@@ -475,8 +475,19 @@ Output NPZ files contain:
 | `move_numbers`     | (N,)          | int32   | Move index within game                          |
 | `total_game_moves` | (N,)          | int32   | Total moves in source game                      |
 | `phases`           | (N,)          | object  | Game phase at each position                     |
+| `victory_types`    | (N,)          | object  | Terminal outcome type per sample                |
+| `engine_modes`     | (N,)          | object  | Engine mode label per sample                    |
+| `move_types`       | (N,)          | object  | MoveType per sample                             |
 | `values_mp`        | (N, 4)        | float32 | Multi-player value vectors                      |
 | `num_players`      | (N,)          | int32   | Player count per sample                         |
+| `opponent_elo`     | (N,)          | float32 | Opponent Elo at game time (if recorded)         |
+| `quality_score`    | (N,)          | float32 | Training quality score (if computed)            |
+| `opponent_types`   | (N,)          | object  | Opponent category label (if recorded)           |
+| `policy_encoding`  | (1,)          | string  | `board_aware` or `legacy_max_n`                 |
+| `feature_version`  | (1,)          | int32   | Feature version metadata                        |
+| `history_length`   | (1,)          | int32   | History length metadata                         |
+| `board_type`       | (1,)          | string  | Board type metadata                             |
+| `board_size`       | (1,)          | int32   | Board size metadata                             |
 
 ### 56-Channel Feature Encoding
 

@@ -20,6 +20,29 @@ import pytest
 import socket
 
 
+@pytest.fixture
+def reset_helpers_imports():
+    """Reset the lazy import state in helpers module for testing.
+
+    Dec 29, 2025: Added to support testing with the new lazy loading system.
+    """
+    import app.coordination.helpers as helpers
+
+    # Save original state
+    original_loaded = helpers._IMPORTS_LOADED
+    original_available = helpers._IMPORTS_AVAILABLE
+
+    # Reset for test
+    helpers._IMPORTS_LOADED = False
+    helpers._IMPORTS_AVAILABLE = False
+
+    yield
+
+    # Restore original state
+    helpers._IMPORTS_LOADED = original_loaded
+    helpers._IMPORTS_AVAILABLE = original_available
+
+
 class TestHasCoordination:
     """Tests for coordination availability check."""
 
@@ -74,19 +97,25 @@ class TestGetCoordinatorSafe:
         # Result could be None or a coordinator instance
         assert result is None or hasattr(result, 'can_spawn_task')
 
-    @patch('app.coordination.helpers._get_coordinator')
-    @patch('app.coordination.helpers._HAS_COORDINATION', True)
-    def test_get_coordinator_safe_handles_exception(self, mock_get_coordinator):
+    def test_get_coordinator_safe_handles_exception(self, reset_helpers_imports):
         """Should return None on exception."""
-        mock_get_coordinator.side_effect = RuntimeError("Init failed")
+        import app.coordination.helpers as helpers
+        # Simulate coordination available but get_coordinator fails
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = True
+        helpers._get_coordinator = MagicMock(side_effect=RuntimeError("Init failed"))
 
         from app.coordination.helpers import get_coordinator_safe
         result = get_coordinator_safe()
         assert result is None
 
-    @patch('app.coordination.helpers._HAS_COORDINATION', False)
-    def test_get_coordinator_safe_no_coordination(self):
+    def test_get_coordinator_safe_no_coordination(self, reset_helpers_imports):
         """Should return None when coordination not available."""
+        import app.coordination.helpers as helpers
+        # Simulate coordination unavailable by setting flags directly
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = False
+
         from app.coordination.helpers import get_coordinator_safe
         result = get_coordinator_safe()
         assert result is None
@@ -105,9 +134,12 @@ class TestCanSpawnSafe:
         assert isinstance(result[0], bool)
         assert isinstance(result[1], str)
 
-    @patch('app.coordination.helpers._HAS_COORDINATION', False)
-    def test_can_spawn_safe_no_coordination(self):
+    def test_can_spawn_safe_no_coordination(self, reset_helpers_imports):
         """Should return (True, 'coordination_unavailable') when no coordination."""
+        import app.coordination.helpers as helpers
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = False
+
         from app.coordination.helpers import can_spawn_safe
 
         allowed, reason = can_spawn_safe(None)
@@ -126,18 +158,23 @@ class TestCanSpawnSafe:
 class TestRegisterTaskSafe:
     """Tests for register_task_safe()."""
 
-    @patch('app.coordination.helpers._HAS_COORDINATION', False)
-    def test_register_task_safe_no_coordination(self):
+    def test_register_task_safe_no_coordination(self, reset_helpers_imports):
         """Should return False when no coordination."""
+        import app.coordination.helpers as helpers
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = False
+
         from app.coordination.helpers import register_task_safe
 
         result = register_task_safe("test-task-1", None)
         assert result is False
 
     @patch('app.coordination.helpers.get_coordinator_safe')
-    @patch('app.coordination.helpers._HAS_COORDINATION', True)
-    def test_register_task_safe_no_coordinator(self, mock_get_coordinator):
+    def test_register_task_safe_no_coordinator(self, mock_get_coordinator, reset_helpers_imports):
         """Should return False when coordinator not available."""
+        import app.coordination.helpers as helpers
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = True
         mock_get_coordinator.return_value = None
 
         from app.coordination.helpers import register_task_safe
@@ -145,9 +182,11 @@ class TestRegisterTaskSafe:
         assert result is False
 
     @patch('app.coordination.helpers.get_coordinator_safe')
-    @patch('app.coordination.helpers._HAS_COORDINATION', True)
-    def test_register_task_safe_success(self, mock_get_coordinator):
+    def test_register_task_safe_success(self, mock_get_coordinator, reset_helpers_imports):
         """Should return True on successful registration."""
+        import app.coordination.helpers as helpers
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = True
         mock_coordinator = MagicMock()
         mock_get_coordinator.return_value = mock_coordinator
 
@@ -157,9 +196,11 @@ class TestRegisterTaskSafe:
         mock_coordinator.register_task.assert_called_once()
 
     @patch('app.coordination.helpers.get_coordinator_safe')
-    @patch('app.coordination.helpers._HAS_COORDINATION', True)
-    def test_register_task_safe_handles_exception(self, mock_get_coordinator):
+    def test_register_task_safe_handles_exception(self, mock_get_coordinator, reset_helpers_imports):
         """Should return False on exception."""
+        import app.coordination.helpers as helpers
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = True
         mock_coordinator = MagicMock()
         mock_coordinator.register_task.side_effect = RuntimeError("DB error")
         mock_get_coordinator.return_value = mock_coordinator
@@ -172,18 +213,23 @@ class TestRegisterTaskSafe:
 class TestCompleteTaskSafe:
     """Tests for complete_task_safe()."""
 
-    @patch('app.coordination.helpers._HAS_COORDINATION', False)
-    def test_complete_task_safe_no_coordination(self):
+    def test_complete_task_safe_no_coordination(self, reset_helpers_imports):
         """Should return False when no coordination."""
+        import app.coordination.helpers as helpers
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = False
+
         from app.coordination.helpers import complete_task_safe
 
         result = complete_task_safe("test-task")
         assert result is False
 
     @patch('app.coordination.helpers.get_coordinator_safe')
-    @patch('app.coordination.helpers._HAS_COORDINATION', True)
-    def test_complete_task_safe_success(self, mock_get_coordinator):
+    def test_complete_task_safe_success(self, mock_get_coordinator, reset_helpers_imports):
         """Should return True on success."""
+        import app.coordination.helpers as helpers
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = True
         mock_coordinator = MagicMock()
         mock_get_coordinator.return_value = mock_coordinator
 
@@ -196,18 +242,23 @@ class TestCompleteTaskSafe:
 class TestFailTaskSafe:
     """Tests for fail_task_safe()."""
 
-    @patch('app.coordination.helpers._HAS_COORDINATION', False)
-    def test_fail_task_safe_no_coordination(self):
+    def test_fail_task_safe_no_coordination(self, reset_helpers_imports):
         """Should return False when no coordination."""
+        import app.coordination.helpers as helpers
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = False
+
         from app.coordination.helpers import fail_task_safe
 
         result = fail_task_safe("test-task", "error message")
         assert result is False
 
     @patch('app.coordination.helpers.get_coordinator_safe')
-    @patch('app.coordination.helpers._HAS_COORDINATION', True)
-    def test_fail_task_safe_success(self, mock_get_coordinator):
+    def test_fail_task_safe_success(self, mock_get_coordinator, reset_helpers_imports):
         """Should return True on success."""
+        import app.coordination.helpers as helpers
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = True
         mock_coordinator = MagicMock()
         mock_get_coordinator.return_value = mock_coordinator
 
@@ -231,17 +282,23 @@ class TestGetRegistrySafe:
 class TestAcquireReleasRoleSafe:
     """Tests for acquire_role_safe() and release_role_safe()."""
 
-    @patch('app.coordination.helpers._HAS_COORDINATION', False)
-    def test_acquire_role_safe_no_coordination(self):
+    def test_acquire_role_safe_no_coordination(self, reset_helpers_imports):
         """Should return False when no coordination."""
+        import app.coordination.helpers as helpers
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = False
+
         from app.coordination.helpers import acquire_role_safe
 
         result = acquire_role_safe(None)
         assert result is False
 
-    @patch('app.coordination.helpers._HAS_COORDINATION', False)
-    def test_release_role_safe_no_coordination(self):
+    def test_release_role_safe_no_coordination(self, reset_helpers_imports):
         """Should return False when no coordination."""
+        import app.coordination.helpers as helpers
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = False
+
         from app.coordination.helpers import release_role_safe
 
         result = release_role_safe(None)
@@ -289,9 +346,12 @@ class TestGetRoleHolder:
 class TestCheckSpawnAllowed:
     """Tests for check_spawn_allowed()."""
 
-    @patch('app.coordination.helpers._HAS_COORDINATION', False)
-    def test_check_spawn_allowed_no_coordination(self):
+    def test_check_spawn_allowed_no_coordination(self, reset_helpers_imports):
         """Should return (True, 'safeguards_unavailable') when no coordination."""
+        import app.coordination.helpers as helpers
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = False
+
         from app.coordination.helpers import check_spawn_allowed
 
         allowed, reason = check_spawn_allowed("selfplay", "hex8_2p")
@@ -333,9 +393,12 @@ class TestGetCurrentNodeId:
 class TestIsUnifiedLoopRunning:
     """Tests for is_unified_loop_running()."""
 
-    @patch('app.coordination.helpers._HAS_COORDINATION', False)
-    def test_is_unified_loop_running_no_coordination(self):
+    def test_is_unified_loop_running_no_coordination(self, reset_helpers_imports):
         """Should return False when no coordination."""
+        import app.coordination.helpers as helpers
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = False
+
         from app.coordination.helpers import is_unified_loop_running
 
         result = is_unified_loop_running()
@@ -345,9 +408,12 @@ class TestIsUnifiedLoopRunning:
 class TestWarnIfOrchestratorRunning:
     """Tests for warn_if_orchestrator_running()."""
 
-    @patch('app.coordination.helpers._HAS_COORDINATION', False)
-    def test_warn_if_orchestrator_running_no_coordination(self, capsys):
+    def test_warn_if_orchestrator_running_no_coordination(self, reset_helpers_imports, capsys):
         """Should not print warning when no coordination."""
+        import app.coordination.helpers as helpers
+        helpers._IMPORTS_LOADED = True
+        helpers._IMPORTS_AVAILABLE = False
+
         from app.coordination.helpers import warn_if_orchestrator_running
 
         warn_if_orchestrator_running("test_daemon")

@@ -226,11 +226,15 @@ def _play_matchup(
     num_games_override: int | None = None,
     time_budget_ms_override: int | None = None,
     max_moves_override: int | None = None,
+    recording_config: Any | None = None,
 ) -> MatchupStats:
     """Run games between the candidate tier and a single opponent.
 
     Evaluates the candidate configuration against a single configured
     opponent entry and returns aggregated statistics.
+
+    Args:
+        recording_config: Optional recording config for game recording (Dec 2025)
     """
     games_to_play = opponent.games or tier_config.num_games
     if num_games_override is not None:
@@ -322,6 +326,18 @@ def _play_matchup(
         last_info: dict[str, Any] = {}
         moves_played = 0
 
+        # Initialize recorder if config provided (Dec 2025 - tier eval recording)
+        recorder = None
+        if recording_config is not None:
+            try:
+                from app.db.unified_recording import UnifiedGameRecorder, is_recording_enabled
+                import uuid
+                if is_recording_enabled():
+                    recorder = UnifiedGameRecorder(recording_config, game_state, game_id=str(uuid.uuid4()))
+                    recorder.__enter__()
+            except ImportError:
+                pass
+
         while not done:
             current_player = game_state.current_player
             current_ai = ai_by_player.get(current_player)
@@ -357,9 +373,22 @@ def _play_matchup(
                     stats.total_moves += moves_played
                     break
 
+            state_before = game_state
             game_state, _reward, done, info = env.step(move)
             last_info = info
             moves_played = info.get("move_count", moves_played + 1)
+
+            # Record move if recorder active
+            if recorder is not None:
+                try:
+                    recorder.add_move(
+                        move,
+                        state_after=game_state,
+                        state_before=state_before,
+                        available_moves_count=0,
+                    )
+                except Exception:
+                    pass
 
         if (
             not last_info
@@ -404,6 +433,21 @@ def _play_matchup(
                 win_rate,
             )
 
+            # Finalize recording
+            if recorder is not None:
+                try:
+                    recorder.finalize(game_state, extra_metadata={
+                        "source": "tier_eval",
+                        "tier_name": tier_config.tier_name,
+                        "candidate_seat": candidate_seat,
+                        "opponent_id": opponent.id,
+                        "result": result_str,
+                        "victory_reason": victory_reason,
+                    })
+                    recorder.__exit__(None, None, None)
+                except Exception:
+                    pass
+
     elapsed = time.time() - matchup_start
     logger.info(
         "[tier-gate] Matchup vs %s completed in %.1fs | Final W/D/L: %d/%d/%d (%.1f%%)",
@@ -426,6 +470,9 @@ def run_tier_evaluation(
     num_games_override: int | None = None,
     time_budget_ms_override: int | None = None,
     max_moves_override: int | None = None,
+    enable_recording: bool = True,
+    recording_db_prefix: str = "tier_eval",
+    recording_db_dir: str = "data/games",
 ) -> TierEvaluationResult:
     """Evaluate a candidate configuration for a given difficulty tier.
 
@@ -438,6 +485,9 @@ def run_tier_evaluation(
         seed: Optional base RNG seed for reproducible evaluations.
         num_games_override: When provided, overrides tier_config.num_games
             for all opponents.
+        enable_recording: Whether to record games for training data (Dec 2025)
+        recording_db_prefix: Prefix for recording database files
+        recording_db_dir: Directory for recording databases
     """
     matchups: list[MatchupStats] = []
     total_games = 0
@@ -448,6 +498,23 @@ def run_tier_evaluation(
     baseline_games = 0
     prev_wins = 0
     prev_games = 0
+
+    # Create recording config if enabled (Dec 2025 - tier eval recording)
+    recording_config = None
+    if enable_recording:
+        try:
+            from app.db.unified_recording import RecordingConfig, RecordSource
+            recording_config = RecordingConfig(
+                board_type=tier_config.board_type.value,
+                num_players=tier_config.num_players,
+                source=RecordSource.TOURNAMENT,
+                engine_mode="tier_eval",
+                db_prefix=recording_db_prefix,
+                db_dir=recording_db_dir,
+                store_history_entries=True,
+            )
+        except ImportError:
+            logger.debug("Recording module not available for tier evaluation")
 
     num_opponents = len(tier_config.opponents)
     logger.info(
@@ -473,6 +540,7 @@ def run_tier_evaluation(
             num_games_override=num_games_override,
             time_budget_ms_override=time_budget_ms_override,
             max_moves_override=max_moves_override,
+            recording_config=recording_config,
         )
         matchups.append(stats)
         total_games += stats.games

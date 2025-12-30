@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
+from app.coordination.contracts import CoordinatorStatus
 from app.coordination.training_coordinator import (
     HEARTBEAT_INTERVAL_SECONDS,
     # Constants
@@ -671,5 +672,526 @@ class TestEventWiring:
                 try:
                     coordinator = wire_training_events()
                     assert coordinator is not None
-                except ImportError:
-                    pass  # Expected if data_events not available
+                except (ImportError, AttributeError):
+                    pass  # Expected if data_events/DataEventType not available
+
+
+# =============================================================================
+# Context Manager Tests
+# =============================================================================
+
+
+class TestTrainingSlotContextManager:
+    """Tests for training_slot context manager."""
+
+    @pytest.fixture
+    def temp_db_path(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "training_coordinator.db"
+            yield db_path
+
+    @pytest.fixture
+    def reset_singleton(self, temp_db_path):
+        """Reset coordinator singleton for clean tests."""
+        import app.coordination.training_coordinator as tc
+        tc._coordinator = None
+        with patch.object(TrainingCoordinator, '_get_db_path', return_value=temp_db_path):
+            with patch.object(TrainingCoordinator, '_get_node_ip', return_value="127.0.0.1"):
+                yield
+        tc._coordinator = None
+
+    def test_training_slot_success(self, reset_singleton):
+        """Context manager should acquire and release slot on success."""
+        from app.coordination.training_coordinator import training_slot
+
+        with patch("app.coordination.training_coordinator.DistributedLock") as mock_lock:
+            mock_lock_instance = MagicMock()
+            mock_lock_instance.acquire.return_value = True
+            mock_lock.return_value = mock_lock_instance
+
+            with training_slot("square8", 2, timeout=5) as job_id:
+                assert job_id is not None
+                assert "square8_2p" in job_id
+
+            # After context, job should be completed
+            from app.coordination.training_coordinator import can_train
+            assert can_train("square8", 2)  # Slot now available
+
+    def test_training_slot_failure_marks_failed(self, reset_singleton):
+        """Context manager should mark job as failed on exception."""
+        from app.coordination.training_coordinator import (
+            training_slot,
+            get_training_coordinator,
+        )
+
+        with patch("app.coordination.training_coordinator.DistributedLock") as mock_lock:
+            mock_lock_instance = MagicMock()
+            mock_lock_instance.acquire.return_value = True
+            mock_lock.return_value = mock_lock_instance
+
+            try:
+                with training_slot("square8", 2, timeout=5) as job_id:
+                    assert job_id is not None
+                    raise ValueError("Simulated training failure")
+            except ValueError:
+                pass
+
+            # Job should be in history as failed
+            coordinator = get_training_coordinator()
+            history = coordinator.get_training_history(limit=1)
+            assert len(history) >= 1
+            assert history[0]["status"] == "failed"
+
+    def test_training_slot_timeout(self, reset_singleton):
+        """Context manager should return None on timeout."""
+        from app.coordination.training_coordinator import training_slot
+
+        with patch("app.coordination.training_coordinator.DistributedLock") as mock_lock:
+            mock_lock_instance = MagicMock()
+            mock_lock_instance.acquire.return_value = True
+            mock_lock.return_value = mock_lock_instance
+
+            # Start first training to block the slot
+            from app.coordination.training_coordinator import request_training_slot
+            job1 = request_training_slot("square8", 2)
+            assert job1 is not None
+
+            # Try to get same slot with short timeout
+            with training_slot("square8", 2, timeout=1) as job_id:
+                assert job_id is None  # Should timeout
+
+    def test_training_slot_no_lock_available(self, reset_singleton):
+        """Context manager should handle lock acquisition failure."""
+        from app.coordination.training_coordinator import training_slot
+
+        with patch("app.coordination.training_coordinator.DistributedLock") as mock_lock:
+            mock_lock_instance = MagicMock()
+            mock_lock_instance.acquire.return_value = False  # Lock not acquired
+            mock_lock.return_value = mock_lock_instance
+
+            with training_slot("square8", 2, timeout=1) as job_id:
+                # Should still work since we use SQLite for coordination
+                # Lock failure is handled gracefully
+                pass  # May or may not get job_id depending on implementation
+
+
+# =============================================================================
+# Concurrent Access Tests
+# =============================================================================
+
+
+class TestConcurrentAccess:
+    """Tests for concurrent training slot access."""
+
+    @pytest.fixture
+    def temp_db_path(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "training_coordinator.db"
+            yield db_path
+
+    @pytest.fixture
+    def coordinator(self, temp_db_path):
+        with patch.object(TrainingCoordinator, '_get_db_path', return_value=temp_db_path):
+            with patch.object(TrainingCoordinator, '_get_node_ip', return_value="127.0.0.1"):
+                coord = TrainingCoordinator(use_nfs=False)
+                yield coord
+
+    def test_concurrent_same_config_blocked(self, coordinator):
+        """Multiple requests for same config should be blocked."""
+        import threading
+        results = []
+
+        with patch("app.coordination.training_coordinator.DistributedLock") as mock_lock:
+            mock_lock_instance = MagicMock()
+            mock_lock_instance.acquire.return_value = True
+            mock_lock.return_value = mock_lock_instance
+
+            def request_training():
+                job_id = coordinator.start_training("square8", 2)
+                results.append(job_id)
+
+            # Start multiple threads requesting same config
+            threads = [threading.Thread(target=request_training) for _ in range(5)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            # Only one should succeed
+            successful = [r for r in results if r is not None]
+            assert len(successful) == 1
+
+    def test_concurrent_different_configs_allowed(self, coordinator):
+        """Multiple requests for different configs should all succeed."""
+        import threading
+        results = {}
+
+        with patch("app.coordination.training_coordinator.DistributedLock") as mock_lock:
+            mock_lock_instance = MagicMock()
+            mock_lock_instance.acquire.return_value = True
+            mock_lock.return_value = mock_lock_instance
+
+            configs = [
+                ("square8", 2),
+                ("hex7", 2),
+                ("square8", 4),
+            ]
+
+            def request_training(board, players):
+                job_id = coordinator.start_training(board, players)
+                results[(board, players)] = job_id
+
+            threads = [
+                threading.Thread(target=request_training, args=(b, p))
+                for b, p in configs
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            # All should succeed
+            for config in configs:
+                assert results[config] is not None
+
+    def test_slot_release_allows_new_request(self, coordinator):
+        """Releasing a slot should allow new training to start."""
+        with patch("app.coordination.training_coordinator.DistributedLock") as mock_lock:
+            mock_lock_instance = MagicMock()
+            mock_lock_instance.acquire.return_value = True
+            mock_lock.return_value = mock_lock_instance
+
+            # Start and complete training
+            job1 = coordinator.start_training("square8", 2)
+            assert job1 is not None
+
+            # Cannot start another
+            job2 = coordinator.start_training("square8", 2)
+            assert job2 is None
+
+            # Complete first training
+            with patch.object(coordinator, '_emit_training_event'):
+                coordinator.complete_training(job1, status="completed")
+
+            # Now can start another
+            job3 = coordinator.start_training("square8", 2)
+            assert job3 is not None
+
+    def test_stale_job_cleanup_allows_new_request(self, coordinator):
+        """Cleaning up stale job should allow new training."""
+        with patch("app.coordination.training_coordinator.DistributedLock") as mock_lock:
+            mock_lock_instance = MagicMock()
+            mock_lock_instance.acquire.return_value = True
+            mock_lock.return_value = mock_lock_instance
+
+            # Start training
+            job1 = coordinator.start_training("square8", 2)
+            assert job1 is not None
+
+            # Make job stale
+            conn = coordinator._get_connection()
+            old_heartbeat = time.time() - (HEARTBEAT_INTERVAL_SECONDS * 10)
+            conn.execute(
+                "UPDATE training_jobs SET last_heartbeat = ? WHERE job_id = ?",
+                (old_heartbeat, job1)
+            )
+            conn.commit()
+
+            # Cleanup
+            coordinator._cleanup_stale_jobs()
+
+            # Now can start another
+            job2 = coordinator.start_training("square8", 2)
+            assert job2 is not None
+
+
+# =============================================================================
+# Event Handler Tests
+# =============================================================================
+
+
+class TestEventHandlers:
+    """Tests for event handler integration."""
+
+    @pytest.fixture
+    def temp_db_path(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "training_coordinator.db"
+            yield db_path
+
+    @pytest.fixture
+    def coordinator(self, temp_db_path):
+        with patch.object(TrainingCoordinator, '_get_db_path', return_value=temp_db_path):
+            with patch.object(TrainingCoordinator, '_get_node_ip', return_value="127.0.0.1"):
+                coord = TrainingCoordinator(use_nfs=False)
+                yield coord
+
+    def test_cluster_unhealthy_blocks_training(self, coordinator):
+        """Cluster unhealthy should block new training."""
+        # Simulate cluster unhealthy event
+        mock_event = MagicMock()
+        mock_event.payload = {"reason": "quorum_lost", "healthy_nodes": []}
+
+        coordinator._on_cluster_unhealthy(mock_event)
+
+        assert not coordinator._cluster_healthy
+        # Note: Training might still be allowed via can_start_training
+        # depending on implementation, but capacity should be affected
+
+    def test_cluster_healthy_resumes_training(self, coordinator):
+        """Cluster healthy should enable training."""
+        # First make cluster unhealthy
+        coordinator._cluster_healthy = False
+
+        # Then healthy
+        mock_event = MagicMock()
+        mock_event.payload = {}
+        coordinator._on_cluster_healthy(mock_event)
+
+        assert coordinator._cluster_healthy
+
+    def test_capacity_change_affects_state(self, coordinator):
+        """Capacity change event should update internal state."""
+        mock_event = MagicMock()
+        mock_event.payload = {"capacity": 0.5}
+
+        coordinator._on_capacity_changed(mock_event)
+
+        assert coordinator._cluster_capacity == 0.5
+
+    def test_capacity_clamped_to_valid_range(self, coordinator):
+        """Capacity should be clamped between 0 and 1."""
+        # Too high
+        mock_event = MagicMock()
+        mock_event.payload = {"capacity": 1.5}
+        coordinator._on_capacity_changed(mock_event)
+        assert coordinator._cluster_capacity == 1.0
+
+        # Too low
+        mock_event.payload = {"capacity": -0.5}
+        coordinator._on_capacity_changed(mock_event)
+        assert coordinator._cluster_capacity == 0.0
+
+    def test_regression_minor_logs_but_continues(self, coordinator):
+        """Minor regression should log but not pause."""
+        mock_event = MagicMock()
+        mock_event.payload = {
+            "config_key": "square8_2p",
+            "elo_drop": 20,
+            "previous_elo": 1600,
+            "current_elo": 1580,
+        }
+
+        old_capacity = coordinator._cluster_capacity
+        coordinator._on_regression_detected(mock_event)
+
+        # Capacity unchanged for minor regression
+        assert coordinator._cluster_capacity == old_capacity
+        assert coordinator._events_processed >= 1
+
+    def test_regression_moderate_reduces_capacity(self, coordinator):
+        """Moderate regression should reduce capacity."""
+        coordinator._cluster_capacity = 1.0
+
+        mock_event = MagicMock()
+        mock_event.payload = {
+            "config_key": "square8_2p",
+            "elo_drop": 40,
+            "previous_elo": 1600,
+            "current_elo": 1560,
+        }
+
+        coordinator._on_regression_detected(mock_event)
+
+        # Capacity should be reduced
+        assert coordinator._cluster_capacity < 1.0
+
+    def test_regression_critical_pauses_training(self, coordinator):
+        """Critical regression should pause training."""
+        with patch("app.coordination.training_coordinator.DistributedLock") as mock_lock:
+            mock_lock_instance = MagicMock()
+            mock_lock_instance.acquire.return_value = True
+            mock_lock.return_value = mock_lock_instance
+
+            # Start a training job
+            job_id = coordinator.start_training("square8", 2)
+            assert job_id is not None
+
+            # Simulate critical regression
+            mock_event = MagicMock()
+            mock_event.payload = {
+                "config_key": "square8_2p",
+                "elo_drop": 100,
+                "model_id": "square8_2p_v1",
+            }
+
+            with patch.object(coordinator, '_pause_training_for_config') as mock_pause:
+                with patch.object(coordinator, '_trigger_model_rollback'):
+                    with patch.object(coordinator, '_emit_via_router'):
+                        coordinator._on_regression_critical(mock_event)
+
+                mock_pause.assert_called_once()
+                assert coordinator._errors_count >= 1
+
+    def test_data_sync_completed_updates_state(self, coordinator):
+        """Data sync completed should update sync time."""
+        mock_event = MagicMock()
+        mock_event.payload = {
+            "config_key": "square8_2p",
+            "sync_time": time.time(),
+        }
+
+        coordinator._on_data_sync_completed(mock_event)
+
+        # Sync time should be updated
+        assert coordinator._last_sync_time > 0
+
+
+# =============================================================================
+# Health Check Tests
+# =============================================================================
+
+
+class TestHealthCheck:
+    """Tests for health check integration."""
+
+    @pytest.fixture
+    def temp_db_path(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "training_coordinator.db"
+            yield db_path
+
+    @pytest.fixture
+    def coordinator(self, temp_db_path):
+        with patch.object(TrainingCoordinator, '_get_db_path', return_value=temp_db_path):
+            with patch.object(TrainingCoordinator, '_get_node_ip', return_value="127.0.0.1"):
+                coord = TrainingCoordinator(use_nfs=False)
+                yield coord
+
+    def test_health_check_returns_result(self, coordinator):
+        """health_check should return HealthCheckResult."""
+        result = coordinator.health_check()
+
+        assert result is not None
+        assert hasattr(result, 'healthy')
+        assert hasattr(result, 'status')
+
+    def test_health_check_healthy_when_running(self, coordinator):
+        """health_check should report healthy when running."""
+        result = coordinator.health_check()
+
+        assert result.healthy
+        assert result.status == CoordinatorStatus.RUNNING
+
+    def test_health_check_includes_details(self, coordinator):
+        """health_check should include useful details."""
+        with patch("app.coordination.training_coordinator.DistributedLock") as mock_lock:
+            mock_lock_instance = MagicMock()
+            mock_lock_instance.acquire.return_value = True
+            mock_lock.return_value = mock_lock_instance
+
+            coordinator.start_training("square8", 2)
+
+            result = coordinator.health_check()
+
+            assert "active_jobs" in result.details or result.details.get("active_count", 0) >= 0
+
+    def test_name_property(self, coordinator):
+        """Coordinator should have a name property."""
+        assert coordinator.name is not None
+        assert "training" in coordinator.name.lower() or "coordinator" in coordinator.name.lower()
+
+
+# =============================================================================
+# Edge Case Tests
+# =============================================================================
+
+
+class TestEdgeCases:
+    """Tests for edge cases and error handling."""
+
+    @pytest.fixture
+    def temp_db_path(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "training_coordinator.db"
+            yield db_path
+
+    @pytest.fixture
+    def coordinator(self, temp_db_path):
+        with patch.object(TrainingCoordinator, '_get_db_path', return_value=temp_db_path):
+            with patch.object(TrainingCoordinator, '_get_node_ip', return_value="127.0.0.1"):
+                coord = TrainingCoordinator(use_nfs=False)
+                yield coord
+
+    def test_update_nonexistent_job(self, coordinator):
+        """Updating nonexistent job should fail gracefully."""
+        result = coordinator.update_progress(
+            job_id="nonexistent-job",
+            epochs_completed=10,
+        )
+        assert not result
+
+    def test_complete_nonexistent_job(self, coordinator):
+        """Completing nonexistent job should fail gracefully."""
+        with patch.object(coordinator, '_emit_training_event'):
+            result = coordinator.complete_training(
+                job_id="nonexistent-job",
+                status="completed",
+            )
+        assert not result
+
+    def test_empty_board_type(self, coordinator):
+        """Empty board type should be handled."""
+        with patch("app.coordination.training_coordinator.DistributedLock") as mock_lock:
+            mock_lock_instance = MagicMock()
+            mock_lock_instance.acquire.return_value = True
+            mock_lock.return_value = mock_lock_instance
+
+            # Empty board type might raise or return None
+            try:
+                job = coordinator.start_training("", 2)
+                # If it doesn't raise, job should be None or empty
+            except (ValueError, sqlite3.IntegrityError):
+                pass  # Expected
+
+    def test_invalid_num_players(self, coordinator):
+        """Invalid player count should be handled."""
+        with patch("app.coordination.training_coordinator.DistributedLock") as mock_lock:
+            mock_lock_instance = MagicMock()
+            mock_lock_instance.acquire.return_value = True
+            mock_lock.return_value = mock_lock_instance
+
+            # Negative players
+            try:
+                job = coordinator.start_training("square8", -1)
+            except (ValueError, sqlite3.IntegrityError):
+                pass
+
+    def test_get_active_jobs_empty(self, coordinator):
+        """get_active_jobs with no jobs should return empty list."""
+        jobs = coordinator.get_active_jobs()
+        assert jobs == []
+
+    def test_get_training_history_empty(self, coordinator):
+        """get_training_history with no history should return empty list."""
+        history = coordinator.get_training_history(limit=10)
+        assert history == []
+
+    def test_heartbeat_update(self, coordinator):
+        """Heartbeat should update last_heartbeat timestamp."""
+        with patch("app.coordination.training_coordinator.DistributedLock") as mock_lock:
+            mock_lock_instance = MagicMock()
+            mock_lock_instance.acquire.return_value = True
+            mock_lock.return_value = mock_lock_instance
+
+            job_id = coordinator.start_training("square8", 2)
+            job_before = coordinator.get_job("square8", 2)
+            initial_heartbeat = job_before.last_heartbeat
+
+            time.sleep(0.1)  # Small delay
+
+            # Update progress (should also update heartbeat)
+            coordinator.update_progress(job_id, epochs_completed=1)
+
+            job_after = coordinator.get_job("square8", 2)
+            assert job_after.last_heartbeat >= initial_heartbeat

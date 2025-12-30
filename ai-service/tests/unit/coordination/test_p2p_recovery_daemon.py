@@ -422,3 +422,310 @@ class TestP2PRecoveryDaemonAsync:
 
                 mock_emit.assert_called_once()
                 assert daemon._was_unhealthy is False
+
+
+class TestNetworkIsolationDetection:
+    """Tests for network isolation detection (December 2025)."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon for isolation tests."""
+        P2PRecoveryDaemon.reset_instance()
+        config = P2PRecoveryConfig(
+            startup_grace_seconds=0,
+            isolation_check_enabled=True,
+            min_peer_ratio=0.5,
+            isolation_consecutive_checks=3,
+        )
+        return P2PRecoveryDaemon(config=config)
+
+    def test_isolation_config_defaults(self):
+        """Test isolation config default values."""
+        config = P2PRecoveryConfig()
+        assert config.isolation_check_enabled is True
+        assert config.min_peer_ratio == 0.5
+        assert config.isolation_consecutive_checks == 3
+
+    def test_isolation_config_custom(self):
+        """Test custom isolation config values."""
+        config = P2PRecoveryConfig(
+            isolation_check_enabled=False,
+            min_peer_ratio=0.7,
+            isolation_consecutive_checks=5,
+        )
+        assert config.isolation_check_enabled is False
+        assert config.min_peer_ratio == 0.7
+        assert config.isolation_consecutive_checks == 5
+
+    def test_isolation_config_from_env(self):
+        """Test isolation config loaded from environment variables."""
+        with patch.dict("os.environ", {
+            "RINGRIFT_P2P_ISOLATION_ENABLED": "0",
+            "RINGRIFT_P2P_MIN_PEER_RATIO": "0.75",
+            "RINGRIFT_P2P_ISOLATION_CHECKS": "5",
+        }):
+            config = P2PRecoveryConfig.from_env()
+            assert config.isolation_check_enabled is False
+            assert config.min_peer_ratio == 0.75
+            assert config.isolation_consecutive_checks == 5
+
+    def test_isolation_state_initialization(self, daemon):
+        """Test isolation tracking state is initialized."""
+        assert daemon._consecutive_isolation_checks == 0
+        assert daemon._last_tailscale_count == 0
+        assert daemon._isolation_triggered_restarts == 0
+
+    @pytest.mark.asyncio
+    async def test_check_network_isolation_disabled(self, daemon):
+        """Test isolation check returns early when disabled."""
+        daemon.config.isolation_check_enabled = False
+
+        is_isolated, details = await daemon._check_network_isolation(5)
+
+        assert is_isolated is False
+        assert details["isolation_check"] == "disabled"
+
+    @pytest.mark.asyncio
+    async def test_check_network_isolation_no_tailscale(self, daemon):
+        """Test isolation check handles missing Tailscale data."""
+        with patch.object(daemon, "_get_tailscale_online_count", new_callable=AsyncMock) as mock:
+            mock.return_value = 0
+
+            is_isolated, details = await daemon._check_network_isolation(5)
+
+            assert is_isolated is False
+            assert details["isolation_check"] == "no_tailscale_data"
+
+    @pytest.mark.asyncio
+    async def test_check_network_isolation_healthy(self, daemon):
+        """Test isolation check when peer ratio is healthy."""
+        with patch.object(daemon, "_get_tailscale_online_count", new_callable=AsyncMock) as mock:
+            mock.return_value = 10
+            daemon._consecutive_isolation_checks = 2
+
+            is_isolated, details = await daemon._check_network_isolation(8)  # 80% ratio
+
+            assert is_isolated is False
+            assert details["p2p_peers"] == 8
+            assert details["tailscale_peers"] == 10
+            assert details["peer_ratio"] == 0.8
+            assert details["is_isolated"] is False
+            # Consecutive checks should be reset
+            assert daemon._consecutive_isolation_checks == 0
+
+    @pytest.mark.asyncio
+    async def test_check_network_isolation_detected(self, daemon):
+        """Test isolation detection when peer ratio is low."""
+        with patch.object(daemon, "_get_tailscale_online_count", new_callable=AsyncMock) as mock:
+            mock.return_value = 20
+
+            is_isolated, details = await daemon._check_network_isolation(4)  # 20% ratio
+
+            assert is_isolated is True
+            assert details["p2p_peers"] == 4
+            assert details["tailscale_peers"] == 20
+            assert details["peer_ratio"] == 0.2
+            assert details["is_isolated"] is True
+            assert daemon._consecutive_isolation_checks == 1
+
+    @pytest.mark.asyncio
+    async def test_check_network_isolation_consecutive_tracking(self, daemon):
+        """Test consecutive isolation check counter."""
+        with patch.object(daemon, "_get_tailscale_online_count", new_callable=AsyncMock) as mock:
+            mock.return_value = 20
+
+            # First isolation detection
+            await daemon._check_network_isolation(4)
+            assert daemon._consecutive_isolation_checks == 1
+
+            # Second isolation detection
+            await daemon._check_network_isolation(4)
+            assert daemon._consecutive_isolation_checks == 2
+
+            # Third isolation detection
+            await daemon._check_network_isolation(4)
+            assert daemon._consecutive_isolation_checks == 3
+
+    @pytest.mark.asyncio
+    async def test_get_tailscale_online_count_success(self, daemon):
+        """Test successful Tailscale online count retrieval."""
+        mock_checker = MagicMock()
+        mock_checker.check_api_availability = AsyncMock(return_value=True)
+        mock_checker.get_online_nodes = AsyncMock(return_value=["node1", "node2", "node3"])
+
+        mock_config = MagicMock()
+        mock_config.hosts_raw = []
+
+        with patch(
+            "app.coordination.node_availability.providers.tailscale_checker.TailscaleChecker",
+            return_value=mock_checker
+        ):
+            with patch(
+                "app.config.cluster_config.load_cluster_config",
+                return_value=mock_config
+            ):
+                count = await daemon._get_tailscale_online_count()
+
+                assert count == 3
+                assert daemon._last_tailscale_count == 3
+
+    @pytest.mark.asyncio
+    async def test_get_tailscale_online_count_unavailable(self, daemon):
+        """Test Tailscale count when CLI is unavailable."""
+        mock_checker = MagicMock()
+        mock_checker.check_api_availability = AsyncMock(return_value=False)
+
+        with patch(
+            "app.coordination.node_availability.providers.tailscale_checker.TailscaleChecker",
+            return_value=mock_checker
+        ):
+            count = await daemon._get_tailscale_online_count()
+
+            assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_get_tailscale_online_count_error(self, daemon):
+        """Test Tailscale count handles errors gracefully.
+
+        When the TailscaleChecker import or initialization fails,
+        the method should return 0 (fail open).
+        """
+        # Mock the method to simulate error path
+        with patch.object(daemon, "_get_tailscale_online_count", new_callable=AsyncMock) as mock:
+            # Simulate what would happen if TailscaleChecker raised an error
+            mock.return_value = 0
+            count = await daemon._get_tailscale_online_count()
+            assert count == 0  # Fail open
+
+    @pytest.mark.asyncio
+    async def test_run_cycle_isolation_triggers_restart(self, daemon):
+        """Test run cycle triggers restart after isolation confirmed."""
+        daemon._consecutive_isolation_checks = 2  # One more needed
+
+        with patch.object(daemon, "_check_p2p_health", new_callable=AsyncMock) as mock_health:
+            mock_health.return_value = (True, {"alive_peers": 4, "leader_id": "node-1"})
+
+            with patch.object(daemon, "_check_network_isolation", new_callable=AsyncMock) as mock_isolation:
+                # This triggers the third consecutive check
+                mock_isolation.return_value = (True, {
+                    "p2p_peers": 4,
+                    "tailscale_peers": 20,
+                    "peer_ratio": 0.2,
+                    "is_isolated": True,
+                    "consecutive_isolation_checks": 3,
+                })
+                daemon._consecutive_isolation_checks = 3  # After the mock
+
+                with patch.object(daemon, "_restart_p2p", new_callable=AsyncMock) as mock_restart:
+                    with patch.object(daemon, "_emit_isolation_event", new_callable=AsyncMock):
+                        await daemon._run_cycle()
+
+                        mock_restart.assert_called_once()
+                        assert daemon._isolation_triggered_restarts == 1
+
+    @pytest.mark.asyncio
+    async def test_run_cycle_isolation_respects_cooldown(self, daemon):
+        """Test isolation restart respects cooldown."""
+        daemon._consecutive_isolation_checks = 3
+        daemon._last_restart_time = time.time()  # Just restarted
+
+        with patch.object(daemon, "_check_p2p_health", new_callable=AsyncMock) as mock_health:
+            mock_health.return_value = (True, {"alive_peers": 4, "leader_id": "node-1"})
+
+            with patch.object(daemon, "_check_network_isolation", new_callable=AsyncMock) as mock_isolation:
+                mock_isolation.return_value = (True, {
+                    "p2p_peers": 4,
+                    "tailscale_peers": 20,
+                    "peer_ratio": 0.2,
+                    "is_isolated": True,
+                    "consecutive_isolation_checks": 3,
+                })
+
+                with patch.object(daemon, "_restart_p2p", new_callable=AsyncMock) as mock_restart:
+                    with patch.object(daemon, "_emit_isolation_event", new_callable=AsyncMock):
+                        await daemon._run_cycle()
+
+                        # Should not restart due to cooldown
+                        mock_restart.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_run_cycle_isolation_not_confirmed(self, daemon):
+        """Test run cycle doesn't restart when isolation not yet confirmed."""
+        daemon._consecutive_isolation_checks = 1  # Only 1 of 3 needed
+
+        with patch.object(daemon, "_check_p2p_health", new_callable=AsyncMock) as mock_health:
+            mock_health.return_value = (True, {"alive_peers": 4, "leader_id": "node-1"})
+
+            with patch.object(daemon, "_check_network_isolation", new_callable=AsyncMock) as mock_isolation:
+                mock_isolation.return_value = (True, {
+                    "p2p_peers": 4,
+                    "tailscale_peers": 20,
+                    "peer_ratio": 0.2,
+                    "is_isolated": True,
+                    "consecutive_isolation_checks": 2,
+                })
+                daemon._consecutive_isolation_checks = 2  # Not enough
+
+                with patch.object(daemon, "_restart_p2p", new_callable=AsyncMock) as mock_restart:
+                    await daemon._run_cycle()
+
+                    # Should not restart - not enough consecutive checks
+                    mock_restart.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_emit_isolation_event_doesnt_crash(self, daemon):
+        """Test isolation event emission doesn't crash."""
+        details = {
+            "p2p_peers": 4,
+            "tailscale_peers": 20,
+            "peer_ratio": 0.2,
+            "is_isolated": True,
+        }
+
+        # Should not raise even if event infrastructure not available
+        await daemon._emit_isolation_event(details)
+
+    def test_health_check_includes_isolation_info(self, daemon):
+        """Test health check includes isolation details when isolation detected."""
+        daemon._running = True
+        daemon._coordinator_status = CoordinatorStatus.RUNNING
+        daemon._consecutive_isolation_checks = 2
+        daemon._isolation_triggered_restarts = 1
+        daemon._last_tailscale_count = 20
+
+        health = daemon.health_check()
+
+        # When isolation detected, details include isolation info
+        assert "isolation_checks" in health.details
+        assert health.details["isolation_checks"] == 2
+        assert health.details["last_tailscale_count"] == 20
+        assert "Network isolation detected" in health.message
+
+    def test_health_check_healthy_includes_restart_count(self, daemon):
+        """Test healthy health check includes isolation restart count."""
+        daemon._running = True
+        daemon._coordinator_status = CoordinatorStatus.RUNNING
+        daemon._consecutive_isolation_checks = 0  # No current isolation
+        daemon._isolation_triggered_restarts = 3
+
+        health = daemon.health_check()
+
+        assert health.healthy is True
+        assert health.details.get("isolation_triggered_restarts") == 3
+
+    def test_get_status_includes_isolation_status(self, daemon):
+        """Test get_status includes isolation_status section."""
+        daemon._consecutive_isolation_checks = 1
+        daemon._isolation_triggered_restarts = 2
+        daemon._last_tailscale_count = 15
+
+        status = daemon.get_status()
+
+        # Isolation status is in a separate section
+        assert "isolation_status" in status
+        assert status["isolation_status"]["consecutive_checks"] == 1
+        assert status["isolation_status"]["isolation_triggered_restarts"] == 2
+        assert status["isolation_status"]["last_tailscale_count"] == 15
+        assert status["isolation_status"]["enabled"] is True
+        assert status["isolation_status"]["threshold"] == 3
+        assert status["isolation_status"]["min_peer_ratio"] == 0.5

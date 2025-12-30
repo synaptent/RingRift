@@ -192,26 +192,52 @@ from app.coordination.helpers import (
     request_bandwidth_safe,
 )
 
-HAS_SYNC_LOCK = has_sync_lock()
-HAS_BANDWIDTH_MANAGER = has_bandwidth_manager()
-HAS_ORCHESTRATOR_REGISTRY = has_coordination()
-HAS_CROSS_PROCESS_EVENTS = has_cross_process_events()
+# =============================================================================
+# Lazy Feature Detection (Dec 29, 2025)
+# =============================================================================
+# Using lazy evaluation to avoid circular imports during module loading.
+# These were previously module-level calls that triggered import cycles.
+# Now uses module __getattr__ for transparent lazy access.
+
+_feature_cache: dict[str, bool | type | None] = {}
+
+# Mapping of lazy attribute names to their evaluation functions
+_LAZY_ATTRS = {
+    "HAS_SYNC_LOCK": has_sync_lock,
+    "HAS_BANDWIDTH_MANAGER": has_bandwidth_manager,
+    "HAS_ORCHESTRATOR_REGISTRY": has_coordination,
+    "HAS_CROSS_PROCESS_EVENTS": has_cross_process_events,
+    "TransferPriority": get_transfer_priorities,
+    "OrchestratorRole": get_orchestrator_roles,
+}
+
+
+def __getattr__(name: str):
+    """Module-level __getattr__ for lazy attribute evaluation."""
+    if name in _LAZY_ATTRS:
+        if name not in _feature_cache:
+            _feature_cache[name] = _LAZY_ATTRS[name]()
+        return _feature_cache[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 # Wrapper functions for backwards compatibility
 def acquire_sync_lock(host: str, timeout: float = 120.0) -> bool:
     return acquire_sync_lock_safe(host, timeout)
 
+
 def release_sync_lock(host: str) -> None:
     release_sync_lock_safe(host)
+
 
 def request_bandwidth(host: str, mbps: float = 100.0, priority=None):
     return request_bandwidth_safe(host, mbps, priority)
 
+
 def release_bandwidth(host: str) -> None:
     release_bandwidth_safe(host)
 
-TransferPriority = get_transfer_priorities()
-OrchestratorRole = get_orchestrator_roles()
+
 get_registry = get_registry_safe
 
 def publish_cross_process_event(event_type: str, payload: dict | None = None):

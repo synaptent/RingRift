@@ -111,6 +111,25 @@ class DatasetValidator:
 | `policy_indices` | `(N,)` object array | Sparse policy action indices                      |
 | `policy_values`  | `(N,)` object array | Sparse policy probabilities                       |
 
+**Optional / Conditional Arrays:**
+
+| Key                      | Description                                              | When Present                    |
+| ------------------------ | -------------------------------------------------------- | ------------------------------- |
+| `move_numbers`           | Move index within the source game                        | Always                          |
+| `total_game_moves`       | Total moves in the source game                           | Always                          |
+| `phases`                 | Game phase at each position                              | Always                          |
+| `victory_types`          | Terminal outcome type per sample                         | Always                          |
+| `engine_modes`           | Engine mode label per sample                             | Always                          |
+| `move_types`             | MoveType per sample                                      | Always                          |
+| `opponent_elo`           | Opponent Elo at game time                                | When recorded                   |
+| `quality_score`          | Training quality score                                   | When quality scoring is enabled |
+| `opponent_types`         | Opponent category (random, heuristic, mcts, nn_v2, etc.) | When recorded                   |
+| `sample_weights`         | Combined quality + freshness weights                     | `--quality-weighted`            |
+| `timestamps`             | Per-sample timestamps (for freshness weighting)          | `--quality-weighted`            |
+| `heuristics`             | Heuristic feature planes                                 | `--include-heuristics`          |
+| `num_heuristic_features` | Heuristic feature count                                  | `--include-heuristics`          |
+| `heuristic_mode`         | Heuristic extraction mode (`fast`/`full`)                | `--include-heuristics`          |
+
 ### 1.2 Feature Normalization Strategies
 
 The current encoding uses 10 feature channels per frame, with 4 frames total (history_length=3 + current):

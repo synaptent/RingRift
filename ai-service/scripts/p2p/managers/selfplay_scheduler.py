@@ -144,7 +144,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
     CPU_COMPATIBLE_ENGINE_MODES = {
         "heuristic-only", "heuristic", "random", "random-only",
         "descent-only", "maxn", "brs", "mixed", "diverse",
-        "tournament-varied", "heuristic-vs-mcts",
+        "tournament-varied", "heuristic-vs-mcts", "cross-ai",
     }
 
     # December 2025: Large board engine mix for square19 and hexagonal
@@ -1199,6 +1199,42 @@ class SelfplayScheduler(EventSubscriptionMixin):
                 "num_players": 2,
                 "engine_mode": "descent-only",
                 "priority": 3,
+            },
+            # Priority 2: Heterogeneous cross-AI games (December 2025)
+            # Per-player AI configs for maximum training diversity
+            # Neural net learning from diverse opponent behaviors
+            {
+                "board_type": "hex8",
+                "num_players": 2,
+                "engine_mode": "cross-ai",
+                "priority": 2,
+                "player_ai_configs": {
+                    1: {"engine": "gumbel-mcts", "budget": 150},
+                    2: {"engine": "heuristic", "difficulty": 5},
+                },
+            },
+            {
+                "board_type": "square8",
+                "num_players": 3,
+                "engine_mode": "cross-ai",
+                "priority": 2,
+                "player_ai_configs": {
+                    1: {"engine": "gumbel-mcts", "budget": 150},
+                    2: {"engine": "brs"},
+                    3: {"engine": "maxn"},
+                },
+            },
+            {
+                "board_type": "hex8",
+                "num_players": 4,
+                "engine_mode": "cross-ai",
+                "priority": 2,
+                "player_ai_configs": {
+                    1: {"engine": "gumbel-mcts", "budget": 200},
+                    2: {"engine": "heuristic", "difficulty": 6},
+                    3: {"engine": "brs"},
+                    4: {"engine": "random"},
+                },
             },
         ]
 

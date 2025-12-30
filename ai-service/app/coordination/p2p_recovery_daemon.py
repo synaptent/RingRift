@@ -46,6 +46,9 @@ class P2PRecoveryConfig(DaemonConfig):
         health_timeout_seconds: Timeout for health check request (default: 10s)
         min_alive_peers: Minimum peers required for healthy cluster (default: 3)
         startup_grace_seconds: Grace period after restart before checking (default: 30s)
+        isolation_check_enabled: Enable network isolation detection (default: True)
+        min_peer_ratio: Trigger isolation recovery if P2P/Tailscale ratio below this (default: 0.5)
+        isolation_consecutive_checks: Consecutive isolation checks before action (default: 3)
     """
 
     check_interval_seconds: int = 60
@@ -55,6 +58,10 @@ class P2PRecoveryConfig(DaemonConfig):
     health_timeout_seconds: float = 10.0
     min_alive_peers: int = 3
     startup_grace_seconds: int = 30
+    # Network isolation detection (December 2025)
+    isolation_check_enabled: bool = True
+    min_peer_ratio: float = 0.5  # Trigger if P2P sees < 50% of Tailscale peers
+    isolation_consecutive_checks: int = 3  # Require 3 checks (~3 min) before action
 
     @classmethod
     def from_env(cls) -> "P2PRecoveryConfig":
@@ -101,6 +108,28 @@ class P2PRecoveryConfig(DaemonConfig):
             except ValueError:
                 pass
 
+        # Network isolation detection config
+        if os.environ.get("RINGRIFT_P2P_ISOLATION_ENABLED"):
+            config.isolation_check_enabled = os.environ.get(
+                "RINGRIFT_P2P_ISOLATION_ENABLED", "1"
+            ) == "1"
+
+        if os.environ.get("RINGRIFT_P2P_MIN_PEER_RATIO"):
+            try:
+                config.min_peer_ratio = float(
+                    os.environ.get("RINGRIFT_P2P_MIN_PEER_RATIO", "0.5")
+                )
+            except ValueError:
+                pass
+
+        if os.environ.get("RINGRIFT_P2P_ISOLATION_CHECKS"):
+            try:
+                config.isolation_consecutive_checks = int(
+                    os.environ.get("RINGRIFT_P2P_ISOLATION_CHECKS", "3")
+                )
+            except ValueError:
+                pass
+
         return config
 
 
@@ -134,6 +163,10 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
         self._was_unhealthy = False
         self._last_status: dict[str, Any] = {}
         self._startup_time = time.time()
+        # Network isolation detection (December 2025)
+        self._consecutive_isolation_checks = 0
+        self._last_tailscale_count = 0
+        self._isolation_triggered_restarts = 0
 
     @staticmethod
     def _get_default_config() -> P2PRecoveryConfig:
@@ -171,7 +204,12 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
         is_healthy, status = await self._check_p2p_health()
         self._last_status = status
 
-        if is_healthy:
+        # Also check for network isolation (December 2025)
+        alive_peers = status.get("alive_peers", 0)
+        is_isolated, isolation_details = await self._check_network_isolation(alive_peers)
+        status["isolation"] = isolation_details
+
+        if is_healthy and not is_isolated:
             # Reset failure counter
             if self._consecutive_failures > 0:
                 logger.info(
@@ -184,8 +222,28 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
             if self._was_unhealthy:
                 await self._emit_recovery_event(status)
                 self._was_unhealthy = False
-        else:
-            # Increment failure counter
+
+        elif is_isolated and self._consecutive_isolation_checks >= self.config.isolation_consecutive_checks:
+            # Network isolation confirmed - trigger restart
+            logger.warning(
+                f"Network isolation confirmed after {self._consecutive_isolation_checks} checks, "
+                f"triggering P2P restart"
+            )
+            await self._emit_isolation_event(isolation_details)
+
+            if self._can_restart():
+                await self._restart_p2p()
+                self._consecutive_isolation_checks = 0
+                self._isolation_triggered_restarts += 1
+                self._was_unhealthy = True
+            else:
+                cooldown_remaining = self._get_cooldown_remaining()
+                logger.warning(
+                    f"P2P restart needed for isolation but in cooldown ({cooldown_remaining:.0f}s remaining)"
+                )
+
+        elif not is_healthy:
+            # Standard health check failure
             self._consecutive_failures += 1
             logger.warning(
                 f"P2P health check failed ({self._consecutive_failures}/{self.config.max_consecutive_failures})"
@@ -245,6 +303,88 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
             return False, {"error": "timeout"}
         except Exception as e:
             return False, {"error": str(e)}
+
+    async def _get_tailscale_online_count(self) -> int:
+        """Get count of online Tailscale peers from local Tailscale status.
+
+        Uses TailscaleChecker to query the mesh network and count peers
+        that are marked as online.
+
+        Returns:
+            Number of online Tailscale peers, or 0 if query fails.
+        """
+        try:
+            from app.coordination.node_availability.providers.tailscale_checker import (
+                TailscaleChecker,
+            )
+            from app.config.cluster_config import load_cluster_config
+
+            checker = TailscaleChecker()
+            if not await checker.check_api_availability():
+                logger.debug("Tailscale CLI not available for isolation check")
+                return 0
+
+            config = load_cluster_config()
+            online_nodes = await checker.get_online_nodes(config.hosts_raw)
+            count = len(online_nodes)
+            self._last_tailscale_count = count
+            return count
+
+        except Exception as e:
+            logger.debug(f"Failed to get Tailscale peer count: {e}")
+            return 0  # Fail open - don't trigger isolation on error
+
+    async def _check_network_isolation(
+        self, alive_peers: int
+    ) -> tuple[bool, dict[str, Any]]:
+        """Check if we're experiencing network isolation.
+
+        Compares P2P visible peers to Tailscale online peers.
+        If P2P sees significantly fewer than Tailscale, we may be isolated.
+
+        Args:
+            alive_peers: Number of peers visible in P2P cluster
+
+        Returns:
+            Tuple of (is_isolated, details_dict)
+        """
+        if not self.config.isolation_check_enabled:
+            return False, {"isolation_check": "disabled"}
+
+        tailscale_count = await self._get_tailscale_online_count()
+
+        if tailscale_count == 0:
+            # Can't determine isolation without Tailscale data
+            return False, {"isolation_check": "no_tailscale_data"}
+
+        peer_ratio = alive_peers / tailscale_count
+        is_isolated = peer_ratio < self.config.min_peer_ratio
+
+        details = {
+            "p2p_peers": alive_peers,
+            "tailscale_peers": tailscale_count,
+            "peer_ratio": round(peer_ratio, 3),
+            "min_ratio": self.config.min_peer_ratio,
+            "is_isolated": is_isolated,
+        }
+
+        if is_isolated:
+            self._consecutive_isolation_checks += 1
+            details["consecutive_isolation_checks"] = self._consecutive_isolation_checks
+            logger.warning(
+                f"Network isolation detected: P2P sees {alive_peers} peers "
+                f"but Tailscale shows {tailscale_count} online "
+                f"(ratio={peer_ratio:.2f}, check {self._consecutive_isolation_checks}/"
+                f"{self.config.isolation_consecutive_checks})"
+            )
+        else:
+            if self._consecutive_isolation_checks > 0:
+                logger.info(
+                    f"Network isolation cleared after {self._consecutive_isolation_checks} checks"
+                )
+            self._consecutive_isolation_checks = 0
+
+        return is_isolated, details
 
     def _can_restart(self) -> bool:
         """Check if we can restart (cooldown has passed)."""
@@ -359,6 +499,26 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
         except Exception as e:
             logger.debug(f"Failed to emit P2P_HEALTH_RECOVERED: {e}")
 
+    async def _emit_isolation_event(self, isolation_details: dict[str, Any]) -> None:
+        """Emit event when network isolation is detected.
+
+        December 2025: New event for monitoring network partition scenarios.
+        """
+        try:
+            from app.distributed.data_events import DataEventType, emit_data_event
+
+            emit_data_event(
+                DataEventType.NETWORK_ISOLATION_DETECTED,
+                p2p_peers=isolation_details.get("p2p_peers", 0),
+                tailscale_peers=isolation_details.get("tailscale_peers", 0),
+                peer_ratio=isolation_details.get("peer_ratio", 0),
+                consecutive_checks=self._consecutive_isolation_checks,
+                isolation_triggered_restarts=self._isolation_triggered_restarts,
+                source="P2PRecoveryDaemon",
+            )
+        except Exception as e:
+            logger.debug(f"Failed to emit NETWORK_ISOLATION_DETECTED: {e}")
+
     # =========================================================================
     # Health & Status
     # =========================================================================
@@ -384,6 +544,23 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
                     "consecutive_failures": self._consecutive_failures,
                     "last_status": self._last_status,
                     "total_restarts": self._total_restarts,
+                    "isolation_checks": self._consecutive_isolation_checks,
+                },
+            )
+
+        # Check if network isolation is being detected
+        if self._consecutive_isolation_checks > 0:
+            return HealthCheckResult(
+                healthy=True,  # Daemon is healthy, but isolation detected
+                status=CoordinatorStatus.RUNNING,
+                message=f"Network isolation detected ({self._consecutive_isolation_checks} checks)",
+                details={
+                    "p2p_healthy": True,
+                    "network_isolated": True,
+                    "isolation_checks": self._consecutive_isolation_checks,
+                    "isolation_threshold": self.config.isolation_consecutive_checks,
+                    "last_tailscale_count": self._last_tailscale_count,
+                    "last_status": self._last_status,
                 },
             )
 
@@ -396,6 +573,7 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
                 "consecutive_failures": self._consecutive_failures,
                 "cycles_completed": self._cycles_completed,
                 "total_restarts": self._total_restarts,
+                "isolation_triggered_restarts": self._isolation_triggered_restarts,
                 "last_status": self._last_status,
             },
         )
@@ -412,6 +590,16 @@ class P2PRecoveryDaemon(BaseDaemon[P2PRecoveryConfig]):
             "unhealthy_duration": time.time() - self._last_healthy_time if self._was_unhealthy else 0,
             "cooldown_remaining": self._get_cooldown_remaining(),
             "last_status": self._last_status,
+        }
+
+        # Network isolation detection status (December 2025)
+        base_status["isolation_status"] = {
+            "enabled": self.config.isolation_check_enabled,
+            "consecutive_checks": self._consecutive_isolation_checks,
+            "threshold": self.config.isolation_consecutive_checks,
+            "min_peer_ratio": self.config.min_peer_ratio,
+            "last_tailscale_count": self._last_tailscale_count,
+            "isolation_triggered_restarts": self._isolation_triggered_restarts,
         }
 
         return base_status

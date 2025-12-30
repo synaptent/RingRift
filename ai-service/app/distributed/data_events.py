@@ -233,6 +233,7 @@ class DataEventType(Enum):
     P2P_SELFPLAY_SCALED = "p2p_selfplay_scaled"
     P2P_RESTART_TRIGGERED = "p2p_restart_triggered"  # Dec 2025: P2P orchestrator restart initiated
     P2P_HEALTH_RECOVERED = "p2p_health_recovered"  # Dec 2025: P2P cluster recovered from unhealthy
+    NETWORK_ISOLATION_DETECTED = "network_isolation_detected"  # Dec 2025: P2P sees fewer peers than Tailscale
 
     # Progress monitoring events (December 2025 - 48h autonomous operation)
     PROGRESS_STALL_DETECTED = "progress_stall_detected"  # Config Elo stalled, recovery triggered

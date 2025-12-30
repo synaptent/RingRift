@@ -38,8 +38,12 @@ from app.monitoring.base import HealthStatus
 
 
 @dataclass
-class HealthCheckResult:
-    """Result of a single health check."""
+class ComponentHealthCheck:
+    """Result of a single component health check.
+
+    December 2025: Renamed from HealthCheckResult to avoid collision with
+    app.coordination.contracts.HealthCheckResult (canonical for coordinators).
+    """
     component: str
     status: HealthStatus
     message: str = ""
@@ -54,6 +58,10 @@ class HealthCheckResult:
             "details": self.details,
             "check_time": self.check_time,
         }
+
+
+# Backward-compat alias (deprecated Dec 2025)
+HealthCheckResult = ComponentHealthCheck
 
 
 @dataclass

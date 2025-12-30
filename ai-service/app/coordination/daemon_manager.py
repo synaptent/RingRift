@@ -1828,6 +1828,10 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         try:
             from app.coordination.event_router import get_router, DataEventType
 
+            if DataEventType is None:
+                logger.debug("[DaemonManager] DataEventType not available, skipping event subscription")
+                return
+
             router = get_router()
             if router is None:
                 logger.debug("[DaemonManager] Event router not available for critical event subscription")
@@ -1937,6 +1941,10 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             # Emit to P2P for cluster-wide awareness
             try:
                 from app.coordination.event_router import get_router, DataEventType, DataEvent
+
+                if DataEventType is None or DataEvent is None:
+                    logger.debug("[DaemonManager] DataEventType not available, skipping alert emission")
+                    return
 
                 router = get_router()
                 if router:

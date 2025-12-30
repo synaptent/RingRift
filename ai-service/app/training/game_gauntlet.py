@@ -27,6 +27,7 @@ from __future__ import annotations
 import logging
 import random
 import sys
+import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -35,6 +36,43 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================
+# Default Gauntlet Recording Configuration (Dec 2025)
+# ============================================
+
+def _create_gauntlet_recording_config(
+    board_type: Any,
+    num_players: int,
+    source: str = "gauntlet",
+) -> Any:
+    """Create a RecordingConfig for gauntlet games.
+
+    Returns None if recording is disabled or not available.
+    Games are saved to data/games/gauntlet_{board_type}_{num_players}p.db
+    """
+    try:
+        from app.db.unified_recording import RecordingConfig, is_recording_enabled
+
+        if not is_recording_enabled():
+            return None
+
+        board_value = getattr(board_type, "value", str(board_type))
+        db_path = f"data/games/gauntlet_{board_value}_{num_players}p.db"
+
+        return RecordingConfig(
+            board_type=board_type,
+            num_players=num_players,
+            db_path=db_path,
+            source=source,
+            enabled=True,
+        )
+    except ImportError:
+        return None
+    except Exception as e:
+        logger.debug(f"[gauntlet] Could not create recording config: {e}")
+        return None
 
 # Import model cache for cleanup after gauntlet runs (Dec 29, 2025)
 try:
@@ -1216,13 +1254,14 @@ def run_baseline_gauntlet(
     max_parallel_workers: int = 2,
     parallel_games: int = 1,
     recording_config: Any | None = None,
+    save_games_for_training: bool = True,
 ) -> GauntletResult:
     """Run a gauntlet evaluation against baseline opponents.
 
     Args:
         model_path: Path to the model checkpoint (file-based loading)
         board_type: Board type for games
-        opponents: List of baselines to test against (default: RANDOM, HEURISTIC)
+        opponents: List of baselines to test against (default: RANDOM, HEURISTIC, MCTS_LIGHT, MCTS_MEDIUM)
         games_per_opponent: Number of games per opponent
         num_players: Number of players in each game
         check_baseline_gating: Whether to check minimum win rate thresholds
@@ -1243,6 +1282,9 @@ def run_baseline_gauntlet(
             Phase 3 optimization: Set to 4-8 for ~3-6x speedup on multi-core systems.
         recording_config: Optional RecordingConfig for saving game data (Dec 2025).
             When provided, games are recorded to canonical databases for training.
+        save_games_for_training: Whether to save games for training data (default: True).
+            Dec 29, 2025: When True and recording_config is None, creates default config
+            that saves games to data/games/gauntlet_{board_type}_{num_players}p.db
 
     Returns:
         GauntletResult with aggregated statistics
@@ -1250,6 +1292,12 @@ def run_baseline_gauntlet(
     if model_path is None and model_getter is None:
         raise ValueError("Must provide either model_path or model_getter")
     _ensure_game_modules()
+
+    # Dec 29, 2025: Create default recording config if saving enabled and not provided
+    if save_games_for_training and recording_config is None and board_type is not None:
+        recording_config = _create_gauntlet_recording_config(board_type, num_players, source="gauntlet")
+        if recording_config is not None:
+            logger.info(f"[gauntlet] Saving games to {recording_config.db_path}")
 
     # Log encoder expectations for debugging channel mismatches
     if board_type is not None:
@@ -1508,6 +1556,169 @@ def _estimate_elo_from_results(
     if total_weight > 0:
         return total_elo / total_weight
     return 1500.0
+
+
+# ============================================
+# Baseline Calibration (Dec 2025)
+# ============================================
+# Run baseline-vs-baseline games to calibrate Elo ratings
+
+
+async def run_baseline_calibration(
+    board_type: Any,
+    num_players: int,
+    games_per_matchup: int = 50,
+    save_games: bool = True,
+) -> dict[str, Any]:
+    """Run baseline-vs-baseline games to calibrate Elo ratings.
+
+    This ensures heuristic vs random Elo is properly calibrated by playing
+    them against each other directly, not just through NN matches.
+
+    Dec 29, 2025: Added to ensure diverse Elo population with all baseline
+    matchups including heuristic vs random.
+
+    Args:
+        board_type: Board type for games
+        num_players: Number of players in each game
+        games_per_matchup: Number of games per baseline pair (default: 50)
+        save_games: Whether to save games for training (default: True)
+
+    Returns:
+        Dict with win rates for each baseline pair
+    """
+    _ensure_game_modules()
+
+    try:
+        from app.training.elo_service import get_elo_service
+        elo_service = get_elo_service()
+    except ImportError:
+        logger.warning("[calibration] EloService not available, skipping Elo recording")
+        elo_service = None
+
+    results: dict[str, Any] = {}
+    board_value = getattr(board_type, "value", str(board_type))
+
+    # Create recording config if saving games
+    recording_config = None
+    if save_games:
+        recording_config = _create_gauntlet_recording_config(
+            board_type, num_players, source="baseline_calibration"
+        )
+
+    # Baseline pairs to calibrate (weaker vs stronger)
+    baseline_pairs = [
+        (BaselineOpponent.RANDOM, BaselineOpponent.HEURISTIC),
+        (BaselineOpponent.HEURISTIC, BaselineOpponent.MCTS_LIGHT),
+    ]
+
+    for baseline_a, baseline_b in baseline_pairs:
+        matchup_key = f"{baseline_a.value}_vs_{baseline_b.value}"
+        logger.info(f"[calibration] Running {matchup_key} ({games_per_matchup} games)")
+
+        wins_a, wins_b, draws = 0, 0, 0
+
+        for game_idx in range(games_per_matchup):
+            # Alternate who plays first for fairness
+            if game_idx % 2 == 0:
+                player_a, player_b = 1, 2
+            else:
+                player_a, player_b = 2, 1
+
+            game_seed = random.randint(0, 0xFFFFFFFF)
+
+            ai_a = create_baseline_ai(baseline_a, player_a, board_type, game_seed=game_seed)
+            ai_b = create_baseline_ai(baseline_b, player_b, board_type, game_seed=game_seed)
+
+            # Build player_ais dict for multiplayer
+            player_ais = {player_a: ai_a, player_b: ai_b}
+
+            # Fill remaining players with random AI for 3p/4p games
+            for p in range(1, num_players + 1):
+                if p not in player_ais:
+                    player_ais[p] = create_baseline_ai(
+                        BaselineOpponent.RANDOM, p, board_type, game_seed=game_seed
+                    )
+
+            # Play the game
+            game_result = play_single_game(
+                candidate_ai=ai_a,
+                opponent_ai=ai_b,
+                board_type=board_type,
+                num_players=num_players,
+                candidate_player=player_a,
+                opponent_ais={p: ai for p, ai in player_ais.items() if p != player_a},
+                recording_config=recording_config,
+            )
+
+            # Track result
+            if game_result.winner == player_a:
+                wins_a += 1
+                winner_baseline = baseline_a.value
+            elif game_result.winner == player_b:
+                wins_b += 1
+                winner_baseline = baseline_b.value
+            else:
+                draws += 1
+                winner_baseline = None
+
+            # Record match for Elo update
+            if elo_service is not None:
+                try:
+                    elo_service.record_match(
+                        participant_a=f"none:{baseline_a.value}:d1",
+                        participant_b=f"none:{baseline_b.value}:d5",
+                        winner=winner_baseline,
+                        board_type=board_value,
+                        num_players=num_players,
+                        game_length=game_result.move_count,
+                        tournament_id=f"baseline_calibration_{board_value}_{num_players}p",
+                    )
+                except (RuntimeError, ValueError, OSError) as e:
+                    logger.debug(f"[calibration] Failed to record Elo: {e}")
+
+        # Store results for this matchup
+        total = wins_a + wins_b + draws
+        results[matchup_key] = {
+            "wins_a": wins_a,
+            "wins_b": wins_b,
+            "draws": draws,
+            "games": total,
+            "win_rate_a": wins_a / total if total > 0 else 0.0,
+            "win_rate_b": wins_b / total if total > 0 else 0.0,
+        }
+
+        logger.info(
+            f"[calibration] {matchup_key}: {baseline_a.value} {wins_a}-{wins_b} {baseline_b.value} "
+            f"({draws} draws)"
+        )
+
+    return results
+
+
+def run_baseline_calibration_sync(
+    board_type: Any,
+    num_players: int,
+    games_per_matchup: int = 50,
+    save_games: bool = True,
+) -> dict[str, Any]:
+    """Synchronous wrapper for run_baseline_calibration().
+
+    Use this for CLI scripts or non-async contexts.
+    """
+    import asyncio
+
+    try:
+        loop = asyncio.get_running_loop()
+        # Already in async context - create task
+        return asyncio.ensure_future(
+            run_baseline_calibration(board_type, num_players, games_per_matchup, save_games)
+        )
+    except RuntimeError:
+        # No running loop - run synchronously
+        return asyncio.run(
+            run_baseline_calibration(board_type, num_players, games_per_matchup, save_games)
+        )
 
 
 # Convenience function for quick evaluation

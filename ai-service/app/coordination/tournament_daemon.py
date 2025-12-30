@@ -721,6 +721,23 @@ class TournamentDaemon:
             num_players = 2
             games_per_matchup = self.config.calibration_games
 
+            # Create recording config if enabled (Dec 2025 - tournament games for training)
+            recording_config = None
+            if self.config.enable_game_recording:
+                try:
+                    from app.db.unified_recording import RecordingConfig, RecordSource
+                    recording_config = RecordingConfig(
+                        board_type=board_type.value,
+                        num_players=num_players,
+                        source=RecordSource.TOURNAMENT,
+                        engine_mode="calibration",
+                        db_prefix=self.config.recording_db_prefix,
+                        db_dir=self.config.recording_db_dir,
+                        store_history_entries=True,
+                    )
+                except ImportError:
+                    logger.debug("Recording module not available for calibration tournament")
+
             for stronger, weaker, expected_rate in calibration_pairs:
                 matchup_key = f"{stronger.value}_vs_{weaker.value}"
                 wins = 0
@@ -742,6 +759,7 @@ class TournamentDaemon:
                             num_players=num_players,
                             player_ais=[player_0_ai, player_1_ai],
                             timeout=self.config.game_timeout_seconds,
+                            recording_config=recording_config,
                         )
 
                         if game_result.get("winner") == stronger_player:
@@ -884,6 +902,23 @@ class TournamentDaemon:
                     logger.warning(f"Unknown board type: {board}")
                     continue
 
+                # Create recording config if enabled (Dec 2025 - tournament games for training)
+                recording_config = None
+                if self.config.enable_game_recording:
+                    try:
+                        from app.db.unified_recording import RecordingConfig, RecordSource
+                        recording_config = RecordingConfig(
+                            board_type=board_type.value,
+                            num_players=num_players,
+                            source=RecordSource.TOURNAMENT,
+                            engine_mode="cross_nn",
+                            db_prefix=self.config.recording_db_prefix,
+                            db_dir=self.config.recording_db_dir,
+                            store_history_entries=True,
+                        )
+                    except ImportError:
+                        logger.debug("Recording module not available for cross-NN tournament")
+
                 # Run tournaments between adjacent versions
                 for i in range(len(models) - 1):
                     older_version, older_path = models[i]
@@ -927,6 +962,7 @@ class TournamentDaemon:
                                 num_players=num_players,
                                 player_ais=player_ais,
                                 timeout=self.config.game_timeout_seconds,
+                                recording_config=recording_config,
                             )
 
                             winner = game_result.get("winner")

@@ -86,8 +86,12 @@ class ProviderInstance:
 
 
 @dataclass
-class HealthCheckResult:
-    """Result of a health check."""
+class ProviderHealthCheckResult:
+    """Result of a provider-specific health check.
+
+    December 2025: Renamed from HealthCheckResult to avoid collision with
+    app.coordination.contracts.HealthCheckResult (canonical for coordinators).
+    """
 
     healthy: bool
     check_type: str
@@ -95,6 +99,10 @@ class HealthCheckResult:
     latency_ms: float | None = None
     timestamp: datetime = field(default_factory=datetime.now)
     details: dict[str, Any] = field(default_factory=dict)
+
+
+# Backward-compat alias (deprecated Dec 2025)
+HealthCheckResult = ProviderHealthCheckResult
 
 
 @dataclass

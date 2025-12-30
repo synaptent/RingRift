@@ -90,6 +90,11 @@ class CompositeGauntletConfig:
     ))
     phase2_algorithms: list[str] = field(default_factory=lambda: list(PHASE2_ALGORITHMS))
 
+    # Game recording for training data (Dec 2025)
+    enable_game_recording: bool = True
+    recording_db_prefix: str = "composite_gauntlet"
+    recording_db_dir: str = "data/games"
+
     @staticmethod
     def for_num_players(num_players: int) -> "CompositeGauntletConfig":
         """Create config with game counts scaled for player count variance.
@@ -324,6 +329,23 @@ class CompositeGauntlet:
         ratings: dict[str, float] = {}
         games_played = 0
 
+        # Create recording config if enabled (Dec 2025 - composite gauntlet recording)
+        recording_config = None
+        if self.config.enable_game_recording:
+            try:
+                from app.db.unified_recording import RecordingConfig, RecordSource
+                recording_config = RecordingConfig(
+                    board_type=self.board_type,
+                    num_players=self.num_players,
+                    source=RecordSource.TOURNAMENT,
+                    engine_mode="composite_phase1",
+                    db_prefix=self.config.recording_db_prefix,
+                    db_dir=self.config.recording_db_dir,
+                    store_history_entries=True,
+                )
+            except ImportError:
+                logger.debug("Recording module not available for composite gauntlet phase 1")
+
         # Register and evaluate each NN with policy_only
         for nn_id in nn_ids:
             participant_id = self.elo_service.register_composite_participant(
@@ -340,6 +362,7 @@ class CompositeGauntlet:
                 nn_path=nn_path_map.get(nn_id),
                 ai_type="policy_only",
                 games_per_baseline=self.config.phase1.games_per_matchup,
+                recording_config=recording_config,
             )
             games_played += games
 
@@ -381,6 +404,23 @@ class CompositeGauntlet:
         ratings: dict[str, float] = {}
         games_played = 0
 
+        # Create recording config if enabled (Dec 2025 - composite gauntlet recording)
+        recording_config = None
+        if self.config.enable_game_recording:
+            try:
+                from app.db.unified_recording import RecordingConfig, RecordSource
+                recording_config = RecordingConfig(
+                    board_type=self.board_type,
+                    num_players=self.num_players,
+                    source=RecordSource.TOURNAMENT,
+                    engine_mode="composite_phase2",
+                    db_prefix=self.config.recording_db_prefix,
+                    db_dir=self.config.recording_db_dir,
+                    store_history_entries=True,
+                )
+            except ImportError:
+                logger.debug("Recording module not available for composite gauntlet phase 2")
+
         for nn_id in nn_ids:
             for ai_type in self.config.phase2_algorithms:
                 # Register composite participant
@@ -398,6 +438,7 @@ class CompositeGauntlet:
                     nn_path=nn_path_map.get(nn_id),
                     ai_type=ai_type,
                     games_per_baseline=self.config.phase2.games_per_matchup,
+                    recording_config=recording_config,
                 )
                 games_played += games
 
@@ -423,6 +464,7 @@ class CompositeGauntlet:
         nn_path: str | None,
         ai_type: str,
         games_per_baseline: int,
+        recording_config: Any | None = None,
     ) -> int:
         """Play games against baseline opponents.
 
@@ -431,6 +473,7 @@ class CompositeGauntlet:
             nn_path: Path to NN model
             ai_type: Algorithm type
             games_per_baseline: Games per baseline opponent
+            recording_config: Optional recording config for game recording (Dec 2025)
 
         Returns:
             Total games played
@@ -446,6 +489,7 @@ class CompositeGauntlet:
                     baseline_id=baseline_id,
                     nn_path=nn_path,
                     ai_type=ai_type,
+                    recording_config=recording_config,
                 )
 
                 # Record result
@@ -475,6 +519,7 @@ class CompositeGauntlet:
         baseline_id: str,
         nn_path: str | None,
         ai_type: str,
+        recording_config: Any | None = None,
     ) -> dict[str, Any] | None:
         """Play a single game between participant and baseline.
 
@@ -483,6 +528,7 @@ class CompositeGauntlet:
             baseline_id: Baseline composite ID
             nn_path: Path to NN model
             ai_type: Algorithm type
+            recording_config: Optional recording config for game recording (Dec 2025)
 
         Returns:
             Game result dict or None if failed
@@ -521,6 +567,17 @@ class CompositeGauntlet:
             from app.training.env import get_theoretical_max_moves
             max_moves = get_theoretical_max_moves(board_type_enum, self.num_players)
 
+            # Initialize recorder if config provided (Dec 2025 - composite gauntlet recording)
+            recorder = None
+            if recording_config is not None:
+                try:
+                    from app.db.unified_recording import UnifiedGameRecorder, is_recording_enabled
+                    if is_recording_enabled():
+                        recorder = UnifiedGameRecorder(recording_config, game_state, game_id=str(uuid.uuid4()))
+                        recorder.__enter__()
+                except ImportError:
+                    pass
+
             # Play game
             while game_state.game_status == self._GameStatus.ACTIVE and move_count < max_moves:
                 current_player = game_state.current_player
@@ -534,8 +591,21 @@ class CompositeGauntlet:
                 if move is None:
                     break
 
+                state_before = game_state
                 game_state = rules.apply_move(game_state, move)
                 move_count += 1
+
+                # Record move if recorder active
+                if recorder is not None:
+                    try:
+                        recorder.add_move(
+                            move,
+                            state_after=game_state,
+                            state_before=state_before,
+                            available_moves_count=0,
+                        )
+                    except Exception:
+                        pass
 
             duration = time.time() - start_time
 
@@ -546,6 +616,20 @@ class CompositeGauntlet:
                     winner = "model"
                 elif game_state.winner == 2:
                     winner = "baseline"
+
+            # Finalize recording
+            if recorder is not None:
+                try:
+                    recorder.finalize(game_state, extra_metadata={
+                        "source": "composite_gauntlet",
+                        "participant_id": participant_id,
+                        "baseline_id": baseline_id,
+                        "ai_type": ai_type,
+                        "winner": winner,
+                    })
+                    recorder.__exit__(None, None, None)
+                except Exception:
+                    pass
 
             return {
                 "winner": winner,

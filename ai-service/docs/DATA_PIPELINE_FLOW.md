@@ -85,10 +85,13 @@ and `TrainingTriggerDaemon` blocks training until data is fresh again.
 **Outputs**:
 
 - NPZ files with training data:
-  - `features`: Board state tensors
-  - `policy_targets`: Move probability distributions
-  - `value_targets`: Game outcome values
+  - `features` + `globals`: Board/state tensors + global features
+  - `policy_indices` + `policy_values`: Sparse move distributions
+  - `values` (and `values_mp` + `num_players` for multi-player exports)
+  - `phases`, `move_numbers`, `total_game_moves`, `victory_types`, `engine_modes`, `move_types`
+  - `opponent_elo`, `quality_score`, `opponent_types` when recorded
   - `sample_weights` + `timestamps` when `--quality-weighted` is enabled
+  - `heuristics` when heuristic extraction is enabled
 
 **Events**:
 
