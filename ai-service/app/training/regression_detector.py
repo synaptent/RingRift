@@ -497,18 +497,37 @@ class RegressionDetector:
             logger.error(f"[RegressionDetector] Event bus publish error: {e}")
 
     def _publish_regression_cleared(self, model_id: str) -> None:
-        """Publish event when a model recovers from regression."""
+        """Publish event when a model recovers from regression.
+
+        December 30, 2025: Enhanced payload for integration Gap #8.
+        Includes config_key for TrainingCoordinator and SelfplayOrchestrator handlers.
+        """
         if self._event_bus is None:
             return
 
         try:
             from app.coordination.event_router import DataEvent, DataEventType
 
+            # Extract config_key from model_id (e.g., "square8_2p_v42" -> "square8_2p")
+            config_key = ""
+            if model_id and "_" in model_id:
+                parts = model_id.split("_")
+                if len(parts) >= 2:
+                    config_key = f"{parts[0]}_{parts[1]}"
+
+            # Get baseline Elo to calculate recovery amount
+            baseline = self._baselines.get(model_id, {})
+            baseline_elo = baseline.get("elo", 0)
+
             event = DataEvent(
                 event_type=DataEventType.REGRESSION_CLEARED,
                 payload={
                     "model_id": model_id,
+                    "config_key": config_key,
                     "timestamp": time.time(),
+                    "elo_recovered": baseline_elo,  # For TrainingCoordinator
+                    "metric_name": "elo",  # For SelfplayOrchestrator
+                    "reason": "consecutive_regressions_cleared",
                 },
                 source="regression_detector",
             )

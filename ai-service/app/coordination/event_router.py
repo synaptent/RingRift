@@ -2312,6 +2312,37 @@ async def emit_training_failed(
     )
 
 
+async def emit_evaluation_started(
+    model_path: str,
+    board_type: str,
+    num_players: int,
+    config_key: str | None = None,
+    **extra_payload
+) -> None:
+    """Emit EVALUATION_STARTED event to all systems.
+
+    December 30, 2025: Added for Gap #3 integration fix.
+    Enables metrics tracking and coordination when evaluation begins.
+    """
+    if config_key is None:
+        config_key = f"{board_type}_{num_players}p"
+
+    payload = {
+        "model_path": model_path,
+        "board_type": board_type,
+        "num_players": num_players,
+        "config_key": config_key,
+        "timestamp": datetime.now().isoformat(),
+    }
+    payload.update(extra_payload)
+
+    await publish(
+        event_type="EVALUATION_STARTED",
+        payload=payload,
+        source="evaluation",
+    )
+
+
 async def emit_evaluation_completed(
     model_id: str | None = None,
     elo: float | None = None,

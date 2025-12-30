@@ -543,6 +543,9 @@ class EvaluationDaemon(BaseEventHandler):
         start_time = time.time()
         logger.info(f"[EvaluationDaemon] Starting evaluation: {model_path}")
 
+        # December 30, 2025: Emit EVALUATION_STARTED (Gap #3 integration fix)
+        await self._emit_evaluation_started(model_path, board_type, num_players)
+
         try:
             # Run the gauntlet
             result = await self._run_gauntlet(
@@ -819,6 +822,34 @@ class EvaluationDaemon(BaseEventHandler):
             logger.debug("[EvaluationDaemon] Event emitters not available")
         except Exception as e:  # noqa: BLE001
             logger.debug(f"[EvaluationDaemon] Failed to emit event: {e}")
+
+    async def _emit_evaluation_started(
+        self,
+        model_path: str,
+        board_type: str,
+        num_players: int,
+    ) -> None:
+        """Emit EVALUATION_STARTED event (December 30, 2025 - Gap #3 fix).
+
+        Enables metrics tracking and coordination when evaluation begins.
+        Subscribers can use this to:
+        - Track evaluation timing and latency
+        - Coordinate resource allocation
+        - Update UI dashboards with evaluation status
+        """
+        try:
+            from app.coordination.event_router import emit_evaluation_started
+
+            await emit_evaluation_started(
+                model_path=model_path,
+                board_type=board_type,
+                num_players=num_players,
+            )
+            logger.debug(f"[EvaluationDaemon] Emitted EVALUATION_STARTED: {model_path}")
+        except ImportError:
+            logger.debug("[EvaluationDaemon] Event emitters not available")
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[EvaluationDaemon] Failed to emit started event: {e}")
 
     async def _emit_evaluation_failed(
         self,
