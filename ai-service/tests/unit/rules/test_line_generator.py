@@ -223,21 +223,110 @@ class TestMoveProperties:
             assert move.type == MoveType.PROCESS_LINE
 
 
-# Placeholder tests for future implementation
 class TestEdgeCases:
-    """Edge case tests - expand as needed."""
+    """Edge case tests for line detection boundary conditions."""
 
-    def test_multiple_lines_same_marker(self):
-        """Test handling when one marker is part of multiple lines."""
-        # TODO: Implement when corner cases are defined
-        pytest.skip("Not yet implemented")
+    @pytest.fixture
+    def generator(self):
+        return LineGenerator()
 
-    def test_line_at_board_edge(self):
-        """Test line detection at board edges."""
-        # TODO: Implement boundary testing
-        pytest.skip("Not yet implemented")
+    def test_multiple_lines_same_marker(self, generator):
+        """Test handling when one marker is part of multiple lines.
 
-    def test_longer_than_minimum_line(self):
-        """Test lines longer than minimum length (e.g., 5 in a row)."""
-        # TODO: Implement for extended line handling
-        pytest.skip("Not yet implemented")
+        Creates an L-shaped pattern where the corner marker (1,1) is part of
+        both a horizontal and vertical line. The generator should detect both
+        lines and generate moves for each.
+        """
+        # L-shape pattern in 3-player game (requires 3 markers per line):
+        # Horizontal: (0,1), (1,1), (2,1)
+        # Vertical:   (1,0), (1,1), (1,2)
+        # The corner marker (1,1) is shared by both lines
+        board = create_board_state(
+            markers={
+                # Horizontal line
+                "0,1": create_marker(0, 1, 1),
+                "1,1": create_marker(1, 1, 1),  # Corner - shared marker
+                "2,1": create_marker(2, 1, 1),
+                # Vertical line
+                "1,0": create_marker(1, 0, 1),
+                # (1,1) already added above
+                "1,2": create_marker(1, 2, 1),
+            }
+        )
+        state = create_game_state(
+            board=board,
+            current_phase="line_processing",
+            num_players=3,  # 3-player requires 3 markers per line
+        )
+        moves = generator.generate(state, player=1)
+        process_moves = [m for m in moves if m.type == MoveType.PROCESS_LINE]
+        # Should detect 2 lines (horizontal and vertical)
+        assert len(process_moves) >= 2
+
+    def test_line_at_board_edge(self, generator):
+        """Test line detection at board edges.
+
+        Tests that lines formed at the edge of the board (y=0 row) are
+        correctly detected. Board edge should not prevent line detection.
+        """
+        # Line at bottom edge of board (y=0)
+        board = create_board_state(
+            markers={
+                "0,0": create_marker(0, 0, 1),
+                "1,0": create_marker(1, 0, 1),
+                "2,0": create_marker(2, 0, 1),
+            }
+        )
+        state = create_game_state(
+            board=board,
+            current_phase="line_processing",
+            num_players=3,  # 3-player requires 3 markers
+        )
+        moves = generator.generate(state, player=1)
+        process_moves = [m for m in moves if m.type == MoveType.PROCESS_LINE]
+        assert len(process_moves) >= 1, "Line at board edge should be detected"
+
+    def test_longer_than_minimum_line(self, generator):
+        """Test lines longer than minimum length (e.g., 5 in a row).
+
+        When a line is longer than the minimum required length, the generator
+        should offer both collapse-all and minimum-collapse options via
+        CHOOSE_LINE_OPTION moves.
+        """
+        # 5 markers in a row in a 3-player game (minimum is 3)
+        board = create_board_state(
+            markers={
+                "0,0": create_marker(0, 0, 1),
+                "1,0": create_marker(1, 0, 1),
+                "2,0": create_marker(2, 0, 1),
+                "3,0": create_marker(3, 0, 1),
+                "4,0": create_marker(4, 0, 1),
+            }
+        )
+        state = create_game_state(
+            board=board,
+            current_phase="line_processing",
+            num_players=3,  # 3-player requires 3 markers
+        )
+        moves = generator.generate(state, player=1)
+
+        # Should have PROCESS_LINE move
+        process_moves = [m for m in moves if m.type == MoveType.PROCESS_LINE]
+        assert len(process_moves) >= 1
+
+        # Should have multiple CHOOSE_LINE_OPTION moves for overlength line:
+        # - 1 collapse-all option (all 5 markers)
+        # - 3 minimum-collapse options (positions 0-2, 1-3, 2-4)
+        choose_moves = [m for m in moves if m.type == MoveType.CHOOSE_LINE_OPTION]
+        assert len(choose_moves) >= 4, (
+            f"Expected at least 4 CHOOSE_LINE_OPTION moves for 5-marker line "
+            f"(1 collapse-all + 3 min-collapse), got {len(choose_moves)}"
+        )
+
+        # Verify collapse-all option exists (should have all 5 positions)
+        collapse_all = [m for m in choose_moves if len(m.collapsed_markers) == 5]
+        assert len(collapse_all) >= 1, "Should have collapse-all option"
+
+        # Verify minimum-collapse options exist (should have 3 positions each)
+        min_collapse = [m for m in choose_moves if len(m.collapsed_markers) == 3]
+        assert len(min_collapse) >= 3, "Should have multiple min-collapse options"
