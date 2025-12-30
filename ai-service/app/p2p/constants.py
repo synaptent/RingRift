@@ -56,6 +56,26 @@ HEARTBEAT_INTERVAL = int(os.environ.get("RINGRIFT_P2P_HEARTBEAT_INTERVAL", "15")
 PEER_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT", "90") or 90)
 # Original fast timeout for non-coordinator nodes in well-connected DC environments
 PEER_TIMEOUT_FAST = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT_FAST", "60") or 60)
+
+
+def get_peer_timeout_for_node(is_coordinator: bool = False) -> int:
+    """Get appropriate peer timeout based on node role.
+
+    Coordinators behind NAT need longer timeouts due to higher latency
+    and potential connection drops. DC nodes can use shorter timeouts
+    for faster failover.
+
+    Args:
+        is_coordinator: True if node is a coordinator (typically behind NAT)
+
+    Returns:
+        Timeout in seconds (90s for coordinators, 60s for DC nodes)
+    """
+    if is_coordinator:
+        return PEER_TIMEOUT  # 90s for coordinators behind NAT
+    return PEER_TIMEOUT_FAST  # 60s for well-connected DC nodes
+
+
 # SUSPECT grace period: nodes transition ALIVE -> SUSPECT -> DEAD
 # Dec 29, 2025: Reduced from 60s to 30s - faster suspect detection enables quicker recovery.
 # With 15s heartbeats, this means 2 missed = suspect, 4 missed = dead

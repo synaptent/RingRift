@@ -751,6 +751,10 @@ class TailscalePeerDiscoveryLoop(BaseLoop):
                 if self._connections_attempted > 0
                 else 0.0
             ),
+            # Dec 30, 2025: Added mode tracking for adaptive intervals
+            "current_mode": self._current_mode,
+            "current_interval": self._interval,
+            "min_peers_for_maintenance": self.config.min_peers_for_maintenance,
             **self.stats.to_dict(),
         }
 
