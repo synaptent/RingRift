@@ -67,23 +67,35 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Try to import swim-p2p, fall back gracefully if not available
-# swim-p2p v1.2.x uses Node.create() factory method with UDPTransport
+# swim-p2p v1.2.x uses Node.create() factory method with transport layer
+# December 30, 2025: Added TCP transport support for environments where UDP is blocked
 try:
     from swim import Node as SwimNode, Member as SwimMember, MemberState
     from swim.transport.udp import UDPTransport
+    from swim.transport.tcp import TCPTransport
     # Verify the factory method exists
     if not hasattr(SwimNode, 'create'):
         raise ImportError("swim-p2p API mismatch: Node.create not found")
     SWIM_AVAILABLE = True
-    logger.info("swim-p2p loaded successfully (SWIM membership available)")
+    TCP_TRANSPORT_AVAILABLE = True
+    logger.info("swim-p2p loaded successfully (SWIM membership available, TCP+UDP transports)")
 except ImportError as e:
     SWIM_AVAILABLE = False
+    TCP_TRANSPORT_AVAILABLE = False
     logger.warning(f"swim-p2p not available: {e}. Install with: pip install swim-p2p")
     # Define stub classes for type hints
     SwimNode = None
     SwimMember = None
     MemberState = None
     UDPTransport = None
+    TCPTransport = None
+
+# Transport selection via environment variable
+# December 30, 2025: Default to TCP since UDP port 7947 is often blocked by firewalls
+SWIM_TRANSPORT = os.environ.get("RINGRIFT_SWIM_TRANSPORT", "tcp").lower()
+if SWIM_TRANSPORT not in ("tcp", "udp"):
+    logger.warning(f"Invalid SWIM_TRANSPORT '{SWIM_TRANSPORT}', defaulting to tcp")
+    SWIM_TRANSPORT = "tcp"
 
 
 @dataclass
@@ -123,6 +135,10 @@ class SwimConfig:
 
     # Bootstrap retry configuration (December 29, 2025)
     bootstrap: SwimBootstrapConfig = field(default_factory=SwimBootstrapConfig)
+
+    # Transport type (December 30, 2025: TCP for firewall-blocked environments)
+    # If not specified, uses RINGRIFT_SWIM_TRANSPORT env var (default: tcp)
+    transport: str = field(default_factory=lambda: SWIM_TRANSPORT)
 
 
 class SwimMembershipManager:
@@ -271,8 +287,17 @@ class SwimMembershipManager:
 
         for attempt in range(bootstrap_config.max_attempts):
             try:
-                # swim-p2p 1.2.x uses factory pattern with UDPTransport
-                transport = UDPTransport()
+                # swim-p2p 1.2.x uses factory pattern with transport layer
+                # December 30, 2025: Support TCP transport for firewall-blocked environments
+                transport_type = self.config.transport
+                if transport_type == "tcp" and TCP_TRANSPORT_AVAILABLE:
+                    transport = TCPTransport()
+                    logger.info(f"SWIM using TCP transport (attempt {attempt + 1})")
+                else:
+                    transport = UDPTransport()
+                    if transport_type == "tcp":
+                        logger.warning(f"TCP transport requested but unavailable, falling back to UDP")
+                    logger.info(f"SWIM using UDP transport (attempt {attempt + 1})")
                 bind_addr = (self.config.bind_host, self.config.bind_port)
 
                 # Configuration for SWIM protocol tuning
@@ -600,6 +625,7 @@ class SwimMembershipManager:
             return {
                 "node_id": self.node_id,
                 "started": False,
+                "transport": self.config.transport,
                 "members": 0,
                 "alive": 0,
                 "suspected": 0,
@@ -615,6 +641,7 @@ class SwimMembershipManager:
             return {
                 "node_id": self.node_id,
                 "started": True,
+                "transport": self.config.transport,
                 "members": len(members),
                 "alive": alive,
                 "suspected": suspected,
@@ -627,6 +654,7 @@ class SwimMembershipManager:
             return {
                 "node_id": self.node_id,
                 "started": True,
+                "transport": self.config.transport,
                 "error": str(e),
             }
 
