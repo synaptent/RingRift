@@ -540,7 +540,7 @@ A 30-game `mixed` engine-mode soak on `square8` (2-player, seed 42, light diffic
 | swap_sides_total_moves        | 0     |
 | avg_swap_sides_moves_per_game | 0.0   |
 
-**Key Observation:** Current AI implementations (Random, Heuristic, Minimax, MCTS, Descent) do not utilise the swap (pie) rule at all in self-play, despite it being enabled by default for 2-player games via `RingRiftEnv.create_initial_state()`. This 0% baseline usage rate reflects that:
+**Key Observation:** The AI implementations exercised in this baseline (Random, Heuristic, Minimax, MCTS, Descent) do not utilise the swap (pie) rule at all in self-play, despite it being enabled by default for 2-player games via `RingRiftEnv.create_initial_state()`. This 0% baseline usage rate reflects that:
 
 1. The swap rule is **legally available** (P2 can invoke after P1's first non-swap move, at most once per game, only during `ACTIVE` status).
 2. No AI policy currently assigns meaningful value to the swap action, which is expected given:

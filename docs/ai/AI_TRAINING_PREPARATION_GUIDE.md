@@ -44,7 +44,7 @@
 | AI Service        | Python microservice (FastAPI, uvicorn)                                                            |
 | ML Framework      | PyTorch 2.6.0                                                                                     |
 | RL Environment    | gymnasium 1.0.0                                                                                   |
-| AI Types          | Random, Heuristic, Minimax, MCTS, Descent                                                         |
+| AI Types          | Random, Heuristic, Minimax, Descent, MCTS, Gumbel MCTS (policy_only + IG-GMO via overrides)       |
 | Difficulty Levels | 1-10 ladder                                                                                       |
 | Neural Network    | [`RingRiftCNN`](../../ai-service/app/ai/neural_net/__init__.py) - 10 residual blocks, 128 filters |
 | Hex Neural Net    | [`HexNeuralNet`](../../ai-service/app/ai/neural_net/__init__.py)                                  |

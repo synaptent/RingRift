@@ -3,7 +3,7 @@
 **Date:** December 2025
 **Status:** Production
 
-This document summarizes the most common events in the RingRift AI training coordination system. For the full list, see `EVENT_REFERENCE_AUTO.md` and `EVENT_CATALOG.md`.
+This document summarizes the most common events in the RingRift AI training coordination system. For the canonical list, see `EVENT_CATALOG.md`. `EVENT_REFERENCE_AUTO.md` is a generated scan of event strings across code/tests and includes non-canonical or test-only events.
 
 ---
 

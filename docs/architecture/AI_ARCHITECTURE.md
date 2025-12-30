@@ -297,13 +297,18 @@ behaviour across TS and Python.
 5.  **MCTSAI** (`mcts`): Monte Carlo Tree Search with PUCT and RAVE, using the shared neural network for value/policy where weights are available. Selected by the ladder for difficulties 7–8.
 6.  **GumbelMCTSAI** (`gumbel_mcts`): Gumbel MCTS with sequential halving and neural guidance. Selected by the ladder for difficulties 9–10.
 
+**Backend-exposed non-ladder AI types (explicit overrides only):**
+
+- **PolicyOnlyAI** (`policy_only`): Direct NN policy inference without search. Used for evaluation, latency baselines, and research tooling; not part of the canonical difficulty ladder.
+- **IG-GMO** (`ig_gmo`): Experimental information-gain GMO. Exposed for research/tournament tooling and explicit overrides; not part of the canonical difficulty ladder.
+
 **Supporting / experimental components:**
 
 - **NeuralNetAI:** CNN-based evaluation (value and policy heads) shared across board types (8×8, 19×19, hex) and used internally by `DescentAI`, `MCTSAI`, and `GumbelMCTSAI`.
-- **Research AIs:** EBMO, GMO, and IG-GMO live in the Python AI service and are not part of the canonical difficulty ladder. Use them only via explicit AI type overrides or tournament tooling.
+- **Research AIs:** EBMO and GMO variants live in the Python AI service and are not part of the canonical difficulty ladder. Use them only via explicit AI type overrides or tournament tooling.
 - Training-side helpers and analysis tools under `ai-service/app/training/` (self-play data generation, tournaments, overfit tests).
 
-The Python `ai-service` exposes these tactical engines via the `AIType` enum, and the TypeScript backend selects them through [`AIServiceClient.AIType`](../../src/server/services/AIServiceClient.ts) and the profile-driven mapping in [`AIEngine`](../../src/server/game/ai/AIEngine.ts).
+The Python `ai-service` exposes these tactical engines via the `AIType` enum, and the TypeScript backend selects them through [`AIServiceClient.AIType`](../../src/server/services/AIServiceClient.ts) and the profile-driven mapping in [`AIEngine`](../../src/server/game/ai/AIEngine.ts). The service has additional research-only AIType values beyond the backend’s AITacticType subset.
 
 ### Neural Network Status
 
@@ -726,7 +731,7 @@ Level 3: Random Valid Move Selection
 #### Level 1: Remote AI Service
 
 - Uses Python microservice for sophisticated AI
-- Supports all AI types (Random, Heuristic, Minimax, MCTS, Descent)
+- Supports all backend-exposed AI types (random, heuristic, minimax, mcts, descent, policy_only, gumbel_mcts, ig_gmo)
 - Provides evaluation scores and thinking time metrics
 - Protected by circuit breaker
 

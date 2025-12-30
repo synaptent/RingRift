@@ -96,7 +96,7 @@ class TestSafeEventEmitterMixin:
     def test_safe_emit_event_success(self, emitter: TestEmitter, mock_event_bus):
         """Test successful event emission returns True."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=mock_event_bus,
         ):
             result = emitter._safe_emit_event("TEST_EVENT", {"key": "value"})
@@ -109,7 +109,7 @@ class TestSafeEventEmitterMixin:
         payload = {"board_type": "hex8", "num_players": 2, "games": 100}
 
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=mock_event_bus,
         ):
             result = emitter._safe_emit_event("TRAINING_COMPLETED", payload)
@@ -124,7 +124,7 @@ class TestSafeEventEmitterMixin:
     def test_safe_emit_event_no_payload(self, emitter: TestEmitter, mock_event_bus):
         """Test event emission without payload uses empty dict."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=mock_event_bus,
         ):
             result = emitter._safe_emit_event("SIMPLE_EVENT")
@@ -137,7 +137,7 @@ class TestSafeEventEmitterMixin:
     def test_safe_emit_event_bus_unavailable(self, emitter: TestEmitter):
         """Test returns False when event bus is unavailable."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=None,
         ):
             result = emitter._safe_emit_event("TEST_EVENT")
@@ -147,7 +147,7 @@ class TestSafeEventEmitterMixin:
     def test_safe_emit_event_import_error(self, emitter: TestEmitter):
         """Test handles ImportError gracefully."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             side_effect=ImportError("Module not found"),
         ):
             result = emitter._safe_emit_event("TEST_EVENT")
@@ -159,7 +159,7 @@ class TestSafeEventEmitterMixin:
         mock_event_bus.publish.side_effect = AttributeError("Missing attribute")
 
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=mock_event_bus,
         ):
             result = emitter._safe_emit_event("TEST_EVENT")
@@ -169,7 +169,7 @@ class TestSafeEventEmitterMixin:
     def test_safe_emit_event_runtime_error(self, emitter: TestEmitter):
         """Test handles RuntimeError gracefully."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             side_effect=RuntimeError("No event loop"),
         ):
             result = emitter._safe_emit_event("TEST_EVENT")
@@ -179,7 +179,7 @@ class TestSafeEventEmitterMixin:
     def test_safe_emit_event_type_error(self, emitter: TestEmitter):
         """Test handles TypeError gracefully."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             side_effect=TypeError("Wrong signature"),
         ):
             result = emitter._safe_emit_event("TEST_EVENT")
@@ -189,7 +189,7 @@ class TestSafeEventEmitterMixin:
     def test_custom_event_source(self, custom_emitter: CustomSourceEmitter, mock_event_bus):
         """Test custom event source is used in emitted events."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=mock_event_bus,
         ):
             custom_emitter._safe_emit_event("TEST_EVENT")
@@ -208,7 +208,7 @@ class TestSafeEventEmitterMixinAsync:
     ):
         """Test async event emission success."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=mock_event_bus,
         ):
             result = await emitter._safe_emit_event_async("ASYNC_EVENT", {"async": True})
@@ -220,7 +220,7 @@ class TestSafeEventEmitterMixinAsync:
     async def test_safe_emit_event_async_failure(self, emitter: TestEmitter):
         """Test async event emission failure returns False."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=None,
         ):
             result = await emitter._safe_emit_event_async("ASYNC_EVENT")
@@ -244,7 +244,7 @@ class TestSafeEventEmitterMixinAsync:
 
         with patch("asyncio.to_thread", side_effect=mock_to_thread):
             with patch(
-                "app.coordination.safe_event_emitter.get_event_bus",
+                "app.coordination.event_router.get_event_bus",
                 return_value=mock_event_bus,
             ):
                 # The fallback sync call should succeed
@@ -265,7 +265,7 @@ class TestSafeEmitEventFunction:
     def test_safe_emit_event_success(self, mock_event_bus):
         """Test module-level emit success."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=mock_event_bus,
         ):
             result = safe_emit_event("MODULE_EVENT", {"key": "value"})
@@ -276,7 +276,7 @@ class TestSafeEmitEventFunction:
     def test_safe_emit_event_custom_source(self, mock_event_bus):
         """Test custom source parameter."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=mock_event_bus,
         ):
             result = safe_emit_event(
@@ -293,7 +293,7 @@ class TestSafeEmitEventFunction:
     def test_safe_emit_event_default_source(self, mock_event_bus):
         """Test default source is 'module'."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=mock_event_bus,
         ):
             safe_emit_event("MODULE_EVENT")
@@ -305,7 +305,7 @@ class TestSafeEmitEventFunction:
     def test_safe_emit_event_bus_unavailable(self):
         """Test returns False when bus unavailable."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=None,
         ):
             result = safe_emit_event("MODULE_EVENT")
@@ -315,7 +315,7 @@ class TestSafeEmitEventFunction:
     def test_safe_emit_event_import_error(self):
         """Test handles ImportError."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             side_effect=ImportError("No module"),
         ):
             result = safe_emit_event("MODULE_EVENT")
@@ -325,7 +325,7 @@ class TestSafeEmitEventFunction:
     def test_safe_emit_event_no_payload(self, mock_event_bus):
         """Test emission without payload."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=mock_event_bus,
         ):
             result = safe_emit_event("SIMPLE_EVENT")
@@ -356,7 +356,7 @@ class TestSafeEventEmitterIntegration:
     def test_event_structure_matches_data_event(self, emitter: TestEmitter, mock_event_bus):
         """Test emitted events have correct DataEvent structure."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=mock_event_bus,
         ):
             emitter._safe_emit_event(
@@ -381,7 +381,7 @@ class TestSafeEventEmitterIntegration:
         emitter2 = CustomSourceEmitter()
 
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=mock_event_bus,
         ):
             emitter1._safe_emit_event("EVENT_1")
@@ -404,7 +404,7 @@ class TestEdgeCases:
     def test_empty_event_type(self, emitter: TestEmitter, mock_event_bus):
         """Test emission with empty event type."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=mock_event_bus,
         ):
             result = emitter._safe_emit_event("")
@@ -416,7 +416,7 @@ class TestEdgeCases:
     ):
         """Test None payload is converted to empty dict."""
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=mock_event_bus,
         ):
             emitter._safe_emit_event("EVENT", None)
@@ -434,7 +434,7 @@ class TestEdgeCases:
         }
 
         with patch(
-            "app.coordination.safe_event_emitter.get_event_bus",
+            "app.coordination.event_router.get_event_bus",
             return_value=mock_event_bus,
         ):
             result = emitter._safe_emit_event("COMPLEX_EVENT", payload)
@@ -452,7 +452,7 @@ class TestLogging:
         """Test debug logging when bus unavailable."""
         with caplog.at_level(logging.DEBUG):
             with patch(
-                "app.coordination.safe_event_emitter.get_event_bus",
+                "app.coordination.event_router.get_event_bus",
                 return_value=None,
             ):
                 emitter._safe_emit_event("TEST_EVENT")
@@ -463,7 +463,7 @@ class TestLogging:
         """Test debug logging on emission failure."""
         with caplog.at_level(logging.DEBUG):
             with patch(
-                "app.coordination.safe_event_emitter.get_event_bus",
+                "app.coordination.event_router.get_event_bus",
                 side_effect=ImportError("Test error"),
             ):
                 emitter._safe_emit_event("TEST_EVENT")

@@ -582,7 +582,7 @@ class TrainingCoordinator:
         """
         payload = event.payload if hasattr(event, 'payload') else {}
 
-        config_key = payload.get("config") or payload.get("config_key", "")
+        config_key = extract_config_key(payload)
         model_id = payload.get("model_id", "")
         elo_drop = payload.get("elo_drop", 0)
         current_elo = payload.get("current_elo", 0)
@@ -650,7 +650,7 @@ class TrainingCoordinator:
         """
         payload = event.payload if hasattr(event, 'payload') else {}
 
-        config_key = payload.get("config") or payload.get("config_key", "")
+        config_key = extract_config_key(payload)
         model_id = payload.get("model_id", "")
         elo_drop = payload.get("elo_drop", 0)
 
@@ -700,7 +700,7 @@ class TrainingCoordinator:
         """
         payload = event.payload if hasattr(event, 'payload') else {}
 
-        config_key = payload.get("config") or payload.get("config_key", "")
+        config_key = extract_config_key(payload)
         model_id = payload.get("model_id", "")
         elo_recovered = payload.get("elo_recovered", 0)
 
@@ -808,7 +808,7 @@ class TrainingCoordinator:
 
         payload = event.payload
         model_id = payload.get("model_id", "")
-        config_key = payload.get("config_key", "")
+        config_key = extract_config_key(payload)
         reason = payload.get("reason", "unknown")
         checkpoint_id = payload.get("checkpoint_id")
 
@@ -893,7 +893,7 @@ class TrainingCoordinator:
 
         payload = event.payload
         model_id = payload.get("model_id", "")
-        config_key = payload.get("config_key", "")
+        config_key = extract_config_key(payload)
         from_version = payload.get("from_version", "")
         to_version = payload.get("to_version", "")
         reason = payload.get("reason", "unknown")
@@ -1041,7 +1041,7 @@ class TrainingCoordinator:
         """
         payload = event.payload if hasattr(event, 'payload') else {}
 
-        config_key = payload.get("config") or payload.get("config_key", "")
+        config_key = extract_config_key(payload)
         quality_score = payload.get("quality_score", 0.0)
         threshold = payload.get("threshold", 0.0)
         reason = payload.get("reason", "unknown")
@@ -1086,7 +1086,7 @@ class TrainingCoordinator:
         """
         payload = event.payload if hasattr(event, 'payload') else {}
 
-        config_key = payload.get("config") or payload.get("config_key", "")
+        config_key = extract_config_key(payload)
         quality_score = payload.get("quality_score", 0.0)
         reason = payload.get("reason", "Quality gate blocked")
 
@@ -1196,7 +1196,7 @@ class TrainingCoordinator:
 
         sync_type = payload.get("sync_type", "unknown")
         data_type = payload.get("data_type", "")
-        config_key = payload.get("config") or payload.get("config_key", "")
+        config_key = extract_config_key(payload)
         duration_seconds = payload.get("duration_seconds", 0.0)
         file_count = payload.get("file_count", 0)
 

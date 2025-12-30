@@ -128,7 +128,8 @@ Notes:
 - `timeControl.type` is `blitz`, `rapid`, or `classical`; `initialTime` is 60-7200 seconds; `increment` is 0-60 seconds.
 - AI games must set `isRated=false`. `aiOpponents.difficulty` must provide at least `count` entries.
 - `aiOpponents.mode` is `local_heuristic` or `service`. `aiTypes` (per opponent, same ordering as `difficulty`) overrides `aiType` (single value).
-- Allowed AI types: `random`, `heuristic`, `minimax`, `mcts`, `descent`.
+- Allowed AI types (public create-game schema): `random`, `heuristic`, `minimax`, `mcts`, `descent`.
+- Additional AI types exist in shared types and backend enums (`policy_only`, `gumbel_mcts`, `ig_gmo`), but are currently reserved for internal/test tooling and rejected by the public HTTP schema.
 - `rulesOptions` overrides per-game rules (swap rule for 2‑player, ring supply, LPS rounds).
 - `seed` pins the RNG for deterministic replays and parity debugging.
 - Calibration fields are optional metadata for AI difficulty studies (typically paired with AI opponents and unrated games).

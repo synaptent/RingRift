@@ -42,6 +42,11 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 # Canonical types (December 2025 consolidation)
 from app.coordination.types import BackpressureLevel, BoardType
 from app.coordination.event_utils import parse_config_key
+from app.coordination.event_handler_utils import (
+    extract_config_key,
+    extract_board_type,
+    extract_num_players,
+)
 
 if TYPE_CHECKING:
     from app.coordination.selfplay_scheduler import SelfplayScheduler
@@ -1213,7 +1218,7 @@ class UnifiedQueuePopulatorDaemon:
             def _on_training_blocked(event: Any) -> None:
                 """Handle TRAINING_BLOCKED_BY_QUALITY - queue extra selfplay."""
                 payload = _extract_payload(event)
-                config_key = payload.get("config_key", "") or payload.get("config", "")
+                config_key = extract_config_key(payload)
                 if not config_key:
                     return
 
@@ -1328,7 +1333,7 @@ class UnifiedQueuePopulatorDaemon:
             def _on_selfplay_target_updated(event: Any) -> None:
                 """Handle SELFPLAY_TARGET_UPDATED - repopulate queue when targets change."""
                 payload = _extract_payload(event)
-                config_key = payload.get("config_key", "")
+                config_key = extract_config_key(payload)
                 new_target = payload.get("target_games") or payload.get("games_target")
                 logger.info(
                     f"[QueuePopulator] Selfplay target updated for {config_key}: {new_target}"

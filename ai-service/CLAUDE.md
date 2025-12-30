@@ -157,6 +157,78 @@ key = make_config_key("hex8", 2)
 
 **When to use**: Any handler processing events with `config_key`, `model_path`, `elo`, `board_type`, or `num_players` fields should use these utilities instead of inline parsing.
 
+### Data Availability Infrastructure (Dec 30, 2025)
+
+Multi-source training data discovery and lazy download for cluster training.
+
+**Data Sources:**
+
+| Source  | Description                          | Access Method                        |
+| ------- | ------------------------------------ | ------------------------------------ |
+| `LOCAL` | Local filesystem databases/NPZ files | Direct file I/O                      |
+| `S3`    | AWS S3 bucket `ringrift-models-*`    | `aws s3 cp` via TrainingDataManifest |
+| `OWC`   | External OWC drive on mac-studio     | SSH/rsync via OWCImportDaemon        |
+| `P2P`   | Other cluster nodes                  | P2P sync via AutoSyncDaemon          |
+
+**Key Components:**
+
+| Module                                       | Purpose                                            |
+| -------------------------------------------- | -------------------------------------------------- |
+| `app/utils/game_discovery.py`                | Find game databases across 14+ filesystem patterns |
+| `app/distributed/data_catalog.py`            | NPZ file discovery and training data catalog       |
+| `app/coordination/training_data_manifest.py` | Multi-source manifest with lazy download           |
+| `app/coordination/owc_import_daemon.py`      | Import from OWC external drive                     |
+
+**GameDiscovery Patterns (14+ patterns):**
+
+```python
+from app.utils.game_discovery import GameDiscovery
+
+discovery = GameDiscovery()
+databases = discovery.find_all_databases()
+# Searches: data/games/*.db, data/games/synced/*.db,
+#           data/games/owc_imports/*.db, and more
+```
+
+**Lazy Download API:**
+
+```python
+from app.coordination.training_data_manifest import get_training_manifest
+
+manifest = get_training_manifest()
+await manifest.refresh_local()   # Scan local files
+await manifest.refresh_s3()      # Scan S3 bucket
+
+# Get best data for a config, download if needed
+path = await manifest.get_or_download_best(
+    config_key="hex8_2p",
+    prefer_source=DataSource.LOCAL,  # Try local first
+    min_size_mb=10.0,                # Minimum 10MB
+)
+if path:
+    # path is now a local file ready for training
+    train_model(path)
+```
+
+**OWC Import Daemon:**
+
+Periodically imports training data from OWC external drive (674 databases) to cluster.
+Runs on coordinator nodes only, targeting underserved configurations.
+
+```python
+# Daemon status via health endpoint
+curl -s http://localhost:8790/status | jq '.daemons.owc_import'
+```
+
+**Environment Variables:**
+
+| Variable                  | Default                | Description                  |
+| ------------------------- | ---------------------- | ---------------------------- |
+| `AWS_ACCESS_KEY_ID`       | -                      | Enable S3 source in manifest |
+| `RINGRIFT_OWC_ENABLED`    | true                   | Enable OWC import daemon     |
+| `RINGRIFT_OWC_HOST`       | mac-studio             | Host with OWC drive attached |
+| `RINGRIFT_OWC_DRIVE_PATH` | /Volumes/RingRift-Data | OWC mount point              |
+
 ### AI Components
 
 | Module                           | Purpose                                     |
