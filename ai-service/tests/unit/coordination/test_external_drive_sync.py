@@ -349,7 +349,11 @@ class TestBuildSshCommand:
     """Tests for SSH command building."""
 
     def test_basic_ssh_command(self, mock_storage_config, mock_cluster_node):
-        """Test basic SSH command without port or key."""
+        """Test basic SSH command without port or key.
+
+        Dec 30, 2025: Updated to expect centralized build_ssh_options() output.
+        Uses provider-aware timeouts (runpod-h100 -> 10s).
+        """
         mock_cluster_node.ssh_port = 22
         mock_cluster_node.ssh_key = None
 
@@ -358,7 +362,9 @@ class TestBuildSshCommand:
 
         assert "ssh" in cmd
         assert "-o StrictHostKeyChecking=no" in cmd
-        assert "-o ConnectTimeout=30" in cmd
+        # Provider-aware timeout: runpod-h100 -> 10s (via centralized helper)
+        assert "-o ConnectTimeout=10" in cmd
+        assert "-o BatchMode=yes" in cmd
 
     def test_ssh_command_with_port(self, mock_storage_config, mock_cluster_node):
         """Test SSH command with custom port."""

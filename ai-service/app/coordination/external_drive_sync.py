@@ -41,6 +41,7 @@ from app.config.cluster_config import (
     get_sync_routing,
     ClusterNode,
 )
+from app.config.coordination_defaults import build_ssh_options
 from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
 
 logger = logging.getLogger(__name__)
@@ -383,20 +384,17 @@ class ExternalDriveSyncDaemon:
             return False
 
     def _build_ssh_command(self, node: ClusterNode) -> str:
-        """Build SSH command for rsync."""
-        ssh_parts = ["ssh"]
+        """Build SSH command for rsync.
 
-        if node.ssh_port and node.ssh_port != 22:
-            ssh_parts.append(f"-p {node.ssh_port}")
-
-        if node.ssh_key:
-            ssh_key = os.path.expanduser(node.ssh_key)
-            ssh_parts.append(f"-i {ssh_key}")
-
-        ssh_parts.extend(["-o", "StrictHostKeyChecking=no"])
-        ssh_parts.extend(["-o", "ConnectTimeout=30"])
-
-        return " ".join(ssh_parts)
+        Dec 30, 2025: Migrated to use centralized build_ssh_options() for
+        consistent SSH configuration and provider-aware timeouts.
+        """
+        return build_ssh_options(
+            key_path=os.path.expanduser(node.ssh_key) if node.ssh_key else None,
+            port=node.ssh_port if node.ssh_port and node.ssh_port != 22 else None,
+            node_id=node.name,
+            include_keepalive=False,  # Short sync operations don't need keepalive
+        )
 
     def _get_sync_source_nodes(self) -> list[ClusterNode]:
         """Get list of cluster nodes to sync games from."""
