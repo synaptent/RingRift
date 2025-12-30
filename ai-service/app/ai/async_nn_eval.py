@@ -1,7 +1,4 @@
-from __future__ import annotations
-
-"""
-Async/batched neural network evaluation helpers.
+"""Async/batched neural network evaluation helpers.
 
 This module provides a thread-safe wrapper around ``NeuralNetAI.evaluate_batch`` so
 search engines can evaluate speculative GameStates asynchronously without risking
@@ -11,6 +8,8 @@ When enabled (default: CUDA), evaluations are routed through a global
 micro-batching worker that coalesces multiple submit calls into larger batches,
 improving GPU throughput while keeping model usage serialized.
 """
+
+from __future__ import annotations
 
 import os
 import queue

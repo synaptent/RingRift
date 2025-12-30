@@ -378,7 +378,8 @@ class ClusterUtilizationWatchdog(HandlerBase):
         is_healthy = self._current_level == UtilizationLevel.HEALTHY
 
         return HealthCheckResult(
-            status=CoordinatorStatus.HEALTHY if is_healthy else CoordinatorStatus.DEGRADED,
+            healthy=is_healthy,
+            status=CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.DEGRADED,
             details={
                 "enabled": self.config.enabled,
                 "current_level": self._current_level.value,

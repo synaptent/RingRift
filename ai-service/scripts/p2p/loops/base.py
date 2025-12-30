@@ -240,6 +240,12 @@ class BaseLoop(ABC):
         try:
             await self._on_start()
 
+            # Debug logging for immediate stop issue (Dec 30, 2025)
+            logger.debug(
+                f"[{self.name}] Entering main loop: _running={self._running}, "
+                f"shutdown_set={self._shutdown_event.is_set()}, enabled={self.enabled}"
+            )
+
             while self._running and not self._shutdown_event.is_set():
                 if not self.enabled:
                     # Loop is disabled, wait for interval and check again
@@ -321,8 +327,14 @@ class BaseLoop(ABC):
                         await self._interruptible_sleep(self.interval)
 
         except asyncio.CancelledError:
-            pass
+            logger.debug(f"[{self.name}] Loop cancelled via CancelledError")
         finally:
+            # Debug logging for immediate stop issue (Dec 30, 2025)
+            logger.debug(
+                f"[{self.name}] Exiting loop: _running={self._running}, "
+                f"shutdown_set={self._shutdown_event.is_set()}, "
+                f"total_runs={self._stats.total_runs}"
+            )
             self._running = False
             try:
                 await self._on_stop()
