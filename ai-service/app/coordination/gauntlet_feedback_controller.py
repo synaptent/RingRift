@@ -230,7 +230,7 @@ class GauntletFeedbackController(BaseEventHandler):
                 status=base_result.status,
                 message=f"{self.name}: {len(self._config_trackers)} configs tracked",
                 details={
-                    "subscribed": self._subscribed,
+                    "subscribed": self.is_subscribed,
                     "configs_tracked": len(self._config_trackers),
                     "uptime_seconds": self.uptime_seconds,
                     "actions_taken": len(self._actions_taken),
