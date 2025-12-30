@@ -510,33 +510,67 @@ class TrainingTriggerDaemon(HandlerBase):
         - On promotion streak: Lower threshold → faster iteration
         - Struggling/regression: Higher threshold → more conservative
 
+        Dec 30, 2025: Added player-count-based threshold reduction.
+        3p/4p configs get lower thresholds since they generate fewer games.
+
         Args:
             config_key: Configuration identifier
 
         Returns:
             Minimum sample count required to trigger training
         """
+        # Dec 30, 2025: Player-count-based threshold multipliers
+        # Multiplayer configs (3p, 4p) generate fewer games, so we lower the threshold
+        # to allow training to proceed with less data
+        player_count_multipliers = {
+            2: 1.0,    # 2p: Full threshold (5000 samples)
+            3: 0.6,    # 3p: 60% threshold (3000 samples)
+            4: 0.4,    # 4p: 40% threshold (2000 samples)
+        }
+
+        # Extract player count from config_key (e.g., "hex8_4p" -> 4)
+        player_count = 2  # Default
+        try:
+            if "_" in config_key:
+                player_part = config_key.split("_")[1]  # "4p"
+                player_count = int(player_part[0])  # 4
+        except (IndexError, ValueError):
+            pass
+
+        multiplier = player_count_multipliers.get(player_count, 1.0)
+        base_threshold = self.config.min_samples_threshold
+
         try:
             from app.training.improvement_optimizer import get_dynamic_threshold
 
             dynamic_threshold = get_dynamic_threshold(config_key)
 
+            # Apply player count multiplier to dynamic threshold
+            adjusted_threshold = int(dynamic_threshold * multiplier)
+
             # Log significant deviations from base threshold
-            if dynamic_threshold != self.config.min_samples_threshold:
+            if adjusted_threshold != base_threshold:
                 logger.debug(
                     f"[TrainingTriggerDaemon] Dynamic threshold for {config_key}: "
-                    f"{dynamic_threshold} (base: {self.config.min_samples_threshold})"
+                    f"{adjusted_threshold} (base: {base_threshold}, "
+                    f"dynamic: {dynamic_threshold}, multiplier: {multiplier})"
                 )
 
-            return dynamic_threshold
+            return adjusted_threshold
 
         except ImportError:
             logger.debug("[TrainingTriggerDaemon] improvement_optimizer not available")
         except Exception as e:
             logger.debug(f"[TrainingTriggerDaemon] Error getting dynamic threshold: {e}")
 
-        # Fallback to static config threshold
-        return self.config.min_samples_threshold
+        # Fallback: Apply player count multiplier to static config threshold
+        adjusted_threshold = int(base_threshold * multiplier)
+        if multiplier != 1.0:
+            logger.debug(
+                f"[TrainingTriggerDaemon] Player-adjusted threshold for {config_key}: "
+                f"{adjusted_threshold} ({player_count}p config, multiplier: {multiplier})"
+            )
+        return adjusted_threshold
 
     def _check_confidence_early_trigger(
         self, config_key: str, sample_count: int

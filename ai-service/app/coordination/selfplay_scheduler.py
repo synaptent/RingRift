@@ -1783,13 +1783,17 @@ class SelfplayScheduler(HandlerBase):
         allocation: dict[str, dict[str, int]],
         games_per_config: int,
     ) -> dict[str, dict[str, int]]:
-        """Enforce minimum allocations for 4-player configs.
+        """Enforce minimum allocations for 3-player and 4-player configs.
 
-        Dec 29, 2025 - Phase 4: 4-player allocation enforcement.
-        The 4p multiplier (4x) can't be satisfied if cluster has limited GPUs.
-        This method redistributes from 2p configs to ensure 4p gets minimum.
+        Dec 29, 2025 - Phase 4: Multiplayer allocation enforcement.
+        Dec 30, 2025: Extended to 3p configs + increased targets.
 
-        Target: 4p configs get at least 1.5x their proportional share.
+        The 3p/4p multipliers can't be satisfied if cluster has limited GPUs.
+        This method redistributes from 2p configs to ensure multiplayer gets minimum.
+
+        Targets (Dec 30, 2025 - more aggressive):
+        - 4p configs get at least 2.5x their proportional share
+        - 3p configs get at least 1.5x their proportional share
         If short, steal from 2p configs (which are easiest to generate).
 
         Args:
@@ -1797,7 +1801,7 @@ class SelfplayScheduler(HandlerBase):
             games_per_config: Base games per config
 
         Returns:
-            Adjusted allocation with enforced 4p minimums
+            Adjusted allocation with enforced multiplayer minimums
         """
         if not allocation:
             return allocation
@@ -1807,63 +1811,124 @@ class SelfplayScheduler(HandlerBase):
         for config_key, node_alloc in allocation.items():
             totals[config_key] = sum(node_alloc.values())
 
-        # Identify 4p and 2p configs
+        # Identify configs by player count
         four_p_configs = [c for c in totals if "_4p" in c]
+        three_p_configs = [c for c in totals if "_3p" in c]
         two_p_configs = [c for c in totals if "_2p" in c]
 
-        if not four_p_configs or not two_p_configs:
-            return allocation
+        if not two_p_configs:
+            return allocation  # No donors available
 
-        # Target: 4p should get at least 1.5x base allocation
-        min_4p_games = int(games_per_config * 1.5)
+        # Dec 30, 2025: More aggressive targets for multiplayer
+        # 4p: 2.5x (was 1.5x) - these have fewest games
+        # 3p: 1.5x (was unhandled) - also underrepresented
+        min_4p_games = int(games_per_config * 2.5)
+        min_3p_games = int(games_per_config * 1.5)
         redistributed = 0
 
+        # Process 4p first (higher priority - most starved)
         for config in four_p_configs:
             current = totals.get(config, 0)
             shortfall = max(0, min_4p_games - current)
 
             if shortfall > 0:
-                # Try to steal from 2p configs
-                for donor in two_p_configs:
-                    donor_current = totals.get(donor, 0)
-                    donor_min = int(games_per_config * 0.5)  # 2p keeps at least 50%
+                stolen = self._steal_from_donors(
+                    allocation, totals, config, shortfall, two_p_configs, games_per_config
+                )
+                redistributed += stolen
+                if stolen > 0:
+                    logger.info(
+                        f"[SelfplayScheduler] 4p enforcement: boosted {config} by {stolen} games "
+                        f"(now {totals.get(config, 0)})"
+                    )
 
-                    available = max(0, donor_current - donor_min)
-                    steal = min(shortfall, available)
+        # Process 3p next (lower priority than 4p)
+        for config in three_p_configs:
+            current = totals.get(config, 0)
+            shortfall = max(0, min_3p_games - current)
 
-                    if steal > 0 and donor in allocation:
-                        # Remove from donor (proportionally from nodes)
-                        for node_id in allocation[donor]:
-                            node_games = allocation[donor][node_id]
-                            node_steal = int(steal * node_games / donor_current)
-                            allocation[donor][node_id] = max(0, node_games - node_steal)
-
-                        # Add to 4p config (to first available node)
-                        if config in allocation and allocation[config]:
-                            first_node = next(iter(allocation[config]))
-                            allocation[config][first_node] += steal
-                        elif config not in allocation:
-                            # Find a node that had this config's board type
-                            allocation[config] = {list(allocation[donor].keys())[0]: steal}
-
-                        totals[donor] -= steal
-                        totals[config] = totals.get(config, 0) + steal
-                        shortfall -= steal
-                        redistributed += steal
-
-                        logger.debug(
-                            f"[SelfplayScheduler] 4p enforcement: {donor} -> {config}: {steal} games"
-                        )
-
-                    if shortfall <= 0:
-                        break
+            if shortfall > 0:
+                stolen = self._steal_from_donors(
+                    allocation, totals, config, shortfall, two_p_configs, games_per_config
+                )
+                redistributed += stolen
+                if stolen > 0:
+                    logger.info(
+                        f"[SelfplayScheduler] 3p enforcement: boosted {config} by {stolen} games "
+                        f"(now {totals.get(config, 0)})"
+                    )
 
         if redistributed > 0:
-            logger.info(
-                f"[SelfplayScheduler] 4p allocation enforcement: redistributed {redistributed} games"
+            logger.warning(
+                f"[SelfplayScheduler] Multiplayer allocation enforcement: "
+                f"redistributed {redistributed} games from 2p → 3p/4p configs"
             )
 
         return allocation
+
+    def _steal_from_donors(
+        self,
+        allocation: dict[str, dict[str, int]],
+        totals: dict[str, int],
+        recipient: str,
+        shortfall: int,
+        donors: list[str],
+        games_per_config: int,
+    ) -> int:
+        """Steal games from donor configs to fill recipient shortfall.
+
+        Dec 30, 2025: Extracted helper for 3p/4p enforcement.
+
+        Args:
+            allocation: Current allocation dict
+            totals: Current totals per config
+            recipient: Config to receive games
+            shortfall: Games needed
+            donors: Configs to steal from
+            games_per_config: Base allocation
+
+        Returns:
+            Number of games stolen
+        """
+        stolen_total = 0
+
+        for donor in donors:
+            if shortfall <= 0:
+                break
+
+            donor_current = totals.get(donor, 0)
+            # Dec 30, 2025: 2p keeps at least 40% (was 50%) to allow more redistribution
+            donor_min = int(games_per_config * 0.4)
+
+            available = max(0, donor_current - donor_min)
+            steal = min(shortfall, available)
+
+            if steal > 0 and donor in allocation:
+                # Remove from donor (proportionally from nodes)
+                for node_id in allocation[donor]:
+                    node_games = allocation[donor][node_id]
+                    if donor_current > 0:
+                        node_steal = int(steal * node_games / donor_current)
+                        allocation[donor][node_id] = max(0, node_games - node_steal)
+
+                # Add to recipient config (to first available node)
+                if recipient in allocation and allocation[recipient]:
+                    first_node = next(iter(allocation[recipient]))
+                    allocation[recipient][first_node] += steal
+                elif recipient not in allocation:
+                    # Find a node that had this config's board type
+                    allocation[recipient] = {list(allocation[donor].keys())[0]: steal}
+
+                totals[donor] -= steal
+                totals[recipient] = totals.get(recipient, 0) + steal
+                shortfall -= steal
+                stolen_total += steal
+
+                logger.debug(
+                    f"[SelfplayScheduler] Multiplayer enforcement: {donor} -> {recipient}: {steal} games"
+                )
+
+        return stolen_total
 
     def _allocate_to_nodes(
         self,
