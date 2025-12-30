@@ -60,6 +60,7 @@ __all__ = [
 # December 2025: Import from canonical source (renamed to CatalogDataType)
 # Backward-compatible alias DataType retained for existing code
 from app.coordination.enums import CatalogDataType
+from app.coordination.event_handler_utils import extract_config_from_path
 
 # Backward-compatible alias (deprecated, remove Q2 2026)
 DataType = CatalogDataType
@@ -467,21 +468,12 @@ class DataCatalog:
 
     def _extract_config_key(self, path: str) -> str:
         """Extract config key (e.g., 'hex8_2p') from path."""
-        filename = Path(path).stem  # Remove extension
-
+        # December 30, 2025: Use consolidated utility for config extraction
         # Common patterns:
         # canonical_hex8_2p.db -> hex8_2p
         # hex8_2p_selfplay.db -> hex8_2p
         # selfplay_square8_4p.db -> square8_4p
-
-        # Try to find board_type + player pattern
-        import re
-
-        match = re.search(r"(hex8|hexagonal|square8|square19)_(\d)p", filename)
-        if match:
-            return f"{match.group(1)}_{match.group(2)}p"
-
-        return ""
+        return extract_config_from_path(path) or ""
 
     def mark_synced(self, path: str, node_id: str) -> None:
         """Mark data as synced to a node.

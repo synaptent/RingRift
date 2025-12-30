@@ -48,7 +48,7 @@ from enum import Enum
 from typing import Any
 
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
-from app.coordination.event_handler_utils import extract_config_key
+from app.coordination.event_handler_utils import extract_config_from_path, extract_config_key
 
 logger = logging.getLogger(__name__)
 
@@ -574,11 +574,8 @@ class ModelLifecycleCoordinator:
         # Extract config key from model path or use provided
         config_key = extract_config_key(payload)
         if not config_key and model_path:
-            # Try to extract from path like "canonical_hex8_2p.pth"
-            import re
-            match = re.search(r"(hex8|square8|square19|hexagonal)_(\d)p", model_path)
-            if match:
-                config_key = f"{match.group(1)}_{match.group(2)}p"
+            # December 30, 2025: Use consolidated utility for path extraction
+            config_key = extract_config_from_path(model_path) or ""
 
         logger.warning(
             f"[ModelLifecycleCoordinator] MODEL_CORRUPTED: {model_path} "

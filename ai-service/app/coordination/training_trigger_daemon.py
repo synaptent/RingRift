@@ -46,7 +46,7 @@ from typing import Any, Callable
 
 from app.config.coordination_defaults import DataFreshnessDefaults, SyncDefaults
 from app.config.env import env
-from app.coordination.event_handler_utils import extract_config_key
+from app.coordination.event_handler_utils import extract_config_from_path, extract_config_key
 from app.coordination.event_utils import parse_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.utils.retry import RetryConfig
@@ -1622,6 +1622,8 @@ class TrainingTriggerDaemon(HandlerBase):
     def _parse_config_from_filename(self, name: str) -> tuple[str | None, int | None]:
         """Parse board_type and num_players from filename.
 
+        December 30, 2025: Migrated to use consolidated extraction utilities.
+
         Handles various naming patterns:
         - hex8_2p.npz -> (hex8, 2)
         - square8_3p_fresh.npz -> (square8, 3)
@@ -1630,17 +1632,12 @@ class TrainingTriggerDaemon(HandlerBase):
         Returns:
             (board_type, num_players) or (None, None) if not parseable.
         """
-        # Match board_type followed by _Np pattern anywhere in filename
-        match = re.search(r'(hex8|square8|square19|hexagonal)_(\d+)p', name)
-        if match:
-            board_type = match.group(1)
-            try:
-                num_players = int(match.group(2))
-                if num_players in (2, 3, 4):
-                    return board_type, num_players
-            except (ValueError, TypeError):
-                pass
-
+        # Use consolidated utilities for config extraction
+        config_key = extract_config_from_path(name)
+        if config_key:
+            parsed = parse_config_key(config_key)
+            if parsed:
+                return parsed.board_type, parsed.num_players
         return None, None
 
     def _get_or_create_state(
