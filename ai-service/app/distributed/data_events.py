@@ -111,12 +111,16 @@ class DataEventType(Enum):
     TRAINING_PROGRESS = "training_progress"
     TRAINING_COMPLETED = "training_completed"
     TRAINING_FAILED = "training_failed"
+    TRAINING_LOCK_ACQUIRED = "training_lock_acquired"  # Dec 30, 2025: Training lock acquired for config
+    TRAINING_SLOT_UNAVAILABLE = "training_slot_unavailable"  # Dec 30, 2025: Training slot not available
 
     # Evaluation events
     EVALUATION_STARTED = "evaluation_started"
     EVALUATION_PROGRESS = "evaluation_progress"
     EVALUATION_COMPLETED = "evaluation_completed"
     EVALUATION_FAILED = "evaluation_failed"
+    EVALUATION_BACKPRESSURE = "evaluation_backpressure"  # Dec 29, 2025: Eval queue backlogged, pause training
+    EVALUATION_BACKPRESSURE_RELEASED = "evaluation_backpressure_released"  # Dec 29, 2025: Eval queue drained, resume training
     MODEL_EVALUATION_BLOCKED = "model_evaluation_blocked"  # Dec 2025 Phase 3: Model not distributed for eval
     ELO_UPDATED = "elo_updated"
 

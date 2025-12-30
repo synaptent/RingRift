@@ -59,13 +59,13 @@ python scripts/update_all_nodes.py --restart-p2p
 | `app/config/coordination_defaults.py` | Centralized timeouts, thresholds, priority weights             |
 | `app/config/thresholds.py`            | Centralized quality/training/budget thresholds (canonical)     |
 
-### Coordination Infrastructure (256 modules)
+### Coordination Infrastructure (257 modules)
 
 | Module                                 | Purpose                                           |
 | -------------------------------------- | ------------------------------------------------- |
-| `daemon_manager.py`                    | Lifecycle for 99 daemon types (~2,000 LOC)        |
+| `daemon_manager.py`                    | Lifecycle for 95 daemon types (~2,000 LOC)        |
 | `daemon_registry.py`                   | Declarative daemon specs (DaemonSpec dataclass)   |
-| `daemon_runners.py`                    | 91 async runner functions                         |
+| `daemon_runners.py`                    | 90 async runner functions                         |
 | `event_router.py`                      | Unified event bus (207 event types, SHA256 dedup) |
 | `selfplay_scheduler.py`                | Priority-based selfplay allocation (~3,800 LOC)   |
 | `budget_calculator.py`                 | Gumbel budget tiers, target games calculation     |
@@ -87,6 +87,7 @@ python scripts/update_all_nodes.py --restart-p2p
 | `unified_distribution_daemon.py`       | Model and NPZ distribution to cluster             |
 | `unified_replication_daemon.py`        | Data replication monitoring and repair            |
 | `training_coordinator.py`              | Training job management and coordination          |
+| `task_coordinator_reservations.py`     | Node reservation for gauntlet/training (Dec 2025) |
 | `connectivity_recovery_coordinator.py` | Network recovery and reconnection                 |
 | `curriculum_feedback_handler.py`       | Curriculum adjustment based on performance        |
 | `cascade_training.py`                  | Cascade training across architectures             |
@@ -338,11 +339,11 @@ weights = tracker.get_compute_weights(board_type="hex8", num_players=2)
 
 ## Daemon System
 
-93 active daemon types, 6 deprecated (99 total). Three-layer architecture:
+89 active daemon types, 6 deprecated (95 total). Three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative `DAEMON_REGISTRY: Dict[DaemonType, DaemonSpec]`
 2. **`daemon_manager.py`** - Lifecycle coordinator (start/stop, health, auto-restart)
-3. **`daemon_runners.py`** - 91 async runner functions
+3. **`daemon_runners.py`** - 90 async runner functions
 
 ```python
 from app.coordination.daemon_manager import get_daemon_manager

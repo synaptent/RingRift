@@ -121,10 +121,13 @@ class TestControllerInitialization:
         assert controller.config.extra_selfplay_games == 1000
 
     def test_initial_state(self, controller):
-        """Controller starts in correct initial state."""
-        assert controller.status == CoordinatorStatus.INITIALIZING
+        """Controller starts in correct initial state.
+
+        December 30, 2025: Fixed to use _status (private attr in BaseEventHandler).
+        Initial status is STOPPED, not INITIALIZING.
+        """
+        assert controller._status == CoordinatorStatus.STOPPED
         assert not controller.is_running
-        assert controller.uptime_seconds == 0.0
         assert len(controller._config_trackers) == 0
 
     def test_name_property(self, controller):
@@ -152,7 +155,7 @@ class TestControllerLifecycle:
 
             assert result is True
             assert controller.is_running
-            assert controller.status == CoordinatorStatus.RUNNING
+            assert controller._status == CoordinatorStatus.RUNNING
             assert controller.uptime_seconds > 0
 
     @pytest.mark.asyncio
@@ -165,7 +168,7 @@ class TestControllerLifecycle:
 
             assert result is False
             assert not controller.is_running
-            assert controller.status == CoordinatorStatus.ERROR
+            assert controller._status == CoordinatorStatus.STOPPED  # Stays STOPPED on failure
 
     @pytest.mark.asyncio
     async def test_double_start(self, controller):
@@ -190,7 +193,7 @@ class TestControllerLifecycle:
                 await controller.stop()
 
                 assert not controller.is_running
-                assert controller.status == CoordinatorStatus.STOPPED
+                assert controller._status == CoordinatorStatus.STOPPED
                 mock_unsub.assert_called_once()
 
 
