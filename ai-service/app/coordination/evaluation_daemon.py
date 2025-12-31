@@ -35,6 +35,7 @@ import asyncio
 import hashlib
 import logging
 import time
+import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict
@@ -551,7 +552,12 @@ class EvaluationDaemon(BaseEventHandler):
             return
 
         start_time = time.time()
+        config_key = f"{board_type}_{num_players}p"
+        run_id = str(uuid.uuid4())
         logger.info(f"[EvaluationDaemon] Starting evaluation: {model_path}")
+
+        # December 30, 2025: Record gauntlet run start for observability
+        self._record_gauntlet_start(run_id, config_key)
 
         # December 30, 2025: Emit EVALUATION_STARTED (Gap #3 integration fix)
         await self._emit_evaluation_started(model_path, board_type, num_players)
@@ -595,6 +601,9 @@ class EvaluationDaemon(BaseEventHandler):
             # December 2025: Mark as recently evaluated for deduplication
             self._recently_evaluated[model_path] = time.time()
 
+            # December 30, 2025: Record gauntlet completion for observability
+            self._record_gauntlet_complete(run_id, 1, total_games, "completed")
+
             logger.info(
                 f"[EvaluationDaemon] Evaluation completed: {model_path} "
                 f"(win_rate={result.get('overall_win_rate', 0):.1%}, "
@@ -609,8 +618,10 @@ class EvaluationDaemon(BaseEventHandler):
             if self._queue_for_retry(
                 model_path, board_type, num_players, "timeout", retry_attempt
             ):
+                self._record_gauntlet_complete(run_id, 0, 0, "retry_queued")
                 return  # Will retry, don't emit permanent failure
             # Emit EVALUATION_FAILED event (Dec 2025 - critical gap fix)
+            self._record_gauntlet_complete(run_id, 0, 0, "failed:timeout")
             await self._emit_evaluation_failed(model_path, board_type, num_players, "timeout")
         except (MemoryError, RuntimeError) as e:
             # December 29, 2025: GPU OOM and RuntimeError (CUDA) are retryable
@@ -623,13 +634,16 @@ class EvaluationDaemon(BaseEventHandler):
                 if self._queue_for_retry(
                     model_path, board_type, num_players, f"GPU error: {e}", retry_attempt
                 ):
+                    self._record_gauntlet_complete(run_id, 0, 0, "retry_queued")
                     return  # Will retry
             # Emit permanent failure
+            self._record_gauntlet_complete(run_id, 0, 0, f"failed:{type(e).__name__}")
             await self._emit_evaluation_failed(model_path, board_type, num_players, str(e))
         except Exception as e:  # noqa: BLE001
             self._eval_stats.evaluations_failed += 1
             logger.error(f"[EvaluationDaemon] Evaluation failed: {model_path}: {e}")
             # Emit EVALUATION_FAILED event (Dec 2025 - critical gap fix)
+            self._record_gauntlet_complete(run_id, 0, 0, f"failed:{type(e).__name__}")
             await self._emit_evaluation_failed(model_path, board_type, num_players, str(e))
 
     async def _run_gauntlet(
@@ -892,6 +906,61 @@ class EvaluationDaemon(BaseEventHandler):
             logger.debug("[EvaluationDaemon] Event emitters not available")
         except Exception as e:  # noqa: BLE001
             logger.debug(f"[EvaluationDaemon] Failed to emit failure event: {e}")
+
+    def _record_gauntlet_start(
+        self,
+        run_id: str,
+        config_key: str,
+    ) -> None:
+        """Record gauntlet run start in unified_elo.db.
+
+        December 30, 2025: Added to improve observability of gauntlet runs.
+        This populates the gauntlet_runs table which was previously empty
+        because game_gauntlet.py only records individual matches.
+        """
+        try:
+            from app.tournament.unified_elo_db import get_unified_elo_db
+
+            db = get_unified_elo_db()
+            conn = db._get_connection()
+            conn.execute(
+                """INSERT INTO gauntlet_runs
+                   (run_id, config_key, started_at, status)
+                   VALUES (?, ?, ?, 'running')""",
+                (run_id, config_key, time.time()),
+            )
+            conn.commit()
+            logger.debug(f"[EvaluationDaemon] Recorded gauntlet start: {run_id}")
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[EvaluationDaemon] Failed to record gauntlet start: {e}")
+
+    def _record_gauntlet_complete(
+        self,
+        run_id: str,
+        models_evaluated: int,
+        total_games: int,
+        status: str = "completed",
+    ) -> None:
+        """Record gauntlet run completion in unified_elo.db.
+
+        December 30, 2025: Added for observability.
+        """
+        try:
+            from app.tournament.unified_elo_db import get_unified_elo_db
+
+            db = get_unified_elo_db()
+            conn = db._get_connection()
+            conn.execute(
+                """UPDATE gauntlet_runs
+                   SET completed_at = ?, models_evaluated = ?,
+                       total_games = ?, status = ?
+                   WHERE run_id = ?""",
+                (time.time(), models_evaluated, total_games, status, run_id),
+            )
+            conn.commit()
+            logger.debug(f"[EvaluationDaemon] Recorded gauntlet complete: {run_id}")
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[EvaluationDaemon] Failed to record gauntlet complete: {e}")
 
     def _emit_backpressure(self, queue_depth: int, activate: bool) -> None:
         """Emit backpressure event to signal training should pause/resume.
