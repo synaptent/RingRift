@@ -159,10 +159,16 @@ class SSHTournamentHandlersMixin(BaseP2PHandler):
             if dry_run:
                 cmd.append("--dry-run")
 
+            # Handle both root path and ai-service path (avoid doubling)
+            ai_service_path = (
+                self.ringrift_path
+                if self.ringrift_path.rstrip("/").endswith("ai-service")
+                else os.path.join(self.ringrift_path, "ai-service")
+            )
             env = os.environ.copy()
-            env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
+            env["PYTHONPATH"] = ai_service_path
 
-            cwd = os.path.join(self.ringrift_path, "ai-service")
+            cwd = ai_service_path
             with open(log_path, "ab") as log_file:
                 proc = await asyncio.create_subprocess_exec(
                     *cmd,

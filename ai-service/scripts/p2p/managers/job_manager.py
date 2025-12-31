@@ -398,6 +398,46 @@ class JobManager(EventSubscriptionMixin):
         self._heartbeats_lock = threading.Lock()
 
     # =========================================================================
+    # Path Helpers (December 2025)
+    # =========================================================================
+
+    def _get_ai_service_path(self) -> str:
+        """Get the path to the ai-service directory.
+
+        Handles both cases:
+        - ringrift_path = /path/to/RingRift (root directory)
+        - ringrift_path = /path/to/RingRift/ai-service (already ai-service)
+
+        Returns:
+            Path to ai-service directory.
+        """
+        if self.ringrift_path.rstrip("/").endswith("ai-service"):
+            return self.ringrift_path
+        return os.path.join(self.ringrift_path, "ai-service")
+
+    def _get_script_path(self, script_name: str) -> str:
+        """Get the full path to a script in ai-service/scripts/.
+
+        Args:
+            script_name: Name of the script (e.g., "run_gpu_selfplay.py")
+
+        Returns:
+            Full path to the script.
+        """
+        return os.path.join(self._get_ai_service_path(), "scripts", script_name)
+
+    def _get_data_path(self, *subpath: str) -> str:
+        """Get a path within ai-service/data/.
+
+        Args:
+            *subpath: Path components under data/ (e.g., "training", "hex8_2p.npz")
+
+        Returns:
+            Full path to the data file/directory.
+        """
+        return os.path.join(self._get_ai_service_path(), "data", *subpath)
+
+    # =========================================================================
     # GPU Capability Helpers (December 2025)
     # =========================================================================
 
@@ -481,7 +521,7 @@ class JobManager(EventSubscriptionMixin):
             Environment dict with standard RingRift settings.
         """
         env = os.environ.copy()
-        env["PYTHONPATH"] = os.path.join(self.ringrift_path, "ai-service")
+        env["PYTHONPATH"] = self._get_ai_service_path()
 
         if include_shadow_skip:
             env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
@@ -1393,7 +1433,7 @@ class JobManager(EventSubscriptionMixin):
         if effective_mode in self.SEARCH_ENGINE_MODES:
             # December 29, 2025: Use generate_gumbel_selfplay.py for search-based modes
             # (run_hybrid_selfplay.py was archived, generate_gumbel_selfplay.py is the active replacement)
-            script_path = os.path.join(self.ringrift_path, "ai-service", "scripts", "generate_gumbel_selfplay.py")
+            script_path = self._get_script_path("generate_gumbel_selfplay.py")
             if not os.path.exists(script_path):
                 logger.warning(f"Gumbel selfplay script not found: {script_path}")
                 return
@@ -1416,7 +1456,7 @@ class JobManager(EventSubscriptionMixin):
             ]
         else:
             # Use run_gpu_selfplay.py for GPU-optimized modes
-            script_path = os.path.join(self.ringrift_path, "ai-service", "scripts", "run_gpu_selfplay.py")
+            script_path = self._get_script_path("run_gpu_selfplay.py")
             if not os.path.exists(script_path):
                 logger.warning(f"GPU selfplay script not found: {script_path}")
                 return
@@ -1617,9 +1657,8 @@ class JobManager(EventSubscriptionMixin):
         logger.info(f"Starting distributed selfplay: {games_per_worker} games/worker, {num_workers} workers")
 
         # Create output directory for this iteration
-        iteration_dir = os.path.join(
-            self.ringrift_path, "ai-service", "data", "selfplay",
-            f"improve_{job_id}", f"iter_{state.current_iteration}"
+        iteration_dir = self._get_data_path(
+            "selfplay", f"improve_{job_id}", f"iter_{state.current_iteration}"
         )
         os.makedirs(iteration_dir, exist_ok=True)
 
@@ -2001,7 +2040,7 @@ class JobManager(EventSubscriptionMixin):
         # Build selfplay command
         cmd = [
             sys.executable,
-            os.path.join(self.ringrift_path, "ai-service", "scripts", "run_self_play_soak.py"),
+            self._get_script_path("run_self_play_soak.py"),
             "--num-games", str(num_games),
             "--board-type", board_type,
             "--num-players", str(num_players),
@@ -2085,13 +2124,11 @@ class JobManager(EventSubscriptionMixin):
 
         logger.info(f"Exporting training data for job {job_id}, iteration {state.current_iteration}")
 
-        iteration_dir = os.path.join(
-            self.ringrift_path, "ai-service", "data", "selfplay",
-            f"improve_{job_id}", f"iter_{state.current_iteration}"
+        iteration_dir = self._get_data_path(
+            "selfplay", f"improve_{job_id}", f"iter_{state.current_iteration}"
         )
-        output_file = os.path.join(
-            self.ringrift_path, "ai-service", "data", "training",
-            f"improve_{job_id}", f"iter_{state.current_iteration}.npz"
+        output_file = self._get_data_path(
+            "training", f"improve_{job_id}", f"iter_{state.current_iteration}.npz"
         )
 
         # Ensure output directory exists
@@ -2116,7 +2153,7 @@ class JobManager(EventSubscriptionMixin):
 
         cmd = [
             sys.executable,
-            os.path.join(self.ringrift_path, "ai-service", "scripts", "jsonl_to_npz.py"),
+            self._get_script_path("jsonl_to_npz.py"),
             "--input-dir",
             iteration_dir,
             "--output",
