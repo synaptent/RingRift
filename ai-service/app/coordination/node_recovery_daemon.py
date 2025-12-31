@@ -621,6 +621,29 @@ class NodeRecoveryDaemon(HandlerBase):
             self._emit_recovery_event(node, action, success=True)
             return True
 
+        if action == RecoveryAction.SOFT_RESTART:
+            # Dec 31, 2025: Restart P2P service only via SSH (not full instance)
+            ssh_success = await self._soft_restart_p2p(node)
+            if ssh_success:
+                # Verify node rejoined P2P cluster
+                verified = await self._verify_node_health_after_restart(node)
+                if verified:
+                    self._recovery_stats.record_recovery_success()
+                    self._emit_recovery_event(node, action, success=True)
+                    return True
+                else:
+                    self._recovery_stats.record_recovery_failure(
+                        f"soft_restart_verification_failed:{node.node_id}"
+                    )
+                    self._emit_recovery_event(node, action, success=False)
+                    return False
+            else:
+                self._recovery_stats.record_recovery_failure(
+                    f"soft_restart_ssh_failed:{node.node_id}"
+                )
+                self._emit_recovery_event(node, action, success=False)
+                return False
+
         if action == RecoveryAction.RESTART:
             api_success = await self._restart_node(node)
             if api_success:
@@ -679,6 +702,81 @@ class NodeRecoveryDaemon(HandlerBase):
             logger.warning(
                 f"[NodeRecoveryDaemon] Cannot restart {node.node_id}: "
                 f"unknown provider {node.provider}"
+            )
+            return False
+
+    async def _soft_restart_p2p(self, node: NodeInfo) -> bool:
+        """Restart P2P service only via SSH (not full instance restart).
+
+        Dec 31, 2025: Implements SOFT_RESTART tier for nodes where the instance
+        is running but P2P service has crashed or become unresponsive.
+
+        This is preferred over full instance restart when:
+        - Node is reachable via SSH
+        - Instance is running but P2P port not responding
+        - Want to minimize downtime and avoid instance restart delays
+        """
+        try:
+            from app.core.ssh import run_ssh_command_async
+
+            # Get the best IP to use (Tailscale preferred)
+            target_ip = node.tailscale_ip or node.public_ip
+            if not target_ip:
+                logger.warning(
+                    f"[NodeRecoveryDaemon] Cannot soft-restart P2P on {node.node_id}: "
+                    "no IP address available"
+                )
+                return False
+
+            # Determine user based on provider
+            ssh_user = "ubuntu"
+            if node.provider == NodeProvider.VAST:
+                ssh_user = "root"
+            elif node.provider == NodeProvider.RUNPOD:
+                ssh_user = "root"
+
+            # P2P restart command - kills existing process and starts new one
+            restart_cmd = (
+                "pkill -SIGTERM -f 'python.*p2p_orchestrator' 2>/dev/null; "
+                "sleep 2; "
+                "cd ~/ringrift/ai-service && "
+                f"nohup python scripts/p2p_orchestrator.py --node-id {node.node_id} "
+                "> logs/p2p.log 2>&1 &"
+            )
+
+            logger.info(
+                f"[NodeRecoveryDaemon] Soft-restarting P2P on {node.node_id} "
+                f"({target_ip}) via SSH"
+            )
+
+            result = await run_ssh_command_async(
+                node.node_id,
+                restart_cmd,
+                timeout=30,
+            )
+
+            if result.success:
+                logger.info(
+                    f"[NodeRecoveryDaemon] P2P soft-restart command sent to {node.node_id}"
+                )
+                # Wait a bit for P2P to start
+                await asyncio.sleep(5)
+                return True
+            else:
+                logger.warning(
+                    f"[NodeRecoveryDaemon] P2P soft-restart failed on {node.node_id}: "
+                    f"{result.stderr[:200] if result.stderr else 'unknown error'}"
+                )
+                return False
+
+        except ImportError:
+            logger.error(
+                "[NodeRecoveryDaemon] app.core.ssh not available for soft-restart"
+            )
+            return False
+        except Exception as e:
+            logger.error(
+                f"[NodeRecoveryDaemon] P2P soft-restart exception on {node.node_id}: {e}"
             )
             return False
 
