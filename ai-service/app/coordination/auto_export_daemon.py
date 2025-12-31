@@ -459,6 +459,7 @@ class AutoExportDaemon(HandlerBase):
                     f"clearing {len(pending)} pending configs: {pending}"
                 )
                 self._pending_sync_configs.clear()
+                self._pending_sync_times.clear()  # Also clear timing data
 
                 # Trigger export check for all previously-pending configs
                 for pending_config_key in pending:

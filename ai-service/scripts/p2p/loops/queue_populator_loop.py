@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -94,13 +95,18 @@ class QueuePopulatorLoop(BaseLoop):
         logger.info(f"[{self.name}] Starting with {INITIAL_DELAY}s initial delay")
 
     async def _run_once(self) -> None:
-        """Execute one iteration of the queue population loop."""
+        """Execute one iteration of the queue population loop.
+
+        Dec 31, 2025: Added diagnostic logging for 48-hour autonomous operation.
+        Helps debug why work queue may be empty.
+        """
         # Lazy initialization of populator
         if not self._initialized:
             self._initialize_populator()
             self._initialized = True
 
         if self._populator is None:
+            logger.debug(f"[{self.name}] Populator not initialized, waiting for retry")
             return  # Initialization failed, backoff will retry
 
         # Import NodeRole here to avoid circular imports
@@ -109,11 +115,26 @@ class QueuePopulatorLoop(BaseLoop):
         # Only leader populates work queue
         role = self._get_role()
         if role != NodeRole.LEADER:
+            # Log periodically (not every iteration)
+            if hasattr(self, "_last_role_log") and (time.time() - self._last_role_log) < 300:
+                return  # Skip logging, already logged recently
+            self._last_role_log = time.time()
+            logger.debug(f"[{self.name}] Skipping - role={role.value}, need LEADER")
             return
 
         # Check if populator is enabled
         if not self._populator.config.enabled:
+            logger.debug(f"[{self.name}] Populator disabled in config")
             return
+
+        # Dec 31, 2025: Log work queue availability
+        from app.coordination.work_queue import get_work_queue
+        wq = get_work_queue()
+        if wq is None:
+            logger.warning(f"[{self.name}] Work queue not available")
+            return
+        current_depth = wq.depth() if hasattr(wq, 'depth') else 0
+        logger.debug(f"[{self.name}] Running as LEADER, queue depth={current_depth}")
 
         # Check if all targets are met
         if self._populator.all_targets_met():

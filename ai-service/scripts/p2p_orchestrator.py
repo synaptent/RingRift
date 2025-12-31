@@ -4326,6 +4326,33 @@ class P2POrchestrator(
                 f"P2P advertise_host {self.advertise_host} is private - mesh connectivity will fail!"
             )
 
+    async def _periodic_ip_validation_loop(self) -> None:
+        """Periodically revalidate advertise_host for late Tailscale availability.
+
+        Dec 31, 2025: Added for 48-hour autonomous operation.
+
+        Problem: If Tailscale is not ready at startup, coordinator advertises private
+        IP (10.x.x.x) which breaks mesh connectivity. Tailscale may become available
+        later but the private IP persists.
+
+        Solution: Check every 5 minutes if we're advertising a private IP and Tailscale
+        is now available. If so, switch to Tailscale IP and update peer info.
+        """
+        await asyncio.sleep(30)  # Initial delay
+        while self.running:
+            try:
+                old_host = self.advertise_host
+                self._validate_and_fix_advertise_host()
+
+                if old_host != self.advertise_host:
+                    logger.info(f"[P2P] IP revalidation: {old_host} -> {self.advertise_host}")
+                    # Update peer info with new IP
+                    self._update_self_info()
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"[P2P] IP revalidation error: {e}")
+
+            await asyncio.sleep(300)  # Check every 5 minutes
+
     def _load_voter_node_ids(self) -> list[str]:
         """Load the set of P2P voter node_ids (for quorum-based leadership).
 
@@ -26775,6 +26802,12 @@ print(json.dumps({{
 
         # Phase 26: Continuous bootstrap loop - ensures isolated nodes can rejoin
         tasks.append(self._create_safe_task(self._continuous_bootstrap_loop(), "continuous_bootstrap"))
+
+        # Dec 31, 2025: Periodic IP revalidation for late Tailscale availability
+        # Fixes nodes advertising private IPs when Tailscale wasn't ready at startup
+        tasks.append(self._create_safe_task(
+            self._periodic_ip_validation_loop(), "ip_validation", factory=self._periodic_ip_validation_loop
+        ))
 
         # NOTE: _follower_discovery_loop removed Dec 2025 - now runs via LoopManager (FollowerDiscoveryLoop)
         # See scripts/p2p/loops/discovery_loop.py for implementation
