@@ -529,6 +529,11 @@ class EventBus:
             event: The event to publish
             bridge_cross_process: If True, also bridge to cross-process queue
         """
+        # Dec 31, 2025: Defensive handling for bare DataEventType passed instead of DataEvent
+        # This fixes AttributeError when callers pass DataEventType enum directly
+        if isinstance(event, DataEventType):
+            event = DataEvent(event_type=event, payload={}, source="unknown")
+
         async with self._lock:
             # Store in history
             self._event_history.append(event)
