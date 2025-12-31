@@ -21692,8 +21692,9 @@ print(json.dumps({{
                         "games": row[2],
                     })
 
-        except (KeyError, IndexError, AttributeError, ImportError):
+        except (KeyError, IndexError, AttributeError, ImportError, sqlite3.OperationalError):
             # Silently fail - ELO summary is optional
+            # Dec 2025: Added sqlite3.OperationalError to handle corrupted databases gracefully
             pass
 
         # Cache the result
