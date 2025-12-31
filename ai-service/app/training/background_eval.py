@@ -36,6 +36,14 @@ except ImportError:
     MIN_WIN_RATE_VS_RANDOM = 0.70  # 70% (matches thresholds.py)
     MIN_WIN_RATE_VS_HEURISTIC = 0.50  # 50% (matches thresholds.py)
 
+# December 30, 2025: Game count for graduated thresholds
+try:
+    from app.utils.game_discovery import get_game_counts_summary
+    HAS_GAME_DISCOVERY = True
+except ImportError:
+    HAS_GAME_DISCOVERY = False
+    get_game_counts_summary = None  # type: ignore
+
 logger = logging.getLogger(__name__)
 
 
@@ -503,6 +511,19 @@ class BackgroundEvaluator:
             model_getter = _model_getter
             logger.info("[BackgroundEval] Using in-memory model loading (zero disk I/O)")
 
+        # Dec 30, 2025: Get game count for graduated thresholds
+        game_count = None
+        if HAS_GAME_DISCOVERY and self.board_type is not None:
+            try:
+                # Extract board type string (may be enum or string)
+                bt_str = self.board_type.value if hasattr(self.board_type, 'value') else str(self.board_type)
+                # Default to 2 players since BackgroundEvaluator doesn't track num_players
+                config_key = f"{bt_str}_2p"
+                game_counts = get_game_counts_summary()
+                game_count = game_counts.get(config_key, 0)
+            except (OSError, RuntimeError, AttributeError):
+                pass  # Will use fallback thresholds
+
         def _run_gauntlet():
             """Inner function for timeout wrapper."""
             return run_baseline_gauntlet(
@@ -513,6 +534,7 @@ class BackgroundEvaluator:
                 check_baseline_gating=True,
                 verbose=False,
                 model_getter=model_getter,
+                game_count=game_count,  # Dec 30: Graduated thresholds
             )
 
         try:

@@ -457,6 +457,177 @@ def get_adaptive_thresholds(model_elo: float, num_players: int = 2) -> dict[str,
     }
 
 
+# =============================================================================
+# Game Count Graduated Thresholds (December 30, 2025)
+# =============================================================================
+# Scale promotion requirements based on training data volume. Early training
+# has insufficient data to produce models that beat heuristic convincingly.
+# These thresholds allow model promotion during bootstrap phase.
+#
+# Tiers:
+#   - Bootstrap (< 5000 games): Lower thresholds for fast iteration
+#   - Standard (5000-20000 games): Normal thresholds
+#   - Aspirational (> 20000 games): Strict thresholds for quality
+
+# Game count tier boundaries
+GAME_COUNT_BOOTSTRAP_THRESHOLD = 5000   # Below this, use bootstrap thresholds
+GAME_COUNT_STANDARD_THRESHOLD = 20000   # Above this, use aspirational thresholds
+
+# 2-player thresholds by tier
+# Bootstrap: Allow promotion with lower win rates during data collection phase
+# Models at this stage typically achieve 60-70% vs heuristic at best
+BOOTSTRAP_WIN_RATE_VS_RANDOM_2P = 0.80      # 80% (must still beat random)
+BOOTSTRAP_WIN_RATE_VS_HEURISTIC_2P = 0.55   # 55% (achievable with limited data)
+
+# Standard: Normal training thresholds
+STANDARD_WIN_RATE_VS_RANDOM_2P = 0.85       # 85%
+STANDARD_WIN_RATE_VS_HEURISTIC_2P = 0.65    # 65%
+
+# Aspirational: High bar for mature models with abundant training data
+ASPIRATIONAL_WIN_RATE_VS_RANDOM_2P = 0.90   # 90%
+ASPIRATIONAL_WIN_RATE_VS_HEURISTIC_2P = 0.80  # 80%
+
+# 3-player thresholds (scaled for 33% random baseline)
+BOOTSTRAP_WIN_RATE_VS_RANDOM_3P = 0.50
+BOOTSTRAP_WIN_RATE_VS_HEURISTIC_3P = 0.40
+
+STANDARD_WIN_RATE_VS_RANDOM_3P = 0.55
+STANDARD_WIN_RATE_VS_HEURISTIC_3P = 0.45
+
+ASPIRATIONAL_WIN_RATE_VS_RANDOM_3P = 0.60
+ASPIRATIONAL_WIN_RATE_VS_HEURISTIC_3P = 0.55
+
+# 4-player thresholds (scaled for 25% random baseline)
+BOOTSTRAP_WIN_RATE_VS_RANDOM_4P = 0.40
+BOOTSTRAP_WIN_RATE_VS_HEURISTIC_4P = 0.30
+
+STANDARD_WIN_RATE_VS_RANDOM_4P = 0.45
+STANDARD_WIN_RATE_VS_HEURISTIC_4P = 0.35
+
+ASPIRATIONAL_WIN_RATE_VS_RANDOM_4P = 0.50
+ASPIRATIONAL_WIN_RATE_VS_HEURISTIC_4P = 0.45
+
+
+def get_game_count_tier(game_count: int) -> str:
+    """Determine threshold tier based on training game count.
+
+    Args:
+        game_count: Number of training games available for config
+
+    Returns:
+        Tier name: 'bootstrap', 'standard', or 'aspirational'
+    """
+    if game_count < GAME_COUNT_BOOTSTRAP_THRESHOLD:
+        return "bootstrap"
+    elif game_count < GAME_COUNT_STANDARD_THRESHOLD:
+        return "standard"
+    else:
+        return "aspirational"
+
+
+def get_game_count_based_win_rate_vs_random(
+    game_count: int, num_players: int = 2
+) -> float:
+    """Get win rate threshold vs random based on training data volume.
+
+    Uses graduated thresholds that are easier during bootstrap phase
+    when limited training data produces weaker models.
+
+    Args:
+        game_count: Number of training games for this config
+        num_players: Number of players (2, 3, or 4)
+
+    Returns:
+        Minimum win rate vs random for promotion
+    """
+    tier = get_game_count_tier(game_count)
+
+    if num_players >= 4:
+        if tier == "bootstrap":
+            return BOOTSTRAP_WIN_RATE_VS_RANDOM_4P
+        elif tier == "standard":
+            return STANDARD_WIN_RATE_VS_RANDOM_4P
+        else:
+            return ASPIRATIONAL_WIN_RATE_VS_RANDOM_4P
+    elif num_players == 3:
+        if tier == "bootstrap":
+            return BOOTSTRAP_WIN_RATE_VS_RANDOM_3P
+        elif tier == "standard":
+            return STANDARD_WIN_RATE_VS_RANDOM_3P
+        else:
+            return ASPIRATIONAL_WIN_RATE_VS_RANDOM_3P
+    else:
+        if tier == "bootstrap":
+            return BOOTSTRAP_WIN_RATE_VS_RANDOM_2P
+        elif tier == "standard":
+            return STANDARD_WIN_RATE_VS_RANDOM_2P
+        else:
+            return ASPIRATIONAL_WIN_RATE_VS_RANDOM_2P
+
+
+def get_game_count_based_win_rate_vs_heuristic(
+    game_count: int, num_players: int = 2
+) -> float:
+    """Get win rate threshold vs heuristic based on training data volume.
+
+    Uses graduated thresholds that are easier during bootstrap phase
+    when limited training data produces weaker models.
+
+    Args:
+        game_count: Number of training games for this config
+        num_players: Number of players (2, 3, or 4)
+
+    Returns:
+        Minimum win rate vs heuristic for promotion
+    """
+    tier = get_game_count_tier(game_count)
+
+    if num_players >= 4:
+        if tier == "bootstrap":
+            return BOOTSTRAP_WIN_RATE_VS_HEURISTIC_4P
+        elif tier == "standard":
+            return STANDARD_WIN_RATE_VS_HEURISTIC_4P
+        else:
+            return ASPIRATIONAL_WIN_RATE_VS_HEURISTIC_4P
+    elif num_players == 3:
+        if tier == "bootstrap":
+            return BOOTSTRAP_WIN_RATE_VS_HEURISTIC_3P
+        elif tier == "standard":
+            return STANDARD_WIN_RATE_VS_HEURISTIC_3P
+        else:
+            return ASPIRATIONAL_WIN_RATE_VS_HEURISTIC_3P
+    else:
+        if tier == "bootstrap":
+            return BOOTSTRAP_WIN_RATE_VS_HEURISTIC_2P
+        elif tier == "standard":
+            return STANDARD_WIN_RATE_VS_HEURISTIC_2P
+        else:
+            return ASPIRATIONAL_WIN_RATE_VS_HEURISTIC_2P
+
+
+def get_graduated_thresholds(
+    game_count: int, num_players: int = 2
+) -> dict[str, float | str]:
+    """Get all graduated thresholds based on training data volume.
+
+    Convenience function that returns both thresholds plus tier info.
+
+    Args:
+        game_count: Number of training games for this config
+        num_players: Number of players (2, 3, or 4)
+
+    Returns:
+        Dict with 'random', 'heuristic' win rate thresholds and 'tier' name
+    """
+    return {
+        "tier": get_game_count_tier(game_count),
+        "random": get_game_count_based_win_rate_vs_random(game_count, num_players),
+        "heuristic": get_game_count_based_win_rate_vs_heuristic(
+            game_count, num_players
+        ),
+    }
+
+
 # Baseline Elo estimates for Elo calculation from win rates
 BASELINE_ELO_RANDOM = 400
 BASELINE_ELO_HEURISTIC = 1200

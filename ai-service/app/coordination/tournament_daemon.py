@@ -49,6 +49,9 @@ logger = logging.getLogger(__name__)
 from app.coordination.daemon_stats import EvaluationDaemonStats
 from app.coordination.event_utils import parse_config_key
 
+# December 30, 2025: Game count for graduated thresholds
+from app.utils.game_discovery import get_game_counts_summary
+
 __all__ = [
     "TournamentDaemon",
     "TournamentDaemonConfig",
@@ -511,6 +514,14 @@ class TournamentDaemon:
                 except ImportError:
                     logger.debug("Recording module not available, games will not be saved")
 
+            # Dec 30, 2025: Get game count for graduated thresholds
+            config_key = f"{board_type}_{num_players}p"
+            try:
+                game_counts = get_game_counts_summary()
+                game_count = game_counts.get(config_key, 0)
+            except (OSError, RuntimeError):
+                game_count = None  # Will use fallback thresholds
+
             gauntlet_results = await asyncio.wait_for(
                 asyncio.to_thread(
                     run_baseline_gauntlet,
@@ -520,6 +531,7 @@ class TournamentDaemon:
                     games_per_opponent=self.config.games_per_baseline,
                     opponents=[BaselineOpponent.RANDOM, BaselineOpponent.HEURISTIC],
                     recording_config=recording_config,
+                    game_count=game_count,  # Dec 30: Graduated thresholds
                 ),
                 timeout=self.config.evaluation_timeout_seconds,
             )

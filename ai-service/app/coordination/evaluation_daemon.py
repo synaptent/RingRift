@@ -64,6 +64,9 @@ from app.coordination.handler_base import BaseEventHandler, EventHandlerConfig
 # December 2025: Gauntlet evaluation
 from app.training.game_gauntlet import BaselineOpponent, run_baseline_gauntlet
 
+# December 30, 2025: Game count for graduated thresholds
+from app.utils.game_discovery import get_game_counts_summary
+
 # December 30, 2025: Architecture extraction for multi-architecture support
 from app.training.architecture_tracker import extract_architecture_from_model_path
 
@@ -692,6 +695,15 @@ class EvaluationDaemon(BaseEventHandler):
             if b in baseline_map
         ]
 
+        # Dec 30, 2025: Get game count for graduated thresholds
+        config_key = f"{board_type}_{num_players}p"
+        try:
+            game_counts = get_game_counts_summary()
+            game_count = game_counts.get(config_key, 0)
+        except (OSError, RuntimeError) as e:
+            logger.debug(f"[EvaluationDaemon] Failed to get game counts: {e}")
+            game_count = None  # Will use fallback thresholds
+
         # Run with timeout, early stopping, and parallel game execution
         # Dec 29: Enable parallel_games=16 for 2-4x faster gauntlet throughput
         result = await asyncio.wait_for(
@@ -707,6 +719,7 @@ class EvaluationDaemon(BaseEventHandler):
                 early_stopping_confidence=self.config.early_stopping_confidence,
                 early_stopping_min_games=self.config.early_stopping_min_games,
                 parallel_games=16,  # Dec 29: Increased for faster evaluation
+                game_count=game_count,  # Dec 30: Graduated thresholds
             ),
             timeout=self.config.evaluation_timeout_seconds,
         )

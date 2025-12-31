@@ -97,6 +97,14 @@ LEADER_LEASE_RENEW_INTERVAL = 15  # How often leader renews lease
 # With Serf integration providing reliable failure detection, we can act quickly
 LEADERLESS_TRAINING_TIMEOUT = 30  # 30 seconds - quick fallback for resilience
 
+# Leader work dispatch timeout - if leader exists but hasn't dispatched work in this long,
+# allow nodes to self-assign work. This prevents idle clusters when leader is present
+# but not actively dispatching work (e.g., empty queue, populator issues).
+# Dec 30, 2025: Added to make network less leader-dependent
+LEADER_WORK_DISPATCH_TIMEOUT = int(
+    os.environ.get("RINGRIFT_P2P_LEADER_WORK_DISPATCH_TIMEOUT", "120") or 120
+)  # 2 minutes - nodes self-assign if leader not dispatching
+
 # Dec 29, 2025: Reduced from 60s to 15s for faster job status updates
 JOB_CHECK_INTERVAL = int(os.environ.get("RINGRIFT_P2P_JOB_CHECK_INTERVAL", "15") or 15)
 DISCOVERY_PORT = 8771  # UDP port for peer discovery

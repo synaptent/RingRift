@@ -563,6 +563,7 @@ from scripts.p2p.constants import (
     LEADER_LEASE_RENEW_INTERVAL,
     LEADER_MIN_RESPONSE_RATE,
     LEADERLESS_TRAINING_TIMEOUT,
+    LEADER_WORK_DISPATCH_TIMEOUT,
     LOAD_AVERAGE_MAX_MULTIPLIER,
     LOAD_MAX_FOR_NEW_JOBS,
     MANIFEST_JSONL_LINECOUNT_CHUNK_BYTES,
@@ -1758,6 +1759,9 @@ class P2POrchestrator(
         # If leaderless for too long, nodes can trigger local training independently.
         self.last_leader_seen: float = time.time()  # When we last saw a functioning leader
         self.last_local_training_fallback: float = 0.0  # When we last triggered local training fallback
+        # Dec 30, 2025: Track when we last received work from the leader
+        # If leader exists but isn't dispatching work, nodes can self-assign after timeout
+        self.last_work_from_leader: float = time.time()  # When we last got work from leader
 
         # Voter-backed lease grants (split-brain resistance).
         #
@@ -16323,6 +16327,8 @@ print(json.dumps(result))
                     if resp.status == 200:
                         data = await resp.json()
                         if data.get("status") == "claimed":
+                            # Dec 30, 2025: Track that leader is actively dispatching work
+                            self.last_work_from_leader = time.time()
                             return data.get("work")
         except Exception as e:  # noqa: BLE001
             logger.debug(f"Failed to claim work from leader: {e}")
@@ -23520,12 +23526,25 @@ print(json.dumps({{
 
         # Skip if leader is managing (avoid conflicts)
         # But continue if leaderless for > 30 seconds (reduced from 60s for Serf reliability)
+        # Dec 30, 2025: Also allow self-assignment if leader exists but isn't dispatching work
         if self.role == NodeRole.LEADER:
             return 0  # Leader uses centralized management
         if self.leader_id:
             leaderless_duration = now - getattr(self, "last_leader_seen", now)
+            work_dispatch_gap = now - getattr(self, "last_work_from_leader", now)
+
+            # Defer to leader only if BOTH conditions are met:
+            # 1. Leader was seen recently (alive)
+            # 2. Leader has been dispatching work recently (active)
             if leaderless_duration < LEADERLESS_TRAINING_TIMEOUT:
-                return 0  # Have a leader, let them manage
+                if work_dispatch_gap < LEADER_WORK_DISPATCH_TIMEOUT:
+                    return 0  # Have a functioning leader that's actively dispatching
+                else:
+                    # Leader is present but not dispatching work - allow self-assignment
+                    logger.info(
+                        f"LOCAL: Leader present but no work dispatched in {work_dispatch_gap:.0f}s "
+                        f"(timeout={LEADER_WORK_DISPATCH_TIMEOUT}s) - self-assigning"
+                    )
 
         # Update self info
         self._update_self_info()

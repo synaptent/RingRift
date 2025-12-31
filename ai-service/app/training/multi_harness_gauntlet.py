@@ -51,6 +51,9 @@ from typing import TYPE_CHECKING, Any
 
 logger = logging.getLogger(__name__)
 
+# December 30, 2025: Game count for graduated thresholds
+from app.utils.game_discovery import get_game_counts_summary
+
 if TYPE_CHECKING:
     from app.models import BoardType
 
@@ -419,6 +422,14 @@ class MultiHarnessGauntlet:
         }
         baselines = [baseline_map[b] for b in config.baselines if b in baseline_map]
 
+        # Dec 30, 2025: Get game count for graduated thresholds
+        config_key = f"{board_type}_{num_players}p"
+        try:
+            game_counts = get_game_counts_summary()
+            game_count = game_counts.get(config_key, 0)
+        except (OSError, RuntimeError):
+            game_count = None  # Will use fallback thresholds
+
         # Run gauntlet with this harness (in thread pool to not block)
         def run_gauntlet() -> dict[str, GauntletGameResult]:
             return run_baseline_gauntlet(
@@ -430,6 +441,7 @@ class MultiHarnessGauntlet:
                 ai_type=ai_type,
                 parallel_games=config.parallel_games,
                 timeout=config.timeout_seconds,
+                game_count=game_count,  # Dec 30: Graduated thresholds
             )
 
         results = await asyncio.to_thread(run_gauntlet)

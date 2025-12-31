@@ -330,8 +330,14 @@ try:
         get_min_win_rate_vs_random,
         get_elo_adaptive_win_rate_vs_heuristic,
         get_elo_adaptive_win_rate_vs_random,
+        # Dec 30, 2025: Graduated thresholds based on game count
+        get_game_count_based_win_rate_vs_random,
+        get_game_count_based_win_rate_vs_heuristic,
+        get_graduated_thresholds,
+        get_game_count_tier,
     )
     HAS_ELO_ADAPTIVE = True
+    HAS_GRADUATED_THRESHOLDS = True
     # Dec 29, 2025: NNUE baseline Elo ratings (not in thresholds.py yet)
     BASELINE_ELO_NNUE_MINIMAX_D4 = 1300
     BASELINE_ELO_NNUE_MAXN_D3 = 1250
@@ -376,6 +382,32 @@ except ImportError:
 
     def get_elo_adaptive_win_rate_vs_random(model_elo: float, num_players: int = 2) -> float:
         return get_min_win_rate_vs_random(num_players)
+
+    HAS_GRADUATED_THRESHOLDS = False
+
+    def get_game_count_tier(game_count: int) -> str:
+        """Fallback tier calculation."""
+        if game_count < 5000:
+            return "bootstrap"
+        elif game_count < 20000:
+            return "standard"
+        return "aspirational"
+
+    def get_game_count_based_win_rate_vs_random(game_count: int, num_players: int = 2) -> float:
+        """Fallback: use standard thresholds."""
+        return get_min_win_rate_vs_random(num_players)
+
+    def get_game_count_based_win_rate_vs_heuristic(game_count: int, num_players: int = 2) -> float:
+        """Fallback: use standard thresholds."""
+        return get_min_win_rate_vs_heuristic(num_players)
+
+    def get_graduated_thresholds(game_count: int, num_players: int = 2) -> dict:
+        """Fallback: use standard thresholds."""
+        return {
+            "tier": get_game_count_tier(game_count),
+            "random": get_min_win_rate_vs_random(num_players),
+            "heuristic": get_min_win_rate_vs_heuristic(num_players),
+        }
 
     def get_elo_adaptive_win_rate_vs_heuristic(model_elo: float, num_players: int = 2) -> float:
         return get_min_win_rate_vs_heuristic(num_players)
@@ -1570,6 +1602,7 @@ def run_baseline_gauntlet(
     save_games_for_training: bool = True,
     confidence_weighted_games: bool = False,
     harness_type: str = "",  # Dec 29: Harness type for unified evaluation
+    game_count: int | None = None,  # Dec 30: Training game count for graduated thresholds
 ) -> GauntletResult:
     """Run a gauntlet evaluation against baseline opponents.
 
@@ -1606,6 +1639,13 @@ def run_baseline_gauntlet(
         harness_type: AI harness type for unified evaluation (e.g., "gumbel_mcts", "minimax").
             December 2025: Enables tracking of model performance under different harnesses.
             Sets harness metadata on result for Elo composite participant IDs.
+        game_count: Number of training games available for this config (optional).
+            December 30, 2025: When provided, uses graduated thresholds based on data volume:
+            - Bootstrap tier (< 5000 games): Lower thresholds for fast iteration
+            - Standard tier (5000-20000 games): Normal thresholds
+            - Aspirational tier (> 20000 games): Strict thresholds for quality
+            This enables model promotion during early training when limited data
+            produces weaker models. Takes precedence over elo_adaptive_thresholds.
 
     Returns:
         GauntletResult with aggregated statistics and harness metadata
@@ -1787,7 +1827,21 @@ def run_baseline_gauntlet(
         # Check baseline gating (use player-aware or Elo-adaptive thresholds)
         if check_baseline_gating:
             # Use Elo-adaptive thresholds if enabled and model_elo provided
-            if elo_adaptive_thresholds and model_elo is not None:
+            # Dec 30, 2025: Priority order for threshold selection:
+            # 1. Game count graduated thresholds (if game_count provided)
+            # 2. Elo-adaptive thresholds (if elo_adaptive_thresholds and model_elo)
+            # 3. Static player-aware thresholds (fallback)
+            if game_count is not None:
+                # Use game count-based graduated thresholds
+                tier = get_game_count_tier(game_count)
+                if baseline == BaselineOpponent.RANDOM:
+                    min_required = get_game_count_based_win_rate_vs_random(game_count, num_players)
+                elif baseline == BaselineOpponent.HEURISTIC:
+                    min_required = get_game_count_based_win_rate_vs_heuristic(game_count, num_players)
+                else:
+                    min_required = MIN_WIN_RATES.get(baseline, 0.0)
+                threshold_type = f"{num_players}p/{tier}@{game_count}games"
+            elif elo_adaptive_thresholds and model_elo is not None:
                 if baseline == BaselineOpponent.RANDOM:
                     min_required = get_elo_adaptive_win_rate_vs_random(model_elo, num_players)
                 elif baseline == BaselineOpponent.HEURISTIC:
