@@ -115,6 +115,8 @@ PERMANENT_FAILURE_RECOVERY_SECONDS = 86400  # 24 hours - permanently failed daem
 CASCADE_RESTART_WINDOW_SECONDS = 300  # 5 minutes - window for counting global restarts
 CASCADE_RESTART_THRESHOLD = 15  # Max total restarts in window before circuit trips
 CASCADE_COOLDOWN_SECONDS = 120  # 2 minutes - cooldown period when circuit is open
+CASCADE_STARTUP_GRACE_PERIOD = 180  # 3 minutes - higher threshold during startup
+CASCADE_STARTUP_THRESHOLD = 50  # Allow many restarts during startup (normal init)
 
 
 # =============================================================================
@@ -1106,6 +1108,17 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                     info = self._daemons[daemon_type]
                     if info.state == DaemonState.RUNNING:
                         healthy_critical += 1
+
+            # Dec 30, 2025: During startup grace period, allow many restarts
+            # This prevents circuit breaker from blocking normal daemon initialization
+            uptime = time.time() - self._start_time
+            if uptime < CASCADE_STARTUP_GRACE_PERIOD:
+                logger.debug(
+                    f"[DaemonManager] Startup grace period ({uptime:.0f}s of "
+                    f"{CASCADE_STARTUP_GRACE_PERIOD}s), using higher threshold "
+                    f"{CASCADE_STARTUP_THRESHOLD}"
+                )
+                return CASCADE_STARTUP_THRESHOLD
 
             # Adjust threshold based on health ratio
             if total_critical == 0:
