@@ -723,6 +723,58 @@ class UnifiedQueuePopulator:
             config=config,
         )
 
+    def _is_training_ready(
+        self, board_type: str, num_players: int, min_samples: int = 5000
+    ) -> tuple[bool, int]:
+        """Check if training data is available for a config.
+
+        Dec 31, 2025: Added to prevent adding TRAINING work items when no
+        training data exists. This was causing training jobs to complete
+        instantly with loss=0.0000 because nodes had nothing to train on.
+
+        Args:
+            board_type: Board type (e.g., "hex8")
+            num_players: Number of players (2, 3, or 4)
+            min_samples: Minimum samples required for training (default 5000)
+
+        Returns:
+            Tuple of (is_ready, sample_count). is_ready is True if sufficient
+            training data exists.
+        """
+        config_key = f"{board_type}_{num_players}p"
+
+        try:
+            from app.distributed.data_catalog import DataCatalog
+
+            catalog = DataCatalog()
+            npz_sources = catalog.discover_npz_files(
+                board_type=board_type,
+                num_players=num_players,
+                min_samples=min_samples,
+            )
+
+            if npz_sources:
+                total_samples = sum(s.sample_count for s in npz_sources)
+                if total_samples >= min_samples:
+                    return True, total_samples
+
+            # Also check TrainingTriggerDaemon state if available
+            try:
+                from app.coordination.training_trigger_daemon import TrainingTriggerDaemon
+
+                daemon = TrainingTriggerDaemon.get_instance_if_exists()
+                if daemon:
+                    state = daemon._training_states.get(config_key)
+                    if state and state.npz_sample_count >= min_samples:
+                        return True, state.npz_sample_count
+            except (ImportError, AttributeError):
+                pass
+
+            return False, 0
+        except (ImportError, OSError, AttributeError) as e:
+            logger.debug(f"Training readiness check failed for {config_key}: {e}")
+            return False, 0
+
     def _create_training_item(
         self, board_type: str, num_players: int
     ) -> "WorkItem":
@@ -896,10 +948,43 @@ class UnifiedQueuePopulator:
             except Exception as e:
                 logger.error(f"Failed to add selfplay item: {e}")
 
-        # Add training items
+        # Add training items (only if training data exists)
+        # Dec 31, 2025: Check training readiness before adding TRAINING work.
+        # Previously, training items were added blindly at a 30% ratio, causing
+        # jobs to complete instantly with loss=0.0000 when no data existed.
+        training_added = 0
+        training_skipped = 0
         for i in range(training_count):
             target = unmet[i % len(unmet)]
             try:
+                # Check if training data exists before creating work item
+                is_ready, sample_count = self._is_training_ready(
+                    target.board_type, target.num_players
+                )
+                if not is_ready:
+                    # No training data - skip this config and add selfplay instead
+                    training_skipped += 1
+                    logger.debug(
+                        f"[QueuePopulator] Skipping training for {target.config_key}: "
+                        f"insufficient data ({sample_count} samples)"
+                    )
+                    # Add selfplay item instead to generate more training data
+                    try:
+                        selfplay_item = self._create_selfplay_item(
+                            target.board_type, target.num_players
+                        )
+                        if scheduler_priorities:
+                            selfplay_item.priority = self._compute_work_priority(
+                                selfplay_item.priority, target.config_key, scheduler_priorities
+                            )
+                        self._work_queue.add_work(selfplay_item)
+                        self._queued_work_ids.add(selfplay_item.work_id)
+                        target.pending_selfplay_count += 1
+                        added += 1
+                    except Exception as sp_err:
+                        logger.error(f"Failed to add replacement selfplay item: {sp_err}")
+                    continue
+
                 item = self._create_training_item(target.board_type, target.num_players)
                 if scheduler_priorities:
                     item.priority = self._compute_work_priority(
@@ -908,8 +993,15 @@ class UnifiedQueuePopulator:
                 self._work_queue.add_work(item)
                 self._queued_work_ids.add(item.work_id)
                 added += 1
+                training_added += 1
             except Exception as e:
                 logger.error(f"Failed to add training item: {e}")
+
+        if training_skipped > 0:
+            logger.info(
+                f"[QueuePopulator] Training skipped for {training_skipped} configs "
+                f"(no data), added {training_added} training + {training_skipped} extra selfplay"
+            )
 
         # Add tournament items
         for i in range(tournament_count):
@@ -948,9 +1040,11 @@ class UnifiedQueuePopulator:
                         logger.error(f"Failed to add sweep item: {e}")
 
         self._last_populate_time = time.time()
+        # Dec 31, 2025: Show actual training items added vs planned
+        # Training items may be skipped if no training data exists
         logger.info(
             f"Populated queue with {added} items "
-            f"(selfplay={selfplay_count}, training={training_count}, "
+            f"(selfplay={selfplay_count + training_skipped}, training={training_added}, "
             f"tournament={tournament_count}, sweeps={sweep_added})"
         )
 
