@@ -30,6 +30,7 @@ from typing import Any
 
 from app.config.thresholds import AUTO_PROMOTION_MIN_QUALITY
 from app.coordination.event_utils import parse_config_key
+from app.utils.game_discovery import count_games_for_config
 
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,8 @@ class PromotionCandidate:
     # Dec 29, 2025: Track consecutive failures for curriculum regression
     consecutive_failures: int = 0  # Number of consecutive failed promotions
     previous_elo: float = 0.0  # Elo before this evaluation (for calculating change)
+    # Dec 31, 2025: Track training game count for graduated thresholds
+    training_game_count: int = 0  # Total training games for this config
 
 
 class AutoPromotionDaemon:
@@ -268,6 +271,16 @@ class AutoPromotionDaemon:
         candidate.model_path = model_path
         candidate.last_evaluation_time = time.time()
 
+        # Dec 31, 2025: Update training game count for graduated thresholds
+        parsed = parse_config_key(config_key)
+        if parsed:
+            try:
+                game_count = count_games_for_config(parsed.board_type, parsed.num_players)
+                candidate.training_game_count = game_count
+                logger.debug(f"[AutoPromotion] {config_key} has {game_count} training games")
+            except Exception as e:
+                logger.debug(f"[AutoPromotion] Could not get game count for {config_key}: {e}")
+
         # Record result - single opponent type
         if opponent_type in ("RANDOM", "HEURISTIC"):
             candidate.evaluation_results[opponent_type] = win_rate
@@ -362,7 +375,9 @@ class AutoPromotionDaemon:
         random_win_rate = candidate.evaluation_results.get("RANDOM", 0.0)
         heuristic_win_rate = candidate.evaluation_results.get("HEURISTIC", 0.0)
 
-        # Dec 28, 2025: Use two-tier promotion system
+        # Dec 28, 2025: Use multi-tier promotion system
+        # - Elo-adaptive: Bootstrap models get easier thresholds
+        # - Game-count graduated: Configs with less data get easier thresholds
         # - Aspirational: Model meets high thresholds for strong performance
         # - Relative: Model beats current best AND meets minimum floor
         # Dec 30, 2025: Pass current_best_elo to enable safety check
@@ -371,6 +386,9 @@ class AutoPromotionDaemon:
         # Dec 30, 2025: Pass model_elo to enable Elo-adaptive thresholds
         # This allows bootstrap models (800-1200 Elo) to pass with lower thresholds
         model_elo = candidate.estimated_elo if candidate.estimated_elo > 0 else None
+        # Dec 31, 2025: Pass game_count to enable graduated thresholds
+        # Configs with limited training data get easier thresholds during bootstrap
+        game_count = candidate.training_game_count if candidate.training_game_count > 0 else None
         should_promote, reason = should_promote_model(
             config_key=candidate.config_key,
             vs_random_rate=random_win_rate,
@@ -378,6 +396,7 @@ class AutoPromotionDaemon:
             beats_current_best=candidate.beats_current_best,
             current_best_elo=current_best_elo,
             model_elo=model_elo,
+            game_count=game_count,
         )
 
         if should_promote:

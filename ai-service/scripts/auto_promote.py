@@ -63,6 +63,7 @@ from app.config.thresholds import (
     get_gauntlet_games_per_opponent,  # December 2025: Dynamic games per player count
 )
 from app.utils.name_generator import generate_model_name, name_from_checkpoint_hash
+from app.utils.game_discovery import count_games_for_config
 
 # Import gauntlet resource limits (Dec 2025)
 try:
@@ -528,15 +529,21 @@ def run_gauntlet_evaluation(
     random_wr = results.opponent_results.get("random", {}).get("win_rate", 0)
     heuristic_wr = results.opponent_results.get("heuristic", {}).get("win_rate", 0)
 
-    # Use two-tier promotion system from thresholds.py
-    # This considers aspirational thresholds AND minimum floor thresholds
+    # Use multi-tier promotion system from thresholds.py
+    # This considers Elo-adaptive, game-count graduated, aspirational, AND minimum floor thresholds
     config_key = f"{board_type}_{num_players}p"
 
     # Check if this model beats the current best (for relative promotion)
     # For now, assume False - caller can override if known
     beats_current_best = False
 
-    # Get promotion decision using sophisticated two-tier system
+    # Dec 31, 2025: Get training game count for graduated thresholds
+    try:
+        training_game_count = count_games_for_config(board_type, num_players)
+    except Exception:
+        training_game_count = None  # Fallback if count fails
+
+    # Get promotion decision using sophisticated multi-tier system
     # Dec 30, 2025: Pass model_elo to enable Elo-adaptive thresholds
     # This allows bootstrap models (800-1200 Elo) to pass with lower thresholds
     model_elo = results.estimated_elo if results.estimated_elo > 0 else None
@@ -546,6 +553,7 @@ def run_gauntlet_evaluation(
         vs_heuristic_rate=heuristic_wr,
         beats_current_best=beats_current_best,
         model_elo=model_elo,
+        game_count=training_game_count,
     )
 
     # Get thresholds for display purposes
