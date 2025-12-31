@@ -26,8 +26,29 @@ Usage:
 
     # Compute sample weight for training
     weight = scorer.compute_sample_weight(quality, recency_hours=2.0)
+
+For building custom scorers:
+    from app.quality import (
+        BaseQualityScorer,
+        ScorerConfig,
+        QualityScorer,
+        QualityResult,
+        QualityLevel,
+    )
+
+    class MyScorer(BaseQualityScorer):
+        def _compute_score(self, data: dict) -> float:
+            return 0.85
+
+        def _compute_components(self, data: dict) -> dict[str, float]:
+            return {"my_component": 0.9}
 """
 
+from app.quality.scorers.base import (
+    BaseQualityScorer,
+    ScorerConfig,
+    ScorerStats,
+)
 from app.quality.thresholds import (
     HIGH_QUALITY_THRESHOLD,
     MIN_QUALITY_FOR_PRIORITY_SYNC,
@@ -37,6 +58,13 @@ from app.quality.thresholds import (
     is_high_quality,
     is_priority_sync_worthy,
     is_training_worthy,
+)
+from app.quality.types import (
+    BatchQualityScorer,
+    QualityLevel,
+    QualityResult,
+    QualityScorer,
+    ValidationResult,
 )
 from app.quality.unified_quality import (
     GameQuality,
@@ -51,14 +79,28 @@ from app.quality.unified_quality import (
 )
 
 __all__ = [
+    # Thresholds
     "HIGH_QUALITY_THRESHOLD",
     "MIN_QUALITY_FOR_PRIORITY_SYNC",
-    # Thresholds
     "MIN_QUALITY_FOR_TRAINING",
+    "QualityThresholds",
+    "get_quality_thresholds",
+    "is_high_quality",
+    "is_priority_sync_worthy",
+    "is_training_worthy",
+    # Types and protocols (P3.1)
+    "BatchQualityScorer",
+    "QualityLevel",
+    "QualityResult",
+    "QualityScorer",
+    "ValidationResult",
+    # Base scorer (P3.2)
+    "BaseQualityScorer",
+    "ScorerConfig",
+    "ScorerStats",
+    # Unified quality scorer
     "GameQuality",
     "QualityCategory",
-    "QualityThresholds",
-    # Quality scorer
     "UnifiedQualityScorer",
     "compute_game_quality",
     "compute_game_quality_from_params",
@@ -66,8 +108,4 @@ __all__ = [
     "compute_sync_priority",
     "get_quality_category",
     "get_quality_scorer",
-    "get_quality_thresholds",
-    "is_high_quality",
-    "is_priority_sync_worthy",
-    "is_training_worthy",
 ]
