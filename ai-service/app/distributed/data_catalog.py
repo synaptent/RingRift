@@ -907,7 +907,7 @@ class DataCatalog:
 
                     npz_sources.append(source)
 
-                except (OSError, ValueError, zipfile.BadZipFile) as e:
+                except (OSError, ValueError, zipfile.BadZipFile, EOFError) as e:
                     logger.debug(f"Failed to analyze NPZ {npz_path}: {e}")
 
         # Sort by recency (newest first)
@@ -971,8 +971,8 @@ class DataCatalog:
                             sample_count = len(data["policy"])
                         elif "states" in data:
                             sample_count = len(data["states"])
-                except (OSError, ValueError, KeyError, zipfile.BadZipFile):
-                    pass  # Use estimate or file is corrupted
+                except (OSError, ValueError, KeyError, zipfile.BadZipFile, EOFError):
+                    pass  # Use estimate or file is corrupted/empty
 
             return NPZDataSource(
                 path=npz_path,
@@ -985,7 +985,7 @@ class DataCatalog:
                 is_available=True,
             )
 
-        except (OSError, ValueError, KeyError, zipfile.BadZipFile) as e:
+        except (OSError, ValueError, KeyError, zipfile.BadZipFile, EOFError) as e:
             logger.debug(f"Error analyzing NPZ {npz_path}: {e}")
             return None
 
