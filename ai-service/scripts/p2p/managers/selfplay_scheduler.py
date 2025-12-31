@@ -1476,9 +1476,12 @@ class SelfplayScheduler(EventSubscriptionMixin):
         # High-end GPUs should never be completely idle to maximize cluster throughput
         if self._evaluation_backpressure_active:
             has_gpu = bool(getattr(node, "has_gpu", False))
-            gpu_memory_gb = float(getattr(node, "gpu_memory_gb", 0.0) or 0.0)
-            # High-end GPU: A100 40GB+, H100 80GB, GH200 96GB
-            is_high_end_gpu = has_gpu and gpu_memory_gb >= 40
+            # Use gpu_power_score to identify high-end GPUs:
+            # H100 80GB = 4000, A100 80GB = 6864, GH200 = 15000
+            gpu_power = int(getattr(node, "gpu_power_score", 0) or 0)
+            gpu_name = str(getattr(node, "gpu_name", "") or "")
+            # High-end GPU: A100, H100, GH200, RTX 5090 (power_score >= 4000)
+            is_high_end_gpu = has_gpu and gpu_power >= 4000
 
             if is_high_end_gpu:
                 # Allow 25% capacity during backpressure for high-end GPUs
@@ -1487,7 +1490,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
                 min_jobs = max(1, base_target // 4)
                 logger.info(
                     f"Backpressure active but allowing {min_jobs} jobs on high-end GPU "
-                    f"{node.node_id} ({gpu_memory_gb:.0f}GB VRAM)"
+                    f"{node.node_id} ({gpu_name}, power={gpu_power})"
                 )
                 return min_jobs
 
