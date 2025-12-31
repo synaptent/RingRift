@@ -127,6 +127,11 @@ if PYSYNCOBJ_AVAILABLE:
             auto_unlock_time: float = RAFT_AUTO_UNLOCK_TIME,
             compaction_min_entries: int = RAFT_COMPACTION_MIN_ENTRIES,
         ):
+            # Initialize _is_ready BEFORE super().__init__() since pysyncobj
+            # callbacks may access is_ready property during initialization
+            self._is_ready = False
+            self._local_start_time = time.time()
+
             # Raft configuration
             conf = _SyncObjConf(
                 autoTick=True,
@@ -142,10 +147,6 @@ if PYSYNCOBJ_AVAILABLE:
             self._work_items: _ReplDict[str, dict[str, Any]] = _ReplDict()
             self._claimed_work: _ReplDict[str, str] = _ReplDict()  # work_id -> node_id
             self._lock_manager = _ReplLockManager(autoUnlockTime=auto_unlock_time)
-
-            # Local tracking
-            self._local_start_time = time.time()
-            self._is_ready = False
 
         @property
         def is_ready(self) -> bool:
@@ -325,6 +326,10 @@ if PYSYNCOBJ_AVAILABLE:
             partner_addrs: list[str],
             auto_unlock_time: float = RAFT_AUTO_UNLOCK_TIME,
         ):
+            # Initialize _is_ready BEFORE super().__init__() since pysyncobj
+            # callbacks may access is_ready property during initialization
+            self._is_ready = False
+
             conf = _SyncObjConf(
                 autoTick=True,
                 appendEntriesUseBatch=True,
@@ -335,8 +340,6 @@ if PYSYNCOBJ_AVAILABLE:
             self._node_jobs: _ReplDict[str, list[str]] = _ReplDict()
             # job_id -> node_id
             self._job_node: _ReplDict[str, str] = _ReplDict()
-            # Readiness tracking
-            self._is_ready = False
 
         @property
         def is_ready(self) -> bool:
