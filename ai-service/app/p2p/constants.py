@@ -317,7 +317,8 @@ MIN_BOOTSTRAP_ATTEMPTS = int(os.environ.get("RINGRIFT_P2P_MIN_BOOTSTRAP_ATTEMPTS
 ISOLATED_BOOTSTRAP_INTERVAL = int(os.environ.get("RINGRIFT_P2P_ISOLATED_BOOTSTRAP_INTERVAL", "30") or 30)
 
 # Minimum connected peers to not be considered isolated
-MIN_CONNECTED_PEERS = int(os.environ.get("RINGRIFT_P2P_MIN_CONNECTED_PEERS", "2") or 2)
+# Dec 30, 2025: Increased from 2 to 5 to prevent gossip partitioning at low peer counts
+MIN_CONNECTED_PEERS = int(os.environ.get("RINGRIFT_P2P_MIN_CONNECTED_PEERS", "5") or 5)
 
 # ============================================
 # Cluster Epochs

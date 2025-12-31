@@ -1066,7 +1066,29 @@ class GossipProtocolMixin(P2PMixinBase):
         if not alive_peer_ids:
             return
 
-        selected_ids = random.sample(alive_peer_ids, min(GOSSIP_FANOUT, len(alive_peer_ids)))
+        # Dec 30, 2025: Prioritize voter nodes in gossip fanout to prevent partitioning
+        # This ensures voter nodes (critical for quorum) are always included
+        voter_ids = getattr(self, "voter_node_ids", []) or []
+        voter_peer_ids = [p for p in alive_peer_ids if p in voter_ids]
+        non_voter_peer_ids = [p for p in alive_peer_ids if p not in voter_ids]
+
+        selected_ids = []
+        # Always include at least 1 voter if available
+        if voter_peer_ids:
+            selected_ids.append(random.choice(voter_peer_ids))
+
+        # Fill remaining fanout with other peers
+        remaining_fanout = GOSSIP_FANOUT - len(selected_ids)
+        if remaining_fanout > 0 and non_voter_peer_ids:
+            sample_size = min(remaining_fanout, len(non_voter_peer_ids))
+            selected_ids.extend(random.sample(non_voter_peer_ids, sample_size))
+
+        # If we still have room and more voters, add them
+        remaining = GOSSIP_FANOUT - len(selected_ids)
+        if remaining > 0 and len(voter_peer_ids) > 1:
+            unused_voters = [v for v in voter_peer_ids if v not in selected_ids]
+            if unused_voters:
+                selected_ids.extend(random.sample(unused_voters, min(remaining, len(unused_voters))))
 
         # Import session helper
         try:

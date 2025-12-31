@@ -92,7 +92,8 @@ class NodeInfo:
     # Dec 30, 2025: Endpoint validation tracking for stale IP detection
     # Prevents partition isolation from stale private IPs persisting after network changes
     endpoint_last_validated: float = 0.0  # Unix timestamp of last successful heartbeat
-    endpoint_ttl_seconds: int = 300  # 5 min TTL before endpoint considered stale
+    # Dec 30, 2025: Reduced from 300s to 60s for faster stale IP recovery
+    endpoint_ttl_seconds: int = 60  # 1 min TTL before endpoint considered stale
 
     def get_health_state(self) -> NodeHealthState:
         """Get detailed health state based on heartbeat timing.
@@ -529,10 +530,21 @@ class NodeInfo:
         d.setdefault('active_job_count', 0)
         # Dec 30, 2025: Endpoint validation fields
         d.setdefault('endpoint_last_validated', 0.0)
-        d.setdefault('endpoint_ttl_seconds', 300)
+        d.setdefault('endpoint_ttl_seconds', 60)  # Match dataclass default (reduced Dec 30, 2025)
         # Dec 30, 2025: Capabilities field - critical for job scheduling
         # Without this, nodes may have empty capabilities and get skipped by schedulers
         d.setdefault('capabilities', [])
+
+        # Dec 30, 2025: Capability inference - if capabilities empty, infer from has_gpu
+        # This ensures nodes get work even if they didn't explicitly advertise capabilities
+        if not d.get('capabilities'):
+            if d.get('has_gpu'):
+                # GPU nodes can do selfplay, training, and cmaes optimization
+                d['capabilities'] = ['selfplay', 'training', 'cmaes']
+            else:
+                # CPU nodes can at least do selfplay (heuristic-based)
+                d['capabilities'] = ['selfplay']
+
         # Ignore unknown keys for rolling upgrades.
         allowed = {f.name for f in dataclass_fields(cls)}
         d = {k: v for k, v in d.items() if k in allowed}

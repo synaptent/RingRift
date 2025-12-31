@@ -1116,10 +1116,13 @@ class HeartbeatLoop(BaseLoop):
                 # Emit HOST_ONLINE for newly discovered peers
                 if is_first_contact:
                     self._peers_discovered += 1
-                    capabilities = []
+                    # Dec 30, 2025: All nodes get selfplay capability as base
+                    # This ensures nodes can receive work from the scheduler
+                    capabilities = ["selfplay"]
                     if getattr(info, "has_gpu", False):
                         gpu_type = getattr(info, "gpu_type", "") or "gpu"
-                        capabilities.append(gpu_type)
+                        # GPU nodes can also do training and cmaes
+                        capabilities.extend(["training", "cmaes", gpu_type])
                     else:
                         capabilities.append("cpu")
                     await self._emit_host_online(info.node_id, capabilities)
