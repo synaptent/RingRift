@@ -145,6 +145,25 @@ if PYSYNCOBJ_AVAILABLE:
 
             # Local tracking
             self._local_start_time = time.time()
+            self._is_ready = False
+
+        @property
+        def is_ready(self) -> bool:
+            """Check if Raft cluster is ready for operations."""
+            # Consider ready if we have a leader
+            if self._getLeader() is not None:
+                self._is_ready = True
+            return self._is_ready
+
+        @property
+        def is_leader(self) -> bool:
+            """Check if this node is the current leader."""
+            return self._isLeader()
+
+        @property
+        def leader_address(self) -> str | None:
+            """Get the current leader's address."""
+            return self._getLeader()
 
         @_replicated
         def add_work(
@@ -316,6 +335,25 @@ if PYSYNCOBJ_AVAILABLE:
             self._node_jobs: _ReplDict[str, list[str]] = _ReplDict()
             # job_id -> node_id
             self._job_node: _ReplDict[str, str] = _ReplDict()
+            # Readiness tracking
+            self._is_ready = False
+
+        @property
+        def is_ready(self) -> bool:
+            """Check if Raft cluster is ready for operations."""
+            if self._getLeader() is not None:
+                self._is_ready = True
+            return self._is_ready
+
+        @property
+        def is_leader(self) -> bool:
+            """Check if this node is the current leader."""
+            return self._isLeader()
+
+        @property
+        def leader_address(self) -> str | None:
+            """Get the current leader's address."""
+            return self._getLeader()
 
         @_replicated
         def assign_job(self, node_id: str, job_id: str) -> bool:
