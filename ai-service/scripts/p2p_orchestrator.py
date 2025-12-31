@@ -707,6 +707,7 @@ from scripts.p2p.managers.state_manager import PersistedLeaderState
 from scripts.p2p.metrics_manager import MetricsManager
 from scripts.p2p.resource_detector import ResourceDetector, ResourceDetectorMixin
 from scripts.p2p.event_emission_mixin import EventEmissionMixin
+from scripts.p2p.failover_integration import FailoverIntegrationMixin
 
 # Unified resource checking utilities (80% max utilization)
 # Includes graceful degradation for dynamic workload management
@@ -1280,6 +1281,7 @@ class P2POrchestrator(
     RaftHandlersMixin,    # /raft/* HTTP handlers
     ResourceDetectorMixin,  # Resource detection delegation (Dec 28, 2025)
     EventEmissionMixin,     # Event emission consolidation (Dec 28, 2025 - Phase 8)
+    FailoverIntegrationMixin,  # Multi-layer transport failover (Dec 30, 2025 - Phase 9)
 ):
     """Main P2P orchestrator class that runs on each node.
 
@@ -1735,6 +1737,14 @@ class P2POrchestrator(
                     logger.info("Raft consensus initialized (will sync with peers in run())")
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Early Raft initialization failed (will retry later): {e}")
+
+        # Initialize failover system (Phase 9: Multi-layer transport cascade)
+        # Lazy initialization - will be fully set up on first use
+        try:
+            self._init_failover_system()
+            logger.info("Failover system initialized (transport cascade + union discovery)")
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Failover system init deferred: {e}")
 
         # State persistence (Phase 1 refactoring: delegated to StateManager)
         self.db_path = STATE_DIR / f"{node_id}_state.db"

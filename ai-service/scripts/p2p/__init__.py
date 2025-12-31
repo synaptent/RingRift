@@ -124,6 +124,68 @@ GossipMetricsMixin = GossipProtocolMixin  # Deprecated: use GossipProtocolMixin 
 # Re-export event emission mixin (Dec 28, 2025 - Phase 8)
 from .event_emission_mixin import EventEmissionMixin
 
+# Re-export failover integration (Dec 30, 2025 - Phase 9)
+from .failover_integration import FailoverIntegrationMixin, is_failover_available
+from .transport_cascade import TransportCascade, get_transport_cascade, TransportTier
+from .protocol_union import ProtocolUnion, get_protocol_union, MembershipSource
+from .union_discovery import UnionDiscovery, get_union_discovery, DiscoveredPeer
+
+# Re-export NAT detection (Dec 30, 2025 - Phase 4)
+from .nat_detection import (
+    NATType,
+    NATDetectionResult,
+    NATDetector,
+    detect_nat_type,
+    get_cached_nat_type,
+)
+
+# Re-export ICE connection (Dec 30, 2025 - Phase 4)
+from .ice_connection import (
+    CandidateType,
+    ICECandidate,
+    ICEGatherer,
+    ICEChecker,
+    establish_connection as ice_establish_connection,
+)
+
+# Re-export transport metrics (Dec 30, 2025 - Phase 5)
+from .transport_metrics import (
+    TransportMetrics,
+    TransportMetricsTracker,
+    get_transport_metrics,
+    record_transport_request,
+    get_recommended_transport,
+)
+
+# Re-export connection pooling (Dec 30, 2025 - Phase 5)
+from .connection_pool import (
+    ConnectionConfig,
+    PeerConnectionPool,
+    get_connection_pool,
+    get_pooled_session,
+    start_connection_pool,
+    stop_connection_pool,
+)
+
+# Re-export leader health probing (Dec 30, 2025 - Phase 6)
+from .leader_health import (
+    LeaderHealthProbe,
+    LeaderHealthResult,
+    LeaderHealthStatus,
+    LeaderProbeConfig,
+    get_leader_health_probe,
+)
+
+# Re-export graceful step-down (Dec 30, 2025 - Phase 6)
+from .graceful_stepdown import (
+    GracefulStepDown,
+    StepDownConfig,
+    StepDownReason,
+    StepDownResult,
+    step_down_leader,
+    select_best_successor,
+)
+
 # Re-export client utilities
 from .client import (
     P2PClient,
@@ -159,6 +221,56 @@ __all__ = [
     # Gossip protocol (Dec 26, 2025 - Phase 3)
     'GossipMetricsMixin',
     'GossipProtocolMixin',
+    # Failover integration (Dec 30, 2025 - Phase 9)
+    'FailoverIntegrationMixin',
+    'is_failover_available',
+    'TransportCascade',
+    'get_transport_cascade',
+    'TransportTier',
+    'ProtocolUnion',
+    'get_protocol_union',
+    'MembershipSource',
+    'UnionDiscovery',
+    'get_union_discovery',
+    'DiscoveredPeer',
+    # NAT detection (Dec 30, 2025 - Phase 4)
+    'NATType',
+    'NATDetectionResult',
+    'NATDetector',
+    'detect_nat_type',
+    'get_cached_nat_type',
+    # ICE connection (Dec 30, 2025 - Phase 4)
+    'CandidateType',
+    'ICECandidate',
+    'ICEGatherer',
+    'ICEChecker',
+    'ice_establish_connection',
+    # Transport metrics (Dec 30, 2025 - Phase 5)
+    'TransportMetrics',
+    'TransportMetricsTracker',
+    'get_transport_metrics',
+    'record_transport_request',
+    'get_recommended_transport',
+    # Connection pooling (Dec 30, 2025 - Phase 5)
+    'ConnectionConfig',
+    'PeerConnectionPool',
+    'get_connection_pool',
+    'get_pooled_session',
+    'start_connection_pool',
+    'stop_connection_pool',
+    # Leader health probing (Dec 30, 2025 - Phase 6)
+    'LeaderHealthProbe',
+    'LeaderHealthResult',
+    'LeaderHealthStatus',
+    'LeaderProbeConfig',
+    'get_leader_health_probe',
+    # Graceful step-down (Dec 30, 2025 - Phase 6)
+    'GracefulStepDown',
+    'StepDownConfig',
+    'StepDownReason',
+    'StepDownResult',
+    'step_down_leader',
+    'select_best_successor',
     # Constants
     'DEFAULT_PORT',
     'DISK_CRITICAL_THRESHOLD',
