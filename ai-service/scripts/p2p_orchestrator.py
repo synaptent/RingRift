@@ -5672,7 +5672,8 @@ class P2POrchestrator(
             try:
                 from app.config.cluster_config import load_cluster_config
                 config = load_cluster_config()
-                nodes = config.get("nodes", {})
+                # ClusterConfig stores hosts in hosts_raw attribute
+                nodes = getattr(config, "hosts_raw", {}) or {}
                 node_cfg = nodes.get(self.node_id, {})
                 # Check role or explicit enabled flags
                 if node_cfg.get("role") == "coordinator":
