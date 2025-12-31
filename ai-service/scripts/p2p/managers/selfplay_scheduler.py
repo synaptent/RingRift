@@ -1472,7 +1472,25 @@ class SelfplayScheduler(EventSubscriptionMixin):
                 pass  # Ignore errors in safeguards callback (non-critical)
 
         # Dec 2025 Phase 5: Check evaluation backpressure - pause when eval queue full
+        # Dec 31, 2025: Add minimum job floor for high-end GPUs during backpressure
+        # High-end GPUs should never be completely idle to maximize cluster throughput
         if self._evaluation_backpressure_active:
+            has_gpu = bool(getattr(node, "has_gpu", False))
+            gpu_memory_gb = float(getattr(node, "gpu_memory_gb", 0.0) or 0.0)
+            # High-end GPU: A100 40GB+, H100 80GB, GH200 96GB
+            is_high_end_gpu = has_gpu and gpu_memory_gb >= 40
+
+            if is_high_end_gpu:
+                # Allow 25% capacity during backpressure for high-end GPUs
+                # This prevents total starvation while still reducing throughput
+                base_target = int(getattr(node, "max_selfplay_jobs", 4) or 4)
+                min_jobs = max(1, base_target // 4)
+                logger.info(
+                    f"Backpressure active but allowing {min_jobs} jobs on high-end GPU "
+                    f"{node.node_id} ({gpu_memory_gb:.0f}GB VRAM)"
+                )
+                return min_jobs
+
             logger.debug(
                 f"Evaluation backpressure active, halting selfplay on {node.node_id}"
             )

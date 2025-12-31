@@ -113,10 +113,21 @@ class EvaluationConfig:
     # Games per baseline opponent
     # Dec 29: Increased from 20 to 50 for more statistically significant eval
     # (±5% confidence interval instead of ±10%)
-    games_per_baseline: int = 50
+    # Dec 31: Reduced to 30 with 6 baselines for faster iteration (30×6=180 games)
+    games_per_baseline: int = 30
 
     # Baselines to evaluate against
-    baselines: list[str] = field(default_factory=lambda: ["random", "heuristic"])
+    # Dec 31, 2025: Expanded from 2 to 6 baselines for better Elo resolution
+    # Previous: ["random", "heuristic"] capped Elo measurement at ~1200
+    # Now covers ~400-1600 Elo range for meaningful model ranking
+    baselines: list[str] = field(default_factory=lambda: [
+        "random",           # ~400 Elo (sanity check - model should crush this)
+        "heuristic",        # ~1200 Elo (basic baseline)
+        "heuristic_strong", # ~1400 Elo (tuned heuristic weights)
+        "gumbel_b64",       # ~1400 Elo (search baseline with budget=64)
+        "policy_only_nn",   # ~1350 Elo (NN without search, tests policy head)
+        "gumbel_b200",      # ~1600 Elo (high quality ceiling, 2p only)
+    ])
 
     # Early stopping configuration
     early_stopping_enabled: bool = True

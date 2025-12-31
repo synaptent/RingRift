@@ -168,8 +168,10 @@ class QueuePopulatorConfig:
     # Trickle mode ensures work queue never completely starves under backpressure.
     # Even at CRITICAL/STOP backpressure, we add trickle_min_items to prevent
     # the pipeline from halting entirely.
+    # Dec 31, 2025: Increased from 2 to 10 to better utilize cluster capacity
+    # during backpressure events. With 40+ nodes, 10 items/cycle keeps pipeline moving.
     trickle_mode_enabled: bool = True
-    trickle_min_items: int = 2  # Minimum items to add even under max backpressure
+    trickle_min_items: int = 10  # Minimum items to add even under max backpressure
 
 
 # =============================================================================
