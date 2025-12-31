@@ -18,6 +18,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from pathlib import Path
@@ -136,8 +137,11 @@ class QueuePopulatorLoop(BaseLoop):
         current_depth = wq.depth() if hasattr(wq, 'depth') else 0
         logger.debug(f"[{self.name}] Running as LEADER, queue depth={current_depth}")
 
-        # Check if all targets are met
-        if self._populator.all_targets_met():
+        # Check if all targets are met (run in thread to avoid blocking)
+        # Dec 31, 2025: Wrap blocking operations with asyncio.to_thread()
+        # to prevent CPU spikes and HTTP server unresponsiveness on leader nodes
+        all_met = await asyncio.to_thread(self._populator.all_targets_met)
+        if all_met:
             logger.info(f"[{self.name}] All Elo targets met (2000+), checking less often")
             # Increase interval temporarily
             self.interval = ALL_TARGETS_MET_INTERVAL
@@ -146,10 +150,10 @@ class QueuePopulatorLoop(BaseLoop):
             # Reset to normal interval
             self.interval = POPULATOR_INTERVAL
 
-        # Populate the queue
-        items_added = self._populator.populate()
+        # Populate the queue (run in thread to avoid blocking SQLite operations)
+        items_added = await asyncio.to_thread(self._populator.populate)
         if items_added > 0:
-            status = self._populator.get_status()
+            status = await asyncio.to_thread(self._populator.get_status)
             logger.info(
                 f"[{self.name}] Queue populated: +{items_added} items, "
                 f"depth={status['current_queue_depth']}, "
