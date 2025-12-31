@@ -447,8 +447,9 @@ class P2PMixinBase:
                     if hybrid_check(nid):
                         alive += 1
                     continue
-                except Exception:
-                    # Fall through to HTTP check on error
+                except Exception as e:
+                    # Dec 30, 2025: Log SWIM check failures for observability
+                    self._log_debug(f"SWIM check failed for {nid}, falling back to HTTP: {type(e).__name__}")
                     pass
 
             # HTTP heartbeat fallback
@@ -505,8 +506,9 @@ class P2PMixinBase:
                     if hybrid_check(nid):
                         alive.append(nid)
                     continue
-                except Exception:
-                    # Fall through to HTTP check on error
+                except Exception as e:
+                    # Dec 30, 2025: Log SWIM check failures for observability
+                    self._log_debug(f"SWIM check failed for {nid}, falling back to HTTP: {type(e).__name__}")
                     pass
 
             # HTTP heartbeat fallback

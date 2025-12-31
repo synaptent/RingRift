@@ -42,7 +42,12 @@ if TYPE_CHECKING:
 
 
 # Dec 28, 2025: Phase 6 - Gossip health tracking threshold
-GOSSIP_FAILURE_SUSPECT_THRESHOLD = 5
+# Dec 30, 2025: Now uses centralized GossipDefaults for configurability
+try:
+    from app.config.coordination_defaults import GossipDefaults
+    GOSSIP_FAILURE_SUSPECT_THRESHOLD = GossipDefaults.FAILURE_THRESHOLD
+except ImportError:
+    GOSSIP_FAILURE_SUSPECT_THRESHOLD = 5  # Fallback
 
 
 class GossipHealthTracker:
