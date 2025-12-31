@@ -537,11 +537,15 @@ def run_gauntlet_evaluation(
     beats_current_best = False
 
     # Get promotion decision using sophisticated two-tier system
+    # Dec 30, 2025: Pass model_elo to enable Elo-adaptive thresholds
+    # This allows bootstrap models (800-1200 Elo) to pass with lower thresholds
+    model_elo = results.estimated_elo if results.estimated_elo > 0 else None
     should_promote, promotion_reason = should_promote_model(
         config_key=config_key,
         vs_random_rate=random_wr,
         vs_heuristic_rate=heuristic_wr,
         beats_current_best=beats_current_best,
+        model_elo=model_elo,
     )
 
     # Get thresholds for display purposes

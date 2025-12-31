@@ -368,12 +368,16 @@ class AutoPromotionDaemon:
         # Dec 30, 2025: Pass current_best_elo to enable safety check
         # This prevents "race to the bottom" where weak models beat weaker models
         current_best_elo = candidate.previous_elo if candidate.previous_elo > 0 else None
+        # Dec 30, 2025: Pass model_elo to enable Elo-adaptive thresholds
+        # This allows bootstrap models (800-1200 Elo) to pass with lower thresholds
+        model_elo = candidate.estimated_elo if candidate.estimated_elo > 0 else None
         should_promote, reason = should_promote_model(
             config_key=candidate.config_key,
             vs_random_rate=random_win_rate,
             vs_heuristic_rate=heuristic_win_rate,
             beats_current_best=candidate.beats_current_best,
             current_best_elo=current_best_elo,
+            model_elo=model_elo,
         )
 
         if should_promote:
