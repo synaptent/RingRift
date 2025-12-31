@@ -47,6 +47,7 @@ import logging
 import socket
 import sqlite3
 import time
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -906,7 +907,7 @@ class DataCatalog:
 
                     npz_sources.append(source)
 
-                except (OSError, ValueError) as e:
+                except (OSError, ValueError, zipfile.BadZipFile) as e:
                     logger.debug(f"Failed to analyze NPZ {npz_path}: {e}")
 
         # Sort by recency (newest first)
@@ -960,8 +961,8 @@ class DataCatalog:
                             sample_count = len(data["policy"])
                         elif "states" in data:
                             sample_count = len(data["states"])
-                except (OSError, ValueError, KeyError):
-                    pass  # Use estimate
+                except (OSError, ValueError, KeyError, zipfile.BadZipFile):
+                    pass  # Use estimate or file is corrupted
 
             return NPZDataSource(
                 path=npz_path,
@@ -974,7 +975,7 @@ class DataCatalog:
                 is_available=True,
             )
 
-        except (OSError, ValueError, KeyError) as e:
+        except (OSError, ValueError, KeyError, zipfile.BadZipFile) as e:
             logger.debug(f"Error analyzing NPZ {npz_path}: {e}")
             return None
 
