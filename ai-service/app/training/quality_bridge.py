@@ -1,5 +1,19 @@
 """Quality Bridge - Unified interface for quality-aware training data selection.
 
+.. deprecated:: Dec 2025
+    This module is deprecated and will be consolidated into app.quality by Q2 2026.
+
+    **Migration Guide:**
+    - For quality lookups: Use ``app.quality.GameQualityScorer`` which provides
+      the same quality scoring with additional features (caching, statistics).
+    - For pipeline configuration: The new ``GameQualityScorer`` integrates directly
+      with training pipelines via event-driven updates.
+    - For quality thresholds: Use ``app.quality.get_quality_thresholds()``.
+
+    **Backward Compatibility:**
+    This module will continue to work until Q2 2026. A deprecation warning is emitted
+    on import to help track migration progress.
+
 This module provides a unified bridge between the distributed sync system's quality
 scoring and the training data loaders. It ensures that quality scores computed during
 sync operations flow seamlessly to training data selection.
@@ -33,9 +47,19 @@ from __future__ import annotations
 
 import logging
 import time
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+# Emit deprecation warning on import
+warnings.warn(
+    "app.training.quality_bridge is deprecated and will be consolidated into "
+    "app.quality by Q2 2026. Use app.quality.GameQualityScorer for quality scoring, "
+    "and app.quality.get_quality_thresholds() for thresholds.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 if TYPE_CHECKING:
     from app.training.hot_data_buffer import HotDataBuffer

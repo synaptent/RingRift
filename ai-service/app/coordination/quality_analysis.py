@@ -1,5 +1,25 @@
 """Quality analysis functions for training data quality assessment.
 
+.. deprecated:: December 2025
+    This module is being consolidated into app.quality. Use the unified
+    quality framework instead:
+
+    For game quality scoring:
+        from app.quality import GameQualityScorer, get_game_quality_scorer
+        scorer = get_game_quality_scorer()
+        result = scorer.score(game_data)
+
+    For database validation:
+        from app.quality.validators import DatabaseValidator
+        validator = DatabaseValidator()
+        result = validator.validate("path/to/database.db")
+
+    For quality thresholds:
+        from app.quality import get_quality_thresholds
+        thresholds = get_quality_thresholds()
+
+    This module will continue to work until Q2 2026 for backward compatibility.
+
 Extracted from feedback_loop_controller.py (December 2025).
 Provides pure functions for quality scoring, intensity mapping, and curriculum
 weight adjustment based on selfplay data quality.
@@ -25,6 +45,16 @@ Usage:
     # Get training urgency from intensity
     urgency = compute_training_urgency(result.quality_score, intensity)
 """
+import warnings
+
+warnings.warn(
+    "app.coordination.quality_analysis is deprecated and will be consolidated into "
+    "app.quality by Q2 2026. Use app.quality.GameQualityScorer for game scoring, "
+    "app.quality.validators.DatabaseValidator for validation, and "
+    "app.quality.get_quality_thresholds() for thresholds.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 from __future__ import annotations
 

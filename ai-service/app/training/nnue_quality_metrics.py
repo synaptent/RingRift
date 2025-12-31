@@ -1,5 +1,20 @@
 """NNUE Quality Metrics for RingRift Training Pipeline.
 
+.. deprecated:: Dec 2025
+    This module is deprecated and will be consolidated into app.quality by Q2 2026.
+
+    **Migration Guide:**
+    - For game quality scoring: Use ``app.quality.GameQualityScorer`` which provides
+      comprehensive quality metrics with configurable weights.
+    - For phase-specific analysis: Use ``app.quality.scorers.game_scorer.GameQualityScorer``
+      which includes phase balance scoring.
+    - For dataset quality: Use ``app.quality.validators.NpzValidator`` for NPZ validation
+      and ``app.quality.validators.DatabaseValidator`` for database validation.
+
+    **Backward Compatibility:**
+    This module will continue to work until Q2 2026. A deprecation warning is emitted
+    on import to help track migration progress.
+
 This module provides quality metrics for evaluating NNUE model performance
 beyond simple loss values. These metrics help diagnose model weaknesses
 and training data issues.
@@ -29,10 +44,20 @@ Usage:
 from __future__ import annotations
 
 import logging
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
+
+# Emit deprecation warning on import
+warnings.warn(
+    "app.training.nnue_quality_metrics is deprecated and will be consolidated into "
+    "app.quality by Q2 2026. Use app.quality.GameQualityScorer for game quality scoring "
+    "and app.quality.validators for data validation.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 logger = logging.getLogger(__name__)
 
