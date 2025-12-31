@@ -353,9 +353,10 @@ class RemoteP2PRecoveryLoop(BaseLoop):
             time.sleep(1)
 
             # Pull latest code and start P2P
+            # Use python3 explicitly since 'python' may not exist on all nodes
             cmd = f"""cd ~/ringrift/ai-service && \
 git pull origin main 2>/dev/null || true && \
-PYTHONPATH=. nohup python scripts/p2p_orchestrator.py --node-id {node_id} --port 8770 > logs/p2p.log 2>&1 &"""
+PYTHONPATH=. nohup python3 scripts/p2p_orchestrator.py --node-id {node_id} --port 8770 > logs/p2p.log 2>&1 &"""
 
             stdin, stdout, stderr = client.exec_command(cmd)
             stdout.channel.recv_exit_status()  # Wait for completion
