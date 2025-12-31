@@ -653,6 +653,8 @@ class TrainingTriggerDaemon(HandlerBase):
             "training_failed": self._on_training_failed,
             # December 30, 2025: Trigger training after quality-weighted NPZ combination
             "npz_combination_complete": self._on_npz_combination_complete,
+            # December 30, 2025: Handle regression events to reduce training intensity
+            "regression_detected": self._on_regression_detected,
         }
 
     async def _on_start(self) -> None:
@@ -1484,6 +1486,81 @@ class TrainingTriggerDaemon(HandlerBase):
 
         except (ValueError, KeyError, TypeError, AttributeError) as e:
             logger.debug(f"[TrainingTriggerDaemon] Error handling TRAINING_FAILED: {e}")
+
+    async def _on_regression_detected(self, event: Any) -> None:
+        """Handle REGRESSION_DETECTED event to reduce training intensity.
+
+        December 30, 2025: Critical fix - regression events were not being
+        handled by TrainingTriggerDaemon, allowing training to continue
+        even when models regressed. This slowed down recovery from regressions.
+
+        Actions:
+        1. Reduce training intensity for the affected config
+        2. Extend cooldown period to allow more data collection
+        3. Track regression in state for debugging
+
+        Severity levels:
+        - "critical" or "severe": Pause training immediately
+        - "moderate": Reduce to "reduced" intensity
+        - "minor": Reduce to "normal" if currently accelerated/hot_path
+
+        Args:
+            event: Event with payload containing config_key, severity, elo_change
+        """
+        try:
+            payload = self._get_payload(event)
+            config_key = extract_config_key(payload)
+            if not config_key:
+                return
+
+            severity = payload.get("severity", "moderate")
+            elo_change = payload.get("elo_change", 0.0)
+            reason = payload.get("reason", "")
+
+            # Parse config key
+            parsed = parse_config_key(config_key)
+            if not parsed:
+                logger.debug(f"[TrainingTriggerDaemon] Invalid config_key: {config_key}")
+                return
+
+            state = self._get_or_create_state(
+                config_key, parsed.board_type, parsed.num_players
+            )
+            old_intensity = state.training_intensity
+
+            # Determine new intensity based on severity
+            if severity in ("critical", "severe"):
+                new_intensity = "paused"
+            elif severity == "moderate":
+                new_intensity = "reduced"
+            elif old_intensity in ("hot_path", "accelerated"):
+                new_intensity = "normal"
+            else:
+                new_intensity = old_intensity  # No change for minor regressions
+
+            # Apply intensity change
+            if new_intensity != old_intensity:
+                state.training_intensity = new_intensity
+                # Extend cooldown to allow more data collection
+                state.training_cooldown_until = time.time() + 600.0  # 10 min cooldown
+
+                logger.warning(
+                    f"[TrainingTriggerDaemon] REGRESSION_DETECTED: {config_key} "
+                    f"severity={severity}, elo_change={elo_change:.1f}, "
+                    f"intensity: {old_intensity} → {new_intensity}"
+                )
+
+                # Track regression event
+                state.consecutive_failures += 1
+                self._save_state()
+            else:
+                logger.info(
+                    f"[TrainingTriggerDaemon] REGRESSION_DETECTED: {config_key} "
+                    f"severity={severity} (no intensity change needed)"
+                )
+
+        except (ValueError, KeyError, TypeError, AttributeError) as e:
+            logger.debug(f"[TrainingTriggerDaemon] Error handling REGRESSION_DETECTED: {e}")
 
     def _queue_training_retry(
         self,

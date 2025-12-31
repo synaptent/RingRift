@@ -1130,6 +1130,16 @@ class GossipProtocolMixin(P2PMixinBase):
             if model_locations:
                 local_state["model_locations"] = model_locations
 
+        # December 2025: Include config version for distributed config sync
+        try:
+            from app.config.cluster_config import get_config_version
+
+            config_version = get_config_version()
+            local_state["config"] = config_version.to_dict()
+        except Exception:
+            # Config version not available - don't fail gossip
+            pass
+
         return local_state
 
     async def _send_gossip_to_peer(
@@ -1396,6 +1406,114 @@ class GossipProtocolMixin(P2PMixinBase):
         for node_id, state in known_states.items():
             if node_id != self.node_id and state.get("model_locations"):
                 self._process_model_locations(state["model_locations"])
+
+        # December 2025: Check config freshness for distributed config sync
+        sender_id = sender_state.get("node_id") if sender_state else None
+        if sender_id and sender_state.get("config"):
+            asyncio.create_task(
+                self._check_config_freshness(sender_id, sender_state["config"])
+            )
+
+    async def _check_config_freshness(
+        self, peer_id: str, peer_config: dict[str, Any]
+    ) -> None:
+        """Compare peer's config version to ours, request sync if stale.
+
+        Called when we receive gossip containing a config version newer
+        than ours. Uses rsync/SSH to pull the updated config.
+
+        Args:
+            peer_id: Node ID of the peer with newer config.
+            peer_config: Config version dict with hash, timestamp, source_node.
+        """
+        try:
+            from app.config.cluster_config import get_config_version, get_config_cache
+
+            local_version = get_config_version()
+            peer_timestamp = peer_config.get("timestamp", 0)
+            local_timestamp = local_version.timestamp
+
+            # 60 second tolerance to avoid sync storms
+            if peer_timestamp <= local_timestamp + 60:
+                return
+
+            self._log_info(
+                f"[ConfigSync] Peer {peer_id} has newer config "
+                f"({peer_timestamp:.0f} vs {local_timestamp:.0f}), requesting sync"
+            )
+
+            # Request config sync from peer
+            await self._request_config_sync(peer_id)
+
+        except Exception as e:
+            self._log_debug(f"[ConfigSync] Error checking config freshness: {e}")
+
+    async def _request_config_sync(self, source_node: str) -> None:
+        """Request fresh config from node with newer version.
+
+        Pulls distributed_hosts.yaml from the source node via SSH/rsync,
+        then triggers a config reload and emits CONFIG_UPDATED event.
+
+        Args:
+            source_node: Node ID to pull config from.
+        """
+        try:
+            from app.config.cluster_config import get_config_cache, get_cluster_nodes
+
+            # Find source node connection info
+            nodes = get_cluster_nodes()
+            source = nodes.get(source_node)
+            if not source or not source.best_ip:
+                self._log_debug(f"[ConfigSync] Cannot find connection info for {source_node}")
+                return
+
+            # Build rsync command
+            import subprocess
+
+            local_config_path = "config/distributed_hosts.yaml"
+            remote_config_path = f"{source.ringrift_path}/config/distributed_hosts.yaml"
+            ssh_args = ["-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"]
+            if source.ssh_key:
+                ssh_args.extend(["-i", source.ssh_key])
+            if source.ssh_port != 22:
+                ssh_args.extend(["-p", str(source.ssh_port)])
+
+            remote_spec = f"{source.ssh_user}@{source.best_ip}:{remote_config_path}"
+            cmd = ["rsync", "-az", "-e", f"ssh {' '.join(ssh_args)}", remote_spec, local_config_path]
+
+            result = await asyncio.to_thread(
+                subprocess.run, cmd, capture_output=True, timeout=30
+            )
+
+            if result.returncode != 0:
+                self._log_debug(f"[ConfigSync] rsync failed: {result.stderr.decode()[:200]}")
+                return
+
+            # Force config reload
+            cache = get_config_cache()
+            cache.get_config(force_reload=True)
+
+            self._log_info(f"[ConfigSync] Config synced from {source_node}")
+
+            # Emit CONFIG_UPDATED event for daemons to reload
+            try:
+                from app.coordination.data_events import DataEventType
+                from scripts.p2p.handlers.handlers_base import get_event_bridge
+
+                bridge = get_event_bridge()
+                await bridge.emit(
+                    DataEventType.CONFIG_UPDATED.value if hasattr(DataEventType, "CONFIG_UPDATED") else "config_updated",
+                    {
+                        "source_node": source_node,
+                        "timestamp": time.time(),
+                    },
+                )
+            except Exception:
+                # Event emission is optional
+                pass
+
+        except Exception as e:
+            self._log_debug(f"[ConfigSync] Sync from {source_node} failed: {e}")
 
     def _process_sender_state(self, sender_state: dict) -> None:
         """Process the sender's state from a gossip response."""
@@ -1725,8 +1843,10 @@ class GossipProtocolMixin(P2PMixinBase):
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     await self._try_anti_entropy_urls(session, peer, full_state, start_time, now)
 
-        except (AttributeError, KeyError, ValueError, TypeError):
-            pass  # Silent failure, will retry next cycle
+        except (AttributeError, KeyError, ValueError, TypeError) as e:
+            # Track anti-entropy failures for observability (Dec 30, 2025)
+            self._record_gossip_metrics("anti_entropy_error")
+            self._log_debug(f"Anti-entropy repair failed for {peer.node_id}: {type(e).__name__}: {e}")
 
     async def _try_anti_entropy_urls(
         self,

@@ -196,6 +196,9 @@ class StateManager:
         self.verbose = verbose
         self._cluster_epoch: int = 0
         self._lock = threading.Lock()
+        # Dec 30, 2025: Track persistence failures for observability
+        self._persistence_failures: int = 0
+        self._last_persistence_error: str | None = None
 
         # Ensure parent directory exists
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -664,7 +667,18 @@ class StateManager:
                     "cluster_epoch": self._cluster_epoch,
                 })
         except sqlite3.Error as e:
-            logger.error(f"Failed to save state: {e}")
+            # Dec 30, 2025: Enhanced error handling with tracking and event emission
+            self._persistence_failures += 1
+            self._last_persistence_error = str(e)
+            logger.error(
+                f"Failed to save state (attempt {self._persistence_failures}): {e}"
+            )
+            # Emit event for observability and coordination
+            _safe_emit_event("state_persistence_failed", {
+                "error": str(e),
+                "failure_count": self._persistence_failures,
+                "db_path": str(self.db_path),
+            })
 
     def _save_peers_unlocked(
         self, cursor: sqlite3.Cursor, node_id: str, peers: dict[str, Any]
