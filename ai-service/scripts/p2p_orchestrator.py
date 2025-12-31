@@ -2507,6 +2507,27 @@ class P2POrchestrator(
             except (ImportError, TypeError) as e:
                 logger.debug(f"SelfHealingLoop: not available: {e}")
 
+            # RemoteP2PRecoveryLoop - December 31, 2025
+            # Automatically starts P2P on cluster nodes that should be running it
+            # but aren't currently in the mesh. Only runs on coordinator nodes.
+            if self.node_id in ("local-mac", "mac-studio") or os.environ.get("RINGRIFT_IS_COORDINATOR"):
+                try:
+                    from scripts.p2p.loops import RemoteP2PRecoveryLoop
+
+                    def _get_alive_peer_ids_for_recovery() -> list[str]:
+                        """Get list of alive peer IDs."""
+                        with self.peers_lock:
+                            return [p.node_id for p in self.peers.values() if p.is_alive()]
+
+                    remote_recovery = RemoteP2PRecoveryLoop(
+                        get_alive_peer_ids=_get_alive_peer_ids_for_recovery,
+                        emit_event=self._emit_event,
+                    )
+                    manager.register(remote_recovery)
+                    logger.info("[LoopManager] RemoteP2PRecoveryLoop registered (coordinator only)")
+                except (ImportError, TypeError) as e:
+                    logger.debug(f"RemoteP2PRecoveryLoop: not available: {e}")
+
             # PredictiveMonitoringLoop - December 28, 2025
             # Migrated from inline _predictive_monitoring_loop (~98 LOC removed)
             # Proactive monitoring and alerting for cluster health

@@ -111,6 +111,10 @@ from .peer_recovery_loop import (
     PeerRecoveryConfig,
     PeerRecoveryLoop,
 )
+from .remote_p2p_recovery_loop import (
+    RemoteP2PRecoveryConfig,
+    RemoteP2PRecoveryLoop,
+)
 from .resilience_loops import (
     PredictiveMonitoringConfig,
     PredictiveMonitoringLoop,
@@ -192,6 +196,9 @@ __all__ = [
     # Peer Recovery (Dec 2025)
     "PeerRecoveryConfig",
     "PeerRecoveryLoop",
+    # Remote P2P Recovery (Dec 2025)
+    "RemoteP2PRecoveryConfig",
+    "RemoteP2PRecoveryLoop",
     # Resilience
     "PredictiveMonitoringConfig",
     "PredictiveMonitoringLoop",
