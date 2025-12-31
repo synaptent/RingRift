@@ -355,6 +355,43 @@ class EloSyncManager(DatabaseSyncManager):
         """Stop background sync loop."""
         await self.stop()
 
+    async def start(self) -> None:
+        """Start the Elo sync manager with bi-directional sync.
+
+        December 30, 2025: Override to add push step after pull.
+        The coordinator pushes its authoritative data to cluster nodes
+        after pulling any new data from them.
+
+        This fixes the issue where cluster nodes had stale Elo data
+        because the base class only pulled (never pushed).
+        """
+        if self._running:
+            logger.warning("EloSyncManager already running")
+            return
+
+        self._running = True
+        is_coordinator = os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() in ("true", "1", "yes")
+
+        logger.info(
+            f"Starting EloSyncManager (interval={self.sync_interval}s, "
+            f"is_coordinator={is_coordinator})"
+        )
+
+        while self._running:
+            try:
+                # Step 1: Pull from cluster (may get new matches from training nodes)
+                await self.sync_with_cluster()
+
+                # Step 2: Push to cluster (coordinator distributes authoritative data)
+                # Only coordinator pushes to avoid conflicts
+                if is_coordinator:
+                    await self.push_to_cluster()
+
+            except Exception as e:
+                logger.error(f"Elo sync cycle error: {e}")
+
+            await asyncio.sleep(self.sync_interval)
+
     async def sync_with_cluster(self) -> bool:
         """Synchronize with cluster nodes. Returns True if any sync succeeded."""
         self._elo_state.total_syncs += 1
@@ -364,6 +401,101 @@ class EloSyncManager(DatabaseSyncManager):
             self._elo_state.successful_syncs += 1
             self._save_elo_state()
         return success
+
+    async def push_to_cluster(self) -> dict[str, bool]:
+        """Push local Elo database to all cluster nodes.
+
+        December 30, 2025: Added to fix sync issue where coordinator's
+        authoritative data never reached cluster nodes. The existing
+        sync_with_cluster() only pulls and merges, which doesn't help
+        when cluster nodes have stale/empty data.
+
+        This method pushes the coordinator's database to all nodes,
+        enabling them to make promotion decisions with up-to-date Elo ratings.
+
+        Returns:
+            Dict mapping node name to push success status
+        """
+        if not self._initialized:
+            await self.initialize()
+
+        results: dict[str, bool] = {}
+        self._update_local_stats()
+
+        logger.info(
+            f"[EloSync] Pushing {self._elo_state.local_record_count} matches "
+            f"to {len(self.nodes)} cluster nodes"
+        )
+
+        for node_name, node_info in self.nodes.items():
+            # Skip nodes in circuit breaker
+            if self._is_circuit_open(node_name):
+                logger.debug(f"[EloSync] Skipping {node_name} (circuit open)")
+                results[node_name] = False
+                continue
+
+            # Try push with failover (Tailscale → SSH → Vast SSH)
+            success = await self._push_to_node(node_name, node_info)
+            results[node_name] = success
+
+            if success:
+                logger.info(f"[EloSync] Successfully pushed to {node_name}")
+            else:
+                logger.warning(f"[EloSync] Failed to push to {node_name}")
+
+        successful = sum(results.values())
+        logger.info(f"[EloSync] Push complete: {successful}/{len(results)} nodes updated")
+
+        return results
+
+    async def _push_to_node(self, node_name: str, node_info: SyncNodeInfo) -> bool:
+        """Push database to a single node with transport failover."""
+        remote_path = node_info.remote_db_path or self._get_remote_db_path()
+
+        # Try Tailscale first (most reliable within mesh)
+        if node_info.tailscale_ip:
+            try:
+                success = await self._rsync_push_with_retry(
+                    host=node_info.tailscale_ip,
+                    remote_path=remote_path,
+                    ssh_port=22,
+                    verify=True,
+                )
+                if success:
+                    return True
+            except Exception as e:
+                logger.debug(f"[EloSync] Tailscale push to {node_name} failed: {e}")
+
+        # Try direct SSH
+        if node_info.ssh_host:
+            try:
+                success = await self._rsync_push_with_retry(
+                    host=node_info.ssh_host,
+                    remote_path=remote_path,
+                    ssh_port=node_info.ssh_port,
+                    verify=True,
+                )
+                if success:
+                    return True
+            except Exception as e:
+                logger.debug(f"[EloSync] SSH push to {node_name} failed: {e}")
+
+        # Try Vast.ai SSH
+        if node_info.vast_ssh_host and node_info.vast_ssh_port:
+            vast_path = f"/workspace/ringrift/{remote_path}"
+            try:
+                success = await self._rsync_push_with_retry(
+                    host=node_info.vast_ssh_host,
+                    remote_path=vast_path,
+                    ssh_port=node_info.vast_ssh_port,
+                    verify=True,
+                )
+                if success:
+                    return True
+            except Exception as e:
+                logger.debug(f"[EloSync] Vast SSH push to {node_name} failed: {e}")
+
+        return False
 
     async def _recalculate_ratings_from_history(self, conn: sqlite3.Connection) -> None:
         """
