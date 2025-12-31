@@ -20152,6 +20152,19 @@ print(json.dumps({{
                         logger.warning(f"Skipping election after leader {reason}: no voter quorum available")
                     else:
                         asyncio.create_task(self._start_election())
+            else:
+                # Dec 31, 2025: Leader not in peers dict - unknown/unreachable leader
+                # This can happen if leader gossip propagated but peer discovery hasn't caught up
+                # Clear the leader and allow election
+                logger.warning(f"Leader {self.leader_id} not found in peers dict, clearing stale leader")
+                old_leader_id = self.leader_id
+                self.leader_id = None
+                self.leader_lease_id = ""
+                self.leader_lease_expires = 0.0
+                self.last_lease_renewal = 0.0
+                self.role = NodeRole.FOLLOWER
+                self._leader_invalidation_until = time.time() + 60.0
+                asyncio.create_task(self._emit_leader_lost(old_leader_id, "unknown_peer"))
 
         # If we're leaderless, periodically retry elections with adaptive backoff
         # December 29, 2025: Improved backoff to start faster then slow down
