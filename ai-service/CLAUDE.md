@@ -36,17 +36,23 @@ python scripts/update_all_nodes.py --restart-p2p
 
 ## Cluster Infrastructure (Dec 2025)
 
-~36 nodes, ~1.3TB GPU memory across providers:
+~41 nodes, ~1.5TB GPU memory across providers:
 
-| Provider     | Nodes | GPUs                        |
-| ------------ | ----- | --------------------------- |
-| Lambda GH200 | 6     | GH200 96GB (training-only)  |
-| Vast.ai      | 14    | RTX 5090/4090/3090, A40     |
-| RunPod       | 6     | H100, A100×5, L40S          |
-| Nebius       | 3     | H100 80GB×2, L40S           |
-| Vultr        | 2     | A100 20GB vGPU              |
-| Hetzner      | 3     | CPU only (P2P voters)       |
-| Local        | 2     | Mac Studio M3 (coordinator) |
+| Provider     | Nodes | GPUs                          |
+| ------------ | ----- | ----------------------------- |
+| Lambda GH200 | 11    | GH200 96GB × 11 (mixed roles) |
+| Vast.ai      | 14    | RTX 5090/4090/3090, A40       |
+| RunPod       | 6     | H100, A100×5, L40S            |
+| Nebius       | 3     | H100 80GB×2, L40S             |
+| Vultr        | 2     | A100 20GB vGPU                |
+| Hetzner      | 3     | CPU only (P2P voters)         |
+| Local        | 2     | Mac Studio M3 (coordinator)   |
+
+**GH200 Role Assignment** (Dec 30, 2025):
+
+- GH200-1 through GH200-5: Selfplay-only (`role: gpu_selfplay`)
+- GH200-training, GH200-7: Training-only (`role: gpu_training_primary`)
+- GH200-8 through GH200-11: Both selfplay and training enabled
 
 ## Key Modules
 

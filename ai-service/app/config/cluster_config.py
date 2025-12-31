@@ -36,7 +36,11 @@ Consolidates inline yaml.safe_load patterns from:
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import logging
+import os
+import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -220,6 +224,183 @@ class ClusterConfig:
     def get_raw_section(self, section: str) -> dict[str, Any]:
         """Get a raw config section by name."""
         return self._raw_config.get(section, {})
+
+
+# =============================================================================
+# Config Version Tracking (December 2025)
+# For distributed config synchronization via gossip protocol
+# =============================================================================
+
+
+@dataclass
+class ConfigVersion:
+    """Tracks config freshness for distributed sync.
+
+    Used by gossip protocol to detect when peer nodes have newer
+    configurations and trigger automatic sync.
+    """
+
+    content_hash: str  # SHA256 of YAML content (first 16 chars)
+    timestamp: float  # When config was last modified (file mtime)
+    source_node: str  # Which node made the change
+
+    @classmethod
+    def from_yaml_path(
+        cls, path: str | Path, source_node: str = "local"
+    ) -> "ConfigVersion":
+        """Compute version from YAML file.
+
+        Args:
+            path: Path to the YAML config file.
+            source_node: Node ID that owns this config version.
+
+        Returns:
+            ConfigVersion with content hash and mtime.
+        """
+        path = Path(path)
+        with open(path, "rb") as f:
+            content = f.read()
+        return cls(
+            content_hash=hashlib.sha256(content).hexdigest()[:16],
+            timestamp=os.path.getmtime(path),
+            source_node=source_node,
+        )
+
+    def is_newer_than(self, other: "ConfigVersion") -> bool:
+        """Returns True if self is newer than other."""
+        return self.timestamp > other.timestamp
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize for gossip state."""
+        return {
+            "hash": self.content_hash,
+            "timestamp": self.timestamp,
+            "source_node": self.source_node,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ConfigVersion":
+        """Deserialize from gossip state."""
+        return cls(
+            content_hash=data.get("hash", ""),
+            timestamp=data.get("timestamp", 0.0),
+            source_node=data.get("source_node", "unknown"),
+        )
+
+
+class ClusterConfigCache:
+    """Singleton cache with automatic freshness tracking.
+
+    Provides centralized config access with file-mtime-based invalidation.
+    Used by gossip protocol to include config version in peer state.
+
+    Thread-safe via lock protection on reload operations.
+    """
+
+    _instance: "ClusterConfigCache | None" = None
+    _lock = threading.Lock()
+
+    def __init__(self) -> None:
+        """Initialize cache (use get_instance() instead of direct construction)."""
+        self._config: ClusterConfig | None = None
+        self._version: ConfigVersion | None = None
+        self._load_time: float = 0.0
+        self._yaml_path: Path = _get_config_path()
+
+    @classmethod
+    def get_instance(cls) -> "ClusterConfigCache":
+        """Get or create the singleton instance."""
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = cls()
+        return cls._instance
+
+    @classmethod
+    def reset_instance(cls) -> None:
+        """Reset singleton for testing."""
+        with cls._lock:
+            cls._instance = None
+
+    def get_config(self, force_reload: bool = False) -> ClusterConfig:
+        """Get config, auto-reloading if file changed.
+
+        Args:
+            force_reload: If True, reload regardless of mtime.
+
+        Returns:
+            ClusterConfig object.
+        """
+        if force_reload or self._needs_refresh():
+            self._reload()
+        if self._config is None:
+            self._reload()
+        return self._config  # type: ignore[return-value]
+
+    def get_version(self) -> ConfigVersion:
+        """Get current config version for gossip state.
+
+        Returns:
+            ConfigVersion with hash, timestamp, and source node.
+        """
+        if self._version is None:
+            self._reload()
+        return self._version  # type: ignore[return-value]
+
+    def _needs_refresh(self) -> bool:
+        """Check if config file has been modified since last load."""
+        if self._config is None:
+            return True
+        try:
+            current_mtime = os.path.getmtime(self._yaml_path)
+            return current_mtime > self._load_time
+        except OSError:
+            # File may not exist or be inaccessible
+            return False
+
+    def _reload(self) -> None:
+        """Reload config from disk."""
+        with self._lock:
+            self._config = load_cluster_config(force_reload=True)
+            try:
+                self._version = ConfigVersion.from_yaml_path(
+                    self._yaml_path,
+                    source_node=os.environ.get("RINGRIFT_NODE_ID", "unknown"),
+                )
+            except OSError:
+                # File may not exist
+                self._version = ConfigVersion(
+                    content_hash="0" * 16,
+                    timestamp=0.0,
+                    source_node=os.environ.get("RINGRIFT_NODE_ID", "unknown"),
+                )
+            self._load_time = time.time()
+            logger.debug(
+                f"Config reloaded: hash={self._version.content_hash}, "
+                f"mtime={self._version.timestamp:.0f}"
+            )
+
+
+def get_config_cache() -> ClusterConfigCache:
+    """Get the global config cache singleton.
+
+    Convenience function for accessing the cache.
+
+    Returns:
+        ClusterConfigCache singleton instance.
+    """
+    return ClusterConfigCache.get_instance()
+
+
+def get_config_version() -> ConfigVersion:
+    """Get the current config version.
+
+    Convenience function for gossip protocol integration.
+
+    Returns:
+        ConfigVersion with hash and timestamp.
+    """
+    return ClusterConfigCache.get_instance().get_version()
 
 
 # Global cached config

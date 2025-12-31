@@ -1169,11 +1169,18 @@ class SyncRouter:
                 self._on_backpressure_released,
             )
 
+            # Dec 2025: Subscribe to CONFIG_UPDATED for cluster config sync
+            router.subscribe(
+                DataEventType.CONFIG_UPDATED.value,
+                self._on_config_updated,
+            )
+
             logger.info(
                 "[SyncRouter] Wired to event router "
                 "(NEW_GAMES_AVAILABLE, TRAINING_STARTED, HOST_ONLINE/OFFLINE, "
                 "NODE_RECOVERED, CLUSTER_CAPACITY_CHANGED, MODEL_SYNC_REQUESTED, "
-                "SYNC_STALLED, SYNC_FAILURE_CRITICAL, BACKPRESSURE_ACTIVATED/RELEASED)"
+                "SYNC_STALLED, SYNC_FAILURE_CRITICAL, BACKPRESSURE_ACTIVATED/RELEASED, "
+                "CONFIG_UPDATED)"
             )
 
         except ImportError as e:
@@ -1683,6 +1690,45 @@ class SyncRouter:
 
         except (AttributeError, KeyError) as e:
             logger.debug(f"[SyncRouter] Error handling backpressure released: {e}")
+
+    async def _on_config_updated(self, event: Any) -> None:
+        """Handle CONFIG_UPDATED event - reload cluster config when updated.
+
+        December 30, 2025: Added as part of distributed config sync infrastructure.
+        When a peer has a newer config version (detected via gossip), it triggers
+        a config pull and emits this event. Subscribers should reload their cached
+        config to pick up the changes.
+
+        Args:
+            event: Event with payload containing source_node, timestamp
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            source_node = payload.get("source_node", "unknown")
+            timestamp = payload.get("timestamp", 0)
+
+            logger.info(
+                f"[SyncRouter] Config updated from {source_node} at {timestamp:.0f}, "
+                "reloading cluster config"
+            )
+
+            # Force reload cluster config to pick up changes
+            try:
+                from app.config.cluster_config import get_config_cache
+
+                cache = get_config_cache()
+                cache.get_config(force_reload=True)
+                logger.debug("[SyncRouter] Successfully reloaded cluster config")
+            except ImportError:
+                logger.warning("[SyncRouter] Could not import config cache for reload")
+            except (OSError, ValueError) as reload_err:
+                logger.warning(f"[SyncRouter] Config reload failed: {reload_err}")
+
+            # Refresh node capabilities from new config
+            self._refresh_from_config()
+
+        except (AttributeError, KeyError, TypeError) as e:
+            logger.debug(f"[SyncRouter] Error handling config updated: {e}")
 
     def is_under_backpressure(self, node_id: str = "") -> bool:
         """Check if a node (or globally) is under backpressure.

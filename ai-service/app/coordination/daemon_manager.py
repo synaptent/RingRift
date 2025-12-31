@@ -2707,6 +2707,9 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         # Dec 2025: Include memory pressure info
         memory_info = self._get_memory_info()
 
+        # Dec 30, 2025: Include config freshness info
+        config_info = self._get_config_freshness_info()
+
         return HealthCheckResult(
             healthy=is_healthy,
             status=status,
@@ -2719,6 +2722,9 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 "uptime_seconds": round(time.time() - self._start_time, 1),
                 "memory_percent": memory_info.get("percent", 0),
                 "memory_available_gb": memory_info.get("available_gb", 0),
+                "config_version": config_info.get("hash", "unknown"),
+                "config_age_seconds": config_info.get("age_seconds", 0),
+                "config_status": config_info.get("status", "unknown"),
             },
         )
 
@@ -2742,6 +2748,44 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         except Exception as e:
             logger.debug(f"Memory info unavailable: {e}")
             return {"percent": 0, "available_gb": 0}
+
+    def _get_config_freshness_info(self) -> dict[str, Any]:
+        """Get cluster config freshness info for health reporting.
+
+        December 30, 2025: Added as part of distributed config sync infrastructure.
+        Reports config version hash, age, and freshness status.
+
+        Returns:
+            Dict with config freshness info:
+                - hash: Content hash of config (first 16 chars of SHA256)
+                - age_seconds: Seconds since config was last loaded
+                - status: "fresh" (< 1 hour), "stale" (1-24 hours), "outdated" (> 24 hours)
+        """
+        try:
+            from app.config.cluster_config import get_config_version
+
+            version = get_config_version()
+            age_seconds = time.time() - version.timestamp
+
+            # Determine status based on age
+            if age_seconds < 3600:  # < 1 hour
+                status = "fresh"
+            elif age_seconds < 86400:  # < 24 hours
+                status = "stale"
+            else:
+                status = "outdated"
+
+            return {
+                "hash": version.content_hash,
+                "age_seconds": round(age_seconds, 1),
+                "status": status,
+            }
+        except ImportError:
+            # Config cache not available
+            return {"hash": "unavailable", "age_seconds": 0, "status": "unknown"}
+        except (OSError, AttributeError) as e:
+            logger.debug(f"Config freshness info unavailable: {e}")
+            return {"hash": "error", "age_seconds": 0, "status": "error"}
 
     def _check_memory_pressure(self, threshold_percent: float = 90.0) -> bool:
         """Check if system is under memory pressure.

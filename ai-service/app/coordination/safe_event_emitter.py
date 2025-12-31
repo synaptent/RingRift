@@ -95,7 +95,7 @@ class SafeEventEmitterMixin:
             payload: Optional event payload dict
 
         Returns:
-            True if event was emitted successfully, False otherwise
+            True if event was scheduled successfully, False otherwise
 
         Example:
             self._safe_emit_event(
@@ -118,13 +118,35 @@ class SafeEventEmitterMixin:
                 payload=payload or {},
                 source=self._event_source,
             )
-            bus.publish(event)
-            return True
 
-        except (AttributeError, ImportError, RuntimeError, TypeError) as e:
+            # bus.publish() is async - schedule it properly
+            # Use fire-and-forget if there's a running loop
+            try:
+                loop = asyncio.get_running_loop()
+                # Schedule as fire-and-forget task
+                task = loop.create_task(bus.publish(event))
+                # Add error callback to log failures without crashing
+                task.add_done_callback(
+                    lambda t: (
+                        logger.debug(
+                            f"[{self._event_source}] Event publish failed: {t.exception()}"
+                        )
+                        if t.exception()
+                        else None
+                    )
+                )
+                return True
+            except RuntimeError:
+                # No running event loop - can't schedule async publish
+                # This is acceptable in pure sync contexts
+                logger.debug(
+                    f"[{self._event_source}] No event loop, event not published"
+                )
+                return False
+
+        except (AttributeError, ImportError, TypeError) as e:
             # AttributeError - event bus missing attribute
             # ImportError - module unavailable during shutdown
-            # RuntimeError - no event loop (in async context)
             # TypeError - wrong DataEvent signature
             logger.debug(f"[{self._event_source}] Event emission failed: {e}")
             return False
@@ -173,7 +195,7 @@ def safe_emit_event(
         source: Source identifier for the event
 
     Returns:
-        True if event was emitted successfully, False otherwise
+        True if event was scheduled successfully, False otherwise
 
     Example:
         from app.coordination.safe_event_emitter import safe_emit_event
@@ -195,10 +217,27 @@ def safe_emit_event(
             payload=payload or {},
             source=source,
         )
-        bus.publish(event)
-        return True
 
-    except (AttributeError, ImportError, RuntimeError, TypeError) as e:
+        # bus.publish() is async - schedule it properly
+        try:
+            loop = asyncio.get_running_loop()
+            # Schedule as fire-and-forget task
+            task = loop.create_task(bus.publish(event))
+            # Add error callback to log failures without crashing
+            task.add_done_callback(
+                lambda t: (
+                    logger.debug(f"[{source}] Event publish failed: {t.exception()}")
+                    if t.exception()
+                    else None
+                )
+            )
+            return True
+        except RuntimeError:
+            # No running event loop - can't schedule async publish
+            logger.debug(f"[{source}] No event loop, event not published")
+            return False
+
+    except (AttributeError, ImportError, TypeError) as e:
         logger.debug(f"[{source}] Event emission failed: {e}")
         return False
 

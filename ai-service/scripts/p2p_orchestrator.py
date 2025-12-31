@@ -9800,6 +9800,94 @@ class P2POrchestrator(
     # moved to RegistryHandlersMixin in scripts/p2p/handlers/registry.py (Dec 28, 2025)
 
     # ============================================
+    # Config Sync Handlers (December 30, 2025)
+    # ============================================
+
+    async def handle_push_config(self, request: web.Request) -> web.Response:
+        """POST /push_config - Push current config to all cluster nodes.
+
+        December 30, 2025: Added as part of distributed config sync infrastructure.
+        Only the leader can push config to prevent conflicting updates.
+
+        When called:
+        1. Force reload local config to ensure we have latest
+        2. Broadcast CONFIG_UPDATED event via gossip
+        3. Nodes that receive the event will pull new config
+
+        Returns:
+            JSON response with status, config hash, and peer count
+        """
+        # Only leader can push config to prevent conflicting updates
+        if not self.is_leader:
+            return web.json_response({
+                "error": "Only leader can push config",
+                "leader_id": self.leader_id,
+            }, status=403)
+
+        try:
+            # Force reload local config
+            try:
+                from app.config.cluster_config import get_config_cache, get_config_version
+
+                cache = get_config_cache()
+                cache.get_config(force_reload=True)
+                version = get_config_version()
+            except ImportError as e:
+                return web.json_response({
+                    "error": f"Config cache not available: {e}",
+                }, status=500)
+            except (OSError, ValueError) as e:
+                return web.json_response({
+                    "error": f"Config reload failed: {e}",
+                }, status=500)
+
+            # Broadcast CONFIG_UPDATED event via gossip
+            peers_notified = 0
+            try:
+                from app.distributed.data_events import DataEventType, emit_data_event
+
+                event_payload = {
+                    "source_node": self.node_id,
+                    "hash": version.content_hash,
+                    "timestamp": version.timestamp,
+                    "force_sync": True,  # Nodes should pull immediately
+                }
+
+                emit_data_event(
+                    event_type=DataEventType.CONFIG_UPDATED,
+                    payload=event_payload,
+                    source="P2POrchestrator.push_config",
+                )
+
+                # Count alive peers
+                with self.peers_lock:
+                    peers_notified = sum(
+                        1 for p in self.peers.values()
+                        if p.get("status") == "alive"
+                    )
+
+                logger.info(
+                    f"[P2POrchestrator] Config pushed: hash={version.content_hash}, "
+                    f"peers_notified={peers_notified}"
+                )
+
+            except (ImportError, RuntimeError, OSError) as e:
+                logger.warning(f"[P2POrchestrator] Event emission failed: {e}")
+                # Still return success since config was reloaded locally
+
+            return web.json_response({
+                "status": "pushed",
+                "config_hash": version.content_hash,
+                "config_timestamp": version.timestamp,
+                "peers_notified": peers_notified,
+                "source_node": self.node_id,
+            })
+
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"[P2POrchestrator] push_config failed: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    # ============================================
     # Connectivity Diagnosis Handlers (SSH/HTTP fallback)
     # ============================================
 
@@ -26216,6 +26304,9 @@ print(json.dumps({{
             app.router.add_get('/cluster/health', self.handle_cluster_health)
             app.router.add_get('/git/status', self.handle_git_status)
             app.router.add_post('/git/update', self.handle_git_update)
+
+            # Config sync routes (December 30, 2025)
+            app.router.add_post('/push_config', self.handle_push_config)
 
             # Dynamic host registry routes (for IP auto-updates)
             app.router.add_post('/register', self.handle_register)

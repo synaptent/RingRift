@@ -279,6 +279,10 @@ class DataEventType(Enum):
     HOST_OFFLINE = "host_offline"
     ERROR = "error"
 
+    # Config sync events (December 2025 - distributed config propagation)
+    CONFIG_UPDATED = "config_updated"  # Cluster config (distributed_hosts.yaml) changed
+    CONFIG_DIVERGENCE_DETECTED = "config_divergence_detected"  # Node has different config than peers
+
     # Health & Recovery events (Phase 10 consolidation)
     HEALTH_CHECK_PASSED = "health_check_passed"
     HEALTH_CHECK_FAILED = "health_check_failed"

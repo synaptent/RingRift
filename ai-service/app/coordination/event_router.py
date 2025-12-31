@@ -46,7 +46,7 @@ import os
 import threading
 import time
 import uuid
-from collections import deque
+from collections import Counter, deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -376,6 +376,8 @@ class UnifiedEventRouter:
         # Use deque for O(1) popleft instead of O(n) list.pop(0) - Dec 2025 perf fix
         self._seen_events_order: deque[str] = deque()  # For LRU eviction (event_id)
         self._seen_hashes_order: deque[str] = deque()  # For LRU eviction (content hash)
+        # Dec 30, 2025: Counter for O(1) hash occurrence tracking (replaces O(n) deque search)
+        self._hash_counts: Counter[str] = Counter()
         self._max_seen_events = max_seen_events
         self._duplicates_prevented = 0
         self._content_duplicates_prevented = 0  # Content-hash based duplicates
@@ -832,13 +834,16 @@ class UnifiedEventRouter:
             if not content_seen:
                 self._seen_content_hashes.add(content_hash)
             self._seen_hashes_order.append(content_hash)
+            self._hash_counts[content_hash] += 1  # O(1) increment
 
             # Bound the LRU deque even if we allow repeated router-origin events
             # with identical content hashes.
             while len(self._seen_hashes_order) > self._max_seen_events:
                 oldest_hash = self._seen_hashes_order.popleft()  # O(1) with deque
-                if oldest_hash not in self._seen_hashes_order:
+                self._hash_counts[oldest_hash] -= 1  # O(1) decrement
+                if self._hash_counts[oldest_hash] <= 0:  # O(1) check
                     self._seen_content_hashes.discard(oldest_hash)
+                    del self._hash_counts[oldest_hash]  # Clean up counter entry
 
             # Track in history (bounded by _max_history)
             self._event_history.append(event)
@@ -996,11 +1001,14 @@ class UnifiedEventRouter:
             if not content_seen:
                 self._seen_content_hashes.add(content_hash)
             self._seen_hashes_order.append(content_hash)
+            self._hash_counts[content_hash] += 1  # O(1) increment
 
             while len(self._seen_hashes_order) > self._max_seen_events:
                 oldest_hash = self._seen_hashes_order.popleft()  # O(1) with deque
-                if oldest_hash not in self._seen_hashes_order:
+                self._hash_counts[oldest_hash] -= 1  # O(1) decrement
+                if self._hash_counts[oldest_hash] <= 0:  # O(1) check
                     self._seen_content_hashes.discard(oldest_hash)
+                    del self._hash_counts[oldest_hash]  # Clean up counter entry
 
             # Track in history (bounded by _max_history)
             self._event_history.append(event)
@@ -1453,6 +1461,7 @@ class UnifiedEventRouter:
         self._seen_events_order.clear()
         self._seen_content_hashes.clear()
         self._seen_hashes_order.clear()
+        self._hash_counts.clear()  # Dec 30, 2025: Clear O(1) counter
         # Also clear statistics
         self._events_routed.clear()
         self._events_by_source.clear()

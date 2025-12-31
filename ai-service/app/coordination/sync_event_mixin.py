@@ -143,6 +143,12 @@ class SyncEventMixin(SyncMixinBase):
                 bus.subscribe(DataEventType.SYNC_REQUEST, self._wrap_handler(self._on_sync_request))
                 logger.info("[AutoSyncDaemon] Subscribed to SYNC_REQUEST (SyncRouter integration)")
 
+            # December 30, 2025: Subscribe to CONFIG_UPDATED for distributed config sync
+            # When cluster config changes, reload cached config and update node list
+            if hasattr(DataEventType, 'CONFIG_UPDATED'):
+                bus.subscribe(DataEventType.CONFIG_UPDATED, self._wrap_handler(self._on_config_updated))
+                logger.info("[AutoSyncDaemon] Subscribed to CONFIG_UPDATED (cluster config sync)")
+
             self._subscribed = True
             if HAS_RESILIENT_HANDLER:
                 logger.info("[AutoSyncDaemon] Event handlers wrapped with resilient_handler")
@@ -686,3 +692,56 @@ class SyncEventMixin(SyncMixinBase):
             self._errors_count += 1
             self._last_error = str(e)
             logger.error(f"[AutoSyncDaemon] Error handling SYNC_REQUEST: {e}")
+
+    async def _on_config_updated(self, event) -> None:
+        """Handle CONFIG_UPDATED event - reload cluster config.
+
+        December 30, 2025: Part of distributed config sync infrastructure.
+        When a peer has a newer config version (detected via gossip), it
+        triggers a config pull and emits this event. We should reload our
+        cached config and update the node list for sync operations.
+
+        Payload:
+            source_node: Node that triggered the config update
+            timestamp: When the config was updated
+            hash: Config content hash (optional)
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else {}
+            source_node = payload.get("source_node", "unknown")
+            timestamp = payload.get("timestamp", 0)
+
+            logger.info(
+                f"[AutoSyncDaemon] CONFIG_UPDATED from {source_node} at {timestamp:.0f} "
+                "- reloading cluster config"
+            )
+
+            self._events_processed += 1
+
+            # Force reload cluster config to pick up changes
+            try:
+                from app.config.cluster_config import get_config_cache
+
+                cache = get_config_cache()
+                new_config = cache.get_config(force_reload=True)
+                logger.debug(
+                    f"[AutoSyncDaemon] Reloaded cluster config: "
+                    f"{len(new_config.hosts if hasattr(new_config, 'hosts') else [])} hosts"
+                )
+            except ImportError:
+                logger.warning("[AutoSyncDaemon] Could not import config cache for reload")
+            except (OSError, ValueError) as reload_err:
+                logger.warning(f"[AutoSyncDaemon] Config reload failed: {reload_err}")
+
+            # Update cluster manifest if we have one
+            if self._cluster_manifest:
+                try:
+                    await self._cluster_manifest.refresh()
+                    logger.debug("[AutoSyncDaemon] Refreshed cluster manifest after config update")
+                except (RuntimeError, OSError, ConnectionError) as refresh_err:
+                    logger.warning(f"[AutoSyncDaemon] Manifest refresh failed: {refresh_err}")
+
+        except (RuntimeError, OSError, ConnectionError) as e:
+            self._errors_count += 1
+            self._last_error = str(e)
+            logger.error(f"[AutoSyncDaemon] Error handling CONFIG_UPDATED: {e}")
