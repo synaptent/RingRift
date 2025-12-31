@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import socket
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -42,6 +43,37 @@ from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.protocols import CoordinatorStatus
 from app.core.ssh import SSHClient, SSHConfig, SSHResult
 from app.config.coordination_defaults import build_ssh_options
+
+
+def _is_running_on_owc_host(owc_host: str) -> bool:
+    """Check if we're running on the OWC host itself.
+
+    Dec 30, 2025: Added to enable local file access when running on mac-studio,
+    avoiding unnecessary SSH overhead and auth issues.
+    """
+    hostname = socket.gethostname().lower()
+    owc_host_lower = owc_host.lower()
+
+    # Check various hostname patterns
+    local_patterns = [
+        owc_host_lower,
+        f"{owc_host_lower}.local",
+        owc_host_lower.replace("-", ""),  # mac-studio -> macstudio
+        owc_host_lower.replace("-", "").replace(".", ""),
+    ]
+
+    hostname_normalized = hostname.replace("-", "").replace(".", "").replace("_", "")
+
+    for pattern in local_patterns:
+        pattern_normalized = pattern.replace("-", "").replace(".", "").replace("_", "")
+        if hostname_normalized.startswith(pattern_normalized):
+            return True
+
+    # Also check if owc_host is localhost
+    if owc_host_lower in ("localhost", "127.0.0.1", "::1"):
+        return True
+
+    return False
 
 logger = logging.getLogger(__name__)
 
@@ -168,14 +200,25 @@ class OWCImportDaemon(HandlerBase):
         self._import_history: list[ImportStats] = []
         self._total_games_imported = 0
         self._owc_available = True
-        # Dec 29, 2025: Use canonical SSHClient for all SSH operations
-        self._ssh_client = SSHClient(SSHConfig(
-            host=self.config.owc_host,
-            user=self.config.owc_user,
-            key_path=self.config.owc_ssh_key,
-            connect_timeout=10,
-            command_timeout=self.config.ssh_timeout,
-        ))
+
+        # Dec 30, 2025: Detect if running on OWC host for local file access
+        self._is_local = _is_running_on_owc_host(self.config.owc_host)
+        if self._is_local:
+            logger.info(
+                f"[OWCImport] Running on OWC host '{self.config.owc_host}', "
+                f"using local file access"
+            )
+
+        # Dec 29, 2025: Use canonical SSHClient for remote SSH operations
+        self._ssh_client: SSHClient | None = None
+        if not self._is_local:
+            self._ssh_client = SSHClient(SSHConfig(
+                host=self.config.owc_host,
+                user=self.config.owc_user,
+                key_path=self.config.owc_ssh_key,
+                connect_timeout=10,
+                command_timeout=self.config.ssh_timeout,
+            ))
 
     @property
     def config(self) -> OWCImportConfig:
@@ -186,21 +229,57 @@ class OWCImportDaemon(HandlerBase):
     # OWC Operations (Dec 29, 2025: Uses canonical SSHClient from app/core/ssh)
     # =========================================================================
 
-    async def _run_ssh_command(self, command: str) -> tuple[bool, str]:
-        """Run SSH command on OWC host using canonical SSHClient.
+    async def _run_command(self, command: str) -> tuple[bool, str]:
+        """Run command on OWC host (locally or via SSH).
 
-        Dec 29, 2025: Migrated from inline SSH subprocess to use app.core.ssh.SSHClient
-        for consistent connection handling, circuit breakers, and metrics.
+        Dec 30, 2025: Added local execution support when running on OWC host.
+        Uses direct subprocess for local execution, SSH for remote.
         """
-        result = await self._ssh_client.run_async(command, timeout=self.config.ssh_timeout)
-        if result.success:
-            return True, result.stdout.strip()
+        if self._is_local:
+            # Run locally using subprocess
+            try:
+                result = await asyncio.to_thread(
+                    subprocess.run,
+                    command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.config.ssh_timeout,
+                )
+                if result.returncode == 0:
+                    return True, result.stdout.strip()
+                else:
+                    return False, result.stderr.strip() or "Command failed"
+            except subprocess.TimeoutExpired:
+                return False, "Command timed out"
+            except Exception as e:
+                return False, str(e)
         else:
-            return False, result.stderr.strip() or result.error or "Unknown error"
+            # Run remotely via SSH
+            if self._ssh_client is None:
+                return False, "SSH client not initialized"
+            result = await self._ssh_client.run_async(
+                command, timeout=self.config.ssh_timeout
+            )
+            if result.success:
+                return True, result.stdout.strip()
+            else:
+                return False, result.stderr.strip() or result.error or "Unknown error"
+
+    # Backward compat alias
+    async def _run_ssh_command(self, command: str) -> tuple[bool, str]:
+        """Alias for _run_command (backward compatibility)."""
+        return await self._run_command(command)
 
     async def _check_owc_available(self) -> bool:
         """Check if OWC drive is accessible."""
-        success, output = await self._run_ssh_command(
+        if self._is_local:
+            # Check locally using Path
+            owc_path = Path(self.config.owc_base_path)
+            return owc_path.exists() and owc_path.is_dir()
+
+        # Check via SSH
+        success, output = await self._run_command(
             f"ls -d '{self.config.owc_base_path}' 2>/dev/null"
         )
         return success
@@ -274,12 +353,36 @@ class OWCImportDaemon(HandlerBase):
         return info if info.configs else None
 
     async def _sync_database(self, rel_path: str) -> Path | None:
-        """Sync a database from OWC to local staging."""
+        """Sync a database from OWC to local staging.
+
+        Dec 30, 2025: Added local mode support - uses shutil.copy when
+        running on OWC host, rsync over SSH when remote.
+        """
+        import shutil
+
         self.config.staging_dir.mkdir(parents=True, exist_ok=True)
 
         local_name = rel_path.replace("/", "_")
         local_path = self.config.staging_dir / local_name
+        source_path = Path(self.config.owc_base_path) / rel_path
 
+        if self._is_local:
+            # Local mode: direct file copy
+            try:
+                if not source_path.exists():
+                    logger.warning(f"[OWCImport] Source not found: {source_path}")
+                    return None
+
+                await asyncio.to_thread(shutil.copy2, source_path, local_path)
+                logger.info(
+                    f"[OWCImport] Copied {rel_path} ({local_path.stat().st_size / 1024 / 1024:.1f} MB)"
+                )
+                return local_path
+            except Exception as e:
+                logger.warning(f"[OWCImport] Copy error for {rel_path}: {e}")
+                return None
+
+        # Remote mode: rsync over SSH
         remote_path = f"{self.config.owc_user}@{self.config.owc_host}:{self.config.owc_base_path}/{rel_path}"
 
         # Dec 30, 2025: Use centralized SSH config for consistent timeouts
@@ -409,7 +512,10 @@ class OWCImportDaemon(HandlerBase):
         # Check OWC availability
         if not await self._check_owc_available():
             if self._owc_available:  # Log only on state change
-                logger.warning(f"[OWCImport] OWC drive not available at {self.config.owc_host}:{self.config.owc_base_path}")
+                if self._is_local:
+                    logger.warning(f"[OWCImport] OWC drive not available at {self.config.owc_base_path}")
+                else:
+                    logger.warning(f"[OWCImport] OWC drive not available at {self.config.owc_host}:{self.config.owc_base_path}")
             self._owc_available = False
             return
 
@@ -505,17 +611,22 @@ class OWCImportDaemon(HandlerBase):
                 healthy=True,  # Still healthy, just OWC unavailable
                 status=CoordinatorStatus.RUNNING,
                 message="OWC drive not available",
-                details={"owc_host": self.config.owc_host},
+                details={
+                    "owc_host": self.config.owc_host,
+                    "is_local": self._is_local,
+                },
             )
 
+        mode = "local" if self._is_local else "remote"
         return HealthCheckResult(
             healthy=True,
             status=CoordinatorStatus.RUNNING,
-            message=f"OWC import active, {self._total_games_imported} games imported",
+            message=f"OWC import active ({mode}), {self._total_games_imported} games imported",
             details={
                 "cycles_completed": self._stats.cycles_completed,
                 "total_games_imported": self._total_games_imported,
                 "owc_available": self._owc_available,
+                "is_local": self._is_local,
                 "errors_count": self._stats.errors_count,
             },
         )
@@ -537,6 +648,7 @@ class OWCImportDaemon(HandlerBase):
             },
             "owc_host": self.config.owc_host,
             "owc_available": self._owc_available,
+            "is_local": self._is_local,
             "total_games_imported": self._total_games_imported,
             "recent_imports": [
                 {
