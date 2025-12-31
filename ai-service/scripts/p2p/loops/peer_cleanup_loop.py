@@ -127,6 +127,17 @@ class CleanupStats:
     last_cleanup_time: float = 0.0
     cycles_run: int = 0
 
+    def to_dict(self) -> dict:
+        """Convert stats to dictionary for JSON serialization."""
+        return {
+            "total_purged": self.total_purged,
+            "tier1_detected": self.tier1_detected,
+            "tier2_purged": self.tier2_purged,
+            "tier3_purged": self.tier3_purged,
+            "last_cleanup_time": self.last_cleanup_time,
+            "cycles_run": self.cycles_run,
+        }
+
 
 # =============================================================================
 # Cleanup Loop
