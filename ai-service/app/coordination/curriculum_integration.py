@@ -24,10 +24,12 @@ Purpose: Close missing feedback loops in AI training self-improvement cycle
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from typing import Any
 
+from app.coordination.curriculum_router import CurriculumSignalBridge
 from app.coordination.event_handler_utils import extract_config_key
 from app.coordination.event_utils import parse_config_key
 from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
@@ -961,6 +963,8 @@ class PFSPWeaknessWatcher:
             if name.startswith(prefix):
                 name = name[len(prefix):]
                 break
+        # Strip version suffixes like _v123, _v1, _v2.0
+        name = re.sub(r"_v\d+(?:\.\d+)?$", "", name)
         parsed = parse_config_key(name)
         if parsed:
             return f"{parsed.board_type}_{parsed.num_players}p"
@@ -1054,7 +1058,7 @@ class PFSPWeaknessWatcher:
 # =============================================================================
 
 
-class PromotionFailedToCurriculumWatcher:
+class PromotionFailedToCurriculumWatcher(CurriculumSignalBridge):
     """Increases curriculum weight when model promotion fails.
 
     When a model fails promotion (emits PROMOTION_FAILED), this watcher
@@ -1067,191 +1071,70 @@ class PromotionFailedToCurriculumWatcher:
     3. This watcher subscribes and increases curriculum weight
     4. CurriculumFeedback allocates more selfplay to affected configs
     5. Emits CURRICULUM_REBALANCED to notify downstream systems
+
+    December 30, 2025: Migrated to use CurriculumSignalBridge base class (P4.2).
+    Reduces ~170 LOC of boilerplate to ~50 LOC of specific logic.
     """
+
+    WATCHER_NAME = "promotion_failed_curriculum_watcher"
+    EVENT_TYPES = ["PROMOTION_FAILED"]  # From RingRiftEventType
 
     # Weight increase factor per consecutive failure (cumulative)
     WEIGHT_INCREASE_PER_FAILURE = 0.20  # 20% increase per failure
+    MAX_WEIGHT_MULTIPLIER = 2.5
 
-    def __init__(self):
-        self._subscribed = False
-        self._failure_counts: dict[str, int] = {}  # config -> consecutive failures
+    def _compute_weight_multiplier(
+        self,
+        config_key: str,
+        payload: dict[str, Any],
+    ) -> float | None:
+        """Compute weight multiplier based on consecutive failures.
 
-    def subscribe(self) -> bool:
-        """Subscribe to PROMOTION_FAILED events."""
-        if self._subscribed:
-            return True
-
-        try:
-            from app.coordination.event_router import get_router
-            from app.events.types import RingRiftEventType
-
-            router = get_router()
-            if router is None:
-                logger.debug("[PromotionFailedToCurriculumWatcher] Event router not available")
-                return False
-
-            router.subscribe(RingRiftEventType.PROMOTION_FAILED, self._on_promotion_failed)
-            self._subscribed = True
-            logger.info("[PromotionFailedToCurriculumWatcher] Subscribed to PROMOTION_FAILED")
-            return True
-
-        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
-            # ImportError: event_router not available
-            # AttributeError: router method missing
-            # TypeError: invalid subscription arguments
-            # RuntimeError: subscription failed
-            logger.warning(f"[PromotionFailedToCurriculumWatcher] Failed to subscribe: {e}")
-            return False
-
-    def unsubscribe(self) -> None:
-        """Unsubscribe from events."""
-        if not self._subscribed:
-            return
-
-        try:
-            from app.coordination.event_router import get_router
-            from app.events.types import RingRiftEventType
-
-            router = get_router()
-            if router:
-                router.unsubscribe(RingRiftEventType.PROMOTION_FAILED, self._on_promotion_failed)
-            self._subscribed = False
-        except (ImportError, AttributeError, TypeError, RuntimeError):
-            # ImportError: event_router not available
-            # AttributeError: router method missing
-            # TypeError: invalid unsubscription arguments
-            # RuntimeError: unsubscription failed
-            pass
-
-    def _on_promotion_failed(self, event) -> None:
-        """Handle PROMOTION_FAILED event - increase curriculum weight.
-
-        December 2025: Closes the promotion failure → curriculum weight feedback loop.
-        When promotion fails, increase selfplay allocation to generate more diverse data.
+        Returns:
+            Weight multiplier (1.2 for first failure, increasing by 0.2 per failure)
+            Capped at 2.5x maximum.
         """
-        try:
-            payload = event.payload if hasattr(event, 'payload') else event
+        # Track consecutive failures in state
+        failure_key = f"{config_key}:failure_count"
+        failure_count = self.get_state(failure_key, 0) + 1
+        self.set_state(failure_key, failure_count)
 
-            config_key = extract_config_key(payload)
-            error = payload.get("error", "unknown")
-            model_id = payload.get("model_id", "")
+        # Increase weight: 20% per failure, up to 2.5x max
+        # failure_count=1 -> 1.2x, failure_count=2 -> 1.4x, etc.
+        multiplier = min(
+            self.MAX_WEIGHT_MULTIPLIER,
+            1.0 + (failure_count * self.WEIGHT_INCREASE_PER_FAILURE),
+        )
+        return multiplier
 
-            if not config_key:
-                return
-
-            # Track consecutive failures
-            self._failure_counts[config_key] = self._failure_counts.get(config_key, 0) + 1
-            failure_count = self._failure_counts[config_key]
-
-            logger.info(
-                f"[PromotionFailedToCurriculumWatcher] Promotion failed for {config_key}: "
-                f"model={model_id}, error={error}, consecutive_failures={failure_count}"
-            )
-
-            # Increase curriculum weight to generate more diverse training data
-            self._increase_curriculum_weight(config_key, failure_count, error)
-
-        except (AttributeError, KeyError, TypeError, ValueError) as e:
-            # AttributeError: event attribute missing
-            # KeyError: missing payload field
-            # TypeError: invalid data types
-            # ValueError: invalid values
-            logger.warning(f"[PromotionFailedToCurriculumWatcher] Error handling promotion failure: {e}")
-
-    def _increase_curriculum_weight(
+    def _extract_event_details(
         self,
-        config_key: str,
-        failure_count: int,
-        error: str,
-    ) -> None:
-        """Increase curriculum weight based on consecutive failures."""
-        try:
-            from app.training.curriculum_feedback import get_curriculum_feedback
-
-            feedback = get_curriculum_feedback()
-            current_weight = feedback._current_weights.get(config_key, 1.0)
-
-            # Increase weight: 20% per failure, up to 2.5x max
-            # failure_count=1 -> 1.2x, failure_count=2 -> 1.44x, etc.
-            weight_multiplier = min(2.5, 1.0 + (failure_count * self.WEIGHT_INCREASE_PER_FAILURE))
-            new_weight = min(feedback.weight_max, current_weight * weight_multiplier)
-
-            if new_weight > current_weight:
-                feedback._current_weights[config_key] = new_weight
-
-                logger.info(
-                    f"[PromotionFailedToCurriculumWatcher] Increased curriculum weight for {config_key}: "
-                    f"{current_weight:.2f} → {new_weight:.2f} (failures={failure_count}, error={error})"
-                )
-
-                # Emit CURRICULUM_REBALANCED event
-                self._emit_rebalance_event(config_key, new_weight, failure_count)
-
-        except ImportError as e:
-            logger.debug(f"[PromotionFailedToCurriculumWatcher] curriculum_feedback import error: {e}")
-        except (AttributeError, TypeError, ValueError, KeyError) as e:
-            # AttributeError: feedback method missing
-            # TypeError: invalid weight types
-            # ValueError: invalid weight values
-            # KeyError: unknown config_key
-            logger.warning(f"[PromotionFailedToCurriculumWatcher] Error increasing weight: {e}")
-
-    def _emit_rebalance_event(
-        self,
-        config_key: str,
-        new_weight: float,
-        failure_count: int,
-    ) -> None:
-        """Emit CURRICULUM_REBALANCED event for downstream systems."""
-        try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
-            router.publish_sync(
-                "CURRICULUM_REBALANCED",
-                {
-                    "trigger": "promotion_failed",
-                    "changed_configs": [config_key],
-                    "new_weights": {config_key: new_weight},
-                    "failure_count": failure_count,
-                    "timestamp": time.time(),
-                },
-                source="promotion_failed_curriculum_watcher",
-            )
-        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
-            # ImportError: event_router not available
-            # AttributeError: router method missing
-            # TypeError: invalid event arguments
-            # RuntimeError: publish failed
-            logger.debug(f"Failed to emit rebalance event: {e}")
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Extract promotion failure details for logging and events."""
+        config_key = extract_config_key(payload)
+        failure_key = f"{config_key}:failure_count" if config_key else ""
+        return {
+            "error": payload.get("error", "unknown"),
+            "model_id": payload.get("model_id", ""),
+            "failure_count": self.get_state(failure_key, 0) if failure_key else 0,
+        }
 
     def reset_failure_count(self, config_key: str) -> None:
         """Reset failure count for a config (called when promotion succeeds)."""
-        if config_key in self._failure_counts:
-            del self._failure_counts[config_key]
-            logger.info(f"[PromotionFailedToCurriculumWatcher] Reset failure count for {config_key}")
+        failure_key = f"{config_key}:failure_count"
+        if self.get_state(failure_key) is not None:
+            self.reset_state(config_key)
+            logger.info(f"[{self.WATCHER_NAME}] Reset failure count for {config_key}")
 
     def get_failure_counts(self) -> dict[str, int]:
         """Get current failure counts."""
-        return dict(self._failure_counts)
-
-    def health_check(self) -> "HealthCheckResult":
-        """Check watcher health for DaemonManager integration."""
-        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
-
-        if not self._subscribed:
-            return HealthCheckResult(
-                healthy=False,
-                status=CoordinatorStatus.STOPPED,
-                message="PromotionFailedToCurriculumWatcher not subscribed",
-            )
-
-        return HealthCheckResult(
-            healthy=True,
-            status=CoordinatorStatus.RUNNING,
-            message=f"Tracking {len(self._failure_counts)} configs with failures",
-            details={"failure_counts": dict(self._failure_counts)},
-        )
+        result = {}
+        for key, value in self._state.items():
+            if key.endswith(":failure_count"):
+                config_key = key.rsplit(":", 1)[0]
+                result[config_key] = value
+        return result
 
 
 # =============================================================================
@@ -1515,7 +1398,7 @@ class PromotionCompletedToCurriculumWatcher:
 # =============================================================================
 
 
-class RegressionCriticalToCurriculumWatcher:
+class RegressionCriticalToCurriculumWatcher(CurriculumSignalBridge):
     """Boosts curriculum weight when critical model regression is detected.
 
     When GauntletFeedbackController detects a severe Elo regression or
@@ -1533,185 +1416,74 @@ class RegressionCriticalToCurriculumWatcher:
     The weight increase is more aggressive than promotion failures since
     regression indicates the model is actively getting worse and needs
     immediate attention.
+
+    December 30, 2025: Migrated to use CurriculumSignalBridge base class (P4.2).
+    Reduces ~200 LOC of boilerplate to ~60 LOC of specific logic.
     """
+
+    WATCHER_NAME = "regression_critical_curriculum_watcher"
+    EVENT_TYPES = ["REGRESSION_CRITICAL"]  # DataEventType.REGRESSION_CRITICAL
 
     # Weight increase factor per regression severity
     WEIGHT_INCREASE_MODERATE = 0.25  # 25% for moderate regressions
     WEIGHT_INCREASE_SEVERE = 0.50  # 50% for severe regressions
+    MAX_WEIGHT_MULTIPLIER = 3.0
 
-    def __init__(self):
-        self._subscribed = False
-        self._regression_counts: dict[str, int] = {}  # config -> consecutive regressions
+    def _compute_weight_multiplier(
+        self,
+        config_key: str,
+        payload: dict[str, Any],
+    ) -> float | None:
+        """Compute weight multiplier based on regression severity.
 
-    def subscribe(self) -> bool:
-        """Subscribe to REGRESSION_CRITICAL events."""
-        if self._subscribed:
-            return True
-
-        try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
-
-            router = get_router()
-            if router is None:
-                logger.debug("[RegressionCriticalToCurriculumWatcher] Event router not available")
-                return False
-
-            router.subscribe(DataEventType.REGRESSION_CRITICAL, self._on_regression_critical)
-            self._subscribed = True
-            logger.info("[RegressionCriticalToCurriculumWatcher] Subscribed to REGRESSION_CRITICAL")
-            return True
-
-        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
-            logger.warning(f"[RegressionCriticalToCurriculumWatcher] Failed to subscribe: {e}")
-            return False
-
-    def unsubscribe(self) -> None:
-        """Unsubscribe from events."""
-        if not self._subscribed:
-            return
-
-        try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
-
-            router = get_router()
-            if router:
-                router.unsubscribe(DataEventType.REGRESSION_CRITICAL, self._on_regression_critical)
-            self._subscribed = False
-        except (ImportError, AttributeError, TypeError, RuntimeError):
-            pass
-
-    def _on_regression_critical(self, event) -> None:
-        """Handle REGRESSION_CRITICAL event - boost curriculum weight.
-
-        December 2025: Closes the regression → curriculum weight feedback loop.
-        When model regression is detected, increase selfplay allocation to
-        generate more diverse data for recovery training.
+        Returns:
+            Weight multiplier (1.25 for moderate, 1.50 for severe)
+            Plus 0.1 per consecutive regression. Capped at 3.0x.
         """
-        try:
-            payload = event.payload if hasattr(event, 'payload') else event
+        severity = payload.get("severity", "moderate")
+        consecutive_regressions = payload.get("consecutive_regressions", 1)
 
-            config_key = extract_config_key(payload)
-            severity = payload.get("severity", "unknown")
-            elo_drop = payload.get("elo_drop", 0)
-            consecutive_regressions = payload.get("consecutive_regressions", 1)
-            recommendation = payload.get("recommendation", "")
+        # Track consecutive regressions in state
+        regression_key = f"{config_key}:regression_count"
+        self.set_state(regression_key, consecutive_regressions)
 
-            if not config_key:
-                return
+        # Calculate weight increase based on severity
+        if severity == "severe":
+            base_increase = self.WEIGHT_INCREASE_SEVERE
+        else:
+            base_increase = self.WEIGHT_INCREASE_MODERATE
 
-            # Track consecutive regressions
-            self._regression_counts[config_key] = consecutive_regressions
+        # Additional increase for consecutive regressions
+        multiplier = 1.0 + base_increase + (0.1 * (consecutive_regressions - 1))
+        return min(self.MAX_WEIGHT_MULTIPLIER, multiplier)
 
-            logger.warning(
-                f"[RegressionCriticalToCurriculumWatcher] Regression detected for {config_key}: "
-                f"severity={severity}, elo_drop={elo_drop:.0f}, "
-                f"consecutive_regressions={consecutive_regressions}, recommendation={recommendation}"
-            )
-
-            # Increase curriculum weight to generate more diverse training data
-            self._increase_curriculum_weight(config_key, severity, elo_drop, consecutive_regressions)
-
-        except (AttributeError, KeyError, TypeError, ValueError) as e:
-            logger.warning(f"[RegressionCriticalToCurriculumWatcher] Error handling regression: {e}")
-
-    def _increase_curriculum_weight(
+    def _extract_event_details(
         self,
-        config_key: str,
-        severity: str,
-        elo_drop: float,
-        consecutive_regressions: int,
-    ) -> None:
-        """Increase curriculum weight based on regression severity."""
-        try:
-            from app.training.curriculum_feedback import get_curriculum_feedback
-
-            feedback = get_curriculum_feedback()
-            current_weight = feedback._current_weights.get(config_key, 1.0)
-
-            # Calculate weight increase based on severity
-            if severity == "severe":
-                base_increase = self.WEIGHT_INCREASE_SEVERE
-            else:
-                base_increase = self.WEIGHT_INCREASE_MODERATE
-
-            # Additional increase for consecutive regressions
-            weight_multiplier = 1.0 + base_increase + (0.1 * (consecutive_regressions - 1))
-            weight_multiplier = min(3.0, weight_multiplier)  # Cap at 3x
-
-            new_weight = min(feedback.weight_max, current_weight * weight_multiplier)
-
-            if new_weight > current_weight:
-                feedback._current_weights[config_key] = new_weight
-
-                logger.info(
-                    f"[RegressionCriticalToCurriculumWatcher] Increased curriculum weight for {config_key}: "
-                    f"{current_weight:.2f} → {new_weight:.2f} (severity={severity}, elo_drop={elo_drop:.0f})"
-                )
-
-                # Emit CURRICULUM_REBALANCED event
-                self._emit_rebalance_event(config_key, new_weight, severity, elo_drop)
-
-        except ImportError as e:
-            logger.debug(f"[RegressionCriticalToCurriculumWatcher] curriculum_feedback import error: {e}")
-        except (AttributeError, TypeError, ValueError, KeyError) as e:
-            logger.warning(f"[RegressionCriticalToCurriculumWatcher] Error increasing weight: {e}")
-
-    def _emit_rebalance_event(
-        self,
-        config_key: str,
-        new_weight: float,
-        severity: str,
-        elo_drop: float,
-    ) -> None:
-        """Emit CURRICULUM_REBALANCED event for downstream systems."""
-        try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
-            router.publish_sync(
-                "CURRICULUM_REBALANCED",
-                {
-                    "trigger": "regression_critical",
-                    "changed_configs": [config_key],
-                    "new_weights": {config_key: new_weight},
-                    "severity": severity,
-                    "elo_drop": elo_drop,
-                    "timestamp": time.time(),
-                },
-                source="regression_critical_curriculum_watcher",
-            )
-        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
-            logger.debug(f"Failed to emit rebalance event: {e}")
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Extract regression details for logging and events."""
+        return {
+            "severity": payload.get("severity", "unknown"),
+            "elo_drop": payload.get("elo_drop", 0),
+            "consecutive_regressions": payload.get("consecutive_regressions", 1),
+            "recommendation": payload.get("recommendation", ""),
+        }
 
     def reset_regression_count(self, config_key: str) -> None:
         """Reset regression count for a config (called when model improves)."""
-        if config_key in self._regression_counts:
-            del self._regression_counts[config_key]
-            logger.info(f"[RegressionCriticalToCurriculumWatcher] Reset regression count for {config_key}")
+        regression_key = f"{config_key}:regression_count"
+        if self.get_state(regression_key) is not None:
+            self.reset_state(config_key)
+            logger.info(f"[{self.WATCHER_NAME}] Reset regression count for {config_key}")
 
     def get_regression_counts(self) -> dict[str, int]:
         """Get current regression counts."""
-        return dict(self._regression_counts)
-
-    def health_check(self) -> "HealthCheckResult":
-        """Check watcher health for DaemonManager integration."""
-        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
-
-        if not self._subscribed:
-            return HealthCheckResult(
-                healthy=False,
-                status=CoordinatorStatus.STOPPED,
-                message="RegressionCriticalToCurriculumWatcher not subscribed",
-            )
-
-        return HealthCheckResult(
-            healthy=True,
-            status=CoordinatorStatus.RUNNING,
-            message=f"Tracking {len(self._regression_counts)} configs with regressions",
-            details={"regression_counts": dict(self._regression_counts)},
-        )
+        result = {}
+        for key, value in self._state.items():
+            if key.endswith(":regression_count"):
+                config_key = key.rsplit(":", 1)[0]
+                result[config_key] = value
+        return result
 
 
 # =============================================================================
@@ -1719,7 +1491,7 @@ class RegressionCriticalToCurriculumWatcher:
 # =============================================================================
 
 
-class QualityPenaltyToCurriculumWatcher:
+class QualityPenaltyToCurriculumWatcher(CurriculumSignalBridge):
     """Reduces curriculum weight when quality penalties are applied.
 
     When AdaptiveController applies a quality penalty to a config (emits
@@ -1733,188 +1505,80 @@ class QualityPenaltyToCurriculumWatcher:
     3. This watcher subscribes and reduces curriculum weight
     4. CurriculumFeedback allocates less selfplay to affected configs
     5. Emits CURRICULUM_REBALANCED to notify downstream systems
+
+    December 30, 2025: Migrated to use CurriculumSignalBridge base class (P4.2).
+    Reduces ~200 LOC of boilerplate to ~60 LOC of specific logic.
     """
+
+    WATCHER_NAME = "quality_penalty_curriculum_watcher"
+    EVENT_TYPES = ["QUALITY_PENALTY_APPLIED"]  # DataEventType.QUALITY_PENALTY_APPLIED
 
     # Weight reduction factor per penalty unit (cumulative with penalties)
     WEIGHT_REDUCTION_PER_PENALTY = 0.15  # 15% reduction per penalty unit
+    MIN_WEIGHT_MULTIPLIER = 0.3  # Never reduce below 30%
 
-    def __init__(self):
-        self._subscribed = False
-        self._penalty_weights: dict[str, float] = {}  # config -> weight multiplier
+    def _compute_weight_multiplier(
+        self,
+        config_key: str,
+        payload: dict[str, Any],
+    ) -> float | None:
+        """Compute weight multiplier based on penalty severity.
 
-    def subscribe(self) -> bool:
-        """Subscribe to QUALITY_PENALTY_APPLIED events."""
-        if self._subscribed:
-            return True
-
-        try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
-
-            router = get_router()
-            if router is None:
-                logger.debug("[QualityPenaltyToCurriculumWatcher] Event router not available")
-                return False
-
-            router.subscribe(DataEventType.QUALITY_PENALTY_APPLIED, self._on_quality_penalty)
-            self._subscribed = True
-            logger.info("[QualityPenaltyToCurriculumWatcher] Subscribed to QUALITY_PENALTY_APPLIED")
-            return True
-
-        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
-            # ImportError: event_router not available
-            # AttributeError: router method missing
-            # TypeError: invalid subscription arguments
-            # RuntimeError: subscription failed
-            logger.warning(f"[QualityPenaltyToCurriculumWatcher] Failed to subscribe: {e}")
-            return False
-
-    def unsubscribe(self) -> None:
-        """Unsubscribe from events."""
-        if not self._subscribed:
-            return
-
-        try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
-
-            router = get_router()
-            if router:
-                router.unsubscribe(DataEventType.QUALITY_PENALTY_APPLIED, self._on_quality_penalty)
-            self._subscribed = False
-        except (ImportError, AttributeError, TypeError, RuntimeError):
-            # ImportError: event_router not available
-            # AttributeError: router method missing
-            # TypeError: invalid unsubscription arguments
-            # RuntimeError: unsubscription failed
-            pass
-
-    def _on_quality_penalty(self, event) -> None:
-        """Handle QUALITY_PENALTY_APPLIED event - reduce curriculum weight.
-
-        December 2025: Closes the quality → curriculum weight feedback loop.
-        When quality penalty is applied, proportionally reduce selfplay allocation.
+        Returns:
+            Weight multiplier (< 1.0 for reduction).
+            penalty=0 → 1.0, penalty=1 → 0.85, penalty=2 → 0.70
+            Minimum 0.3x to prevent complete starvation.
         """
-        try:
-            payload = event.payload if hasattr(event, 'payload') else event
+        new_penalty = payload.get("new_penalty", 0.0)
 
-            config_key = extract_config_key(payload)
-            new_penalty = payload.get("new_penalty", 0.0)
-            rate_multiplier = payload.get("rate_multiplier", 1.0)
-            reason = payload.get("reason", "")
+        # Track penalty in state
+        penalty_key = f"{config_key}:penalty"
+        old_penalty = self.get_state(penalty_key, 0.0)
 
-            if not config_key:
-                return
+        # Only apply if penalty changed significantly
+        if abs(new_penalty - old_penalty) < 0.02:
+            return None  # Skip - no significant change
 
-            # Calculate weight reduction based on penalty severity
-            # penalty=0 → weight=1.0, penalty=1 → weight=0.85, penalty=2 → weight=0.70
-            weight_factor = max(0.3, 1.0 - (new_penalty * self.WEIGHT_REDUCTION_PER_PENALTY))
-            old_weight = self._penalty_weights.get(config_key, 1.0)
+        self.set_state(penalty_key, new_penalty)
 
-            if abs(weight_factor - old_weight) > 0.02:
-                self._penalty_weights[config_key] = weight_factor
-                self._apply_curriculum_weight(config_key, weight_factor, new_penalty, reason)
+        # Calculate weight reduction based on penalty severity
+        # penalty=0 → weight=1.0, penalty=1 → weight=0.85, penalty=2 → weight=0.70
+        multiplier = max(
+            self.MIN_WEIGHT_MULTIPLIER,
+            1.0 - (new_penalty * self.WEIGHT_REDUCTION_PER_PENALTY),
+        )
+        return multiplier
 
-        except (AttributeError, KeyError, TypeError, ValueError) as e:
-            # AttributeError: event attribute missing
-            # KeyError: missing payload field
-            # TypeError: invalid data types
-            # ValueError: invalid penalty values
-            logger.warning(f"[QualityPenaltyToCurriculumWatcher] Error handling penalty: {e}")
-
-    def _apply_curriculum_weight(
+    def _extract_event_details(
         self,
-        config_key: str,
-        weight_factor: float,
-        penalty: float,
-        reason: str,
-    ) -> None:
-        """Apply weight reduction to CurriculumFeedback."""
-        try:
-            from app.training.curriculum_feedback import get_curriculum_feedback
-
-            feedback = get_curriculum_feedback()
-            current_weight = feedback._current_weights.get(config_key, 1.0)
-
-            # Apply the quality-based weight reduction
-            new_weight = max(feedback.weight_min, current_weight * weight_factor)
-
-            if new_weight < current_weight:
-                feedback._current_weights[config_key] = new_weight
-
-                logger.info(
-                    f"[QualityPenaltyToCurriculumWatcher] Reduced curriculum weight for {config_key}: "
-                    f"{current_weight:.2f} → {new_weight:.2f} (penalty={penalty:.2f}, reason={reason})"
-                )
-
-                # Emit CURRICULUM_REBALANCED event
-                self._emit_rebalance_event(config_key, new_weight, penalty)
-
-        except ImportError as e:
-            logger.debug(f"[QualityPenaltyToCurriculumWatcher] curriculum_feedback import error: {e}")
-        except (AttributeError, TypeError, ValueError, KeyError) as e:
-            # AttributeError: feedback method missing
-            # TypeError: invalid weight types
-            # ValueError: invalid weight values
-            # KeyError: unknown config_key
-            logger.warning(f"[QualityPenaltyToCurriculumWatcher] Error applying weight: {e}")
-
-    def _emit_rebalance_event(
-        self,
-        config_key: str,
-        new_weight: float,
-        penalty: float,
-    ) -> None:
-        """Emit CURRICULUM_REBALANCED event for downstream systems."""
-        try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
-            router.publish_sync(
-                "CURRICULUM_REBALANCED",
-                {
-                    "trigger": "quality_penalty",
-                    "changed_configs": [config_key],
-                    "new_weights": {config_key: new_weight},
-                    "penalty": penalty,
-                    "timestamp": time.time(),
-                },
-                source="quality_penalty_curriculum_watcher",
-            )
-        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
-            # ImportError: event_router not available
-            # AttributeError: router method missing
-            # TypeError: invalid event arguments
-            # RuntimeError: publish failed
-            logger.debug(f"Failed to emit rebalance event: {e}")
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Extract quality penalty details for logging and events."""
+        return {
+            "penalty": payload.get("new_penalty", 0.0),
+            "rate_multiplier": payload.get("rate_multiplier", 1.0),
+            "reason": payload.get("reason", ""),
+        }
 
     def get_penalty_weights(self) -> dict[str, float]:
         """Get current penalty-based weight factors."""
-        return dict(self._penalty_weights)
+        result = {}
+        for key, value in self._state.items():
+            if key.endswith(":penalty"):
+                config_key = key.rsplit(":", 1)[0]
+                # Convert penalty to weight factor
+                result[config_key] = max(
+                    self.MIN_WEIGHT_MULTIPLIER,
+                    1.0 - (value * self.WEIGHT_REDUCTION_PER_PENALTY),
+                )
+        return result
 
     def reset_penalty(self, config_key: str) -> None:
         """Reset penalty weight for a config (called when quality recovers)."""
-        if config_key in self._penalty_weights:
-            del self._penalty_weights[config_key]
-            logger.info(f"[QualityPenaltyToCurriculumWatcher] Reset penalty weight for {config_key}")
-
-    def health_check(self) -> "HealthCheckResult":
-        """Check watcher health for DaemonManager integration."""
-        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
-
-        if not self._subscribed:
-            return HealthCheckResult(
-                healthy=False,
-                status=CoordinatorStatus.STOPPED,
-                message="QualityPenaltyToCurriculumWatcher not subscribed",
-            )
-
-        return HealthCheckResult(
-            healthy=True,
-            status=CoordinatorStatus.RUNNING,
-            message=f"Tracking {len(self._penalty_weights)} configs with penalties",
-            details={"penalty_weights": dict(self._penalty_weights)},
-        )
+        penalty_key = f"{config_key}:penalty"
+        if self.get_state(penalty_key) is not None:
+            self.reset_state(config_key)
+            logger.info(f"[{self.WATCHER_NAME}] Reset penalty for {config_key}")
 
 
 # =============================================================================

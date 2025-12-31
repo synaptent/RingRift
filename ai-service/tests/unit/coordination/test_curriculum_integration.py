@@ -134,7 +134,8 @@ class TestQualityPenaltyToCurriculumWatcher:
         watcher = QualityPenaltyToCurriculumWatcher()
         assert watcher.WEIGHT_REDUCTION_PER_PENALTY == 0.15
         assert watcher._subscribed is False
-        assert len(watcher._penalty_weights) == 0
+        # Dec 2025: Uses base class _state dict via get_penalty_weights()
+        assert len(watcher.get_penalty_weights()) == 0
 
     def test_get_penalty_weights_empty(self):
         """get_penalty_weights returns empty dict initially."""
@@ -144,10 +145,12 @@ class TestQualityPenaltyToCurriculumWatcher:
     def test_reset_penalty(self):
         """reset_penalty removes weight for config."""
         watcher = QualityPenaltyToCurriculumWatcher()
-        watcher._penalty_weights["hex8_2p"] = 0.7
+        # Dec 2025: Use _compute_weight_multiplier to populate state
+        watcher._compute_weight_multiplier("hex8_2p", {"new_penalty": 1.0})
+        assert "hex8_2p" in watcher.get_penalty_weights()
 
         watcher.reset_penalty("hex8_2p")
-        assert "hex8_2p" not in watcher._penalty_weights
+        assert "hex8_2p" not in watcher.get_penalty_weights()
 
     def test_reset_penalty_nonexistent(self):
         """reset_penalty is safe for nonexistent config."""
@@ -461,7 +464,8 @@ class TestPromotionFailedToCurriculumWatcher:
         watcher = PromotionFailedToCurriculumWatcher()
         assert watcher.WEIGHT_INCREASE_PER_FAILURE == 0.20
         assert watcher._subscribed is False
-        assert len(watcher._failure_counts) == 0
+        # Dec 2025: Uses base class _state dict via get_failure_counts()
+        assert len(watcher.get_failure_counts()) == 0
 
     def test_get_failure_counts_empty(self):
         """get_failure_counts returns empty dict initially."""
@@ -562,7 +566,8 @@ class TestRegressionCriticalToCurriculumWatcher:
         assert watcher.WEIGHT_INCREASE_MODERATE == 0.25
         assert watcher.WEIGHT_INCREASE_SEVERE == 0.50
         assert watcher._subscribed is False
-        assert len(watcher._regression_counts) == 0
+        # Dec 2025: Uses base class _state dict via get_regression_counts()
+        assert len(watcher.get_regression_counts()) == 0
 
     def test_get_regression_counts_empty(self):
         """get_regression_counts returns empty dict initially."""

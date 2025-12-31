@@ -428,7 +428,7 @@ class CurriculumSignalBridge(ABC):
             HealthCheckResult indicating current health status
         """
         try:
-            from app.coordination.health_facade import CoordinatorStatus, HealthCheckResult
+            from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 
             if not self._subscribed:
                 return HealthCheckResult(
