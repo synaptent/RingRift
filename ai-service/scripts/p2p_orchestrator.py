@@ -8827,6 +8827,14 @@ class P2POrchestrator(
                     if job_type == "selfplay" and status in ("running", "claimed"):
                         selfplay_jobs_count += 1
 
+        # Jan 1, 2026: Aggregate cluster-wide selfplay jobs from peers
+        cluster_selfplay_jobs = selfplay_jobs_count  # Start with local count
+        cluster_training_jobs = 0
+        for peer_node_id, peer_data in peers.items():
+            if isinstance(peer_data, dict):
+                cluster_selfplay_jobs += int(peer_data.get("selfplay_jobs", 0) or 0)
+                cluster_training_jobs += int(peer_data.get("training_jobs", 0) or 0)
+
         return web.json_response({
             "node_id": self.node_id,
             "role": self.role.value,
@@ -8875,7 +8883,9 @@ class P2POrchestrator(
             # Jan 1, 2026: Explicit work queue and job counts (Phase 4B fix)
             "work_queue_size": work_queue_size,
             "active_jobs": active_jobs_count,
-            "selfplay_jobs": selfplay_jobs_count,
+            "selfplay_jobs": cluster_selfplay_jobs,  # Cluster-wide aggregated
+            "training_jobs": cluster_training_jobs,  # Cluster-wide aggregated
+            "local_selfplay_jobs": selfplay_jobs_count,  # This node only
         })
 
     async def handle_external_work(self, request: web.Request) -> web.Response:
