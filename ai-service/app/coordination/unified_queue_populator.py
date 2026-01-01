@@ -697,12 +697,15 @@ class UnifiedQueuePopulator:
         model_elo = target.current_best_elo if target else 1500.0
 
         # Engine selection based on board size and model quality
+        # Jan 1, 2026: Changed large board mode from "gumbel" to "heuristic-only"
+        # because gumbel-mcts with --no-gpu-tree (CPU tree search) is too slow
+        # (~0 games/hour). Will switch back once GPU tree mode is fixed.
         if board_type in LARGE_BOARDS:
-            engine_mode = "gumbel"
+            engine_mode = "heuristic-only"  # Was "gumbel", too slow with CPU tree
         elif model_elo >= 1600 and best_model:
             engine_mode = "nnue-guided"
         else:
-            engine_mode = "gpu_heuristic"
+            engine_mode = "heuristic-only"  # Was "gpu_heuristic"
 
         config = {
             "board_type": board_type,
