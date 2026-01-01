@@ -92,6 +92,12 @@ class RemoteP2PRecoveryConfig:
     # Whether to emit events on recovery
     emit_events: bool = True
 
+    # Post-recovery verification timeout (seconds) - wait for node to appear in peers
+    verification_timeout_seconds: float = 60.0
+
+    # Verification poll interval (seconds)
+    verification_poll_interval: float = 5.0
+
 
 # =============================================================================
 # Statistics
@@ -103,19 +109,25 @@ class RemoteP2PRecoveryStats:
     """Statistics for remote P2P recovery operations."""
 
     nodes_recovered: int = 0
+    nodes_verified: int = 0  # Nodes confirmed in P2P mesh after recovery
     nodes_failed: int = 0
+    nodes_verification_failed: int = 0  # Started but didn't appear in mesh
     last_recovery_time: float = 0.0
     cycles_run: int = 0
     nodes_skipped_cooldown: int = 0
+    ssh_key_missing: bool = False  # SSH key validation failed
 
     def to_dict(self) -> dict:
         """Convert stats to dictionary for JSON serialization."""
         return {
             "nodes_recovered": self.nodes_recovered,
+            "nodes_verified": self.nodes_verified,
             "nodes_failed": self.nodes_failed,
+            "nodes_verification_failed": self.nodes_verification_failed,
             "last_recovery_time": self.last_recovery_time,
             "cycles_run": self.cycles_run,
             "nodes_skipped_cooldown": self.nodes_skipped_cooldown,
+            "ssh_key_missing": self.ssh_key_missing,
         }
 
 
@@ -168,6 +180,66 @@ class RemoteP2PRecoveryLoop(BaseLoop):
         # Paramiko client (lazy loaded)
         self._paramiko: Any = None
 
+        # Validate SSH key on initialization
+        if not self._validate_ssh_key():
+            self._stats.ssh_key_missing = True
+
+    def _validate_ssh_key(self) -> bool:
+        """Check SSH key exists and has correct permissions.
+
+        Returns:
+            True if SSH key is valid, False otherwise.
+        """
+        from pathlib import Path
+
+        key_path = Path(self.config.ssh_key_path).expanduser()
+        if not key_path.exists():
+            logger.warning(f"[RemoteP2PRecovery] SSH key not found: {key_path}")
+            return False
+
+        # Check permissions (should be 600 or more restrictive)
+        try:
+            mode = key_path.stat().st_mode & 0o777
+            if mode > 0o600:
+                logger.warning(
+                    f"[RemoteP2PRecovery] SSH key has insecure permissions: "
+                    f"{oct(mode)} (should be 0600 or more restrictive)"
+                )
+                # Don't fail, just warn - some systems may have different requirements
+        except OSError as e:
+            logger.warning(f"[RemoteP2PRecovery] Cannot check SSH key permissions: {e}")
+
+        return True
+
+    async def _verify_recovery(self, node_id: str) -> bool:
+        """Wait for recovered node to appear in alive peers.
+
+        Args:
+            node_id: Node identifier to wait for
+
+        Returns:
+            True if node appeared in peers within timeout, False otherwise.
+        """
+        start = time.time()
+        timeout = self.config.verification_timeout_seconds
+        poll_interval = self.config.verification_poll_interval
+
+        while time.time() - start < timeout:
+            alive_peers = set(self._get_alive_peer_ids())
+            if node_id in alive_peers:
+                logger.info(
+                    f"[RemoteP2PRecovery] Node {node_id} verified in mesh after "
+                    f"{time.time() - start:.1f}s"
+                )
+                return True
+            await asyncio.sleep(poll_interval)
+
+        logger.warning(
+            f"[RemoteP2PRecovery] Node {node_id} did not appear in mesh within "
+            f"{timeout}s timeout"
+        )
+        return False
+
     def _get_paramiko(self) -> Any:
         """Lazy-load paramiko module."""
         if self._paramiko is None:
@@ -182,6 +254,13 @@ class RemoteP2PRecoveryLoop(BaseLoop):
     async def _run_once(self) -> None:
         """Execute one recovery cycle."""
         if not self.config.enabled:
+            return
+
+        # Skip if SSH key is missing
+        if self._stats.ssh_key_missing:
+            logger.debug(
+                "[RemoteP2PRecovery] Skipping cycle - SSH key missing or invalid"
+            )
             return
 
         paramiko = self._get_paramiko()
@@ -257,7 +336,8 @@ class RemoteP2PRecoveryLoop(BaseLoop):
         ]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Count successes/failures
+        # Count successes/failures and verify recoveries
+        nodes_to_verify = []
         for (node_id, _), result in zip(nodes_this_cycle, results):
             self._last_attempt[node_id] = now
             if isinstance(result, Exception):
@@ -265,8 +345,28 @@ class RemoteP2PRecoveryLoop(BaseLoop):
                 self._stats.nodes_failed += 1
             elif result:
                 self._stats.nodes_recovered += 1
+                nodes_to_verify.append(node_id)
             else:
                 self._stats.nodes_failed += 1
+
+        # Post-recovery verification: wait for nodes to appear in mesh
+        if nodes_to_verify:
+            logger.info(
+                f"[RemoteP2PRecovery] Verifying {len(nodes_to_verify)} nodes joined mesh..."
+            )
+            verify_tasks = [self._verify_recovery(node_id) for node_id in nodes_to_verify]
+            verify_results = await asyncio.gather(*verify_tasks, return_exceptions=True)
+
+            for node_id, verified in zip(nodes_to_verify, verify_results):
+                if isinstance(verified, Exception):
+                    logger.warning(
+                        f"[RemoteP2PRecovery] Verification error for {node_id}: {verified}"
+                    )
+                    self._stats.nodes_verification_failed += 1
+                elif verified:
+                    self._stats.nodes_verified += 1
+                else:
+                    self._stats.nodes_verification_failed += 1
 
         self._stats.last_recovery_time = now
 

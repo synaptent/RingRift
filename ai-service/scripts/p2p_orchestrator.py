@@ -2509,8 +2509,12 @@ class P2POrchestrator(
 
             # RemoteP2PRecoveryLoop - December 31, 2025
             # Automatically starts P2P on cluster nodes that should be running it
-            # but aren't currently in the mesh. Only runs on coordinator nodes.
-            if self.node_id in ("local-mac", "mac-studio") or os.environ.get("RINGRIFT_IS_COORDINATOR"):
+            # but aren't currently in the mesh. Runs on any voter node for redundancy.
+            # Dec 31, 2025: Changed from coordinator-only to any voter node
+            voter_ids = list(getattr(self, "voter_node_ids", []) or [])
+            is_coordinator = self.node_id in ("local-mac", "mac-studio") or os.environ.get("RINGRIFT_IS_COORDINATOR")
+            is_voter = self.node_id in voter_ids
+            if is_coordinator or is_voter:
                 try:
                     from scripts.p2p.loops import RemoteP2PRecoveryLoop
 
@@ -2519,12 +2523,14 @@ class P2POrchestrator(
                         with self.peers_lock:
                             return [p.node_id for p in self.peers.values() if p.is_alive()]
 
+                    # Note: emit_event omitted - uses internal logging instead
+                    # P2POrchestrator doesn't have _emit_event but the loop is optional
                     remote_recovery = RemoteP2PRecoveryLoop(
                         get_alive_peer_ids=_get_alive_peer_ids_for_recovery,
-                        emit_event=self._emit_event,
                     )
                     manager.register(remote_recovery)
-                    logger.info("[LoopManager] RemoteP2PRecoveryLoop registered (coordinator only)")
+                    role_desc = "coordinator" if is_coordinator else "voter"
+                    logger.info(f"[LoopManager] RemoteP2PRecoveryLoop registered ({role_desc}: {self.node_id})")
                 except (ImportError, TypeError) as e:
                     logger.debug(f"RemoteP2PRecoveryLoop: not available: {e}")
 

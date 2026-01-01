@@ -43,26 +43,43 @@ except ImportError:
 # Dec 28, 2025: CRITICAL FIX - Changed "hex" to "hex8" in all profiles.
 # "hex" was normalized to "hexagonal" (large 469-cell board) instead of
 # "hex8" (small 61-cell board), starving hex8_* configs of selfplay games.
+# Dec 31, 2025: Added random, nn-minimax, descent-only, gpu-gumbel harnesses
+# for broader harness diversity. Total = 100%.
 DIVERSE_ENGINE_PROFILES = [
-    # Neural-guided (50%)
+    # Neural-guided Gumbel MCTS (24%) - highest quality training data
     {"engine_mode": "gumbel-mcts", "board_type": "hex8", "num_players": 2, "weight": 0.18},
-    {"engine_mode": "policy-only", "board_type": "hex8", "num_players": 2, "weight": 0.12},
-    {"engine_mode": "nnue-guided", "board_type": "square8", "num_players": 2, "weight": 0.08},
     {"engine_mode": "gumbel-mcts", "board_type": "square8", "num_players": 3, "weight": 0.06},
+    # GPU Gumbel (3%) - high throughput neural search
+    {"engine_mode": "gpu-gumbel", "board_type": "hex8", "num_players": 2, "weight": 0.02},
+    {"engine_mode": "gpu-gumbel", "board_type": "square8", "num_players": 2, "weight": 0.01},
+    # Policy-only (11%) - fast neural moves without search
+    {"engine_mode": "policy-only", "board_type": "hex8", "num_players": 2, "weight": 0.08},
+    {"engine_mode": "policy-only", "board_type": "square8", "num_players": 4, "weight": 0.03},
+    # NNUE-guided (12%) - efficient value + policy guidance
+    {"engine_mode": "nnue-guided", "board_type": "square8", "num_players": 2, "weight": 0.08},
+    {"engine_mode": "nnue-guided", "board_type": "hex8", "num_players": 3, "weight": 0.04},
+    # Standard MCTS (6%)
     {"engine_mode": "mcts", "board_type": "hex8", "num_players": 2, "weight": 0.06},
+    # NN-Minimax (7%) - strong 2-player search with neural evaluation
+    {"engine_mode": "nn-minimax", "board_type": "square8", "num_players": 2, "weight": 0.04},
+    {"engine_mode": "nn-minimax", "board_type": "hex8", "num_players": 2, "weight": 0.03},
     # MaxN/BRS multiplayer (15%) - best for 3P/4P games
     {"engine_mode": "maxn", "board_type": "hex8", "num_players": 3, "weight": 0.05},
     {"engine_mode": "maxn", "board_type": "square8", "num_players": 4, "weight": 0.04},
     {"engine_mode": "brs", "board_type": "hex8", "num_players": 3, "weight": 0.03},
     {"engine_mode": "brs", "board_type": "square8", "num_players": 4, "weight": 0.03},
-    # Heuristic throughput (22%)
-    {"engine_mode": "heuristic-only", "board_type": "hex8", "num_players": 2, "weight": 0.10},
-    {"engine_mode": "heuristic-only", "board_type": "square8", "num_players": 2, "weight": 0.07},
-    {"engine_mode": "heuristic-only", "board_type": "hex8", "num_players": 4, "weight": 0.05},
-    # Exploration (13%)
-    {"engine_mode": "mixed", "board_type": "square19", "num_players": 2, "weight": 0.04},
-    {"engine_mode": "nnue-guided", "board_type": "hex8", "num_players": 3, "weight": 0.04},
-    {"engine_mode": "policy-only", "board_type": "square8", "num_players": 4, "weight": 0.05},
+    # Descent-only (4%) - exploration via sequential halving
+    {"engine_mode": "descent-only", "board_type": "hex8", "num_players": 2, "weight": 0.02},
+    {"engine_mode": "descent-only", "board_type": "square8", "num_players": 2, "weight": 0.02},
+    # Heuristic throughput (12%) - fast baseline games
+    {"engine_mode": "heuristic-only", "board_type": "hex8", "num_players": 2, "weight": 0.05},
+    {"engine_mode": "heuristic-only", "board_type": "square8", "num_players": 2, "weight": 0.04},
+    {"engine_mode": "heuristic-only", "board_type": "hex8", "num_players": 4, "weight": 0.03},
+    # Random (5%) - baseline calibration, exploration
+    {"engine_mode": "random", "board_type": "hex8", "num_players": 2, "weight": 0.03},
+    {"engine_mode": "random", "board_type": "square8", "num_players": 4, "weight": 0.02},
+    # Mixed exploration (1%)
+    {"engine_mode": "mixed", "board_type": "square19", "num_players": 2, "weight": 0.01},
 ]
 
 # Add project root to path for scripts.lib imports
