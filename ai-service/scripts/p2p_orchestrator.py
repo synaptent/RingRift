@@ -26119,8 +26119,13 @@ print(json.dumps({{
                     "--db", str(output_dir / "games.db"),
                     "--seed", str(int(time.time() * 1000) % 2**31),
                     "--allow-fresh-weights",  # Allow running even without trained model
-                    "--use-gpu-tree",  # 170x speedup with GPU tensor tree MCTS (RR-GPU-TREE-001 fixed)
                 ]
+
+                # Dec 31, 2025: Check if GPU tree is disabled for this node (e.g., vGPU nodes)
+                # vGPU instances don't properly accelerate GPU tree MCTS, causing CPU-bound slowdown
+                node_config = self._load_distributed_hosts().get("hosts", {}).get(self.node_id, {})
+                if not node_config.get("disable_gpu_tree", False):
+                    cmd.append("--use-gpu-tree")  # 170x speedup with GPU tensor tree MCTS
 
                 # Start process with GPU environment
                 env = os.environ.copy()

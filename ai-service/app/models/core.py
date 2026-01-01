@@ -827,18 +827,27 @@ class AIConfig(BaseModel):
     # Minimax Quiescence Search Configuration (Dec 2025)
     #
     # These fields control quiescence search behavior in MinimaxAI.
-    # Quiescence search explores "noisy" moves (captures, lines) at leaf
-    # nodes to mitigate the horizon effect. On large boards (square19,
-    # hexagonal), unlimited quiescence can cause minimax to exceed time
-    # budgets. These knobs allow tuning for time-constrained scenarios.
+    # Quiescence search configuration (Dec 2025)
+    #
+    # IMPORTANT: Quiescence is DISABLED by default for RingRift because:
+    # 1. RingRift has multi-phase turns where "noisy" moves (captures, line
+    #    formations) are MANDATORY phase completions, not optional extensions
+    # 2. The main search already explores all phases of a turn naturally
+    # 3. Quiescence is redundant and wastes computation on large boards
+    #
+    # Quiescence was designed for chess where captures are optional. In RingRift,
+    # the phase machine requires these moves before the turn ends. Enable only
+    # for experimentation.
     # ------------------------------------------------------------------
 
     quiescence_enabled: bool = Field(
-        default=True,
+        default=False,
         description=(
-            "When True (default), MinimaxAI uses quiescence search at leaf nodes "
-            "to explore captures and line formations. When False, returns static "
-            "evaluation at depth 0 (faster but may miss tactical sequences)."
+            "When True, MinimaxAI uses quiescence search at leaf nodes "
+            "to explore captures and line formations. DISABLED by default because "
+            "RingRift's multi-phase turns make quiescence redundant - the main "
+            "search already explores all mandatory phase moves. Enable only for "
+            "experimentation or if turn-based depth is disabled."
         ),
     )
     quiescence_depth: int | None = Field(
@@ -859,6 +868,43 @@ class AIConfig(BaseModel):
             "Maximum nodes to visit in quiescence search across all leaf nodes. "
             "When None, uses a default of 10000 nodes. Helps enforce time limits "
             "on large boards where quiescence can explore thousands of positions."
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Turn-Based Depth and Branching Factor Optimization (Dec 2025)
+    #
+    # RingRift has multi-phase turns where a player may make 5-10+ moves
+    # before the turn passes. Traditional per-move depth counting means
+    # "depth 3" might only represent 1 actual turn on complex boards.
+    # ------------------------------------------------------------------
+
+    turn_based_depth: bool = Field(
+        default=True,
+        description=(
+            "When True (default), MinimaxAI counts depth by turns (player changes) "
+            "rather than individual moves. This ensures 'depth 3' means 3 full turns "
+            "of lookahead regardless of phase complexity. When False, uses traditional "
+            "per-move depth counting where each move decrements depth by 1."
+        ),
+    )
+    max_branching_factor: int | None = Field(
+        default=None,
+        ge=10,
+        le=1000,
+        description=(
+            "Maximum number of moves to consider at each node. When None, evaluates "
+            "all legal moves. When set, uses move ordering (killer moves, policy, "
+            "heuristics) to select the top N moves, pruning the rest. Helps manage "
+            "large boards (hexagonal: 469 cells) where branching can exceed 100+."
+        ),
+    )
+    forced_move_extension: bool = Field(
+        default=True,
+        description=(
+            "When True (default), positions with only one legal move are handled "
+            "instantly without decrementing depth. This accelerates search through "
+            "forced sequences (single captures, territory decisions with one option)."
         ),
     )
 

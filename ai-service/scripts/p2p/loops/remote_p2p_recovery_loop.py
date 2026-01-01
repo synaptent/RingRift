@@ -88,7 +88,8 @@ class RemoteP2PRecoveryConfig:
     )
 
     # Minimum time since last attempt for a node before retrying (seconds)
-    retry_cooldown_seconds: float = 600.0  # 10 minutes
+    # Dec 2025: Reduced from 600s to 120s for faster 48h autonomous recovery
+    retry_cooldown_seconds: float = 120.0  # 2 minutes
 
     # Whether to emit events on recovery
     emit_events: bool = True

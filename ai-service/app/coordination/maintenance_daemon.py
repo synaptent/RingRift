@@ -908,14 +908,14 @@ class MaintenanceDaemon:
                 node_id = os.environ.get("RINGRIFT_NODE_ID", socket.gethostname())
 
                 # Register to manifest
-                if hasattr(manifest, 'register_games_batch'):
-                    manifest.register_games_batch(
-                        node_id=node_id,
+                # Dec 31, 2025: Use register_database() instead of register_games_batch()
+                if hasattr(manifest, 'register_database'):
+                    manifest.register_database(
                         db_path=str(db_path),
+                        node_id=node_id,
                         board_type=board_type,
                         num_players=num_players,
                         game_count=game_count,
-                        is_canonical="canonical" in db_path.name.lower(),
                     )
                     recovered += 1
                     logger.info(

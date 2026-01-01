@@ -162,8 +162,10 @@ class MinimaxAI(HeuristicAI):
             )
 
         # Quiescence search configuration (Dec 2025)
-        # Controls quiescence search to prevent time budget overruns on large boards
-        self.quiescence_enabled: bool = getattr(config, 'quiescence_enabled', True)
+        # NOTE: Quiescence is disabled by default for RingRift because multi-phase
+        # turns make it redundant - the main search already explores all mandatory
+        # phase moves. See AIConfig for detailed explanation.
+        self.quiescence_enabled: bool = getattr(config, 'quiescence_enabled', False)
         self.quiescence_depth_override: int | None = getattr(config, 'quiescence_depth', None)
         self.quiescence_node_limit: int = getattr(config, 'quiescence_node_limit', None) or 10000
         # Track nodes visited specifically in quiescence (reset per search)
@@ -171,10 +173,19 @@ class MinimaxAI(HeuristicAI):
         # Board size for adaptive quiescence depth (set on first move)
         self._board_cells: int | None = None
 
+        # Turn-based depth and branching factor optimization (Dec 2025)
+        # Turn-based depth counts by player changes, not individual moves
+        self.turn_based_depth: bool = getattr(config, 'turn_based_depth', True)
+        # Max moves to consider at each node (None = all moves)
+        self.max_branching_factor: int | None = getattr(config, 'max_branching_factor', None)
+        # Skip search for single-move positions (forced moves)
+        self.forced_move_extension: bool = getattr(config, 'forced_move_extension', True)
+
         logger.debug(
             f"MinimaxAI(player={player_number}): quiescence_enabled={self.quiescence_enabled}, "
-            f"quiescence_depth_override={self.quiescence_depth_override}, "
-            f"quiescence_node_limit={self.quiescence_node_limit}"
+            f"turn_based_depth={self.turn_based_depth}, "
+            f"max_branching_factor={self.max_branching_factor}, "
+            f"forced_move_extension={self.forced_move_extension}"
         )
 
     def _get_quiescence_depth(self) -> int:
@@ -940,29 +951,54 @@ class MinimaxAI(HeuristicAI):
         if not valid_moves:
             return self._evaluate_mutable(state)
 
+        # Forced move extension (Dec 2025): If only one legal move, play it
+        # without decrementing depth. This accelerates forced sequences.
+        if self.forced_move_extension and len(valid_moves) == 1:
+            move = valid_moves[0]
+            undo = state.make_move(move)
+            next_is_me = (state.current_player == self.player_number)
+            # Don't decrement depth for forced moves
+            eval_score = self._alpha_beta_mutable(state, depth, alpha, beta, next_is_me)
+            state.unmake_move(undo)
+            return eval_score
+
         is_me = (current_player_num == self.player_number)
 
         # Move ordering with Killer Heuristic (and policy if available)
         ordered_moves = self._order_moves_with_killers(valid_moves, depth, state)
 
+        # Apply max branching factor limit (Dec 2025)
+        # Only consider top N moves after ordering to manage large boards
+        if self.max_branching_factor is not None and len(ordered_moves) > self.max_branching_factor:
+            ordered_moves = ordered_moves[:self.max_branching_factor]
+
         if is_me:
             max_eval = float('-inf')
             for i, move in enumerate(ordered_moves):
+                player_before = current_player_num
                 undo = state.make_move(move)
-                next_is_me = (state.current_player == self.player_number)
+                player_after = state.current_player
+                next_is_me = (player_after == self.player_number)
+
+                # Turn-based depth (Dec 2025): Only decrement depth when player changes
+                # This ensures "depth 3" means 3 full turns, not 3 individual moves
+                if self.turn_based_depth:
+                    next_depth = depth if player_after == player_before else depth - 1
+                else:
+                    next_depth = depth - 1
 
                 # Principal Variation Search (PVS)
                 if i == 0:
                     eval_score = self._alpha_beta_mutable(
-                        state, depth - 1, alpha, beta, next_is_me
+                        state, next_depth, alpha, beta, next_is_me
                     )
                 else:
                     eval_score = self._alpha_beta_mutable(
-                        state, depth - 1, alpha, alpha + 0.01, next_is_me
+                        state, next_depth, alpha, alpha + 0.01, next_is_me
                     )
                     if alpha < eval_score < beta:
                         eval_score = self._alpha_beta_mutable(
-                            state, depth - 1, eval_score, beta, next_is_me
+                            state, next_depth, eval_score, beta, next_is_me
                         )
 
                 state.unmake_move(undo)
@@ -988,21 +1024,29 @@ class MinimaxAI(HeuristicAI):
         else:
             min_eval = float('inf')
             for i, move in enumerate(ordered_moves):
+                player_before = current_player_num
                 undo = state.make_move(move)
-                next_is_me = (state.current_player == self.player_number)
+                player_after = state.current_player
+                next_is_me = (player_after == self.player_number)
+
+                # Turn-based depth (Dec 2025): Only decrement depth when player changes
+                if self.turn_based_depth:
+                    next_depth = depth if player_after == player_before else depth - 1
+                else:
+                    next_depth = depth - 1
 
                 # Principal Variation Search (PVS)
                 if i == 0:
                     eval_score = self._alpha_beta_mutable(
-                        state, depth - 1, alpha, beta, next_is_me
+                        state, next_depth, alpha, beta, next_is_me
                     )
                 else:
                     eval_score = self._alpha_beta_mutable(
-                        state, depth - 1, beta - 0.01, beta, next_is_me
+                        state, next_depth, beta - 0.01, beta, next_is_me
                     )
                     if alpha < eval_score < beta:
                         eval_score = self._alpha_beta_mutable(
-                            state, depth - 1, alpha, eval_score, next_is_me
+                            state, next_depth, alpha, eval_score, next_is_me
                         )
 
                 state.unmake_move(undo)

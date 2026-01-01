@@ -119,9 +119,18 @@ class MaxNAI(HeuristicAI):
         self._multi_player_nnue: Any | None = None  # MultiPlayerNNUE (lazy loaded)
         self._nn_initialized: bool = False
 
+        # Turn-based depth and branching optimization (Dec 2025)
+        # Turn-based depth counts by player changes, not individual moves
+        self.turn_based_depth: bool = getattr(config, 'turn_based_depth', True)
+        # Max moves to consider at each node (None = all moves)
+        self.max_branching_factor: int | None = getattr(config, 'max_branching_factor', None)
+        # Skip search for single-move positions (forced moves)
+        self.forced_move_extension: bool = getattr(config, 'forced_move_extension', True)
+
         logger.debug(
             f"MaxNAI(player={player_number}, difficulty={config.difficulty}, "
-            f"gpu_enabled={self._gpu_enabled}, use_neural_net={self.use_neural_net})"
+            f"gpu_enabled={self._gpu_enabled}, use_neural_net={self.use_neural_net}, "
+            f"turn_based_depth={self.turn_based_depth})"
         )
 
     def _get_max_depth(self) -> int:
@@ -606,6 +615,19 @@ class MaxNAI(HeuristicAI):
         if not valid_moves:
             return self._evaluate_all_players(state)
 
+        # Forced move extension (Dec 2025): Single move = play without depth cost
+        if self.forced_move_extension and len(valid_moves) == 1:
+            undo = state.make_move(valid_moves[0])
+            result = self._maxn_search(state, depth)  # Don't decrement depth
+            state.unmake_move(undo)
+            return result
+
+        # Apply max branching factor limit (Dec 2025)
+        # On large boards with chain captures, there can be 100,000+ moves.
+        # Use heuristic ordering to sample the most promising moves.
+        if self.max_branching_factor is not None and len(valid_moves) > self.max_branching_factor:
+            valid_moves = self._order_moves_for_branching(valid_moves, self.max_branching_factor)
+
         # Current player picks move that maximizes their own score
         best_scores: dict[int, float] | None = None
         best_my_score = float('-inf')
@@ -614,8 +636,17 @@ class MaxNAI(HeuristicAI):
             if time.time() - self.start_time > self.time_limit:
                 break
 
+            player_before = current_player
             undo = state.make_move(move)
-            child_scores = self._maxn_search(state, depth - 1)
+            player_after = state.current_player
+
+            # Turn-based depth (Dec 2025): Only decrement when player changes
+            if self.turn_based_depth:
+                next_depth = depth if player_after == player_before else depth - 1
+            else:
+                next_depth = depth - 1
+
+            child_scores = self._maxn_search(state, next_depth)
             state.unmake_move(undo)
 
             my_score = child_scores.get(current_player, 0.0)
@@ -633,6 +664,47 @@ class MaxNAI(HeuristicAI):
         })
 
         return best_scores
+
+    def _order_moves_for_branching(self, moves: list, limit: int) -> list:
+        """Order moves by heuristic priority and return top N for sampling.
+
+        Args:
+            moves: List of valid moves
+            limit: Maximum moves to return
+
+        Returns:
+            Top N moves ordered by priority (captures > attacks > placements)
+
+        Dec 2025: Handles extremely high branching factor scenarios
+        (100,000+ chain capture sequences on large boards).
+        """
+        from app.rules.move_types import MoveType
+
+        # Score moves by type priority
+        scored_moves = []
+        for move in moves:
+            score = 0.0
+            move_type = move.get('type') if isinstance(move, dict) else getattr(move, 'type', None)
+
+            # Prioritize captures (most impactful moves)
+            if move_type in (MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT,
+                            'OVERTAKING_CAPTURE', 'CONTINUE_CAPTURE_SEGMENT'):
+                score = 100.0
+            # Then attacks/movements
+            elif move_type in (MoveType.MOVE_STACK, 'MOVE_STACK'):
+                score = 50.0
+            # Then placements
+            elif move_type in (MoveType.PLACE_RING, 'PLACE_RING'):
+                score = 25.0
+            # Everything else
+            else:
+                score = 10.0
+
+            scored_moves.append((score, move))
+
+        # Sort by score descending and take top N
+        scored_moves.sort(key=lambda x: x[0], reverse=True)
+        return [move for _, move in scored_moves[:limit]]
 
     def _evaluate_all_players(self, state: MutableGameState) -> dict[int, float]:
         """Evaluate position for ALL players.
@@ -731,9 +803,17 @@ class BRSAI(HeuristicAI):
         self._multi_player_nnue: Any | None = None  # MultiPlayerNNUE (lazy loaded)
         self._nn_initialized: bool = False
 
+        # Turn-based depth and branching optimization (Dec 2025)
+        # BRS already uses "rounds" which is conceptually turn-based
+        # Max moves to consider when finding best reply (None = all moves)
+        self.max_branching_factor: int | None = getattr(config, 'max_branching_factor', None)
+        # Skip search for single-move positions (forced moves)
+        self.forced_move_extension: bool = getattr(config, 'forced_move_extension', True)
+
         logger.debug(
             f"BRSAI(player={player_number}, difficulty={config.difficulty}, "
-            f"use_neural_net={self.use_neural_net})"
+            f"use_neural_net={self.use_neural_net}, "
+            f"max_branching_factor={self.max_branching_factor})"
         )
 
     def _get_lookahead_rounds(self) -> int:
@@ -923,6 +1003,11 @@ class BRSAI(HeuristicAI):
 
         Returns:
             Evaluation score for original player after simulation
+
+        Dec 2025 optimizations for high branching factor:
+        - Forced move extension: single-move positions don't consume a round
+        - Max branching factor: limit moves evaluated when finding best reply
+        - Turn-based round counting: only decrement when player changes
         """
         self.nodes_visited += 1
 
@@ -937,11 +1022,33 @@ class BRSAI(HeuristicAI):
         if not valid_moves:
             return self._evaluate_for_me(state)
 
+        # Forced move extension (Dec 2025): If only one legal move, play it
+        # without consuming a round. This accelerates forced phase sequences.
+        if self.forced_move_extension and len(valid_moves) == 1:
+            move = valid_moves[0]
+            undo = state.make_move(move)
+            player_after = state.current_player
+            # Don't decrement round if player didn't change (still same player's turn)
+            next_rounds = remaining_rounds if player_after == current_player else remaining_rounds - 1
+            result = self._simulate_brs_rounds(state, next_rounds)
+            state.unmake_move(undo)
+            return result
+
+        # Apply max branching factor limit (Dec 2025)
+        # On large boards with chain captures, there can be 100,000+ moves.
+        # We sample the most promising moves based on quick heuristic ordering.
+        moves_to_evaluate = valid_moves
+        if self.max_branching_factor is not None and len(valid_moves) > self.max_branching_factor:
+            # Order moves by quick heuristic (captures first, then by type)
+            moves_to_evaluate = self._order_moves_for_sampling(
+                valid_moves, state, self.max_branching_factor
+            )
+
         # Find greedy best move for current player
         best_move = None
         best_score = float('-inf')
 
-        for move in valid_moves:
+        for move in moves_to_evaluate:
             if time.time() - self.start_time > self.time_limit:
                 break
 
@@ -964,10 +1071,57 @@ class BRSAI(HeuristicAI):
 
         # Apply best reply and continue
         undo = state.make_move(best_move)
-        result = self._simulate_brs_rounds(state, remaining_rounds - 1)
+        player_after = state.current_player
+        # Turn-based round counting: only decrement when player changes
+        next_rounds = remaining_rounds if player_after == current_player else remaining_rounds - 1
+        result = self._simulate_brs_rounds(state, next_rounds)
         state.unmake_move(undo)
 
         return result
+
+    def _order_moves_for_sampling(
+        self,
+        moves: list,
+        state: MutableGameState,
+        limit: int
+    ) -> list:
+        """Order moves by heuristic priority and return top N for sampling.
+
+        Args:
+            moves: List of valid moves
+            state: Current game state
+            limit: Maximum moves to return
+
+        Returns:
+            Top N moves ordered by priority (captures > attacks > placements)
+        """
+        from app.rules.move_types import MoveType
+
+        # Score moves by type priority
+        scored_moves = []
+        for move in moves:
+            score = 0.0
+            move_type = move.get('type') if isinstance(move, dict) else getattr(move, 'type', None)
+
+            # Prioritize captures (most impactful moves)
+            if move_type in (MoveType.OVERTAKING_CAPTURE, MoveType.CONTINUE_CAPTURE_SEGMENT,
+                            'OVERTAKING_CAPTURE', 'CONTINUE_CAPTURE_SEGMENT'):
+                score = 100.0
+            # Then attacks/movements
+            elif move_type in (MoveType.MOVE_STACK, 'MOVE_STACK'):
+                score = 50.0
+            # Then placements
+            elif move_type in (MoveType.PLACE_RING, 'PLACE_RING'):
+                score = 25.0
+            # Everything else
+            else:
+                score = 10.0
+
+            scored_moves.append((score, move))
+
+        # Sort by score descending and take top N
+        scored_moves.sort(key=lambda x: x[0], reverse=True)
+        return [move for _, move in scored_moves[:limit]]
 
     def _evaluate_for_me(self, state: MutableGameState) -> float:
         """Evaluate position from this AI's perspective.

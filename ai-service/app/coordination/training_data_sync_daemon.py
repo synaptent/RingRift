@@ -454,11 +454,14 @@ async def trigger_local_refresh(
     try:
         from app.distributed.data_events import DataEventType, emit_data_event
 
-        emit_data_event(
+        # Dec 31, 2025: emit_data_event expects a payload dict, not kwargs
+        await emit_data_event(
             DataEventType.SYNC_TRIGGERED,
-            config_key=config_key,
-            reason="stale_data_refresh",
-            max_age_hours=max_age_hours,
+            payload={
+                "config_key": config_key,
+                "reason": "stale_data_refresh",
+                "max_age_hours": max_age_hours,
+            },
         )
         return True
     except (ImportError, AttributeError) as e:
@@ -726,13 +729,16 @@ class TrainingDataSyncDaemon:
                 if result.success
                 else DataEventType.DATA_SYNC_FAILED
             )
-            emit_data_event(
+            # Dec 31, 2025: emit_data_event expects a payload dict, not kwargs
+            await emit_data_event(
                 event_type,
-                config_key=result.config_key,
-                source=result.source.value if result.source else None,
-                bytes_transferred=result.bytes_transferred,
-                duration_seconds=result.duration_seconds,
-                error=result.error,
+                payload={
+                    "config_key": result.config_key,
+                    "source": result.source.value if result.source else None,
+                    "bytes_transferred": result.bytes_transferred,
+                    "duration_seconds": result.duration_seconds,
+                    "error": result.error,
+                },
             )
         except Exception as e:
             logger.debug(f"Failed to emit sync event: {e}")
