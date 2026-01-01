@@ -10,6 +10,11 @@ Security Note:
     2. Falls back to allow_pickle=True only when necessary for object arrays
     3. Logs a warning when using unsafe mode
 
+NumPy 2.x Compatibility:
+    Files saved with numpy 2.x may contain references to numpy._core
+    which doesn't exist in numpy 1.x. This module provides a compatibility
+    shim that aliases numpy._core to numpy.core for cross-version loading.
+
 Usage:
     from app.utils.numpy_utils import safe_load_npz
 
@@ -23,10 +28,26 @@ Usage:
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+# NumPy 1.x / 2.x compatibility shim
+# numpy 2.x uses numpy._core internally, but numpy 1.x doesn't have it.
+# When loading pickled arrays saved with numpy 2.x on numpy 1.x, the
+# pickle contains references to numpy._core which causes ModuleNotFoundError.
+# This shim aliases numpy._core to numpy.core for compatibility.
+if not hasattr(np, "_core"):
+    # numpy 1.x - create alias for numpy 2.x pickled arrays
+    import numpy.core as _numpy_core
+    sys.modules["numpy._core"] = _numpy_core
+    sys.modules["numpy._core.multiarray"] = _numpy_core.multiarray
+    sys.modules["numpy._core.numeric"] = _numpy_core.numeric
+    sys.modules["numpy._core.umath"] = _numpy_core.umath
+    if hasattr(_numpy_core, "_methods"):
+        sys.modules["numpy._core._methods"] = _numpy_core._methods
 
 __all__ = [
     "safe_load_npz",

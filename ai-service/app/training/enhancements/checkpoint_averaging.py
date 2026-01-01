@@ -88,6 +88,9 @@ class CheckpointAverager:
         """
         Compute the average of all stored checkpoints.
 
+        Only averages keys that exist in ALL checkpoints to handle models
+        with different architectures (e.g., some with hex_mask, some without).
+
         Returns:
             Averaged state dict
         """
@@ -103,14 +106,33 @@ class CheckpointAverager:
         if not checkpoints:
             raise ValueError("No checkpoints available for averaging")
 
-        # Initialize with first checkpoint
+        # Find keys that exist in ALL checkpoints (intersection)
+        common_keys = set(checkpoints[0].keys())
+        for ckpt in checkpoints[1:]:
+            common_keys &= set(ckpt.keys())
+
+        if not common_keys:
+            raise ValueError("No common keys found across checkpoints")
+
+        # Log if we're skipping any keys
+        all_keys = set()
+        for ckpt in checkpoints:
+            all_keys |= set(ckpt.keys())
+        skipped_keys = all_keys - common_keys
+        if skipped_keys:
+            logger.warning(
+                f"Skipping {len(skipped_keys)} keys not present in all checkpoints: "
+                f"{sorted(skipped_keys)[:5]}{'...' if len(skipped_keys) > 5 else ''}"
+            )
+
+        # Initialize with first checkpoint (only common keys)
         averaged = {}
-        for key in checkpoints[0]:
+        for key in common_keys:
             averaged[key] = checkpoints[0][key].clone().float()
 
         # Add remaining checkpoints
         for ckpt in checkpoints[1:]:
-            for key in averaged:
+            for key in common_keys:
                 averaged[key] += ckpt[key].float()
 
         # Divide by number of checkpoints
@@ -120,7 +142,7 @@ class CheckpointAverager:
             # Restore original dtype
             averaged[key] = averaged[key].to(checkpoints[0][key].dtype)
 
-        logger.info(f"Averaged {num_ckpts} checkpoints")
+        logger.info(f"Averaged {num_ckpts} checkpoints ({len(common_keys)} common keys)")
         return averaged
 
     def cleanup(self) -> None:
