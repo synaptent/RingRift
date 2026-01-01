@@ -126,6 +126,8 @@ class CleanupStats:
     tier3_purged: int = 0  # Purged retired from cache (>24h)
     last_cleanup_time: float = 0.0
     cycles_run: int = 0
+    consecutive_errors: int = 0  # Required by LoopManager.get_status()
+    successful_runs: int = 0  # Required by LoopManager.get_status()
 
     @property
     def total_runs(self) -> int:
@@ -134,6 +136,16 @@ class CleanupStats:
         Required by LoopManager.start_all() which checks _stats.total_runs.
         """
         return self.cycles_run
+
+    @property
+    def success_rate(self) -> float:
+        """Calculate success rate as a percentage.
+
+        Required by LoopManager.get_status() at base.py:410.
+        """
+        if self.cycles_run == 0:
+            return 100.0
+        return (self.successful_runs / self.cycles_run) * 100.0
 
     def to_dict(self) -> dict:
         """Convert stats to dictionary for JSON serialization."""

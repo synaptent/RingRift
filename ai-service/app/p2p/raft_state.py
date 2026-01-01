@@ -411,6 +411,39 @@ class ReplicatedWorkQueue(SyncObj):
             f"ReplicatedWorkQueue initialized: {self_address} -> {partner_addresses}"
         )
 
+        # Store config for recreation after unpickling (January 2026 fix)
+        self._auto_unlock_time = auto_unlock_time
+
+    def __getstate__(self) -> dict:
+        """Custom pickling to exclude unpicklable objects.
+
+        The ReplLockManager contains threading objects that cannot be pickled.
+        We exclude it and recreate it in __setstate__.
+
+        January 2026: Fix for 'cannot pickle _thread.lock' error.
+        """
+        state = self.__dict__.copy()
+        # Remove unpicklable attributes
+        state.pop('_ReplicatedWorkQueue__lock_manager', None)
+        state.pop('_on_ready_callback', None)
+        state.pop('_on_leader_change_callback', None)
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        """Custom unpickling to recreate the lock manager.
+
+        January 2026: Fix for 'cannot pickle _thread.lock' error.
+        """
+        self.__dict__.update(state)
+        # Recreate the lock manager
+        auto_unlock_time = getattr(self, '_auto_unlock_time', RAFT_AUTO_UNLOCK_TIME)
+        self._ReplicatedWorkQueue__lock_manager = ReplLockManager(
+            autoUnlockTime=auto_unlock_time
+        )
+        # Reset callbacks to None - they'll need to be set again if needed
+        self._on_ready_callback = None
+        self._on_leader_change_callback = None
+
     def _handle_ready(self) -> None:
         """Handle cluster ready event."""
         self._is_ready = True
@@ -809,6 +842,27 @@ class ReplicatedJobAssignments(SyncObj):
         logger.info(
             f"ReplicatedJobAssignments initialized: {self_address} -> {partner_addresses}"
         )
+
+    def __getstate__(self) -> dict:
+        """Custom pickling to exclude unpicklable callback objects.
+
+        January 2026: Fix for potential pickle errors with callbacks.
+        """
+        state = self.__dict__.copy()
+        # Remove unpicklable callback attributes
+        state.pop('_on_ready_callback', None)
+        state.pop('_on_leader_change_callback', None)
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        """Custom unpickling to restore default callback state.
+
+        January 2026: Fix for potential pickle errors with callbacks.
+        """
+        self.__dict__.update(state)
+        # Reset callbacks to None - they'll need to be set again if needed
+        self._on_ready_callback = None
+        self._on_leader_change_callback = None
 
     def _handle_ready(self) -> None:
         """Handle cluster ready event."""
@@ -1240,6 +1294,27 @@ class ReplicatedEloStore(SyncObj):
         logger.info(
             f"ReplicatedEloStore initialized: {self_address} -> {partner_addresses}"
         )
+
+    def __getstate__(self) -> dict:
+        """Custom pickling to exclude unpicklable callback objects.
+
+        January 2026: Fix for potential pickle errors with callbacks.
+        """
+        state = self.__dict__.copy()
+        # Remove unpicklable callback attributes
+        state.pop('_on_ready_callback', None)
+        state.pop('_on_leader_change_callback', None)
+        return state
+
+    def __setstate__(self, state: dict) -> None:
+        """Custom unpickling to restore default callback state.
+
+        January 2026: Fix for potential pickle errors with callbacks.
+        """
+        self.__dict__.update(state)
+        # Reset callbacks to None - they'll need to be set again if needed
+        self._on_ready_callback = None
+        self._on_leader_change_callback = None
 
     def _handle_ready(self) -> None:
         """Handle cluster ready event."""

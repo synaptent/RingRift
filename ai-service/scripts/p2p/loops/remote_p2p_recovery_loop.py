@@ -119,6 +119,8 @@ class RemoteP2PRecoveryStats:
     cycles_run: int = 0
     nodes_skipped_cooldown: int = 0
     ssh_key_missing: bool = False  # SSH key validation failed
+    consecutive_errors: int = 0  # Required by LoopManager.get_status()
+    successful_runs: int = 0  # Required by LoopManager.get_status()
 
     @property
     def total_runs(self) -> int:
@@ -127,6 +129,16 @@ class RemoteP2PRecoveryStats:
         Required by LoopManager.start_all() which checks _stats.total_runs.
         """
         return self.cycles_run
+
+    @property
+    def success_rate(self) -> float:
+        """Calculate success rate as a percentage.
+
+        Required by LoopManager.get_status() at base.py:410.
+        """
+        if self.cycles_run == 0:
+            return 100.0
+        return (self.successful_runs / self.cycles_run) * 100.0
 
     def to_dict(self) -> dict:
         """Convert stats to dictionary for JSON serialization."""
