@@ -1464,6 +1464,7 @@ class JobManager(EventSubscriptionMixin):
                 "--db", str(output_dir / "games.db"),  # uses --db not --record-db
                 "--seed", str(int(time.time() * 1000) % 2**31),
                 "--simulation-budget", str(simulation_budget),
+                "--no-gpu-tree",  # Dec 31, 2025: Disable GPU tree mode which hangs on large boards
             ]
         else:
             # Use run_gpu_selfplay.py for GPU-optimized modes
