@@ -510,3 +510,101 @@ class ElectionHandlersMixin(BaseP2PHandler):
         except Exception as e:
             logger.error(f"Error handling election request: {e}")
             return self.error_response(str(e), status=500)
+
+    async def handle_provisional_leader_claim(self, request: web.Request) -> web.Response:
+        """Handle provisional leadership claim from another node.
+
+        Jan 1, 2026: This endpoint handles provisional leadership claims during
+        fallback leadership mode. When a node claims provisional leadership after
+        prolonged leaderlessness (voter quorum unavailable), peers can:
+
+        1. ACK: Acknowledge the claim (agree to follow this provisional leader)
+        2. CHALLENGE: Contest the claim (if we're also claiming provisional leadership)
+
+        If multiple nodes claim provisional leadership, the highest node_id wins.
+
+        Request body:
+            - claimant_id: str - ID of the node claiming provisional leadership
+            - lease_id: str - Provisional lease ID
+            - claimed_at: float - Timestamp when claim was made
+
+        Response:
+            - ack: bool - True if we acknowledge this claim
+            - challenge: bool - True if we're challenging this claim
+            - challenger_id: str - Our node_id if challenging
+            - current_leader: str | None - Our known leader if we have one
+        """
+        try:
+            data = await self.parse_json_body(request)
+            if data is None:
+                return self.bad_request("Invalid JSON body")
+
+            claimant_id = str(data.get("claimant_id") or "").strip()
+            lease_id = str(data.get("lease_id") or "").strip()
+            claimed_at = float(data.get("claimed_at") or 0.0)
+
+            if not claimant_id or not lease_id:
+                return self.bad_request("missing claimant_id or lease_id")
+
+            logger.info(f"Received provisional leadership claim from {claimant_id}")
+
+            # If we already have a functioning leader, reject the claim
+            if self.leader_id and self.leader_id != claimant_id:
+                with self.peers_lock:
+                    leader = self.peers.get(self.leader_id)
+                if leader and leader.is_alive():
+                    logger.info(f"Rejecting provisional claim: have active leader {self.leader_id}")
+                    return self.json_response({
+                        "ack": False,
+                        "challenge": False,
+                        "current_leader": self.leader_id,
+                        "reason": "have_active_leader",
+                    })
+
+            # Check if we're also a provisional leader or claiming
+            if self.role == NodeRole.PROVISIONAL_LEADER:
+                # We're also claiming - use node_id tiebreaker
+                if self.node_id > claimant_id:
+                    # We win the tiebreaker, challenge their claim
+                    logger.info(f"Challenging provisional claim from {claimant_id}: our ID {self.node_id} > {claimant_id}")
+                    return self.json_response({
+                        "ack": False,
+                        "challenge": True,
+                        "challenger_id": self.node_id,
+                        "reason": "node_id_tiebreaker",
+                    })
+                else:
+                    # They win the tiebreaker, step down and acknowledge
+                    logger.info(f"Stepping down from provisional: {claimant_id} > {self.node_id}")
+                    self._step_down_from_provisional()
+                    # Fall through to acknowledge
+
+            # If we're a candidate in an election, also use tiebreaker
+            if self.role == NodeRole.CANDIDATE:
+                if self.node_id > claimant_id:
+                    logger.info(f"Challenging provisional claim during election: {self.node_id} > {claimant_id}")
+                    return self.json_response({
+                        "ack": False,
+                        "challenge": True,
+                        "challenger_id": self.node_id,
+                        "reason": "election_in_progress",
+                    })
+
+            # Acknowledge the provisional claim
+            self.leader_id = claimant_id
+            self.leader_lease_id = lease_id
+            self.leader_lease_expires = claimed_at + 60  # Short provisional lease
+            self.role = NodeRole.FOLLOWER
+            self._save_state()
+
+            logger.info(f"Acknowledged provisional leader: {claimant_id}")
+
+            return self.json_response({
+                "ack": True,
+                "challenge": False,
+                "node_id": self.node_id,
+            })
+
+        except Exception as e:
+            logger.error(f"Error handling provisional leader claim: {e}")
+            return self.error_response(str(e), status=500)

@@ -564,6 +564,13 @@ from scripts.p2p.constants import (
     LEADER_MIN_RESPONSE_RATE,
     LEADERLESS_TRAINING_TIMEOUT,
     LEADER_WORK_DISPATCH_TIMEOUT,
+    # Probabilistic fallback leadership (Jan 1, 2026)
+    PROVISIONAL_LEADER_MIN_LEADERLESS_TIME,
+    PROVISIONAL_LEADER_INITIAL_PROBABILITY,
+    PROVISIONAL_LEADER_MAX_PROBABILITY,
+    PROVISIONAL_LEADER_PROBABILITY_GROWTH_RATE,
+    PROVISIONAL_LEADER_QUORUM_TIMEOUT,
+    PROVISIONAL_LEADER_CHECK_INTERVAL,
     LOAD_AVERAGE_MAX_MULTIPLIER,
     LOAD_MAX_FOR_NEW_JOBS,
     MANIFEST_JSONL_LINECOUNT_CHUNK_BYTES,
@@ -1775,6 +1782,16 @@ class P2POrchestrator(
         # Dec 30, 2025: Track when we last received work from the leader
         # If leader exists but isn't dispatching work, nodes can self-assign after timeout
         self.last_work_from_leader: float = time.time()  # When we last got work from leader
+
+        # Jan 1, 2026: Probabilistic Fallback Leadership (Provisional Leader state)
+        # When normal elections repeatedly fail, nodes can claim provisional leadership
+        # with increasing probability. Provisional leaders can dispatch work but must be
+        # confirmed by quorum acknowledgment or node_id tiebreaker if contested.
+        self._provisional_leader_claimed_at: float = 0.0  # When we claimed provisional leadership
+        self._provisional_leader_acks: set[str] = set()  # Nodes that acknowledged our provisional claim
+        self._provisional_leader_challengers: dict[str, float] = {}  # node_id -> challenge_time
+        self._last_provisional_check: float = 0.0  # Last time we checked for probabilistic claim
+        self._provisional_claim_probability: float = PROVISIONAL_LEADER_INITIAL_PROBABILITY
 
         # Voter-backed lease grants (split-brain resistance).
         #
@@ -3852,8 +3869,9 @@ class P2POrchestrator(
                 f"[LeaderCheck] Not leader: leader_id={self.leader_id}, "
                 f"self.node_id={self.node_id}, role={self.role.value if hasattr(self.role, 'value') else self.role}"
             )
-            # Consistency: we should never claim role=leader while leader_id points elsewhere (or is None).
-            if self.role == NodeRole.LEADER:
+            # Consistency: we should never claim role=leader/provisional while leader_id points elsewhere (or is None).
+            # Jan 1, 2026: Also check PROVISIONAL_LEADER for consistency
+            if self.role in (NodeRole.LEADER, NodeRole.PROVISIONAL_LEADER):
                 logger.info("Inconsistent leadership state (role=leader but leader_id!=self); stepping down")
                 self.role = NodeRole.FOLLOWER
                 self.last_lease_renewal = 0.0
@@ -3873,8 +3891,9 @@ class P2POrchestrator(
                             asyncio.get_running_loop().create_task(self._start_election())
             return False
         # Consistency: we should never claim leader_id=self while being a follower/candidate.
-        if self.role != NodeRole.LEADER:
-            logger.info("Inconsistent leadership state (leader_id=self but role!=leader); clearing leader_id")
+        # Jan 1, 2026: PROVISIONAL_LEADER is also valid for dispatching work (fallback leadership)
+        if self.role not in (NodeRole.LEADER, NodeRole.PROVISIONAL_LEADER):
+            logger.info("Inconsistent leadership state (leader_id=self but role!=leader/provisional); clearing leader_id")
             self.role = NodeRole.FOLLOWER
             self.leader_id = None
             self.leader_lease_id = ""
@@ -8789,6 +8808,13 @@ class P2POrchestrator(
             "role": self.role.value,
             "leader_id": self.leader_id,
             "effective_leader_id": (effective_leader.node_id if effective_leader else None),
+            # Jan 1, 2026: Provisional leadership status
+            "is_provisional_leader": self.role == NodeRole.PROVISIONAL_LEADER,
+            "provisional_claimed_at": getattr(self, "_provisional_leader_claimed_at", 0.0) or 0.0,
+            "provisional_acks": len(getattr(self, "_provisional_leader_acks", set()) or set()),
+            "provisional_challengers": len(getattr(self, "_provisional_leader_challengers", {}) or {}),
+            "fallback_leader_since": getattr(self, "_fallback_leader_since", 0.0) or 0.0,
+            "fallback_leader_reason": getattr(self, "_fallback_leader_reason", "") or "",
             "leaders_reported": leaders_reported,
             "leaders_eligible": leaders_eligible,
             "voter_node_ids": voter_ids,
@@ -16978,6 +17004,56 @@ print(json.dumps(result))
                     "weight": 0.02,
                     "description": "MaxN 4P hexagonal - high quality 4-player",
                 },
+                # Jan 1, 2026: Added missing harness types for full diversity
+                # Minimax (2P paranoid search), Descent (stochastic), Random (baseline)
+                {
+                    "engine_mode": "nn-minimax",
+                    "board_type": "hex8",
+                    "num_players": 2,
+                    "profile": "balanced",
+                    "weight": 0.02,
+                    "description": "NN-Minimax 2P hex8 - deep alpha-beta search",
+                },
+                {
+                    "engine_mode": "nn-minimax",
+                    "board_type": "square8",
+                    "num_players": 2,
+                    "profile": "balanced",
+                    "weight": 0.02,
+                    "description": "NN-Minimax 2P square - tactical search",
+                },
+                {
+                    "engine_mode": "nn-descent",
+                    "board_type": "hex8",
+                    "num_players": 2,
+                    "profile": "balanced",
+                    "weight": 0.01,
+                    "description": "NN-Descent 2P hex8 - stochastic exploration",
+                },
+                {
+                    "engine_mode": "nn-descent",
+                    "board_type": "square8",
+                    "num_players": 3,
+                    "profile": "balanced",
+                    "weight": 0.01,
+                    "description": "NN-Descent 3P square - multiplayer descent",
+                },
+                {
+                    "engine_mode": "random",
+                    "board_type": "hex8",
+                    "num_players": 2,
+                    "profile": "balanced",
+                    "weight": 0.005,
+                    "description": "Random 2P hex8 - baseline diversity",
+                },
+                {
+                    "engine_mode": "random",
+                    "board_type": "square8",
+                    "num_players": 4,
+                    "profile": "balanced",
+                    "weight": 0.005,
+                    "description": "Random 4P square - multiplayer baseline",
+                },
             ]
 
             # Select profiles based on weighted random sampling
@@ -20230,12 +20306,17 @@ print(json.dumps({{
                 # CRITICAL: Check quorum before starting election to prevent quorum bypass
                 if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
                     logger.warning(f"Skipping periodic election retry {retry_count + 1}: no voter quorum available")
+                    # Jan 1, 2026: Check probabilistic fallback leadership when quorum unavailable
+                    # This prevents indefinite cluster stalls when voters are unreachable
+                    asyncio.create_task(self._check_probabilistic_leadership(now))
                 else:
                     logger.info(f"Triggering election retry {retry_count + 1} after {backoff_seconds}s leaderless")
                     asyncio.create_task(self._start_election())
         elif self.leader_id:
             # Reset retry count when we have a leader
             self._election_retry_count = 0
+            # Jan 1, 2026: Reset probabilistic claim probability when we have a leader
+            self._provisional_claim_probability = PROVISIONAL_LEADER_INITIAL_PROBABILITY
 
     async def _probe_retired_peers_async(self) -> None:
         """Actively probe retired peers to detect recovery.
@@ -20657,6 +20738,293 @@ print(json.dumps({{
 
         # Start P2P auto-deployer when becoming leader
         await self._start_p2p_auto_deployer()
+
+    # ============================================
+    # Probabilistic Fallback Leadership (Jan 1, 2026)
+    # ============================================
+
+    async def _check_probabilistic_leadership(self, now: float) -> None:
+        """Check if we should claim provisional leadership using probabilistic fallback.
+
+        Jan 1, 2026: When normal elections repeatedly fail (e.g., voter quorum unavailable),
+        nodes can claim provisional leadership with increasing probability. This prevents
+        indefinite cluster stalls while still preferring proper elections.
+
+        Design:
+        1. Only activate after PROVISIONAL_LEADER_MIN_LEADERLESS_TIME (5 min)
+        2. Probability starts low, grows exponentially over time
+        3. If random check passes, claim PROVISIONAL_LEADER state
+        4. Announce to peers and collect acknowledgments
+        5. Promote to full LEADER after quorum ack or timeout with no challengers
+        """
+        import random
+
+        # Skip if we already have a leader or are claiming
+        if self.leader_id or self.role in (NodeRole.LEADER, NodeRole.PROVISIONAL_LEADER, NodeRole.CANDIDATE):
+            return
+
+        # Rate limit checks
+        if now - self._last_provisional_check < PROVISIONAL_LEADER_CHECK_INTERVAL:
+            return
+        self._last_provisional_check = now
+
+        # Check if we've been leaderless long enough
+        leaderless_duration = now - self.last_leader_seen
+        if leaderless_duration < PROVISIONAL_LEADER_MIN_LEADERLESS_TIME:
+            return
+
+        # Check if we're eligible (not NAT-blocked, preferably GPU node)
+        self._update_self_info()
+        if getattr(self.self_info, "nat_blocked", False):
+            logger.debug("Skipping probabilistic leadership: NAT-blocked")
+            return
+
+        # Calculate current probability based on leaderless duration
+        # Probability grows exponentially beyond minimum threshold
+        minutes_beyond_minimum = (leaderless_duration - PROVISIONAL_LEADER_MIN_LEADERLESS_TIME) / 60.0
+        current_prob = min(
+            PROVISIONAL_LEADER_MAX_PROBABILITY,
+            PROVISIONAL_LEADER_INITIAL_PROBABILITY * (PROVISIONAL_LEADER_PROBABILITY_GROWTH_RATE ** minutes_beyond_minimum)
+        )
+        self._provisional_claim_probability = current_prob
+
+        # Roll the dice
+        roll = random.random()
+        logger.debug(f"Probabilistic leadership check: roll={roll:.3f}, threshold={current_prob:.3f}, "
+                    f"leaderless={int(leaderless_duration)}s")
+
+        if roll >= current_prob:
+            return  # Not claiming this time
+
+        # We're claiming provisional leadership
+        logger.info(f"Claiming provisional leadership after {int(leaderless_duration)}s leaderless "
+                   f"(prob={current_prob:.2%}, roll={roll:.3f})")
+
+        await self._claim_provisional_leadership()
+
+    async def _claim_provisional_leadership(self) -> None:
+        """Claim provisional leadership and announce to peers.
+
+        Provisional leaders can dispatch work but must be confirmed by:
+        - Quorum acknowledgment from peers, OR
+        - No challengers after timeout period (with node_id tiebreaker if contested)
+        """
+        import uuid
+
+        now = time.time()
+
+        # Set provisional state
+        self.role = NodeRole.PROVISIONAL_LEADER
+        self._provisional_leader_claimed_at = now
+        self._provisional_leader_acks = {self.node_id}  # Self-ack
+        self._provisional_leader_challengers = {}
+
+        # Create a provisional lease (shorter than normal)
+        provisional_lease_id = f"PROVISIONAL_{self.node_id}_{uuid.uuid4().hex[:8]}"
+        self.leader_lease_id = provisional_lease_id
+        self.leader_lease_expires = now + PROVISIONAL_LEADER_QUORUM_TIMEOUT
+        self.last_lease_renewal = now
+
+        # Set ourselves as leader (provisional) so peers know who's claiming
+        self.leader_id = self.node_id
+
+        logger.info(f"Provisional leadership claimed: lease={provisional_lease_id}")
+
+        # Announce provisional claim to all peers
+        async with AsyncLockWrapper(self.peers_lock):
+            peers = [p for p in self.peers.values() if p.node_id != self.node_id and p.is_alive()]
+
+        if not peers:
+            # No peers to acknowledge, promote immediately
+            logger.info("No alive peers to acknowledge, promoting immediately to full leader")
+            await self._promote_provisional_to_leader("no_peers")
+            return
+
+        # Send provisional leadership claim to all peers
+        timeout = aiohttp.ClientTimeout(total=5)
+        acks_received = 0
+        challengers = []
+
+        async with get_client_session(timeout) as session:
+            for peer in peers:
+                try:
+                    url = self._url_for_peer(peer, "/provisional-leader/claim")
+                    async with session.post(
+                        url,
+                        json={
+                            "claimant_id": self.node_id,
+                            "lease_id": provisional_lease_id,
+                            "claimed_at": now,
+                        },
+                        headers=self._auth_headers(),
+                    ) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            if data.get("ack"):
+                                self._provisional_leader_acks.add(peer.node_id)
+                                acks_received += 1
+                                logger.debug(f"Provisional ack from {peer.node_id}")
+                            elif data.get("challenge"):
+                                challenger_id = data.get("challenger_id", peer.node_id)
+                                self._provisional_leader_challengers[challenger_id] = now
+                                challengers.append(challenger_id)
+                                logger.info(f"Provisional challenge from {challenger_id}")
+                except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
+                    pass  # Network errors expected
+
+        logger.info(f"Provisional claim results: {acks_received} acks, {len(challengers)} challengers")
+
+        # Handle challenges using node_id tiebreaker
+        if challengers:
+            # Find highest challenger
+            all_claimants = [self.node_id] + challengers
+            all_claimants.sort(reverse=True)
+            winner = all_claimants[0]
+
+            if winner != self.node_id:
+                logger.info(f"Stepping down from provisional: {winner} > {self.node_id}")
+                self._step_down_from_provisional()
+                return
+
+            logger.info(f"Won provisional tiebreaker against {challengers}")
+
+        # Check if we have quorum
+        total_peers = len(peers) + 1  # Include self
+        quorum_size = (total_peers // 2) + 1
+        current_acks = len(self._provisional_leader_acks)
+
+        if current_acks >= quorum_size:
+            logger.info(f"Quorum achieved ({current_acks}/{quorum_size}), promoting to full leader")
+            await self._promote_provisional_to_leader("quorum_achieved")
+        else:
+            # Schedule a follow-up check after timeout period
+            logger.info(f"Quorum not yet achieved ({current_acks}/{quorum_size}), waiting for timeout")
+            asyncio.get_event_loop().call_later(
+                PROVISIONAL_LEADER_QUORUM_TIMEOUT,
+                lambda: asyncio.create_task(self._check_provisional_promotion())
+            )
+
+    async def _check_provisional_promotion(self) -> None:
+        """Check if provisional leader should be promoted after timeout period."""
+        if self.role != NodeRole.PROVISIONAL_LEADER:
+            return  # Already promoted or stepped down
+
+        now = time.time()
+        claim_duration = now - self._provisional_leader_claimed_at
+
+        if claim_duration < PROVISIONAL_LEADER_QUORUM_TIMEOUT:
+            return  # Not time yet
+
+        # Check for any challengers that won during the timeout
+        if self._provisional_leader_challengers:
+            all_claimants = [self.node_id] + list(self._provisional_leader_challengers.keys())
+            all_claimants.sort(reverse=True)
+            winner = all_claimants[0]
+
+            if winner != self.node_id:
+                logger.info(f"Challenger {winner} won during timeout period")
+                self._step_down_from_provisional()
+                return
+
+        # No successful challengers, promote to full leader
+        logger.info(f"Provisional timeout elapsed with no successful challengers, promoting to full leader")
+        await self._promote_provisional_to_leader("timeout_no_challengers")
+
+    async def _promote_provisional_to_leader(self, reason: str) -> None:
+        """Promote from provisional to full leader.
+
+        Args:
+            reason: Why we're promoting (quorum_achieved, timeout_no_challengers, no_peers)
+        """
+        if self.role == NodeRole.LEADER:
+            return  # Already promoted
+
+        logger.info(f"Promoting from provisional to full leader: {reason}")
+
+        # Clear provisional state
+        self._provisional_leader_claimed_at = 0.0
+        self._provisional_leader_acks.clear()
+        self._provisional_leader_challengers.clear()
+
+        # Full leader transition (subset of _become_leader, but without voter lease)
+        import uuid
+        now = time.time()
+
+        self.role = NodeRole.LEADER
+        self.leader_id = self.node_id
+        self.last_leader_seen = now
+
+        # Create a new lease ID to mark full leadership
+        lease_id = f"FALLBACK_{self.node_id}_{int(now)}_{uuid.uuid4().hex[:8]}"
+        self.leader_lease_id = lease_id
+        self.leader_lease_expires = now + LEADER_LEASE_DURATION
+        self.last_lease_renewal = now
+
+        # Track that this is fallback leadership (for monitoring)
+        self._fallback_leader_since = now
+        self._fallback_leader_reason = reason
+
+        # Increment epochs
+        self._increment_cluster_epoch()
+        self._lease_epoch += 1
+        self._fence_token = f"{self.node_id}:{self._lease_epoch}:{now}"
+
+        # Emit LEADER_ELECTED event
+        asyncio.create_task(self._emit_leader_elected(self.node_id, getattr(self, "cluster_epoch", 0)))
+
+        # Announce to all peers
+        async with AsyncLockWrapper(self.peers_lock):
+            peers = list(self.peers.values())
+
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with get_client_session(timeout) as session:
+            for peer in peers:
+                if peer.node_id != self.node_id:
+                    try:
+                        url = self._url_for_peer(peer, "/coordinator")
+                        await session.post(
+                            url,
+                            json={
+                                "leader_id": self.node_id,
+                                "lease_id": self.leader_lease_id,
+                                "lease_expires": self.leader_lease_expires,
+                                "fallback_leadership": True,
+                                "lease_epoch": self._lease_epoch,
+                                "fence_token": self._fence_token,
+                            },
+                            headers=self._auth_headers(),
+                        )
+                    except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
+                        pass
+
+        self._save_state()
+
+        # Start monitoring services
+        await self._start_monitoring_if_leader()
+        await self._start_p2p_auto_deployer()
+
+        logger.info(f"Full fallback leadership established: lease={lease_id}")
+
+    def _step_down_from_provisional(self) -> None:
+        """Step down from provisional leadership (lost to challenger)."""
+        logger.info(f"Stepping down from provisional leadership")
+
+        self.role = NodeRole.FOLLOWER
+        self.leader_id = None
+        self.leader_lease_id = ""
+        self.leader_lease_expires = 0.0
+        self.last_lease_renewal = 0.0
+
+        # Clear provisional state
+        self._provisional_leader_claimed_at = 0.0
+        self._provisional_leader_acks.clear()
+        self._provisional_leader_challengers.clear()
+
+        self._save_state()
+
+    def _is_provisional_leader(self) -> bool:
+        """Check if we are currently a provisional leader."""
+        return self.role == NodeRole.PROVISIONAL_LEADER and self.leader_id == self.node_id
 
     async def _request_election_from_voters(self, reason: str = "non_voter_request") -> bool:
         """December 29, 2025: Non-voters can request that voters start an election.
@@ -26867,6 +27235,8 @@ print(json.dumps({{
             app.router.add_post('/election/force_leader', self.handle_election_force_leader)
             # December 29, 2025: Allow non-voters to request elections via voters
             app.router.add_post('/election/request', self.handle_election_request)
+            # Jan 1, 2026: Probabilistic fallback leadership - provisional claim handler
+            app.router.add_post('/provisional-leader/claim', self.handle_provisional_leader_claim)
 
             # Serf integration routes (battle-tested SWIM gossip)
             app.router.add_post('/serf/event', self.handle_serf_event)

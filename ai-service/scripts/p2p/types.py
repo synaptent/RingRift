@@ -8,10 +8,18 @@ from enum import Enum
 
 
 class NodeRole(str, Enum):
-    """Role a node plays in the cluster."""
+    """Role a node plays in the cluster.
+
+    Jan 1, 2026: Added PROVISIONAL_LEADER for probabilistic fallback leadership.
+    When normal elections fail repeatedly (e.g., voter quorum unavailable),
+    nodes can claim provisional leadership with increasing probability.
+    Provisional leaders can dispatch work but must be confirmed by quorum
+    acknowledgment or node_id tiebreaker if contested.
+    """
     LEADER = "leader"
     FOLLOWER = "follower"
     CANDIDATE = "candidate"
+    PROVISIONAL_LEADER = "provisional_leader"  # Jan 1, 2026: Fallback leadership before quorum confirmation
 
 
 class NodeHealthState(str, Enum):

@@ -105,6 +105,58 @@ LEADER_WORK_DISPATCH_TIMEOUT = int(
     os.environ.get("RINGRIFT_P2P_LEADER_WORK_DISPATCH_TIMEOUT", "120") or 120
 )  # 2 minutes - nodes self-assign if leader not dispatching
 
+# ============================================
+# Probabilistic Fallback Leadership (Jan 1, 2026)
+# ============================================
+# When normal elections repeatedly fail (e.g., voter quorum unavailable after partition),
+# nodes can claim provisional leadership with increasing probability. This prevents
+# indefinite cluster stalls while still preferring proper elections.
+#
+# Design principles:
+# 1. Only activate after significant leaderless period (prevents race with normal elections)
+# 2. Use low initial probability that grows over time (exponential backoff in reverse)
+# 3. Require quorum acknowledgment OR node_id tiebreaker to finalize leadership
+# 4. Use PROVISIONAL_LEADER state before becoming full LEADER
+#
+# Flow: leaderless N seconds → probabilistic claim → PROVISIONAL_LEADER
+#       → quorum ack / tiebreaker win → LEADER (or step down if contested by higher node)
+
+# Minimum time leaderless before fallback leadership kicks in
+# 5 minutes = 300 seconds - plenty of time for normal elections to complete
+PROVISIONAL_LEADER_MIN_LEADERLESS_TIME = int(
+    os.environ.get("RINGRIFT_P2P_PROVISIONAL_MIN_LEADERLESS", "300") or 300
+)
+
+# Initial probability of claiming provisional leadership (per check cycle)
+# 0.05 = 5% chance per cycle - starts low to prevent race conditions
+PROVISIONAL_LEADER_INITIAL_PROBABILITY = float(
+    os.environ.get("RINGRIFT_P2P_PROVISIONAL_INITIAL_PROB", "0.05") or 0.05
+)
+
+# Maximum probability cap to prevent guaranteed immediate claim
+# 0.75 = 75% max - still some randomness even after long leaderless period
+PROVISIONAL_LEADER_MAX_PROBABILITY = float(
+    os.environ.get("RINGRIFT_P2P_PROVISIONAL_MAX_PROB", "0.75") or 0.75
+)
+
+# Probability growth factor per minute of leaderlessness beyond minimum
+# 1.3 = 30% increase per minute (compounding)
+# After 5 min: 5% → after 6 min: 6.5% → after 7 min: 8.45% → after 10 min: 18.5%
+PROVISIONAL_LEADER_PROBABILITY_GROWTH_RATE = float(
+    os.environ.get("RINGRIFT_P2P_PROVISIONAL_GROWTH_RATE", "1.3") or 1.3
+)
+
+# How long provisional leader waits for quorum acknowledgment before self-promotion
+# 60 seconds should be enough for peers to respond if reachable
+PROVISIONAL_LEADER_QUORUM_TIMEOUT = int(
+    os.environ.get("RINGRIFT_P2P_PROVISIONAL_QUORUM_TIMEOUT", "60") or 60
+)
+
+# How often to check for probabilistic leadership opportunity (seconds)
+PROVISIONAL_LEADER_CHECK_INTERVAL = int(
+    os.environ.get("RINGRIFT_P2P_PROVISIONAL_CHECK_INTERVAL", "30") or 30
+)
+
 # Dec 29, 2025: Reduced from 60s to 15s for faster job status updates
 JOB_CHECK_INTERVAL = int(os.environ.get("RINGRIFT_P2P_JOB_CHECK_INTERVAL", "15") or 15)
 DISCOVERY_PORT = 8771  # UDP port for peer discovery
