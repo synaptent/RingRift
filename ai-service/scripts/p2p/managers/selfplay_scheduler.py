@@ -155,10 +155,13 @@ class SelfplayScheduler(EventSubscriptionMixin):
     # - policy-only: Neural-guided, needs model (⚡⚡⚡⚡, ⭐⭐⭐) - GPU required
     # - gumbel-mcts: Balanced neural search with budget 64 (⚡⚡, ⭐⭐⭐⭐) - GPU required
     # Dec 31, 2025: Minimum 15% Gumbel MCTS for quality training data (48h autonomous operation)
+    # Dec 31, 2025: Added MINIMAX (paranoid) to all engine mixes
+    # Paranoid minimax assumes all opponents ally against current player - works for 2-4 players
     LARGE_BOARD_ENGINE_MIX = [
         # (engine_mode, weight, gpu_required, extra_args)
-        ("heuristic", 35, False, None),  # 35% - fast bootstrap (reduced from 40%)
-        ("brs", 20, False, None),  # 20% - good for multiplayer
+        ("heuristic", 30, False, None),  # 30% - fast bootstrap
+        ("minimax", 10, False, {"depth": 3}),  # 10% - paranoid search (works for 2-4p)
+        ("brs", 15, False, None),  # 15% - good for multiplayer
         ("maxn", 15, False, None),  # 15% - highest heuristic quality
         ("policy-only", 15, True, None),  # 15% - neural guided (GPU)
         ("gumbel-mcts", 15, True, {"budget": 64}),  # 15% - balanced neural (GPU) - min floor
@@ -167,28 +170,32 @@ class SelfplayScheduler(EventSubscriptionMixin):
     # CPU-only variant for nodes without GPU
     LARGE_BOARD_ENGINE_MIX_CPU = [
         # (engine_mode, weight, gpu_required, extra_args)
-        ("heuristic", 50, False, None),  # 50% - fast bootstrap
+        ("heuristic", 40, False, None),  # 40% - fast bootstrap
+        ("minimax", 15, False, {"depth": 3}),  # 15% - paranoid search (2-4p)
         ("brs", 25, False, None),  # 25% - good for multiplayer
-        ("maxn", 25, False, None),  # 25% - highest heuristic quality
+        ("maxn", 20, False, None),  # 20% - highest heuristic quality
     ]
 
     # December 2025: Standard board engine mix for smaller boards (hex8, square8)
     # Higher neural network weight since games are faster on smaller boards
+    # Dec 31, 2025: Added MINIMAX (paranoid) - deeper search on smaller boards
     STANDARD_BOARD_ENGINE_MIX = [
         # (engine_mode, weight, gpu_required, extra_args)
-        ("heuristic", 25, False, None),  # 25% - fast bootstrap
-        ("brs", 15, False, None),  # 15% - good for multiplayer diversity
+        ("heuristic", 20, False, None),  # 20% - fast bootstrap
+        ("minimax", 15, False, {"depth": 4}),  # 15% - paranoid search (2-4p, deeper on small boards)
+        ("brs", 10, False, None),  # 10% - good for multiplayer diversity
         ("maxn", 10, False, None),  # 10% - highest heuristic quality
-        ("policy-only", 20, True, None),  # 20% - neural guided (GPU)
+        ("policy-only", 15, True, None),  # 15% - neural guided (GPU)
         ("gumbel-mcts", 30, True, {"budget": 150}),  # 30% - balanced neural (GPU)
     ]
 
     # CPU-only variant for standard boards
     STANDARD_BOARD_ENGINE_MIX_CPU = [
         # (engine_mode, weight, gpu_required, extra_args)
-        ("heuristic", 40, False, None),  # 40% - fast bootstrap
-        ("brs", 30, False, None),  # 30% - good for multiplayer
-        ("maxn", 30, False, None),  # 30% - highest heuristic quality
+        ("heuristic", 30, False, None),  # 30% - fast bootstrap
+        ("minimax", 25, False, {"depth": 4}),  # 25% - paranoid search (2-4p)
+        ("brs", 25, False, None),  # 25% - good for multiplayer
+        ("maxn", 20, False, None),  # 20% - highest heuristic quality
     ]
 
     # Large board types that should use the large board engine mix
@@ -196,43 +203,28 @@ class SelfplayScheduler(EventSubscriptionMixin):
     # Standard board types that should use the standard board engine mix
     STANDARD_BOARD_TYPES = {"hex8", "square8"}
 
-    # Dec 31, 2025: 2-player specific engine mix with MINIMAX for stronger search
-    # MINIMAX is only valid for 2-player games (perfect information adversarial search)
-    TWO_PLAYER_ENGINE_MIX = [
-        # (engine_mode, weight, gpu_required, extra_args)
-        ("heuristic", 20, False, None),  # 20% - fast bootstrap
-        ("minimax", 20, False, {"depth": 4}),  # 20% - classic adversarial (2p only)
-        ("policy-only", 20, True, None),  # 20% - neural guided (GPU)
-        ("gumbel-mcts", 30, True, {"budget": 150}),  # 30% - balanced neural (GPU)
-        ("descent", 10, True, None),  # 10% - exploration via descent (GPU)
-    ]
-
-    TWO_PLAYER_ENGINE_MIX_CPU = [
-        # (engine_mode, weight, gpu_required, extra_args)
-        ("heuristic", 40, False, None),  # 40% - fast bootstrap
-        ("minimax", 60, False, {"depth": 4}),  # 60% - classic adversarial (2p only)
-    ]
-
     @classmethod
     def _select_board_engine(
         cls,
         has_gpu: bool,
         board_type: str,
-        num_players: int = 0,
+        num_players: int = 0,  # Kept for API compatibility, not used
     ) -> tuple[str, dict[str, Any] | None]:
         """Select an engine mode from the appropriate engine mix for the board type.
 
         Uses weighted random selection from the engine mix matching the board type:
-        - 2-player games: TWO_PLAYER_ENGINE_MIX (includes MINIMAX)
         - Large boards (square19, hexagonal): LARGE_BOARD_ENGINE_MIX
         - Standard boards (hex8, square8): STANDARD_BOARD_ENGINE_MIX
+
+        All mixes include MINIMAX (paranoid search) which works for 2-4 players.
+        Paranoid minimax assumes all opponents ally against the current player.
 
         GPU vs CPU variants are selected based on node capability.
 
         Args:
             has_gpu: Whether the node has GPU capability
             board_type: Board type to select engine for
-            num_players: Number of players (2-player uses special MINIMAX mix)
+            num_players: Kept for API compatibility (MINIMAX works for all player counts)
 
         Returns:
             Tuple of (engine_mode, extra_args) where extra_args may contain
@@ -240,15 +232,10 @@ class SelfplayScheduler(EventSubscriptionMixin):
 
         December 2025: Extended to support mixed-engine strategy for ALL board types,
         not just large boards. BRS and MaxN now available for hex8/square8 diversity.
-        December 31, 2025: Added 2-player specific engine mix with MINIMAX.
+        December 31, 2025: Added MINIMAX (paranoid) to all mixes - works for 2-4 players.
         """
-        # Dec 31, 2025: Use 2-player engine mix for 2-player games
-        # MINIMAX is only valid for 2-player adversarial games
-        if num_players == 2:
-            engine_mix = cls.TWO_PLAYER_ENGINE_MIX if has_gpu else cls.TWO_PLAYER_ENGINE_MIX_CPU
-            board_category = "2-player"
         # Select appropriate engine mix based on board type and GPU availability
-        elif board_type in cls.LARGE_BOARD_TYPES:
+        if board_type in cls.LARGE_BOARD_TYPES:
             engine_mix = cls.LARGE_BOARD_ENGINE_MIX if has_gpu else cls.LARGE_BOARD_ENGINE_MIX_CPU
             board_category = "large"
         else:
@@ -1463,12 +1450,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
                     selected["engine_extra_args"] = extra_args
 
                 # Determine board category for logging
-                if num_players == 2:
-                    board_category = "2-player"
-                elif board_type in self.LARGE_BOARD_TYPES:
-                    board_category = "large"
-                else:
-                    board_category = "standard"
+                board_category = "large" if board_type in self.LARGE_BOARD_TYPES else "standard"
                 logger.info(
                     f"{board_category.capitalize()} board engine mix: {board_type}_{num_players}p '{engine_mode}' -> "
                     f"'{actual_engine}' (gpu={has_gpu}, extra_args={extra_args})"
