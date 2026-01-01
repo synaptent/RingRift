@@ -244,6 +244,7 @@ class DataEventType(Enum):
     P2P_HEALTH_RECOVERED = "p2p_health_recovered"  # Dec 2025: P2P cluster recovered from unhealthy
     NETWORK_ISOLATION_DETECTED = "network_isolation_detected"  # Dec 2025: P2P sees fewer peers than Tailscale
     QUORUM_PRIORITY_RECONNECT = "quorum_priority_reconnect"  # Dec 30, 2025: Priority reconnection order for quorum
+    CLUSTER_P2P_RECOVERY_COMPLETED = "cluster_p2p_recovery_completed"  # Dec 31, 2025: Cluster-wide SSH recovery
 
     # Voter health events (December 30, 2025 - 48h autonomous operation)
     VOTER_OFFLINE = "voter_offline"  # Individual voter became unreachable

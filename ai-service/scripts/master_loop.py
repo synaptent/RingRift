@@ -146,6 +146,11 @@ STATE_SAVE_INTERVAL_SECONDS = env.state_save_interval  # RINGRIFT_STATE_SAVE_INT
 # Load forecasting snapshot interval (December 2025)
 LOAD_SNAPSHOT_INTERVAL = 3600  # 1 hour - record cluster load for pattern learning
 
+# Cluster-wide P2P recovery interval (December 31, 2025)
+# SSH into all P2P-enabled nodes and restart P2P on any that aren't responding
+# This complements the local P2P_RECOVERY daemon which handles the coordinator's own P2P
+CLUSTER_P2P_RECOVERY_INTERVAL = int(os.environ.get("RINGRIFT_CLUSTER_P2P_RECOVERY_INTERVAL", "1800"))  # 30 minutes
+
 # PID file for master loop detection (December 2025)
 PID_FILE_PATH = Path(__file__).parent.parent / "data" / "coordination" / "master_loop.pid"
 LOCK_DIR = Path(__file__).parent.parent / "data" / "coordination"
@@ -285,6 +290,7 @@ class MasterLoopController:
         self._last_training_check = 0.0
         self._last_allocation_check = 0.0
         self._last_load_snapshot = 0.0  # Load forecasting (Dec 2025)
+        self._last_cluster_p2p_recovery = 0.0  # Cluster-wide P2P recovery (Dec 31, 2025)
 
         # Control
         self._running = False
@@ -1064,6 +1070,12 @@ class MasterLoopController:
                         await self._record_load_snapshot(health)
                         self._last_load_snapshot = now
 
+                    # 9. Cluster-wide P2P recovery (Dec 31, 2025)
+                    # Complements local P2P_RECOVERY daemon by checking/restarting P2P on all cluster nodes
+                    if now - self._last_cluster_p2p_recovery >= CLUSTER_P2P_RECOVERY_INTERVAL:
+                        await self._run_cluster_p2p_recovery()
+                        self._last_cluster_p2p_recovery = now
+
                 except asyncio.CancelledError:
                     # Allow cancellation to propagate for clean shutdown
                     raise
@@ -1162,6 +1174,14 @@ class MasterLoopController:
             # December 30, 2025: Vast.ai idle termination (15min threshold)
             # Uses unified_idle_shutdown_daemon with Vast-specific config
             DaemonType.VAST_IDLE,
+            # December 31, 2025: P2P recovery for LOCAL orchestrator health
+            # Monitors /status endpoint and restarts local P2P when unhealthy
+            # For cluster-wide P2P recovery, see _run_cluster_p2p_recovery()
+            DaemonType.P2P_RECOVERY,
+            # December 31, 2025: Memory monitoring to prevent OOM crashes
+            DaemonType.MEMORY_MONITOR,
+            # December 31, 2025: Stale model fallback for uninterrupted selfplay
+            DaemonType.STALE_FALLBACK,
         ]
 
         # S3 backup daemons - only if AWS credentials are configured (December 2025)
@@ -1729,6 +1749,100 @@ class MasterLoopController:
             logger.debug("[MasterLoop] Load forecaster not available")
         except Exception as e:
             logger.debug(f"[MasterLoop] Error recording load snapshot: {e}")
+
+    async def _run_cluster_p2p_recovery(self) -> None:
+        """Cluster-wide P2P recovery - check and restart P2P on remote nodes.
+
+        December 31, 2025: Added for 48-hour autonomous operation.
+
+        This complements the local P2P_RECOVERY daemon by scanning all P2P-enabled
+        cluster nodes via SSH and restarting P2P on any that aren't responding.
+
+        The local daemon only handles the coordinator's own P2P orchestrator.
+        This method handles all other cluster nodes.
+
+        Recovery is parallel with a semaphore to avoid overwhelming SSH connections.
+        """
+        try:
+            # Import the recovery module
+            from scripts.recover_p2p_cluster import (
+                load_p2p_nodes,
+                check_node_p2p_status,
+                restart_p2p_on_node,
+            )
+
+            nodes = load_p2p_nodes()
+            if not nodes:
+                logger.debug("[MasterLoop] No P2P-enabled nodes found for cluster recovery")
+                return
+
+            logger.info(f"[MasterLoop] Starting cluster P2P recovery check for {len(nodes)} nodes")
+
+            # Check status of all nodes in parallel
+            semaphore = asyncio.Semaphore(10)  # Max 10 concurrent SSH connections
+
+            async def check_with_semaphore(node):
+                async with semaphore:
+                    return await check_node_p2p_status(node)
+
+            statuses = await asyncio.gather(*[check_with_semaphore(n) for n in nodes])
+
+            # Categorize results
+            reachable = [s for s in statuses if s["reachable"]]
+            p2p_ok = [s for s in reachable if s["p2p_responding"]]
+            p2p_not_running = [s for s in reachable if not s["p2p_running"]]
+            p2p_not_responding = [s for s in reachable if s["p2p_running"] and not s["p2p_responding"]]
+
+            logger.info(
+                f"[MasterLoop] P2P cluster status: "
+                f"{len(reachable)}/{len(nodes)} reachable, "
+                f"{len(p2p_ok)} healthy, "
+                f"{len(p2p_not_running)} not running, "
+                f"{len(p2p_not_responding)} not responding"
+            )
+
+            # Restart P2P on nodes where it's not running or not responding
+            nodes_to_restart = []
+            for status in p2p_not_running + p2p_not_responding:
+                node = next((n for n in nodes if n.name == status["name"]), None)
+                if node:
+                    nodes_to_restart.append(node)
+
+            if nodes_to_restart:
+                logger.info(f"[MasterLoop] Restarting P2P on {len(nodes_to_restart)} nodes")
+
+                async def restart_with_semaphore(node):
+                    async with semaphore:
+                        return await restart_p2p_on_node(node, dry_run=False)
+
+                restart_results = await asyncio.gather(
+                    *[restart_with_semaphore(n) for n in nodes_to_restart]
+                )
+                restarted = sum(1 for r in restart_results if r)
+                logger.info(
+                    f"[MasterLoop] Cluster P2P recovery: restarted {restarted}/{len(nodes_to_restart)} nodes"
+                )
+
+                # Emit recovery event for monitoring
+                try:
+                    from app.distributed.data_events import DataEventType, emit_data_event
+                    emit_data_event(
+                        DataEventType.CLUSTER_P2P_RECOVERY_COMPLETED,
+                        nodes_checked=len(nodes),
+                        reachable=len(reachable),
+                        healthy=len(p2p_ok),
+                        restarted=restarted,
+                        source="MasterLoopController",
+                    )
+                except Exception as e:
+                    logger.debug(f"[MasterLoop] Failed to emit recovery event: {e}")
+            else:
+                logger.debug("[MasterLoop] All P2P nodes healthy, no restart needed")
+
+        except ImportError as e:
+            logger.warning(f"[MasterLoop] Cluster P2P recovery not available: {e}")
+        except Exception as e:
+            logger.error(f"[MasterLoop] Error in cluster P2P recovery: {e}", exc_info=True)
 
     # =========================================================================
     # Training coordination
