@@ -1280,13 +1280,13 @@ async def _emit_sync_checksum_failed(
 
         emit_data_event(
             event_type=DataEventType.SYNC_CHECKSUM_FAILED,
-            source="sync_integrity",
-            metadata={
+            payload={
                 "source_path": source_path,
                 "dest_path": dest_path,
                 "target_node": target_node,
                 "error": error,
             },
+            source="sync_integrity",
         )
     except (ImportError, AttributeError) as e:
         logger.debug(f"[SyncIntegrity] Could not emit SYNC_CHECKSUM_FAILED: {e}")
