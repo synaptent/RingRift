@@ -2512,13 +2512,24 @@ class P2POrchestrator(
             # SelfHealingLoop - December 28, 2025
             # Migrated from inline _self_healing_loop (~71 LOC removed)
             # Recovers stuck jobs (leader) and cleans stale processes (all nodes)
+            # Jan 2026: Added loop auto-restart for 48h autonomous operation
             try:
                 from scripts.p2p.loops import SelfHealingLoop
+
+                # Jan 2026: Callback to restart stopped loops - critical for 48h autonomy
+                async def _restart_stopped_loops_callback() -> dict[str, bool]:
+                    """Restart any stopped but enabled loops."""
+                    lm = self._get_loop_manager()
+                    if lm is not None:
+                        return await lm.restart_stopped_loops()
+                    return {}
+
                 self_healing = SelfHealingLoop(
                     is_leader=lambda: self.role == NodeRole.LEADER,
                     get_health_manager=get_health_manager,
                     get_work_queue=get_work_queue,
                     cleanup_stale_processes=self._cleanup_stale_processes,
+                    restart_stopped_loops=_restart_stopped_loops_callback,
                 )
                 manager.register(self_healing)
             except (ImportError, TypeError) as e:
@@ -10002,6 +10013,99 @@ class P2POrchestrator(
             })
         except Exception as e:  # noqa: BLE001
             logger.error(f"Cluster health check error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_loop_restart(self, request: web.Request) -> web.Response:
+        """POST /loops/restart/{name} - Restart a specific stopped loop.
+
+        January 1, 2026: Added for 48h autonomous operation support.
+        Allows restarting crashed/stopped loops without full P2P restart.
+        """
+        try:
+            loop_name = request.match_info.get("name")
+            if not loop_name:
+                return web.json_response({"error": "Loop name required"}, status=400)
+
+            loop_manager = self._get_loop_manager()
+            if loop_manager is None:
+                return web.json_response({
+                    "error": "LoopManager not available"
+                }, status=501)
+
+            success = loop_manager.restart_loop(loop_name)
+            if success:
+                return web.json_response({
+                    "success": True,
+                    "message": f"Loop '{loop_name}' restart initiated",
+                    "loop_name": loop_name,
+                })
+            else:
+                return web.json_response({
+                    "success": False,
+                    "message": f"Could not restart loop '{loop_name}'",
+                    "loop_name": loop_name,
+                }, status=404)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Loop restart error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_restart_stopped_loops(self, request: web.Request) -> web.Response:
+        """POST /loops/restart_stopped - Restart all stopped but enabled loops.
+
+        January 1, 2026: Added for 48h autonomous operation support.
+        Automatically restarts all loops that have crashed/stopped unexpectedly.
+        """
+        try:
+            loop_manager = self._get_loop_manager()
+            if loop_manager is None:
+                return web.json_response({
+                    "error": "LoopManager not available"
+                }, status=501)
+
+            results = await loop_manager.restart_stopped_loops()
+            restarted = [name for name, success in results.items() if success]
+            failed = [name for name, success in results.items() if not success]
+
+            return web.json_response({
+                "success": True,
+                "restarted": restarted,
+                "failed": failed,
+                "total_restarted": len(restarted),
+                "total_failed": len(failed),
+            })
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Restart stopped loops error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_loops_status(self, request: web.Request) -> web.Response:
+        """GET /loops/status - Get status of all background loops.
+
+        January 1, 2026: Added for monitoring and debugging loop health.
+        """
+        try:
+            loop_manager = self._get_loop_manager()
+            if loop_manager is None:
+                return web.json_response({
+                    "error": "LoopManager not available"
+                }, status=501)
+
+            all_status = loop_manager.get_all_status()
+            health = loop_manager.health_check()
+
+            # Summarize which loops are stopped
+            stopped_loops = [
+                name for name, status in all_status.items()
+                if not status.get("running") and status.get("enabled")
+            ]
+
+            return web.json_response({
+                "success": True,
+                "health": health,
+                "stopped_enabled_loops": stopped_loops,
+                "loops": all_status,
+            })
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Loops status error: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
     # Relay Handlers moved to scripts/p2p/handlers/relay.py
@@ -27319,6 +27423,12 @@ print(json.dumps({{
 
             # Config sync routes (December 30, 2025)
             app.router.add_post('/push_config', self.handle_push_config)
+
+            # Loop management routes (January 1, 2026)
+            # For 48h autonomous operation: restart crashed/stopped loops
+            app.router.add_post('/loops/restart/{name}', self.handle_loop_restart)
+            app.router.add_post('/loops/restart_stopped', self.handle_restart_stopped_loops)
+            app.router.add_get('/loops/status', self.handle_loops_status)
 
             # Dynamic host registry routes (for IP auto-updates)
             app.router.add_post('/register', self.handle_register)

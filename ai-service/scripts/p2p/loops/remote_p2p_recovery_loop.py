@@ -140,6 +140,15 @@ class RemoteP2PRecoveryStats:
             return 100.0
         return (self.successful_runs / self.cycles_run) * 100.0
 
+    @property
+    def failed_runs(self) -> int:
+        """Number of failed runs.
+
+        Required by LoopManager.health_check() at base.py:792.
+        Maps to cycles_run - successful_runs for this stats class.
+        """
+        return self.cycles_run - self.successful_runs
+
     def to_dict(self) -> dict:
         """Convert stats to dictionary for JSON serialization."""
         return {
@@ -151,6 +160,8 @@ class RemoteP2PRecoveryStats:
             "last_recovery_time": self.last_recovery_time,
             "cycles_run": self.cycles_run,
             "total_runs": self.cycles_run,  # Include for consistency
+            "successful_runs": self.successful_runs,
+            "failed_runs": self.failed_runs,  # Computed property
             "nodes_skipped_cooldown": self.nodes_skipped_cooldown,
             "ssh_key_missing": self.ssh_key_missing,
         }

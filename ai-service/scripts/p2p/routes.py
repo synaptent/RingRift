@@ -418,6 +418,17 @@ JOBS_API_ROUTES = [
 ]
 
 # ===========================================================================
+# Loop Management Routes (January 2026)
+# For 48h autonomous operation: restart crashed/stopped loops
+# ===========================================================================
+
+LOOP_MANAGEMENT_ROUTES = [
+    Route("POST", "/loops/restart/{name}", "handle_loop_restart"),
+    Route("POST", "/loops/restart_stopped", "handle_restart_stopped_loops"),
+    Route("GET", "/loops/status", "handle_loops_status"),
+]
+
+# ===========================================================================
 # All Route Groups
 # ===========================================================================
 
@@ -451,6 +462,7 @@ ALL_ROUTE_GROUPS = {
     "abtest": ABTEST_ROUTES,
     "canonical_api": CANONICAL_API_ROUTES,
     "jobs_api": JOBS_API_ROUTES,
+    "loop_management": LOOP_MANAGEMENT_ROUTES,
 }
 
 

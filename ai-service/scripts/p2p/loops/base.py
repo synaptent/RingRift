@@ -817,3 +817,57 @@ class LoopManager:
             "failing_loops": failing_loops,
             "loop_status": self.get_all_status(),
         }
+
+    def restart_loop(self, name: str) -> bool:
+        """Restart a stopped loop.
+
+        Jan 2026: Added to support 48h autonomous operation by allowing
+        crashed/stopped loops to be restarted without full P2P restart.
+
+        Args:
+            name: Name of the loop to restart
+
+        Returns:
+            True if loop was restarted, False if not found or already running
+        """
+        loop = self._loops.get(name)
+        if loop is None:
+            logger.warning(f"[{self.name}] Cannot restart unknown loop: {name}")
+            return False
+
+        if loop.running:
+            logger.debug(f"[{self.name}] Loop '{name}' is already running")
+            return True
+
+        if not loop.enabled:
+            logger.info(f"[{self.name}] Not restarting disabled loop: {name}")
+            return False
+
+        logger.info(f"[{self.name}] Restarting stopped loop: {name}")
+        loop.start_background()
+        return True
+
+    async def restart_stopped_loops(self) -> dict[str, bool]:
+        """Restart all enabled loops that have stopped.
+
+        Jan 2026: Added for 48h autonomous operation. This method should
+        be called periodically to recover loops that crashed unexpectedly.
+
+        Returns:
+            Dictionary mapping restarted loop names to success status
+        """
+        results: dict[str, bool] = {}
+
+        for name, loop in self._loops.items():
+            if not loop.running and loop.enabled:
+                logger.info(f"[{self.name}] Auto-restarting stopped loop: {name}")
+                loop.start_background()
+                # Brief delay to let loop initialize
+                await asyncio.sleep(0.1)
+                results[name] = loop.running
+                if loop.running:
+                    logger.info(f"[{self.name}] Successfully restarted loop: {name}")
+                else:
+                    logger.warning(f"[{self.name}] Failed to restart loop: {name}")
+
+        return results

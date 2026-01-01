@@ -224,6 +224,7 @@ class SelfHealingLoop(BaseLoop):
         get_work_queue: Callable[[], WorkQueueProtocol | None],
         cleanup_stale_processes: Callable[[], int],
         config: SelfHealingConfig | None = None,
+        restart_stopped_loops: Callable[[], Coroutine[Any, Any, dict[str, bool]]] | None = None,
     ):
         """Initialize self-healing loop.
 
@@ -233,6 +234,7 @@ class SelfHealingLoop(BaseLoop):
             get_work_queue: Callback returning work queue instance
             cleanup_stale_processes: Callback to clean up stale processes
             config: Loop configuration
+            restart_stopped_loops: Optional callback to restart stopped loops (Jan 2026)
         """
         self.config = config or SelfHealingConfig()
         super().__init__(
@@ -243,11 +245,14 @@ class SelfHealingLoop(BaseLoop):
         self._get_health_manager = get_health_manager
         self._get_work_queue = get_work_queue
         self._cleanup_stale_processes = cleanup_stale_processes
+        self._restart_stopped_loops = restart_stopped_loops
 
         # Statistics
         self._stale_processes_cleaned = 0
         self._stuck_jobs_recovered = 0
+        self._loops_restarted = 0
         self._last_stale_check = 0.0
+        self._last_loop_restart_check = 0.0
 
     async def _on_start(self) -> None:
         """Initial delay before starting healing."""
@@ -269,6 +274,20 @@ class SelfHealingLoop(BaseLoop):
             except Exception as e:
                 logger.debug(f"[SelfHealing] Stale process cleanup error: {e}")
             self._last_stale_check = now
+
+        # Jan 2026: Loop auto-restart - check every 5 minutes for stopped loops
+        # This ensures 48h autonomous operation by recovering crashed loops
+        loop_restart_interval = 300.0  # 5 minutes
+        if self._restart_stopped_loops and now - self._last_loop_restart_check >= loop_restart_interval:
+            try:
+                results = await self._restart_stopped_loops()
+                restarted_count = sum(1 for success in results.values() if success)
+                if restarted_count > 0:
+                    self._loops_restarted += restarted_count
+                    logger.info(f"[SelfHealing] Restarted {restarted_count} stopped loops: {list(results.keys())}")
+            except Exception as e:
+                logger.debug(f"[SelfHealing] Loop restart error: {e}")
+            self._last_loop_restart_check = now
 
         # Only leader performs job recovery
         if not self._is_leader():
@@ -321,7 +340,9 @@ class SelfHealingLoop(BaseLoop):
         return {
             "stale_processes_cleaned": self._stale_processes_cleaned,
             "stuck_jobs_recovered": self._stuck_jobs_recovered,
+            "loops_restarted": self._loops_restarted,
             "last_stale_check": self._last_stale_check,
+            "last_loop_restart_check": self._last_loop_restart_check,
             **self.stats.to_dict(),
         }
 
