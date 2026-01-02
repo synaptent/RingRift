@@ -74,8 +74,11 @@ class PeerRecoveryConfig:
     backoff_multiplier: float = 1.2
 
     # Number of failures before applying backoff
-    # Jan 2026: Reduced from 3 to 1 to start backing off earlier and avoid retry storms
-    backoff_threshold: int = 1
+    # Jan 2026: Changed back to 3 (was reduced to 1, caused peer thrashing)
+    # Threshold of 1 was too aggressive - a single transient failure triggered backoff,
+    # causing healthy peers to be deprioritized. 3 failures provides resilience
+    # against transient network blips while still backing off for persistent issues.
+    backoff_threshold: int = 3
 
     # Whether to emit events on recovery/failure
     emit_events: bool = True

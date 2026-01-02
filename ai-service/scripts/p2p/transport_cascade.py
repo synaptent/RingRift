@@ -474,7 +474,15 @@ class GlobalCircuitBreaker:
 
     Opens when cluster-wide failure rate exceeds threshold,
     triggering emergency notifications.
+
+    Sprint 4 (Jan 2, 2026): Added state persistence for crash recovery.
+    Circuit state is saved to StateManager on transitions and restored on startup.
     """
+
+    # Class-level state manager reference for persistence
+    # Set via set_state_manager() during P2P orchestrator initialization
+    _state_manager: Any = None
+    _persistence_key = "global_circuit_breaker"
 
     def __init__(
         self,
@@ -498,6 +506,9 @@ class GlobalCircuitBreaker:
         self._success_threshold = success_threshold
         self._half_open_successes = 0
         self._notification_callback: Any = None
+
+        # Sprint 4: Restore state from persistence if available
+        self._load_state()
 
     @property
     def is_open(self) -> bool:
@@ -562,6 +573,9 @@ class GlobalCircuitBreaker:
                 f"Total failures: {self._state.total_failures}"
             )
 
+            # Sprint 4: Persist state for crash recovery
+            self._save_state()
+
             # Trigger emergency notifications
             if self._notification_callback:
                 asyncio.create_task(self._emit_emergency_alerts())
@@ -572,6 +586,9 @@ class GlobalCircuitBreaker:
         self._state.total_failures = 0
         self._half_open_successes = 0
         logger.info("Global circuit breaker CLOSED")
+
+        # Sprint 4: Persist state for crash recovery
+        self._save_state()
 
     async def _emit_emergency_alerts(self) -> None:
         """Send alerts via every possible channel."""
@@ -610,6 +627,103 @@ class GlobalCircuitBreaker:
             "last_success_time": self._state.last_success_time,
             "last_failure_time": self._state.last_failure_time,
         }
+
+    # =========================================================================
+    # State Persistence (Sprint 4 - Jan 2, 2026)
+    # =========================================================================
+
+    @classmethod
+    def set_state_manager(cls, state_manager: Any) -> None:
+        """Set the state manager for circuit breaker persistence.
+
+        Called during P2P orchestrator initialization to enable state persistence.
+
+        Args:
+            state_manager: StateManager instance from p2p/managers/state_manager.py
+        """
+        cls._state_manager = state_manager
+        logger.debug("[GlobalCircuitBreaker] State manager configured for persistence")
+
+    def _save_state(self) -> bool:
+        """Save circuit breaker state to persistence.
+
+        Sprint 4 (Jan 2, 2026): Persist state on every transition to enable
+        crash recovery. Uses StateManager's peer health infrastructure.
+
+        Returns:
+            True if saved successfully, False otherwise
+        """
+        if not self._state_manager:
+            return False
+
+        try:
+            # Use PeerHealthState with a synthetic peer_id for the global CB
+            from .managers.state_manager import PeerHealthState
+
+            health_state = PeerHealthState(
+                node_id=self._persistence_key,
+                state="global_circuit_breaker",  # Special marker
+                failure_count=self._state.total_failures,
+                gossip_failure_count=0,
+                last_seen=self._state.last_success_time,
+                last_failure=self._state.last_failure_time,
+                circuit_state=self._state.state,
+                circuit_opened_at=self._state.opened_at,
+            )
+
+            return self._state_manager.save_peer_health(health_state)
+        except (ImportError, AttributeError, TypeError) as e:
+            logger.debug(f"[GlobalCircuitBreaker] Failed to save state: {e}")
+            return False
+
+    def _load_state(self) -> bool:
+        """Load circuit breaker state from persistence.
+
+        Sprint 4 (Jan 2, 2026): Restore state on startup to prevent
+        "circuit breaker amnesia" after P2P restart.
+
+        Returns:
+            True if state was restored, False otherwise
+        """
+        if not self._state_manager:
+            return False
+
+        try:
+            health_state = self._state_manager.load_peer_health(self._persistence_key)
+            if health_state is None:
+                return False
+
+            # Only restore if the persisted state is recent (within recovery timeout * 2)
+            age = time.time() - health_state.updated_at
+            if age > self._recovery_timeout * 2:
+                logger.info(
+                    f"[GlobalCircuitBreaker] Persisted state too old ({age:.0f}s), "
+                    f"starting fresh"
+                )
+                return False
+
+            # Restore state
+            self._state.state = health_state.circuit_state
+            self._state.opened_at = health_state.circuit_opened_at
+            self._state.total_failures = health_state.failure_count
+            self._state.last_failure_time = health_state.last_failure
+            self._state.last_success_time = health_state.last_seen
+
+            if self._state.state == "open":
+                logger.warning(
+                    f"[GlobalCircuitBreaker] Restored OPEN state from persistence "
+                    f"(opened {age:.0f}s ago, failures={self._state.total_failures})"
+                )
+            else:
+                logger.info(
+                    f"[GlobalCircuitBreaker] Restored state={self._state.state} "
+                    f"from persistence"
+                )
+
+            return True
+        except (ImportError, AttributeError, TypeError) as e:
+            logger.debug(f"[GlobalCircuitBreaker] Failed to load state: {e}")
+            return False
 
 
 # Singleton instances

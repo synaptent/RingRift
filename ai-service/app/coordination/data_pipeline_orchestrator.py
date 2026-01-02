@@ -2144,6 +2144,147 @@ class DataPipelineOrchestrator(
         except (AttributeError, KeyError, TypeError) as e:
             self._record_error(f"_on_new_games_available: {e}")
 
+    def _on_orphan_games_detected(self, event) -> None:
+        """Handle ORPHAN_GAMES_DETECTED event - trigger resync and re-export.
+
+        Sprint 4 (Jan 2, 2026): Auto-trigger re-export for orphaned games above threshold.
+        Orphan games are selfplay databases that exist on nodes but aren't registered
+        in the central manifest. They need to be synced and re-exported.
+
+        The plan suggested adding this handler which was referenced but not implemented.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            host = payload.get("host", "unknown")
+            orphan_count = payload.get("orphan_count", 0)
+            orphan_paths = payload.get("orphan_paths", [])
+            total_games = payload.get("total_games", 0)
+
+            logger.info(
+                f"[DataPipelineOrchestrator] Orphan games detected: "
+                f"host={host}, count={orphan_count}, games={total_games}"
+            )
+
+            # Sprint 4: Auto-resync threshold - only trigger for significant orphan counts
+            ORPHAN_RESYNC_THRESHOLD = int(
+                os.environ.get("RINGRIFT_ORPHAN_RESYNC_THRESHOLD", "100")
+            )
+
+            if total_games >= ORPHAN_RESYNC_THRESHOLD:
+                logger.info(
+                    f"[DataPipelineOrchestrator] Orphan threshold exceeded "
+                    f"({total_games} >= {ORPHAN_RESYNC_THRESHOLD}), triggering resync"
+                )
+                # Emit sync trigger event to pull orphan data
+                self._emit_orphan_resync_trigger(host, orphan_paths, total_games)
+
+            self._record_event_processed()
+
+        except (AttributeError, KeyError, TypeError) as e:
+            self._record_error(f"_on_orphan_games_detected: {e}")
+
+    def _on_orphan_games_registered(self, event) -> None:
+        """Handle ORPHAN_GAMES_REGISTERED event - trigger export after registration.
+
+        Sprint 4 (Jan 2, 2026): After orphan games are registered, trigger NPZ export
+        to include the recovered data in training.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            host = payload.get("host", "unknown")
+            registered_count = payload.get("registered_count", 0)
+            games_recovered = payload.get("games_recovered", 0)
+            registered_paths = payload.get("registered_paths", [])
+
+            logger.info(
+                f"[DataPipelineOrchestrator] Orphan games registered: "
+                f"host={host}, count={registered_count}, games={games_recovered}"
+            )
+
+            # Extract configs from registered paths and trigger re-export
+            configs_to_export: set[str] = set()
+            for path in registered_paths:
+                config = self._extract_config_from_db_path(path)
+                if config:
+                    configs_to_export.add(config)
+
+            # Trigger export for affected configs
+            for config_key in configs_to_export:
+                self._emit_export_trigger(config_key, source="orphan_recovery")
+
+            self._record_event_processed()
+
+        except (AttributeError, KeyError, TypeError) as e:
+            self._record_error(f"_on_orphan_games_registered: {e}")
+
+    def _emit_orphan_resync_trigger(
+        self, host: str, orphan_paths: list[str], total_games: int
+    ) -> None:
+        """Emit SYNC_TRIGGERED event to resync orphan games.
+
+        Sprint 4 (Jan 2, 2026): Part of orphan game recovery pipeline.
+        """
+        try:
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import emit_event
+
+            emit_event(
+                DataEventType.SYNC_TRIGGERED,
+                {
+                    "host": host,
+                    "paths": orphan_paths[:10],  # Limit payload size
+                    "game_count": total_games,
+                    "trigger": "orphan_recovery",
+                    "source": "data_pipeline_orchestrator",
+                    "timestamp": time.time(),
+                },
+            )
+            logger.debug(
+                f"[DataPipelineOrchestrator] Emitted SYNC_TRIGGERED for orphan recovery"
+            )
+        except (AttributeError, ImportError, RuntimeError) as e:
+            logger.debug(f"[DataPipelineOrchestrator] Failed to emit sync trigger: {e}")
+
+    def _emit_export_trigger(self, config_key: str, source: str) -> None:
+        """Emit event to trigger NPZ export for a config.
+
+        Sprint 4 (Jan 2, 2026): Part of orphan game recovery pipeline.
+        """
+        try:
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import emit_event
+
+            emit_event(
+                DataEventType.NEW_GAMES_AVAILABLE,
+                {
+                    "config_key": config_key,
+                    "source": source,
+                    "trigger": "orphan_recovery",
+                    "timestamp": time.time(),
+                },
+            )
+            logger.debug(
+                f"[DataPipelineOrchestrator] Emitted NEW_GAMES_AVAILABLE for {config_key}"
+            )
+        except (AttributeError, ImportError, RuntimeError) as e:
+            logger.debug(f"[DataPipelineOrchestrator] Failed to emit export trigger: {e}")
+
+    def _extract_config_from_db_path(self, path: str) -> str | None:
+        """Extract config key from database path.
+
+        Sprint 4 (Jan 2, 2026): Helper for orphan recovery.
+        Path format: .../selfplay_{board}_{n}p.db or .../canonical_{board}_{n}p.db
+        """
+        import re
+
+        # Match patterns like selfplay_hex8_2p.db or canonical_square8_4p.db
+        match = re.search(r"(?:selfplay_|canonical_)?(\w+)_(\d+)p\.db$", path)
+        if match:
+            board_type = match.group(1)
+            num_players = match.group(2)
+            return f"{board_type}_{num_players}p"
+        return None
+
     def _update_selfplay_scheduler_targets(self, config_key: str) -> None:
         """Update SelfplayScheduler with training sample targets.
 

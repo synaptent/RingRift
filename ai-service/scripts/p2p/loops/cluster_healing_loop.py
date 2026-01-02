@@ -114,6 +114,22 @@ class ClusterHealingConfig:
         in {"1", "true", "yes", "on"}
     )
 
+    # Time-based rate limiting (Jan 2026)
+    # Maximum heals allowed in any rolling time window.
+    # This provides hard protection against heal storms regardless of cycle timing.
+    max_heals_per_window: int = field(
+        default_factory=lambda: int(
+            os.environ.get("RINGRIFT_CLUSTER_HEALING_MAX_PER_WINDOW", "5")
+        )
+    )
+
+    # Rolling window for rate limiting (seconds)
+    rate_limit_window_seconds: float = field(
+        default_factory=lambda: float(
+            os.environ.get("RINGRIFT_CLUSTER_HEALING_RATE_WINDOW", "60")
+        )
+    )
+
 
 # =============================================================================
 # Host Info
@@ -195,6 +211,10 @@ class ClusterHealingLoop(BaseLoop):
         self._heal_failures: dict[str, int] = {}  # node_id -> failure count
         self._heal_next_attempt: dict[str, float] = {}  # node_id -> next attempt time
 
+        # Time-based rate limiting (Jan 2026)
+        # Track timestamps of successful heals for rolling window rate limit
+        self._heal_timestamps: list[float] = []
+
         # Cache hosts config
         self._hosts_cache: dict[str, HostInfo] = {}
         self._hosts_cache_time: float = 0.0
@@ -203,6 +223,7 @@ class ClusterHealingLoop(BaseLoop):
         self._stats_heal_attempts = 0
         self._stats_heal_successes = 0
         self._stats_heal_failures = 0
+        self._stats_rate_limited = 0  # Jan 2026: track rate-limited attempts
 
     def _load_hosts_config(self) -> dict[str, HostInfo]:
         """Load and cache hosts from distributed_hosts.yaml."""
@@ -381,6 +402,38 @@ echo "P2P restarted"
 
         return f"ssh {ssh_opts} {host.ssh_user}@{host.tailscale_ip} '{remote_cmd}'"
 
+    def _is_rate_limited(self) -> bool:
+        """Check if we've hit the rate limit for heals.
+
+        Jan 2026: Added to prevent heal storms. Uses a rolling time window
+        to ensure we never exceed max_heals_per_window in any rate_limit_window_seconds
+        period.
+
+        Returns:
+            True if rate limited (should not heal), False if OK to heal
+        """
+        now = time.time()
+        window = self.config.rate_limit_window_seconds
+        max_heals = self.config.max_heals_per_window
+
+        # Prune timestamps outside the window
+        cutoff = now - window
+        self._heal_timestamps = [ts for ts in self._heal_timestamps if ts > cutoff]
+
+        # Check if at limit
+        return len(self._heal_timestamps) >= max_heals
+
+    def _record_heal_timestamp(self) -> None:
+        """Record a successful heal for rate limiting."""
+        self._heal_timestamps.append(time.time())
+
+    def _get_rate_limit_remaining(self) -> int:
+        """Get number of heals remaining in current window."""
+        now = time.time()
+        cutoff = now - self.config.rate_limit_window_seconds
+        recent = [ts for ts in self._heal_timestamps if ts > cutoff]
+        return max(0, self.config.max_heals_per_window - len(recent))
+
     async def _heal_node(self, host: HostInfo, bootstrap_peers: list[str]) -> bool:
         """Attempt to heal a single node."""
         self._stats_heal_attempts += 1
@@ -485,16 +538,30 @@ echo "P2P restarted"
             f"[ClusterHealing] Attempting to heal {len(to_heal)}/{len(missing)} nodes"
         )
 
-        # Heal each node
+        # Heal each node with rate limiting (Jan 2026)
         healed = 0
+        rate_limited = 0
         for host in to_heal:
+            # Check time-based rate limit before each heal
+            if self._is_rate_limited():
+                remaining = self._get_rate_limit_remaining()
+                logger.info(
+                    f"[ClusterHealing] Rate limited, skipping {host.name} "
+                    f"({remaining} heals remaining in window)"
+                )
+                self._stats_rate_limited += 1
+                rate_limited += 1
+                continue
+
             success = await self._heal_node(host, bootstrap_peers)
             if success:
                 healed += 1
+                self._record_heal_timestamp()  # Track for rate limiting
 
-        if healed > 0:
+        if healed > 0 or rate_limited > 0:
             logger.info(
-                f"[ClusterHealing] Healed {healed}/{len(to_heal)} nodes this cycle"
+                f"[ClusterHealing] Cycle complete: healed={healed}, "
+                f"rate_limited={rate_limited}, attempted={len(to_heal)}"
             )
 
     def get_healing_stats(self) -> dict[str, Any]:
@@ -503,10 +570,15 @@ echo "P2P restarted"
             "heal_attempts": self._stats_heal_attempts,
             "heal_successes": self._stats_heal_successes,
             "heal_failures": self._stats_heal_failures,
+            "rate_limited": self._stats_rate_limited,  # Jan 2026
             "nodes_in_backoff": len(self._heal_next_attempt),
             "success_rate": (
                 self._stats_heal_successes / max(1, self._stats_heal_attempts)
             ),
+            # Jan 2026: Rate limit status
+            "rate_limit_remaining": self._get_rate_limit_remaining(),
+            "rate_limit_window_seconds": self.config.rate_limit_window_seconds,
+            "max_heals_per_window": self.config.max_heals_per_window,
         }
 
     def reset_backoff(self, node_id: str) -> None:

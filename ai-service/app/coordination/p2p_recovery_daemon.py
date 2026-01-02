@@ -56,6 +56,10 @@ class P2PRecoveryConfig:
         # Dec 30, 2025: Exponential backoff for restart attempts
         restart_backoff_multiplier: Multiplier for exponential backoff (default: 2.0)
         max_cooldown_seconds: Maximum cooldown between restarts (default: 30 min)
+        # Jan 2026: Proactive voter quorum monitoring
+        voter_quorum_monitoring_enabled: Enable proactive voter quorum checks (default: True)
+        min_voters_for_healthy_quorum: Minimum voters to consider quorum healthy (default: 5)
+        voter_quorum_size: Total voters required for quorum (default: 4, out of 7)
     """
 
     enabled: bool = True  # Whether daemon should run
@@ -79,6 +83,10 @@ class P2PRecoveryConfig:
     max_leader_gap_seconds: int = 45  # Jan 2026: Reduced from 120s for faster leader recovery
     quorum_recovery_enabled: bool = True
     leader_election_endpoint: str = "http://localhost:8770/election/start"
+    # Jan 2026: Proactive voter quorum monitoring
+    voter_quorum_monitoring_enabled: bool = True
+    min_voters_for_healthy_quorum: int = 5  # Trigger recovery if < 5 of 7 voters healthy
+    voter_quorum_size: int = 4  # Quorum threshold (out of 7 total voters)
 
     @classmethod
     def from_env(cls) -> "P2PRecoveryConfig":
@@ -195,6 +203,10 @@ class P2PRecoveryDaemon(HandlerBase):
         self._restart_attempt_count = 0  # Consecutive restart attempts without recovery
         # Jan 2026: Cache NAT-blocked status (checked once at startup)
         self._is_nat_blocked: bool | None = None
+        # Jan 2026: Proactive voter quorum monitoring
+        self._last_voter_quorum_check: dict[str, Any] = {}
+        self._quorum_at_risk_consecutive = 0  # Consecutive checks with quorum at risk
+        self._quorum_recovery_triggered = 0  # Total proactive recoveries triggered
 
     @property
     def config(self) -> P2PRecoveryConfig:
@@ -356,6 +368,10 @@ class P2PRecoveryDaemon(HandlerBase):
         alive_peers = status.get("alive_peers", 0)
         is_isolated, isolation_details = await self._check_network_isolation(alive_peers)
         status["isolation"] = isolation_details
+
+        # Jan 2026: Proactive voter quorum monitoring
+        quorum_healthy, quorum_details = await self._check_voter_quorum(status)
+        status["voter_quorum"] = quorum_details
 
         # Dec 29, 2025: Track leader presence for leader gap detection
         leader_id = status.get("leader_id")
@@ -567,6 +583,189 @@ class P2PRecoveryDaemon(HandlerBase):
             self._consecutive_isolation_checks = 0
 
         return is_isolated, details
+
+    async def _check_voter_quorum(self, status: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
+        """Check voter quorum health proactively.
+
+        Jan 2026: Added for proactive voter quorum monitoring during regular
+        health check cycles. Triggers recovery actions when voter count drops
+        below min_voters_for_healthy_quorum (default: 5 of 7 voters).
+
+        Args:
+            status: P2P status dict from health check
+
+        Returns:
+            Tuple of (quorum_healthy, details_dict)
+        """
+        if not self._daemon_config.voter_quorum_monitoring_enabled:
+            return True, {"voter_quorum_check": "disabled"}
+
+        try:
+            from app.config.cluster_config import get_p2p_voters
+
+            # Get all configured voters
+            all_voters = set(get_p2p_voters())
+            total_voters = len(all_voters)
+
+            if total_voters == 0:
+                return True, {"voter_quorum_check": "no_voters_configured"}
+
+            # Get list of alive peers from P2P status
+            alive_peers_list = status.get("alive_peers_list", [])
+
+            # If we only have a count (not a list), try to get from P2P
+            if isinstance(alive_peers_list, int) or not alive_peers_list:
+                alive_peers_list = await self._get_alive_peers_list()
+
+            # Count online voters
+            alive_peers_set = set(alive_peers_list) if alive_peers_list else set()
+            online_voters = all_voters & alive_peers_set
+            offline_voters = all_voters - online_voters
+            online_count = len(online_voters)
+
+            details = {
+                "total_voters": total_voters,
+                "online_voters": online_count,
+                "offline_voters": list(offline_voters),
+                "min_for_healthy": self._daemon_config.min_voters_for_healthy_quorum,
+                "quorum_size": self._daemon_config.voter_quorum_size,
+            }
+
+            self._last_voter_quorum_check = details
+
+            # Check if quorum is at risk (< min_voters_for_healthy_quorum)
+            quorum_healthy = online_count >= self._daemon_config.min_voters_for_healthy_quorum
+
+            if not quorum_healthy:
+                self._quorum_at_risk_consecutive += 1
+                details["consecutive_at_risk_checks"] = self._quorum_at_risk_consecutive
+
+                # Determine severity
+                if online_count < self._daemon_config.voter_quorum_size:
+                    severity = "QUORUM_LOST"
+                    logger.critical(
+                        f"VOTER QUORUM LOST: {online_count}/{total_voters} voters online "
+                        f"(need {self._daemon_config.voter_quorum_size} for quorum)"
+                    )
+                else:
+                    severity = "QUORUM_AT_RISK"
+                    logger.warning(
+                        f"Voter quorum at risk: {online_count}/{total_voters} voters online "
+                        f"(healthy threshold: {self._daemon_config.min_voters_for_healthy_quorum})"
+                    )
+
+                details["severity"] = severity
+
+                # Trigger recovery after 2 consecutive checks to avoid spurious triggers
+                if self._quorum_at_risk_consecutive >= 2:
+                    logger.info(
+                        f"Triggering proactive quorum recovery "
+                        f"(consecutive at-risk checks: {self._quorum_at_risk_consecutive})"
+                    )
+                    await self._trigger_proactive_quorum_recovery(offline_voters, severity)
+            else:
+                if self._quorum_at_risk_consecutive > 0:
+                    logger.info(
+                        f"Voter quorum restored: {online_count}/{total_voters} voters online "
+                        f"(was at risk for {self._quorum_at_risk_consecutive} checks)"
+                    )
+                self._quorum_at_risk_consecutive = 0
+
+            return quorum_healthy, details
+
+        except ImportError:
+            return True, {"voter_quorum_check": "cluster_config_unavailable"}
+        except Exception as e:
+            logger.debug(f"Failed to check voter quorum: {e}")
+            return True, {"voter_quorum_check": "error", "error": str(e)}
+
+    async def _get_alive_peers_list(self) -> list[str]:
+        """Get list of alive peer IDs from P2P status.
+
+        Jan 2026: Helper to get peer list when only count is available in status.
+        """
+        try:
+            import aiohttp
+
+            async with aiohttp.ClientSession() as session:
+                # Try extended status endpoint that includes peer list
+                async with session.get(
+                    f"{self._daemon_config.health_endpoint}/peers",
+                    timeout=aiohttp.ClientTimeout(total=5.0),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        return data.get("alive_peers", [])
+        except Exception:
+            pass
+        return []
+
+    async def _trigger_proactive_quorum_recovery(
+        self, offline_voters: set[str], severity: str
+    ) -> None:
+        """Trigger proactive recovery when voter quorum is at risk.
+
+        Jan 2026: Initiates recovery actions when voters go offline.
+        Actions depend on severity:
+        - QUORUM_AT_RISK: Boost reconnection priority for offline voters
+        - QUORUM_LOST: Aggressive recovery + potential P2P restart
+
+        Args:
+            offline_voters: Set of offline voter node IDs
+            severity: Either "QUORUM_AT_RISK" or "QUORUM_LOST"
+        """
+        self._quorum_recovery_triggered += 1
+
+        # Emit event for monitoring
+        try:
+            from app.distributed.data_events import DataEventType, emit_data_event
+
+            emit_data_event(
+                DataEventType.QUORUM_RECOVERY_STARTED if severity == "QUORUM_LOST"
+                else DataEventType.QUORUM_AT_RISK,
+                trigger="proactive_monitoring",
+                offline_voters=list(offline_voters),
+                severity=severity,
+                consecutive_checks=self._quorum_at_risk_consecutive,
+                source="P2PRecoveryDaemon",
+            )
+        except Exception as e:
+            logger.debug(f"Failed to emit quorum event: {e}")
+
+        # Always prioritize voter reconnections
+        await self._prioritize_quorum_reconnections()
+
+        # For QUORUM_LOST, consider additional recovery actions
+        if severity == "QUORUM_LOST":
+            logger.warning(
+                f"Quorum lost with {len(offline_voters)} voters offline. "
+                "Triggering cluster healing for voter nodes."
+            )
+
+            # Try to trigger cluster healing specifically for voter nodes
+            try:
+                await self._trigger_voter_healing(offline_voters)
+            except Exception as e:
+                logger.warning(f"Voter healing trigger failed: {e}")
+
+    async def _trigger_voter_healing(self, offline_voters: set[str]) -> None:
+        """Trigger cluster healing specifically for offline voters.
+
+        Jan 2026: Coordinates with ClusterHealingLoop to prioritize voter recovery.
+        """
+        try:
+            # Emit event that ClusterHealingLoop can subscribe to
+            from app.distributed.data_events import DataEventType, emit_data_event
+
+            emit_data_event(
+                DataEventType.VOTER_HEALING_REQUESTED,
+                offline_voters=list(offline_voters),
+                priority="urgent",
+                source="P2PRecoveryDaemon",
+            )
+            logger.info(f"Requested urgent healing for {len(offline_voters)} offline voters")
+        except Exception as e:
+            logger.debug(f"Failed to emit VOTER_HEALING_REQUESTED: {e}")
 
     def _get_current_cooldown(self) -> float:
         """Calculate current cooldown with exponential backoff.
@@ -1022,6 +1221,16 @@ class P2PRecoveryDaemon(HandlerBase):
             "max_leader_gap_seconds": self.config.max_leader_gap_seconds,
             "elections_triggered": self._leader_gap_elections_triggered,
             "quorum_recovery_attempts": self._quorum_recovery_attempts,
+        }
+
+        # Jan 2026: Voter quorum monitoring status
+        base_status["voter_quorum_status"] = {
+            "enabled": self.config.voter_quorum_monitoring_enabled,
+            "min_voters_for_healthy": self.config.min_voters_for_healthy_quorum,
+            "quorum_size": self.config.voter_quorum_size,
+            "consecutive_at_risk_checks": self._quorum_at_risk_consecutive,
+            "recovery_triggered_count": self._quorum_recovery_triggered,
+            "last_check": self._last_voter_quorum_check,
         }
 
         return base_status
