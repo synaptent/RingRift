@@ -307,13 +307,13 @@ class JobManager(EventSubscriptionMixin):
         # Subscribe to events
         job_mgr.subscribe_to_events()
 
-        # Spawn a selfplay job
+        # Spawn a selfplay job (default: GPU Gumbel MCTS for high quality)
         await job_mgr.run_gpu_selfplay_job(
             job_id="job123",
             board_type="hex8",
             num_players=2,
             num_games=100,
-            engine_mode="heuristic-only"
+            engine_mode="gumbel-mcts"  # High-quality GPU-accelerated selfplay
         )
 
         # Get job status
@@ -1446,7 +1446,8 @@ class JobManager(EventSubscriptionMixin):
             )
             return
 
-        effective_mode = engine_mode or "heuristic-only"
+        # Jan 2026: Default to gumbel-mcts for high-quality training data
+        effective_mode = engine_mode or "gumbel-mcts"
 
         # December 2025: GPU availability check using GPU_REQUIRED_ENGINE_MODES
         # This prevents wasting compute on GPU-required modes when no GPU is available
@@ -1457,19 +1458,31 @@ class JobManager(EventSubscriptionMixin):
                 has_mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
 
                 if not (has_cuda or has_mps):
-                    logger.warning(
-                        f"GPU-required mode '{effective_mode}' requested but no GPU available "
-                        f"(CUDA={has_cuda}, MPS={has_mps}), falling back to heuristic-only for job {job_id}"
-                    )
-                    effective_mode = "heuristic-only"
+                    # No GPU: use weighted CPU engine mix for diversity
+                    try:
+                        from scripts.p2p.managers.selfplay_scheduler import SelfplayScheduler
+                        effective_mode, _ = SelfplayScheduler._select_board_engine(
+                            has_gpu=False,  # CPU-only selection
+                            board_type=board_type,
+                            num_players=num_players,
+                        )
+                        logger.warning(
+                            f"GPU-required mode requested but no GPU available "
+                            f"(CUDA={has_cuda}, MPS={has_mps}), using CPU mode '{effective_mode}' for job {job_id}"
+                        )
+                    except Exception:
+                        logger.warning(
+                            f"GPU-required mode requested but no GPU available, falling back to maxn for job {job_id}"
+                        )
+                        effective_mode = "maxn"  # High-quality CPU mode
                 else:
                     device_type = "CUDA" if has_cuda else "MPS"
                     logger.debug(f"GPU available ({device_type}) for mode '{effective_mode}' job {job_id}")
             except ImportError:
                 logger.warning(
-                    f"PyTorch not available for GPU check, falling back to heuristic-only for job {job_id}"
+                    f"PyTorch not available for GPU check, falling back to maxn for job {job_id}"
                 )
-                effective_mode = "heuristic-only"
+                effective_mode = "maxn"  # High-quality CPU mode
 
         if effective_mode in self.SEARCH_ENGINE_MODES:
             # December 29, 2025: Use generate_gumbel_selfplay.py for search-based modes
@@ -1926,8 +1939,12 @@ class JobManager(EventSubscriptionMixin):
         # Dec 28, 2025: Use centralized JobDefaults.HEALTH_CHECK_TIMEOUT (30s)
         timeout = ClientTimeout(total=JobDefaults.HEALTH_CHECK_TIMEOUT)
 
-        # December 2025: Determine engine mode and GPU requirements upfront
-        # Dec 29 2025: Use multi-armed bandit for engine selection when model available
+        # Jan 2026: Use weighted engine mix for high-quality diverse training data
+        # Priority: GPU Gumbel MCTS (highest quality) > Bandit selection > Weighted mix
+        effective_engine_mode = "gumbel-mcts"  # Default to high-quality GPU mode
+        engine_extra_args: dict[str, Any] | None = None
+
+        # Try bandit selection first (learns optimal engine per config)
         if model_path:
             try:
                 from app.coordination.selfplay_engine_bandit import get_selfplay_engine_bandit
@@ -1938,12 +1955,41 @@ class JobManager(EventSubscriptionMixin):
                     f"[EngineBandit] Selected engine '{effective_engine_mode}' for {config_key}"
                 )
             except (ImportError, AttributeError) as e:
-                # Dec 31, 2025: Fall back to heuristic-only (not gumbel-mcts) for fast GPU selfplay
-                # gumbel-mcts CPU tree search is too slow even with --no-gpu-tree
-                logger.debug(f"[EngineBandit] Fallback to heuristic-only: {e}")
-                effective_engine_mode = "heuristic-only"
+                # Jan 2026: Use SelfplayScheduler's weighted engine mix for diversity
+                # This ensures GPU nodes get GPU engines, CPU nodes get CPU engines
+                try:
+                    from scripts.p2p.managers.selfplay_scheduler import SelfplayScheduler
+                    # Assume GPU availability (workers will be filtered below)
+                    effective_engine_mode, engine_extra_args = SelfplayScheduler._select_board_engine(
+                        has_gpu=True,  # Prefer GPU engines, filtered below
+                        board_type=board_type,
+                        num_players=num_players,
+                    )
+                    logger.info(
+                        f"[EngineSelect] Selected '{effective_engine_mode}' for {board_type}_{num_players}p "
+                        f"via weighted mix (extra_args={engine_extra_args})"
+                    )
+                except Exception as mix_err:
+                    # Ultimate fallback: gumbel-mcts for quality
+                    logger.debug(f"[EngineSelect] Fallback to gumbel-mcts: {e}, {mix_err}")
+                    effective_engine_mode = "gumbel-mcts"
+                    engine_extra_args = {"budget": 150}
         else:
-            effective_engine_mode = "heuristic-only"
+            # No model: use weighted engine mix for diverse training data
+            try:
+                from scripts.p2p.managers.selfplay_scheduler import SelfplayScheduler
+                effective_engine_mode, engine_extra_args = SelfplayScheduler._select_board_engine(
+                    has_gpu=True,  # Prefer GPU engines, filtered below
+                    board_type=board_type,
+                    num_players=num_players,
+                )
+                logger.info(
+                    f"[EngineSelect] Selected '{effective_engine_mode}' (no model) via weighted mix"
+                )
+            except Exception as e:
+                logger.debug(f"[EngineSelect] Fallback to gumbel-mcts (no model): {e}")
+                effective_engine_mode = "gumbel-mcts"
+                engine_extra_args = {"budget": 150}
         gpu_required = self._engine_mode_requires_gpu(effective_engine_mode)
 
         if gpu_required:
@@ -2021,6 +2067,9 @@ class JobManager(EventSubscriptionMixin):
                     "output_dir": output_dir,
                     "engine_mode": effective_engine_mode,
                 }
+                # Jan 2026: Include engine extra args (e.g., budget for gumbel-mcts)
+                if engine_extra_args:
+                    payload["engine_extra_args"] = engine_extra_args
 
                 # Phase 15.1.7: Use retry-enabled dispatch method
                 result = await self._dispatch_single_worker_with_retry(
@@ -2102,7 +2151,7 @@ class JobManager(EventSubscriptionMixin):
             "--num-games", str(num_games),
             "--board-type", board_type,
             "--num-players", str(num_players),
-            "--engine-mode", "descent-only" if model_path else "heuristic-only",
+            "--engine-mode", "gumbel-mcts" if model_path else "maxn",  # Jan 2026: High-quality modes
             "--max-moves", "10000",  # Avoid draws due to move limit
             "--log-jsonl", output_file,
         ]

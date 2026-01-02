@@ -159,15 +159,15 @@ class SelfplayScheduler(EventSubscriptionMixin):
     # Paranoid minimax assumes all opponents ally against current player - works for 2-4 players
     LARGE_BOARD_ENGINE_MIX = [
         # (engine_mode, weight, gpu_required, extra_args)
-        # Jan 2026: Full harness diversity for comprehensive training data
-        ("random", 5, False, None),  # 5% - baseline diversity (vs pure random)
-        ("heuristic", 25, False, None),  # 25% - fast bootstrap
-        ("minimax", 10, False, {"depth": 3}),  # 10% - paranoid search (works for 2-4p)
-        ("brs", 15, False, None),  # 15% - good for multiplayer
-        ("maxn", 10, False, None),  # 10% - highest heuristic quality
+        # Jan 2026: GPU Gumbel MCTS prioritized for high-quality training data
+        ("random", 3, False, None),  # 3% - baseline diversity (vs pure random)
+        ("heuristic", 10, False, None),  # 10% - fast bootstrap (reduced)
+        ("minimax", 5, False, {"depth": 3}),  # 5% - paranoid search (works for 2-4p)
+        ("brs", 7, False, None),  # 7% - good for multiplayer
+        ("maxn", 5, False, None),  # 5% - highest heuristic quality
         ("nn-descent", 5, True, None),  # 5% - exploration via neural descent (GPU)
         ("policy-only", 15, True, None),  # 15% - neural guided (GPU)
-        ("gumbel-mcts", 15, True, {"budget": 64}),  # 15% - balanced neural (GPU) - min floor
+        ("gumbel-mcts", 50, True, {"budget": 150}),  # 50% - HIGH QUALITY neural (GPU) - primary mode
     ]
 
     # CPU-only variant for nodes without GPU
@@ -183,18 +183,18 @@ class SelfplayScheduler(EventSubscriptionMixin):
 
     # December 2025: Standard board engine mix for smaller boards (hex8, square8)
     # Higher neural network weight since games are faster on smaller boards
-    # Dec 31, 2025: Added MINIMAX (paranoid) - deeper search on smaller boards
+    # Jan 2026: GPU Gumbel MCTS heavily prioritized for high-quality training data
     STANDARD_BOARD_ENGINE_MIX = [
         # (engine_mode, weight, gpu_required, extra_args)
-        # Jan 2026: Full harness diversity for comprehensive training data
-        ("random", 5, False, None),  # 5% - baseline diversity (vs pure random)
-        ("heuristic", 15, False, None),  # 15% - fast bootstrap
-        ("minimax", 10, False, {"depth": 4}),  # 10% - paranoid search (2-4p, deeper on small boards)
-        ("brs", 10, False, None),  # 10% - good for multiplayer diversity
-        ("maxn", 10, False, None),  # 10% - highest heuristic quality
+        # Jan 2026: GPU Gumbel MCTS prioritized for high-quality training data
+        ("random", 2, False, None),  # 2% - baseline diversity (vs pure random)
+        ("heuristic", 8, False, None),  # 8% - fast bootstrap (reduced)
+        ("minimax", 5, False, {"depth": 4}),  # 5% - paranoid search (2-4p, deeper on small boards)
+        ("brs", 5, False, None),  # 5% - good for multiplayer diversity
+        ("maxn", 5, False, None),  # 5% - highest heuristic quality
         ("nn-descent", 5, True, None),  # 5% - exploration via neural descent (GPU)
-        ("policy-only", 15, True, None),  # 15% - neural guided (GPU)
-        ("gumbel-mcts", 30, True, {"budget": 150}),  # 30% - balanced neural (GPU)
+        ("policy-only", 10, True, None),  # 10% - neural guided (GPU)
+        ("gumbel-mcts", 60, True, {"budget": 200}),  # 60% - HIGH QUALITY neural (GPU) - primary mode
     ]
 
     # CPU-only variant for standard boards
@@ -1276,7 +1276,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
             {
                 "board_type": "hexagonal",
                 "num_players": 2,
-                "engine_mode": "descent-only",
+                "engine_mode": "gumbel-mcts",  # Jan 2026: High-quality GPU mode
                 "priority": 3,
             },
             # Priority 2: Heterogeneous cross-AI games (December 2025)

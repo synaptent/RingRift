@@ -185,7 +185,7 @@ class JobsApiHandlersMixin(BaseP2PHandler):
             job_type: Type of job ("nnue", "cmaes", "selfplay", "gpu_selfplay", "hybrid_selfplay")
             board_type: Board type (default: "square8")
             num_players: Number of players (default: 2)
-            engine_mode: Engine mode for selfplay jobs (default: "heuristic-only")
+            engine_mode: Engine mode for selfplay jobs (default: "gumbel-mcts")
             total_games: Total games for training jobs (default: 0)
 
         Returns:
@@ -245,7 +245,8 @@ class JobsApiHandlersMixin(BaseP2PHandler):
             if job_type in ["selfplay", "gpu_selfplay", "hybrid_selfplay"]:
                 board_type = data.get("board_type", "square8")
                 num_players = int(data.get("num_players", 2))
-                engine_mode = data.get("engine_mode", "heuristic-only")
+                # Jan 2026: Default to gumbel-mcts for high-quality training data
+                engine_mode = data.get("engine_mode", "gumbel-mcts")
 
                 # Map job type string to enum - import lazily
                 jt = self._get_job_type_enum(job_type)

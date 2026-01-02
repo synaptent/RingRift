@@ -559,7 +559,7 @@ class ClusterJob:
     node_id: str
     board_type: str = "square8"
     num_players: int = 2
-    engine_mode: str = "descent-only"
+    engine_mode: str = "gumbel-mcts"  # Jan 2026: Default to high-quality GPU mode
     pid: int = 0
     started_at: float = 0.0
     status: str = "running"

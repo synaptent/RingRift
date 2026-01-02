@@ -747,7 +747,7 @@ class StateManager:
                         job.get("node_id"),
                         job.get("board_type", "square8"),
                         job.get("num_players", 2),
-                        job.get("engine_mode", "descent-only"),
+                        job.get("engine_mode", "gumbel-mcts"),  # Jan 2026: Default to high-quality GPU mode
                         job.get("pid", 0),
                         job.get("started_at", 0.0),
                         job.get("status", "running"),
