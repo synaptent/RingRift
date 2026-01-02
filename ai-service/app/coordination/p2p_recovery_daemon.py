@@ -76,7 +76,7 @@ class P2PRecoveryConfig:
     min_peer_ratio: float = 0.5  # Trigger if P2P sees < 50% of Tailscale peers
     isolation_consecutive_checks: int = 3  # Require 3 checks (~3 min) before action
     # Dec 29, 2025: Self-healing for quorum and leader gaps
-    max_leader_gap_seconds: int = 120  # Force election if no leader for 2 minutes
+    max_leader_gap_seconds: int = 45  # Jan 2026: Reduced from 120s for faster leader recovery
     quorum_recovery_enabled: bool = True
     leader_election_endpoint: str = "http://localhost:8770/election/start"
 

@@ -564,6 +564,9 @@ from scripts.p2p.constants import (
     LEADER_MIN_RESPONSE_RATE,
     LEADERLESS_TRAINING_TIMEOUT,
     LEADER_WORK_DISPATCH_TIMEOUT,
+    # Leader stickiness (Jan 2, 2026)
+    INCUMBENT_LEADER_GRACE_PERIOD,
+    RECENT_LEADER_WINDOW,
     # Probabilistic fallback leadership (Jan 1, 2026)
     PROVISIONAL_LEADER_MIN_LEADERLESS_TIME,
     PROVISIONAL_LEADER_INITIAL_PROBABILITY,
@@ -1802,6 +1805,11 @@ class P2POrchestrator(
         # Dec 30, 2025: Track when we last received work from the leader
         # If leader exists but isn't dispatching work, nodes can self-assign after timeout
         self.last_work_from_leader: float = time.time()  # When we last got work from leader
+
+        # Jan 2, 2026: Leader stickiness - prefer incumbent during elections
+        # Track when we last held leadership to allow re-claiming with preference
+        self._last_become_leader_time: float = 0.0  # When we last became leader
+        self._last_step_down_time: float = 0.0  # When we last stepped down from leadership
 
         # Jan 1, 2026: Probabilistic Fallback Leadership (Provisional Leader state)
         # When normal elections repeatedly fail, nodes can claim provisional leadership
@@ -4085,6 +4093,39 @@ class P2POrchestrator(
         """Property alias for _is_leader() - required by WorkQueueHandlersMixin."""
         return self._is_leader()
 
+    def _was_recently_leader(self) -> bool:
+        """Check if this node was the cluster leader within RECENT_LEADER_WINDOW.
+
+        Jan 2, 2026: Leader stickiness - allows previous leader to reclaim
+        leadership with preference during elections, reducing oscillation.
+
+        Returns:
+            True if we were leader and stepped down within RECENT_LEADER_WINDOW seconds.
+        """
+        now = time.time()
+        # Check if we became leader at some point
+        if self._last_become_leader_time <= 0:
+            return False
+        # Check if we stepped down recently (within window)
+        if self._last_step_down_time <= 0:
+            return False
+        time_since_step_down = now - self._last_step_down_time
+        return time_since_step_down < RECENT_LEADER_WINDOW
+
+    def _in_incumbent_grace_period(self) -> bool:
+        """Check if we're within the incumbent grace period after stepping down.
+
+        Jan 2, 2026: During this period, the previous leader gets priority
+        to reclaim leadership without competition.
+
+        Returns:
+            True if within INCUMBENT_LEADER_GRACE_PERIOD seconds of step-down.
+        """
+        if self._last_step_down_time <= 0:
+            return False
+        time_since_step_down = time.time() - self._last_step_down_time
+        return time_since_step_down < INCUMBENT_LEADER_GRACE_PERIOD
+
     # =========================================================================
     # UNIFIED LEADERSHIP STATE MACHINE (ULSM) - Jan 2026
     # Broadcast callback for state machine step-down notifications
@@ -4221,6 +4262,8 @@ class P2POrchestrator(
             self.leader_lease_expires = 0.0
             self.last_lease_renewal = 0.0
             self._is_leader_quorum_fail_count = 0
+            # Jan 2, 2026: Track when we stepped down for leader stickiness
+            self._last_step_down_time = time.time()
             self._release_voter_grant_if_self()
             self._save_state()
 
@@ -5147,6 +5190,120 @@ class P2POrchestrator(
                         break
 
         return alive_count
+
+    def _check_voter_health(self) -> dict[str, any]:
+        """Check health status of all configured voters and emit alerts.
+
+        Jan 2, 2026: Voter health monitoring for proactive alerting.
+        Returns a dict with voter health status and emits events for:
+        - Individual voter offline
+        - Quorum threatened (voters_alive < quorum_size + 1)
+        - Quorum lost (voters_alive < quorum_size)
+
+        Returns:
+            Dict with voters_total, voters_alive, voters_offline, quorum_size,
+            quorum_ok, quorum_threatened, and per-voter status.
+        """
+        voter_ids = getattr(self, "voter_node_ids", []) or []
+        if not voter_ids:
+            return {
+                "voters_total": 0,
+                "voters_alive": 0,
+                "voters_offline": [],
+                "quorum_size": 0,
+                "quorum_ok": True,
+                "quorum_threatened": False,
+                "voter_status": {},
+            }
+
+        quorum_size = getattr(self, "voter_quorum_size", 0) or 0
+        voter_ip_map = self._build_voter_ip_mapping()
+
+        # Check each voter's status
+        voter_status: dict[str, dict] = {}
+        alive_voters: list[str] = []
+        offline_voters: list[str] = []
+
+        # Track last known status for change detection
+        prev_offline = set(getattr(self, "_last_offline_voters", []))
+
+        for voter_id in voter_ids:
+            is_alive = False
+            status_detail = "unknown"
+
+            # Check 1: Is this voter us?
+            if voter_id == self.node_id:
+                is_alive = True
+                status_detail = "self"
+            else:
+                # Check 2: Direct node_id match in peers
+                peer = self.peers.get(voter_id)
+                if peer and peer.is_alive():
+                    is_alive = True
+                    status_detail = "direct"
+                else:
+                    # Check 3: IP:port match
+                    voter_ips = voter_ip_map.get(voter_id, set())
+                    for peer_id, p in self.peers.items():
+                        if ":" in peer_id:
+                            peer_ip = peer_id.split(":")[0]
+                            if peer_ip in voter_ips and p.is_alive():
+                                is_alive = True
+                                status_detail = f"ip_match:{peer_ip}"
+                                break
+                    if not is_alive:
+                        status_detail = "unreachable"
+
+            voter_status[voter_id] = {
+                "alive": is_alive,
+                "detail": status_detail,
+            }
+            if is_alive:
+                alive_voters.append(voter_id)
+            else:
+                offline_voters.append(voter_id)
+
+        # Store for next comparison
+        self._last_offline_voters = offline_voters
+
+        voters_alive = len(alive_voters)
+        voters_total = len(voter_ids)
+        quorum_ok = voters_alive >= quorum_size
+        quorum_threatened = voters_alive <= quorum_size  # Just at or below threshold
+
+        # Emit events for status changes
+        newly_offline = set(offline_voters) - prev_offline
+        newly_online = prev_offline - set(offline_voters)
+
+        for voter_id in newly_offline:
+            logger.warning(
+                f"[VoterHealth] Voter {voter_id} went OFFLINE "
+                f"({voters_alive}/{voters_total} alive, quorum={quorum_size})"
+            )
+
+        for voter_id in newly_online:
+            logger.info(
+                f"[VoterHealth] Voter {voter_id} came ONLINE "
+                f"({voters_alive}/{voters_total} alive, quorum={quorum_size})"
+            )
+
+        # Periodic summary log
+        if offline_voters:
+            logger.warning(
+                f"[VoterHealth] Status: {voters_alive}/{voters_total} voters alive, "
+                f"quorum={'OK' if quorum_ok else 'LOST'}, "
+                f"offline: {offline_voters}"
+            )
+
+        return {
+            "voters_total": voters_total,
+            "voters_alive": voters_alive,
+            "voters_offline": offline_voters,
+            "quorum_size": quorum_size,
+            "quorum_ok": quorum_ok,
+            "quorum_threatened": quorum_threatened,
+            "voter_status": voter_status,
+        }
 
     def _maybe_adopt_voter_node_ids(self, voter_node_ids: list[str], *, source: str) -> bool:
         """Adopt/override the voter set when it's not explicitly configured.
@@ -9523,6 +9680,8 @@ class P2POrchestrator(
             "voter_quorum_size": int(getattr(self, "voter_quorum_size", 0) or 0),
             "voters_alive": voters_alive,
             "voter_quorum_ok": self._has_voter_quorum(),
+            # Jan 2, 2026: Detailed voter health for monitoring
+            "voter_health": self._check_voter_health(),
             "self": self.self_info.to_dict(),
             "peers": peers,
             "local_jobs": jobs,
@@ -20372,6 +20531,20 @@ print(json.dumps({{
                     last_voter_mesh_refresh = now
                     await self._refresh_voter_mesh()
 
+                # Jan 2, 2026: Voter health monitoring - check and log voter status
+                # This runs every heartbeat cycle for proactive alerting
+                health = self._check_voter_health()
+                if not health.get("quorum_ok"):
+                    logger.error(
+                        f"[VoterHealth] QUORUM LOST: {health['voters_alive']}/{health['voters_total']} "
+                        f"voters alive, need {health['quorum_size']}"
+                    )
+                elif health.get("quorum_threatened"):
+                    logger.warning(
+                        f"[VoterHealth] QUORUM THREATENED: {health['voters_alive']}/{health['voters_total']} "
+                        f"voters alive (at threshold of {health['quorum_size']})"
+                    )
+
             except Exception as e:  # noqa: BLE001
                 logger.info(f"Voter heartbeat error: {e}")
 
@@ -21423,6 +21596,34 @@ print(json.dumps({{
 
         if self.election_in_progress:
             return
+
+        # =========================================================================
+        # Jan 2, 2026: Leader Stickiness
+        # If we recently were the leader, try to reclaim immediately.
+        # If we're not the recent leader, check if any peer was and give them priority.
+        # =========================================================================
+        if self._was_recently_leader() and self._in_incumbent_grace_period():
+            # We recently stepped down - try to reclaim leadership immediately
+            logger.info(
+                f"Incumbent advantage: attempting immediate leadership reclaim "
+                f"(stepped down {time.time() - self._last_step_down_time:.1f}s ago)"
+            )
+            self.election_in_progress = True
+            self.role = NodeRole.CANDIDATE
+            try:
+                # Skip bully algorithm - try to become leader directly
+                conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
+                if self._is_leader_eligible(self.self_info, conflict_keys):
+                    await self._become_leader()
+                    if self.role == NodeRole.LEADER:
+                        logger.info("Incumbent reclaimed leadership successfully")
+                        return
+            finally:
+                if self.role == NodeRole.CANDIDATE:
+                    self.role = NodeRole.FOLLOWER
+                self.election_in_progress = False
+            # If we failed to reclaim, fall through to normal election
+            logger.info("Incumbent reclaim failed, falling back to normal election")
 
         self.election_in_progress = True
         self.role = NodeRole.CANDIDATE

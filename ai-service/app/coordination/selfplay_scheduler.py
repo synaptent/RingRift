@@ -775,32 +775,28 @@ class SelfplayScheduler(HandlerBase):
 
         self._last_priority_update = now
 
-        # Get data freshness
-        freshness_data = await self._get_data_freshness()
+        # Jan 2026: Parallel fetch of all async data for priority updates
+        # This significantly reduces priority update latency from 6 sequential calls to 1 parallel call
+        (
+            freshness_data,
+            elo_data,
+            feedback_data,
+            curriculum_data,
+            game_count_data,
+            elo_current_data,
+        ) = await asyncio.gather(
+            self._get_data_freshness(),
+            self._get_elo_velocities(),
+            self._get_feedback_signals(),
+            self._get_curriculum_weights(),
+            self._get_game_counts(),
+            self._get_current_elos(),
+        )
 
-        # Get ELO velocities
-        elo_data = await self._get_elo_velocities()
-
-        # Get feedback loop signals
-        feedback_data = await self._get_feedback_signals()
-
-        # Get curriculum weights (Phase 2C.3)
-        curriculum_data = await self._get_curriculum_weights()
-
-        # Get improvement boosts (Phase 5)
+        # Sync operations (fast, no parallelization needed)
         improvement_data = self._get_improvement_boosts()
-
-        # Get momentum multipliers (Phase 19)
         momentum_data = self._get_momentum_multipliers()
-
-        # Get architecture boosts (Phase 5B)
         architecture_data = self._get_architecture_boosts()
-
-        # Get game counts (Dec 2025)
-        game_count_data = await self._get_game_counts()
-
-        # Get current Elos for adaptive budget (Dec 29, 2025)
-        elo_current_data = await self._get_current_elos()
 
         # Update each config
         for config_key, priority in self._config_priorities.items():

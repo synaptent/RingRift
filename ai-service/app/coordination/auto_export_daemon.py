@@ -53,8 +53,8 @@ class AutoExportConfig:
     # Cooldown between exports for same config (seconds)
     # Reduced from 30min→5min→1min (Dec 2025) to minimize training data lag
     export_cooldown_seconds: int = 60  # 1 minute
-    # Maximum concurrent exports
-    max_concurrent_exports: int = 2
+    # Maximum concurrent exports - Jan 2026: Increased from 2 to 4 for better parallelism
+    max_concurrent_exports: int = 4
     # Timeout for export subprocess (seconds)
     export_timeout_seconds: int = 3600  # 1 hour
     # Whether to use incremental export (--use-cache)

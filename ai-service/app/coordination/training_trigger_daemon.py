@@ -2112,10 +2112,11 @@ class TrainingTriggerDaemon(HandlerBase):
             circuit_breaker_open = not breaker.can_execute(config_key)
 
         # GPU availability (quick check, don't block)
+        # Jan 2026: Reduced timeout from 5s to 2s for faster training trigger decisions
         gpu_available = True
         try:
             gpu_available = await asyncio.wait_for(
-                self._check_gpu_availability(), timeout=5.0
+                self._check_gpu_availability(), timeout=2.0
             )
         except asyncio.TimeoutError:
             pass

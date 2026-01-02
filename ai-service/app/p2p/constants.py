@@ -102,7 +102,9 @@ ELECTION_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_ELECTION_TIMEOUT", "15") or 
 # Leader lease must be comfortably larger than the heartbeat cadence
 # LEARNED LESSONS: Increased from 90s to 180s - network latency between cloud providers
 # can cause lease renewal to fail even with Tailscale.
-LEADER_LEASE_DURATION = 180  # seconds
+# Jan 2, 2026: Increased from 180s to 300s to reduce election churn during transient
+# network issues. 80% of 10-minute monitoring windows showed leaderless states with 180s.
+LEADER_LEASE_DURATION = 300  # seconds (5 minutes)
 LEADER_LEASE_RENEW_INTERVAL = 15  # How often leader renews lease
 
 # Leaderless fallback - trigger local training when no leader for this long
@@ -381,6 +383,25 @@ PEER_BOOTSTRAP_MIN_PEERS = 3
 # Use RINGRIFT_P2P_STARTUP_GRACE_PERIOD=180 for coordinated restarts if needed.
 STARTUP_GRACE_PERIOD = int(os.environ.get("RINGRIFT_P2P_STARTUP_GRACE_PERIOD", "30") or 30)
 VOTER_MIN_QUORUM = int(os.environ.get("RINGRIFT_P2P_VOTER_MIN_QUORUM", "3") or 3)
+
+# ============================================
+# Leader Stickiness (Jan 2, 2026)
+# ============================================
+# Prefer the current incumbent leader during elections to reduce churn.
+# When an election is triggered, if this node was the leader recently,
+# it gets a grace period before other nodes can claim leadership.
+# This prevents oscillation when the leader has transient connectivity issues.
+
+# Grace period in seconds after stepping down before allowing other leaders
+# During this window, the previous leader can reclaim without competition
+INCUMBENT_LEADER_GRACE_PERIOD = int(
+    os.environ.get("RINGRIFT_P2P_INCUMBENT_GRACE_PERIOD", "45") or 45
+)
+
+# Time window to consider a node as "recently was leader"
+RECENT_LEADER_WINDOW = int(
+    os.environ.get("RINGRIFT_P2P_RECENT_LEADER_WINDOW", "120") or 120
+)
 
 # Bootstrap seeds - initial peers to contact for mesh join
 # Empty by default; loaded from distributed_hosts.yaml or CLI args
