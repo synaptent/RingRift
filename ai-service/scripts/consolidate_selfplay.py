@@ -9,7 +9,11 @@ from pathlib import Path
 import sys
 
 def consolidate_config(config: str, base_dir: Path = Path("data/selfplay/p2p_hybrid")) -> int:
-    """Consolidate games for a single config."""
+    """Consolidate games for a single config.
+
+    IMPORTANT: This function MERGES games into existing canonical DBs.
+    It does NOT delete/replace existing data.
+    """
     source_dir = base_dir / config
     dest_db = Path(f"data/games/canonical_{config}.db")
 
@@ -17,8 +21,22 @@ def consolidate_config(config: str, base_dir: Path = Path("data/selfplay/p2p_hyb
         print(f"No source directory for {config}")
         return 0
 
-    # Remove existing dest to ensure clean schema
-    dest_db.unlink(missing_ok=True)
+    # CRITICAL: Do NOT add dest_db.unlink() here!
+    # See incident on Jan 2, 2026 where 235K+ games were lost.
+    # This script MERGES games into existing canonical DBs.
+
+    # Check if destination already exists and has data
+    existing_count = 0
+    if dest_db.exists():
+        try:
+            existing_conn = sqlite3.connect(str(dest_db))
+            existing_count = existing_conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
+            existing_conn.close()
+            print(f"{config}: Existing DB has {existing_count} games, will merge new games")
+        except Exception:
+            # DB exists but is corrupt/empty - safe to initialize fresh
+            print(f"{config}: Existing DB is corrupt/empty, will initialize")
+            dest_db.unlink(missing_ok=True)
 
     # Find first source DB to copy schema from
     source_dbs = list(source_dir.rglob("games.db"))
@@ -26,21 +44,28 @@ def consolidate_config(config: str, base_dir: Path = Path("data/selfplay/p2p_hyb
         print(f"No source databases for {config}")
         return 0
 
-    # Copy schema from first source
-    first_src = sqlite3.connect(str(source_dbs[0]))
+    # Only create schema if dest doesn't exist or was corrupt
+    if not dest_db.exists():
+        # Copy schema from first source
+        first_src = sqlite3.connect(str(source_dbs[0]))
+        dest_conn = sqlite3.connect(str(dest_db))
+
+        # Copy games table schema
+        games_schema = first_src.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='games'").fetchone()
+        if games_schema:
+            dest_conn.execute(games_schema[0])
+
+        # Copy game_moves table schema
+        moves_schema = first_src.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='game_moves'").fetchone()
+        if moves_schema:
+            dest_conn.execute(moves_schema[0])
+
+        first_src.close()
+        dest_conn.commit()
+        dest_conn.close()
+
+    # Open dest for merging
     dest_conn = sqlite3.connect(str(dest_db))
-
-    # Copy games table schema
-    games_schema = first_src.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='games'").fetchone()
-    if games_schema:
-        dest_conn.execute(games_schema[0])
-
-    # Copy game_moves table schema
-    moves_schema = first_src.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='game_moves'").fetchone()
-    if moves_schema:
-        dest_conn.execute(moves_schema[0])
-
-    first_src.close()
 
     # Find all source DBs and import
     total_imported = 0
@@ -80,7 +105,8 @@ def consolidate_config(config: str, base_dir: Path = Path("data/selfplay/p2p_hyb
 
     # Count final
     final_count = sqlite3.connect(str(dest_db)).execute("SELECT COUNT(*) FROM games").fetchone()[0]
-    print(f"{config}: Imported {total_imported} games, total now: {final_count}")
+    new_games = final_count - existing_count
+    print(f"{config}: Added {new_games} new games (tried {total_imported}), total now: {final_count}")
     return final_count
 
 
