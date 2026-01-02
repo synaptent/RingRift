@@ -98,7 +98,7 @@ def play_game(
     rules = DefaultRulesEngine()
     board_type_enum = BOARD_TYPE_MAP.get(board_type, BoardType.SQUARE8)
     state = create_initial_state(board_type_enum, num_players=2)
-    initial_state = state.model_copy(deep=True) if collect_moves else None
+    initial_state = state.copy(deep=True) if collect_moves else None  # Pydantic v1
 
     # Create AIs with the weight profiles
     config1 = AIConfig(difficulty=5, seed=seed)

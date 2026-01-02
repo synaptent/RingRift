@@ -654,7 +654,7 @@ def run_single_game(
         model_pool=model_pool,
     )
 
-    state_history: list[GameState] = [state.model_copy(deep=True)]
+    state_history: list[GameState] = [state.copy(deep=True)]  # Pydantic v1
     move_history: list[Any] = []
     move_count = 0
 
@@ -678,7 +678,7 @@ def run_single_game(
         try:
             state, _reward, done, _info = env.step(move)
             move_history.append(move)
-            state_history.append(state.model_copy(deep=True))
+            state_history.append(state.copy(deep=True))
         except Exception as exc:
             logger.warning(f"Game {game_index}: Step exception: {exc}")
             break

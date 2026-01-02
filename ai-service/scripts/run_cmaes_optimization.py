@@ -751,7 +751,7 @@ def evaluate_fitness(
         else:
             assert pool_states is not None  # for type-checkers
             base_state = pool_states[i % len(pool_states)]
-            initial_state = base_state.model_copy(deep=True)
+            initial_state = base_state.copy(deep=True)  # Pydantic v1
 
             move_progress_callback: Callable[[int], None] | None = None
             if progress_reporter is not None and start_time is not None:
@@ -1121,7 +1121,7 @@ def evaluate_fitness_multiplayer(
         board = boards[game_index % len(boards)]
         pool_states = pools[board]
         base_state = pool_states[game_index % len(pool_states)]
-        game_state = base_state.model_copy(deep=True)
+        game_state = base_state.copy(deep=True)  # Pydantic v1
 
         # Choose candidate seat uniformly at random.
         candidate_seat_index = int(rng.integers(0, num_players))
@@ -1149,7 +1149,7 @@ def evaluate_fitness_multiplayer(
             )
 
         # Track initial state and moves for recording
-        initial_state = game_state.model_copy(deep=True)
+        initial_state = game_state.copy(deep=True)  # Pydantic v1
         moves_list: list[Move] = []
 
         moves_played = 0

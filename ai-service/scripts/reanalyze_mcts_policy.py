@@ -75,7 +75,7 @@ class GameStateAdapter(MCTSGameState):
             raise ValueError(f"Invalid move index {move_idx}, have {len(self._legal_moves)} moves")
         move = self._legal_moves[move_idx]
         new_real_state = self.engine.apply_move(
-            self.real_state.model_copy(deep=True), move
+            self.real_state.copy(deep=True), move  # Pydantic v1
         )
         return GameStateAdapter(new_real_state, self.engine)
 

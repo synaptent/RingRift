@@ -358,9 +358,8 @@ def generate_game(
 
     # Reset environment with game seed
     state = env.reset(seed=game_seed)
-    initial_state = (
-        state.model_copy(deep=True) if hasattr(state, "model_copy") else state
-    )
+    # Use .copy() for Pydantic v1 compatibility
+    initial_state = state.copy(deep=True) if hasattr(state, "copy") else state
 
     moves_data = []
     max_moves = config.max_moves or get_max_moves(config.board_type, config.num_players)

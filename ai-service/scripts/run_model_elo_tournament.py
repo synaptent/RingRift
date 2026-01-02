@@ -639,7 +639,7 @@ def play_model_vs_model_game(
     # Create initial state
     state = create_initial_state(board_type, num_players)
     state.id = game_id
-    initial_state = state.model_copy(deep=True)
+    initial_state = state.copy(deep=True)  # Pydantic v1 compatibility
     engine = DefaultRulesEngine()
 
     # Capture initial state for training data (use JSON-safe serialization)
@@ -899,7 +899,7 @@ def play_nn_vs_nn_game(
     # Use canonical create_initial_state for proper setup
     game_state = create_initial_state(board_type=board_type, num_players=num_players)
     game_state.id = str(uuid.uuid4())
-    initial_state = game_state.model_copy(deep=True)
+    initial_state = game_state.copy(deep=True)  # Pydantic v1
 
     # Capture initial state snapshot for NPZ export (required for training data)
     # Use serialize_game_state() for JSON-safe serialization

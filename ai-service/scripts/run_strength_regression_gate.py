@@ -327,7 +327,7 @@ def _run_matchup_on_pool(
             }
 
             env.reset(seed=game_seed)
-            env._state = scenario.initial_state.model_copy(deep=True)
+            env._state = scenario.initial_state.copy(deep=True)  # Pydantic v1
             env._move_count = 0
 
             moves_played = 0

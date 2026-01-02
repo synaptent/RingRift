@@ -1733,7 +1733,8 @@ def run_self_play_soak(
             # Game recording: capture initial state and collect moves
             # Also track for JSONL training data if include_training_data is enabled
             should_track_game_data = replay_db or include_training_data
-            initial_state_for_recording = state.model_copy(deep=True) if should_track_game_data else None
+            # Use .copy() for Pydantic v1 compatibility (v2 uses .model_copy())
+            initial_state_for_recording = state.copy(deep=True) if should_track_game_data else None
             game_moves_for_recording: list[Any] = []
 
             # Initialise S-invariant / elimination snapshot for this game.
