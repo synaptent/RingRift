@@ -489,11 +489,12 @@ class SwimMembershipManager:
 
     def _handle_member_alive(self, member: SwimMember):
         """Handle member becoming alive."""
-        self._members[member.id] = "alive"
-        logger.info(f"SWIM: {member.id} is now ALIVE")
+        member_id = self._get_member_id(member)
+        self._members[member_id] = "alive"
+        logger.info(f"SWIM: {member_id} is now ALIVE")
         if self.on_member_alive:
             try:
-                self.on_member_alive(member.id)
+                self.on_member_alive(member_id)
             except (TypeError, AttributeError, ValueError) as e:
                 logger.error(f"Error in on_member_alive callback: {e}")
 
@@ -553,6 +554,7 @@ class SwimMembershipManager:
         """Get list of all alive peer node IDs.
 
         December 30, 2025: Updated to use correct swim-p2p 1.2.x MemberList API.
+        Jan 2, 2026: Fixed to use _get_member_id() helper for proper ID extraction.
 
         Returns:
             List of node IDs that are currently alive
@@ -566,18 +568,18 @@ class SwimMembershipManager:
             if hasattr(members, 'get_alive_members'):
                 alive_members = members.get_alive_members()
                 return [
-                    member.id if hasattr(member, 'id') else str(member)
+                    self._get_member_id(member)
                     for member in alive_members
-                    if (member.id if hasattr(member, 'id') else str(member)) != self.node_id
+                    if self._get_member_id(member) != self.node_id
                 ]
 
             # Fallback: get all members and filter by state
             members_list = self._get_members_list()
             return [
-                member.id if hasattr(member, 'id') else str(member)
+                self._get_member_id(member)
                 for member in members_list
                 if (member.state if hasattr(member, 'state') else "alive") == "alive"
-                and (member.id if hasattr(member, 'id') else str(member)) != self.node_id
+                and self._get_member_id(member) != self.node_id
             ]
         except (RuntimeError, AttributeError, StopIteration) as e:
             logger.error(f"Error getting alive peers: {e}")
@@ -631,7 +633,7 @@ class SwimMembershipManager:
             members_list = self._get_members_list()
             member = next(
                 (m for m in members_list
-                 if (m.id if hasattr(m, 'id') else str(m)) == peer_id),
+                 if self._get_member_id(m) == peer_id),
                 None
             )
             if member is None:
