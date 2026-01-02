@@ -51,17 +51,18 @@ logger = logging.getLogger(__name__)
 class RemoteP2PRecoveryConfig:
     """Configuration for remote P2P recovery."""
 
-    # Interval between recovery cycles (seconds) - default 1 minute
-    # Jan 2026: Reduced from 300s to 60s for faster 48h autonomous recovery
+    # Interval between recovery cycles (seconds) - default 2 minutes
+    # Jan 2026: Increased from 60s to 120s to prevent restart cascade
+    # When set too low, nodes get restarted before they finish joining mesh
     check_interval_seconds: float = field(
         default_factory=lambda: float(
-            os.environ.get("RINGRIFT_REMOTE_P2P_RECOVERY_INTERVAL", "60")
+            os.environ.get("RINGRIFT_REMOTE_P2P_RECOVERY_INTERVAL", "120")
         )
     )
 
     # Maximum nodes to recover per cycle (prevent thundering herd)
-    # Jan 2026: Increased from 5 to 10 for faster cluster recovery
-    max_nodes_per_cycle: int = 10
+    # Jan 2026: Reduced from 10 to 5 to prevent cluster instability
+    max_nodes_per_cycle: int = 5
 
     # SSH timeout per node (seconds)
     ssh_timeout_seconds: float = 30.0
@@ -90,14 +91,16 @@ class RemoteP2PRecoveryConfig:
     )
 
     # Minimum time since last attempt for a node before retrying (seconds)
-    # Jan 2026: Reduced from 120s to 60s for faster NAT-blocked node recovery
-    retry_cooldown_seconds: float = 60.0  # 1 minute
+    # Jan 2026: Increased from 60s to 180s to prevent restart cascade
+    # Nodes need time to fully start up and establish mesh connectivity
+    retry_cooldown_seconds: float = 180.0  # 3 minutes
 
     # Whether to emit events on recovery
     emit_events: bool = True
 
     # Post-recovery verification timeout (seconds) - wait for node to appear in peers
-    verification_timeout_seconds: float = 60.0
+    # Jan 2026: Increased from 60s to 120s - nodes need time to load state and bootstrap
+    verification_timeout_seconds: float = 120.0
 
     # Verification poll interval (seconds)
     verification_poll_interval: float = 5.0
