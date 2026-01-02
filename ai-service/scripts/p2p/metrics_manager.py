@@ -28,6 +28,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from app.config.coordination_defaults import MetricsRetentionDefaults
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,6 +62,10 @@ class MetricsManager:
         self._metrics_last_flush: float = time.time()  # Initialize to now to avoid immediate flush
         self._metrics_flush_interval = flush_interval
         self._metrics_max_buffer = max_buffer
+
+        # January 2026: Retention policy tracking
+        self._last_cleanup: float = 0.0  # Start at 0 to allow first cleanup
+        self._total_row_count: int = 0  # Cached for VACUUM threshold calculation
 
         # Ensure metrics table exists
         self._ensure_table()
@@ -143,6 +149,7 @@ class MetricsManager:
             self._metrics_last_flush = time.time()
 
         conn = None
+        flushed_count = 0
         try:
             conn = sqlite3.connect(str(self.db_path))
             cursor = conn.cursor()
@@ -155,10 +162,92 @@ class MetricsManager:
                 entries,
             )
             conn.commit()
-            return len(entries)
+            flushed_count = len(entries)
         except Exception as e:
             logger.error(f"Failed to flush metrics buffer ({len(entries)} entries): {e}")
             return 0
+        finally:
+            if conn:
+                conn.close()
+
+        # January 2026: Trigger cleanup after successful flush
+        self._cleanup_old_metrics()
+
+        return flushed_count
+
+    def _cleanup_old_metrics(self) -> int:
+        """Remove metrics older than retention period.
+
+        January 2026: Added to prevent unbounded database growth.
+
+        Uses batched deletes to avoid long-running transactions and triggers
+        VACUUM when a significant portion of data has been deleted.
+
+        Returns:
+            Number of rows deleted
+        """
+        now = time.time()
+
+        # Check if cleanup interval has passed
+        if now - self._last_cleanup < MetricsRetentionDefaults.CLEANUP_INTERVAL:
+            return 0
+
+        self._last_cleanup = now
+        retention_cutoff = now - (MetricsRetentionDefaults.RETENTION_HOURS * 3600)
+
+        conn = None
+        total_deleted = 0
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+
+            # Get current total row count for VACUUM threshold
+            cursor.execute("SELECT COUNT(*) FROM metrics_history")
+            self._total_row_count = cursor.fetchone()[0]
+
+            if self._total_row_count == 0:
+                return 0
+
+            # Delete in batches to avoid long transactions
+            batch_size = MetricsRetentionDefaults.CLEANUP_BATCH_SIZE
+            while True:
+                cursor.execute(
+                    """
+                    DELETE FROM metrics_history
+                    WHERE id IN (
+                        SELECT id FROM metrics_history
+                        WHERE timestamp < ?
+                        LIMIT ?
+                    )
+                    """,
+                    (retention_cutoff, batch_size),
+                )
+                deleted = cursor.rowcount
+                conn.commit()
+                total_deleted += deleted
+
+                if deleted < batch_size:
+                    break
+
+            # Run VACUUM if we deleted a significant portion
+            if self._total_row_count > 0:
+                deleted_percent = (total_deleted / self._total_row_count) * 100
+                if deleted_percent >= MetricsRetentionDefaults.VACUUM_THRESHOLD_PERCENT:
+                    logger.info(
+                        f"Metrics cleanup deleted {total_deleted} rows ({deleted_percent:.1f}%), "
+                        f"running VACUUM"
+                    )
+                    conn.execute("VACUUM")
+                elif total_deleted > 0:
+                    logger.debug(
+                        f"Metrics cleanup deleted {total_deleted} rows ({deleted_percent:.1f}%)"
+                    )
+
+            return total_deleted
+
+        except Exception as e:
+            logger.warning(f"Metrics cleanup failed: {e}")
+            return total_deleted
         finally:
             if conn:
                 conn.close()
@@ -271,10 +360,12 @@ class MetricsManager:
         """Return health status for the metrics manager.
 
         Returns:
-            dict with is_healthy, pending_count, last_flush details
+            dict with is_healthy, pending_count, last_flush, retention details
         """
+        now = time.time()
         pending = self.get_pending_count()
-        time_since_flush = time.time() - self._metrics_last_flush
+        time_since_flush = now - self._metrics_last_flush
+        time_since_cleanup = now - self._last_cleanup if self._last_cleanup > 0 else None
         # Unhealthy if buffer hasn't flushed in 5x normal interval
         is_healthy = time_since_flush < (self._metrics_flush_interval * 5)
         return {
@@ -284,6 +375,14 @@ class MetricsManager:
             "time_since_flush": time_since_flush,
             "max_buffer": self._metrics_max_buffer,
             "db_path": str(self.db_path),
+            # January 2026: Retention policy info
+            "retention": {
+                "retention_hours": MetricsRetentionDefaults.RETENTION_HOURS,
+                "cleanup_interval": MetricsRetentionDefaults.CLEANUP_INTERVAL,
+                "last_cleanup": self._last_cleanup if self._last_cleanup > 0 else None,
+                "time_since_cleanup": time_since_cleanup,
+                "cached_row_count": self._total_row_count,
+            },
         }
 
 

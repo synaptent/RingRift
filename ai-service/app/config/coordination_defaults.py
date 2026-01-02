@@ -880,6 +880,31 @@ class MetricsAnalysisDefaults:
     ANOMALY_THRESHOLD: float = _env_float("RINGRIFT_METRICS_ANOMALY_THRESHOLD", 3.0)
 
 
+@dataclass(frozen=True)
+class MetricsRetentionDefaults:
+    """Default values for metrics database retention and cleanup.
+
+    January 2026: Added to prevent unbounded SQLite database growth.
+
+    Used by: scripts/p2p/metrics_manager.py
+    """
+    # Retention period for old metrics (hours)
+    # Default 7 days = 168 hours
+    RETENTION_HOURS: int = _env_int("RINGRIFT_METRICS_RETENTION_HOURS", 168)
+
+    # Batch size for cleanup deletions (rows per batch)
+    CLEANUP_BATCH_SIZE: int = _env_int("RINGRIFT_METRICS_CLEANUP_BATCH_SIZE", 1000)
+
+    # VACUUM threshold - run VACUUM after deleting this % of total rows
+    VACUUM_THRESHOLD_PERCENT: float = _env_float(
+        "RINGRIFT_METRICS_VACUUM_THRESHOLD_PERCENT", 10.0
+    )
+
+    # Minimum interval between cleanups (seconds)
+    # Prevents cleanup running too frequently
+    CLEANUP_INTERVAL: int = _env_int("RINGRIFT_METRICS_CLEANUP_INTERVAL", 3600)
+
+
 # =============================================================================
 # Cache Coordination Defaults (December 2025)
 # =============================================================================
@@ -1993,6 +2018,12 @@ class JobReaperDefaults:
 
     # Maximum times to reassign a failed job
     MAX_REASSIGN_ATTEMPTS: int = _env_int("RINGRIFT_MAX_REASSIGN_ATTEMPTS", 3)
+
+    # January 2026: Exponential backoff for job reassignment
+    # Prevents rapid retry cycles when jobs consistently fail
+    REASSIGN_BACKOFF_BASE: float = _env_float("RINGRIFT_REASSIGN_BACKOFF_BASE", 30.0)
+    REASSIGN_BACKOFF_MULTIPLIER: float = _env_float("RINGRIFT_REASSIGN_BACKOFF_MULTIPLIER", 2.0)
+    REASSIGN_BACKOFF_MAX: float = _env_float("RINGRIFT_REASSIGN_BACKOFF_MAX", 300.0)
 
     # Duration to blacklist failing nodes (seconds)
     NODE_BLACKLIST_DURATION: int = _env_int("RINGRIFT_NODE_BLACKLIST_DURATION", 600)
@@ -3197,6 +3228,7 @@ __all__ = [
     "JobTimeoutDefaults",
     "LockDefaults",
     "MetricsAnalysisDefaults",
+    "MetricsRetentionDefaults",  # January 2026
     "MonitoringDefaults",
     "NetworkRetryDefaults",
     "OperationTimeouts",

@@ -24,6 +24,7 @@ import shutil
 from app.config.coordination_defaults import (
     DaemonHealthDefaults,
     JobDefaults,
+    JobReaperDefaults,
     OperationTimeouts,
     SSHDefaults,
     TaskLifecycleDefaults,
@@ -404,8 +405,9 @@ class JobManager(EventSubscriptionMixin):
         self._processes_lock = threading.Lock()
 
         # Phase 15.1.9: Job heartbeat tracking for abandoned job detection
-        # Maps job_id -> (last_heartbeat_time, reassignment_count)
-        self._job_heartbeats: dict[str, tuple[float, int]] = {}
+        # Maps job_id -> (last_heartbeat_time, reassignment_count, next_reassignment_time)
+        # January 2026: Added next_reassignment_time for exponential backoff
+        self._job_heartbeats: dict[str, tuple[float, int, float]] = {}
         self._heartbeats_lock = threading.Lock()
 
     # =========================================================================
@@ -1161,7 +1163,8 @@ class JobManager(EventSubscriptionMixin):
         with self._heartbeats_lock:
             current = self._job_heartbeats.get(job_id)
             reassignment_count = current[1] if current else 0
-            self._job_heartbeats[job_id] = (time.time(), reassignment_count)
+            next_reassign_time = current[2] if current else 0.0
+            self._job_heartbeats[job_id] = (time.time(), reassignment_count, next_reassign_time)
 
     def get_job_heartbeats(self) -> dict[str, float]:
         """Get all job heartbeat timestamps.
@@ -1182,7 +1185,8 @@ class JobManager(EventSubscriptionMixin):
             reassignment_count: Number of times this job has been reassigned
         """
         with self._heartbeats_lock:
-            self._job_heartbeats[job_id] = (time.time(), reassignment_count)
+            # next_reassignment_time = 0.0 means eligible for immediate reassignment if needed
+            self._job_heartbeats[job_id] = (time.time(), reassignment_count, 0.0)
 
     def _unregister_job_heartbeat(self, job_id: str) -> None:
         """Remove a job from heartbeat tracking.
@@ -1209,7 +1213,7 @@ class JobManager(EventSubscriptionMixin):
 
         with self._heartbeats_lock:
             stale_job_ids = [
-                job_id for job_id, (last_hb, _) in self._job_heartbeats.items()
+                job_id for job_id, (last_hb, _, _) in self._job_heartbeats.items()
                 if now - last_hb > self.JOB_HEARTBEAT_TIMEOUT
             ]
 
@@ -1246,10 +1250,23 @@ class JobManager(EventSubscriptionMixin):
         Returns:
             True if job was successfully queued for reassignment, False otherwise
         """
-        # Get reassignment count
+        now = time.time()
+
+        # Get reassignment count and backoff info
         with self._heartbeats_lock:
             current = self._job_heartbeats.get(job_id)
             reassignment_count = current[1] if current else 0
+            next_reassignment_time = current[2] if current else 0.0
+
+        # January 2026: Check exponential backoff before allowing reassignment
+        # This prevents rapid retry cycles when jobs consistently fail
+        if now < next_reassignment_time:
+            backoff_remaining = next_reassignment_time - now
+            logger.debug(
+                f"Job {job_id} in backoff period, {backoff_remaining:.1f}s remaining "
+                f"(attempt {reassignment_count})"
+            )
+            return False
 
         # Check if we've exceeded max reassignment attempts
         if reassignment_count >= self.MAX_REASSIGNMENT_ATTEMPTS:
@@ -1295,17 +1312,27 @@ class JobManager(EventSubscriptionMixin):
             board_type=job_info.get("board_type", ""),
         )
 
-        # Increment reassignment count
+        # Increment reassignment count and calculate exponential backoff
+        new_reassignment_count = reassignment_count + 1
+        backoff_delay = min(
+            JobReaperDefaults.REASSIGN_BACKOFF_BASE * (
+                JobReaperDefaults.REASSIGN_BACKOFF_MULTIPLIER ** reassignment_count
+            ),
+            JobReaperDefaults.REASSIGN_BACKOFF_MAX,
+        )
+        next_reassign_time = now + backoff_delay
+
         with self._heartbeats_lock:
-            self._job_heartbeats[job_id] = (time.time(), reassignment_count + 1)
+            self._job_heartbeats[job_id] = (now, new_reassignment_count, next_reassign_time)
 
         self.stats.jobs_orphaned += 1
         self.stats.jobs_reassigned += 1
 
-        # Log the reassignment for monitoring
+        # Log the reassignment with backoff info for monitoring
         logger.info(
             f"Reassigning orphaned job {job_id} (type={job_type}, "
-            f"original_node={original_node}, attempt={reassignment_count + 1})"
+            f"original_node={original_node}, attempt={new_reassignment_count}, "
+            f"backoff_delay={backoff_delay:.0f}s)"
         )
 
         # Note: The actual re-dispatch is handled by SelfplayScheduler which
