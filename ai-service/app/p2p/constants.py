@@ -122,9 +122,21 @@ LEADER_WORK_DISPATCH_TIMEOUT = int(
 #       → quorum ack / tiebreaker win → LEADER (or step down if contested by higher node)
 
 # Minimum time leaderless before fallback leadership kicks in
-# 5 minutes = 300 seconds - plenty of time for normal elections to complete
+# Jan 2026: Reduced from 300s to 60s for faster recovery after step-down
+# ULSM broadcasts step-down immediately, so 60s is ample time for normal elections
 PROVISIONAL_LEADER_MIN_LEADERLESS_TIME = int(
-    os.environ.get("RINGRIFT_P2P_PROVISIONAL_MIN_LEADERLESS", "300") or 300
+    os.environ.get("RINGRIFT_P2P_PROVISIONAL_MIN_LEADERLESS", "60") or 60
+)
+
+# Jan 2026: How many election retry failures before activating provisional fallback
+ELECTION_RETRY_COUNT_BEFORE_PROVISIONAL = int(
+    os.environ.get("RINGRIFT_P2P_ELECTION_RETRIES_BEFORE_PROVISIONAL", "4") or 4
+)
+
+# Jan 2026: Time after which deterministic fallback takes over (highest eligible node wins)
+# 3 minutes = 180 seconds - if still leaderless, skip probabilistic and go deterministic
+DETERMINISTIC_FALLBACK_TIME = int(
+    os.environ.get("RINGRIFT_P2P_DETERMINISTIC_FALLBACK_TIME", "180") or 180
 )
 
 # Initial probability of claiming provisional leadership (per check cycle)

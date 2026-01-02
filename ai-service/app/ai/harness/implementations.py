@@ -397,3 +397,40 @@ class HeuristicHarness(AIHarness):
             "nodes_visited": 1,
         }
         return move, metadata
+
+
+class RandomHarness(AIHarness):
+    """Harness that selects moves randomly (uniform distribution).
+
+    Useful for:
+    - Baseline comparison in gauntlets/evaluations
+    - Training data diversity (playing against random opponent)
+    - Sanity checking that models beat random
+    """
+
+    supports_nn = False
+    supports_nnue = False
+    requires_policy_head = False
+
+    def _create_underlying_ai(self, player_number: int) -> Any:
+        """No underlying AI needed - we just select randomly."""
+        return None
+
+    def _select_move_impl(
+        self,
+        game_state: GameState,
+        player_number: int,
+    ) -> tuple[Move | None, dict[str, Any]]:
+        import random
+        from ...rules import GameEngine
+
+        valid_moves = GameEngine.get_valid_moves(game_state, player_number)
+        if not valid_moves:
+            return None, {"value_estimate": 0.0, "nodes_visited": 0}
+
+        move = random.choice(valid_moves)
+        metadata = {
+            "value_estimate": 0.0,  # Random has no value estimate
+            "nodes_visited": 0,  # No search performed
+        }
+        return move, metadata

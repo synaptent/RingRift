@@ -571,6 +571,9 @@ from scripts.p2p.constants import (
     PROVISIONAL_LEADER_PROBABILITY_GROWTH_RATE,
     PROVISIONAL_LEADER_QUORUM_TIMEOUT,
     PROVISIONAL_LEADER_CHECK_INTERVAL,
+    # Jan 2026: ULSM tiered fallback
+    ELECTION_RETRY_COUNT_BEFORE_PROVISIONAL,
+    DETERMINISTIC_FALLBACK_TIME,
     LOAD_AVERAGE_MAX_MULTIPLIER,
     LOAD_MAX_FOR_NEW_JOBS,
     MANIFEST_JSONL_LINECOUNT_CHUNK_BYTES,
@@ -715,6 +718,11 @@ from scripts.p2p.metrics_manager import MetricsManager
 from scripts.p2p.resource_detector import ResourceDetector, ResourceDetectorMixin
 from scripts.p2p.event_emission_mixin import EventEmissionMixin
 from scripts.p2p.failover_integration import FailoverIntegrationMixin
+from scripts.p2p.leadership_state_machine import (
+    LeadershipStateMachine,
+    LeaderState,
+    TransitionReason,
+)
 
 # Unified resource checking utilities (80% max utilization)
 # Includes graceful degradation for dynamic workload management
@@ -1456,6 +1464,13 @@ class P2POrchestrator(
         # Node state
         self.role = NodeRole.FOLLOWER
         self.leader_id: str | None = None
+
+        # Unified Leadership State Machine (ULSM) - Jan 2026
+        # Single source of truth for leadership state transitions.
+        # Addresses silent step-down and split-brain issues.
+        self._leadership_sm = LeadershipStateMachine(node_id=self.node_id)
+        # Broadcast callback is set in _setup_routes() after app is created
+
         self.verbose = bool(os.environ.get("RINGRIFT_P2P_VERBOSE", "").strip())
         self.peers: dict[str, NodeInfo] = {}
         self.local_jobs: dict[str, ClusterJob] = {}
@@ -3926,63 +3941,211 @@ class P2POrchestrator(
         # LEARNED LESSONS - Lease-based leadership prevents split-brain
         # Must have valid lease to act as leader
         if self.leader_lease_expires > 0 and time.time() >= self.leader_lease_expires:
-            logger.info("Leadership lease expired, stepping down")
-            # Dec 2025: Emit LEADER_LOST before clearing leader_id
-            old_leader_id = self.leader_id
-            self.role = NodeRole.FOLLOWER
-            self.leader_id = None
-            self.leader_lease_id = ""
-            self.leader_lease_expires = 0.0
-            self.last_lease_renewal = 0.0
-            self._release_voter_grant_if_self()
-            self._save_state()
-            self._emit_leader_lost_sync(old_leader_id, "lease_expired")
-            # CRITICAL: Check quorum before starting election to prevent quorum bypass
-            if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
-                logger.warning("Skipping election after lease expired: no voter quorum available")
-            else:
-                with contextlib.suppress(RuntimeError):
-                    asyncio.get_running_loop().create_task(self._start_election())
+            logger.info("Leadership lease expired, stepping down via ULSM")
+            # Jan 2026: Use ULSM step-down which broadcasts to peers BEFORE local mutation
+            # This ensures peers learn about step-down immediately, preventing split-brain
+            self._schedule_step_down_sync(TransitionReason.LEASE_EXPIRED)
+            # Note: Election is triggered after step-down completes (in _complete_step_down_async)
+            # if quorum is available
             return False
         # Dec 31, 2025: Add grace period for quorum failures in _is_leader() too
         # This prevents rapid step-downs from transient network issues
+        # Jan 2026: Use ULSM QuorumHealth for unified quorum tracking
         if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
-            self._is_leader_quorum_fail_count = getattr(self, "_is_leader_quorum_fail_count", 0) + 1
             voters_alive = sum(
                 1 for vid in getattr(self, "voter_node_ids", [])
                 if vid in self.peers and self.peers[vid].is_alive()
             )
             quorum_size = getattr(self, "voter_quorum_size", 0)
+            # Use ULSM QuorumHealth for unified tracking (threshold=5 vs old 3)
+            threshold_exceeded = self._leadership_sm.quorum_health.record_failure(voters_alive)
+            fail_count = self._leadership_sm.quorum_health.consecutive_failures
+            threshold = self._leadership_sm.quorum_health.failure_threshold
             logger.debug(
-                f"[LeaderCheck] Quorum check failed ({self._is_leader_quorum_fail_count}/3): "
+                f"[LeaderCheck] Quorum check failed ({fail_count}/{threshold}): "
                 f"voters_alive={voters_alive}, quorum_size={quorum_size}"
             )
-            if self._is_leader_quorum_fail_count >= 3:
-                logger.info("Leadership without voter quorum (3 consecutive failures), stepping down")
-                # Dec 2025: Emit LEADER_LOST before clearing leader_id
-                old_leader_id = self.leader_id
-                self.role = NodeRole.FOLLOWER
-                self.leader_id = None
-                self.leader_lease_id = ""
-                self.leader_lease_expires = 0.0
-                self.last_lease_renewal = 0.0
-                self._is_leader_quorum_fail_count = 0
-                self._release_voter_grant_if_self()
-                self._save_state()
-                self._emit_leader_lost_sync(old_leader_id, "quorum_lost")
-                # NOTE: Don't start election here - we just lost quorum, so election would fail anyway
+            if threshold_exceeded:
+                logger.info(f"Leadership without voter quorum ({threshold} consecutive failures), stepping down via ULSM")
+                # Jan 2026: Use ULSM step-down which broadcasts to peers BEFORE local mutation
+                self._schedule_step_down_sync(TransitionReason.QUORUM_LOST)
+                # NOTE: Don't start election here - we just lost quorum, so election would fail
                 # Wait for quorum to be restored before attempting election
                 logger.warning("Skipping election after quorum loss: no voter quorum available")
             return False
         else:
-            # Reset counter on success
-            self._is_leader_quorum_fail_count = 0
+            # Reset quorum health counter on success
+            voters_alive = sum(
+                1 for vid in getattr(self, "voter_node_ids", [])
+                if vid in self.peers and self.peers[vid].is_alive()
+            )
+            self._leadership_sm.quorum_health.record_success(voters_alive)
         return True
 
     @property
     def is_leader(self) -> bool:
         """Property alias for _is_leader() - required by WorkQueueHandlersMixin."""
         return self._is_leader()
+
+    # =========================================================================
+    # UNIFIED LEADERSHIP STATE MACHINE (ULSM) - Jan 2026
+    # Broadcast callback for state machine step-down notifications
+    # =========================================================================
+
+    async def _broadcast_leader_state_change(
+        self,
+        new_state: str,
+        epoch: int,
+        reason: "TransitionReason",
+    ) -> None:
+        """Broadcast leadership state change to all peers.
+
+        Called by LeadershipStateMachine.transition_to() when stepping down.
+        This ensures peers learn about step-down BEFORE local state mutation.
+
+        Args:
+            new_state: New leadership state (e.g., "stepping_down")
+            epoch: Current leadership epoch
+            reason: Reason for the transition
+        """
+        message = {
+            "node_id": self.node_id,
+            "new_state": new_state,
+            "epoch": epoch,
+            "reason": reason.value if hasattr(reason, "value") else str(reason),
+            "timestamp": time.time(),
+        }
+
+        tasks = []
+        peers_snapshot: dict[str, Any] = {}
+        with self.peers_lock:
+            peers_snapshot = dict(self.peers)
+
+        for peer_id, peer_info in peers_snapshot.items():
+            if not peer_info.is_alive():
+                continue
+
+            # Build URL for peer
+            url = f"http://{peer_info.advertise_host}:{peer_info.advertise_port}/leader-state-change"
+            tasks.append(self._broadcast_to_peer(url, message, peer_id))
+
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            success = sum(1 for r in results if r is True)
+            logger.info(
+                f"Broadcast step-down to {success}/{len(tasks)} peers "
+                f"(epoch={epoch}, reason={reason.value if hasattr(reason, 'value') else reason})"
+            )
+
+    async def _broadcast_to_peer(
+        self,
+        url: str,
+        message: dict[str, Any],
+        peer_id: str,
+    ) -> bool:
+        """Send state change message to a single peer with timeout."""
+        try:
+            async with get_client_session(timeout=2.0) as session:
+                async with session.post(
+                    url,
+                    json=message,
+                    headers=self._auth_headers(),
+                ) as resp:
+                    if resp.status == 200:
+                        return True
+                    logger.debug(f"Broadcast to {peer_id} returned {resp.status}")
+                    return False
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+            logger.debug(f"Broadcast to {peer_id} failed: {e}")
+            return False
+
+    # =========================================================================
+    # ULSM STEP-DOWN HELPERS - Sync-to-async bridge for _is_leader() calls
+    # =========================================================================
+
+    def _schedule_step_down_sync(self, reason: "TransitionReason") -> None:
+        """Schedule async step-down from sync context (e.g., _is_leader()).
+
+        This is a sync-to-async bridge that schedules the full ULSM step-down
+        process via asyncio.create_task(). The step-down includes:
+        1. State machine transition to STEPPING_DOWN (broadcasts to peers)
+        2. Brief delay for broadcast propagation
+        3. Transition to FOLLOWER
+        4. Legacy field synchronization
+
+        Args:
+            reason: Why we're stepping down (LEASE_EXPIRED, QUORUM_LOST, etc.)
+        """
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._complete_step_down_async(reason))
+            logger.info(f"ULSM: Scheduled step-down for reason={reason.value}")
+        except RuntimeError:
+            # No running loop - this shouldn't happen in normal operation
+            logger.warning("ULSM: No event loop to schedule step-down")
+
+    async def _complete_step_down_async(self, reason: "TransitionReason") -> None:
+        """Complete the step-down process via ULSM state machine.
+
+        This is the async implementation that:
+        1. Transitions to STEPPING_DOWN (triggers broadcast to peers)
+        2. Waits briefly for broadcast propagation
+        3. Transitions to FOLLOWER
+        4. Syncs legacy fields and saves state
+
+        Args:
+            reason: Why we're stepping down
+        """
+        try:
+            # Step 1: Transition to STEPPING_DOWN (triggers broadcast)
+            old_leader_id = self.leader_id
+            success = await self._leadership_sm.transition_to(
+                LeaderState.STEPPING_DOWN,
+                reason,
+            )
+            if not success:
+                logger.warning(f"ULSM: Failed transition to STEPPING_DOWN, current state={self._leadership_sm.state}")
+                return
+
+            # Step 2: Brief delay to allow broadcast propagation
+            await asyncio.sleep(0.5)
+
+            # Step 3: Transition to FOLLOWER
+            await self._leadership_sm.transition_to(
+                LeaderState.FOLLOWER,
+                TransitionReason.STEP_DOWN_COMPLETE,
+            )
+
+            # Step 4: Sync legacy fields (for backward compatibility)
+            self.role = NodeRole.FOLLOWER
+            self.leader_id = None
+            self.leader_lease_id = ""
+            self.leader_lease_expires = 0.0
+            self.last_lease_renewal = 0.0
+            self._is_leader_quorum_fail_count = 0
+            self._release_voter_grant_if_self()
+            self._save_state()
+
+            # Emit LEADER_LOST event for other components
+            self._emit_leader_lost_sync(old_leader_id, reason.value)
+
+            logger.info(f"ULSM: Step-down complete, reason={reason.value}")
+
+            # Step 5: Trigger new election for certain step-down reasons
+            # Skip for QUORUM_LOST since election would fail anyway
+            if reason != TransitionReason.QUORUM_LOST:
+                if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
+                    logger.warning("ULSM: Skipping post-step-down election - no voter quorum")
+                else:
+                    logger.info("ULSM: Starting election after step-down")
+                    asyncio.create_task(self._start_election())
+
+        except Exception as e:
+            logger.error(f"ULSM: Error during step-down: {e}", exc_info=True)
+            # Fallback: Force follower state
+            self.role = NodeRole.FOLLOWER
+            self.leader_id = None
+            self._save_state()
 
     # =========================================================================
     # TASK ISOLATION - Prevent single task failure from crashing all tasks
@@ -20379,23 +20542,30 @@ print(json.dumps({{
 
         # Clear stale leader IDs after restarts/partitions
         if self.leader_id and not self._is_leader_lease_valid():
-            logger.info(f"Clearing stale/expired leader lease: leader_id={self.leader_id}")
             old_leader_id = self.leader_id
-            self.leader_id = None
-            self.leader_lease_id = ""
-            self.leader_lease_expires = 0.0
-            self.last_lease_renewal = 0.0
-            self.role = NodeRole.FOLLOWER
-            # Dec 31, 2025: Set invalidation window to prevent gossip from re-setting stale leader
-            # Window = 60 seconds - enough time for election to complete
-            self._leader_invalidation_until = time.time() + 60.0
-            # Emit LEADER_LOST before starting election (Dec 2025 fix)
-            asyncio.create_task(self._emit_leader_lost(old_leader_id, "lease_expired"))
-            # CRITICAL: Check quorum before starting election to prevent quorum bypass
-            if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
-                logger.warning("Skipping election after stale lease clear: no voter quorum available")
+            is_self_leader = (old_leader_id == self.node_id)
+            logger.info(f"Clearing stale/expired leader lease: leader_id={old_leader_id}, is_self={is_self_leader}")
+
+            if is_self_leader:
+                # Jan 2026: Our own lease expired - use ULSM for broadcast-before-mutation
+                await self._complete_step_down_async(TransitionReason.LEASE_EXPIRED)
             else:
-                asyncio.create_task(self._start_election())
+                # Another node's stale lease - just clear locally, no broadcast needed
+                self.leader_id = None
+                self.leader_lease_id = ""
+                self.leader_lease_expires = 0.0
+                self.last_lease_renewal = 0.0
+                self.role = NodeRole.FOLLOWER
+                # Dec 31, 2025: Set invalidation window to prevent gossip from re-setting stale leader
+                # Window = 60 seconds - enough time for election to complete
+                self._leader_invalidation_until = time.time() + 60.0
+                # Emit LEADER_LOST before starting election (Dec 2025 fix)
+                await self._emit_leader_lost(old_leader_id, "lease_expired")
+                # CRITICAL: Check quorum before starting election to prevent quorum bypass
+                if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
+                    logger.warning("Skipping election after stale lease clear: no voter quorum available")
+                else:
+                    asyncio.create_task(self._start_election())
 
         # If leader is dead, start election
         if self.leader_id and self.leader_id != self.node_id:
@@ -21151,23 +21321,21 @@ print(json.dumps({{
         logger.info(f"Full fallback leadership established: lease={lease_id}")
 
     def _step_down_from_provisional(self) -> None:
-        """Step down from provisional leadership (lost to challenger)."""
-        logger.info(f"Stepping down from provisional leadership")
+        """Step down from provisional leadership (lost to challenger).
 
-        self.role = NodeRole.FOLLOWER
-        self.leader_id = None
-        self.leader_lease_id = ""
-        self.leader_lease_expires = 0.0
-        self.last_lease_renewal = 0.0
+        Jan 2026: Uses ULSM for broadcast-before-mutation pattern.
+        """
+        logger.info("Stepping down from provisional leadership via ULSM")
 
-        # Clear provisional state
+        # Clear provisional-specific state first (ULSM doesn't know about these)
         self._provisional_leader_claimed_at = 0.0
         self._provisional_leader_acks.clear()
         self._provisional_leader_challengers.clear()
 
-        self._save_state()
+        # Use ULSM step-down (broadcasts to peers, then clears leader state)
+        self._schedule_step_down_sync(TransitionReason.ARBITER_OVERRIDE)
 
-        # Jan 1, 2026: Phase 3B-C - notify voters of lease revocation
+        # Notify voters of lease revocation
         try:
             asyncio.create_task(self._notify_voters_lease_revoked())
         except RuntimeError:
@@ -21179,6 +21347,111 @@ print(json.dumps({{
     def _is_provisional_leader(self) -> bool:
         """Check if we are currently a provisional leader."""
         return self.role == NodeRole.PROVISIONAL_LEADER and self.leader_id == self.node_id
+
+    # =========================================================================
+    # ULSM TIERED FALLBACK - Jan 2026
+    # Three-tier leadership fallback for cluster resilience
+    # =========================================================================
+
+    async def _check_leadership_fallback(self, now: float) -> None:
+        """Tiered leadership fallback for cluster resilience.
+
+        Jan 2026: ULSM tiered fallback mechanism with three levels:
+
+        Tier 1 (0-60s): Fast election retries
+            - Only if we have voter quorum
+            - Try normal elections with increasing urgency
+
+        Tier 2 (60-180s): Probabilistic provisional
+            - Existing mechanism with exponential probability growth
+            - Fallback when elections fail repeatedly
+
+        Tier 3 (180s+): Deterministic fallback
+            - Skip probability, highest eligible node_id wins
+            - Last resort to ensure cluster always has leadership
+
+        Args:
+            now: Current timestamp
+        """
+        # Skip if we already have a leader or are claiming
+        if self.leader_id:
+            return
+
+        # Skip if we're already in a leadership role
+        if self.role in (NodeRole.LEADER, NodeRole.PROVISIONAL_LEADER, NodeRole.CANDIDATE):
+            return
+
+        leaderless_duration = now - self.last_leader_seen
+
+        # Tier 1: Fast election retries (0-60s)
+        if leaderless_duration < PROVISIONAL_LEADER_MIN_LEADERLESS_TIME:
+            if self._has_voter_quorum():
+                # Increment election retry counter
+                self._election_retry_count = getattr(self, "_election_retry_count", 0) + 1
+
+                if self._election_retry_count >= ELECTION_RETRY_COUNT_BEFORE_PROVISIONAL:
+                    logger.info(f"Tier 1 fallback: {self._election_retry_count} election retries, "
+                               f"proceeding to provisional fallback")
+                else:
+                    logger.debug(f"Tier 1 fallback: Retrying election (attempt {self._election_retry_count})")
+                    await self._start_election()
+            return
+
+        # Tier 2: Probabilistic provisional (60-180s)
+        if leaderless_duration < DETERMINISTIC_FALLBACK_TIME:
+            await self._check_probabilistic_leadership(now)
+            return
+
+        # Tier 3: Deterministic fallback (180s+)
+        logger.info(f"Tier 3 fallback: Deterministic election after {int(leaderless_duration)}s leaderless")
+        await self._deterministic_leader_election()
+
+    async def _deterministic_leader_election(self) -> None:
+        """Deterministic fallback: highest eligible node_id becomes leader.
+
+        Jan 2026: When probabilistic fallback has failed for too long,
+        use deterministic approach: highest alphabetically-sorted node_id
+        among eligible nodes wins. This guarantees convergence.
+        """
+        # Collect eligible nodes (alive, not NAT-blocked, preferably GPU)
+        self._update_self_info()
+
+        if getattr(self.self_info, "nat_blocked", False):
+            logger.debug("Deterministic fallback: skipping, we are NAT-blocked")
+            return
+
+        # Build list of eligible node IDs
+        eligible_nodes = []
+
+        # Check self eligibility
+        if not getattr(self.self_info, "nat_blocked", False):
+            eligible_nodes.append(self.node_id)
+
+        # Check peers
+        async with AsyncLockWrapper(self.peers_lock):
+            for peer_id, peer in self.peers.items():
+                if peer.is_alive() and not getattr(peer, "nat_blocked", False):
+                    eligible_nodes.append(peer_id)
+
+        if not eligible_nodes:
+            logger.warning("Deterministic fallback: no eligible nodes found")
+            return
+
+        # Highest node_id wins (deterministic tiebreaker)
+        eligible_nodes.sort(reverse=True)
+        winner = eligible_nodes[0]
+
+        logger.info(f"Deterministic fallback: winner={winner} (from {len(eligible_nodes)} eligible)")
+
+        if winner == self.node_id:
+            # We won - claim provisional leadership
+            logger.info("Deterministic fallback: We won, claiming provisional leadership")
+            await self._claim_provisional_leadership()
+        else:
+            # Someone else should win - wait for them
+            logger.debug(f"Deterministic fallback: {winner} should claim leadership, waiting")
+            # Reset our retry counter since we're deferring
+            self._election_retry_count = 0
 
     async def _request_election_from_voters(self, reason: str = "non_voter_request") -> bool:
         """December 29, 2025: Non-voters can request that voters start an election.
@@ -27396,6 +27669,9 @@ print(json.dumps({{
             # Jan 1, 2026: Probabilistic fallback leadership - provisional claim handler
             app.router.add_post('/provisional-leader/claim', self.handle_provisional_leader_claim)
 
+            # Jan 1, 2026: ULSM - Leadership state change broadcast (ensures peers learn of step-down)
+            app.router.add_post('/leader-state-change', self.handle_leader_state_change)
+
             # Serf integration routes (battle-tested SWIM gossip)
             app.router.add_post('/serf/event', self.handle_serf_event)
 
@@ -27625,6 +27901,11 @@ print(json.dumps({{
 
         # Wire SyncRouter to event system for real-time sync triggers (December 2025)
         self._wire_sync_router_events()
+
+        # Wire LeadershipStateMachine broadcast callback (ULSM - Jan 2026)
+        # This enables the state machine to broadcast step-down to peers
+        self._leadership_sm._broadcast_callback = self._broadcast_leader_state_change
+        logger.info("ULSM: Leadership state machine broadcast callback wired")
 
         # Increase backlog to handle burst of connections from many nodes
         # Default is ~128, which can overflow when many vast nodes heartbeat simultaneously

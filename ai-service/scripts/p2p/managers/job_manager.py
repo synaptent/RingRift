@@ -448,6 +448,36 @@ class JobManager(EventSubscriptionMixin):
         """
         return os.path.join(self._get_ai_service_path(), "data", *subpath)
 
+    def _should_use_gpu_tree(self) -> bool:
+        """Check if GPU tree mode should be enabled for this node.
+
+        Checks the distributed_hosts.yaml config for this node's disable_gpu_tree setting.
+        GPU tree is enabled by default unless explicitly disabled for the node (e.g., vGPU nodes).
+
+        Returns:
+            True if GPU tree should be used, False if it should be disabled.
+        """
+        try:
+            import yaml
+            config_path = os.path.join(self._get_ai_service_path(), "config", "distributed_hosts.yaml")
+            if not os.path.exists(config_path):
+                # No config file, default to GPU tree enabled
+                return True
+
+            with open(config_path, "r") as f:
+                config = yaml.safe_load(f)
+
+            hosts = config.get("hosts", {})
+            node_config = hosts.get(self.node_id, {})
+
+            # disable_gpu_tree: true means DON'T use GPU tree
+            # Default is False (use GPU tree)
+            return not node_config.get("disable_gpu_tree", False)
+        except Exception as e:
+            logger.debug(f"Could not load node config for GPU tree check: {e}")
+            # On error, default to GPU tree enabled
+            return True
+
     # =========================================================================
     # GPU Capability Helpers (December 2025)
     # =========================================================================
@@ -1464,8 +1494,16 @@ class JobManager(EventSubscriptionMixin):
                 "--db", str(output_dir / "games.db"),  # uses --db not --record-db
                 "--seed", str(int(time.time() * 1000) % 2**31),
                 "--simulation-budget", str(simulation_budget),
-                "--no-gpu-tree",  # Dec 31, 2025: Disable GPU tree mode which hangs on large boards
             ]
+            # Jan 1, 2026: Use per-node config to decide GPU tree mode
+            # GPU tree gives 170x speedup but hangs on some nodes (vGPU, large boards)
+            # Check distributed_hosts.yaml for disable_gpu_tree setting
+            if self._should_use_gpu_tree():
+                cmd.append("--use-gpu-tree")
+                logger.debug(f"GPU tree enabled for node {self.node_id} job {job_id}")
+            else:
+                cmd.append("--no-gpu-tree")
+                logger.debug(f"GPU tree disabled for node {self.node_id} job {job_id}")
         else:
             # Use run_gpu_selfplay.py for GPU-optimized modes
             script_path = self._get_script_path("run_gpu_selfplay.py")

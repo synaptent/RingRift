@@ -1120,6 +1120,8 @@ class GossipProtocolMixin(P2PMixinBase):
             "role": self.role.value if hasattr(self.role, "value") else str(self.role),
             "leader_id": self.leader_id,
             "leader_lease_expires": getattr(self, "leader_lease_expires", 0),
+            # Jan 2026: ULSM epoch for stale leader claim rejection
+            "leadership_epoch": getattr(self, "_leadership_sm", None) and self._leadership_sm.epoch or 0,
             "selfplay_jobs": getattr(self.self_info, "selfplay_jobs", 0),
             "training_jobs": getattr(self.self_info, "training_jobs", 0),
             "gpu_percent": getattr(self.self_info, "gpu_percent", 0),
@@ -1563,12 +1565,25 @@ class GossipProtocolMixin(P2PMixinBase):
             self._gossip_peer_states[sender_id] = sender_state
 
             # Update leader info if sender claims to know a leader
+            # Jan 2026: Use ULSM epoch validation to reject stale claims
             if sender_state.get("leader_id") and not self.leader_id:
                 claimed_leader = sender_state.get("leader_id")
+                claimed_epoch = sender_state.get("leadership_epoch", 0)
                 lease_expires = sender_state.get("leader_lease_expires", 0)
-                if lease_expires > time.time():
-                    self.leader_id = claimed_leader
-                    self.last_leader_seen = time.time()
+
+                # Check if we have ULSM state machine for validation
+                if hasattr(self, "_leadership_sm") and self._leadership_sm:
+                    if self._leadership_sm.validate_leader_claim(claimed_leader, claimed_epoch, lease_expires):
+                        self.leader_id = claimed_leader
+                        self.last_leader_seen = time.time()
+                        logger.debug(f"Gossip: Accepted leader claim {claimed_leader} epoch={claimed_epoch}")
+                    else:
+                        logger.debug(f"Gossip: Rejected leader claim {claimed_leader} epoch={claimed_epoch}")
+                else:
+                    # Fallback: simple lease expiry check (pre-ULSM behavior)
+                    if lease_expires > time.time():
+                        self.leader_id = claimed_leader
+                        self.last_leader_seen = time.time()
 
     def _process_known_states(self, known_states: dict[str, dict]) -> None:
         """Process known states from gossip propagation."""

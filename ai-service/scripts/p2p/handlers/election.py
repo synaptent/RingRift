@@ -673,3 +673,75 @@ class ElectionHandlersMixin(BaseP2PHandler):
         except Exception as e:
             logger.error(f"Error handling provisional leader claim: {e}")
             return self.error_response(str(e), status=500)
+
+    async def handle_leader_state_change(self, request: web.Request) -> web.Response:
+        """Handle leader step-down broadcast from peers.
+
+        Part of the Unified Leadership State Machine (ULSM) - Jan 2026.
+        When a leader steps down, they broadcast to all peers BEFORE clearing
+        their local state. This ensures peers learn about the step-down
+        immediately rather than waiting for lease expiry.
+
+        Request body:
+            {
+                "node_id": "stepping-down-leader-id",
+                "new_state": "stepping_down",
+                "epoch": 5,
+                "reason": "quorum_lost",
+                "timestamp": 1234567890.123
+            }
+
+        Response:
+            {"ack": true} on success
+        """
+        try:
+            data = await request.json()
+            sender_id = data.get("node_id", "")
+            new_state = data.get("new_state", "")
+            sender_epoch = data.get("epoch", 0)
+            reason = data.get("reason", "unknown")
+
+            logger.info(
+                f"Received leader state change: node={sender_id}, "
+                f"state={new_state}, epoch={sender_epoch}, reason={reason}"
+            )
+
+            # Only process step-down broadcasts from our current leader
+            if new_state == "stepping_down" and self.leader_id == sender_id:
+                logger.info(
+                    f"Leader {sender_id} stepping down (epoch {sender_epoch}), "
+                    f"clearing leader_id"
+                )
+
+                # Clear our record of the leader
+                self.leader_id = None
+
+                # Update state machine if available
+                if hasattr(self, "_leadership_sm"):
+                    # Set invalidation window to reject stale gossip
+                    self._leadership_sm._invalidation_until = time.time() + 60.0
+                    # Update epoch if sender's is higher
+                    if sender_epoch > self._leadership_sm._epoch:
+                        self._leadership_sm._epoch = sender_epoch
+                    # Clear the leader in state machine
+                    self._leadership_sm.clear_leader()
+
+                # Save state to disk
+                self._save_state()
+
+                # Emit event for other components
+                _event_bridge.emit(
+                    "LEADER_STEP_DOWN_RECEIVED",
+                    {
+                        "former_leader": sender_id,
+                        "epoch": sender_epoch,
+                        "reason": reason,
+                        "node_id": self.node_id,
+                    },
+                )
+
+            return self.json_response({"ack": True})
+
+        except Exception as e:
+            logger.error(f"Error handling leader state change: {e}")
+            return self.error_response(str(e), status=500)

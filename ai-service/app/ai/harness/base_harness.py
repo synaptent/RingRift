@@ -45,6 +45,7 @@ class HarnessType(Enum):
     POLICY_ONLY = "policy_only"
     DESCENT = "descent"
     HEURISTIC = "heuristic"
+    RANDOM = "random"  # Jan 1, 2026: Added for baseline comparison and diversity
 
 
 class ModelType(Enum):

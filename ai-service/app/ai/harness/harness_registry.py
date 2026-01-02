@@ -119,6 +119,15 @@ HARNESS_COMPATIBILITY: dict[HarnessType, HarnessCompatibility] = {
         min_difficulty=1,
         description="Hand-crafted heuristic evaluation only",
     ),
+    HarnessType.RANDOM: HarnessCompatibility(
+        harness_type=HarnessType.RANDOM,
+        supports_nn=False,  # No model needed
+        supports_nnue=False,  # No model needed
+        requires_policy_head=False,
+        optimal_for=["baseline", "sanity_check", "diversity"],
+        min_difficulty=1,
+        description="Uniform random move selection for baseline comparison",
+    ),
 }
 
 
@@ -200,6 +209,7 @@ def _ensure_implementations_loaded() -> None:
         MaxNHarness,
         MinimaxHarness,
         PolicyOnlyHarness,
+        RandomHarness,
     )
 
     _HARNESS_IMPLEMENTATIONS = {
@@ -211,6 +221,7 @@ def _ensure_implementations_loaded() -> None:
         HarnessType.POLICY_ONLY: PolicyOnlyHarness,
         HarnessType.DESCENT: DescentHarness,
         HarnessType.HEURISTIC: HeuristicHarness,
+        HarnessType.RANDOM: RandomHarness,
     }
 
 
@@ -334,6 +345,7 @@ HARNESS_PLAYER_RESTRICTIONS: dict[HarnessType, tuple[int, int]] = {
     HarnessType.MINIMAX: (2, 2),  # Only 2-player (alpha-beta)
     HarnessType.MAXN: (3, 4),  # 3-4 player only (multiplayer search)
     HarnessType.BRS: (3, 4),  # 3-4 player only (best-reply search)
+    HarnessType.RANDOM: (2, 4),  # Jan 1, 2026: Random for baseline and diversity
 }
 
 

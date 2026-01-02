@@ -48,11 +48,13 @@ logger = logging.getLogger(__name__)
 
 
 # Available engines for selfplay
-# Jan 1, 2026: Removed gumbel-mcts and mcts from list because CPU tree search is too slow
-# and GPU tree mode hangs. Will re-add once GPU tree is fixed.
+# Jan 1, 2026: Re-enabled gumbel-mcts - now uses per-node config to decide GPU tree mode
+# Nodes with disable_gpu_tree: true in distributed_hosts.yaml will use --no-gpu-tree
+# Other nodes (GH200, H100, etc.) will use GPU tree for 170x speedup
 AVAILABLE_ENGINES: list[str] = [
     "heuristic-only",
     "policy-only",
+    "gumbel-mcts",  # Re-enabled: uses per-node GPU tree config
     "mixed",
 ]
 
@@ -60,16 +62,15 @@ AVAILABLE_ENGINES: list[str] = [
 ALL_ENGINES: list[str] = [
     "heuristic-only",
     "policy-only",
-    "gumbel-mcts",  # Currently disabled: GPU tree hangs, CPU tree too slow
-    "mcts",         # Currently disabled: Same issue as gumbel-mcts
+    "gumbel-mcts",  # Re-enabled Jan 1, 2026
+    "mcts",         # Still disabled: use gumbel-mcts instead
     "mixed",
 ]
 
 # Default engine when no data available
-# Jan 1, 2026: Changed from gumbel-mcts to heuristic-only because
-# gumbel-mcts with --no-gpu-tree (CPU tree search) is too slow (~0 games/hour)
-# Once GPU tree hang is fixed, can switch back to gumbel-mcts
-DEFAULT_ENGINE = "heuristic-only"
+# Jan 1, 2026: Use gumbel-mcts for high quality training data
+# Nodes without GPU tree support will still work (slower CPU tree)
+DEFAULT_ENGINE = "gumbel-mcts"
 
 # Minimum games before engine can be selected by exploitation
 MIN_GAMES_FOR_EXPLOITATION = 100
