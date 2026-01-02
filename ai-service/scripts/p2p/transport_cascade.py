@@ -294,6 +294,113 @@ class TransportCascade:
 
         return best_transport
 
+    def get_transport_rankings(self, target: str) -> list[tuple[str, float]]:
+        """Get ranked list of transports for a target.
+
+        Sprint 5 (Jan 2, 2026): Returns all transports sorted by score.
+
+        Args:
+            target: Target node identifier
+
+        Returns:
+            List of (transport_name, score) tuples, sorted best first
+        """
+        rankings: list[tuple[str, float]] = []
+
+        # Try persisted metrics first
+        if self._state_manager and target:
+            try:
+                metrics = self._state_manager.load_transport_metrics(target=target)
+                for m in metrics:
+                    name = m.get("transport_name", "")
+                    success_rate = m.get("success_rate", 0.5)
+                    consec_fail = m.get("consecutive_failures", 0)
+                    score = success_rate - (consec_fail * 0.1)
+                    rankings.append((name, score))
+            except (AttributeError, TypeError):
+                pass
+
+        # Fall back to in-memory if no persisted data
+        if not rankings and target in self._health:
+            for transport_name, health in self._health[target].items():
+                score = health.success_rate - (health.consecutive_failures * 0.1)
+                rankings.append((transport_name, score))
+
+        # Sort by score descending
+        rankings.sort(key=lambda x: x[1], reverse=True)
+        return rankings
+
+    def get_all_transport_rankings(self) -> dict[str, list[tuple[str, float]]]:
+        """Get transport rankings for all known targets.
+
+        Sprint 5 (Jan 2, 2026): Aggregates rankings across all targets
+        for cluster-wide transport health visibility.
+
+        Returns:
+            Dict mapping target -> list of (transport_name, score) tuples
+        """
+        all_rankings: dict[str, list[tuple[str, float]]] = {}
+
+        # Get all targets from in-memory health data
+        for target in self._health.keys():
+            all_rankings[target] = self.get_transport_rankings(target)
+
+        return all_rankings
+
+    def get_transport_health_summary(self) -> dict[str, Any]:
+        """Get summary of transport health across all targets.
+
+        Sprint 5 (Jan 2, 2026): Unified metrics view for monitoring.
+
+        Returns:
+            Dict with overall transport health statistics
+        """
+        summary: dict[str, Any] = {
+            "targets": len(self._health),
+            "transports": {},
+            "global_circuit_breaker": None,
+        }
+
+        # Aggregate transport stats
+        transport_stats: dict[str, dict[str, float]] = {}
+        for target, health_by_transport in self._health.items():
+            for transport_name, health in health_by_transport.items():
+                if transport_name not in transport_stats:
+                    transport_stats[transport_name] = {
+                        "total_successes": 0,
+                        "total_failures": 0,
+                        "target_count": 0,
+                        "avg_success_rate": 0.0,
+                        "total_latency_ms": 0.0,
+                    }
+                stats = transport_stats[transport_name]
+                stats["total_successes"] += health.successes
+                stats["total_failures"] += health.failures
+                stats["target_count"] += 1
+                stats["total_latency_ms"] += health.total_latency_ms
+
+        # Calculate averages
+        for name, stats in transport_stats.items():
+            total = stats["total_successes"] + stats["total_failures"]
+            if total > 0:
+                stats["avg_success_rate"] = stats["total_successes"] / total
+            if stats["total_successes"] > 0:
+                stats["avg_latency_ms"] = stats["total_latency_ms"] / stats["total_successes"]
+            else:
+                stats["avg_latency_ms"] = 0.0
+
+        summary["transports"] = transport_stats
+
+        # Include global circuit breaker state
+        if self._global_circuit_breaker:
+            summary["global_circuit_breaker"] = {
+                "open": self._global_circuit_breaker.is_open(),
+                "failure_count": self._global_circuit_breaker._failure_count,
+                "last_failure_time": self._global_circuit_breaker._last_failure_time,
+            }
+
+        return summary
+
     def set_circuit_breaker(self, cb: GlobalCircuitBreaker) -> None:
         """Set global circuit breaker for cascade control."""
         self._global_circuit_breaker = cb
