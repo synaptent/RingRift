@@ -5068,7 +5068,12 @@ class P2POrchestrator(
             return {}
 
         # Load config to get IP mappings
-        cfg_path = Path(self.ringrift_path) / "ai-service" / "config" / "distributed_hosts.yaml"
+        # Jan 2, 2026: Handle ringrift_path that already includes ai-service suffix
+        rp = Path(self.ringrift_path)
+        if rp.name == "ai-service":
+            cfg_path = rp / "config" / "distributed_hosts.yaml"
+        else:
+            cfg_path = rp / "ai-service" / "config" / "distributed_hosts.yaml"
         if not cfg_path.exists():
             return {}
 

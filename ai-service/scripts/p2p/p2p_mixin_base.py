@@ -511,7 +511,13 @@ class P2PMixinBase:
             return {}
 
         from pathlib import Path
-        cfg_path = Path(ringrift_path) / "ai-service" / "config" / "distributed_hosts.yaml"
+        rp = Path(ringrift_path)
+        # Jan 2, 2026: Handle ringrift_path that already includes ai-service suffix
+        # Config files are stored at .../ai-service/config/, so don't add ai-service again
+        if rp.name == "ai-service":
+            cfg_path = rp / "config" / "distributed_hosts.yaml"
+        else:
+            cfg_path = rp / "ai-service" / "config" / "distributed_hosts.yaml"
         if not cfg_path.exists():
             return {}
 
