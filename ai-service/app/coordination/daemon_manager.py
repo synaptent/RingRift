@@ -298,6 +298,13 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         self._restart_timestamps: dict[str, list[float]] = {}  # Daemon -> list of restart times
         self._permanently_failed: dict[str, float] = {}  # Daemon -> timestamp when marked failed
 
+        # Sprint 5 (Jan 2, 2026): Deadlock detection
+        # Track lock acquisitions to detect potential deadlocks (locks held > 5 minutes)
+        self._lock_acquired_at: float | None = None
+        self._lock_holder_operation: str | None = None
+        self._deadlock_threshold_seconds: float = 300.0  # 5 minutes
+        self._deadlock_detected_at: float | None = None  # Prevent duplicate alerts
+
         # Dec 2025: Degraded mode tracking (48-hour autonomous operation)
         # Tracks daemons in degraded mode with their next retry time and tier
         # Key: daemon_name, Value: (next_retry_time, restart_tier, entered_degraded_at)
@@ -447,9 +454,87 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             yield False
             return
         try:
+            # Sprint 5: Track lock acquisition for deadlock detection
+            self._lock_acquired_at = time.time()
+            self._lock_holder_operation = operation_name
             yield True
         finally:
+            # Sprint 5: Clear lock tracking on release
+            self._lock_acquired_at = None
+            self._lock_holder_operation = None
             self._lock.release()
+
+    # =========================================================================
+    # Deadlock Detection (Sprint 5 - Jan 2, 2026)
+    # =========================================================================
+
+    async def _check_for_deadlocks(self) -> None:
+        """Check for potential deadlocks (locks held > threshold).
+
+        Sprint 5 (Jan 2, 2026): Monitors lock durations and emits DEADLOCK_DETECTED
+        event if any lock is held for more than 5 minutes.
+
+        This is called from the health loop to detect stuck operations that may
+        be blocking other daemon operations.
+        """
+        if self._lock_acquired_at is None:
+            # No lock currently held - clear any previous detection
+            self._deadlock_detected_at = None
+            return
+
+        now = time.time()
+        lock_duration = now - self._lock_acquired_at
+
+        if lock_duration < self._deadlock_threshold_seconds:
+            # Lock not held long enough to be a deadlock
+            return
+
+        # Potential deadlock detected
+        if self._deadlock_detected_at is not None:
+            # Already detected and reported, don't spam
+            return
+
+        self._deadlock_detected_at = now
+        operation = self._lock_holder_operation or "unknown"
+        duration_minutes = lock_duration / 60.0
+
+        logger.error(
+            f"[DaemonManager] DEADLOCK SUSPECTED: Lock held for {duration_minutes:.1f} minutes "
+            f"by operation '{operation}'"
+        )
+
+        # Emit DEADLOCK_DETECTED event
+        try:
+            from app.distributed.data_events import emit_deadlock_detected
+            await emit_deadlock_detected(
+                resources=["daemon_manager_lock"],
+                holders=[operation],
+                source="daemon_manager",
+            )
+        except (ImportError, RuntimeError) as e:
+            logger.debug(f"Could not emit DEADLOCK_DETECTED: {e}")
+
+    def get_lock_status(self) -> dict[str, Any]:
+        """Get current lock status for debugging.
+
+        Returns:
+            Dict with lock status information including:
+            - locked: Whether lock is currently held
+            - operation: Name of operation holding the lock (if any)
+            - duration_seconds: How long lock has been held (if any)
+            - deadlock_detected: Whether deadlock was detected
+        """
+        now = time.time()
+        locked = self._lock_acquired_at is not None
+        duration = (now - self._lock_acquired_at) if locked else 0.0
+
+        return {
+            "locked": locked,
+            "operation": self._lock_holder_operation,
+            "duration_seconds": round(duration, 2),
+            "deadlock_detected": self._deadlock_detected_at is not None,
+            "threshold_seconds": self._deadlock_threshold_seconds,
+        }
 
     # =========================================================================
     # Restart Count Persistence (Dec 2025)
@@ -2330,9 +2415,14 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         return self._lifecycle._get_dependents(daemon_type)
 
     async def _health_loop(self) -> None:
-        """Background health check loop."""
+        """Background health check loop.
+
+        Sprint 5 (Jan 2, 2026): Added deadlock detection check.
+        """
         while self._running and not self._shutdown_event.is_set():
             try:
+                # Sprint 5: Check for potential deadlocks before health checks
+                await self._check_for_deadlocks()
                 await self._check_health()
                 await asyncio.sleep(self.config.health_check_interval)
             except asyncio.CancelledError:
