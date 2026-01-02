@@ -93,7 +93,15 @@ class RemoteP2PRecoveryConfig:
     # Minimum time since last attempt for a node before retrying (seconds)
     # Jan 2026: Increased from 60s to 180s to prevent restart cascade
     # Nodes need time to fully start up and establish mesh connectivity
-    retry_cooldown_seconds: float = 180.0  # 3 minutes
+    retry_cooldown_seconds: float = 180.0  # 3 minutes (base cooldown)
+
+    # Exponential backoff configuration
+    # Jan 2026: Prevent pathological restart loops by backing off exponentially
+    # after repeated restart attempts on the same node
+    backoff_multiplier: float = 2.0  # Each restart attempt doubles the cooldown
+    backoff_max_seconds: float = 3600.0  # Max 1 hour between restart attempts
+    backoff_reset_after_stable_seconds: float = 600.0  # Reset backoff after 10 min stable
+    backoff_max_restart_count: int = 5  # After this many restarts, use max backoff
 
     # Whether to emit events on recovery
     emit_events: bool = True
@@ -125,9 +133,11 @@ class RemoteP2PRecoveryStats:
     # This is required because base.py does self._stats.total_runs += 1
     total_runs: int = 0
     nodes_skipped_cooldown: int = 0
+    nodes_skipped_backoff: int = 0  # Jan 2026: Nodes skipped due to exponential backoff
     ssh_key_missing: bool = False  # SSH key validation failed
     consecutive_errors: int = 0  # Required by LoopManager.get_status()
     successful_runs: int = 0  # Required by LoopManager.get_status()
+    backoff_resets: int = 0  # Jan 2026: Count of nodes that had backoff reset after stability
 
     @property
     def cycles_run(self) -> int:
@@ -167,6 +177,8 @@ class RemoteP2PRecoveryStats:
             "successful_runs": self.successful_runs,
             "failed_runs": self.failed_runs,  # Computed property
             "nodes_skipped_cooldown": self.nodes_skipped_cooldown,
+            "nodes_skipped_backoff": self.nodes_skipped_backoff,
+            "backoff_resets": self.backoff_resets,
             "ssh_key_missing": self.ssh_key_missing,
         }
 
@@ -217,6 +229,14 @@ class RemoteP2PRecoveryLoop(BaseLoop):
         # Track last attempt time per node to implement cooldown
         self._last_attempt: dict[str, float] = {}
 
+        # Jan 2026: Track restart counts for exponential backoff
+        # Increment on failed verification, reset after stable period
+        self._restart_count: dict[str, int] = {}
+
+        # Track when nodes were first seen stable (in mesh continuously)
+        # Used to reset backoff after stable period
+        self._first_stable_time: dict[str, float] = {}
+
         # Paramiko client (lazy loaded)
         self._paramiko: Any = None
 
@@ -250,6 +270,62 @@ class RemoteP2PRecoveryLoop(BaseLoop):
             logger.warning(f"[RemoteP2PRecovery] Cannot check SSH key permissions: {e}")
 
         return True
+
+    def _get_effective_cooldown(self, node_id: str) -> float:
+        """Calculate effective cooldown with exponential backoff.
+
+        Args:
+            node_id: Node identifier
+
+        Returns:
+            Cooldown in seconds, exponentially increasing with restart count.
+        """
+        restart_count = self._restart_count.get(node_id, 0)
+        if restart_count == 0:
+            return self.config.retry_cooldown_seconds
+
+        # Exponential backoff: base * (multiplier ^ min(count, max_count))
+        effective_count = min(restart_count, self.config.backoff_max_restart_count)
+        cooldown = self.config.retry_cooldown_seconds * (
+            self.config.backoff_multiplier ** effective_count
+        )
+        return min(cooldown, self.config.backoff_max_seconds)
+
+    def _check_and_reset_stable_nodes(self, alive_peer_ids: set[str]) -> None:
+        """Check if nodes have been stable long enough to reset their backoff.
+
+        A node is considered stable if it has been in the alive peers set
+        continuously for backoff_reset_after_stable_seconds.
+
+        Args:
+            alive_peer_ids: Set of currently alive peer node IDs
+        """
+        now = time.time()
+        reset_threshold = self.config.backoff_reset_after_stable_seconds
+
+        for node_id in list(self._restart_count.keys()):
+            if node_id in alive_peer_ids:
+                # Node is alive - track when we first saw it stable
+                if node_id not in self._first_stable_time:
+                    self._first_stable_time[node_id] = now
+                    logger.debug(
+                        f"[RemoteP2PRecovery] {node_id} now stable, "
+                        f"will reset backoff after {reset_threshold}s"
+                    )
+                elif now - self._first_stable_time[node_id] >= reset_threshold:
+                    # Been stable long enough - reset backoff
+                    old_count = self._restart_count.pop(node_id, 0)
+                    self._first_stable_time.pop(node_id, None)
+                    self._last_attempt.pop(node_id, None)
+                    self._stats.backoff_resets += 1
+                    logger.info(
+                        f"[RemoteP2PRecovery] {node_id} stable for {reset_threshold}s, "
+                        f"reset backoff (was {old_count} restarts)"
+                    )
+            else:
+                # Node is not alive - reset the stable timer
+                if node_id in self._first_stable_time:
+                    del self._first_stable_time[node_id]
 
     async def _verify_recovery(self, node_id: str) -> bool:
         """Wait for recovered node to appear in alive peers.
@@ -342,6 +418,9 @@ class RemoteP2PRecoveryLoop(BaseLoop):
             logger.debug("[RemoteP2PRecovery] No alive peers yet, skipping")
             return
 
+        # Check if any nodes with backoff have been stable long enough to reset
+        self._check_and_reset_stable_nodes(alive_peer_ids)
+
         # Get configured nodes that should be running P2P
         configured_nodes = self._get_configured_nodes()
         if not configured_nodes:
@@ -367,10 +446,20 @@ class RemoteP2PRecoveryLoop(BaseLoop):
             if not node_info.get("tailscale_ip") and not node_info.get("ssh_host"):
                 continue
 
-            # Skip if in cooldown
+            # Skip if in cooldown (with exponential backoff for repeat offenders)
             last_attempt = self._last_attempt.get(node_id, 0)
-            if now - last_attempt < self.config.retry_cooldown_seconds:
-                self._stats.nodes_skipped_cooldown += 1
+            effective_cooldown = self._get_effective_cooldown(node_id)
+            if now - last_attempt < effective_cooldown:
+                restart_count = self._restart_count.get(node_id, 0)
+                if restart_count > 0:
+                    # This is exponential backoff, not just regular cooldown
+                    self._stats.nodes_skipped_backoff += 1
+                    logger.debug(
+                        f"[RemoteP2PRecovery] Skipping {node_id}: "
+                        f"backoff {effective_cooldown:.0f}s (restart #{restart_count})"
+                    )
+                else:
+                    self._stats.nodes_skipped_cooldown += 1
                 continue
 
             nodes_to_recover.append((node_id, node_info))
@@ -442,10 +531,28 @@ class RemoteP2PRecoveryLoop(BaseLoop):
                         f"[RemoteP2PRecovery] Verification error for {node_id}: {verified}"
                     )
                     self._stats.nodes_verification_failed += 1
+                    # Increment restart count for exponential backoff
+                    self._restart_count[node_id] = self._restart_count.get(node_id, 0) + 1
+                    logger.info(
+                        f"[RemoteP2PRecovery] {node_id} verification failed, "
+                        f"restart count now {self._restart_count[node_id]} "
+                        f"(next cooldown: {self._get_effective_cooldown(node_id):.0f}s)"
+                    )
                 elif verified:
                     self._stats.nodes_verified += 1
+                    # Successful verification - start tracking stability
+                    # (backoff will be reset after stable period)
+                    if node_id in self._restart_count:
+                        self._first_stable_time[node_id] = now
                 else:
                     self._stats.nodes_verification_failed += 1
+                    # Increment restart count for exponential backoff
+                    self._restart_count[node_id] = self._restart_count.get(node_id, 0) + 1
+                    logger.info(
+                        f"[RemoteP2PRecovery] {node_id} did not appear in mesh, "
+                        f"restart count now {self._restart_count[node_id]} "
+                        f"(next cooldown: {self._get_effective_cooldown(node_id):.0f}s)"
+                    )
 
         self._stats.last_recovery_time = now
 
@@ -609,12 +716,26 @@ PYTHONPATH=. nohup python3 scripts/p2p_orchestrator.py --node-id {node_id} --por
 
     def get_recovery_stats(self) -> dict[str, Any]:
         """Get recovery statistics."""
+        # Include nodes currently in backoff with their cooldown times
+        nodes_in_backoff = {
+            node_id: {
+                "restart_count": count,
+                "effective_cooldown_seconds": self._get_effective_cooldown(node_id),
+            }
+            for node_id, count in self._restart_count.items()
+            if count > 0
+        }
+
         return {
             **self._stats.to_dict(),
+            "nodes_in_backoff": nodes_in_backoff,
             "config": {
                 "interval_seconds": self.config.check_interval_seconds,
                 "max_per_cycle": self.config.max_nodes_per_cycle,
                 "retry_cooldown_seconds": self.config.retry_cooldown_seconds,
+                "backoff_multiplier": self.config.backoff_multiplier,
+                "backoff_max_seconds": self.config.backoff_max_seconds,
+                "backoff_reset_after_stable_seconds": self.config.backoff_reset_after_stable_seconds,
                 "enabled": self.config.enabled,
                 "dry_run": self.config.dry_run,
             },
@@ -624,4 +745,6 @@ PYTHONPATH=. nohup python3 scripts/p2p_orchestrator.py --node-id {node_id} --por
         """Reset recovery statistics."""
         self._stats = RemoteP2PRecoveryStats()
         self._last_attempt.clear()
-        logger.info("[RemoteP2PRecovery] Statistics reset")
+        self._restart_count.clear()
+        self._first_stable_time.clear()
+        logger.info("[RemoteP2PRecovery] Statistics and backoff state reset")
