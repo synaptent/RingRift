@@ -148,6 +148,7 @@ ADMIN_ROUTES = [
     Route("POST", "/admin/restart", "handle_admin_restart"),
     Route("POST", "/admin/reset_node_jobs", "handle_admin_reset_node_jobs"),
     Route("POST", "/admin/add_peer", "handle_admin_add_peer"),  # Jan 2026: Partition healing
+    Route("GET", "/admin/clear_nat_blocked", "handle_admin_clear_nat_blocked"),  # Jan 2, 2026: Clear NAT-blocked status
 ]
 
 # ===========================================================================
