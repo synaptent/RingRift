@@ -28612,35 +28612,33 @@ print(json.dumps({{
         # Increase backlog to handle burst of connections from many nodes
         # Default is ~128, which can overflow when many vast nodes heartbeat simultaneously
         #
-        # Jan 2, 2026: Try dual-stack IPv6 first when host is 0.0.0.0
-        # This enables accepting both IPv4 and IPv6 connections on a single socket.
-        # Falls back to IPv4-only if IPv6 binding fails.
+        # Jan 2, 2026: Bind to BOTH IPv4 and IPv6 explicitly
+        # Python's asyncio/aiohttp doesn't properly implement dual-stack sockets
+        # (IPV6_V6ONLY is not automatically disabled), so we bind to both addresses.
         bind_host = self.host
         if self.host == "0.0.0.0":
-            # Try IPv6 dual-stack first
+            # Bind to IPv4 first (always needed)
+            site_v4 = web.TCPSite(runner, '0.0.0.0', self.port, reuse_address=True, backlog=1024)
             try:
-                site = web.TCPSite(runner, '::', self.port, reuse_address=True, backlog=1024)
-                await site.start()
-                bind_host = "[::]"
-                logger.info(f"HTTP server started on [::]:{self.port} (dual-stack, backlog=1024)")
-            except OSError as v6_err:
-                if "Address already in use" in str(v6_err) or getattr(v6_err, 'errno', 0) == 98:
+                await site_v4.start()
+                logger.info(f"HTTP server started on 0.0.0.0:{self.port} (IPv4, backlog=1024)")
+            except OSError as e:
+                if "Address already in use" in str(e) or getattr(e, 'errno', 0) == 98:
                     logger.error(f"Port {self.port} already in use. Is another P2P instance running?")
                     logger.error(f"Try: lsof -i :{self.port} or pkill -f p2p_orchestrator")
-                    raise RuntimeError(f"Port {self.port} already bound - cannot start P2P daemon") from v6_err
-                # Fall back to IPv4-only
-                logger.debug(f"IPv6 dual-stack failed, falling back to IPv4: {v6_err}")
-                site = web.TCPSite(runner, '0.0.0.0', self.port, reuse_address=True, backlog=1024)
-                try:
-                    await site.start()
-                    bind_host = "0.0.0.0"
-                    logger.info(f"HTTP server started on 0.0.0.0:{self.port} (IPv4-only, backlog=1024)")
-                except OSError as e:
-                    if "Address already in use" in str(e) or getattr(e, 'errno', 0) == 98:
-                        logger.error(f"Port {self.port} already in use. Is another P2P instance running?")
-                        logger.error(f"Try: lsof -i :{self.port} or pkill -f p2p_orchestrator")
-                        raise RuntimeError(f"Port {self.port} already bound - cannot start P2P daemon") from e
-                    raise
+                    raise RuntimeError(f"Port {self.port} already bound - cannot start P2P daemon") from e
+                raise
+
+            # Also try to bind to IPv6 (optional, for IPv6-only clients)
+            try:
+                site_v6 = web.TCPSite(runner, '::', self.port, reuse_address=True, backlog=1024)
+                await site_v6.start()
+                bind_host = "0.0.0.0 + [::]"
+                logger.info(f"HTTP server also listening on [::]:{self.port} (IPv6)")
+            except OSError as v6_err:
+                # IPv6 binding failed - that's OK, IPv4 is already working
+                logger.debug(f"IPv6 binding failed (OK, IPv4 is active): {v6_err}")
+                bind_host = "0.0.0.0"
         else:
             # Specific host requested - bind directly
             site = web.TCPSite(runner, self.host, self.port, reuse_address=True, backlog=1024)
