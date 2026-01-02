@@ -5135,6 +5135,37 @@ class P2POrchestrator(
         ip_map = getattr(self, "_ip_to_node_map", {})
         return ip_map.get(ip, peer_id)
 
+    def _find_voter_peer_by_ip(self, voter_id: str) -> tuple[str | None, "NodeInfo | None"]:
+        """Find a voter's peer entry by matching their known IPs against peers dict.
+
+        Jan 2, 2026: Added to fix voter heartbeat loop which was looking up voters
+        by friendly name (e.g., 'hetzner-cpu1') but peers dict uses IP:port keys
+        from SWIM (e.g., '135.181.39.239:7947').
+
+        Args:
+            voter_id: The voter's friendly node_id (e.g., 'hetzner-cpu1')
+
+        Returns:
+            Tuple of (peer_key, peer_info) where peer_key is the IP:port key in
+            self.peers, or (None, None) if not found.
+        """
+        # Get voter's known IPs from config
+        voter_ip_map = self._build_voter_ip_mapping()
+        voter_ips = voter_ip_map.get(voter_id, set())
+
+        if not voter_ips:
+            return None, None
+
+        # Search peers dict for any key that starts with one of the voter's IPs
+        for peer_key, peer_info in self.peers.items():
+            # peer_key format: "IP:port" (e.g., "135.181.39.239:7947")
+            if ":" in peer_key:
+                peer_ip = peer_key.split(":")[0]
+                if peer_ip in voter_ips:
+                    return peer_key, peer_info
+
+        return None, None
+
     def _count_alive_voters(self) -> int:
         """Count alive voters by checking both node_id and IP:port matches.
 
@@ -20499,9 +20530,10 @@ print(json.dumps({{
                 other_voters = [v for v in self.voter_node_ids if v != self.node_id]
 
                 for voter_id in other_voters:
-                    # Find voter peer info
+                    # Find voter peer info by IP mapping (Jan 2, 2026 fix)
+                    # Peers dict uses IP:port keys from SWIM, not friendly node_ids
                     async with AsyncLockWrapper(self.peers_lock):
-                        voter_peer = self.peers.get(voter_id)
+                        peer_key, voter_peer = self._find_voter_peer_by_ip(voter_id)
 
                     if not voter_peer:
                         # Try to discover voter from known peers
@@ -20514,12 +20546,13 @@ print(json.dumps({{
                     if success:
                         # AGGRESSIVE NAT RECOVERY: Clear NAT-blocked immediately on success
                         if VOTER_NAT_RECOVERY_AGGRESSIVE and voter_peer.nat_blocked:
-                            logger.info(f"Voter {voter_id} NAT-blocked status cleared (heartbeat succeeded)")
+                            logger.info(f"Voter {voter_id} (key={peer_key}) NAT-blocked status cleared (heartbeat succeeded)")
                             async with AsyncLockWrapper(self.peers_lock):
-                                if voter_id in self.peers:
-                                    self.peers[voter_id].nat_blocked = False
-                                    self.peers[voter_id].nat_blocked_since = 0.0
-                                    self.peers[voter_id].consecutive_failures = 0
+                                # Use peer_key (IP:port) not voter_id (friendly name)
+                                if peer_key and peer_key in self.peers:
+                                    self.peers[peer_key].nat_blocked = False
+                                    self.peers[peer_key].nat_blocked_since = 0.0
+                                    self.peers[peer_key].consecutive_failures = 0
                     else:
                         # Try alternative endpoints
                         success = await self._try_voter_alternative_endpoints(voter_peer)
@@ -20527,9 +20560,10 @@ print(json.dumps({{
                         if not success:
                             # Increment failure count but don't mark NAT-blocked yet
                             with self.peers_lock:
-                                if voter_id in self.peers:
-                                    self.peers[voter_id].consecutive_failures = \
-                                        int(getattr(self.peers[voter_id], "consecutive_failures", 0) or 0) + 1
+                                # Use peer_key (IP:port) not voter_id (friendly name)
+                                if peer_key and peer_key in self.peers:
+                                    self.peers[peer_key].consecutive_failures = \
+                                        int(getattr(self.peers[peer_key], "consecutive_failures", 0) or 0) + 1
 
                 # Periodic voter mesh refresh - ensure all voters know about each other
                 if now - last_voter_mesh_refresh > VOTER_MESH_REFRESH_INTERVAL:
@@ -28492,6 +28526,7 @@ print(json.dumps({{
             app.router.add_post('/admin/restart', self.handle_admin_restart)             # Force restart orchestrator
             app.router.add_post('/admin/reset_node_jobs', self.handle_admin_reset_node_jobs)  # Reset job counts for zombie nodes
             app.router.add_post('/admin/add_peer', self.handle_admin_add_peer)  # Inject peer for partition healing (Jan 2026)
+            app.router.add_get('/admin/clear_nat_blocked', self.handle_admin_clear_nat_blocked)  # Clear NAT-blocked status (Jan 2, 2026)
 
             # Phase 5: Event subscription visibility (December 2025)
             app.router.add_get('/subscriptions', self.handle_subscriptions)              # Show event subscriptions

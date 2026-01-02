@@ -519,3 +519,82 @@ class AdminHandlersMixin(BaseP2PHandler):
         except Exception as e:  # noqa: BLE001
             logger.error(f"Error in handle_admin_add_peer: {e}")
             return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_admin_clear_nat_blocked(self, request: web.Request) -> web.Response:
+        """Clear NAT-blocked status on all or specific peers.
+
+        Jan 2, 2026: Added to enable leader election when all voters are
+        marked as nat_blocked due to voter heartbeat loop not finding peers
+        by their IP:port keys.
+
+        Query params:
+            node_id: Optional. If specified, only clear for this node.
+                     Otherwise clears all peers.
+            voters_only: Optional. If "true", only clear for voters.
+
+        Returns:
+            JSON with count of cleared peers.
+        """
+        try:
+            from scripts.p2p_orchestrator import AsyncLockWrapper
+
+            node_id = request.query.get("node_id", "").strip()
+            voters_only = request.query.get("voters_only", "").lower() == "true"
+
+            cleared = []
+            voter_ids = list(getattr(self, "voter_node_ids", []) or [])
+            voter_ip_map = {}
+
+            # Build IP to voter_id mapping for matching
+            if voters_only and hasattr(self, "_build_voter_ip_mapping"):
+                voter_ip_mapping = self._build_voter_ip_mapping()
+                for vid, ips in voter_ip_mapping.items():
+                    for ip in ips:
+                        voter_ip_map[ip] = vid
+
+            async with AsyncLockWrapper(self.peers_lock):
+                for peer_key, peer_info in list(self.peers.items()):
+                    # Skip if filtering by specific node_id
+                    if node_id and peer_key != node_id:
+                        # Also try matching by IP for IP:port format keys
+                        if ":" in peer_key:
+                            peer_ip = peer_key.split(":")[0]
+                            resolved = voter_ip_map.get(peer_ip, peer_key)
+                            if resolved != node_id:
+                                continue
+                        else:
+                            continue
+
+                    # Skip if filtering by voters only
+                    if voters_only:
+                        is_voter = peer_key in voter_ids
+                        if not is_voter and ":" in peer_key:
+                            peer_ip = peer_key.split(":")[0]
+                            is_voter = peer_ip in voter_ip_map
+                        if not is_voter:
+                            continue
+
+                    # Clear NAT-blocked status
+                    was_blocked = getattr(peer_info, "nat_blocked", False)
+                    if was_blocked:
+                        peer_info.nat_blocked = False
+                        peer_info.nat_blocked_since = 0.0
+                        peer_info.consecutive_failures = 0
+                        cleared.append({
+                            "peer_key": peer_key,
+                            "node_id": getattr(peer_info, "node_id", peer_key),
+                        })
+
+            logger.info(f"Cleared NAT-blocked status on {len(cleared)} peers (admin request)")
+
+            return web.json_response({
+                "success": True,
+                "cleared_count": len(cleared),
+                "cleared_peers": cleared[:50],  # Limit for response size
+                "voters_only": voters_only,
+                "specific_node_id": node_id if node_id else None,
+            })
+
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Error in handle_admin_clear_nat_blocked: {e}")
+            return web.json_response({"error": str(e)}, status=500)
