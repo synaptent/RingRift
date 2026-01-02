@@ -2633,12 +2633,15 @@ class P2POrchestrator(
                     """Get game counts per node from manifest."""
                     result: dict[str, int] = {}
                     if hasattr(self, 'cluster_data_manifest') and self.cluster_data_manifest:
-                        for node_id, node_data in self.cluster_data_manifest.items():
-                            games = node_data.get("games", {})
-                            total_games = sum(
-                                g.get("count", 0) for g in games.values()
-                            ) if isinstance(games, dict) else 0
-                            result[node_id] = total_games
+                        for node_id, node_data in self.cluster_data_manifest.node_manifests.items():
+                            # NodeDataManifest is a dataclass with selfplay_games field
+                            if hasattr(node_data, 'selfplay_games'):
+                                result[node_id] = node_data.selfplay_games
+                            elif isinstance(node_data, dict):
+                                # Fallback for dict representation
+                                result[node_id] = node_data.get('selfplay_games', 0)
+                            else:
+                                result[node_id] = 0
                     return result
 
                 async def _aggregate_from_node_for_loop(node_id: str) -> dict[str, Any]:
