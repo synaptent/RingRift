@@ -411,3 +411,111 @@ class AdminHandlersMixin(BaseP2PHandler):
         except Exception as e:  # noqa: BLE001
             logger.error(f"Error in handle_admin_reset_node_jobs: {e}")
             return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_admin_add_peer(self, request: web.Request) -> web.Response:
+        """Add a peer to this node's peer list without restart.
+
+        This endpoint enables partition healing - external systems can inject
+        peers from other partitions to create bridges for gossip propagation.
+
+        January 2026: Added for partition_healer.py integration.
+
+        Request body:
+            node_id: The node ID to add
+            address: The IP/hostname of the peer
+            port: The P2P port (default: 8770)
+
+        Returns:
+            JSON with success status and peer info
+        """
+        try:
+            from scripts.p2p_orchestrator import AsyncLockWrapper
+
+            data = await request.json()
+            node_id = data.get("node_id", "").strip()
+            address = data.get("address", "").strip()
+            port = int(data.get("port", 8770))
+
+            if not node_id:
+                return web.json_response({
+                    "error": "node_id is required in request body"
+                }, status=400)
+
+            if not address:
+                return web.json_response({
+                    "error": "address is required in request body"
+                }, status=400)
+
+            # Check if peer already exists
+            async with AsyncLockWrapper(self.peers_lock):
+                already_exists = node_id in self.peers
+
+            if already_exists:
+                return web.json_response({
+                    "success": True,
+                    "node_id": node_id,
+                    "message": f"Peer '{node_id}' already exists",
+                    "already_existed": True,
+                })
+
+            # Try to connect to the peer to validate it's reachable
+            import aiohttp
+            peer_url = f"http://{address}:{port}/health"
+            is_reachable = False
+            peer_info_from_health = {}
+
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(peer_url, timeout=aiohttp.ClientTimeout(total=5.0)) as resp:
+                        if resp.status == 200:
+                            is_reachable = True
+                            try:
+                                peer_info_from_health = await resp.json()
+                            except Exception:
+                                pass
+            except Exception as e:
+                logger.debug(f"Could not reach peer {node_id} at {address}:{port}: {e}")
+
+            # Add peer to our list (even if not immediately reachable - gossip will sync)
+            try:
+                from scripts.p2p.models import NodeInfo
+                from scripts.p2p.types import NodeRole
+
+                new_peer = NodeInfo(
+                    node_id=node_id,
+                    host=address,
+                    port=port,
+                    scheme="http",
+                    role=NodeRole.FOLLOWER,
+                    last_heartbeat=time.time() if is_reachable else 0.0,
+                    leader_id=peer_info_from_health.get("leader_id"),
+                )
+
+                async with AsyncLockWrapper(self.peers_lock):
+                    self.peers[node_id] = new_peer
+                    logger.info(f"Added peer {node_id} at {address}:{port} (reachable={is_reachable})")
+
+            except ImportError:
+                # Fallback if models not available - just add raw dict
+                async with AsyncLockWrapper(self.peers_lock):
+                    self.peers[node_id] = {
+                        "node_id": node_id,
+                        "host": address,
+                        "port": port,
+                        "last_heartbeat": time.time() if is_reachable else 0.0,
+                    }
+                    logger.info(f"Added peer {node_id} at {address}:{port} (dict mode)")
+
+            return web.json_response({
+                "success": True,
+                "node_id": node_id,
+                "address": address,
+                "port": port,
+                "is_reachable": is_reachable,
+                "already_existed": False,
+                "message": f"Peer '{node_id}' added successfully",
+            })
+
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Error in handle_admin_add_peer: {e}")
+            return web.json_response({"error": str(e)}, status=500)

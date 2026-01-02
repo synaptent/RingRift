@@ -34,6 +34,7 @@ import logging
 import random
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Coroutine
 
 from .base import BaseLoop
@@ -455,6 +456,7 @@ class TailscalePeerDiscoveryConfig:
 
     December 2025: Extracted from p2p_orchestrator._tailscale_peer_recovery_loop
     December 30, 2025: MAJOR UPDATE - Enable discovery on ALL nodes with adaptive intervals.
+    January 2, 2026: Added YAML fallback for bootstrap mode.
 
     Previous behavior (REMOVED):
     - Leaders ran discovery every 2 minutes
@@ -466,6 +468,7 @@ class TailscalePeerDiscoveryConfig:
     - Bootstrap mode: 60s interval when < min_peers_for_maintenance
     - Maintenance mode: 120s interval when >= min_peers_for_maintenance
     - ±10% jitter prevents simultaneous discovery storms
+    - YAML fallback: When in bootstrap mode, also probe hosts from distributed_hosts.yaml
     """
 
     # Adaptive intervals (Dec 30, 2025)
@@ -488,6 +491,11 @@ class TailscalePeerDiscoveryConfig:
         "lambda-", "vast-", "gh200", "h100", "a100", "a10",
         "192-222-", "aws-", "nebius-", "runpod-", "vultr-", "hetzner-",
     )
+
+    # YAML fallback for bootstrap mode (Jan 2026)
+    # When in bootstrap mode, also probe hosts from distributed_hosts.yaml
+    yaml_fallback_enabled: bool = True
+    yaml_fallback_path: str = ""  # Empty = auto-detect
 
     def __post_init__(self) -> None:
         """Validate configuration values."""
@@ -619,6 +627,7 @@ class TailscalePeerDiscoveryLoop(BaseLoop):
         """Discover and connect to Tailscale peers not in P2P network.
 
         December 30, 2025: Runs on ALL nodes (leader check removed).
+        January 2, 2026: Added YAML fallback for bootstrap mode.
         """
         self._loop_count += 1
 
@@ -629,20 +638,44 @@ class TailscalePeerDiscoveryLoop(BaseLoop):
         # Get current peers
         current_peers = self._get_current_peers()
 
-        # Get Tailscale peers via `tailscale status --json`
-        ts_peers = await self._get_tailscale_peers()
-        if not ts_peers:
-            return
+        # Collect missing nodes from multiple sources
+        missing_nodes: list[tuple[str, str]] = []
+        seen_hosts: set[str] = set()
 
-        # Find compute nodes not in P2P network
-        missing_nodes = self._find_missing_compute_nodes(ts_peers, current_peers)
+        # Source 1: Tailscale status
+        ts_peers = await self._get_tailscale_peers()
+        if ts_peers:
+            ts_missing = self._find_missing_compute_nodes(ts_peers, current_peers)
+            for hostname, ip in ts_missing:
+                if hostname not in seen_hosts:
+                    missing_nodes.append((hostname, ip))
+                    seen_hosts.add(hostname)
+
+        # Source 2: YAML fallback (Jan 2026)
+        # Use YAML fallback in bootstrap mode OR when Tailscale returned no peers
+        use_yaml_fallback = (
+            self.config.yaml_fallback_enabled
+            and (self._current_mode == "bootstrap" or not ts_peers)
+        )
+        if use_yaml_fallback:
+            yaml_missing = await self._probe_yaml_hosts(current_peers)
+            for hostname, ip in yaml_missing:
+                if hostname not in seen_hosts:
+                    missing_nodes.append((hostname, ip))
+                    seen_hosts.add(hostname)
+
         if not missing_nodes:
             return
 
         self._nodes_discovered += len(missing_nodes)
+        sources = []
+        if ts_peers:
+            sources.append("tailscale")
+        if use_yaml_fallback:
+            sources.append("yaml")
         logger.info(
             f"[TailscalePeerDiscovery] Found {len(missing_nodes)} compute nodes "
-            f"not in P2P network"
+            f"not in P2P network (sources: {', '.join(sources)})"
         )
 
         # Attempt to connect to missing nodes
@@ -746,6 +779,86 @@ class TailscalePeerDiscoveryLoop(BaseLoop):
                 continue
 
             missing.append((hostname, ip))
+
+        return missing
+
+    def _get_yaml_hosts_path(self) -> Path | None:
+        """Get path to distributed_hosts.yaml, auto-detecting if needed."""
+        if self.config.yaml_fallback_path:
+            return Path(self.config.yaml_fallback_path)
+
+        # Auto-detect: Try common locations
+        candidates = [
+            Path(__file__).parent.parent.parent.parent / "config" / "distributed_hosts.yaml",
+            Path.home() / "ringrift" / "ai-service" / "config" / "distributed_hosts.yaml",
+            Path("/workspace/ringrift/ai-service/config/distributed_hosts.yaml"),
+        ]
+        for path in candidates:
+            if path.exists():
+                return path
+        return None
+
+    def _load_yaml_hosts(self) -> list[tuple[str, str]]:
+        """Load hosts from distributed_hosts.yaml.
+
+        Returns:
+            List of (hostname, tailscale_ip) tuples for enabled hosts
+        """
+        yaml_path = self._get_yaml_hosts_path()
+        if not yaml_path or not yaml_path.exists():
+            return []
+
+        try:
+            import yaml
+            with open(yaml_path) as f:
+                config = yaml.safe_load(f)
+
+            hosts = []
+            for host in config.get("hosts", []):
+                name = host.get("name", "")
+                tailscale_ip = host.get("tailscale_ip", "")
+                enabled = host.get("enabled", True)
+
+                if name and tailscale_ip and enabled:
+                    hosts.append((name, tailscale_ip))
+
+            return hosts
+        except Exception as e:
+            logger.debug(f"[TailscalePeerDiscovery] Failed to load YAML: {e}")
+            return []
+
+    async def _probe_yaml_hosts(self, current_peers: set[str]) -> list[tuple[str, str]]:
+        """Find and probe hosts from YAML that aren't in P2P network.
+
+        January 2026: This provides an alternative discovery path when
+        Tailscale status doesn't show all peers (common in container/userspace mode).
+
+        Returns:
+            List of (hostname, ip) for hosts that should be connected
+        """
+        yaml_hosts = self._load_yaml_hosts()
+        if not yaml_hosts:
+            return []
+
+        missing = []
+        for hostname, ip in yaml_hosts:
+            # Skip if already in P2P network
+            if hostname in current_peers:
+                continue
+            if hostname.replace("-", "_") in current_peers:
+                continue
+
+            # Skip if this is ourselves (crude check)
+            if ip.startswith("127.") or ip == "0.0.0.0":
+                continue
+
+            missing.append((hostname, ip))
+
+        if missing:
+            logger.info(
+                f"[TailscalePeerDiscovery] YAML fallback found {len(missing)} "
+                f"hosts not in P2P network"
+            )
 
         return missing
 
