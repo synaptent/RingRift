@@ -146,6 +146,8 @@ if PYSYNCOBJ_AVAILABLE:
             # Replicated data structures
             self._work_items: _ReplDict[str, dict[str, Any]] = _ReplDict()
             self._claimed_work: _ReplDict[str, str] = _ReplDict()  # work_id -> node_id
+            # Jan 2, 2026: Store auto_unlock_time for __setstate__ reconstruction
+            self._auto_unlock_time = auto_unlock_time
             self._lock_manager = _ReplLockManager(autoUnlockTime=auto_unlock_time)
 
         @property
@@ -165,6 +167,34 @@ if PYSYNCOBJ_AVAILABLE:
         def leader_address(self) -> str | None:
             """Get the current leader's address."""
             return self._getLeader()
+
+        def __getstate__(self) -> dict:
+            """Exclude unpicklable ReplLockManager during serialization.
+
+            Jan 2, 2026: Fix for pysyncobj serialization error:
+            "TypeError: cannot pickle '_thread.lock' object"
+
+            The _lock_manager from pysyncobj.batteries.ReplLockManager contains
+            threading locks that cannot be pickled. We exclude it during
+            serialization and recreate it during deserialization.
+            """
+            state = self.__dict__.copy()
+            # Remove unpicklable lock manager
+            state.pop("_lock_manager", None)
+            return state
+
+        def __setstate__(self, state: dict) -> None:
+            """Recreate ReplLockManager after deserialization.
+
+            Jan 2, 2026: Companion to __getstate__ for Raft snapshot restore.
+            """
+            self.__dict__.update(state)
+            # Recreate lock manager with same auto-unlock time
+            auto_unlock_time = getattr(self, "_auto_unlock_time", RAFT_AUTO_UNLOCK_TIME)
+            if _ReplLockManager is not None:
+                self._lock_manager = _ReplLockManager(autoUnlockTime=auto_unlock_time)
+            else:
+                self._lock_manager = None
 
         @_replicated
         def add_work(
@@ -595,9 +625,24 @@ class ConsensusMixin(P2PMixinBase):
         Dec 30, 2025: Now checks RaftInitState to prevent using Raft during
         initialization when objects may not be ready.
 
+        Jan 2, 2026: Added consecutive failure tracking. After 3 consecutive
+        Raft failures, Raft is disabled until manually reset or the P2P
+        orchestrator restarts.
+
         Returns:
             True if Raft should be used, False to fall back to SQLite
         """
+        # Jan 2, 2026: Check for consecutive failures first
+        raft_failure_count = getattr(self, "_raft_consecutive_failures", 0)
+        if raft_failure_count >= 3:
+            # Log at debug to avoid spam
+            if raft_failure_count == 3:
+                logger.warning(
+                    f"Raft disabled: {raft_failure_count} consecutive failures "
+                    "(falling back to SQLite)"
+                )
+            return False
+
         # Check state machine first (more accurate than legacy flag)
         init_state = getattr(self, "_raft_init_state", RaftInitState.NOT_STARTED)
         if init_state != RaftInitState.READY:
@@ -618,6 +663,27 @@ class ConsensusMixin(P2PMixinBase):
             return True
 
         return False
+
+    def _track_raft_failure(self, error: Exception) -> None:
+        """Track a Raft operation failure.
+
+        Jan 2, 2026: Part of failure tracking system to auto-disable Raft
+        after repeated failures (likely due to serialization or network issues).
+        """
+        self._raft_consecutive_failures = getattr(self, "_raft_consecutive_failures", 0) + 1
+        logger.warning(
+            f"Raft failure #{self._raft_consecutive_failures}: {error}"
+        )
+
+    def _reset_raft_failures(self) -> None:
+        """Reset Raft failure counter after a successful operation.
+
+        Jan 2, 2026: Called after successful Raft operations to reset the
+        failure counter, allowing Raft to be re-enabled after transient issues.
+        """
+        if getattr(self, "_raft_consecutive_failures", 0) > 0:
+            logger.info("Raft operation succeeded, resetting failure counter")
+        self._raft_consecutive_failures = 0
 
     def claim_work_distributed(
         self,
@@ -663,6 +729,8 @@ class ConsensusMixin(P2PMixinBase):
             # Get pending work
             pending = raft_wq.get_pending_work(capabilities)
             if not pending:
+                # Jan 2, 2026: Reset failures on successful operation
+                self._reset_raft_failures()
                 return None
 
             # Try to claim the highest priority item
@@ -673,11 +741,15 @@ class ConsensusMixin(P2PMixinBase):
                         f"[Raft] Node {node_id} claimed work {work_id} "
                         f"(type={item['work_type']}, priority={item['priority']})"
                     )
+                    # Jan 2, 2026: Reset failures on successful claim
+                    self._reset_raft_failures()
                     return item
 
             return None
 
         except Exception as e:
+            # Jan 2, 2026: Track Raft failure for auto-disable
+            self._track_raft_failure(e)
             logger.error(f"Raft claim_work failed: {e}, falling back to SQLite")
             return self._claim_work_sqlite(node_id, capabilities)
 

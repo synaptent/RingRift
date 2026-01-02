@@ -78,6 +78,7 @@ WORK_QUEUE_ROUTES = [
     Route("GET", "/work/node/{node_id}", "handle_work_for_node"),
     Route("POST", "/work/cancel", "handle_work_cancel"),
     Route("GET", "/work/history", "handle_work_history"),
+    Route("GET", "/dispatch/stats", "handle_dispatch_stats"),  # Jan 2, 2026
 ]
 
 # ===========================================================================

@@ -35,6 +35,7 @@ import logging
 import math
 import os
 import re
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -115,6 +116,13 @@ class TrainingTriggerConfig:
     # Independent watchdog kills training jobs that exceed this limit
     # This catches hung processes even if the daemon restarts
     training_timeout_hours: float = 4.0
+    # January 2, 2026: Graceful shutdown timeout - send SIGTERM first, wait this long,
+    # then SIGKILL if process still running. Prevents checkpoint corruption.
+    graceful_kill_timeout_seconds: float = 30.0
+    # January 2, 2026: Maximum duration for evaluation backpressure before auto-recovery.
+    # If EVALUATION_BACKPRESSURE_RELEASED event is lost/never received, training resumes
+    # automatically after this timeout to prevent indefinite training pauses.
+    backpressure_max_duration_seconds: float = 1800.0  # 30 minutes
     # Check interval for periodic scans
     # December 29, 2025: Reduced from 120s to 30s for faster detection
     scan_interval_seconds: int = 30  # 30 seconds
@@ -2873,22 +2881,14 @@ class TrainingTriggerDaemon(HandlerBase):
             )
 
             # Kill the training process if we have a PID
+            # January 2, 2026: Use graceful shutdown - SIGTERM first to allow checkpoint save,
+            # then SIGKILL after grace period if still running
             if state.training_pid is not None:
-                try:
-                    os.kill(state.training_pid, 9)  # SIGKILL
-                    self._timeout_stats["processes_killed"] += 1
-                    logger.info(
-                        f"[TrainingTriggerDaemon] Killed timed-out training process "
-                        f"PID {state.training_pid} for {config_key}"
-                    )
-                except ProcessLookupError:
-                    logger.debug(
-                        f"[TrainingTriggerDaemon] Process {state.training_pid} already dead"
-                    )
-                except PermissionError:
-                    logger.error(
-                        f"[TrainingTriggerDaemon] Permission denied killing PID {state.training_pid}"
-                    )
+                await self._graceful_kill_process(
+                    state.training_pid,
+                    config_key,
+                    grace_seconds=self.config.graceful_kill_timeout_seconds,
+                )
 
             # Reset state
             state.training_in_progress = False
@@ -2904,6 +2904,72 @@ class TrainingTriggerDaemon(HandlerBase):
 
             # Emit training failed event
             await self._emit_training_failed(config_key, "timeout")
+
+    async def _graceful_kill_process(
+        self, pid: int, config_key: str, grace_seconds: float = 30.0
+    ) -> None:
+        """Gracefully kill a training process - SIGTERM first, then SIGKILL.
+
+        January 2, 2026: Added to prevent model checkpoint corruption during timeout.
+        Sends SIGTERM first to allow the training process to save checkpoints,
+        waits up to grace_seconds, then sends SIGKILL if still running.
+
+        Args:
+            pid: Process ID to kill
+            config_key: Config key for logging
+            grace_seconds: Time to wait between SIGTERM and SIGKILL
+        """
+        try:
+            # First, send SIGTERM for graceful shutdown
+            os.kill(pid, signal.SIGTERM)
+            logger.info(
+                f"[TrainingTriggerDaemon] Sent SIGTERM to training process "
+                f"PID {pid} for {config_key}, waiting {grace_seconds}s for graceful exit"
+            )
+
+            # Wait for process to exit gracefully
+            start_wait = time.time()
+            while time.time() - start_wait < grace_seconds:
+                try:
+                    # Check if process still exists (os.kill with signal 0 checks existence)
+                    os.kill(pid, 0)
+                    await asyncio.sleep(1.0)  # Check every second
+                except ProcessLookupError:
+                    # Process has exited gracefully
+                    logger.info(
+                        f"[TrainingTriggerDaemon] Training process PID {pid} "
+                        f"exited gracefully after SIGTERM for {config_key}"
+                    )
+                    self._timeout_stats["processes_killed"] += 1
+                    return
+
+            # Process still running after grace period - send SIGKILL
+            try:
+                os.kill(pid, signal.SIGKILL)
+                self._timeout_stats["processes_killed"] += 1
+                logger.warning(
+                    f"[TrainingTriggerDaemon] Sent SIGKILL to training process "
+                    f"PID {pid} for {config_key} (did not exit after {grace_seconds}s SIGTERM)"
+                )
+            except ProcessLookupError:
+                # Process exited between our check and SIGKILL - that's fine
+                logger.info(
+                    f"[TrainingTriggerDaemon] Training process PID {pid} "
+                    f"exited just before SIGKILL for {config_key}"
+                )
+
+        except ProcessLookupError:
+            logger.debug(
+                f"[TrainingTriggerDaemon] Process {pid} already dead for {config_key}"
+            )
+        except PermissionError:
+            logger.error(
+                f"[TrainingTriggerDaemon] Permission denied killing PID {pid} for {config_key}"
+            )
+        except OSError as e:
+            logger.error(
+                f"[TrainingTriggerDaemon] OS error killing PID {pid} for {config_key}: {e}"
+            )
 
     async def _emit_training_failed(self, config_key: str, reason: str) -> None:
         """Emit TRAINING_FAILED event for timed-out or errored training."""
@@ -2939,6 +3005,10 @@ class TrainingTriggerDaemon(HandlerBase):
         # December 29, 2025 (Phase 2): Check for timed-out training jobs
         await self._check_training_timeouts()
 
+        # January 2, 2026: Check for backpressure recovery timeout
+        # If backpressure has been active too long, auto-release to prevent indefinite pause
+        await self._check_backpressure_recovery_timeout()
+
         # December 29, 2025 (Phase 3): Process pending training retries
         await self._process_training_retry_queue()
 
@@ -2949,6 +3019,56 @@ class TrainingTriggerDaemon(HandlerBase):
         now = time.time()
         if now - self._last_state_save >= self.config.state_save_interval_seconds:
             self._save_state()
+
+    async def _check_backpressure_recovery_timeout(self) -> None:
+        """Check if evaluation backpressure has exceeded max duration and auto-release.
+
+        January 2, 2026: Added to prevent indefinite training pause if
+        EVALUATION_BACKPRESSURE_RELEASED event is lost or never received.
+        """
+        if not self._evaluation_backpressure:
+            return
+
+        last_backpressure = self._backpressure_stats.get("last_backpressure_time", 0)
+        if last_backpressure <= 0:
+            return
+
+        now = time.time()
+        duration = now - last_backpressure
+
+        if duration >= self.config.backpressure_max_duration_seconds:
+            self._evaluation_backpressure = False
+            self._backpressure_stats["resumes_after_backpressure"] += 1
+            self._backpressure_stats["auto_recovery_count"] = (
+                self._backpressure_stats.get("auto_recovery_count", 0) + 1
+            )
+
+            duration_minutes = duration / 60
+            max_minutes = self.config.backpressure_max_duration_seconds / 60
+            logger.warning(
+                f"[TrainingTriggerDaemon] Auto-released evaluation backpressure after "
+                f"{duration_minutes:.1f}m (max: {max_minutes:.0f}m). "
+                f"Training RESUMED - possible lost BACKPRESSURE_RELEASED event."
+            )
+
+            # Emit an event for visibility
+            try:
+                from app.distributed.data_events import DataEventType
+
+                bus = self._get_event_bus()
+                if bus:
+                    bus.publish_sync(
+                        "training_backpressure_auto_released",
+                        {
+                            "duration_seconds": duration,
+                            "max_duration_seconds": self.config.backpressure_max_duration_seconds,
+                            "auto_recovery_count": self._backpressure_stats["auto_recovery_count"],
+                            "timestamp": now,
+                            "source": "TrainingTriggerDaemon",
+                        },
+                    )
+            except Exception:
+                pass  # Event emission is optional
 
     async def _scan_for_training_opportunities(self) -> None:
         """Scan for configs that may need training."""

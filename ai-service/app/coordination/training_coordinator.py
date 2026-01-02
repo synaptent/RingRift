@@ -225,6 +225,11 @@ class TrainingCoordinator:
         self._last_sync_time: float = 0.0
         self._config_sync_times: dict[str, float] = {}
 
+        # January 2, 2026: Lock failure tracking for escalation
+        # Tracks consecutive lock failures per config to detect persistent issues
+        self._lock_failure_counts: dict[str, int] = {}
+        self._lock_failure_escalation_threshold: int = 3  # Escalate after 3 consecutive failures
+
         # Register with coordinator registries
         # 1. Protocol-level registration (for runtime discovery)
         register_coordinator(self)
@@ -1539,14 +1544,34 @@ class TrainingCoordinator:
 
         if not lock_acquired:
             logger.error(f"Could not acquire distributed lock for {config_key} after {len(lock_timeouts)} attempts")
+
+            # January 2, 2026: Track consecutive lock failures for escalation
+            self._lock_failure_counts[config_key] = self._lock_failure_counts.get(config_key, 0) + 1
+            consecutive_failures = self._lock_failure_counts[config_key]
+
             # Emit failure event for monitoring
             self._emit_slot_unavailable(
                 board_type=board_type,
                 num_players=num_players,
                 reason="lock_failed",
                 attempts=len(lock_timeouts),
+                consecutive_failures=consecutive_failures,
             )
+
+            # January 2, 2026: Escalate if threshold exceeded
+            if consecutive_failures >= self._lock_failure_escalation_threshold:
+                self._escalate_lock_failure(
+                    config_key=config_key,
+                    board_type=board_type,
+                    num_players=num_players,
+                    consecutive_failures=consecutive_failures,
+                )
+
             return None
+
+        # January 2, 2026: Reset failure count on successful lock acquisition
+        if config_key in self._lock_failure_counts:
+            del self._lock_failure_counts[config_key]
 
         # Emit lock acquired event for monitoring (December 2025 - Phase 14)
         self._emit_training_event(
@@ -1831,6 +1856,58 @@ class TrainingCoordinator:
         )
         logger.debug(
             f"Emitted TRAINING_SLOT_UNAVAILABLE for {board_type}_{num_players}p: {reason}"
+        )
+
+    def _escalate_lock_failure(
+        self,
+        config_key: str,
+        board_type: str,
+        num_players: int,
+        consecutive_failures: int,
+    ) -> None:
+        """Escalate repeated lock acquisition failures.
+
+        January 2, 2026: Added to surface persistent lock issues that may indicate
+        infrastructure problems (dead locks, stale lock holders, network partitions).
+
+        This method:
+        1. Emits a high-severity TRAINING_LOCK_ESCALATION event
+        2. Logs at ERROR level for operator visibility
+        3. Increments error counters for health monitoring
+
+        Args:
+            config_key: Config key (e.g., "hex8_2p")
+            board_type: Board type
+            num_players: Number of players
+            consecutive_failures: Number of consecutive lock failures
+        """
+        self._errors_count += 1
+        self._last_error = f"Lock escalation for {config_key}: {consecutive_failures} consecutive failures"
+
+        logger.error(
+            f"[TrainingCoordinator] ESCALATION: {consecutive_failures} consecutive lock "
+            f"failures for {config_key}. Possible causes: dead lock holder, network "
+            f"partition, stale NFS lock. Investigation required."
+        )
+
+        self._emit_via_router(
+            "TRAINING_LOCK_ESCALATION",
+            {
+                "config_key": config_key,
+                "board_type": board_type,
+                "num_players": num_players,
+                "consecutive_failures": consecutive_failures,
+                "escalation_threshold": self._lock_failure_escalation_threshold,
+                "node_name": self._node_name,
+                "timestamp": time.time(),
+                "severity": "high",
+                "suggested_actions": [
+                    "Check for stale lock files in NFS",
+                    "Verify lock holder node is alive",
+                    "Check network connectivity",
+                    "Consider manual lock cleanup if holder is dead",
+                ],
+            },
         )
 
     def _emit_via_router(self, event_type: str, payload: dict[str, Any]) -> None:

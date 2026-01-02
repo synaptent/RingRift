@@ -346,7 +346,7 @@ class WorkItem:
             return False
         return not self.attempts >= self.max_attempts
 
-    def has_pending_dependencies(self, completed_ids: set) -> bool:
+    def has_pending_dependencies(self, completed_ids: set[str]) -> bool:
         """Check if any dependencies are not yet completed.
 
         Args:
@@ -366,6 +366,70 @@ class WorkItem:
         if self.claimed_at == 0:
             return False
         return time.time() - self.claimed_at > self.timeout_seconds
+
+
+@dataclass
+class ClaimRejectionStats:
+    """Track why jobs are not being dispatched to improve observability.
+
+    Jan 2, 2026: Added to diagnose GPU node idle issues where jobs queue
+    but never dispatch. Jobs pass through 7 filtering gates in claim_work()
+    that can silently reject them.
+    """
+
+    total_claim_attempts: int = 0
+    rejected_by_capability: int = 0
+    rejected_by_exclusion: int = 0
+    rejected_by_target_node: int = 0
+    rejected_by_target_node_expired: int = 0  # target_node was cleared due to expiration
+    rejected_by_requires_gpu: int = 0
+    rejected_by_policy: int = 0
+    rejected_by_already_claimed: int = 0
+    successful_claims: int = 0
+
+    # Track which target_nodes are being rejected most often
+    target_node_rejections: dict[str, int] = field(default_factory=dict)
+
+    # Timestamp of last reset (for rate calculations)
+    last_reset_at: float = field(default_factory=time.time)
+
+    def increment_target_node_rejection(self, target_node: str) -> None:
+        """Track rejection by specific target_node."""
+        self.rejected_by_target_node += 1
+        self.target_node_rejections[target_node] = (
+            self.target_node_rejections.get(target_node, 0) + 1
+        )
+
+    def reset(self) -> None:
+        """Reset all counters."""
+        self.total_claim_attempts = 0
+        self.rejected_by_capability = 0
+        self.rejected_by_exclusion = 0
+        self.rejected_by_target_node = 0
+        self.rejected_by_target_node_expired = 0
+        self.rejected_by_requires_gpu = 0
+        self.rejected_by_policy = 0
+        self.rejected_by_already_claimed = 0
+        self.successful_claims = 0
+        self.target_node_rejections.clear()
+        self.last_reset_at = time.time()
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dict for JSON serialization."""
+        return {
+            "total_claim_attempts": self.total_claim_attempts,
+            "rejected_by_capability": self.rejected_by_capability,
+            "rejected_by_exclusion": self.rejected_by_exclusion,
+            "rejected_by_target_node": self.rejected_by_target_node,
+            "rejected_by_target_node_expired": self.rejected_by_target_node_expired,
+            "rejected_by_requires_gpu": self.rejected_by_requires_gpu,
+            "rejected_by_policy": self.rejected_by_policy,
+            "rejected_by_already_claimed": self.rejected_by_already_claimed,
+            "successful_claims": self.successful_claims,
+            "target_node_rejections": self.target_node_rejections.copy(),
+            "last_reset_at": self.last_reset_at,
+            "elapsed_seconds": time.time() - self.last_reset_at,
+        }
 
 
 class WorkQueue:
@@ -446,6 +510,9 @@ class WorkQueue:
             "last_activation_at": 0.0,
             "last_rejection_at": 0.0,
         }
+
+        # Jan 2, 2026: Claim rejection tracking for dispatch observability
+        self._claim_rejection_stats = ClaimRejectionStats()
 
         # Database initialization is now lazy - deferred to first use
         # This allows importing the module on read-only filesystems
@@ -553,6 +620,24 @@ class WorkQueue:
             "raft_leader_address": raft_stats.get("leader_address"),
             "raft_is_ready": raft_stats.get("is_ready", False),
         }
+
+    def get_claim_rejection_stats(self) -> dict[str, Any]:
+        """Get claim rejection statistics for debugging job dispatch issues.
+
+        Jan 2, 2026: Added for /dispatch/stats endpoint to diagnose why
+        GPU nodes are idle despite jobs being queued.
+
+        Returns:
+            Dictionary with claim rejection breakdown by filter type.
+        """
+        return self._claim_rejection_stats.to_dict()
+
+    def reset_claim_rejection_stats(self) -> None:
+        """Reset claim rejection statistics.
+
+        Jan 2, 2026: Call periodically to get fresh rate data.
+        """
+        self._claim_rejection_stats.reset()
 
     def _init_db(self) -> None:
         """Initialize SQLite database for work queue persistence.
@@ -1183,6 +1268,9 @@ class WorkQueue:
             return self._claim_work_raft(node_id, capabilities)
 
         with self.lock:
+            # Jan 2, 2026: Track claim attempts for observability
+            self._claim_rejection_stats.total_claim_attempts += 1
+
             # Get set of completed work_ids for dependency checking
             completed_ids = {
                 item.work_id for item in self.items.values()
@@ -1207,20 +1295,40 @@ class WorkQueue:
 
                 # Check capabilities
                 if capabilities and work_type not in capabilities:
+                    self._claim_rejection_stats.rejected_by_capability += 1
                     continue
 
                 # Check if this node is excluded (set by JobReaperDaemon for failed nodes)
                 excluded_nodes = item.config.get("_excluded_nodes", [])
                 if node_id in excluded_nodes:
+                    self._claim_rejection_stats.rejected_by_exclusion += 1
                     logger.debug(f"Node {node_id} excluded from {item.work_id}")
                     continue
 
-                # Dec 29, 2025: Check target_node hint (for NAT-blocked node work distribution)
+                # Jan 2, 2026: Check target_node with expiration support
                 # If work was queued for a specific node, only that node can claim it
+                # BUT if target_node_expires_at is set and expired, clear the target_node
                 target_node = item.config.get("target_node")
-                if target_node and target_node != node_id:
-                    logger.debug(f"Work {item.work_id} targeted for {target_node}, not {node_id}")
-                    continue
+                target_node_expires_at = item.config.get("target_node_expires_at", 0)
+
+                if target_node:
+                    now = time.time()
+                    if target_node_expires_at > 0 and now > target_node_expires_at:
+                        # Target node assignment has expired - clear it so any node can claim
+                        logger.info(
+                            f"Work {item.work_id} target_node {target_node} expired "
+                            f"(expired {now - target_node_expires_at:.0f}s ago), clearing"
+                        )
+                        item.config.pop("target_node", None)
+                        item.config.pop("target_node_expires_at", None)
+                        self._claim_rejection_stats.rejected_by_target_node_expired += 1
+                        # Continue to let this or any node claim it now
+                        self._save_item(item)
+                    elif target_node != node_id:
+                        # Not expired and wrong node - reject
+                        self._claim_rejection_stats.increment_target_node_rejection(target_node)
+                        logger.debug(f"Work {item.work_id} targeted for {target_node}, not {node_id}")
+                        continue
 
                 # Dec 30, 2025: Check requires_gpu flag to prevent CPU-only/coordinator nodes
                 # from claiming GPU-intensive work (selfplay should run on cluster GPU nodes)
@@ -1233,6 +1341,7 @@ class WorkQueue:
                         node_id.lower().startswith(prefix) for prefix in coordinator_prefixes
                     )
                     if is_coordinator:
+                        self._claim_rejection_stats.rejected_by_requires_gpu += 1
                         logger.debug(
                             f"Work {item.work_id} requires GPU, skipping coordinator {node_id}"
                         )
@@ -1240,6 +1349,7 @@ class WorkQueue:
 
                 # Check policy
                 if self.policy_manager and not self.policy_manager.is_work_allowed(node_id, work_type):
+                    self._claim_rejection_stats.rejected_by_policy += 1
                     logger.debug(f"Policy denies {work_type} on {node_id}")
                     continue
 
@@ -1251,10 +1361,12 @@ class WorkQueue:
                     item.claimed_by = node_id
                     item.claimed_at = claimed_at
                     item.attempts += 1
+                    self._claim_rejection_stats.successful_claims += 1
                     logger.info(f"Work {item.work_id} claimed by {node_id}: {work_type}")
                     return item
                 else:
                     # Another worker claimed it first, skip to next
+                    self._claim_rejection_stats.rejected_by_already_claimed += 1
                     logger.debug(f"Work {item.work_id} already claimed, skipping")
                     continue
 

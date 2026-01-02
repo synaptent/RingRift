@@ -550,3 +550,44 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
         except Exception as e:
             logger.error(f"Error getting work history: {e}")
             return self.error_response(str(e), status=500)
+
+    async def handle_dispatch_stats(self, request: web.Request) -> web.Response:
+        """Get dispatch/claim rejection statistics for debugging job dispatch issues.
+
+        Jan 2, 2026: Added to diagnose why GPU nodes are idle despite jobs
+        being queued. Returns breakdown of why claim_work() is rejecting jobs.
+
+        Query params:
+            reset: If "true", reset stats after returning current values
+        """
+        try:
+            wq = get_work_queue()
+            if wq is None:
+                return self._work_queue_unavailable()
+
+            # Get claim rejection stats
+            rejection_stats = wq.get_claim_rejection_stats()
+
+            # Get queue stats for context
+            queue_stats = wq.get_queue_stats()
+
+            # Optionally reset stats
+            if request.query.get("reset", "").lower() == "true":
+                wq.reset_claim_rejection_stats()
+
+            return self.json_response({
+                "claim_rejection_stats": rejection_stats,
+                "queue_stats": {
+                    "pending": queue_stats.get("pending", 0),
+                    "claimed": queue_stats.get("claimed", 0),
+                    "running": queue_stats.get("running", 0),
+                    "completed": queue_stats.get("completed", 0),
+                    "failed": queue_stats.get("failed", 0),
+                    "total_items": queue_stats.get("total_items", 0),
+                },
+                "is_leader": self.is_leader,
+                "leader_id": self.leader_id,
+            })
+        except Exception as e:
+            logger.error(f"Error getting dispatch stats: {e}")
+            return self.error_response(str(e), status=500)
