@@ -2098,6 +2098,40 @@ async def create_s3_consolidation() -> None:
         raise
 
 
+async def create_unified_backup() -> None:
+    """Create and run unified backup daemon (January 2026).
+
+    Backs up all selfplay games to OWC external drive and S3.
+    Uses GameDiscovery to find databases from all storage patterns.
+    """
+    try:
+        from app.coordination.unified_backup_daemon import UnifiedBackupDaemon
+
+        daemon = UnifiedBackupDaemon()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"UnifiedBackupDaemon not available: {e}")
+        raise
+
+
+async def create_s3_push() -> None:
+    """Create and run S3 push daemon (January 2026).
+
+    Pushes all game databases, training NPZ files, and models to S3
+    for backup and cluster-wide access.
+    """
+    try:
+        from app.coordination.s3_push_daemon import S3PushDaemon
+
+        daemon = S3PushDaemon()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"S3PushDaemon not available: {e}")
+        raise
+
+
 async def create_distillation() -> None:
     """Create and run distillation daemon."""
     try:
@@ -2697,6 +2731,8 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.S3_BACKUP.name: create_s3_backup,
         DaemonType.S3_NODE_SYNC.name: create_s3_node_sync,
         DaemonType.S3_CONSOLIDATION.name: create_s3_consolidation,
+        DaemonType.UNIFIED_BACKUP.name: create_unified_backup,  # Jan 2026: OWC + S3 backup
+        DaemonType.S3_PUSH.name: create_s3_push,  # Jan 2026: S3 backup push
         DaemonType.DISTILLATION.name: create_distillation,
         DaemonType.EXTERNAL_DRIVE_SYNC.name: create_external_drive_sync,
         DaemonType.VAST_CPU_PIPELINE.name: create_vast_cpu_pipeline,

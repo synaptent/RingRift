@@ -237,6 +237,9 @@ class P2PClusterDeployer:
     ) -> tuple[bool, str]:
         """Kill existing p2p_orchestrator processes on node.
 
+        Also kills supervisor and keepalive processes that might restart the orchestrator.
+        Uses SIGTERM first, then SIGKILL as fallback if processes don't terminate.
+
         Args:
             node_id: Node identifier
             client: SSH client for the node
@@ -247,16 +250,34 @@ class P2PClusterDeployer:
         if self.dry_run:
             return True, "[DRY-RUN] Would kill existing p2p_orchestrator"
 
-        logger.debug(f"[{node_id}] Killing existing p2p_orchestrator processes...")
+        logger.debug(f"[{node_id}] Killing existing P2P processes (orchestrator, supervisor, keepalive, systemd)...")
 
-        # Find and kill p2p_orchestrator processes
-        cmd = (
+        # Step 1: Stop systemd service if it exists (prevents restarts)
+        # Use kill mode to force immediate stop without waiting for graceful shutdown
+        # Bypass circuit breaker since we must execute this for deployment
+        cmd_stop_systemd = (
+            "systemctl kill --signal=SIGKILL ringrift-p2p 2>/dev/null || true; "
+            "systemctl stop ringrift-p2p 2>/dev/null || true; "
+            "systemctl disable ringrift-p2p 2>/dev/null || true"
+        )
+        await client.run_async(cmd_stop_systemd, timeout=60, bypass_circuit_breaker=True)
+
+        # Step 2: Kill supervisor and keepalive to prevent restarts
+        cmd_kill_managers = (
+            "pkill -9 -f 'p2p_supervisor' 2>/dev/null || true; "
+            "pkill -9 -f 'p2p_keepalive' 2>/dev/null || true; "
+            "sleep 1"
+        )
+        await client.run_async(cmd_kill_managers, timeout=30, bypass_circuit_breaker=True)
+
+        # Step 3: Try graceful SIGTERM for orchestrator, wait 5 seconds
+        cmd_sigterm = (
             "pkill -f 'python.*p2p_orchestrator' || true; "
-            "sleep 1; "
+            "sleep 5; "
             "pgrep -f 'python.*p2p_orchestrator' | wc -l"
         )
 
-        result = await client.run_async(cmd, timeout=30)
+        result = await client.run_async(cmd_sigterm, timeout=60, bypass_circuit_breaker=True)
 
         if not result.success:
             return False, f"Failed to kill processes: {result.stderr}"
@@ -265,8 +286,26 @@ class P2PClusterDeployer:
         remaining = result.stdout.strip()
         if remaining == "0":
             return True, "Killed existing processes (if any)"
+
+        # Step 4: Processes still running - use SIGKILL
+        logger.warning(f"[{node_id}] {remaining} processes still running after SIGTERM, using SIGKILL...")
+
+        cmd_sigkill = (
+            "pkill -9 -f 'python.*p2p_orchestrator' || true; "
+            "sleep 3; "
+            "pgrep -f 'python.*p2p_orchestrator' | wc -l"
+        )
+
+        result = await client.run_async(cmd_sigkill, timeout=30, bypass_circuit_breaker=True)
+
+        if not result.success:
+            return False, f"Failed to SIGKILL processes: {result.stderr}"
+
+        remaining = result.stdout.strip()
+        if remaining == "0":
+            return True, "Killed existing processes with SIGKILL"
         else:
-            return False, f"{remaining} processes still running after kill attempt"
+            return False, f"{remaining} processes still running after SIGKILL"
 
     async def start_p2p_orchestrator(
         self,
@@ -394,7 +433,7 @@ class P2PClusterDeployer:
         logger.info(f"[{node_id}] Starting deployment...")
 
         try:
-            # Create SSH client
+            # Create SSH client with extended timeouts for high-latency connections
             config = SSHConfig(
                 host=node_config.get("ssh_host", ""),
                 port=node_config.get("ssh_port", 22),
@@ -403,6 +442,9 @@ class P2PClusterDeployer:
                 work_dir=node_config.get("ringrift_path", "~/ringrift/ai-service"),
                 venv_activate=node_config.get("venv_activate"),
                 tailscale_ip=node_config.get("tailscale_ip"),
+                connect_timeout=30,  # Increased for high-latency connections
+                server_alive_interval=10,
+                server_alive_count_max=3,
             )
             client = SSHClient(config)
 

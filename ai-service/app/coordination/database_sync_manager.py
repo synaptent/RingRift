@@ -74,16 +74,18 @@ def _get_ssh_user_for_host(host: str) -> str:
     try:
         from app.config.cluster_config import get_cluster_nodes
 
-        for node in get_cluster_nodes():
+        # get_cluster_nodes() returns dict[str, ClusterNode], iterate values
+        for node in get_cluster_nodes().values():
             # Match by Tailscale IP, SSH host, or name
             if host in (node.tailscale_ip, node.ssh_host, node.name):
                 return node.ssh_user
 
         # Not found in cluster config - default to 'ubuntu' (most common)
-        # Lambda, Nebius, RunPod all use ubuntu
+        # Lambda, Nebius use ubuntu; Hetzner/Vast/RunPod/Vultr use root
         return "ubuntu"
-    except Exception:
+    except Exception as e:
         # Fallback if cluster config unavailable
+        logger.debug(f"Failed to lookup SSH user for {host}: {e}")
         return "ubuntu"
 
 

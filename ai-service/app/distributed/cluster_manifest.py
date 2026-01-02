@@ -693,6 +693,167 @@ class ClusterManifest:
 
         logger.debug(f"Initialized cluster manifest at {self.db_path}")
 
+        # January 2026: Real-time event subscriptions for immediate manifest updates
+        self._subscribed = False
+        self._subscription_ids: list[str] = []
+
+    # =========================================================================
+    # Real-Time Event Subscriptions (January 2026)
+    # =========================================================================
+
+    def subscribe_to_events(self) -> bool:
+        """Subscribe to data events for real-time manifest updates.
+
+        Subscribes to:
+        - NEW_GAMES_AVAILABLE: New games generated locally
+        - GAMES_UPLOADED_TO_S3: Games uploaded to S3
+        - GAMES_UPLOADED_TO_OWC: Games uploaded to OWC drive
+
+        This reduces manifest lag from 5 minutes (gossip interval) to near-real-time
+        for locally-generated data.
+
+        Returns:
+            True if successfully subscribed
+        """
+        if self._subscribed:
+            return True
+
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            if router is None:
+                logger.debug("[ClusterManifest] Event router not available")
+                return False
+
+            # Subscribe to NEW_GAMES_AVAILABLE for local game registrations
+            try:
+                from app.distributed.data_events import DataEventType
+                router.subscribe(
+                    DataEventType.NEW_GAMES_AVAILABLE,
+                    self._on_new_games_available,
+                )
+                logger.debug("[ClusterManifest] Subscribed to NEW_GAMES_AVAILABLE")
+            except ImportError:
+                logger.debug("[ClusterManifest] DataEventType not available")
+
+            # Subscribe to upload completion events (custom string events)
+            router.subscribe("GAMES_UPLOADED_TO_S3", self._on_s3_upload)
+            router.subscribe("GAMES_UPLOADED_TO_OWC", self._on_owc_upload)
+
+            self._subscribed = True
+            logger.info(
+                "[ClusterManifest] Subscribed to real-time events "
+                "(NEW_GAMES_AVAILABLE, GAMES_UPLOADED_TO_S3, GAMES_UPLOADED_TO_OWC)"
+            )
+            return True
+
+        except ImportError as e:
+            logger.debug(f"[ClusterManifest] Event router not importable: {e}")
+            return False
+        except Exception as e:
+            logger.warning(f"[ClusterManifest] Failed to subscribe to events: {e}")
+            return False
+
+    async def _on_new_games_available(self, event: Any) -> None:
+        """Handle NEW_GAMES_AVAILABLE event - register games immediately.
+
+        This bypasses the 5-minute gossip interval for locally-generated games,
+        making them visible in the manifest immediately.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            db_path = payload.get("db_path", "")
+            game_count = payload.get("game_count", 0)
+            board_type = payload.get("board_type")
+            num_players = payload.get("num_players")
+            config_key = payload.get("config_key", "")
+
+            if not db_path:
+                return
+
+            # Register the database immediately
+            self.register_database(
+                db_path=db_path,
+                node_id=self.node_id,
+                board_type=board_type,
+                num_players=num_players,
+                config_key=config_key,
+                game_count=game_count,
+            )
+
+            logger.debug(
+                f"[ClusterManifest] Immediate registration: {db_path} "
+                f"({game_count} games, {config_key or 'unknown config'})"
+            )
+
+        except Exception as e:
+            logger.debug(f"[ClusterManifest] Error handling NEW_GAMES_AVAILABLE: {e}")
+
+    async def _on_s3_upload(self, event: Any) -> None:
+        """Handle GAMES_UPLOADED_TO_S3 event - track S3 upload completion.
+
+        Updates manifest to note that games are now also available in S3.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            db_path = payload.get("db_path", "")
+            s3_key = payload.get("s3_key", "")
+            game_count = payload.get("game_count", 0)
+            config_key = payload.get("config_key", "")
+
+            if not db_path or not s3_key:
+                return
+
+            # Register the S3 location as a virtual node
+            # Use "s3" as node_id to distinguish from cluster nodes
+            self.register_database(
+                db_path=s3_key,
+                node_id="s3",
+                config_key=config_key,
+                game_count=game_count,
+            )
+
+            logger.debug(
+                f"[ClusterManifest] Registered S3 upload: {s3_key} "
+                f"({game_count} games)"
+            )
+
+        except Exception as e:
+            logger.debug(f"[ClusterManifest] Error handling GAMES_UPLOADED_TO_S3: {e}")
+
+    async def _on_owc_upload(self, event: Any) -> None:
+        """Handle GAMES_UPLOADED_TO_OWC event - track OWC upload completion.
+
+        Updates manifest to note that games are now also available on OWC drive.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+            db_path = payload.get("db_path", "")
+            dest_path = payload.get("dest_path", "")
+            game_count = payload.get("game_count", 0)
+            config_key = payload.get("config_key", "")
+
+            if not db_path or not dest_path:
+                return
+
+            # Register the OWC location as a virtual node
+            # Use "owc" as node_id to distinguish from cluster nodes
+            self.register_database(
+                db_path=dest_path,
+                node_id="owc",
+                config_key=config_key,
+                game_count=game_count,
+            )
+
+            logger.debug(
+                f"[ClusterManifest] Registered OWC upload: {dest_path} "
+                f"({game_count} games)"
+            )
+
+        except Exception as e:
+            logger.debug(f"[ClusterManifest] Error handling GAMES_UPLOADED_TO_OWC: {e}")
+
     def _migrate_schema(self, conn: sqlite3.Connection) -> None:
         """Apply schema migrations for existing databases.
 
@@ -2429,11 +2590,24 @@ class ClusterManifest:
 _cluster_manifest: ClusterManifest | None = None
 
 
-def get_cluster_manifest() -> ClusterManifest:
-    """Get the singleton ClusterManifest instance."""
+def get_cluster_manifest(auto_subscribe: bool = True) -> ClusterManifest:
+    """Get the singleton ClusterManifest instance.
+
+    Args:
+        auto_subscribe: If True (default), automatically subscribe to
+            real-time events on first creation. Set to False for testing
+            or when event router is not available.
+
+    Returns:
+        The singleton ClusterManifest instance.
+    """
     global _cluster_manifest
     if _cluster_manifest is None:
         _cluster_manifest = ClusterManifest()
+        if auto_subscribe:
+            # Subscribe to real-time events for immediate manifest updates
+            # This reduces lag from 5 minutes (gossip) to near-real-time
+            _cluster_manifest.subscribe_to_events()
     return _cluster_manifest
 
 

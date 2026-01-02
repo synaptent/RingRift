@@ -850,9 +850,10 @@ class SSHClient:
                 "-o", f"ControlPersist={self._config.control_persist}",
             ])
 
-        # Port
-        if self._config.port != 22:
-            cmd.extend(["-p", str(self._config.port)])
+        # Port - use port 22 for Tailscale IPs, otherwise use configured port
+        effective_port = 22 if use_tailscale else self._config.port
+        if effective_port != 22:
+            cmd.extend(["-p", str(effective_port)])
 
         # Key file
         if self._config.key_path:
@@ -935,7 +936,12 @@ class SSHClient:
             env_str = " ".join(f"{k}={v}" for k, v in env.items())
             remote_cmd = f"{env_str} {remote_cmd}"
         if self._config.venv_activate:
-            remote_cmd = f"source {self._config.venv_activate} && {remote_cmd}"
+            # Handle both "source /path/activate" and just "/path/activate" formats
+            venv = self._config.venv_activate
+            if venv.startswith("source "):
+                remote_cmd = f"{venv} && {remote_cmd}"
+            else:
+                remote_cmd = f"source {venv} && {remote_cmd}"
 
         # Transport fallback chain: Tailscale -> Direct -> Cloudflare
         transports = []
@@ -1180,8 +1186,11 @@ class SSHClient:
             "-o", f"ServerAliveCountMax={self._config.server_alive_count_max}",
             "-o", "BatchMode=yes",
         ]
-        if self._config.port != 22:
-            cmd.extend(["-P", str(self._config.port)])
+        # Use port 22 for Tailscale IPs, otherwise use configured port
+        use_tailscale = self._config.tailscale_ip and target_host == self._config.tailscale_ip
+        effective_port = 22 if use_tailscale else self._config.port
+        if effective_port != 22:
+            cmd.extend(["-P", str(effective_port)])
         if self._config.key_path:
             key_path = os.path.expanduser(self._config.key_path)
             if os.path.exists(key_path):
@@ -1229,8 +1238,11 @@ class SSHClient:
             "-o", f"ServerAliveCountMax={self._config.server_alive_count_max}",
             "-o", "BatchMode=yes",
         ]
-        if self._config.port != 22:
-            cmd.extend(["-P", str(self._config.port)])
+        # Use port 22 for Tailscale IPs, otherwise use configured port
+        use_tailscale = self._config.tailscale_ip and target_host == self._config.tailscale_ip
+        effective_port = 22 if use_tailscale else self._config.port
+        if effective_port != 22:
+            cmd.extend(["-P", str(effective_port)])
         if self._config.key_path:
             key_path = os.path.expanduser(self._config.key_path)
             if os.path.exists(key_path):

@@ -11,9 +11,12 @@ of where they're stored. It handles all known storage patterns:
 6. Unified selfplay: data/selfplay/unified_*/games.db
 7. P2P selfplay: data/selfplay/p2p/{board_type}_{num_players}*/*/games.db
 8. P2P hybrid: data/selfplay/p2p_hybrid/{board_type}_{num_players}/*/games.db
-9. Harvested data: data/training/*/harvested_games.db
-10. OWC imports: data/games/owc_imports/*.db (Dec 30, 2025)
-11. Synced data: data/games/synced/**/*.db (Dec 30, 2025)
+9. P2P GPU selfplay: data/selfplay/p2p_gpu/{board_type}_{num_players}p*/*/games.db (Jan 2026)
+10. Gumbel selfplay: data/selfplay/gumbel/{board_type}_{num_players}p/*/games.db (Jan 2026)
+11. SLURM HPC: data/selfplay/slurm_{board_type}_{num_players}p*/games.db (Jan 2026)
+12. Harvested data: data/training/*/harvested_games.db
+13. OWC imports: data/games/owc_imports/*.db (Dec 30, 2025)
+14. Synced data: data/games/synced/**/*.db (Dec 30, 2025)
 
 Usage:
     from app.utils.game_discovery import GameDiscovery
@@ -138,6 +141,23 @@ class GameDiscovery:
         # P2P hybrid selfplay
         ("data/selfplay/p2p_hybrid/{board_type}_{num_players}p/*/games.db", False),
         ("data/selfplay/p2p_hybrid/{board_type}_{num_players}/*/games.db", False),
+        # P2P GPU selfplay (critical - often has 10-50K games per config)
+        ("data/selfplay/p2p_gpu/{board_type}_{num_players}p/*/games.db", False),
+        ("data/selfplay/p2p_gpu/{board_type}_{num_players}p*/*/games.db", False),
+        ("data/selfplay/p2p_gpu/*/{board_type}_{num_players}p/games.db", False),
+        ("data/selfplay/p2p_gpu/*/{board_type}_{num_players}p*/games.db", False),
+        # Gumbel MCTS selfplay
+        ("data/selfplay/gumbel/{board_type}_{num_players}p/*/games.db", False),
+        ("data/selfplay/gumbel/{board_type}_{num_players}/*/games.db", False),
+        ("data/selfplay/gumbel/*/{board_type}_{num_players}p/games.db", False),
+        # SLURM HPC output
+        ("data/selfplay/slurm_{board_type}_{num_players}p*/games.db", False),
+        ("data/selfplay/slurm_*/{board_type}_{num_players}p/games.db", False),
+        ("data/selfplay/slurm_*/{board_type}_{num_players}p*/games.db", False),
+        # Catch-all patterns for any board/player subdirs (fallback)
+        ("data/selfplay/*/{board_type}_{num_players}p/*/games.db", False),
+        ("data/selfplay/*/*/{board_type}_{num_players}p/games.db", False),
+        ("data/selfplay/*/*/{board_type}_{num_players}p*/games.db", False),
         # Harvested training data
         ("data/training/*/harvested_games.db", True),
         # OWC imports (Dec 30, 2025) - Data imported from OWC external drive
@@ -145,6 +165,15 @@ class GameDiscovery:
         # Synced data from other cluster nodes (Dec 30, 2025)
         ("data/games/synced/*.db", True),
         ("data/games/synced/**/*.db", True),
+        # Remote-fetched databases (Jan 2026) - from RemoteGameFetcher
+        ("data/games/fetched/*.db", True),
+        ("data/games/fetched/**/*.db", True),
+        # S3 downloads (Jan 2026) - from aws s3 cp
+        ("data/games/s3_downloads/*.db", True),
+        ("data/games/s3_downloads/**/*.db", True),
+        # Inter-node cluster sync (Jan 2026)
+        ("data/games/cluster_sync/*.db", True),
+        ("data/games/cluster_sync/**/*.db", True),
         # Legacy patterns
         ("data/games/hex8_*.db", False),
         ("data/games/canonical_*.db", True),

@@ -558,7 +558,10 @@ class EloService:
                     nn_model_path TEXT,
                     ai_algorithm TEXT,
                     algorithm_config TEXT,
-                    is_composite INTEGER DEFAULT 0
+                    is_composite INTEGER DEFAULT 0,
+                    -- January 2026: Only track Elo for deployable models
+                    -- Non-deployable models (ephemeral checkpoints) should not pollute Elo DB
+                    is_deployable INTEGER DEFAULT 0
                 )
             """)
 
@@ -651,6 +654,18 @@ class EloService:
                 conn.execute("ALTER TABLE elo_ratings ADD COLUMN peak_rating REAL DEFAULT 1500.0")
                 logger.info("Migrated elo_ratings: added peak_rating column")
 
+            # January 2026: Add is_deployable column for filtering ephemeral checkpoints
+            cursor = conn.execute("PRAGMA table_info(participants)")
+            participant_columns = {row[1] for row in cursor.fetchall()}
+            if "is_deployable" not in participant_columns:
+                conn.execute("ALTER TABLE participants ADD COLUMN is_deployable INTEGER DEFAULT 0")
+                # Mark existing canonical models as deployable
+                conn.execute("""
+                    UPDATE participants SET is_deployable = 1
+                    WHERE model_path LIKE '%canonical_%' OR model_path LIKE '%ringrift_best_%'
+                """)
+                logger.info("Migrated participants: added is_deployable column")
+
             # Model identity tracking tables (January 2026)
             # Track model files by SHA256 hash for deduplication and alias resolution
             conn.execute("""
@@ -692,18 +707,23 @@ class EloService:
         difficulty: int | None = None,
         use_neural_net: bool = False,
         model_path: str | None = None,
-        metadata: dict | None = None
+        metadata: dict | None = None,
+        is_deployable: bool = False,
     ) -> None:
         """Register a new participant (model or AI baseline).
 
         Note: The `name` parameter is deprecated and ignored. The participant_id
         serves as the display name.
+
+        Args:
+            is_deployable: If True, this participant is eligible for production use.
+                Only deployable models should have persistent Elo tracking.
         """
         with self._transaction() as conn:
             conn.execute("""
                 INSERT OR REPLACE INTO participants
-                (participant_id, ai_type, difficulty, use_neural_net, model_path, created_at, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (participant_id, ai_type, difficulty, use_neural_net, model_path, created_at, metadata, is_deployable)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 participant_id,
                 ai_type,
@@ -711,7 +731,8 @@ class EloService:
                 int(use_neural_net),
                 model_path,
                 time.time(),
-                json.dumps(metadata) if metadata else None
+                json.dumps(metadata) if metadata else None,
+                int(is_deployable),
             ))
 
     # =========================================================================
@@ -882,6 +903,35 @@ class EloService:
             WHERE mi.content_sha256 = ?
         """, (content_sha256,))
         return [row[0] for row in cursor.fetchall()]
+
+    def get_participant_by_model_path(
+        self,
+        model_path: str,
+        board_type: str,
+        num_players: int,
+    ) -> "EloRating | None":
+        """Get Elo rating for a model file by computing its hash.
+
+        January 2026: Public API for looking up Elo ratings by model file.
+        Computes SHA256 hash of the model file and finds the matching participant.
+
+        Args:
+            model_path: Path to the model file
+            board_type: Board type (e.g., 'square8', 'hex8')
+            num_players: Number of players (2, 3, or 4)
+
+        Returns:
+            EloRating if model is found in database, None otherwise
+        """
+        content_hash = self._compute_model_hash(model_path)
+        if content_hash is None:
+            return None
+
+        participant_id = self._find_participant_by_hash(content_hash)
+        if participant_id is None:
+            return None
+
+        return self.get_rating(participant_id, board_type, num_players)
 
     def verify_and_update_model_identity(
         self,
@@ -1155,7 +1205,8 @@ class EloService:
         num_players: int,
         model_path: str | None = None,
         parent_model_id: str | None = None,
-        validate_file: bool = True
+        validate_file: bool = True,
+        is_deployable: bool = False,
     ) -> None:
         """Register a trained model and initialize its Elo rating.
 
@@ -1166,6 +1217,10 @@ class EloService:
             model_path: Optional path to model file
             parent_model_id: Optional ID of parent model (for lineage tracking)
             validate_file: If True, verify model file exists before registering
+            is_deployable: If True, this model is a candidate for production use.
+                Only deployable models should have persistent Elo tracking.
+                Set True for: canonical models, preserved high-Elo checkpoints.
+                Set False for: ephemeral training checkpoints, experiments.
         """
         # Validate model file exists (prevent phantom entries)
         if validate_file and model_path and not self._validate_model_path(model_path):
@@ -1209,13 +1264,24 @@ class EloService:
                     )
 
         # Register as participant
+        # Auto-detect deployable status from path if not explicitly set
+        effective_deployable = is_deployable
+        if not effective_deployable and model_path:
+            # Canonical and best models are always deployable
+            if "canonical_" in model_path or "ringrift_best_" in model_path:
+                effective_deployable = True
+            # Preserved high-Elo models are deployable
+            if "/preserved/" in model_path:
+                effective_deployable = True
+
         self.register_participant(
             participant_id=model_id,
             name=model_id,
             ai_type="neural_net",
             use_neural_net=True,
             model_path=model_path,
-            metadata={"parent_model_id": parent_model_id, "content_sha256": content_hash}
+            metadata={"parent_model_id": parent_model_id, "content_sha256": content_hash},
+            is_deployable=effective_deployable,
         )
 
         # Store model identity for future tracking

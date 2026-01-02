@@ -401,6 +401,100 @@ def _enforce_canonical_db_policy(
         )
 
 
+def _check_remote_data_sources(
+    board_type: str, num_players: int, local_db_paths: list[str]
+) -> None:
+    """Check remote sources for additional game data (January 2026).
+
+    This is informational only - it logs what data is available remotely
+    so users know if they should run sync before export.
+
+    Args:
+        board_type: Board type (e.g., "hex8")
+        num_players: Number of players
+        local_db_paths: List of local database paths already discovered
+    """
+    config_key = f"{board_type}_{num_players}p"
+    remote_sources: list[tuple[str, int]] = []
+
+    # 1. Check OWC external drive for databases
+    try:
+        import subprocess
+
+        owc_host = os.environ.get("OWC_HOST", "mac-studio")
+        owc_path = os.environ.get("OWC_BASE_PATH", "/Volumes/RingRift-Data")
+
+        # Quick SSH check for OWC databases
+        result = subprocess.run(
+            [
+                "ssh",
+                "-o",
+                "ConnectTimeout=5",
+                owc_host,
+                f"find {owc_path}/games -name '*{config_key}*.db' 2>/dev/null | wc -l",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            owc_count = int(result.stdout.strip())
+            if owc_count > 0:
+                remote_sources.append((f"OWC ({owc_host})", owc_count))
+    except Exception:
+        pass  # OWC not available, skip silently
+
+    # 2. Check S3 for archived databases
+    try:
+        import subprocess
+
+        s3_bucket = os.environ.get("RINGRIFT_S3_BUCKET", "ringrift-models-20251214")
+        result = subprocess.run(
+            [
+                "aws",
+                "s3",
+                "ls",
+                f"s3://{s3_bucket}/consolidated/games/",
+                "--recursive",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode == 0:
+            # Count matching files
+            s3_count = sum(
+                1 for line in result.stdout.splitlines() if config_key in line
+            )
+            if s3_count > 0:
+                remote_sources.append(("S3", s3_count))
+    except Exception:
+        pass  # S3 not available, skip silently
+
+    # 3. Check ClusterManifest for games on other nodes
+    try:
+        from app.distributed.cluster_manifest import get_cluster_manifest
+
+        manifest = get_cluster_manifest()
+        remote_games = manifest.get_game_count(config_key)
+        if remote_games > 0:
+            remote_sources.append(("P2P Cluster", remote_games))
+    except Exception:
+        pass  # Manifest not available, skip silently
+
+    # Report findings
+    if remote_sources:
+        print(f"\n[REMOTE DATA] Additional data available for {config_key}:")
+        for source, count in remote_sources:
+            if "games" in source.lower() or "P2P" in source:
+                print(f"  - {source}: ~{count:,} games")
+            else:
+                print(f"  - {source}: {count} database(s)")
+        print(
+            "  Tip: Run 'python scripts/master_loop.py' or sync daemons to fetch remote data.\n"
+        )
+
+
 def build_encoder(
     board_type: BoardType,
     encoder_version: str = "default",
@@ -1399,6 +1493,115 @@ def export_replay_dataset(
     )
 
 
+def _fetch_remote_databases(
+    board_type: str,
+    num_players: int,
+    include_remote: bool,
+    include_s3: bool,
+    include_owc: bool,
+    target_dir: str,
+) -> list[str]:
+    """Fetch game databases from remote sources.
+
+    January 2026: Enables cluster-wide data aggregation for export.
+
+    Args:
+        board_type: Board type (hex8, square8, etc.)
+        num_players: Number of players (2, 3, 4)
+        include_remote: Fetch from P2P cluster nodes
+        include_s3: Fetch from S3
+        include_owc: Fetch from OWC drive
+        target_dir: Directory to store fetched databases
+
+    Returns:
+        List of paths to fetched database files
+    """
+    if not (include_remote or include_s3 or include_owc):
+        return []
+
+    try:
+        import asyncio
+        from pathlib import Path
+        from app.utils.remote_game_fetcher import RemoteGameFetcher, FetchConfig
+
+        config_key = f"{board_type}_{num_players}p"
+        print(f"[REMOTE] Fetching databases from remote sources for {config_key}...")
+
+        # Configure fetcher
+        config = FetchConfig(
+            fetch_from_p2p=include_remote,
+            fetch_from_s3=include_s3,
+            fetch_from_owc=include_owc,
+            default_target_dir=Path(target_dir),
+        )
+        fetcher = RemoteGameFetcher(config)
+
+        # Run async fetch
+        async def do_fetch():
+            return await fetcher.fetch_all_for_config(
+                config_key=config_key,
+                target_dir=Path(target_dir),
+            )
+
+        paths = asyncio.run(do_fetch())
+
+        fetched_paths = [str(p) for p in paths]
+        if fetched_paths:
+            print(f"[REMOTE] Fetched {len(fetched_paths)} databases from remote sources")
+            for p in fetched_paths:
+                print(f"  {p}")
+        else:
+            print("[REMOTE] No remote databases found")
+
+        return fetched_paths
+
+    except ImportError as e:
+        print(f"[REMOTE] RemoteGameFetcher not available: {e}")
+        return []
+    except Exception as e:
+        print(f"[REMOTE] Error fetching remote databases: {e}")
+        return []
+
+
+def _check_remote_data_sources(board_type: str, num_players: int, db_paths: list[str]) -> None:
+    """Check and log remote data source availability (informational only).
+
+    This is a legacy function that logs available remote sources.
+    Use --include-remote/--include-s3/--include-owc to actually fetch data.
+    """
+    try:
+        import asyncio
+        from app.utils.unified_game_aggregator import get_unified_game_aggregator
+
+        async def check():
+            aggregator = get_unified_game_aggregator()
+            counts = await aggregator.get_total_games(
+                board_type, num_players,
+                include_remote=True,
+                include_s3=True,
+                include_owc=True,
+            )
+            return counts
+
+        counts = asyncio.run(check())
+
+        # Only log if there's significant remote data not in local paths
+        local_count = counts.sources.get("local", 0)
+        remote_total = counts.total_games - local_count
+
+        if remote_total > 0:
+            print(f"\n[INFO] Additional games available from remote sources:")
+            for source, count in counts.sources.items():
+                if source != "local" and count > 0:
+                    print(f"  {source}: {count:,} games")
+            print(f"  Use --include-remote/--include-s3/--include-owc to fetch\n")
+
+    except ImportError:
+        pass  # Aggregator not available
+    except Exception as e:
+        print(f"[DEBUG] Error checking remote sources: {e}")
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Export NN training samples from existing GameReplayDB replays.",
@@ -1713,6 +1916,43 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Example: --exclude-sources human"
         ),
     )
+    # January 2026: Remote source fetching flags
+    parser.add_argument(
+        "--include-remote",
+        action="store_true",
+        help=(
+            "Fetch game databases from P2P cluster nodes before export. "
+            "Uses RemoteGameFetcher to download from other nodes in the cluster. "
+            "Fetched DBs are stored in data/games/fetched/ and included in export. "
+            "January 2026: Enables cluster-wide data aggregation."
+        ),
+    )
+    parser.add_argument(
+        "--include-s3",
+        action="store_true",
+        help=(
+            "Fetch game databases from AWS S3 before export. "
+            "Downloads from s3://ringrift-models-20251214/consolidated/games/. "
+            "Requires AWS credentials configured. "
+            "January 2026: Enables S3 data integration."
+        ),
+    )
+    parser.add_argument(
+        "--include-owc",
+        action="store_true",
+        help=(
+            "Fetch game databases from OWC external drive before export. "
+            "Downloads from mac-studio:/Volumes/RingRift-Data/selfplay_repository/. "
+            "Requires SSH key access to OWC host. "
+            "January 2026: Enables OWC data integration."
+        ),
+    )
+    parser.add_argument(
+        "--fetch-target-dir",
+        type=str,
+        default="data/games/fetched",
+        help="Directory to store fetched remote databases (default: data/games/fetched)",
+    )
     return parser.parse_args(argv)
 
 
@@ -1763,6 +2003,23 @@ def main(argv: list[str] | None = None) -> int:
             print("[DISCOVERY] No databases found for this configuration")
             return 1
         print(f"[DISCOVERY] Total: {len(db_paths)} databases")
+
+        # Check remote sources for additional data (January 2026 enhancement)
+        _check_remote_data_sources(args.board_type, args.num_players, db_paths)
+
+    # January 2026: Fetch from remote sources if requested
+    if getattr(args, 'include_remote', False) or getattr(args, 'include_s3', False) or getattr(args, 'include_owc', False):
+        remote_dbs = _fetch_remote_databases(
+            board_type=args.board_type,
+            num_players=args.num_players,
+            include_remote=getattr(args, 'include_remote', False),
+            include_s3=getattr(args, 'include_s3', False),
+            include_owc=getattr(args, 'include_owc', False),
+            target_dir=getattr(args, 'fetch_target_dir', 'data/games/fetched'),
+        )
+        for remote_db in remote_dbs:
+            if remote_db not in db_paths:
+                db_paths.append(remote_db)
 
     if not db_paths:
         raise ValueError("Either --db or --use-discovery must be specified")

@@ -126,6 +126,9 @@ class TrainingTriggerConfig:
     # December 29, 2025: State persistence for daemon restarts (Phase 3)
     state_db_path: str = "data/coordination/training_trigger_state.db"
     state_save_interval_seconds: float = 300.0  # Save every 5 minutes
+    # January 2026: Log aggregated game counts from all sources (local, cluster, S3, OWC)
+    # Provides visibility into cluster-wide game availability for training decisions
+    log_aggregated_game_counts: bool = True
 
 
 @dataclass
@@ -398,6 +401,8 @@ class TrainingTriggerDaemon(HandlerBase):
             max_delay=1200.0,  # 20 minutes
             jitter=0.1,  # Add slight jitter to avoid thundering herd
         )
+        # January 2026: Lazy-loaded UnifiedGameAggregator for cluster-wide game counts
+        self._game_aggregator = None
         self._retry_stats = {
             "retries_queued": 0,
             "retries_succeeded": 0,
@@ -722,6 +727,52 @@ class TrainingTriggerDaemon(HandlerBase):
             params = intensity_params["normal"]
 
         return params
+
+    def _get_game_aggregator(self):
+        """Get or create the UnifiedGameAggregator instance.
+
+        January 2026: Provides lazy-loaded access to cluster-wide game counts.
+        """
+        if self._game_aggregator is None:
+            try:
+                from app.utils.unified_game_aggregator import get_unified_game_aggregator
+                self._game_aggregator = get_unified_game_aggregator()
+            except ImportError:
+                logger.debug("[TrainingTriggerDaemon] UnifiedGameAggregator not available")
+        return self._game_aggregator
+
+    async def _log_aggregated_game_counts(
+        self, config_key: str, board_type: str, num_players: int
+    ) -> None:
+        """Log cluster-wide game counts for visibility.
+
+        January 2026: Shows game availability from all sources (local, cluster, S3, OWC).
+        Useful for debugging training eligibility and understanding data distribution.
+        """
+        if not self._daemon_config.log_aggregated_game_counts:
+            return
+
+        aggregator = self._get_game_aggregator()
+        if aggregator is None:
+            return
+
+        try:
+            counts = await aggregator.get_total_games(
+                board_type, num_players,
+                include_remote=True,
+                include_s3=True,
+                include_owc=True,
+            )
+            logger.info(
+                f"[TrainingTriggerDaemon] {config_key} cluster-wide games: "
+                f"total={counts.total_games:,}, sources={counts.sources}"
+            )
+            if counts.errors:
+                logger.debug(
+                    f"[TrainingTriggerDaemon] {config_key} aggregation errors: {counts.errors}"
+                )
+        except Exception as e:
+            logger.debug(f"[TrainingTriggerDaemon] Failed to get aggregated counts: {e}")
 
     def _get_dynamic_sample_threshold(self, config_key: str) -> int:
         """Get dynamically adjusted sample threshold for training.
@@ -2018,6 +2069,10 @@ class TrainingTriggerDaemon(HandlerBase):
             else:
                 return False, f"data too old ({data_age_hours:.1f}h)"
 
+        # January 2026: Log cluster-wide game counts for visibility
+        # This helps understand data distribution across all sources
+        await self._log_aggregated_game_counts(config_key, state.board_type, state.num_players)
+
         # 4. Check minimum samples (with confidence-based early trigger)
         # Dec 29, 2025: Try confidence-based early trigger first
         # This allows training to start earlier when statistical confidence is high
@@ -2230,6 +2285,163 @@ class TrainingTriggerDaemon(HandlerBase):
             return False
         except Exception as e:
             logger.warning(f"[TrainingTriggerDaemon] ensure_fresh_data failed: {e}")
+            return False
+
+    async def _check_all_data_sources(
+        self, config_key: str, min_samples_needed: int
+    ) -> tuple[int, str | None]:
+        """Check all sources for available training data (January 2026).
+
+        Queries local NPZ files, TrainingDataManifest (S3/OWC), and ClusterManifest
+        to find total available samples across all data sources.
+
+        Args:
+            config_key: Configuration identifier (e.g., "hex8_2p")
+            min_samples_needed: Minimum samples required for training
+
+        Returns:
+            Tuple of (total_samples_available, best_remote_path_if_any)
+        """
+        total_samples = 0
+        best_remote_path: str | None = None
+
+        # 1. Check local NPZ files
+        try:
+            local_npz = Path(f"data/training/{config_key}.npz")
+            if local_npz.exists():
+                import numpy as np
+                data = np.load(local_npz)
+                local_count = len(data.get("features", data.get("states", [])))
+                total_samples += local_count
+                logger.debug(
+                    f"[TrainingTriggerDaemon] Local NPZ for {config_key}: {local_count} samples"
+                )
+        except Exception as e:
+            logger.debug(f"[TrainingTriggerDaemon] Local NPZ check failed: {e}")
+
+        # 2. Check TrainingDataManifest for S3/OWC data
+        try:
+            from app.coordination.training_data_manifest import (
+                get_training_manifest,
+                DataSource,
+            )
+
+            manifest = get_training_manifest()
+
+            # Check S3
+            s3_data = manifest.get_data_for_config(config_key, source=DataSource.S3)
+            if s3_data and s3_data.sample_count > 0:
+                logger.debug(
+                    f"[TrainingTriggerDaemon] S3 has {s3_data.sample_count} samples for {config_key}"
+                )
+                if s3_data.sample_count > total_samples:
+                    total_samples = s3_data.sample_count
+                    best_remote_path = s3_data.path
+
+            # Check OWC
+            owc_data = manifest.get_data_for_config(config_key, source=DataSource.OWC)
+            if owc_data and owc_data.sample_count > 0:
+                logger.debug(
+                    f"[TrainingTriggerDaemon] OWC has {owc_data.sample_count} samples for {config_key}"
+                )
+                if owc_data.sample_count > total_samples:
+                    total_samples = owc_data.sample_count
+                    best_remote_path = owc_data.path
+
+        except ImportError:
+            logger.debug("[TrainingTriggerDaemon] TrainingDataManifest not available")
+        except Exception as e:
+            logger.debug(f"[TrainingTriggerDaemon] Manifest check failed: {e}")
+
+        # 3. Check ClusterManifest for games on other nodes (estimate samples)
+        try:
+            from app.distributed.cluster_manifest import get_cluster_manifest
+
+            cluster_manifest = get_cluster_manifest()
+            remote_games = cluster_manifest.get_game_count(config_key)
+            if remote_games > 0:
+                # Estimate ~50 samples per game (typical move count)
+                estimated_samples = remote_games * 50
+                logger.debug(
+                    f"[TrainingTriggerDaemon] Cluster has ~{remote_games} games "
+                    f"(~{estimated_samples} samples) for {config_key}"
+                )
+                # Don't override total_samples, just log for awareness
+                # The games need to be synced and exported first
+
+        except ImportError:
+            logger.debug("[TrainingTriggerDaemon] ClusterManifest not available")
+        except Exception as e:
+            logger.debug(f"[TrainingTriggerDaemon] Cluster check failed: {e}")
+
+        return total_samples, best_remote_path
+
+    async def _fetch_remote_data_if_needed(
+        self, config_key: str, local_count: int, min_samples_needed: int
+    ) -> bool:
+        """Fetch remote data if local is insufficient (January 2026).
+
+        When local training data is below threshold, attempts to download
+        from S3 or OWC to enable training.
+
+        Args:
+            config_key: Configuration identifier (e.g., "hex8_2p")
+            local_count: Current local sample count
+            min_samples_needed: Minimum samples required for training
+
+        Returns:
+            True if data was fetched and is now available locally
+        """
+        if local_count >= min_samples_needed:
+            return True  # Already have enough locally
+
+        try:
+            from app.coordination.training_data_manifest import (
+                get_training_manifest,
+                DataSource,
+            )
+
+            manifest = get_training_manifest()
+
+            # Find best remote source
+            best_source = None
+            best_count = local_count
+
+            for source in [DataSource.S3, DataSource.OWC]:
+                data = manifest.get_data_for_config(config_key, source=source)
+                if data and data.sample_count > best_count:
+                    best_source = data
+                    best_count = data.sample_count
+
+            if best_source and best_count >= min_samples_needed:
+                logger.info(
+                    f"[TrainingTriggerDaemon] Fetching {config_key} from "
+                    f"{best_source.source.value} ({best_count} samples)"
+                )
+
+                # Download to local training directory
+                local_path = await manifest.download_to_local(best_source)
+                if local_path and local_path.exists():
+                    logger.info(
+                        f"[TrainingTriggerDaemon] Downloaded {config_key} to {local_path}"
+                    )
+                    return True
+                else:
+                    logger.warning(
+                        f"[TrainingTriggerDaemon] Download failed for {config_key}"
+                    )
+                    return False
+
+            logger.debug(
+                f"[TrainingTriggerDaemon] No remote source with enough data for {config_key}"
+            )
+            return False
+
+        except ImportError:
+            logger.debug("[TrainingTriggerDaemon] TrainingDataManifest not available")
+            return False
+        except Exception as e:
+            logger.warning(f"[TrainingTriggerDaemon] Remote fetch failed: {e}")
             return False
 
     async def _dispatch_training_to_queue(

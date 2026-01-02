@@ -63,6 +63,17 @@ except ImportError:
     emit_checkpoint_saved = None
     emit_checkpoint_loaded = None
 
+# Model preservation for high-Elo checkpoints (optional)
+try:
+    from app.training.model_preservation import (
+        ModelPreservationService,
+        get_preservation_service,
+    )
+    HAS_PRESERVATION = True
+except ImportError:
+    HAS_PRESERVATION = False
+    get_preservation_service = None
+
 
 class CheckpointType(Enum):
     """Types of checkpoints."""
@@ -138,6 +149,10 @@ class UnifiedCheckpointConfig:
     """Configuration for unified checkpoint manager."""
     # Basic settings
     checkpoint_dir: Path = Path("checkpoints")
+
+    # Board configuration (for Elo-based preservation)
+    board_type: str | None = None  # e.g., "hex8", "square8"
+    num_players: int | None = None  # 2, 3, or 4
 
     # Retention policy (from fault_tolerance)
     max_checkpoints: int = 10
@@ -525,9 +540,44 @@ class UnifiedCheckpointManager:
 
         # Remove checkpoints not in keep set
         to_remove = [c for c in self.checkpoints if c.checkpoint_id not in keep_ids]
-        for c in to_remove:
+
+        # Check for preservation eligibility before deleting
+        preservation_service = None
+        if (HAS_PRESERVATION and
+            self.config.board_type is not None and
+            self.config.num_players is not None):
             try:
-                Path(c.file_path).unlink()
+                preservation_service = get_preservation_service()
+            except Exception as e:
+                logger.debug(f"Preservation service unavailable: {e}")
+
+        for c in to_remove:
+            checkpoint_path = Path(c.file_path)
+
+            # Check if checkpoint should be preserved (has high Elo)
+            if preservation_service is not None:
+                try:
+                    if preservation_service.should_preserve(
+                        checkpoint_path,
+                        self.config.board_type,
+                        self.config.num_players,
+                    ):
+                        preserved_path = preservation_service.preserve_checkpoint(
+                            checkpoint_path,
+                            self.config.board_type,
+                            self.config.num_players,
+                        )
+                        if preserved_path:
+                            logger.info(
+                                f"Preserved high-Elo checkpoint before cleanup: "
+                                f"{c.checkpoint_id} -> {preserved_path}"
+                            )
+                except Exception as e:
+                    logger.warning(f"Failed to check/preserve checkpoint {c.checkpoint_id}: {e}")
+
+            # Delete the original checkpoint file
+            try:
+                checkpoint_path.unlink()
                 logger.debug(f"Removed old checkpoint: {c.checkpoint_id}")
             except OSError:
                 pass

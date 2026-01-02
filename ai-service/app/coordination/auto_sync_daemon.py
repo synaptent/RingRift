@@ -856,8 +856,18 @@ class AutoSyncDaemon(
         except (RuntimeError, OSError, ConnectionError, TypeError) as e:
             logger.debug(f"Could not emit DATA_SYNC_FAILED: {e}")
 
-    async def _emit_sync_completed(self, games_synced: int, bytes_transferred: int = 0) -> None:
-        """Emit DATA_SYNC_COMPLETED event for feedback loop coupling."""
+    async def _emit_sync_completed(
+        self,
+        games_synced: int,
+        bytes_transferred: int = 0,
+        db_path: str | None = None,
+        config_key: str | None = None,
+    ) -> None:
+        """Emit DATA_SYNC_COMPLETED event for feedback loop coupling.
+
+        January 2026: Enhanced to include backup flags and db_path for
+        UnifiedBackupDaemon to push synced data to OWC/S3.
+        """
         try:
             from app.coordination.event_router import DataEventType, get_router
 
@@ -871,6 +881,12 @@ class AutoSyncDaemon(
                         "bytes_transferred": bytes_transferred,
                         "total_syncs": self._stats.total_syncs,
                         "successful_syncs": self._stats.successful_syncs,
+                        # January 2026: Added for UnifiedBackupDaemon integration
+                        "db_path": db_path,
+                        "config_key": config_key,
+                        "needs_owc_backup": True,
+                        "needs_s3_backup": True,
+                        "source": "selfplay",
                     },
                     source="AutoSyncDaemon",
                 )

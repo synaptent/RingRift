@@ -1249,7 +1249,8 @@ class MasterLoopController:
                 DaemonType.NNUE_TRAINING,           # dispatches NNUE training to cluster
                 DaemonType.TOURNAMENT_DAEMON,       # runs tournaments
                 DaemonType.EVALUATION,              # runs gauntlets
-                DaemonType.AUTO_PROMOTION,          # triggers promotion (can spawn gauntlet)
+                # Jan 2026: AUTO_PROMOTION moved to coordinator - it only subscribes to
+                # EVALUATION_COMPLETED events and promotes models. No CPU/GPU work.
                 DaemonType.QUEUE_POPULATOR,         # can spawn selfplay
                 DaemonType.UTILIZATION_OPTIMIZER,   # spawns processes on idle GPUs
             }

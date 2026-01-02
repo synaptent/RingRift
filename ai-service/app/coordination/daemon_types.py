@@ -364,6 +364,24 @@ class DaemonType(Enum):
     # =========================================================================
     ELO_PROGRESS = "elo_progress"
 
+    # =========================================================================
+    # Unified Backup Daemon (January 2026)
+    # =========================================================================
+    # Backs up ALL selfplay games to OWC external drive and AWS S3.
+    # Discovers games from all storage patterns via GameDiscovery.
+    # Event-driven: responds to DATA_SYNC_COMPLETED, SELFPLAY_COMPLETE.
+    # =========================================================================
+    UNIFIED_BACKUP = "unified_backup"
+
+    # =========================================================================
+    # S3 Push Daemon (January 2026)
+    # =========================================================================
+    # Pushes all game databases, training NPZ files, and models to S3.
+    # Periodically checks for modified files and uploads only changes.
+    # Event-driven: responds to DATA_SYNC_COMPLETED, TRAINING_COMPLETED.
+    # =========================================================================
+    S3_PUSH = "s3_push"
+
 
 class DaemonState(Enum):
     """State of a daemon."""
@@ -633,6 +651,8 @@ DAEMON_CATEGORY_MAP: dict[DaemonType, DaemonCategory] = {
     DaemonType.S3_NODE_SYNC: DaemonCategory.DISTRIBUTION,
     DaemonType.S3_CONSOLIDATION: DaemonCategory.DISTRIBUTION,
     DaemonType.UNIFIED_DATA_PLANE: DaemonCategory.DISTRIBUTION,
+    DaemonType.UNIFIED_BACKUP: DaemonCategory.DISTRIBUTION,  # Jan 2026: OWC + S3 backup
+    DaemonType.S3_PUSH: DaemonCategory.DISTRIBUTION,  # Jan 2026: S3 backup push
 
     # RESOURCE category - resource management
     DaemonType.IDLE_RESOURCE: DaemonCategory.RESOURCE,
