@@ -591,3 +591,59 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
         except Exception as e:
             logger.error(f"Error getting dispatch stats: {e}")
             return self.error_response(str(e), status=500)
+
+    async def handle_clear_stale_targets(self, request: web.Request) -> web.Response:
+        """Clear target_node from jobs targeted at non-existent nodes.
+
+        Jan 2, 2026: Added to fix jobs stuck on old/renamed node targets.
+
+        POST /queue/clear-stale-targets
+
+        This endpoint clears target_node assignments for pending jobs where
+        the target node no longer exists in the cluster. This allows any
+        available node to claim those jobs.
+
+        Returns:
+            JSON with count of cleared jobs
+        """
+        try:
+            if not self.is_leader:
+                return self.error_response(
+                    "Only leader can clear stale targets",
+                    status=403
+                )
+
+            wq = get_work_queue()
+            if wq is None:
+                return self._work_queue_unavailable()
+
+            # Get valid node IDs from peer manager
+            valid_node_ids = set()
+            if hasattr(self, 'peer_manager') and self.peer_manager:
+                peers = self.peer_manager.get_all_peers()
+                valid_node_ids = {p.get('node_id') for p in peers if p.get('node_id')}
+            elif hasattr(self, 'all_peers') and self.all_peers:
+                valid_node_ids = set(self.all_peers.keys())
+
+            # Add self
+            if hasattr(self, 'node_id'):
+                valid_node_ids.add(self.node_id)
+
+            if not valid_node_ids:
+                return self.error_response(
+                    "Could not determine valid node IDs",
+                    status=500
+                )
+
+            # Clear stale targets
+            cleared_count = wq.clear_stale_target_nodes(valid_node_ids)
+
+            return self.json_response({
+                "cleared_count": cleared_count,
+                "valid_nodes": len(valid_node_ids),
+                "is_leader": self.is_leader,
+            })
+
+        except Exception as e:
+            logger.error(f"Error clearing stale targets: {e}")
+            return self.error_response(str(e), status=500)

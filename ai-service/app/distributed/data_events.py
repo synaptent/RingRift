@@ -71,6 +71,8 @@ __all__ = [
     "emit_disk_space_low",
     # Leader heartbeat monitoring (P0 Dec 2025)
     "emit_leader_heartbeat_missing",
+    # Leader lease expiry (Jan 2026)
+    "emit_leader_lease_expired",
 ]
 
 # Global singleton instance
@@ -383,6 +385,7 @@ class DataEventType(Enum):
     SPLIT_BRAIN_DETECTED = "split_brain_detected"  # Multiple leaders detected in cluster
     SPLIT_BRAIN_RESOLVED = "split_brain_resolved"  # Split-brain resolved (non-canonical leaders demoted)
     LEADER_HEARTBEAT_MISSING = "leader_heartbeat_missing"  # P0 Dec 2025: Leader heartbeat delayed (monitoring)
+    LEADER_LEASE_EXPIRED = "leader_lease_expired"  # Jan 2026: Leader lease expired without stepdown
 
     # P2P State persistence events (December 2025)
     STATE_PERSISTED = "state_persisted"  # P2P state saved to database
@@ -2539,6 +2542,41 @@ async def emit_leader_heartbeat_missing(
             "last_heartbeat": last_heartbeat,
             "expected_interval": expected_interval,
             "delay_seconds": delay_seconds,
+        },
+        source=source,
+    ))
+
+
+async def emit_leader_lease_expired(
+    leader_id: str,
+    lease_expiry_time: float,
+    current_time: float,
+    grace_seconds: float = 30.0,
+    source: str = "",
+) -> None:
+    """Emit a LEADER_LEASE_EXPIRED event when leader lease expires without stepdown.
+
+    This event is emitted when a leader's lease expires but the leader hasn't
+    voluntarily stepped down. This indicates a potential stuck or unresponsive
+    leader that needs to be replaced via election.
+
+    January 2, 2026: Added for stale leader alerting in Sprint 3.
+
+    Args:
+        leader_id: ID of the leader node whose lease expired
+        lease_expiry_time: Unix timestamp when lease expired
+        current_time: Current Unix timestamp
+        grace_seconds: Grace period that was allowed beyond expiry
+        source: Node emitting the event
+    """
+    await get_event_bus().publish(DataEvent(
+        event_type=DataEventType.LEADER_LEASE_EXPIRED,
+        payload={
+            "leader_id": leader_id,
+            "lease_expiry_time": lease_expiry_time,
+            "current_time": current_time,
+            "grace_seconds": grace_seconds,
+            "expired_by_seconds": current_time - lease_expiry_time,
         },
         source=source,
     ))

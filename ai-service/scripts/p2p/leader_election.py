@@ -45,11 +45,13 @@ _CONSTANTS = P2PMixinBase._load_config_constants({
     "VOTER_MIN_QUORUM": 3,
     "CONSENSUS_MODE": "bully",
     "RAFT_ENABLED": False,
+    "LEADER_LEASE_EXPIRY_GRACE_SECONDS": 30,  # Jan 2026: Stale leader alerting
 })
 
 VOTER_MIN_QUORUM = _CONSTANTS["VOTER_MIN_QUORUM"]
 CONSENSUS_MODE = _CONSTANTS["CONSENSUS_MODE"]
 RAFT_ENABLED = _CONSTANTS["RAFT_ENABLED"]
+LEADER_LEASE_EXPIRY_GRACE_SECONDS = _CONSTANTS["LEADER_LEASE_EXPIRY_GRACE_SECONDS"]
 
 # Phase 3.2 (January 2026): Dynamic voter management
 # Enable via RINGRIFT_P2P_DYNAMIC_VOTER=true
@@ -486,6 +488,68 @@ class LeaderElectionMixin(P2PMixinBase):
             return False, "role=leader but leader_id!=self"
         return True, "consistent"
 
+    def _check_lease_expiry(self) -> dict[str, Any]:
+        """Check if the current leader's lease has expired without stepdown.
+
+        January 2, 2026: Added for stale leader alerting (Sprint 3).
+
+        This method checks if the known leader's lease has expired beyond the
+        configured grace period. If expired, it emits a LEADER_LEASE_EXPIRED
+        event to alert monitoring systems.
+
+        Returns:
+            dict with:
+            - lease_stale: True if lease expired beyond grace
+            - lease_remaining: Seconds until expiry (negative if expired)
+            - grace_exceeded_by: Seconds beyond grace (0 if not exceeded)
+            - event_emitted: True if LEADER_LEASE_EXPIRED was emitted this check
+        """
+        now = time.time()
+        lease_expires = getattr(self, "leader_lease_expires", 0.0) or 0.0
+        leader_id = self.leader_id or ""
+
+        # Calculate time since expiry
+        lease_remaining = lease_expires - now
+        grace_exceeded_by = max(0, -lease_remaining - LEADER_LEASE_EXPIRY_GRACE_SECONDS)
+
+        result = {
+            "lease_stale": False,
+            "lease_remaining": lease_remaining,
+            "grace_exceeded_by": grace_exceeded_by,
+            "event_emitted": False,
+            "leader_id": leader_id,
+        }
+
+        # Skip if no leader known
+        if not leader_id:
+            return result
+
+        # Skip if we ARE the leader (we handle our own stepdown)
+        if leader_id == self.node_id:
+            return result
+
+        # Check if expired beyond grace
+        if grace_exceeded_by > 0:
+            result["lease_stale"] = True
+
+            # Log warning
+            self._log_warning(
+                f"Leader {leader_id} lease expired {grace_exceeded_by:.1f}s ago "
+                f"(lease_expires={lease_expires:.1f}, grace={LEADER_LEASE_EXPIRY_GRACE_SECONDS}s)"
+            )
+
+            # Emit event (async-safe via _safe_emit_event)
+            self._safe_emit_event("LEADER_LEASE_EXPIRED", {
+                "leader_id": leader_id,
+                "lease_expiry_time": lease_expires,
+                "current_time": now,
+                "grace_seconds": LEADER_LEASE_EXPIRY_GRACE_SECONDS,
+                "expired_by_seconds": -lease_remaining,
+            })
+            result["event_emitted"] = True
+
+        return result
+
     def _has_voter_consensus_on_leader(self, proposed_leader: str) -> bool:
         """Check if voter quorum agrees on the proposed leader.
 
@@ -901,14 +965,19 @@ class LeaderElectionMixin(P2PMixinBase):
         # January 2026 (Phase 3.2): Dynamic voter management health info
         dynamic_voter_info = self._check_dynamic_voter_health()
 
+        # January 2026 (Sprint 3): Check for stale leader lease expiry
+        lease_expiry_info = self._check_lease_expiry()
+        has_stale_leader = lease_expiry_info.get("lease_stale", False)
+
         # Unhealthy if:
         # 1. No quorum and we should have voters (unless using Raft), OR
-        # 2. Split-brain detected (critical severity)
+        # 2. Split-brain detected (critical severity), OR
+        # 3. Leader lease expired without stepdown (stale leader)
         # When using Raft, quorum is handled by Raft consensus
         if using_raft:
-            is_healthy = not has_split_brain
+            is_healthy = not has_split_brain and not has_stale_leader
         else:
-            is_healthy = (has_quorum or voter_count == 0) and not has_split_brain
+            is_healthy = (has_quorum or voter_count == 0) and not has_split_brain and not has_stale_leader
 
         result = {
             "is_healthy": is_healthy,
@@ -926,6 +995,9 @@ class LeaderElectionMixin(P2PMixinBase):
             "raft_leader_synced": raft_leader_synced,
             # Phase 3.2: Dynamic voter management
             "dynamic_voter": dynamic_voter_info,
+            # Sprint 3: Stale leader alerting
+            "stale_leader_detected": has_stale_leader,
+            "lease_expiry_info": lease_expiry_info,
         }
 
         # Add Raft leader info if available

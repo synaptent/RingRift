@@ -639,6 +639,73 @@ class WorkQueue:
         """
         self._claim_rejection_stats.reset()
 
+    def clear_stale_target_nodes(self, valid_node_ids: set[str]) -> int:
+        """Clear target_node from jobs targeted at non-existent nodes.
+
+        Jan 2, 2026: Added to fix jobs stuck on old/renamed node targets.
+
+        When nodes are renamed or removed, jobs with target_node set to those
+        old names will never be claimed. This method clears target_node for
+        all pending jobs where the target doesn't exist in valid_node_ids.
+
+        Args:
+            valid_node_ids: Set of currently valid node IDs in the cluster.
+
+        Returns:
+            Number of jobs that had their target_node cleared.
+        """
+        if not getattr(self, '_db_initialized', False):
+            self._ensure_db()
+        if not self._db_initialized or self._readonly_mode:
+            logger.warning("Cannot clear stale targets: database not initialized or readonly")
+            return 0
+
+        cleared_count = 0
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            # Get all pending items with target_node set
+            cursor.execute("""
+                SELECT work_id, config FROM work_items
+                WHERE status = 'pending'
+            """)
+
+            updates = []
+            for row in cursor.fetchall():
+                work_id, config_json = row
+                try:
+                    config = json.loads(config_json) if config_json else {}
+                    target_node = config.get("target_node")
+                    if target_node and target_node not in valid_node_ids:
+                        # Clear the stale target_node
+                        config.pop("target_node", None)
+                        config.pop("target_node_expires_at", None)
+                        updates.append((json.dumps(config), work_id))
+                        logger.info(f"Clearing stale target_node {target_node} from work {work_id}")
+                except json.JSONDecodeError:
+                    continue
+
+            # Batch update
+            if updates:
+                cursor.executemany("""
+                    UPDATE work_items SET config = ? WHERE work_id = ?
+                """, updates)
+                conn.commit()
+                cleared_count = len(updates)
+                logger.info(f"Cleared stale target_node from {cleared_count} pending jobs")
+
+        except sqlite3.Error as e:
+            logger.error(f"Error clearing stale target nodes: {e}")
+            if conn:
+                conn.rollback()
+        finally:
+            if conn:
+                conn.close()
+
+        return cleared_count
+
     def _init_db(self) -> None:
         """Initialize SQLite database for work queue persistence.
 

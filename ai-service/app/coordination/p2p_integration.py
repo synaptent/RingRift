@@ -140,6 +140,20 @@ class P2PJobResult:
     details: dict[str, Any] | None = None
 
 
+@dataclass
+class DistributedLockResult:
+    """Result of a distributed lock operation.
+
+    January 2026 (Sprint 3): Added for global training lock support.
+    """
+
+    acquired: bool
+    lock_name: str
+    holder: str | None = None
+    error: str = ""
+    timestamp: float = 0.0
+
+
 # Cached status to avoid hammering P2P orchestrator
 _status_cache: dict[str, Any] = {}
 _status_cache_time: float = 0.0

@@ -638,6 +638,18 @@ LEADER_MIN_RESPONSE_RATE = float(os.environ.get("RINGRIFT_P2P_LEADER_MIN_RESPONS
 LEADER_DEGRADED_STEPDOWN_DELAY = int(os.environ.get("RINGRIFT_P2P_LEADER_DEGRADED_STEPDOWN_DELAY", "60") or 60)
 
 # ============================================
+# Stale Leader Alerting (January 2, 2026)
+# ============================================
+# Alert when leader lease expires without voluntary stepdown.
+# This catches leaders that crash without proper shutdown.
+
+# Grace period after lease expiry before emitting LEADER_LEASE_EXPIRED event
+# Gives the leader time to step down gracefully or renew the lease
+LEADER_LEASE_EXPIRY_GRACE_SECONDS = int(
+    os.environ.get("RINGRIFT_P2P_LEADER_LEASE_EXPIRY_GRACE", "30") or 30
+)
+
+# ============================================
 # Frozen Leader Detection (January 2, 2026)
 # ============================================
 # Leaders can heartbeat but have a stuck event loop (frozen).

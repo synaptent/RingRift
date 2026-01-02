@@ -79,6 +79,7 @@ WORK_QUEUE_ROUTES = [
     Route("POST", "/work/cancel", "handle_work_cancel"),
     Route("GET", "/work/history", "handle_work_history"),
     Route("GET", "/dispatch/stats", "handle_dispatch_stats"),  # Jan 2, 2026
+    Route("POST", "/queue/clear-stale-targets", "handle_clear_stale_targets"),  # Jan 2, 2026
 ]
 
 # ===========================================================================

@@ -99,7 +99,9 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+import sqlite3
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -157,20 +159,27 @@ class PipelineCircuitBreaker:
     app.distributed.circuit_breaker with "pipeline" as the target.
     Adds per-stage failure tracking for observability.
 
+    January 2026: Added SQLite persistence to prevent retry storms after restart.
+
     This is a thin wrapper that:
     1. Uses canonical CircuitBreaker with target="pipeline"
     2. Tracks failures per stage for logging/metrics
     3. Provides backward-compatible API
+    4. Persists state to SQLite for crash recovery
     """
 
     # Default target name for pipeline-wide circuit
     PIPELINE_TARGET = "pipeline"
+
+    # Default persistence path
+    DEFAULT_DB_PATH = Path("data/coordination/circuit_breaker_state.db")
 
     def __init__(
         self,
         failure_threshold: int = 3,
         recovery_timeout: float = 60.0,
         half_open_max_calls: int = 1,
+        db_path: Path | str | None = None,
     ):
         """Initialize pipeline circuit breaker.
 
@@ -178,9 +187,16 @@ class PipelineCircuitBreaker:
             failure_threshold: Failures before opening circuit
             recovery_timeout: Seconds before trying half-open recovery
             half_open_max_calls: Max test calls in half-open state
+            db_path: SQLite database path for state persistence (None = use default)
         """
         self._failures_by_stage: dict[str, int] = {}
         self._success_count: int = 0
+        self._failure_threshold = failure_threshold
+        self._recovery_timeout = recovery_timeout
+
+        # Set up persistence
+        self._db_path = Path(db_path) if db_path else self.DEFAULT_DB_PATH
+        self._init_persistence_db()
 
         if _HAS_CANONICAL_CIRCUIT_BREAKER and CanonicalCircuitBreaker:
             self._breaker = CanonicalCircuitBreaker(
@@ -196,8 +212,9 @@ class PipelineCircuitBreaker:
             self._fallback_state = CircuitBreakerState.CLOSED
             self._fallback_failure_count = 0
             self._fallback_last_failure_time = 0.0
-            self._failure_threshold = failure_threshold
-            self._recovery_timeout = recovery_timeout
+
+        # Load persisted state (after initializing _breaker)
+        self._load_state()
 
     @property
     def is_open(self) -> bool:
@@ -238,6 +255,8 @@ class PipelineCircuitBreaker:
         else:
             self._fallback_state = CircuitBreakerState.CLOSED
             self._fallback_failure_count = 0
+        # Persist state change
+        self._save_state()
 
     def record_failure(self, stage: str, error: str = "") -> None:
         """Record a failed execution."""
@@ -255,6 +274,8 @@ class PipelineCircuitBreaker:
                 logger.warning(
                     f"[PipelineCircuitBreaker] Threshold reached, opening circuit: {stage} - {error}"
                 )
+        # Persist state change
+        self._save_state()
 
     def reset(self) -> None:
         """Manually reset the circuit breaker."""
@@ -265,6 +286,8 @@ class PipelineCircuitBreaker:
             self._fallback_state = CircuitBreakerState.CLOSED
             self._fallback_failure_count = 0
         logger.info("[PipelineCircuitBreaker] Manually reset")
+        # Persist state change
+        self._save_state()
 
     def get_status(self) -> dict[str, Any]:
         """Get circuit breaker status."""
@@ -290,6 +313,128 @@ class PipelineCircuitBreaker:
             "consecutive_opens": 0,
             "using_canonical": False,
         }
+
+    # =========================================================================
+    # State Persistence (January 2026)
+    # =========================================================================
+
+    def _init_persistence_db(self) -> None:
+        """Initialize SQLite database for state persistence."""
+        try:
+            self._db_path.parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(str(self._db_path))
+            cursor = conn.cursor()
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS circuit_breaker_state (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    state TEXT NOT NULL,
+                    failure_count INTEGER NOT NULL DEFAULT 0,
+                    success_count INTEGER NOT NULL DEFAULT 0,
+                    last_failure_time REAL,
+                    failures_by_stage TEXT,
+                    updated_at REAL NOT NULL
+                )
+            """)
+            conn.commit()
+            conn.close()
+            logger.debug(f"[PipelineCircuitBreaker] Initialized persistence DB: {self._db_path}")
+        except Exception as e:
+            logger.warning(f"[PipelineCircuitBreaker] Failed to init persistence DB: {e}")
+
+    def _save_state(self) -> None:
+        """Persist current circuit breaker state to SQLite."""
+        try:
+            state_value = self._fallback_state.value if not self._breaker else (
+                self._breaker.get_state(self.PIPELINE_TARGET).value
+            )
+            failure_count = self._fallback_failure_count if not self._breaker else (
+                self._breaker.get_status(self.PIPELINE_TARGET).failure_count
+            )
+            last_failure = self._fallback_last_failure_time if not self._breaker else (
+                self._breaker.get_status(self.PIPELINE_TARGET).last_failure_time or 0.0
+            )
+
+            conn = sqlite3.connect(str(self._db_path))
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO circuit_breaker_state (id, state, failure_count, success_count, last_failure_time, failures_by_stage, updated_at)
+                VALUES (1, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    state = excluded.state,
+                    failure_count = excluded.failure_count,
+                    success_count = excluded.success_count,
+                    last_failure_time = excluded.last_failure_time,
+                    failures_by_stage = excluded.failures_by_stage,
+                    updated_at = excluded.updated_at
+            """, (
+                state_value,
+                failure_count,
+                self._success_count,
+                last_failure,
+                json.dumps(self._failures_by_stage),
+                time.time(),
+            ))
+            conn.commit()
+            conn.close()
+            logger.debug(f"[PipelineCircuitBreaker] Saved state: {state_value}, failures={failure_count}")
+        except Exception as e:
+            logger.warning(f"[PipelineCircuitBreaker] Failed to save state: {e}")
+
+    def _load_state(self) -> None:
+        """Load persisted circuit breaker state from SQLite."""
+        try:
+            if not self._db_path.exists():
+                logger.debug("[PipelineCircuitBreaker] No persisted state found")
+                return
+
+            conn = sqlite3.connect(str(self._db_path))
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT state, failure_count, success_count, last_failure_time, failures_by_stage, updated_at
+                FROM circuit_breaker_state WHERE id = 1
+            """)
+            row = cursor.fetchone()
+            conn.close()
+
+            if not row:
+                logger.debug("[PipelineCircuitBreaker] No persisted state row found")
+                return
+
+            state_str, failure_count, success_count, last_failure_time, failures_json, updated_at = row
+
+            # Check if state is stale (older than recovery_timeout)
+            age = time.time() - updated_at
+            if age > self._recovery_timeout:
+                logger.info(f"[PipelineCircuitBreaker] Persisted state too old ({age:.0f}s), starting fresh")
+                return
+
+            # Restore state
+            self._success_count = success_count
+            self._failures_by_stage = json.loads(failures_json) if failures_json else {}
+
+            if not self._breaker:
+                # Restore fallback state
+                self._fallback_state = CircuitBreakerState(state_str)
+                self._fallback_failure_count = failure_count
+                self._fallback_last_failure_time = last_failure_time or 0.0
+                logger.info(
+                    f"[PipelineCircuitBreaker] Restored fallback state: {state_str}, "
+                    f"failures={failure_count}, age={age:.0f}s"
+                )
+            else:
+                # For canonical breaker, replay failures to restore state
+                # Note: This approximates the state since canonical breaker
+                # tracks per-target state internally
+                if state_str == CircuitBreakerState.OPEN.value:
+                    for _ in range(failure_count):
+                        self._breaker.record_failure(self.PIPELINE_TARGET, None)
+                logger.info(
+                    f"[PipelineCircuitBreaker] Restored canonical state: replayed {failure_count} failures, "
+                    f"age={age:.0f}s"
+                )
+
+        except Exception as e:
+            logger.warning(f"[PipelineCircuitBreaker] Failed to load state: {e}")
 
 
 # Backward-compat alias (deprecated - use PipelineCircuitBreaker)
