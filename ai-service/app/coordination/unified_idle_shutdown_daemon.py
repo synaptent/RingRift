@@ -93,7 +93,10 @@ PROVIDER_DEFAULTS: dict[str, dict[str, Any]] = {
         "env_prefix": "LAMBDA",
     },
     "vast": {
-        "idle_threshold_seconds": 900,  # 15 minutes (hourly billing)
+        # Jan 2, 2026 (Sprint 3.5): Increased from 900s to 1800s
+        # 15 minutes was too aggressive - terminated nodes during normal scheduling gaps
+        # between selfplay job batches. 30 minutes provides buffer for job dispatch.
+        "idle_threshold_seconds": 1800,  # 30 minutes (increased from 15)
         "min_cost_savings_per_hour": 0.10,
         "drain_period_seconds": 180,
         "min_nodes_to_retain": 0,

@@ -1098,17 +1098,37 @@ class GossipProtocolMixin(P2PMixinBase):
             get_client_session = None
 
         # Send gossip to selected peers, fetching fresh peer info under lock
-        # Dec 30, 2025: Use configurable timeout instead of hardcoded value
+        # Jan 2, 2026 (Sprint 3.5): Use per-peer timeout based on NAT status
+        # NAT-blocked nodes need longer timeouts (120s) due to relay latency
+        try:
+            from app.p2p.constants import get_peer_timeout_for_node, PEER_TIMEOUT_NAT_BLOCKED
+        except ImportError:
+            get_peer_timeout_for_node = None
+            PEER_TIMEOUT_NAT_BLOCKED = 120
+
         try:
             from app.config.coordination_defaults import GossipDefaults
-            timeout = ClientTimeout(total=GossipDefaults.PROBE_HTTP_TIMEOUT)
+            default_timeout = GossipDefaults.PROBE_HTTP_TIMEOUT
         except ImportError:
-            timeout = ClientTimeout(total=5)
+            default_timeout = 5
 
         for peer_id in selected_ids:
             with self.peers_lock:
                 peer = self.peers.get(peer_id)
             if peer and peer.is_alive():
+                # Jan 2, 2026: Per-peer timeout based on NAT status
+                is_nat_blocked = getattr(peer, "nat_blocked", False)
+                if get_peer_timeout_for_node and is_nat_blocked:
+                    peer_timeout = get_peer_timeout_for_node(
+                        is_coordinator=False,
+                        nat_blocked=True,
+                    )
+                elif is_nat_blocked:
+                    # Fallback if function unavailable
+                    peer_timeout = PEER_TIMEOUT_NAT_BLOCKED
+                else:
+                    peer_timeout = default_timeout
+                timeout = ClientTimeout(total=peer_timeout)
                 await self._send_gossip_to_peer(peer, local_state, timeout, get_client_session)
 
     def _build_local_gossip_state(self, now: float) -> dict[str, Any]:

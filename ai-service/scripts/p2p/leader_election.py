@@ -55,11 +55,38 @@ LEADER_LEASE_EXPIRY_GRACE_SECONDS = _CONSTANTS["LEADER_LEASE_EXPIRY_GRACE_SECOND
 
 # Phase 3.2 (January 2026): Dynamic voter management
 # Enable via RINGRIFT_P2P_DYNAMIC_VOTER=true
+#
+# FEATURE STATUS: DISABLED BY DEFAULT (Sprint 3.5, Jan 2, 2026)
+# This feature auto-promotes non-voter nodes to voters when the voter quorum
+# is at risk (alive voters <= quorum + 1). This provides automatic failover
+# when voter nodes fail.
+#
+# WHY DISABLED:
+# - Cluster stability: Dynamic voter changes can cause split-brain scenarios
+#   during network partitions if not carefully tuned.
+# - Raft mode has its own membership management.
+# - The current voter set (7 nodes across providers) is stable.
+#
+# ENABLE WHEN:
+# - You have a stable cluster with reliable network connectivity
+# - You understand the risks of automatic voter promotion
+# - You've tested the feature in a non-production environment
+#
+# CONFIGURATION:
+# - RINGRIFT_P2P_DYNAMIC_VOTER=true - Enable dynamic voter management
+# - RINGRIFT_P2P_DYNAMIC_VOTER_PROMOTION_DELAY=60 - Seconds to wait before promotion
+#
 import os
 DYNAMIC_VOTER_ENABLED = os.environ.get("RINGRIFT_P2P_DYNAMIC_VOTER", "false").lower() == "true"
 VOTER_QUORUM_MARGIN = 1  # Promote when alive voters <= quorum_required + margin
 VOTER_MIN_UPTIME_SECONDS = 300.0  # Candidate must have 5+ minutes uptime
 VOTER_MAX_ERROR_RATE = 0.10  # Candidate must have <10% error rate
+
+# Import promotion delay from constants (with fallback)
+try:
+    from app.p2p.constants import DYNAMIC_VOTER_PROMOTION_DELAY
+except ImportError:
+    DYNAMIC_VOTER_PROMOTION_DELAY = 60
 
 
 class LeaderElectionMixin(P2PMixinBase):

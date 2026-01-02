@@ -728,6 +728,205 @@ async def close_p2p_connection() -> None:
 
 
 # =============================================================================
+# Distributed Lock Functions (January 2026 - Sprint 3)
+# =============================================================================
+
+
+async def acquire_distributed_lock(
+    lock_name: str,
+    timeout_seconds: float = 300.0,
+) -> DistributedLockResult:
+    """Acquire a distributed lock via P2P Raft consensus.
+
+    January 2026 (Sprint 3): Added for global training lock support.
+    Prevents duplicate training jobs across cluster nodes.
+
+    Args:
+        lock_name: Name of the lock (e.g., "training:hex8:2")
+        timeout_seconds: Lock timeout/TTL in seconds (default: 300)
+
+    Returns:
+        DistributedLockResult with acquired=True if lock was acquired
+
+    Example:
+        lock_name = f"training:{board_type}:{num_players}"
+        result = await acquire_distributed_lock(lock_name)
+        if result.acquired:
+            try:
+                await run_training(...)
+            finally:
+                await release_distributed_lock(lock_name)
+    """
+    if not HAS_AIOHTTP:
+        return DistributedLockResult(
+            acquired=False,
+            lock_name=lock_name,
+            error="aiohttp not available",
+        )
+
+    try:
+        leader_url = await get_p2p_leader_url()
+        if not leader_url:
+            return DistributedLockResult(
+                acquired=False,
+                lock_name=lock_name,
+                error="P2P leader not available",
+            )
+
+        # POST to /raft/lock/{name}
+        import aiohttp
+
+        url = f"{leader_url}/raft/lock/{lock_name}"
+        payload = {"timeout": timeout_seconds}
+
+        # Get auth token if available
+        auth_token = os.environ.get("RINGRIFT_P2P_AUTH_TOKEN", "")
+        headers = {}
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+
+        timeout = aiohttp.ClientTimeout(total=30.0)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json=payload, headers=headers) as response:
+                data = await response.json()
+
+                if response.status == 200:
+                    return DistributedLockResult(
+                        acquired=data.get("acquired", False),
+                        lock_name=lock_name,
+                        holder=data.get("holder"),
+                        timestamp=data.get("timestamp", time.time()),
+                    )
+                else:
+                    return DistributedLockResult(
+                        acquired=False,
+                        lock_name=lock_name,
+                        error=data.get("error", f"HTTP {response.status}"),
+                    )
+
+    except asyncio.TimeoutError:
+        logger.warning(f"[P2P] Timeout acquiring lock {lock_name}")
+        return DistributedLockResult(
+            acquired=False,
+            lock_name=lock_name,
+            error="timeout",
+        )
+    except Exception as e:
+        logger.error(f"[P2P] Error acquiring lock {lock_name}: {e}")
+        return DistributedLockResult(
+            acquired=False,
+            lock_name=lock_name,
+            error=str(e),
+        )
+
+
+async def release_distributed_lock(lock_name: str) -> bool:
+    """Release a distributed lock via P2P Raft consensus.
+
+    January 2026 (Sprint 3): Added for global training lock support.
+
+    Args:
+        lock_name: Name of the lock to release
+
+    Returns:
+        True if lock was released successfully
+    """
+    if not HAS_AIOHTTP:
+        logger.warning(f"[P2P] Cannot release lock {lock_name}: aiohttp not available")
+        return False
+
+    try:
+        leader_url = await get_p2p_leader_url()
+        if not leader_url:
+            logger.warning(f"[P2P] Cannot release lock {lock_name}: no leader")
+            return False
+
+        # DELETE to /raft/lock/{name}
+        import aiohttp
+
+        url = f"{leader_url}/raft/lock/{lock_name}"
+
+        # Get auth token if available
+        auth_token = os.environ.get("RINGRIFT_P2P_AUTH_TOKEN", "")
+        headers = {}
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+
+        timeout = aiohttp.ClientTimeout(total=30.0)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.delete(url, headers=headers) as response:
+                data = await response.json()
+                released = data.get("released", False)
+
+                if released:
+                    logger.debug(f"[P2P] Released lock {lock_name}")
+                else:
+                    logger.warning(
+                        f"[P2P] Failed to release lock {lock_name}: {data.get('error', 'unknown')}"
+                    )
+
+                return released
+
+    except asyncio.TimeoutError:
+        logger.warning(f"[P2P] Timeout releasing lock {lock_name}")
+        return False
+    except Exception as e:
+        logger.error(f"[P2P] Error releasing lock {lock_name}: {e}")
+        return False
+
+
+class DistributedLockContext:
+    """Async context manager for distributed locks.
+
+    January 2026 (Sprint 3): Safe lock management with auto-release.
+
+    Usage:
+        async with DistributedLockContext("training:hex8:2") as lock:
+            if lock.acquired:
+                await run_training(...)
+            else:
+                logger.info("Lock not acquired, skipping")
+    """
+
+    def __init__(self, lock_name: str, timeout_seconds: float = 300.0):
+        self.lock_name = lock_name
+        self.timeout_seconds = timeout_seconds
+        self.result: DistributedLockResult | None = None
+
+    async def __aenter__(self) -> DistributedLockResult:
+        self.result = await acquire_distributed_lock(
+            self.lock_name,
+            timeout_seconds=self.timeout_seconds,
+        )
+        return self.result
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        if self.result and self.result.acquired:
+            await release_distributed_lock(self.lock_name)
+
+
+def with_training_lock(config_key: str, timeout_seconds: float = 300.0) -> DistributedLockContext:
+    """Create a distributed lock context for training operations.
+
+    January 2026 (Sprint 3): Convenience function for training locks.
+
+    Args:
+        config_key: Configuration key (e.g., "hex8_2p")
+        timeout_seconds: Lock TTL (default: 300s = 5 minutes)
+
+    Returns:
+        DistributedLockContext for use with async with
+
+    Example:
+        async with with_training_lock("hex8_2p") as lock:
+            if lock.acquired:
+                await trigger_training("hex8_2p")
+    """
+    lock_name = f"training:{config_key.replace('_', ':')}"
+    return DistributedLockContext(lock_name, timeout_seconds)
+
+
+# =============================================================================
 # Compatibility shim for broken imports
 # =============================================================================
 
@@ -916,6 +1115,12 @@ __all__ = [
     "submit_batch_p2p_jobs",  # December 2025
     # Lease functions
     "update_p2p_lease",  # December 2025
+    # Distributed lock functions (January 2026 - Sprint 3)
+    "acquire_distributed_lock",
+    "release_distributed_lock",
+    "with_training_lock",
+    "DistributedLockContext",
+    "DistributedLockResult",
     # Utility functions
     "is_p2p_available",
     "clear_p2p_cache",

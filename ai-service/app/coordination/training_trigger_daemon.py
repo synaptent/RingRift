@@ -68,6 +68,19 @@ except ImportError:
     HAS_CIRCUIT_BREAKER = False
     get_training_breaker = None
 
+# Distributed lock integration (January 2026 - Sprint 3)
+# Prevents duplicate training jobs across cluster nodes
+try:
+    from app.coordination.p2p_integration import (
+        with_training_lock,
+        is_p2p_available,
+    )
+    HAS_DISTRIBUTED_LOCK = True
+except ImportError:
+    HAS_DISTRIBUTED_LOCK = False
+    with_training_lock = None  # type: ignore
+    is_p2p_available = None  # type: ignore
+
 
 @dataclass
 class TrainingTriggerConfig:
@@ -2581,6 +2594,7 @@ class TrainingTriggerDaemon(HandlerBase):
         """Run training subprocess for a configuration.
 
         December 30, 2025: Added arch parameter for multi-architecture training.
+        January 2026 (Sprint 3): Added distributed lock to prevent duplicate jobs.
         """
         state = self._training_states.get(config_key)
         if not state:
@@ -2594,6 +2608,48 @@ class TrainingTriggerDaemon(HandlerBase):
             )
             return False
 
+        # January 2026 (Sprint 3): Acquire distributed lock to prevent duplicate training
+        # This ensures only one node trains a given config at a time across the cluster.
+        # Lock timeout is 30 minutes (1800s) to cover long training runs.
+        if HAS_DISTRIBUTED_LOCK and with_training_lock:
+            try:
+                # Check if P2P is available before attempting lock
+                if is_p2p_available and await is_p2p_available():
+                    arch_suffix = f":{arch.name}" if arch else ""
+                    lock_name = f"{config_key}{arch_suffix}"
+                    async with with_training_lock(lock_name, timeout_seconds=1800.0) as lock_result:
+                        if not lock_result.acquired:
+                            logger.info(
+                                f"[TrainingTriggerDaemon] Training lock for {config_key} "
+                                f"not acquired (held by another node), skipping"
+                            )
+                            return False
+                        logger.debug(
+                            f"[TrainingTriggerDaemon] Acquired training lock for {config_key}"
+                        )
+                        # Run training within lock context
+                        return await self._run_training_inner(config_key, state, arch)
+            except Exception as e:
+                # If lock acquisition fails, log and proceed without lock
+                # This ensures training still works when P2P is unavailable
+                logger.warning(
+                    f"[TrainingTriggerDaemon] Distributed lock error for {config_key}: {e}, "
+                    "proceeding without cluster lock"
+                )
+
+        # Fallback: run without distributed lock (P2P unavailable or error)
+        return await self._run_training_inner(config_key, state, arch)
+
+    async def _run_training_inner(
+        self,
+        config_key: str,
+        state: "TrainingConfigState",
+        arch: ArchitectureSpec | None = None,
+    ) -> bool:
+        """Inner training logic (called by _run_training with lock held).
+
+        January 2026 (Sprint 3): Extracted to enable lock wrapper.
+        """
         # December 30, 2025: Dispatch to work queue on coordinator nodes
         # This allows the coordinator to trigger training on remote GPU nodes
         if self._dispatch_to_queue:

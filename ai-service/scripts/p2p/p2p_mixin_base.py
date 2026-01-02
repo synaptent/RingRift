@@ -71,6 +71,61 @@ _event_circuit_opened_at: float = 0.0
 EVENT_CIRCUIT_FAILURE_THRESHOLD = 10  # Open circuit after 10 consecutive failures
 EVENT_CIRCUIT_RESET_TIMEOUT = 60.0  # Try again after 60 seconds
 
+# =============================================================================
+# IP Mapping Cache (Sprint 3.5 - Jan 2, 2026)
+# =============================================================================
+#
+# Cache for distributed_hosts.yaml IP mappings to avoid reading the file
+# on every _count_alive_peers() call (which happens 100+ times per minute).
+# TTL of 60 seconds ensures config changes are picked up within a minute.
+
+_ip_mapping_cache_lock = threading.Lock()
+_ip_mapping_cache: dict[str, set[str]] | None = None
+_ip_mapping_cache_timestamp: float = 0.0
+_ip_mapping_cache_config_path: str = ""
+IP_MAPPING_CACHE_TTL = 60.0  # Refresh cache every 60 seconds
+
+
+def _get_cached_ip_mapping(config_path: Path) -> dict[str, set[str]] | None:
+    """Get cached IP mapping if still valid.
+
+    Args:
+        config_path: Path to distributed_hosts.yaml
+
+    Returns:
+        Cached mapping if valid, None if cache miss or stale
+    """
+    global _ip_mapping_cache, _ip_mapping_cache_timestamp, _ip_mapping_cache_config_path
+
+    with _ip_mapping_cache_lock:
+        config_path_str = str(config_path)
+        now = time.time()
+
+        # Check if cache is valid
+        if (
+            _ip_mapping_cache is not None
+            and _ip_mapping_cache_config_path == config_path_str
+            and (now - _ip_mapping_cache_timestamp) < IP_MAPPING_CACHE_TTL
+        ):
+            return _ip_mapping_cache
+
+        return None
+
+
+def _set_cached_ip_mapping(config_path: Path, mapping: dict[str, set[str]]) -> None:
+    """Update the IP mapping cache.
+
+    Args:
+        config_path: Path to distributed_hosts.yaml
+        mapping: The IP mapping to cache
+    """
+    global _ip_mapping_cache, _ip_mapping_cache_timestamp, _ip_mapping_cache_config_path
+
+    with _ip_mapping_cache_lock:
+        _ip_mapping_cache = mapping
+        _ip_mapping_cache_timestamp = time.time()
+        _ip_mapping_cache_config_path = str(config_path)
+
 
 def _get_event_circuit_state() -> tuple[bool, int]:
     """Get current circuit breaker state.
@@ -496,6 +551,10 @@ class P2PMixinBase:
         Jan 2, 2026: Added to support peer matching when peers are discovered
         via SWIM as IP:port format instead of proper node_ids.
 
+        Sprint 3.5 (Jan 2, 2026): Now uses caching to avoid repeated YAML loads.
+        The distributed_hosts.yaml was being loaded on every _count_alive_peers()
+        call (100+ times per minute). Cache has 60s TTL for config freshness.
+
         Args:
             node_ids: List of node IDs to map
 
@@ -505,12 +564,11 @@ class P2PMixinBase:
         if not node_ids:
             return {}
 
-        # Load config to get IP mappings
+        # Determine config path
         ringrift_path = getattr(self, "ringrift_path", None)
         if not ringrift_path:
             return {}
 
-        from pathlib import Path
         rp = Path(ringrift_path)
         # Jan 2, 2026: Handle ringrift_path that already includes ai-service suffix
         # Config files are stored at .../ai-service/config/, so don't add ai-service again
@@ -521,31 +579,40 @@ class P2PMixinBase:
         if not cfg_path.exists():
             return {}
 
-        try:
-            import yaml
-            data = yaml.safe_load(cfg_path.read_text()) or {}
-            hosts = data.get("hosts", {}) or {}
-        except Exception:
-            return {}
+        # Sprint 3.5: Check cache first
+        full_mapping = _get_cached_ip_mapping(cfg_path)
 
-        node_ip_map: dict[str, set[str]] = {}
-        for nid in node_ids:
-            host_cfg = hosts.get(nid, {})
-            ips: set[str] = set()
+        if full_mapping is None:
+            # Cache miss - load from YAML
+            try:
+                import yaml
+                data = yaml.safe_load(cfg_path.read_text()) or {}
+                hosts = data.get("hosts", {}) or {}
+            except Exception:
+                return {}
 
-            # Collect all known IPs for this node
-            if host_cfg.get("tailscale_ip"):
-                ips.add(host_cfg["tailscale_ip"])
-            if host_cfg.get("ssh_host"):
-                ssh_host = host_cfg["ssh_host"]
-                # Only add if it's an IP (not a hostname like "ssh5.vast.ai")
-                if ssh_host and not any(c.isalpha() for c in ssh_host.replace(".", "")):
-                    ips.add(ssh_host)
+            # Build full mapping for all hosts in config
+            full_mapping = {}
+            for nid, host_cfg in hosts.items():
+                ips: set[str] = set()
 
-            if ips:
-                node_ip_map[nid] = ips
+                # Collect all known IPs for this node
+                if host_cfg.get("tailscale_ip"):
+                    ips.add(host_cfg["tailscale_ip"])
+                if host_cfg.get("ssh_host"):
+                    ssh_host = host_cfg["ssh_host"]
+                    # Only add if it's an IP (not a hostname like "ssh5.vast.ai")
+                    if ssh_host and not any(c.isalpha() for c in ssh_host.replace(".", "")):
+                        ips.add(ssh_host)
 
-        return node_ip_map
+                if ips:
+                    full_mapping[nid] = ips
+
+            # Update cache
+            _set_cached_ip_mapping(cfg_path, full_mapping)
+
+        # Filter to requested node_ids
+        return {nid: full_mapping[nid] for nid in node_ids if nid in full_mapping}
 
     def _get_alive_peer_list(self, node_ids: list[str]) -> list[str]:
         """Get list of node IDs that are currently alive.

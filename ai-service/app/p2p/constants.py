@@ -93,6 +93,16 @@ def get_peer_timeout_for_node(is_coordinator: bool = False, nat_blocked: bool = 
 # Dec 29, 2025: Reduced from 60s to 30s - faster suspect detection enables quicker recovery.
 # With 15s heartbeats, this means 2 missed = suspect, 4 missed = dead
 SUSPECT_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_SUSPECT_TIMEOUT", "30") or 30)
+
+# Jan 2, 2026 (Sprint 3.5): Dynamic voter promotion delay
+# When enabled via RINGRIFT_P2P_DYNAMIC_VOTER=true, this delay prevents premature promotion
+# by waiting for a voter failure to persist before promoting a new voter.
+# This avoids voter set thrashing during transient network issues.
+# NOTE: Dynamic voter management is disabled by default to avoid cluster instability.
+# Enable only in stable clusters with reliable network connectivity.
+DYNAMIC_VOTER_PROMOTION_DELAY = int(
+    os.environ.get("RINGRIFT_P2P_DYNAMIC_VOTER_PROMOTION_DELAY", "60") or 60
+)
 # Election timeout configurable for aggressive failover mode
 # Dec 29, 2025: Increased from 10 to 30 to reduce leader thrashing (5 changes/6h → 1/6h)
 # Dec 30, 2025: Reduced from 30 to 15 - faster failover after mesh stabilization,
