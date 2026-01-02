@@ -1784,12 +1784,14 @@ class P2POrchestrator(
 
         # Sprint 4 (Jan 2, 2026): Wire circuit breaker state persistence
         # This enables crash recovery for the global circuit breaker
+        # Sprint 5 (Jan 2, 2026): Wire transport metrics persistence
         try:
-            from scripts.p2p.transport_cascade import GlobalCircuitBreaker
+            from scripts.p2p.transport_cascade import GlobalCircuitBreaker, TransportCascade
             GlobalCircuitBreaker.set_state_manager(self.state_manager)
-            logger.debug("Circuit breaker state persistence configured")
+            TransportCascade.set_state_manager(self.state_manager)
+            logger.debug("Circuit breaker and transport metrics persistence configured")
         except ImportError:
-            logger.debug("Transport cascade not available for CB persistence")
+            logger.debug("Transport cascade not available for persistence")
 
         # Metrics recording (Phase 1 refactoring: delegated to MetricsManager)
         self.metrics_manager = MetricsManager(self.db_path)

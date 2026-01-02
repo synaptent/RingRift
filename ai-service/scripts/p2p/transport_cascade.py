@@ -146,7 +146,14 @@ class TransportCascade:
     - Health-aware ordering: prioritize historically successful transports
     - Parallel probing: can probe multiple transports simultaneously
     - Circuit breaker integration: stops cascade if global CB opens
+
+    Sprint 5 (Jan 2, 2026): Added metrics persistence for historical analysis.
     """
+
+    # Class-level state manager for metrics persistence
+    _state_manager: Any = None
+    _last_metrics_persist: float = 0.0
+    _metrics_persist_interval: float = 300.0  # Persist every 5 minutes
 
     def __init__(self):
         self._transports: list[BaseTransport] = []
@@ -159,6 +166,133 @@ class TransportCascade:
         self._min_tier = int(os.environ.get("RINGRIFT_TRANSPORT_MIN_TIER", "1"))
         self._max_tier = int(os.environ.get("RINGRIFT_TRANSPORT_MAX_TIER", "5"))
         self._timeout_per_transport = float(os.environ.get("RINGRIFT_TRANSPORT_TIMEOUT", "10"))
+
+        # Sprint 5: Load historical metrics on startup
+        self._load_metrics_from_persistence()
+
+    @classmethod
+    def set_state_manager(cls, state_manager: Any) -> None:
+        """Set the state manager for transport metrics persistence.
+
+        Called during P2P orchestrator initialization.
+
+        Args:
+            state_manager: StateManager instance
+        """
+        cls._state_manager = state_manager
+        logger.debug("[TransportCascade] State manager configured for metrics persistence")
+
+    def _load_metrics_from_persistence(self) -> int:
+        """Load historical transport metrics on startup.
+
+        Returns:
+            Number of metrics loaded
+        """
+        if not self._state_manager:
+            return 0
+
+        try:
+            metrics = self._state_manager.load_transport_metrics(max_age_seconds=3600.0)
+            loaded = 0
+            for m in metrics:
+                target = m.get("target", "")
+                transport_name = m.get("transport_name", "")
+                if not target or not transport_name:
+                    continue
+
+                health = self.get_health(target, transport_name)
+                health.successes = m.get("successes", 0)
+                health.failures = m.get("failures", 0)
+                health.total_latency_ms = m.get("total_latency_ms", 0.0)
+                health.consecutive_failures = m.get("consecutive_failures", 0)
+                health.last_success_time = m.get("last_success_time", 0.0)
+                health.last_failure_time = m.get("last_failure_time", 0.0)
+                loaded += 1
+
+            if loaded > 0:
+                logger.info(f"[TransportCascade] Loaded {loaded} historical transport metrics")
+            return loaded
+        except (AttributeError, TypeError) as e:
+            logger.debug(f"[TransportCascade] Failed to load metrics: {e}")
+            return 0
+
+    def persist_metrics(self, force: bool = False) -> int:
+        """Persist current transport metrics to database.
+
+        Called periodically or on significant events.
+
+        Args:
+            force: Force persistence even if interval hasn't elapsed
+
+        Returns:
+            Number of metrics persisted
+        """
+        if not self._state_manager:
+            return 0
+
+        now = time.time()
+        if not force and (now - self._last_metrics_persist) < self._metrics_persist_interval:
+            return 0
+
+        try:
+            metrics_list = []
+            for target, transports in self._health.items():
+                for transport_name, health in transports.items():
+                    # Only persist if there's been activity
+                    if health.successes + health.failures == 0:
+                        continue
+                    metrics_list.append({
+                        "target": target,
+                        "transport_name": transport_name,
+                        "successes": health.successes,
+                        "failures": health.failures,
+                        "total_latency_ms": health.total_latency_ms,
+                        "consecutive_failures": health.consecutive_failures,
+                        "last_success_time": health.last_success_time,
+                        "last_failure_time": health.last_failure_time,
+                    })
+
+            if metrics_list:
+                saved = self._state_manager.save_transport_metrics_batch(metrics_list)
+                self._last_metrics_persist = now
+                return saved
+            return 0
+        except (AttributeError, TypeError) as e:
+            logger.debug(f"[TransportCascade] Failed to persist metrics: {e}")
+            return 0
+
+    def get_recommended_transport(self, target: str) -> str | None:
+        """Get the recommended transport for a target based on historical performance.
+
+        Sprint 5 (Jan 2, 2026): Uses persisted metrics for ranking.
+
+        Args:
+            target: Target node identifier
+
+        Returns:
+            Best transport name, or None if no data
+        """
+        if self._state_manager:
+            try:
+                return self._state_manager.get_best_transport_for_target(target)
+            except (AttributeError, TypeError):
+                pass
+
+        # Fall back to in-memory metrics
+        if target not in self._health:
+            return None
+
+        best_transport = None
+        best_score = -1.0
+
+        for transport_name, health in self._health[target].items():
+            # Score = success_rate - penalty for consecutive failures
+            score = health.success_rate - (health.consecutive_failures * 0.1)
+            if score > best_score:
+                best_score = score
+                best_transport = transport_name
+
+        return best_transport
 
     def set_circuit_breaker(self, cb: GlobalCircuitBreaker) -> None:
         """Set global circuit breaker for cascade control."""

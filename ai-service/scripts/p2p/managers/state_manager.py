@@ -443,6 +443,34 @@ class StateManager:
                 ON peer_health_history(state, updated_at)
             """)
 
+            # Sprint 5 (Jan 2, 2026): Transport metrics table for historical analysis
+            # Tracks per-transport health for each target node
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS transport_metrics (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    target TEXT NOT NULL,
+                    transport_name TEXT NOT NULL,
+                    successes INTEGER DEFAULT 0,
+                    failures INTEGER DEFAULT 0,
+                    total_latency_ms REAL DEFAULT 0,
+                    avg_latency_ms REAL DEFAULT 0,
+                    success_rate REAL DEFAULT 0.5,
+                    consecutive_failures INTEGER DEFAULT 0,
+                    last_success_time REAL DEFAULT 0,
+                    last_failure_time REAL DEFAULT 0,
+                    updated_at REAL NOT NULL,
+                    UNIQUE(target, transport_name)
+                )
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_transport_metrics_target
+                ON transport_metrics(target, updated_at)
+            """)
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_transport_metrics_transport
+                ON transport_metrics(transport_name, success_rate)
+            """)
+
             conn.commit()
 
     def load_state(self, node_id: str) -> PersistedState:
@@ -1323,3 +1351,311 @@ class StateManager:
                 "fresh_count": 0,
                 "error": str(e),
             }
+
+    # =========================================================================
+    # Transport Metrics Persistence (Sprint 5 - Jan 2, 2026)
+    # =========================================================================
+
+    def save_transport_metrics(
+        self,
+        target: str,
+        transport_name: str,
+        successes: int,
+        failures: int,
+        total_latency_ms: float,
+        consecutive_failures: int,
+        last_success_time: float,
+        last_failure_time: float,
+    ) -> bool:
+        """Save transport metrics for a target/transport combination.
+
+        Sprint 5 (Jan 2, 2026): Persist transport health for historical analysis
+        and transport ranking decisions.
+
+        Args:
+            target: Target node identifier
+            transport_name: Transport name (e.g., 'tailscale', 'ssh', 'http')
+            successes: Total successful attempts
+            failures: Total failed attempts
+            total_latency_ms: Sum of all successful latencies
+            consecutive_failures: Current consecutive failure count
+            last_success_time: Timestamp of last success
+            last_failure_time: Timestamp of last failure
+
+        Returns:
+            True if saved successfully, False otherwise
+        """
+        try:
+            total = successes + failures
+            success_rate = successes / total if total > 0 else 0.5
+            avg_latency = total_latency_ms / successes if successes > 0 else 0.0
+
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT OR REPLACE INTO transport_metrics
+                    (target, transport_name, successes, failures, total_latency_ms,
+                     avg_latency_ms, success_rate, consecutive_failures,
+                     last_success_time, last_failure_time, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        target,
+                        transport_name,
+                        successes,
+                        failures,
+                        total_latency_ms,
+                        avg_latency,
+                        success_rate,
+                        consecutive_failures,
+                        last_success_time,
+                        last_failure_time,
+                        time.time(),
+                    ),
+                )
+                conn.commit()
+                return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to save transport metrics for {target}/{transport_name}: {e}")
+            return False
+
+    def save_transport_metrics_batch(
+        self,
+        metrics: list[dict[str, Any]],
+    ) -> int:
+        """Save multiple transport metrics in a single transaction.
+
+        Args:
+            metrics: List of dicts with keys: target, transport_name, successes,
+                     failures, total_latency_ms, consecutive_failures,
+                     last_success_time, last_failure_time
+
+        Returns:
+            Number of records saved successfully
+        """
+        if not metrics:
+            return 0
+
+        saved = 0
+        try:
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                now = time.time()
+
+                for m in metrics:
+                    try:
+                        successes = m.get("successes", 0)
+                        failures = m.get("failures", 0)
+                        total_latency = m.get("total_latency_ms", 0.0)
+                        total = successes + failures
+                        success_rate = successes / total if total > 0 else 0.5
+                        avg_latency = total_latency / successes if successes > 0 else 0.0
+
+                        cursor.execute(
+                            """
+                            INSERT OR REPLACE INTO transport_metrics
+                            (target, transport_name, successes, failures, total_latency_ms,
+                             avg_latency_ms, success_rate, consecutive_failures,
+                             last_success_time, last_failure_time, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                m.get("target", ""),
+                                m.get("transport_name", ""),
+                                successes,
+                                failures,
+                                total_latency,
+                                avg_latency,
+                                success_rate,
+                                m.get("consecutive_failures", 0),
+                                m.get("last_success_time", 0.0),
+                                m.get("last_failure_time", 0.0),
+                                now,
+                            ),
+                        )
+                        saved += 1
+                    except sqlite3.Error as e:
+                        logger.warning(f"Failed to save transport metric: {e}")
+
+                conn.commit()
+                if saved > 0:
+                    logger.debug(f"[StateManager] Saved {saved} transport metrics")
+        except sqlite3.Error as e:
+            logger.error(f"Failed to save transport metrics batch: {e}")
+
+        return saved
+
+    def load_transport_metrics(
+        self,
+        target: str | None = None,
+        transport_name: str | None = None,
+        max_age_seconds: float = 86400.0,
+    ) -> list[dict[str, Any]]:
+        """Load transport metrics from database.
+
+        Args:
+            target: Filter by target (None for all targets)
+            transport_name: Filter by transport (None for all transports)
+            max_age_seconds: Maximum age of records to load (default: 24 hours)
+
+        Returns:
+            List of metric dictionaries
+        """
+        results: list[dict[str, Any]] = []
+        try:
+            cutoff = time.time() - max_age_seconds
+            with self._db_connection(read_only=True) as conn:
+                cursor = conn.cursor()
+
+                query = """
+                    SELECT target, transport_name, successes, failures, total_latency_ms,
+                           avg_latency_ms, success_rate, consecutive_failures,
+                           last_success_time, last_failure_time, updated_at
+                    FROM transport_metrics
+                    WHERE updated_at > ?
+                """
+                params: list[Any] = [cutoff]
+
+                if target:
+                    query += " AND target = ?"
+                    params.append(target)
+                if transport_name:
+                    query += " AND transport_name = ?"
+                    params.append(transport_name)
+
+                query += " ORDER BY updated_at DESC"
+                cursor.execute(query, params)
+
+                for row in cursor.fetchall():
+                    results.append({
+                        "target": row[0],
+                        "transport_name": row[1],
+                        "successes": row[2],
+                        "failures": row[3],
+                        "total_latency_ms": row[4],
+                        "avg_latency_ms": row[5],
+                        "success_rate": row[6],
+                        "consecutive_failures": row[7],
+                        "last_success_time": row[8],
+                        "last_failure_time": row[9],
+                        "updated_at": row[10],
+                    })
+
+        except sqlite3.Error as e:
+            logger.error(f"Failed to load transport metrics: {e}")
+
+        return results
+
+    def get_best_transport_for_target(self, target: str) -> str | None:
+        """Get the recommended transport for a target based on historical metrics.
+
+        Sprint 5 (Jan 2, 2026): Returns transport with best success rate,
+        with latency as tiebreaker.
+
+        Args:
+            target: Target node identifier
+
+        Returns:
+            Best transport name, or None if no data
+        """
+        try:
+            with self._db_connection(read_only=True) as conn:
+                cursor = conn.cursor()
+                # Prefer high success rate, then low latency
+                cursor.execute(
+                    """
+                    SELECT transport_name, success_rate, avg_latency_ms
+                    FROM transport_metrics
+                    WHERE target = ?
+                      AND updated_at > ?
+                      AND successes + failures >= 5
+                    ORDER BY success_rate DESC, avg_latency_ms ASC
+                    LIMIT 1
+                    """,
+                    (target, time.time() - 3600),  # Last hour only
+                )
+                row = cursor.fetchone()
+                if row:
+                    return row[0]
+                return None
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get best transport for {target}: {e}")
+            return None
+
+    def get_transport_metrics_summary(self) -> dict[str, Any]:
+        """Get summary of transport metrics across all targets.
+
+        Returns:
+            Dict with transport rankings and aggregate stats
+        """
+        try:
+            with self._db_connection(read_only=True) as conn:
+                cursor = conn.cursor()
+
+                # Get per-transport aggregates
+                cursor.execute("""
+                    SELECT transport_name,
+                           COUNT(DISTINCT target) as target_count,
+                           SUM(successes) as total_successes,
+                           SUM(failures) as total_failures,
+                           AVG(success_rate) as avg_success_rate,
+                           AVG(avg_latency_ms) as avg_latency
+                    FROM transport_metrics
+                    WHERE updated_at > ?
+                    GROUP BY transport_name
+                    ORDER BY avg_success_rate DESC
+                """, (time.time() - 3600,))
+
+                transports = {}
+                for row in cursor.fetchall():
+                    transports[row[0]] = {
+                        "target_count": row[1],
+                        "total_successes": row[2],
+                        "total_failures": row[3],
+                        "avg_success_rate": row[4],
+                        "avg_latency_ms": row[5],
+                    }
+
+                # Get total counts
+                cursor.execute("SELECT COUNT(*) FROM transport_metrics")
+                total = cursor.fetchone()[0]
+
+                return {
+                    "total_records": total,
+                    "transports": transports,
+                    "ranking": list(transports.keys()),  # Already sorted by success rate
+                }
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get transport metrics summary: {e}")
+            return {"total_records": 0, "transports": {}, "ranking": [], "error": str(e)}
+
+    def clear_stale_transport_metrics(self, max_age_seconds: float = 86400.0) -> int:
+        """Clear transport metrics older than max_age_seconds.
+
+        Args:
+            max_age_seconds: Maximum age before clearing (default: 24 hours)
+
+        Returns:
+            Number of records cleared
+        """
+        cleared = 0
+        try:
+            cutoff = time.time() - max_age_seconds
+            with self._db_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "DELETE FROM transport_metrics WHERE updated_at < ?",
+                    (cutoff,),
+                )
+                cleared = cursor.rowcount
+                conn.commit()
+                if cleared > 0:
+                    logger.info(
+                        f"[StateManager] Cleared {cleared} stale transport metrics "
+                        f"(older than {max_age_seconds/3600:.1f}h)"
+                    )
+        except sqlite3.Error as e:
+            logger.error(f"Failed to clear stale transport metrics: {e}")
+
+        return cleared
