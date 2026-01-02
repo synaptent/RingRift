@@ -4792,9 +4792,8 @@ class P2POrchestrator(
         if exclude_primary and exclude_primary in ips:
             ips.discard(exclude_primary)
 
-        # Remove localhost variants
-        ips.discard("127.0.0.1")
-        ips.discard("0.0.0.0")
+        # Remove localhost variants (127.0.0.0/8 loopback range and bind-all)
+        ips = {ip for ip in ips if not ip.startswith("127.") and ip != "0.0.0.0" and ip != "::1"}
 
         logger.debug(f"[P2P] Discovered alternate IPs: {ips}")
         return ips

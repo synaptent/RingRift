@@ -182,39 +182,42 @@ class ResourceDetector:
         Returns:
             Tailscale IP if available, else empty string
         """
-        ipv4 = ""
-        ipv6 = ""
-
-        # Get IPv4
-        try:
-            result = subprocess.run(
-                ["tailscale", "ip", "-4"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                ipv4 = (result.stdout or "").strip().splitlines()[0].strip()
-        except (FileNotFoundError, subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
-            pass
-
-        # Get IPv6
-        try:
-            result = subprocess.run(
-                ["tailscale", "ip", "-6"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                ipv6 = (result.stdout or "").strip().splitlines()[0].strip()
-        except (FileNotFoundError, subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
-            pass
+        # Jan 2, 2026: Delegate to specific methods that use _find_tailscale_binary()
+        ipv4 = self.get_tailscale_ipv4()
+        ipv6 = self.get_tailscale_ipv6()
 
         # Return based on preference
         if prefer_ipv6 and ipv6:
             return ipv6
         return ipv4 or ipv6 or ""
+
+    @staticmethod
+    def _find_tailscale_binary() -> str | None:
+        """Find the tailscale binary path.
+
+        Jan 2, 2026: Checks multiple locations to handle macOS and Linux.
+
+        Returns:
+            Path to tailscale binary or None if not found
+        """
+        # Candidate paths in order of preference
+        candidates = [
+            "tailscale",  # In PATH (Linux, some macOS setups)
+            "/usr/local/bin/tailscale",  # Common Linux/macOS location
+            "/Applications/Tailscale.app/Contents/MacOS/Tailscale",  # macOS app
+        ]
+
+        import shutil
+        for candidate in candidates:
+            # Check if it's in PATH
+            if "/" not in candidate:
+                path = shutil.which(candidate)
+                if path:
+                    return path
+            elif os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+
+        return None
 
     def get_tailscale_ipv6(self) -> str:
         """Return this node's Tailscale IPv6 (fd7a:...) when available.
@@ -222,9 +225,13 @@ class ResourceDetector:
         Returns:
             Tailscale IPv6 if available, else empty string
         """
+        binary = self._find_tailscale_binary()
+        if not binary:
+            return ""
+
         try:
             result = subprocess.run(
-                ["tailscale", "ip", "-6"],
+                [binary, "ip", "-6"],
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -242,9 +249,13 @@ class ResourceDetector:
         Returns:
             Tailscale IPv4 if available, else empty string
         """
+        binary = self._find_tailscale_binary()
+        if not binary:
+            return ""
+
         try:
             result = subprocess.run(
-                ["tailscale", "ip", "-4"],
+                [binary, "ip", "-4"],
                 capture_output=True,
                 text=True,
                 timeout=5,
