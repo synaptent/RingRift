@@ -36,6 +36,10 @@ from aiohttp import web
 # Dec 2025: Use consolidated handler utilities
 from scripts.p2p.handlers.base import BaseP2PHandler
 from scripts.p2p.handlers.handlers_base import get_event_bridge
+from scripts.p2p.handlers.timeout_decorator import (
+    handler_timeout,
+    HANDLER_TIMEOUT_GOSSIP,
+)
 
 if TYPE_CHECKING:
     pass
@@ -73,6 +77,7 @@ class GossipHandlersMixin(BaseP2PHandler):
     leader_id: str | None
     auth_token: str | None
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_gossip(self, request: web.Request) -> web.Response:
         """POST /gossip - Receive gossip from peer and respond with our state.
 
@@ -199,6 +204,7 @@ class GossipHandlersMixin(BaseP2PHandler):
             logger.error(f"Error handling gossip request: {e}", exc_info=True)
             return self.error_response(str(e), status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_gossip_anti_entropy(self, request: web.Request) -> web.Response:
         """POST /gossip/anti-entropy - Full state exchange for consistency repair.
 

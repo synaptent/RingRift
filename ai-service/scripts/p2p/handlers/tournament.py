@@ -32,6 +32,11 @@ from typing import TYPE_CHECKING, Any
 from aiohttp import web
 
 from scripts.p2p.handlers.base import BaseP2PHandler
+from scripts.p2p.handlers.timeout_decorator import (
+    handler_timeout,
+    HANDLER_TIMEOUT_TOURNAMENT,
+    HANDLER_TIMEOUT_GOSSIP,
+)
 
 if TYPE_CHECKING:
     from scripts.p2p.models import NodeRole
@@ -62,6 +67,7 @@ class TournamentHandlersMixin(BaseP2PHandler):
     distributed_tournament_state: dict
     job_manager: Any  # JobManager
 
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_tournament_start(self, request: web.Request) -> web.Response:
         """Start or propose a distributed tournament.
 
@@ -173,6 +179,7 @@ class TournamentHandlersMixin(BaseP2PHandler):
         except Exception as e:
             return self.error_response(str(e), status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_tournament_match(self, request: web.Request) -> web.Response:
         """Execute a tournament match and return results synchronously.
 
@@ -204,6 +211,7 @@ class TournamentHandlersMixin(BaseP2PHandler):
             logger.error(f"Tournament match error: {e}")
             return self.error_response(str(e), status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_tournament_status(self, request: web.Request) -> web.Response:
         """Get status of distributed tournaments."""
         try:
@@ -222,6 +230,7 @@ class TournamentHandlersMixin(BaseP2PHandler):
         except Exception as e:
             return self.error_response(str(e), status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_tournament_result(self, request: web.Request) -> web.Response:
         """Receive match result from a worker."""
         try:

@@ -18,6 +18,11 @@ from typing import TYPE_CHECKING, Any
 from aiohttp import web
 
 from scripts.p2p.handlers.base import BaseP2PHandler
+from scripts.p2p.handlers.timeout_decorator import (
+    handler_timeout,
+    HANDLER_TIMEOUT_DELIVERY,
+    HANDLER_TIMEOUT_GOSSIP,
+)
 
 if TYPE_CHECKING:
     from scripts.p2p_orchestrator import P2POrchestrator
@@ -62,6 +67,7 @@ class DeliveryHandlersMixin(BaseP2PHandler):
         app.router.add_get('/delivery/status/{node_id}', self.handle_delivery_status)
     """
 
+    @handler_timeout(HANDLER_TIMEOUT_DELIVERY)
     async def handle_delivery_verify(
         self: "P2POrchestrator",
         request: web.Request,
@@ -225,6 +231,7 @@ class DeliveryHandlersMixin(BaseP2PHandler):
 
         return validation
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_delivery_status(
         self: "P2POrchestrator",
         request: web.Request,
