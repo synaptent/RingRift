@@ -22,11 +22,29 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Coroutine
 
 from .base import BaseLoop
+
+# Lazy import for event emission (avoid circular imports)
+_emit_event = None
+
+
+def _get_emit_event():
+    """Lazy load event emission to avoid circular imports."""
+    global _emit_event
+    if _emit_event is None:
+        try:
+            from app.coordination.event_router import emit_event
+            _emit_event = emit_event
+        except ImportError:
+            # Fallback: no-op if event router not available
+            _emit_event = lambda *args, **kwargs: None
+    return _emit_event
+
 
 logger = logging.getLogger(__name__)
 
@@ -895,6 +913,13 @@ class WorkQueueMaintenanceConfig:
     # Orphan cleanup thresholds (Dec 2025)
     max_pending_age_hours: float = 24.0  # Remove stale pending items
     max_claimed_age_hours: float = 2.0  # Reset claimed items without heartbeat
+    # Jan 2026: Work queue stall detection for 48h autonomous operation
+    stall_threshold_seconds: float = float(
+        os.environ.get("RINGRIFT_WORK_QUEUE_STALL_THRESHOLD", "300")
+    )  # 5 minutes without dispatched work = stall
+    stall_recovery_threshold_seconds: float = float(
+        os.environ.get("RINGRIFT_WORK_QUEUE_STALL_RECOVERY_THRESHOLD", "60")
+    )  # 1 minute of activity to clear stall
 
     def __post_init__(self) -> None:
         """Validate configuration values."""
@@ -908,6 +933,8 @@ class WorkQueueMaintenanceConfig:
             raise ValueError("max_pending_age_hours must be > 0")
         if self.max_claimed_age_hours <= 0:
             raise ValueError("max_claimed_age_hours must be > 0")
+        if self.stall_threshold_seconds <= 0:
+            raise ValueError("stall_threshold_seconds must be > 0")
 
 
 class WorkQueueMaintenanceLoop(BaseLoop):
@@ -916,6 +943,7 @@ class WorkQueueMaintenanceLoop(BaseLoop):
     Runs periodically to:
     - Check for timed out work items
     - Clean up old completed items from the database
+    - Detect and alert on work queue stalls (Jan 2026)
 
     Only runs on the leader node.
     """
@@ -945,6 +973,13 @@ class WorkQueueMaintenanceLoop(BaseLoop):
         self._timeouts_processed = 0
         self._items_cleaned = 0
         self._stale_items_handled = 0
+
+        # Jan 2026: Work queue stall detection
+        self._stall_detected = False
+        self._stall_detected_at: float = 0.0
+        self._last_work_completed_time: float = time.time()
+        self._stall_events_emitted = 0
+        self._recovery_events_emitted = 0
 
     async def _on_start(self) -> None:
         """Initial delay before starting maintenance."""
@@ -990,12 +1025,124 @@ class WorkQueueMaintenanceLoop(BaseLoop):
                     f"{stale_stats.get('claimed_reset', 0)} reset to pending"
                 )
 
+        # Jan 2026: Work queue stall detection for 48h autonomous operation
+        await self._check_work_queue_stall(wq)
+
+    async def _check_work_queue_stall(self, wq: Any) -> None:
+        """Check for work queue stall and emit events.
+
+        A stall is detected when no work has been completed for longer than
+        the configured threshold. This enables alerting and automatic recovery
+        for 48-hour autonomous operation.
+        """
+        now = time.time()
+
+        # Check if any work was completed recently
+        # Use work queue stats if available, otherwise track via timeouts processed
+        work_completed_recently = False
+
+        if hasattr(wq, 'get_stats'):
+            try:
+                stats = wq.get_stats()
+                last_completed = stats.get("last_work_completed_time", 0)
+                if last_completed > self._last_work_completed_time:
+                    self._last_work_completed_time = last_completed
+                    work_completed_recently = True
+            except Exception:
+                pass
+
+        # Also count timeouts processed as "activity" (work is happening)
+        if self._timeouts_processed > 0:
+            work_completed_recently = True
+            self._last_work_completed_time = now
+
+        # Calculate idle duration
+        idle_duration = now - self._last_work_completed_time
+
+        if not self._stall_detected:
+            # Check for new stall
+            if idle_duration > self.config.stall_threshold_seconds:
+                self._stall_detected = True
+                self._stall_detected_at = now
+                self._stall_events_emitted += 1
+
+                # Gather context for the event
+                blocked_configs = []
+                if hasattr(wq, 'get_blocked_configs'):
+                    try:
+                        blocked_configs = list(wq.get_blocked_configs())
+                    except Exception:
+                        pass
+
+                pending_count = 0
+                if hasattr(wq, 'get_pending_count'):
+                    try:
+                        pending_count = wq.get_pending_count()
+                    except Exception:
+                        pass
+
+                logger.warning(
+                    f"[WorkQueueMaintenance] Work queue STALLED: no work dispatched in "
+                    f"{idle_duration:.0f}s (threshold: {self.config.stall_threshold_seconds}s). "
+                    f"Pending items: {pending_count}, blocked configs: {len(blocked_configs)}"
+                )
+
+                # Emit stall event
+                try:
+                    emit = _get_emit_event()
+                    emit(
+                        "work_queue_stalled",
+                        {
+                            "idle_seconds": idle_duration,
+                            "threshold_seconds": self.config.stall_threshold_seconds,
+                            "pending_count": pending_count,
+                            "blocked_configs": blocked_configs[:10],  # Limit to 10
+                            "stall_detected_at": self._stall_detected_at,
+                        },
+                    )
+                except Exception as e:
+                    logger.debug(f"[WorkQueueMaintenance] Failed to emit stall event: {e}")
+        else:
+            # Already in stall state - check for recovery
+            if work_completed_recently:
+                # Work resumed - check if sustained
+                recovery_duration = now - self._last_work_completed_time
+                if recovery_duration < self.config.stall_recovery_threshold_seconds:
+                    # Sustained activity - consider recovered
+                    stall_duration = now - self._stall_detected_at
+                    self._stall_detected = False
+                    self._recovery_events_emitted += 1
+
+                    logger.info(
+                        f"[WorkQueueMaintenance] Work queue RECOVERED after {stall_duration:.0f}s stall"
+                    )
+
+                    # Emit recovery event
+                    try:
+                        emit = _get_emit_event()
+                        emit(
+                            "work_queue_recovered",
+                            {
+                                "stall_duration_seconds": stall_duration,
+                                "recovery_time": now,
+                            },
+                        )
+                    except Exception as e:
+                        logger.debug(f"[WorkQueueMaintenance] Failed to emit recovery event: {e}")
+
     def get_maintenance_stats(self) -> dict[str, Any]:
         """Get maintenance statistics."""
+        now = time.time()
         return {
             "timeouts_processed": self._timeouts_processed,
             "items_cleaned": self._items_cleaned,
             "stale_items_handled": self._stale_items_handled,
+            # Jan 2026: Stall detection stats
+            "stall_detected": self._stall_detected,
+            "stall_events_emitted": self._stall_events_emitted,
+            "recovery_events_emitted": self._recovery_events_emitted,
+            "idle_duration_seconds": now - self._last_work_completed_time,
+            "stall_threshold_seconds": self.config.stall_threshold_seconds,
             **self.stats.to_dict(),
         }
 

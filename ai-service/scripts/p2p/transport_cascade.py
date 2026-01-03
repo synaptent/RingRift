@@ -87,6 +87,142 @@ class TransportHealth:
         self.consecutive_failures += 1
 
 
+class AdaptiveTimeoutTracker:
+    """Learn per-peer timeouts from historical latency.
+
+    Jan 2026: Part of Phase 2.3 - Adaptive Timeout Learning.
+
+    Uses a rolling window of latency samples to compute adaptive timeouts:
+    - Target: p95 latency * multiplier (default 1.5)
+    - Clamped to [min_timeout, max_timeout] range
+
+    This prevents:
+    - Fast peers waiting too long for responses
+    - Slow peers being falsely marked as dead
+    """
+
+    def __init__(
+        self,
+        min_timeout: float = 5.0,
+        max_timeout: float = 60.0,
+        default_timeout: float = 10.0,
+        multiplier: float = 1.5,
+        window_size: int = 100,
+    ):
+        """Initialize adaptive timeout tracker.
+
+        Args:
+            min_timeout: Minimum timeout in seconds
+            max_timeout: Maximum timeout in seconds
+            default_timeout: Timeout for unknown targets
+            multiplier: Multiply p95 latency by this factor
+            window_size: Number of latency samples to track per target
+        """
+        self._min_timeout = min_timeout
+        self._max_timeout = max_timeout
+        self._default_timeout = default_timeout
+        self._multiplier = multiplier
+        self._window_size = window_size
+
+        # target -> list of latency samples (ms)
+        self._latency_samples: dict[str, list[float]] = {}
+
+        # Environment overrides
+        self._min_timeout = float(
+            os.environ.get("RINGRIFT_ADAPTIVE_TIMEOUT_MIN", str(min_timeout))
+        )
+        self._max_timeout = float(
+            os.environ.get("RINGRIFT_ADAPTIVE_TIMEOUT_MAX", str(max_timeout))
+        )
+        self._multiplier = float(
+            os.environ.get("RINGRIFT_ADAPTIVE_TIMEOUT_MULTIPLIER", str(multiplier))
+        )
+
+    def record_latency(self, target: str, latency_ms: float) -> None:
+        """Record a successful latency sample.
+
+        Args:
+            target: Target identifier (node_id, IP, etc.)
+            latency_ms: Observed latency in milliseconds
+        """
+        if target not in self._latency_samples:
+            self._latency_samples[target] = []
+
+        samples = self._latency_samples[target]
+        samples.append(latency_ms)
+
+        # Keep only the most recent samples
+        if len(samples) > self._window_size:
+            self._latency_samples[target] = samples[-self._window_size:]
+
+    def get_timeout(self, target: str) -> float:
+        """Get adaptive timeout for a target.
+
+        Returns:
+            Timeout in seconds based on historical latency, clamped to valid range.
+        """
+        samples = self._latency_samples.get(target, [])
+
+        if len(samples) < 3:
+            # Not enough data, use default
+            return self._default_timeout
+
+        # Calculate p95 latency
+        sorted_samples = sorted(samples)
+        p95_index = int(len(sorted_samples) * 0.95)
+        p95_latency_ms = sorted_samples[p95_index]
+
+        # Convert to seconds and apply multiplier
+        timeout_seconds = (p95_latency_ms / 1000.0) * self._multiplier
+
+        # Clamp to valid range
+        return min(self._max_timeout, max(self._min_timeout, timeout_seconds))
+
+    def get_stats(self, target: str) -> dict[str, Any]:
+        """Get statistics for a target.
+
+        Args:
+            target: Target identifier
+
+        Returns:
+            Dictionary with latency statistics
+        """
+        samples = self._latency_samples.get(target, [])
+
+        if not samples:
+            return {
+                "target": target,
+                "sample_count": 0,
+                "timeout": self._default_timeout,
+            }
+
+        sorted_samples = sorted(samples)
+        return {
+            "target": target,
+            "sample_count": len(samples),
+            "min_latency_ms": sorted_samples[0],
+            "max_latency_ms": sorted_samples[-1],
+            "p50_latency_ms": sorted_samples[len(sorted_samples) // 2],
+            "p95_latency_ms": sorted_samples[int(len(sorted_samples) * 0.95)],
+            "timeout": self.get_timeout(target),
+        }
+
+    def get_all_stats(self) -> list[dict[str, Any]]:
+        """Get statistics for all tracked targets."""
+        return [self.get_stats(target) for target in self._latency_samples]
+
+    def clear(self, target: str | None = None) -> None:
+        """Clear latency samples.
+
+        Args:
+            target: Specific target to clear, or None for all targets
+        """
+        if target is None:
+            self._latency_samples.clear()
+        elif target in self._latency_samples:
+            del self._latency_samples[target]
+
+
 @runtime_checkable
 class TransportProtocol(Protocol):
     """Protocol for all transport implementations."""
@@ -166,6 +302,16 @@ class TransportCascade:
         self._min_tier = int(os.environ.get("RINGRIFT_TRANSPORT_MIN_TIER", "1"))
         self._max_tier = int(os.environ.get("RINGRIFT_TRANSPORT_MAX_TIER", "5"))
         self._timeout_per_transport = float(os.environ.get("RINGRIFT_TRANSPORT_TIMEOUT", "10"))
+
+        # Jan 2026: Adaptive timeout learning (Phase 2.3)
+        self._adaptive_timeouts_enabled = (
+            os.environ.get("RINGRIFT_ADAPTIVE_TIMEOUTS_ENABLED", "true").lower() == "true"
+        )
+        self._adaptive_timeout_tracker = AdaptiveTimeoutTracker(
+            min_timeout=5.0,
+            max_timeout=60.0,
+            default_timeout=self._timeout_per_transport,
+        )
 
         # Sprint 5: Load historical metrics on startup
         self._load_metrics_from_persistence()
@@ -507,6 +653,13 @@ class TransportCascade:
         """Try transports sequentially."""
         errors = []
 
+        # Jan 2026: Use adaptive timeout if enabled and we have historical data
+        effective_timeout = timeout
+        if self._adaptive_timeouts_enabled:
+            adaptive_timeout = self._adaptive_timeout_tracker.get_timeout(target)
+            # Use the larger of fixed and adaptive to be safe during learning
+            effective_timeout = max(timeout, adaptive_timeout)
+
         for transport in transports:
             # Check availability first
             try:
@@ -522,7 +675,7 @@ class TransportCascade:
             try:
                 result = await asyncio.wait_for(
                     transport.send(target, payload),
-                    timeout=timeout,
+                    timeout=effective_timeout,
                 )
                 latency_ms = (time.time() - start_time) * 1000
 
@@ -535,7 +688,7 @@ class TransportCascade:
 
             except asyncio.TimeoutError:
                 self._record_failure(target, transport.name)
-                errors.append(f"{transport.name}: timeout ({timeout}s)")
+                errors.append(f"{transport.name}: timeout ({effective_timeout:.1f}s)")
 
             except Exception as e:
                 self._record_failure(target, transport.name)
@@ -564,6 +717,13 @@ class TransportCascade:
 
         errors = []
 
+        # Jan 2026: Use adaptive timeout if enabled and we have historical data
+        effective_timeout = timeout
+        if self._adaptive_timeouts_enabled:
+            adaptive_timeout = self._adaptive_timeout_tracker.get_timeout(target)
+            # Use the larger of fixed and adaptive to be safe during learning
+            effective_timeout = max(timeout, adaptive_timeout)
+
         # Try each tier
         for tier in sorted(by_tier.keys(), key=lambda t: t.value):
             tier_transports = by_tier[tier]
@@ -572,7 +732,7 @@ class TransportCascade:
             tasks = []
             for transport in tier_transports:
                 task = asyncio.create_task(
-                    self._try_transport(target, payload, transport, timeout)
+                    self._try_transport(target, payload, transport, effective_timeout)
                 )
                 tasks.append((transport.name, task))
 
@@ -676,6 +836,10 @@ class TransportCascade:
         if self._global_circuit_breaker:
             self._global_circuit_breaker.record_success(transport_name, target)
 
+        # Jan 2026: Record latency for adaptive timeout learning
+        if self._adaptive_timeouts_enabled:
+            self._adaptive_timeout_tracker.record_latency(target, latency_ms)
+
         logger.debug(
             f"Transport success: {transport_name} -> {target} "
             f"({latency_ms:.1f}ms, rate={health.success_rate:.2f})"
@@ -693,6 +857,36 @@ class TransportCascade:
             f"Transport failure: {transport_name} -> {target} "
             f"(consecutive={health.consecutive_failures}, rate={health.success_rate:.2f})"
         )
+
+    def get_adaptive_timeout_stats(self) -> dict[str, Any]:
+        """Get adaptive timeout learning statistics.
+
+        Returns:
+            Dictionary with adaptive timeout stats per target.
+        """
+        return {
+            "enabled": self._adaptive_timeouts_enabled,
+            "targets": self._adaptive_timeout_tracker.get_all_stats(),
+            "config": {
+                "min_timeout": self._adaptive_timeout_tracker._min_timeout,
+                "max_timeout": self._adaptive_timeout_tracker._max_timeout,
+                "default_timeout": self._adaptive_timeout_tracker._default_timeout,
+                "multiplier": self._adaptive_timeout_tracker._multiplier,
+            },
+        }
+
+    def get_adaptive_timeout(self, target: str) -> float:
+        """Get the adaptive timeout for a specific target.
+
+        Args:
+            target: Target identifier
+
+        Returns:
+            Adaptive timeout in seconds
+        """
+        if not self._adaptive_timeouts_enabled:
+            return self._timeout_per_transport
+        return self._adaptive_timeout_tracker.get_timeout(target)
 
 
 @dataclass

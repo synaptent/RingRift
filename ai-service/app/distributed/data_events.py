@@ -318,6 +318,9 @@ class DataEventType(Enum):
     WORK_TIMEOUT = "work_timeout"  # Work timed out
     WORK_CANCELLED = "work_cancelled"  # Work cancelled
     JOB_PREEMPTED = "job_preempted"  # Job preempted for higher priority work
+    # Jan 2026: Work queue stall detection for autonomous operation
+    WORK_QUEUE_STALLED = "work_queue_stalled"  # No work dispatched for extended period
+    WORK_QUEUE_RECOVERED = "work_queue_recovered"  # Work dispatch resumed after stall
 
     # Cluster status events
     CLUSTER_STATUS_CHANGED = "cluster_status_changed"
