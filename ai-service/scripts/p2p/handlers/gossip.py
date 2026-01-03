@@ -241,17 +241,26 @@ class GossipHandlersMixin(BaseP2PHandler):
             peer_states = data.get("all_known_states", {})
             updates = 0
             new_peers = []
-            for node_id, state in peer_states.items():
-                if node_id == self.node_id:
-                    continue
-                existing = self._gossip_peer_states.get(node_id, {})
-                is_new_peer = not existing
-                if state.get("version", 0) > existing.get("version", 0):
-                    self._gossip_peer_states[node_id] = state
-                    updates += 1
-                    self._record_gossip_metrics("update", node_id)
-                    if is_new_peer:
-                        new_peers.append((node_id, state))
+
+            # Jan 3, 2026: Use sync lock to prevent race with cleanup
+            sync_lock = getattr(self, "_gossip_state_sync_lock", None)
+            if sync_lock is not None:
+                sync_lock.acquire()
+            try:
+                for node_id, state in peer_states.items():
+                    if node_id == self.node_id:
+                        continue
+                    existing = self._gossip_peer_states.get(node_id, {})
+                    is_new_peer = not existing
+                    if state.get("version", 0) > existing.get("version", 0):
+                        self._gossip_peer_states[node_id] = state
+                        updates += 1
+                        self._record_gossip_metrics("update", node_id)
+                        if is_new_peer:
+                            new_peers.append((node_id, state))
+            finally:
+                if sync_lock is not None:
+                    sync_lock.release()
 
             # Emit node online events for newly discovered peers (Dec 2025 consolidation)
             for peer_id, peer_state in new_peers:

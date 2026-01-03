@@ -199,6 +199,12 @@ if HAS_PROMETHEUS:
         'Total requests blocked by open circuit',
         ['operation_type', 'target']
     )
+    # Sprint 10 (Jan 3, 2026): Escalation tier tracking
+    PROM_ESCALATION_TIER = _get_or_create_gauge(
+        'ringrift_circuit_breaker_escalation_tier',
+        'Current escalation tier for circuit breaker (0-5)',
+        ['operation_type', 'target']
+    )
 
 
 class CircuitState(Enum):
@@ -573,6 +579,12 @@ class CircuitBreaker:
                 PROM_CIRCUIT_STATE.labels(
                     operation_type=self.operation_type, target=target
                 ).set(state_value)
+                # Sprint 10 (Jan 3, 2026): Update escalation tier gauge
+                with self._lock:
+                    circuit = self._get_or_create_circuit(target)
+                    PROM_ESCALATION_TIER.labels(
+                        operation_type=self.operation_type, target=target
+                    ).set(circuit.escalation_tier)
             except (ValueError, TypeError):
                 pass  # Label mismatch - metric was registered with different labels
 
@@ -580,8 +592,22 @@ class CircuitBreaker:
         if old_state is not None and new_state is not None:
             self._notify_state_change(target, old_state, new_state)
 
-    def record_failure(self, target: str, error: Exception | None = None) -> None:
-        """Record a failed operation for target."""
+    def record_failure(
+        self,
+        target: str,
+        error: Exception | None = None,
+        preemptive: bool = False,
+    ) -> None:
+        """Record a failed operation for target.
+
+        Args:
+            target: The target that failed (e.g., hostname, endpoint).
+            error: Optional exception that caused the failure.
+            preemptive: If True, this is a preemptive failure from gossip replication.
+                       Preemptive failures increment failure_count but don't update
+                       last_failure_time or trigger immediate state changes. This
+                       biases the circuit towards opening faster if local failures occur.
+        """
         old_state = None
         new_state = None
         opened_circuit = False
@@ -590,7 +616,11 @@ class CircuitBreaker:
             circuit = self._get_or_create_circuit(target)
             old_state = circuit.state
             circuit.failure_count += 1
-            circuit.last_failure_time = time.time()
+
+            # Jan 3, 2026: Preemptive failures from gossip don't update last_failure_time
+            # This prevents gossip from resetting recovery timeouts
+            if not preemptive:
+                circuit.last_failure_time = time.time()
 
             if circuit.state == CircuitState.HALF_OPEN:
                 # Failure in half-open: go back to open with increased backoff
@@ -628,6 +658,12 @@ class CircuitBreaker:
                 PROM_CIRCUIT_STATE.labels(
                     operation_type=self.operation_type, target=target
                 ).set(state_value)
+                # Sprint 10 (Jan 3, 2026): Update escalation tier gauge
+                with self._lock:
+                    circuit = self._get_or_create_circuit(target)
+                    PROM_ESCALATION_TIER.labels(
+                        operation_type=self.operation_type, target=target
+                    ).set(circuit.escalation_tier)
             except (ValueError, TypeError):
                 pass  # Label mismatch - metric was registered with different labels
 

@@ -37,6 +37,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from app.coordination.event_utils import parse_config_key
 from app.utils.game_discovery import GameDiscovery
 
 logger = logging.getLogger(__name__)
@@ -203,9 +204,9 @@ class BackupCompletenessTracker:
             return overall.by_config[config_key]
 
         # Create empty status for unknown config
-        parts = config_key.split("_")
-        board_type = parts[0] if parts else "unknown"
-        num_players = int(parts[1].rstrip("p")) if len(parts) > 1 else 2
+        parsed = parse_config_key(config_key)
+        board_type = parsed.board_type if parsed else "unknown"
+        num_players = parsed.num_players if parsed else 2
 
         return ConfigBackupStatus(
             config_key=config_key,
@@ -296,15 +297,10 @@ class BackupCompletenessTracker:
                 s3_count = s3_counts.get(config_key, 0)
                 owc_count = owc_counts.get(config_key, 0)
 
-                # Parse config key
-                parts = config_key.split("_")
-                board_type = parts[0] if parts else "unknown"
-                num_players = 2
-                if len(parts) > 1:
-                    try:
-                        num_players = int(parts[1].rstrip("p"))
-                    except ValueError:
-                        pass
+                # Parse config key using centralized utility
+                parsed = parse_config_key(config_key)
+                board_type = parsed.board_type if parsed else "unknown"
+                num_players = parsed.num_players if parsed else 2
 
                 # Compute coverage
                 s3_coverage = s3_count / local_count if local_count > 0 else 1.0

@@ -28,9 +28,28 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from scripts.p2p.p2p_mixin_base import P2PMixinBase
+
+
+# Jan 3, 2026: Quorum health levels for proactive monitoring
+class QuorumHealthLevel(str, Enum):
+    """Quorum health state for proactive monitoring.
+
+    Enables early warning when voter quorum is degrading, before complete failure.
+
+    Levels:
+        HEALTHY: Sufficient margin above minimum quorum (>= quorum + 2)
+        DEGRADED: At risk, one failure away from MINIMUM (== quorum + 1)
+        MINIMUM: Exactly at quorum - no room for failure (== quorum)
+        LOST: Below quorum - cluster cannot make progress (< quorum)
+    """
+    HEALTHY = "healthy"
+    DEGRADED = "degraded"
+    MINIMUM = "minimum"
+    LOST = "lost"
 
 if TYPE_CHECKING:
     from threading import RLock
@@ -240,6 +259,9 @@ class LeaderElectionMixin(P2PMixinBase):
             self._voter_promotion_cb = VoterPromotionCircuitBreaker()
         return self._voter_promotion_cb
 
+    # Jan 3, 2026: Quorum health level tracking for proactive monitoring
+    _last_quorum_health_level: QuorumHealthLevel | None = None
+
     def _has_voter_quorum(self) -> bool:
         """Return True if we currently see enough voter nodes alive.
 
@@ -257,6 +279,113 @@ class LeaderElectionMixin(P2PMixinBase):
         # Use base class helper for counting alive peers
         alive = self._count_alive_peers(voters)
         return alive >= quorum
+
+    def _check_quorum_health(self) -> QuorumHealthLevel:
+        """Proactive quorum health check with early warning.
+
+        Jan 3, 2026: Added for proactive quorum degradation monitoring.
+
+        Returns:
+            QuorumHealthLevel indicating current quorum state:
+            - HEALTHY: >= quorum + 2 voters alive
+            - DEGRADED: == quorum + 1 voters alive
+            - MINIMUM: == quorum voters alive (no room for failure)
+            - LOST: < quorum voters alive (cluster cannot make progress)
+        """
+        voters = list(getattr(self, "voter_node_ids", []) or [])
+        if not voters:
+            return QuorumHealthLevel.HEALTHY
+
+        total = len(voters)
+        quorum = min(VOTER_MIN_QUORUM, total)
+        alive = self._count_alive_peers(voters)
+
+        # Determine health level based on margin above quorum
+        if alive < quorum:
+            level = QuorumHealthLevel.LOST
+        elif alive == quorum:
+            level = QuorumHealthLevel.MINIMUM
+        elif alive == quorum + 1:
+            level = QuorumHealthLevel.DEGRADED
+        else:  # alive >= quorum + 2
+            level = QuorumHealthLevel.HEALTHY
+
+        # Emit event if health level changed
+        old_level = getattr(self, "_last_quorum_health_level", None)
+        if old_level is not None and level != old_level:
+            self._on_quorum_health_changed(old_level, level, alive, total, quorum)
+
+        self._last_quorum_health_level = level
+        return level
+
+    def _on_quorum_health_changed(
+        self,
+        old_level: QuorumHealthLevel,
+        new_level: QuorumHealthLevel,
+        alive: int,
+        total: int,
+        quorum: int,
+    ) -> None:
+        """Handle quorum health level change with event emission.
+
+        Jan 3, 2026: Proactive alerting for quorum degradation.
+        """
+        # Log appropriately based on severity
+        if new_level == QuorumHealthLevel.LOST:
+            logger.error(
+                f"QUORUM LOST: {alive}/{total} voters alive, need {quorum}. "
+                "Cluster cannot elect new leaders!"
+            )
+        elif new_level == QuorumHealthLevel.MINIMUM:
+            logger.warning(
+                f"QUORUM AT MINIMUM: {alive}/{total} voters alive (exactly {quorum}). "
+                "Any voter failure will cause quorum loss!"
+            )
+        elif new_level == QuorumHealthLevel.DEGRADED:
+            logger.warning(
+                f"Quorum degraded: {alive}/{total} voters alive ({quorum} required). "
+                "One failure from minimum quorum."
+            )
+        elif old_level in (QuorumHealthLevel.LOST, QuorumHealthLevel.MINIMUM):
+            logger.info(
+                f"Quorum recovered to {new_level.value}: {alive}/{total} voters alive."
+            )
+
+        # Emit event via base class helper
+        self._safe_emit_event("QUORUM_HEALTH_CHANGED", {
+            "old_level": old_level.value,
+            "new_level": new_level.value,
+            "alive_voters": alive,
+            "total_voters": total,
+            "quorum_required": quorum,
+            "node_id": self.node_id,
+            "timestamp": time.time(),
+        })
+
+    def get_quorum_health_status(self) -> dict[str, Any]:
+        """Get detailed quorum health status for monitoring.
+
+        Jan 3, 2026: Comprehensive quorum health info for /status endpoint.
+
+        Returns:
+            Dict with health level, counts, and thresholds
+        """
+        voters = list(getattr(self, "voter_node_ids", []) or [])
+        total = len(voters)
+        quorum = min(VOTER_MIN_QUORUM, total) if voters else 0
+        alive = self._count_alive_peers(voters) if voters else 0
+        level = self._check_quorum_health()
+
+        return {
+            "health_level": level.value,
+            "alive_voters": alive,
+            "total_voters": total,
+            "quorum_required": quorum,
+            "margin": alive - quorum,
+            "is_healthy": level == QuorumHealthLevel.HEALTHY,
+            "is_at_risk": level in (QuorumHealthLevel.DEGRADED, QuorumHealthLevel.MINIMUM),
+            "is_lost": level == QuorumHealthLevel.LOST,
+        }
 
     def _release_voter_grant_if_self(self) -> None:
         """Release our voter-side lease grant when stepping down.
@@ -295,6 +424,11 @@ class LeaderElectionMixin(P2PMixinBase):
         cleared_count = 0
         timeout = ClientTimeout(total=3)
 
+        # Jan 3, 2026: Copy peers under lock before async operations
+        # This prevents race conditions when peers dict is modified concurrently
+        with self.peers_lock:
+            peers_snapshot = dict(self.peers)
+
         async with aiohttp.ClientSession(timeout=timeout) as session:
             for voter_id in voter_node_ids:
                 if voter_id == self.node_id:
@@ -303,8 +437,8 @@ class LeaderElectionMixin(P2PMixinBase):
                     cleared_count += 1
                     continue
 
-                # Get voter peer info
-                peer = self.peers.get(voter_id)
+                # Get voter peer info from snapshot (lock-safe)
+                peer = peers_snapshot.get(voter_id)
                 if not peer or not peer.is_alive():
                     continue
 
@@ -1118,6 +1252,10 @@ class LeaderElectionMixin(P2PMixinBase):
         alive_voters = self._count_alive_peers(self.voter_node_ids or [])
         lease_remaining = max(0, self.leader_lease_expires - time.time())
 
+        # Jan 3, 2026: Proactive quorum health monitoring with event emission
+        # This tracks and emits QUORUM_HEALTH_CHANGED events on level transitions
+        quorum_health_level = self._check_quorum_health()
+
         # December 2025: Run split-brain detection (triggers resolution if needed)
         # Skip split-brain detection when using Raft - Raft handles this
         split_brain_info = None
@@ -1161,6 +1299,13 @@ class LeaderElectionMixin(P2PMixinBase):
             # Sprint 3: Stale leader alerting
             "stale_leader_detected": has_stale_leader,
             "lease_expiry_info": lease_expiry_info,
+            # Jan 3, 2026: Quorum health level for proactive monitoring
+            "quorum_health_level": quorum_health_level.value,
+            "quorum_at_risk": quorum_health_level in (
+                QuorumHealthLevel.DEGRADED,
+                QuorumHealthLevel.MINIMUM,
+                QuorumHealthLevel.LOST,
+            ),
         }
 
         # Add Raft leader info if available

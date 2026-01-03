@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
+from app.coordination.mixins.import_mixin import ImportDaemonMixin
 from app.coordination.protocols import CoordinatorStatus
 
 logger = logging.getLogger(__name__)
@@ -98,14 +99,21 @@ class S3FileInfo:
     etag: str
 
 
-class S3ImportDaemon(HandlerBase):
+class S3ImportDaemon(HandlerBase, ImportDaemonMixin):
     """Daemon that imports training data from S3 for recovery and bootstrap.
 
     Provides on-demand import of canonical databases, training NPZ files,
     and model checkpoints from S3 backup.
+
+    January 2026: Inherits from ImportDaemonMixin for file validation
+    and atomic replacement functionality.
     """
 
     _instance: S3ImportDaemon | None = None
+
+    # ImportDaemonMixin configuration
+    IMPORT_LOG_PREFIX = "[S3Import]"
+    IMPORT_VERIFY_CHECKSUMS = True
 
     def __init__(self, config: S3ImportConfig | None = None):
         """Initialize S3 import daemon.
@@ -220,12 +228,24 @@ class S3ImportDaemon(HandlerBase):
 
             if result.returncode == 0:
                 file_size = local_path.stat().st_size
+
+                # Validate downloaded file using ImportDaemonMixin
+                validation = await self._validate_import(local_path)
+                if not validation.valid:
+                    logger.warning(
+                        f"[S3Import] Downloaded file failed validation: "
+                        f"{validation.error}"
+                    )
+                    self._import_stats.import_errors += 1
+                    local_path.unlink(missing_ok=True)
+                    return False
+
                 self._imported_files[s3_key] = str(local_path)
                 self._import_stats.total_files_imported += 1
                 self._import_stats.total_bytes_imported += file_size
                 logger.info(
                     f"[S3Import] Downloaded {s3_key} "
-                    f"({file_size / (1024*1024):.1f} MB)"
+                    f"({file_size / (1024*1024):.1f} MB, validated)"
                 )
                 return True
             else:

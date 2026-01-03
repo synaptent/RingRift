@@ -891,6 +891,37 @@ Recent stability improvements to the P2P orchestrator:
 - Heartbeat interval reduced: 30s → 15s (faster peer discovery)
 - Peer timeout reduced: 90s → 60s (faster dead node detection)
 
+## Circuit Breaker Gossip Replication (Jan 3, 2026)
+
+**New Feature**: Circuit breaker states are now replicated via the P2P gossip protocol.
+
+**Problem Solved**: Previously, when a node discovered a failing target (e.g., an unreachable host),
+other nodes would independently discover the same failure through their own connection attempts.
+This led to duplicated work and slower cluster-wide failure adaptation.
+
+**Solution**: Open circuit breaker states are now shared via gossip:
+
+1. **State Collection** (`gossip_protocol.py:_get_circuit_breaker_gossip_state`):
+   - Collects all OPEN and HALF_OPEN circuits from local CircuitBreakerRegistry
+   - Includes: operation_type, target, state, failure_count, opened_at, age_seconds
+
+2. **State Processing** (`gossip_protocol.py:_process_circuit_breaker_states`):
+   - When receiving CB states from peers, records "preemptive failures" locally
+   - Only applies to fresh circuits (opened within last 5 minutes)
+   - Preemptive failures increment failure_count but don't update last_failure_time
+
+3. **Preemptive Flag** (`circuit_breaker.py:record_failure`):
+   - New `preemptive=True` parameter for gossip-originated failures
+   - Preemptive failures bias circuit towards opening but don't trigger callbacks
+
+**Benefits**:
+
+- Cluster-wide failure awareness within 1 gossip interval (~15s)
+- Reduced connection attempts to known-failing targets
+- Faster recovery from network partitions
+
+**Configuration**: Uses existing GossipDefaults from coordination_defaults.py.
+
 ## See Also
 
 - `AGENTS.md` - Coding guidelines

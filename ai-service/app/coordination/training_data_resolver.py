@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 # Use DataSource from cluster_manifest (has all 4 sources)
+from app.coordination.event_utils import parse_config_key
 from app.distributed.cluster_manifest import (
     ClusterManifest,
     DataSource,
@@ -195,16 +196,13 @@ class TrainingDataResolver:
         If S3/OWC locations are not in the manifest, query the inventory
         modules directly to discover available databases.
         """
-        # Parse config key
-        parts = config_key.split("_")
-        if len(parts) < 2:
+        # Parse config key using centralized utility
+        parsed = parse_config_key(config_key)
+        if not parsed:
             return all_sources
 
-        board_type = parts[0]
-        try:
-            num_players = int(parts[1].replace("p", ""))
-        except ValueError:
-            return all_sources
+        board_type = parsed.board_type
+        num_players = parsed.num_players
 
         # Check S3 if no manifest locations
         if not all_sources.get(DataSource.S3):
@@ -396,13 +394,11 @@ class TrainingDataResolver:
     ) -> ResolvedDataResult:
         """Try to find data on local filesystem."""
         # Also check via GameDiscovery for local databases
-        parts = config_key.split("_")
-        if len(parts) >= 2:
-            board_type = parts[0]
-            num_players = int(parts[1].replace("p", ""))
+        parsed = parse_config_key(config_key)
+        if parsed:
             local_dbs = self._discovery.find_databases_for_config(
-                board_type=board_type,
-                num_players=num_players,
+                board_type=parsed.board_type,
+                num_players=parsed.num_players,
             )
             for db in local_dbs:
                 db_path = Path(db.path)

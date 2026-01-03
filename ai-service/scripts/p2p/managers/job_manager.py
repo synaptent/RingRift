@@ -30,6 +30,14 @@ from app.config.coordination_defaults import (
     TaskLifecycleDefaults,
 )
 
+# Sprint 10 (Jan 3, 2026): Adaptive timeout for SSH operations
+try:
+    from app.distributed.circuit_breaker import get_adaptive_timeout
+except ImportError:
+    def get_adaptive_timeout(operation_type: str, host: str, default: float) -> float:
+        """Fallback when circuit_breaker not available."""
+        return default
+
 # Dec 31, 2025: Import batch size calculator for GPU utilization optimization
 try:
     from app.ai.gpu_parallel_games import get_optimal_batch_size
@@ -747,7 +755,7 @@ class JobManager(EventSubscriptionMixin):
     # =========================================================================
 
     async def _preflight_check_node(
-        self, node_id: str, timeout: float = 5.0
+        self, node_id: str, timeout: float | None = None
     ) -> tuple[bool, str]:
         """Quick health check before dispatching job to node.
 
@@ -756,7 +764,7 @@ class JobManager(EventSubscriptionMixin):
 
         Args:
             node_id: The node ID to check
-            timeout: Maximum time to wait for probe response (default: 5s)
+            timeout: Maximum time to wait for probe response (uses adaptive timeout if None)
 
         Returns:
             Tuple of (is_available, reason).
@@ -765,6 +773,7 @@ class JobManager(EventSubscriptionMixin):
 
         December 2025: Added as part of cluster availability fix to prevent
         dispatching jobs to unavailable nodes.
+        Sprint 10 (Jan 3, 2026): Uses adaptive timeout based on host history.
         """
         # Check 1: Node in alive peers
         with self.peers_lock:
@@ -775,13 +784,18 @@ class JobManager(EventSubscriptionMixin):
                 if peer.status in ("offline", "dead", "retired"):
                     return False, f"peer_status_{peer.status}"
 
+        # Sprint 10 (Jan 3, 2026): Use adaptive timeout based on host performance history
+        effective_timeout = timeout if timeout is not None else get_adaptive_timeout(
+            "ssh", node_id, default=5.0
+        )
+
         # Check 2: Quick SSH probe
         try:
             from app.core.ssh import run_ssh_command_async
 
             result = await asyncio.wait_for(
-                run_ssh_command_async(node_id, "echo ok", timeout=timeout),
-                timeout=timeout + 1
+                run_ssh_command_async(node_id, "echo ok", timeout=effective_timeout),
+                timeout=effective_timeout + 1
             )
             if not result or not result.success:
                 stderr_preview = (result.stderr[:100] if result and result.stderr else "no result")
@@ -928,7 +942,7 @@ class JobManager(EventSubscriptionMixin):
             logger.debug(f"Disk space check error for {node_id}: {e}")
             return True, f"disk_check_error_skipped: {e}"
 
-    async def _check_gpu_health(self, node_id: str, timeout: float = 10.0) -> tuple[bool, str]:
+    async def _check_gpu_health(self, node_id: str, timeout: float | None = None) -> tuple[bool, str]:
         """Verify GPU is available and not in error state.
 
         Runs nvidia-smi on the target node to check for CUDA errors,
@@ -936,7 +950,7 @@ class JobManager(EventSubscriptionMixin):
 
         Args:
             node_id: The node ID to check
-            timeout: Maximum time to wait for nvidia-smi (default: 10s)
+            timeout: Maximum time to wait for nvidia-smi (uses adaptive timeout if None)
 
         Returns:
             Tuple of (is_healthy, reason).
@@ -949,6 +963,7 @@ class JobManager(EventSubscriptionMixin):
 
         January 2026: Skip nvidia-smi on non-GPU nodes (macOS, Hetzner CPU)
         to prevent crashes and false failures.
+        Sprint 10 (Jan 3, 2026): Uses adaptive timeout based on host history.
         """
         # Check if target node has GPU capability before running nvidia-smi
         # This prevents crashes on macOS coordinators and CPU-only nodes
@@ -967,6 +982,11 @@ class JobManager(EventSubscriptionMixin):
                 logger.debug(f"Skipping GPU health check for macOS node {node_id}")
                 return True, "macos_no_nvidia_gpu"
 
+        # Sprint 10 (Jan 3, 2026): Use adaptive timeout based on host performance history
+        effective_timeout = timeout if timeout is not None else get_adaptive_timeout(
+            "ssh", node_id, default=10.0
+        )
+
         try:
             from app.core.ssh import run_ssh_command_async
 
@@ -974,9 +994,9 @@ class JobManager(EventSubscriptionMixin):
                 run_ssh_command_async(
                     node_id,
                     "nvidia-smi --query-gpu=name,memory.used,memory.total --format=csv,noheader 2>&1",
-                    timeout=timeout
+                    timeout=effective_timeout
                 ),
-                timeout=timeout + 1
+                timeout=effective_timeout + 1
             )
             if not result or not result.success:
                 stderr = result.stderr if result else "no result"
@@ -1008,8 +1028,8 @@ class JobManager(EventSubscriptionMixin):
         self,
         node_id: str,
         requires_gpu: bool = False,
-        preflight_timeout: float = 5.0,
-        gpu_check_timeout: float = 10.0,
+        preflight_timeout: float | None = None,
+        gpu_check_timeout: float | None = None,
     ) -> tuple[bool, str]:
         """Validate that a node is suitable for running a job.
 
@@ -1019,8 +1039,8 @@ class JobManager(EventSubscriptionMixin):
         Args:
             node_id: The node ID to validate
             requires_gpu: Whether the job requires GPU (triggers GPU health check)
-            preflight_timeout: Timeout for SSH probe
-            gpu_check_timeout: Timeout for GPU health check
+            preflight_timeout: Timeout for SSH probe (uses adaptive timeout if None)
+            gpu_check_timeout: Timeout for GPU health check (uses adaptive timeout if None)
 
         Returns:
             Tuple of (is_valid, reason).
@@ -1029,6 +1049,7 @@ class JobManager(EventSubscriptionMixin):
 
         December 2025: Convenience method combining preflight and GPU checks.
         Updated Dec 2025: Now checks availability cache first for fast rejection.
+        Sprint 10 (Jan 3, 2026): Uses adaptive timeouts based on host history when None.
         """
         # Step 0: Check availability cache first (fast path for known-unavailable nodes)
         try:
@@ -1043,7 +1064,7 @@ class JobManager(EventSubscriptionMixin):
         except ImportError:
             pass  # Cache not available, continue with full checks
 
-        # Step 1: Basic preflight check
+        # Step 1: Basic preflight check (uses adaptive timeout when preflight_timeout is None)
         is_available, reason = await self._preflight_check_node(node_id, preflight_timeout)
         if not is_available:
             logger.warning(f"Node {node_id} failed preflight check: {reason}")
@@ -1051,7 +1072,7 @@ class JobManager(EventSubscriptionMixin):
             self._update_availability_cache(node_id, available=False, reason=reason)
             return False, f"preflight_{reason}"
 
-        # Step 2: GPU health check if required
+        # Step 2: GPU health check if required (uses adaptive timeout when gpu_check_timeout is None)
         if requires_gpu:
             is_healthy, gpu_reason = await self._check_gpu_health(node_id, gpu_check_timeout)
             if not is_healthy:

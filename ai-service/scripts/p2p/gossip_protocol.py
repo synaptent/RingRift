@@ -320,6 +320,13 @@ class GossipProtocolMixin(P2PMixinBase):
             from .network import TimeoutAsyncLockWrapper
             self._gossip_state_lock = TimeoutAsyncLockWrapper(timeout=_GOSSIP_LOCK_TIMEOUT)
 
+        # Jan 3, 2026: Add threading lock for sync state modifications
+        # The async lock above is for async cleanup, this sync lock protects
+        # state modifications from _process_gossip_response and HTTP handlers
+        if not hasattr(self, "_gossip_state_sync_lock"):
+            import threading
+            self._gossip_state_sync_lock = threading.RLock()
+
         # Dec 29, 2025: Restore persisted gossip state on startup
         # This allows faster cluster state recovery after P2P restarts
         self._restore_gossip_state_on_startup()
@@ -341,17 +348,29 @@ class GossipProtocolMixin(P2PMixinBase):
             return
         self._last_gossip_cleanup = now
 
-        # Acquire lock with timeout to prevent deadlocks
+        # Acquire locks with timeout to prevent deadlocks
         # Graceful fallback if lock unavailable (e.g., during initialization)
         # Jan 2026: Use centralized _GOSSIP_LOCK_TIMEOUT from LoopTimeouts
-        lock = getattr(self, "_gossip_state_lock", None)
-        if lock is not None:
-            acquired = await lock.acquire(timeout=_GOSSIP_LOCK_TIMEOUT)
-            if not acquired:
+        async_lock = getattr(self, "_gossip_state_lock", None)
+        sync_lock = getattr(self, "_gossip_state_sync_lock", None)
+
+        # Acquire async lock first (for other async callers)
+        async_acquired = False
+        if async_lock is not None:
+            async_acquired = await async_lock.acquire(timeout=_GOSSIP_LOCK_TIMEOUT)
+            if not async_acquired:
                 self._log_warning("Gossip state lock acquisition timed out during cleanup")
                 return
-        else:
-            acquired = False
+
+        # Jan 3, 2026: Also acquire sync lock to prevent race with sync state modifiers
+        sync_acquired = False
+        if sync_lock is not None:
+            sync_acquired = sync_lock.acquire(blocking=True, timeout=_GOSSIP_LOCK_TIMEOUT)
+            if not sync_acquired:
+                if async_lock is not None and async_acquired:
+                    async_lock.release()
+                self._log_warning("Gossip sync lock acquisition timed out during cleanup")
+                return
 
         try:
             cleaned_states = 0
@@ -424,8 +443,11 @@ class GossipProtocolMixin(P2PMixinBase):
                     f"{cleaned_health} health tracking entries"
                 )
         finally:
-            if lock is not None and acquired:
-                lock.release()
+            # Jan 3, 2026: Release both locks in reverse order
+            if sync_lock is not None and sync_acquired:
+                sync_lock.release()
+            if async_lock is not None and async_acquired:
+                async_lock.release()
 
     # =========================================================================
     # Endpoint Validation (Dec 30, 2025)
@@ -1140,6 +1162,61 @@ class GossipProtocolMixin(P2PMixinBase):
                 timeout = ClientTimeout(total=peer_timeout)
                 await self._send_gossip_to_peer(peer, local_state, timeout, get_client_session)
 
+    def _get_circuit_breaker_gossip_state(self) -> dict[str, Any] | None:
+        """Get circuit breaker states for gossip replication.
+
+        Jan 3, 2026: Enables cluster-wide circuit breaker awareness.
+        When a node discovers a failing target (e.g., a host with network issues),
+        it shares this information via gossip. Other nodes can then preemptively
+        avoid that target, reducing duplicated failure discovery.
+
+        Only shares OPEN and HALF_OPEN circuits (not CLOSED) to minimize
+        gossip payload size. Circuit breaker state is keyed by operation type
+        (ssh, http, p2p, etc.) and target (host/endpoint).
+
+        Returns:
+            Dict with open circuit states, or None if no open circuits or
+            circuit breaker module unavailable.
+        """
+        try:
+            from app.distributed.circuit_breaker import (
+                get_circuit_registry,
+                CircuitState,
+            )
+        except ImportError:
+            return None
+
+        try:
+            registry = get_circuit_registry()
+            open_circuits = registry.get_all_open_circuits()
+
+            if not open_circuits:
+                return None
+
+            # Convert to serializable format
+            # Structure: {operation_type: {target: {state, failure_count, opened_at}}}
+            result = {}
+            now = time.time()
+
+            for op_type, targets in open_circuits.items():
+                result[op_type] = {}
+                for target, status in targets.items():
+                    # Only include minimal info needed for replication
+                    result[op_type][target] = {
+                        "state": status.state.value,
+                        "failure_count": status.failure_count,
+                        "opened_at": status.opened_at,
+                        "escalation_tier": status.escalation_tier,
+                        # Age of the open circuit for freshness decisions
+                        "age_seconds": now - status.opened_at if status.opened_at else 0,
+                    }
+
+            return result if result else None
+
+        except (AttributeError, TypeError, ValueError) as e:
+            self._log_debug(f"Circuit breaker state not available for gossip: {type(e).__name__}: {e}")
+            return None
+
     def _build_local_gossip_state(self, now: float) -> dict[str, Any]:
         """Build local state dict to share via gossip."""
         local_state = {
@@ -1206,6 +1283,12 @@ class GossipProtocolMixin(P2PMixinBase):
         except (ImportError, AttributeError, TypeError, ValueError) as e:
             # Jan 2026: Narrowed exception types for better debugging
             self._log_debug(f"Config version not available for gossip: {type(e).__name__}: {e}")
+
+        # Jan 3, 2026: Include circuit breaker states for cluster-wide failure awareness
+        # This allows nodes to preemptively avoid targets that other nodes have found to be failing
+        cb_state = self._get_circuit_breaker_gossip_state()
+        if cb_state:
+            local_state["circuit_breakers"] = cb_state
 
         return local_state
 
@@ -1510,6 +1593,17 @@ class GossipProtocolMixin(P2PMixinBase):
                 self._check_config_freshness(sender_id, sender_state["config"])
             )
 
+        # Jan 3, 2026: Process circuit breaker states for cluster-wide failure awareness
+        if sender_state.get("circuit_breakers"):
+            self._process_circuit_breaker_states(
+                sender_id or "unknown",
+                sender_state["circuit_breakers"]
+            )
+        # Also check known_states for circuit breaker info
+        for node_id, state in known_states.items():
+            if node_id != self.node_id and state.get("circuit_breakers"):
+                self._process_circuit_breaker_states(node_id, state["circuit_breakers"])
+
     async def _check_config_freshness(
         self, peer_id: str, peer_config: dict[str, Any]
     ) -> None:
@@ -1619,40 +1713,56 @@ class GossipProtocolMixin(P2PMixinBase):
         if not sender_id or sender_id == self.node_id:
             return
 
-        existing = self._gossip_peer_states.get(sender_id, {})
-        # Last-write-wins conflict resolution
-        if sender_state.get("version", 0) > existing.get("version", 0):
-            self._gossip_peer_states[sender_id] = sender_state
+        # Jan 3, 2026: Use sync lock to prevent race with cleanup
+        lock = getattr(self, "_gossip_state_sync_lock", None)
+        if lock is not None:
+            lock.acquire()
+        try:
+            existing = self._gossip_peer_states.get(sender_id, {})
+            # Last-write-wins conflict resolution
+            if sender_state.get("version", 0) > existing.get("version", 0):
+                self._gossip_peer_states[sender_id] = sender_state
+        finally:
+            if lock is not None:
+                lock.release()
 
-            # Update leader info if sender claims to know a leader
-            # Jan 2026: Use ULSM epoch validation to reject stale claims
-            if sender_state.get("leader_id") and not self.leader_id:
-                claimed_leader = sender_state.get("leader_id")
-                claimed_epoch = sender_state.get("leadership_epoch", 0)
-                lease_expires = sender_state.get("leader_lease_expires", 0)
+        # Update leader info if sender claims to know a leader
+        # Jan 2026: Use ULSM epoch validation to reject stale claims
+        if sender_state.get("leader_id") and not self.leader_id:
+            claimed_leader = sender_state.get("leader_id")
+            claimed_epoch = sender_state.get("leadership_epoch", 0)
+            lease_expires = sender_state.get("leader_lease_expires", 0)
 
-                # Check if we have ULSM state machine for validation
-                if hasattr(self, "_leadership_sm") and self._leadership_sm:
-                    if self._leadership_sm.validate_leader_claim(claimed_leader, claimed_epoch, lease_expires):
-                        self.leader_id = claimed_leader
-                        self.last_leader_seen = time.time()
-                        logger.debug(f"Gossip: Accepted leader claim {claimed_leader} epoch={claimed_epoch}")
-                    else:
-                        logger.debug(f"Gossip: Rejected leader claim {claimed_leader} epoch={claimed_epoch}")
+            # Check if we have ULSM state machine for validation
+            if hasattr(self, "_leadership_sm") and self._leadership_sm:
+                if self._leadership_sm.validate_leader_claim(claimed_leader, claimed_epoch, lease_expires):
+                    self.leader_id = claimed_leader
+                    self.last_leader_seen = time.time()
+                    logger.debug(f"Gossip: Accepted leader claim {claimed_leader} epoch={claimed_epoch}")
                 else:
-                    # Fallback: simple lease expiry check (pre-ULSM behavior)
-                    if lease_expires > time.time():
-                        self.leader_id = claimed_leader
-                        self.last_leader_seen = time.time()
+                    logger.debug(f"Gossip: Rejected leader claim {claimed_leader} epoch={claimed_epoch}")
+            else:
+                # Fallback: simple lease expiry check (pre-ULSM behavior)
+                if lease_expires > time.time():
+                    self.leader_id = claimed_leader
+                    self.last_leader_seen = time.time()
 
     def _process_known_states(self, known_states: dict[str, dict]) -> None:
         """Process known states from gossip propagation."""
-        for node_id, state in known_states.items():
-            if node_id == self.node_id:
-                continue
-            existing = self._gossip_peer_states.get(node_id, {})
-            if state.get("version", 0) > existing.get("version", 0):
-                self._gossip_peer_states[node_id] = state
+        # Jan 3, 2026: Use sync lock to prevent race with cleanup
+        lock = getattr(self, "_gossip_state_sync_lock", None)
+        if lock is not None:
+            lock.acquire()
+        try:
+            for node_id, state in known_states.items():
+                if node_id == self.node_id:
+                    continue
+                existing = self._gossip_peer_states.get(node_id, {})
+                if state.get("version", 0) > existing.get("version", 0):
+                    self._gossip_peer_states[node_id] = state
+        finally:
+            if lock is not None:
+                lock.release()
 
     def _process_peer_manifests(self, peer_manifests: dict) -> None:
         """Process peer manifest info for P2P sync."""
@@ -1715,6 +1825,81 @@ class GossipProtocolMixin(P2PMixinBase):
         except Exception as e:
             # Log but don't fail on sync errors
             self._log_debug(f"Model location sync failed: {e}")
+
+    def _process_circuit_breaker_states(
+        self, source_node: str, cb_states: dict[str, dict]
+    ) -> None:
+        """Process circuit breaker states from gossip for preemptive failure avoidance.
+
+        Jan 3, 2026: When a peer reports OPEN circuits for targets, we can preemptively
+        record failures on our local circuit breakers. This prevents all nodes in the
+        cluster from independently discovering the same failure, reducing wasted
+        connection attempts and speeding up cluster-wide failure adaptation.
+
+        Strategy:
+        - Only process circuits that are OPEN or HALF_OPEN (not CLOSED)
+        - Only apply if the remote circuit is "fresh" (opened within last 5 minutes)
+        - Record a single failure locally (doesn't immediately open, just increments)
+        - This way, if local attempts also fail, circuit opens faster
+
+        Args:
+            source_node: Node ID that reported the circuit breaker states
+            cb_states: Dict of {operation_type: {target: {state, failure_count, ...}}}
+        """
+        if not cb_states:
+            return
+
+        try:
+            from app.distributed.circuit_breaker import (
+                get_circuit_registry,
+                CircuitState,
+            )
+        except ImportError:
+            return
+
+        try:
+            registry = get_circuit_registry()
+            now = time.time()
+
+            # Max age for considering a remote circuit "fresh"
+            # If circuit opened >5 min ago, target may have recovered
+            MAX_CIRCUIT_AGE_SECONDS = 300.0
+
+            processed_count = 0
+
+            for op_type, targets in cb_states.items():
+                breaker = registry.get_breaker(op_type)
+
+                for target, state_info in targets.items():
+                    remote_state = state_info.get("state", "")
+                    age_seconds = state_info.get("age_seconds", 0)
+
+                    # Skip if not OPEN/HALF_OPEN or too old
+                    if remote_state not in ("open", "half_open"):
+                        continue
+                    if age_seconds > MAX_CIRCUIT_AGE_SECONDS:
+                        continue
+
+                    # Check if we already have this circuit open
+                    local_status = breaker.get_status(target)
+                    if local_status and local_status.state != CircuitState.CLOSED:
+                        # Already tracking failure for this target
+                        continue
+
+                    # Record a preemptive failure to bias our local circuit
+                    # This doesn't immediately open the circuit, just increments failure count
+                    # If local attempts also fail, we'll reach threshold faster
+                    breaker.record_failure(target, preemptive=True)
+                    processed_count += 1
+
+            if processed_count > 0:
+                self._log_debug(
+                    f"[CB-Gossip] Applied {processed_count} preemptive failures "
+                    f"from {source_node} circuit breaker state"
+                )
+
+        except (AttributeError, TypeError, ValueError, KeyError) as e:
+            self._log_debug(f"Circuit breaker gossip processing failed: {type(e).__name__}: {e}")
 
     def _get_local_model_locations(self) -> list[dict]:
         """December 2025 Phase 3D: Get local model locations for gossip sharing.

@@ -75,13 +75,22 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # December 29, 2025: Circuit breaker integration for distribution reliability
+# Sprint 10 (Jan 3, 2026): Added get_adaptive_timeout for SSH operations
 try:
-    from app.distributed.circuit_breaker import CircuitBreakerRegistry, CircuitState
+    from app.distributed.circuit_breaker import (
+        CircuitBreakerRegistry,
+        CircuitState,
+        get_adaptive_timeout,
+    )
     CIRCUIT_BREAKER_AVAILABLE = True
 except ImportError:
     CIRCUIT_BREAKER_AVAILABLE = False
     CircuitBreakerRegistry = None  # type: ignore
     CircuitState = None  # type: ignore
+
+    def get_adaptive_timeout(operation_type: str, host: str, default: float) -> float:
+        """Fallback when circuit_breaker not available."""
+        return default
 
 # December 30, 2025: Centralized SSH configuration
 try:
@@ -1782,7 +1791,9 @@ class UnifiedDistributionDaemon:
 
                     combined_cmd = " && ".join(symlink_cmds)
                     client = get_ssh_client(host)
-                    result = await client.run_async(combined_cmd, timeout=30)
+                    # Sprint 10 (Jan 3, 2026): Use adaptive timeout based on host history
+                    adaptive_timeout = get_adaptive_timeout("ssh", host, default=30.0)
+                    result = await client.run_async(combined_cmd, timeout=adaptive_timeout)
                     return result.success
                 except (OSError, asyncio.TimeoutError, RuntimeError) as e:
                     logger.debug(f"Failed to create symlinks on {host}: {e}")

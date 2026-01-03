@@ -49,6 +49,62 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# Prometheus Metrics (Sprint 10 - Jan 3, 2026)
+# =============================================================================
+
+try:
+    from prometheus_client import Counter, Histogram, REGISTRY
+    HAS_PROMETHEUS = True
+except ImportError:
+    HAS_PROMETHEUS = False
+    REGISTRY = None
+
+
+def _get_or_create_counter(name: str, description: str, labels: list):
+    """Get existing counter or create new one, handling re-registration."""
+    if not HAS_PROMETHEUS:
+        return None
+    try:
+        return Counter(name, description, labels)
+    except ValueError:
+        return REGISTRY._names_to_collectors.get(name)
+
+
+def _get_or_create_histogram(name: str, description: str, labels: list, buckets=None):
+    """Get existing histogram or create new one, handling re-registration."""
+    if not HAS_PROMETHEUS:
+        return None
+    try:
+        if buckets:
+            return Histogram(name, description, labels, buckets=buckets)
+        return Histogram(name, description, labels)
+    except ValueError:
+        return REGISTRY._names_to_collectors.get(name)
+
+
+if HAS_PROMETHEUS:
+    # Count of events that were coalesced (deduplicated)
+    PROM_EVENTS_COALESCED = _get_or_create_counter(
+        'ringrift_events_coalesced_total',
+        'Events deduplicated by coalescer',
+        ['event_type']
+    )
+    # Histogram of batch sizes when flushed
+    PROM_BATCH_SIZE = _get_or_create_histogram(
+        'ringrift_event_batch_size',
+        'Number of events per batch when flushed',
+        ['event_type'],
+        buckets=[1, 5, 10, 25, 50, 100, 250, 500, 1000]
+    )
+    # Count of events published via batch buffer
+    PROM_EVENTS_PUBLISHED = _get_or_create_counter(
+        'ringrift_events_batched_total',
+        'Total events published via batch buffer',
+        ['event_type']
+    )
+
+
+# =============================================================================
 # Configuration
 # =============================================================================
 
@@ -437,6 +493,9 @@ class EventCoalescer:
                 # Replace existing pending event
                 self._total_coalesced += 1
                 self._pending[key] = event
+                # Sprint 10: Record coalesced event metric
+                if HAS_PROMETHEUS and PROM_EVENTS_COALESCED is not None:
+                    PROM_EVENTS_COALESCED.labels(event_type=event_type).inc()
             else:
                 # New event - start timer
                 self._pending[key] = event
@@ -454,6 +513,9 @@ class EventCoalescer:
 
                 if event and self._on_emit:
                     self._total_emitted += 1
+                    # Sprint 10: Record emitted event metric
+                    if HAS_PROMETHEUS and PROM_EVENTS_PUBLISHED is not None:
+                        PROM_EVENTS_PUBLISHED.labels(event_type=event.event_type).inc()
                     result = self._on_emit(event)
                     if asyncio.iscoroutine(result):
                         await result
@@ -474,8 +536,15 @@ class EventCoalescer:
                 timer.cancel()
             self._timers.clear()
 
+            # Sprint 10: Record batch size metric
+            if HAS_PROMETHEUS and PROM_BATCH_SIZE is not None and events:
+                PROM_BATCH_SIZE.labels(event_type="flush").observe(len(events))
+
             for event in events:
                 self._total_emitted += 1
+                # Sprint 10: Record emitted event metric
+                if HAS_PROMETHEUS and PROM_EVENTS_PUBLISHED is not None:
+                    PROM_EVENTS_PUBLISHED.labels(event_type=event.event_type).inc()
                 if self._on_emit:
                     result = self._on_emit(event)
                     if asyncio.iscoroutine(result):

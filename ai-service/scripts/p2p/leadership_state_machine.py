@@ -226,6 +226,12 @@ class LeadershipStateMachine:
         self._last_transition_time = time.time()
         self._transition_count = 0
 
+        # Jan 3, 2026: Epoch collision tracking for split-brain detection
+        # Maps epoch -> (leader_id, timestamp) to detect conflicting claims
+        self._epoch_leader_claims: dict[int, tuple[str, float]] = {}
+        # Grace period: how long to consider claims at same epoch as conflict
+        self._claim_grace_period = 30.0  # 30 seconds
+
         # Unified quorum tracking
         self.quorum_health = QuorumHealth()
 
@@ -414,6 +420,27 @@ class LeadershipStateMachine:
             )
             return False
 
+        # Jan 3, 2026: Epoch collision detection for split-brain
+        # Check if we've seen a different leader at this exact epoch recently
+        if claimed_epoch in self._epoch_leader_claims:
+            prior_leader, claim_time = self._epoch_leader_claims[claimed_epoch]
+            if prior_leader != claimed_leader:
+                age = now - claim_time
+                if age < self._claim_grace_period:
+                    # Different leader at same epoch within grace period = split-brain
+                    logger.error(
+                        f"SPLIT-BRAIN DETECTED: epoch {claimed_epoch} claimed by both "
+                        f"{prior_leader} (seen {age:.1f}s ago) and {claimed_leader}. "
+                        f"Rejecting new claim to prevent dual leaders."
+                    )
+                    return False
+                else:
+                    # Old claim expired, allow new leader at same epoch
+                    logger.debug(
+                        f"Prior claim at epoch {claimed_epoch} by {prior_leader} "
+                        f"expired ({age:.1f}s ago), allowing claim from {claimed_leader}"
+                    )
+
         # Don't override if we already have a leader at same/higher epoch
         if self._leader_id and claimed_epoch <= self._epoch:
             logger.debug(
@@ -437,6 +464,18 @@ class LeadershipStateMachine:
         if epoch > self._epoch:
             self._epoch = epoch
         self._leader_id = leader_id
+
+        # Jan 3, 2026: Record this claim for epoch collision detection
+        now = time.time()
+        self._epoch_leader_claims[epoch] = (leader_id, now)
+
+        # Cleanup old epoch entries to prevent memory growth
+        # Keep only epochs >= current epoch - 10
+        min_keep_epoch = max(0, self._epoch - 10)
+        old_epochs = [e for e in self._epoch_leader_claims if e < min_keep_epoch]
+        for old_epoch in old_epochs:
+            del self._epoch_leader_claims[old_epoch]
+
         logger.debug(f"Accepted leader {leader_id} at epoch {epoch}")
 
     def clear_leader(self) -> None:
@@ -512,6 +551,15 @@ class LeadershipStateMachine:
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize state machine for /status endpoint and persistence."""
+        # Jan 3, 2026: Include epoch claim tracking info for debugging
+        epoch_claims_info = {}
+        now = time.time()
+        for epoch, (leader, claim_time) in self._epoch_leader_claims.items():
+            epoch_claims_info[str(epoch)] = {
+                "leader": leader,
+                "age_seconds": round(now - claim_time, 1),
+            }
+
         return {
             "state": self._state.value,
             "epoch": self._epoch,
@@ -526,6 +574,9 @@ class LeadershipStateMachine:
             "last_transition_time": self._last_transition_time,
             "transition_count": self._transition_count,
             "seconds_since_transition": time.time() - self._last_transition_time,
+            # Jan 3, 2026: Split-brain detection tracking
+            "epoch_claims": epoch_claims_info,
+            "claim_grace_period": self._claim_grace_period,
         }
 
     def to_persistence_dict(self) -> dict[str, Any]:

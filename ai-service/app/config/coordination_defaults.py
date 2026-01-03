@@ -1216,6 +1216,34 @@ class PartitionHealingDefaults:
         "RINGRIFT_PARTITION_HEALING_CONVERGENCE_AGREEMENT", 0.8
     )
 
+    # Sprint 10 (Jan 3, 2026): Recovery escalation on convergence failure
+    # Number of consecutive convergence failures before escalation
+    ESCALATION_THRESHOLD: int = _env_int(
+        "RINGRIFT_PARTITION_HEALING_ESCALATION_THRESHOLD", 3
+    )
+
+    # Base wait time (seconds) before probe after failure (multiplied by escalation level)
+    ESCALATION_BASE_WAIT: float = _env_float(
+        "RINGRIFT_PARTITION_HEALING_ESCALATION_BASE_WAIT", 60.0
+    )
+
+    # Maximum escalation level (caps wait time growth)
+    ESCALATION_MAX_LEVEL: int = _env_int(
+        "RINGRIFT_PARTITION_HEALING_ESCALATION_MAX_LEVEL", 5
+    )
+
+    # Whether to emit P2P_RECOVERY_NEEDED event at max escalation
+    EMIT_RECOVERY_EVENT_AT_MAX: bool = _env_bool(
+        "RINGRIFT_PARTITION_HEALING_EMIT_RECOVERY_EVENT", True
+    )
+
+    # Jan 3, 2026: Overall timeout for entire healing pass (seconds)
+    # Prevents healing operations from hanging indefinitely
+    # Default: 300s (5 minutes) - enough for discovery + healing + convergence
+    TOTAL_TIMEOUT: float = _env_float(
+        "RINGRIFT_PARTITION_HEALING_TOTAL_TIMEOUT", 300.0
+    )
+
 
 # =============================================================================
 # Export Validation Defaults (Sprint 4 - January 2, 2026)

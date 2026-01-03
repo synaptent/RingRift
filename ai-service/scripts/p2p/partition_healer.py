@@ -119,6 +119,10 @@ class PartitionHealer:
         self._healing_lock = threading.Lock()
         self._pending_trigger: bool = False
 
+        # Sprint 10 (Jan 3, 2026): Recovery escalation on consecutive convergence failures
+        self._consecutive_failures: int = 0
+        self._escalation_level: int = 0
+
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session."""
         if self._session is None or self._session.closed:
@@ -476,8 +480,9 @@ class PartitionHealer:
                 converged, convergence_msg = await self._validate_convergence(known_peers)
 
                 if converged:
-                    # Emit success event
+                    # Emit success event and reset escalation state
                     self._emit_healing_event(result)
+                    self._reset_escalation()
                 else:
                     # Convergence failed - mark result as partial success
                     result.success = False
@@ -487,6 +492,8 @@ class PartitionHealer:
                         f"Partition healing completed but convergence not achieved: "
                         f"{convergence_msg}"
                     )
+                    # Sprint 10 (Jan 3, 2026): Escalate recovery on repeated failures
+                    await self._escalate_recovery(convergence_msg)
 
             return result
         else:
@@ -564,10 +571,27 @@ class PartitionHealer:
             logger.info(f"Waiting {delay:.0f}s before starting healing pass...")
             await asyncio.sleep(delay)
 
-        # Run the healing pass
+        # Run the healing pass with overall timeout
+        # Jan 3, 2026: Added timeout to prevent healing operations from hanging indefinitely
         try:
-            result = await self.run_healing_pass()
+            result = await asyncio.wait_for(
+                self.run_healing_pass(),
+                timeout=PartitionHealingDefaults.TOTAL_TIMEOUT,
+            )
             return result
+        except asyncio.TimeoutError:
+            error_msg = (
+                f"Healing pass timed out after {PartitionHealingDefaults.TOTAL_TIMEOUT}s"
+            )
+            logger.error(error_msg)
+            self._emit_healing_failed_event(error_msg)
+            return HealingResult(
+                success=False,
+                partitions_found=0,
+                partitions_healed=0,
+                nodes_reconnected=0,
+                errors=[error_msg],
+            )
         except Exception as e:
             logger.error(f"Healing pass failed: {e}")
             self._emit_healing_failed_event(str(e))
@@ -605,6 +629,91 @@ class PartitionHealer:
         except (ImportError, Exception):
             pass  # Best effort
 
+    async def _escalate_recovery(self, reason: str) -> None:
+        """Escalate recovery when convergence repeatedly fails.
+
+        Sprint 10 (Jan 3, 2026): When gossip convergence fails multiple times,
+        escalate by increasing wait times and eventually emitting P2P_RECOVERY_NEEDED.
+
+        Escalation tiers:
+        - Level 1-2: Log warning, increase probe interval
+        - Level 3-4: Log error, longer backoff
+        - Level 5+: Emit P2P_RECOVERY_NEEDED for external intervention
+
+        Args:
+            reason: Description of the convergence failure
+        """
+        self._consecutive_failures += 1
+
+        # Determine escalation level
+        if self._consecutive_failures >= PartitionHealingDefaults.ESCALATION_THRESHOLD:
+            self._escalation_level = min(
+                self._escalation_level + 1,
+                PartitionHealingDefaults.ESCALATION_MAX_LEVEL,
+            )
+        else:
+            # Not enough consecutive failures for escalation
+            logger.info(
+                f"[RecoveryEscalation] Convergence failure {self._consecutive_failures}/"
+                f"{PartitionHealingDefaults.ESCALATION_THRESHOLD} (not yet escalating)"
+            )
+            return
+
+        # Calculate wait time for next probe
+        wait_time = (
+            PartitionHealingDefaults.ESCALATION_BASE_WAIT
+            * self._escalation_level
+        )
+
+        logger.warning(
+            f"[RecoveryEscalation] Escalated to level {self._escalation_level} "
+            f"after {self._consecutive_failures} consecutive failures. "
+            f"Next probe in {wait_time:.0f}s. Reason: {reason}"
+        )
+
+        # At max escalation, emit event for external recovery
+        if (
+            self._escalation_level >= PartitionHealingDefaults.ESCALATION_MAX_LEVEL
+            and PartitionHealingDefaults.EMIT_RECOVERY_EVENT_AT_MAX
+        ):
+            try:
+                from app.distributed.data_events import DataEventType
+                from app.coordination.event_router import emit_event
+
+                emit_event(
+                    DataEventType.P2P_RECOVERY_NEEDED,
+                    {
+                        "reason": f"Partition healing convergence failed repeatedly: {reason}",
+                        "escalation_level": self._escalation_level,
+                        "consecutive_failures": self._consecutive_failures,
+                        "timestamp": time.time(),
+                    },
+                )
+                logger.error(
+                    f"[RecoveryEscalation] Emitted P2P_RECOVERY_NEEDED at max escalation. "
+                    f"Manual intervention may be required."
+                )
+            except ImportError:
+                logger.warning(
+                    "[RecoveryEscalation] Could not emit P2P_RECOVERY_NEEDED "
+                    "(event_router not available)"
+                )
+            except Exception as e:
+                logger.warning(f"[RecoveryEscalation] Failed to emit recovery event: {e}")
+
+    def _reset_escalation(self) -> None:
+        """Reset escalation state after successful convergence.
+
+        Sprint 10 (Jan 3, 2026): Called when healing succeeds to reset counters.
+        """
+        if self._consecutive_failures > 0 or self._escalation_level > 0:
+            logger.info(
+                f"[RecoveryEscalation] Reset after success "
+                f"(was level {self._escalation_level}, {self._consecutive_failures} failures)"
+            )
+        self._consecutive_failures = 0
+        self._escalation_level = 0
+
     def get_status(self) -> dict[str, Any]:
         """Get partition healer status for /status endpoint."""
         return {
@@ -617,6 +726,11 @@ class PartitionHealer:
                 if self._last_healing_time > 0
                 else True
             ),
+            # Sprint 10 (Jan 3, 2026): Escalation state
+            "consecutive_failures": self._consecutive_failures,
+            "escalation_level": self._escalation_level,
+            "escalation_threshold": PartitionHealingDefaults.ESCALATION_THRESHOLD,
+            "max_escalation_level": PartitionHealingDefaults.ESCALATION_MAX_LEVEL,
         }
 
     async def run_daemon(self, interval: float = 60.0) -> None:

@@ -42,6 +42,7 @@ from typing import Any
 
 from app.coordination.event_utils import parse_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
+from app.coordination.mixins.import_mixin import ImportDaemonMixin
 from app.coordination.protocols import CoordinatorStatus
 from app.core.ssh import SSHClient, SSHConfig, SSHResult
 from app.config.coordination_defaults import build_ssh_options
@@ -181,7 +182,7 @@ class ImportStats:
 # ============================================================================
 
 
-class OWCImportDaemon(HandlerBase):
+class OWCImportDaemon(HandlerBase, ImportDaemonMixin):
     """Daemon that imports training data from OWC external drive.
 
     This daemon runs on the coordinator and periodically checks the OWC drive
@@ -190,7 +191,14 @@ class OWCImportDaemon(HandlerBase):
     December 2025: Migrated to HandlerBase pattern.
     - Uses HandlerBase singleton (get_instance/reset_instance)
     - Uses _stats for metrics tracking
+
+    January 2026: Inherits from ImportDaemonMixin for file validation
+    functionality.
     """
+
+    # ImportDaemonMixin configuration
+    IMPORT_LOG_PREFIX = "[OWCImport]"
+    IMPORT_VERIFY_CHECKSUMS = True
 
     def __init__(self, config: OWCImportConfig | None = None):
         self._daemon_config = config or OWCImportConfig.from_env()
@@ -379,8 +387,19 @@ class OWCImportDaemon(HandlerBase):
                     return None
 
                 await asyncio.to_thread(shutil.copy2, source_path, local_path)
+
+                # Validate synced database using ImportDaemonMixin
+                validation = await self._validate_import(local_path, expected_type="db")
+                if not validation.valid:
+                    logger.warning(
+                        f"[OWCImport] Synced file failed validation: {validation.error}"
+                    )
+                    local_path.unlink(missing_ok=True)
+                    return None
+
                 logger.info(
-                    f"[OWCImport] Copied {rel_path} ({local_path.stat().st_size / 1024 / 1024:.1f} MB)"
+                    f"[OWCImport] Copied {rel_path} "
+                    f"({local_path.stat().st_size / 1024 / 1024:.1f} MB, validated)"
                 )
                 return local_path
             except Exception as e:
@@ -414,7 +433,19 @@ class OWCImportDaemon(HandlerBase):
             )
 
             if proc.returncode == 0 and local_path.exists():
-                logger.info(f"[OWCImport] Synced {rel_path} ({local_path.stat().st_size / 1024 / 1024:.1f} MB)")
+                # Validate synced database using ImportDaemonMixin
+                validation = await self._validate_import(local_path, expected_type="db")
+                if not validation.valid:
+                    logger.warning(
+                        f"[OWCImport] Synced file failed validation: {validation.error}"
+                    )
+                    local_path.unlink(missing_ok=True)
+                    return None
+
+                logger.info(
+                    f"[OWCImport] Synced {rel_path} "
+                    f"({local_path.stat().st_size / 1024 / 1024:.1f} MB, validated)"
+                )
                 return local_path
             else:
                 return None

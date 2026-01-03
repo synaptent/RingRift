@@ -2234,6 +2234,13 @@ class SelfplayScheduler(HandlerBase):
             if hasattr(DataEventType, 'NODE_TERMINATED'):
                 _safe_subscribe(DataEventType.NODE_TERMINATED, self._on_host_offline, "NODE_TERMINATED")
 
+            # Jan 3, 2026: Subscribe to voter demotion/promotion for allocation adjustment
+            # When a voter is demoted, it signals potential node health issues
+            if hasattr(DataEventType, 'VOTER_DEMOTED'):
+                _safe_subscribe(DataEventType.VOTER_DEMOTED, self._on_voter_demoted, "VOTER_DEMOTED")
+            if hasattr(DataEventType, 'VOTER_PROMOTED'):
+                _safe_subscribe(DataEventType.VOTER_PROMOTED, self._on_voter_promoted, "VOTER_PROMOTED")
+
             # Dec 2025: Subscribe to regression events for curriculum rebalancing
             if hasattr(DataEventType, 'REGRESSION_DETECTED'):
                 _safe_subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected, "REGRESSION_DETECTED")
@@ -3345,6 +3352,66 @@ class SelfplayScheduler(HandlerBase):
 
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling host offline: {e}")
+
+    def _on_voter_demoted(self, event: Any) -> None:
+        """Handle VOTER_DEMOTED - mark voter node as having potential issues.
+
+        Jan 3, 2026: When a voter is demoted due to health issues, it signals
+        the node may be unstable. We reduce its allocation weight to minimize
+        impact on selfplay throughput.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            node_id = payload.get("node_id", "") or payload.get("host", "")
+            reason = payload.get("reason", "health_check_failed")
+
+            if node_id:
+                # Track demoted voters separately (subset of unhealthy nodes)
+                if not hasattr(self, "_demoted_voters"):
+                    self._demoted_voters: set[str] = set()
+
+                self._demoted_voters.add(node_id)
+
+                # Reduce allocation weight for this node (not full exclusion)
+                # Voters are important nodes, so we reduce but don't fully disable
+                if node_id in self._node_capabilities:
+                    # Reduce to 25% capacity instead of full exclusion
+                    self._node_capabilities[node_id].current_load = 0.75
+
+                logger.warning(
+                    f"[SelfplayScheduler] Voter {node_id} demoted (reason: {reason}). "
+                    f"Reduced allocation weight to 25%."
+                )
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling voter demoted: {e}")
+
+    def _on_voter_promoted(self, event: Any) -> None:
+        """Handle VOTER_PROMOTED - restore voter node to full allocation.
+
+        Jan 3, 2026: When a voter is re-promoted after recovery, restore
+        its allocation capacity to full.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            node_id = payload.get("node_id", "") or payload.get("host", "")
+
+            if node_id:
+                demoted_voters = getattr(self, "_demoted_voters", set())
+                if node_id in demoted_voters:
+                    self._demoted_voters.discard(node_id)
+
+                    # Restore full allocation capacity
+                    if node_id in self._node_capabilities:
+                        self._node_capabilities[node_id].current_load = 0.0
+
+                    logger.info(
+                        f"[SelfplayScheduler] Voter {node_id} re-promoted. "
+                        f"Restored to full allocation capacity."
+                    )
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling voter promoted: {e}")
 
     def _on_cluster_unhealthy(self, event: Any) -> None:
         """Handle P2P_CLUSTER_UNHEALTHY - reduce allocation rate.
