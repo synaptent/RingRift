@@ -3018,7 +3018,8 @@ class GossipDefaults:
     ANTI_ENTROPY_TIMEOUT: float = _env_float("RINGRIFT_GOSSIP_ANTI_ENTROPY_TIMEOUT", 10.0)
 
     # Consecutive failures before marking peer as suspect
-    FAILURE_THRESHOLD: int = _env_int("RINGRIFT_GOSSIP_FAILURE_THRESHOLD", 5)
+    # Jan 2026: Reduced from 5 to 4 for faster peer recovery (-30s detection time)
+    FAILURE_THRESHOLD: int = _env_int("RINGRIFT_GOSSIP_FAILURE_THRESHOLD", 4)
 
     # Maximum gossip message size in bytes (1MB default)
     MAX_MESSAGE_SIZE_BYTES: int = _env_int("RINGRIFT_GOSSIP_MAX_MESSAGE_SIZE", 1_048_576)

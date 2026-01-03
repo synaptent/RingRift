@@ -824,3 +824,254 @@ class TestMultipleTargets:
         assert "host2" in states
         assert "host3" in states
         assert len(states) == 3
+
+
+# =============================================================================
+# Test Escalation Tiers (Phase 15.1.8 - January 2026)
+# =============================================================================
+
+
+class TestEscalationTiers:
+    """Tests for escalation tier functionality.
+
+    Phase 15.1.8: Instead of circuits staying permanently open after
+    max_consecutive_opens, they enter escalation tiers with progressively
+    longer recovery periods.
+    """
+
+    def test_tier_zero_below_max_opens(self):
+        """Tier should be 0 when consecutive_opens < max_consecutive_opens."""
+        breaker = CircuitBreaker(failure_threshold=2, max_consecutive_opens=5)
+
+        # Open the circuit 4 times (below max of 5)
+        for i in range(4):
+            breaker.record_failure("host1")
+            breaker.record_failure("host1")
+            breaker.force_reset("host1")
+
+        # Should still be tier 0
+        circuit = breaker._get_or_create_circuit("host1")
+        tier = breaker._get_escalation_tier(circuit)
+        assert tier == 0
+
+    def test_tier_progression_with_consecutive_opens(self):
+        """Tier should increase as consecutive_opens exceeds max."""
+        breaker = CircuitBreaker(failure_threshold=2, max_consecutive_opens=5)
+
+        circuit = breaker._get_or_create_circuit("host1")
+
+        # At exactly max_consecutive_opens
+        circuit.consecutive_opens = 5
+        assert breaker._get_escalation_tier(circuit) == 1
+
+        # 5 more opens -> tier 2
+        circuit.consecutive_opens = 10
+        assert breaker._get_escalation_tier(circuit) == 2
+
+        # 5 more opens -> tier 3
+        circuit.consecutive_opens = 15
+        assert breaker._get_escalation_tier(circuit) == 3
+
+        # Should max out at tier 3
+        circuit.consecutive_opens = 100
+        assert breaker._get_escalation_tier(circuit) == 3
+
+    def test_tier_config_values(self):
+        """Each tier should have correct wait and probe_interval values."""
+        breaker = CircuitBreaker()
+
+        # Tier 0: 1 min wait, 10s probe
+        config0 = breaker._get_tier_config(0)
+        assert config0["wait"] == 60
+        assert config0["probe_interval"] == 10
+
+        # Tier 1: 5 min wait, 30s probe
+        config1 = breaker._get_tier_config(1)
+        assert config1["wait"] == 300
+        assert config1["probe_interval"] == 30
+
+        # Tier 2: 15 min wait, 60s probe
+        config2 = breaker._get_tier_config(2)
+        assert config2["wait"] == 900
+        assert config2["probe_interval"] == 60
+
+        # Tier 3: 1 hour wait, 5 min probe
+        config3 = breaker._get_tier_config(3)
+        assert config3["wait"] == 3600
+        assert config3["probe_interval"] == 300
+
+    def test_tier_config_clamped_to_max(self):
+        """Tier config should clamp to max tier for out-of-range values."""
+        breaker = CircuitBreaker()
+
+        config_high = breaker._get_tier_config(100)
+        config_max = breaker._get_tier_config(3)
+
+        assert config_high == config_max
+
+    def test_probe_timing_respects_tier_wait(self):
+        """Should not probe until tier wait period has passed."""
+        breaker = CircuitBreaker(failure_threshold=2, max_consecutive_opens=5)
+
+        circuit = breaker._get_or_create_circuit("host1")
+        circuit.consecutive_opens = 5
+        circuit.escalation_tier = 1
+        circuit.escalation_entered_at = time.time()  # Just entered tier
+
+        # Should not probe - haven't waited 5 minutes yet
+        assert breaker._should_probe_in_tier(circuit) is False
+
+    def test_probe_timing_allows_after_wait(self):
+        """Should allow probe after tier wait period."""
+        breaker = CircuitBreaker(failure_threshold=2, max_consecutive_opens=5)
+
+        circuit = breaker._get_or_create_circuit("host1")
+        circuit.consecutive_opens = 5
+        circuit.escalation_tier = 1
+        circuit.escalation_entered_at = time.time() - 400  # 400s ago (> 300s wait)
+        circuit.last_probe_at = None  # Never probed
+
+        # Should allow probe - waited long enough
+        assert breaker._should_probe_in_tier(circuit) is True
+
+    def test_probe_interval_respected(self):
+        """Should respect probe_interval between probes."""
+        breaker = CircuitBreaker(failure_threshold=2, max_consecutive_opens=5)
+
+        circuit = breaker._get_or_create_circuit("host1")
+        circuit.consecutive_opens = 5
+        circuit.escalation_tier = 1
+        circuit.escalation_entered_at = time.time() - 400  # Past wait period
+        circuit.last_probe_at = time.time() - 10  # Probed 10s ago
+
+        # Tier 1 has 30s probe interval - should not allow yet
+        assert breaker._should_probe_in_tier(circuit) is False
+
+        # After 30s - should allow
+        circuit.last_probe_at = time.time() - 35
+        assert breaker._should_probe_in_tier(circuit) is True
+
+    def test_escalate_updates_tier(self):
+        """_escalate should update tier and enter time."""
+        breaker = CircuitBreaker(failure_threshold=2, max_consecutive_opens=5)
+
+        circuit = breaker._get_or_create_circuit("host1")
+        circuit.consecutive_opens = 10  # Should be tier 2
+
+        breaker._escalate(circuit)
+
+        assert circuit.escalation_tier == 2
+        assert circuit.escalation_entered_at is not None
+        assert time.time() - circuit.escalation_entered_at < 1.0
+
+    def test_escalate_only_updates_on_tier_change(self):
+        """_escalate should not update entered_at if tier unchanged."""
+        breaker = CircuitBreaker(failure_threshold=2, max_consecutive_opens=5)
+
+        circuit = breaker._get_or_create_circuit("host1")
+        circuit.consecutive_opens = 6
+        circuit.escalation_tier = 1
+        original_entered_at = time.time() - 100
+        circuit.escalation_entered_at = original_entered_at
+
+        breaker._escalate(circuit)
+
+        # Tier unchanged, entered_at should not change
+        assert circuit.escalation_tier == 1
+        assert circuit.escalation_entered_at == original_entered_at
+
+    def test_get_time_until_next_probe_during_wait(self):
+        """Should return remaining wait time during tier wait period."""
+        breaker = CircuitBreaker(failure_threshold=2, max_consecutive_opens=5)
+
+        circuit = breaker._get_or_create_circuit("host1")
+        circuit.consecutive_opens = 5
+        circuit.escalation_tier = 1
+        circuit.escalation_entered_at = time.time() - 100  # 100s ago
+
+        # Tier 1 wait is 300s, so 200s remaining
+        remaining = breaker._get_time_until_next_probe(circuit)
+        assert remaining is not None
+        assert 195 < remaining < 205  # Allow some tolerance
+
+    def test_get_time_until_next_probe_during_interval(self):
+        """Should return remaining probe interval time."""
+        breaker = CircuitBreaker(failure_threshold=2, max_consecutive_opens=5)
+
+        circuit = breaker._get_or_create_circuit("host1")
+        circuit.consecutive_opens = 5
+        circuit.escalation_tier = 1
+        circuit.escalation_entered_at = time.time() - 400  # Past wait
+        circuit.last_probe_at = time.time() - 10  # 10s ago
+
+        # Tier 1 probe interval is 30s, so 20s remaining
+        remaining = breaker._get_time_until_next_probe(circuit)
+        assert remaining is not None
+        assert 15 < remaining < 25  # Allow some tolerance
+
+    def test_get_time_until_next_probe_ready_now(self):
+        """Should return 0 when probe is allowed immediately."""
+        breaker = CircuitBreaker(failure_threshold=2, max_consecutive_opens=5)
+
+        circuit = breaker._get_or_create_circuit("host1")
+        circuit.consecutive_opens = 5
+        circuit.escalation_tier = 1
+        circuit.escalation_entered_at = time.time() - 400  # Past wait
+        circuit.last_probe_at = time.time() - 100  # Long ago
+
+        remaining = breaker._get_time_until_next_probe(circuit)
+        assert remaining == 0.0
+
+    def test_successful_recovery_resets_escalation(self):
+        """Successful probe should reset circuit and escalation state."""
+        breaker = CircuitBreaker(failure_threshold=2, max_consecutive_opens=5)
+
+        # Put circuit in escalation by directly setting state
+        # (normal failures would need state transitions to increment consecutive_opens)
+        circuit = breaker._get_or_create_circuit("host1")
+        circuit.state = CircuitState.OPEN
+        circuit.consecutive_opens = 10  # In escalation tier 2
+        circuit.escalation_tier = 2
+        circuit.escalation_entered_at = time.time() - 1000
+
+        assert circuit.consecutive_opens >= 5
+        assert circuit.escalation_tier == 2
+
+        # Reset the circuit (simulates successful recovery)
+        breaker.force_reset("host1")
+
+        circuit = breaker._get_or_create_circuit("host1")
+        assert circuit.consecutive_opens == 0
+        assert circuit.escalation_tier == 0
+        assert breaker.get_state("host1") == CircuitState.CLOSED
+
+    def test_max_tier_still_allows_probing(self):
+        """Even at max tier, probing should still be allowed after intervals."""
+        breaker = CircuitBreaker(failure_threshold=2, max_consecutive_opens=5)
+
+        circuit = breaker._get_or_create_circuit("host1")
+        circuit.consecutive_opens = 100  # Way past max
+        circuit.escalation_tier = 3  # Max tier
+        circuit.escalation_entered_at = time.time() - 10000  # Long ago
+        circuit.last_probe_at = time.time() - 500  # Past 5 min interval
+
+        # Should still allow probing at max tier
+        assert breaker._should_probe_in_tier(circuit) is True
+
+    def test_status_includes_escalation_info(self):
+        """CircuitStatus should include escalation information."""
+        breaker = CircuitBreaker(failure_threshold=2, max_consecutive_opens=5)
+
+        # Put into escalation by directly setting state
+        # (consecutive_opens only increments on state transitions,
+        # not from repeated failures)
+        circuit = breaker._get_or_create_circuit("host1")
+        circuit.state = CircuitState.OPEN
+        circuit.consecutive_opens = 10  # In escalation tier 2
+        circuit.escalation_tier = 2
+        circuit.escalation_entered_at = time.time() - 100
+
+        status = breaker.get_status("host1")
+
+        assert status.escalation_tier > 0
+        assert status.is_escalated is True

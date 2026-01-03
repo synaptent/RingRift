@@ -1203,8 +1203,8 @@ class GossipProtocolMixin(P2PMixinBase):
 
             config_version = get_config_version()
             local_state["config"] = config_version.to_dict()
-        except Exception as e:
-            # Dec 30, 2025: Log config version failures for observability
+        except (ImportError, AttributeError, TypeError, ValueError) as e:
+            # Jan 2026: Narrowed exception types for better debugging
             self._log_debug(f"Config version not available for gossip: {type(e).__name__}: {e}")
 
         return local_state
@@ -1541,7 +1541,8 @@ class GossipProtocolMixin(P2PMixinBase):
             # Request config sync from peer
             await self._request_config_sync(peer_id)
 
-        except Exception as e:
+        except (ImportError, AttributeError, KeyError, TypeError, ValueError) as e:
+            # Jan 2026: Narrowed exception types for better debugging
             self._log_debug(f"[ConfigSync] Error checking config freshness: {e}")
 
     async def _request_config_sync(self, source_node: str) -> None:
@@ -1604,11 +1605,12 @@ class GossipProtocolMixin(P2PMixinBase):
                         "timestamp": time.time(),
                     },
                 )
-            except Exception as e:
-                # Dec 30, 2025: Log event emission failures for observability
+            except (ImportError, AttributeError, RuntimeError) as e:
+                # Jan 2026: Narrowed exception types for better debugging
                 self._log_debug(f"[ConfigSync] CONFIG_UPDATED event emission failed: {type(e).__name__}: {e}")
 
-        except Exception as e:
+        except (ImportError, OSError, subprocess.SubprocessError, AttributeError, KeyError) as e:
+            # Jan 2026: Narrowed exception types for better debugging
             self._log_debug(f"[ConfigSync] Sync from {source_node} failed: {e}")
 
     def _process_sender_state(self, sender_state: dict) -> None:
@@ -1815,7 +1817,8 @@ class GossipProtocolMixin(P2PMixinBase):
                     info.node_id, host, port,
                     str(getattr(info, "tailscale_ip", "") or "")
                 )
-        except Exception as e:
+        except (OSError, ConnectionError, asyncio.TimeoutError, AttributeError) as e:
+            # Jan 2026: Narrowed exception types for better debugging
             if self.verbose:
                 self._log_debug(f"Failed to connect to gossip-learned peer {node_id}: {e}")
 

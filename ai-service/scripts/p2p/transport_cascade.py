@@ -941,6 +941,107 @@ class TransportCascade:
             return self._timeout_per_transport
         return self._adaptive_timeout_tracker.get_timeout(target)
 
+    def get_transport_latency_summary(self) -> dict[str, Any]:
+        """Get latency summary aggregated by transport type.
+
+        Jan 3, 2026: Added for /status endpoint transport latency visibility.
+        Enables diagnosis of slow transports across all targets.
+
+        Returns:
+            Dictionary with per-transport latency stats:
+            {
+                "by_transport": {
+                    "http": {"avg_latency_ms": 45.2, "success_rate": 0.98, ...},
+                    "ssh": {"avg_latency_ms": 120.5, "success_rate": 0.95, ...},
+                },
+                "by_target": {
+                    "node-1": {"best_transport": "http", "avg_latency_ms": 32.1},
+                    ...
+                },
+                "summary": {
+                    "total_targets": 25,
+                    "transports_used": ["http", "ssh", "tailscale"],
+                    "overall_avg_latency_ms": 67.3,
+                }
+            }
+        """
+        by_transport: dict[str, dict[str, float | int]] = {}
+        by_target: dict[str, dict[str, Any]] = {}
+
+        # Aggregate stats by transport
+        for target, transports in self._health.items():
+            best_transport = None
+            best_latency = float("inf")
+
+            for transport_name, health in transports.items():
+                # Skip transports with no data
+                if health.successes + health.failures == 0:
+                    continue
+
+                # Initialize transport aggregate if needed
+                if transport_name not in by_transport:
+                    by_transport[transport_name] = {
+                        "total_successes": 0,
+                        "total_failures": 0,
+                        "total_latency_ms": 0.0,
+                        "targets_used": 0,
+                    }
+
+                agg = by_transport[transport_name]
+                agg["total_successes"] += health.successes
+                agg["total_failures"] += health.failures
+                agg["total_latency_ms"] += health.total_latency_ms
+                agg["targets_used"] += 1
+
+                # Track best transport per target
+                if health.successes > 0 and health.avg_latency_ms < best_latency:
+                    best_latency = health.avg_latency_ms
+                    best_transport = transport_name
+
+            if best_transport:
+                by_target[target] = {
+                    "best_transport": best_transport,
+                    "avg_latency_ms": round(best_latency, 1),
+                }
+
+        # Calculate averages and success rates per transport
+        transport_summary: dict[str, dict[str, Any]] = {}
+        overall_latency_total = 0.0
+        overall_success_total = 0
+
+        for transport_name, agg in by_transport.items():
+            successes = agg["total_successes"]
+            failures = agg["total_failures"]
+            total = successes + failures
+
+            avg_latency = 0.0
+            if successes > 0:
+                avg_latency = agg["total_latency_ms"] / successes
+                overall_latency_total += agg["total_latency_ms"]
+                overall_success_total += successes
+
+            transport_summary[transport_name] = {
+                "avg_latency_ms": round(avg_latency, 1),
+                "success_rate": round(successes / total, 3) if total > 0 else 0.0,
+                "total_requests": total,
+                "targets_used": agg["targets_used"],
+            }
+
+        # Overall summary
+        overall_avg = 0.0
+        if overall_success_total > 0:
+            overall_avg = overall_latency_total / overall_success_total
+
+        return {
+            "by_transport": transport_summary,
+            "by_target": by_target,
+            "summary": {
+                "total_targets": len(by_target),
+                "transports_used": list(transport_summary.keys()),
+                "overall_avg_latency_ms": round(overall_avg, 1),
+            },
+        }
+
 
 @dataclass
 class GlobalCircuitState:

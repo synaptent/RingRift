@@ -10067,6 +10067,17 @@ class P2POrchestrator(
         # Phase 5: SWIM/Raft protocol status (Dec 26, 2025)
         swim_raft_status = self._get_swim_raft_status()
 
+        # Jan 3, 2026: Transport latency stats for diagnosing slow transports
+        transport_latency: dict = {}
+        try:
+            from scripts.p2p.transport_cascade import get_transport_cascade
+            cascade = get_transport_cascade()
+            transport_latency = cascade.get_transport_latency_summary()
+        except ImportError:
+            transport_latency = {"available": False, "reason": "import_error"}
+        except Exception as e:  # noqa: BLE001
+            transport_latency = {"available": False, "error": str(e)}
+
         # Dec 2025: Get event subscription status for health monitoring
         event_subscriptions = getattr(self, "_event_subscription_status", {
             "daemon_events": False,
@@ -10161,6 +10172,7 @@ class P2POrchestrator(
             "tournament_scheduling": tournament_scheduling,
             "data_dedup": data_dedup,
             "swim_raft": swim_raft_status,
+            "transport_latency": transport_latency,  # Jan 3, 2026: Per-transport latency metrics
             "event_subscriptions": event_subscriptions,
             "partition": partition_status,
             "background_loops": background_loops,
