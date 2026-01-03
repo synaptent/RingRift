@@ -163,6 +163,20 @@ class RemoteP2PRecoveryStats:
         """
         return self.cycles_run - self.successful_runs
 
+    @failed_runs.setter
+    def failed_runs(self, value: int) -> None:
+        """Set failed_runs by adjusting cycles_run.
+
+        Jan 3, 2026: Added to support base.py:282 which increments failed_runs.
+        Since failed_runs = cycles_run - successful_runs, incrementing failed_runs
+        means incrementing cycles_run without changing successful_runs.
+        """
+        # Calculate delta from current value
+        current = self.cycles_run - self.successful_runs
+        delta = value - current
+        # Adjust cycles_run to achieve the desired failed_runs
+        self.cycles_run += delta
+
     def to_dict(self) -> dict:
         """Convert stats to dictionary for JSON serialization."""
         return {
