@@ -46,6 +46,13 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from app.config.coordination_defaults import PartitionHealingDefaults
 from scripts.p2p.union_discovery import UnionDiscovery, DiscoveredPeer
 
+# Jan 2026: Centralized timeouts for partition healing
+try:
+    from scripts.p2p.loops.loop_constants import LoopTimeouts
+    _PARTITION_DISCOVERY_TIMEOUT = LoopTimeouts.PARTITION_DISCOVERY
+except ImportError:
+    _PARTITION_DISCOVERY_TIMEOUT = 30.0  # Fallback
+
 logger = logging.getLogger(__name__)
 
 # Singleton instance for access from P2P orchestrator
@@ -126,7 +133,7 @@ class PartitionHealer:
 
     async def discover_all_peers(self) -> dict[str, DiscoveredPeer]:
         """Use union discovery to find all known peers."""
-        return await self._union_discovery.discover_all_peers(timeout=30.0)
+        return await self._union_discovery.discover_all_peers(timeout=_PARTITION_DISCOVERY_TIMEOUT)
 
     async def get_peer_view(self, address: str) -> dict[str, Any] | None:
         """Get a peer's view of the cluster from its /status endpoint."""

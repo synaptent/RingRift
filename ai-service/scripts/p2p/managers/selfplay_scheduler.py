@@ -82,7 +82,12 @@ MIN_FREE_MEMORY_GB = 2.0
 
 @dataclass
 class DiversityMetrics:
-    """Diversity tracking metrics for selfplay scheduling."""
+    """Diversity tracking metrics for selfplay scheduling.
+
+    January 2026 Sprint 10: Added opponent_types_by_config tracking for
+    diversity maximization. Tracks which opponent types each config has
+    played against to ensure variety in training data.
+    """
 
     games_by_engine_mode: dict[str, int] = field(default_factory=dict)
     games_by_board_config: dict[str, int] = field(default_factory=dict)
@@ -90,6 +95,46 @@ class DiversityMetrics:
     asymmetric_games: int = 0
     symmetric_games: int = 0
     last_reset: float = field(default_factory=time.time)
+    # January 2026 Sprint 10: Track opponent types per config for diversity
+    # Key: config_key, Value: set of opponent types (harness names)
+    opponent_types_by_config: dict[str, set[str]] = field(default_factory=dict)
+    # Track total games per opponent type (cluster-wide)
+    games_by_opponent_type: dict[str, int] = field(default_factory=dict)
+
+    def get_diversity_score(self, config_key: str) -> float:
+        """Get diversity score for a config (0-1, higher = more diverse).
+
+        January 2026 Sprint 10: Computes diversity based on opponent variety.
+        A config that has played against many different opponent types gets
+        a higher score.
+        """
+        # Total possible opponent types (from AI_HARNESS_CONFIGS)
+        # Approximate based on typical harness count
+        MAX_OPPONENT_TYPES = 8  # random, heuristic, gumbel, minimax, maxn, brs, policy, descent
+
+        opponents_seen = self.opponent_types_by_config.get(config_key, set())
+        num_seen = len(opponents_seen)
+
+        if num_seen == 0:
+            return 0.0  # No opponents seen = needs diversity
+        if num_seen >= MAX_OPPONENT_TYPES:
+            return 1.0  # All opponent types seen
+
+        return min(1.0, num_seen / MAX_OPPONENT_TYPES)
+
+    def record_opponent(self, config_key: str, opponent_type: str) -> None:
+        """Record that a config played against an opponent type.
+
+        January 2026 Sprint 10: Tracks opponent variety for diversity scoring.
+        """
+        if config_key not in self.opponent_types_by_config:
+            self.opponent_types_by_config[config_key] = set()
+        self.opponent_types_by_config[config_key].add(opponent_type)
+
+        # Also track total games by opponent type
+        if opponent_type not in self.games_by_opponent_type:
+            self.games_by_opponent_type[opponent_type] = 0
+        self.games_by_opponent_type[opponent_type] += 1
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary with computed metrics."""
@@ -105,6 +150,12 @@ class DiversityMetrics:
             else {}
         )
 
+        # January 2026 Sprint 10: Include diversity scores per config
+        diversity_scores = {
+            config: self.get_diversity_score(config)
+            for config in self.opponent_types_by_config.keys()
+        }
+
         return {
             "games_by_engine_mode": dict(self.games_by_engine_mode),
             "games_by_board_config": dict(self.games_by_board_config),
@@ -114,6 +165,8 @@ class DiversityMetrics:
             "asymmetric_ratio": asymmetric_ratio,
             "engine_mode_distribution": engine_mode_distribution,
             "uptime_seconds": time.time() - self.last_reset,
+            "games_by_opponent_type": dict(self.games_by_opponent_type),
+            "diversity_scores": diversity_scores,
         }
 
 
@@ -2640,6 +2693,9 @@ class SelfplayScheduler(EventSubscriptionMixin):
 
         Args:
             config: Selfplay configuration dict with engine_mode, board_type, num_players, etc.
+
+        January 2026 Sprint 10: Added opponent type tracking for diversity maximization.
+        Records which opponent types each config has played against.
         """
         # Track engine mode
         engine_mode = config.get("engine_mode", "unknown")
@@ -2655,6 +2711,10 @@ class SelfplayScheduler(EventSubscriptionMixin):
             self.diversity_metrics.games_by_board_config[board_key] = 0
         self.diversity_metrics.games_by_board_config[board_key] += 1
 
+        # January 2026 Sprint 10: Track opponent type for diversity scoring
+        # Record the engine_mode as the opponent type for this config
+        self.diversity_metrics.record_opponent(board_key, engine_mode)
+
         # Track asymmetric vs symmetric
         if config.get("asymmetric"):
             self.diversity_metrics.asymmetric_games += 1
@@ -2666,6 +2726,11 @@ class SelfplayScheduler(EventSubscriptionMixin):
                 f"Weak({weak.get('engine_mode')}@D{weak.get('difficulty')}) "
                 f"on {board_key}"
             )
+            # Record both opponent types in asymmetric games
+            if strong.get("engine_mode"):
+                self.diversity_metrics.record_opponent(board_key, strong["engine_mode"])
+            if weak.get("engine_mode"):
+                self.diversity_metrics.record_opponent(board_key, weak["engine_mode"])
         else:
             self.diversity_metrics.symmetric_games += 1
 

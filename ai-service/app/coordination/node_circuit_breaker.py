@@ -48,6 +48,16 @@ from app.config.coordination_defaults import CircuitBreakerDefaults
 
 logger = logging.getLogger(__name__)
 
+# January 2026 Sprint 10: Import event emission for circuit breaker monitoring
+try:
+    from app.coordination.event_router import publish_sync
+    from app.distributed.data_events import DataEventType
+    _HAS_EVENTS = True
+except ImportError:
+    publish_sync = None  # type: ignore[assignment]
+    DataEventType = None  # type: ignore[misc, assignment]
+    _HAS_EVENTS = False
+
 __all__ = [
     "NodeCircuitBreaker",
     "NodeCircuitBreakerRegistry",
@@ -237,12 +247,97 @@ class NodeCircuitBreaker:
     def _notify_state_change(
         self, node_id: str, old_state: NodeCircuitState, new_state: NodeCircuitState
     ) -> None:
-        """Notify callback of state change."""
-        if self._on_state_change and old_state != new_state:
+        """Notify callback and emit events on state change.
+
+        January 2026 Sprint 10: Added event emission for circuit breaker monitoring.
+        Enables alerting infrastructure to track circuit health cluster-wide.
+        """
+        if old_state == new_state:
+            return
+
+        # Call optional callback
+        if self._on_state_change:
             try:
                 self._on_state_change(node_id, old_state, new_state)
             except Exception as e:
                 logger.warning(f"[NodeCircuitBreaker] State change callback error: {e}")
+
+        # January 2026 Sprint 10: Emit circuit breaker events for monitoring
+        if not self.config.emit_events or not _HAS_EVENTS:
+            return
+
+        try:
+            event_type = None
+            if new_state == NodeCircuitState.OPEN:
+                event_type = DataEventType.CIRCUIT_BREAKER_OPENED
+            elif new_state == NodeCircuitState.CLOSED:
+                event_type = DataEventType.CIRCUIT_BREAKER_CLOSED
+            elif new_state == NodeCircuitState.HALF_OPEN:
+                event_type = DataEventType.CIRCUIT_BREAKER_HALF_OPEN
+
+            if event_type and publish_sync:
+                circuit = self._circuits.get(node_id)
+                payload = {
+                    "node_id": node_id,
+                    "old_state": old_state.value,
+                    "new_state": new_state.value,
+                    "failure_count": circuit.failure_count if circuit else 0,
+                    "recovery_timeout": self.config.recovery_timeout,
+                    "timestamp": time.time(),
+                }
+                publish_sync(event_type, payload)
+                logger.debug(
+                    f"[NodeCircuitBreaker] Emitted {event_type.value} for {node_id}"
+                )
+
+            # Check if too many circuits are open (threshold alert)
+            self._check_threshold_alert()
+        except Exception as e:
+            logger.warning(f"[NodeCircuitBreaker] Event emission error: {e}")
+
+    def _check_threshold_alert(self) -> None:
+        """Check if too many circuits are open and emit threshold alert.
+
+        January 2026 Sprint 10: Emits CIRCUIT_BREAKER_THRESHOLD when >20% of
+        tracked nodes have open circuits. This indicates potential cluster-wide
+        health issues requiring investigation.
+        """
+        if not _HAS_EVENTS or not publish_sync:
+            return
+
+        total_nodes = len(self._circuits)
+        if total_nodes < 3:
+            # Too few nodes to meaningfully calculate threshold
+            return
+
+        open_count = sum(
+            1 for c in self._circuits.values()
+            if c.state == NodeCircuitState.OPEN
+        )
+
+        open_ratio = open_count / total_nodes
+        threshold_ratio = 0.20  # 20% of nodes with open circuits triggers alert
+
+        if open_ratio >= threshold_ratio:
+            try:
+                payload = {
+                    "open_count": open_count,
+                    "total_nodes": total_nodes,
+                    "open_ratio": round(open_ratio, 3),
+                    "threshold_ratio": threshold_ratio,
+                    "open_nodes": [
+                        node_id for node_id, c in self._circuits.items()
+                        if c.state == NodeCircuitState.OPEN
+                    ],
+                    "timestamp": time.time(),
+                }
+                publish_sync(DataEventType.CIRCUIT_BREAKER_THRESHOLD, payload)
+                logger.warning(
+                    f"[NodeCircuitBreaker] Threshold alert: {open_count}/{total_nodes} "
+                    f"circuits open ({open_ratio:.1%})"
+                )
+            except Exception as e:
+                logger.warning(f"[NodeCircuitBreaker] Threshold alert emission error: {e}")
 
     def can_check(self, node_id: str) -> bool:
         """Check if a health check is allowed for this node.

@@ -181,11 +181,18 @@ class LoopTimeouts:
     ELECTION_REQUEST: float = 3.0            # Election request timeout
     LEADER_PROBE: float = 5.0                # Leader health probe
     STATE_TRANSFER: float = 10.0             # Leader state transfer
+    VOTER_PROMOTION_CB: float = 300.0        # Voter promotion circuit breaker timeout
+    DRAIN_TIMEOUT: float = 30.0              # Work drain before stepdown
+
+    # Partition healing
+    CONVERGENCE_TIMEOUT: float = 120.0       # Post-healing convergence check
+    PARTITION_DISCOVERY: float = 30.0        # Peer discovery during healing
 
     # Sync and transfer
     SYNC_LOCK: float = 120.0                 # Sync operation lock
     SYNC_OPERATION: float = 300.0            # Full sync timeout
     RSYNC_TRANSFER: float = 300.0            # Rsync file transfer
+    MANIFEST_COLLECTION: float = 120.0       # Cluster manifest collection
 
     # Process management
     PROCESS_SPAWN: float = 30.0              # Process spawn verification
@@ -193,11 +200,15 @@ class LoopTimeouts:
     SUBPROCESS_QUICK: float = 5.0            # Quick subprocess calls
     SUBPROCESS_LONG: float = 30.0            # Long subprocess calls
 
-    @staticmethod
-    def get_for_provider(provider: str) -> dict[str, float]:
-        """Get provider-specific timeout adjustments.
+    # Provider-specific multipliers (higher latency = higher multiplier)
+    PROVIDER_MULTIPLIERS: dict = None  # type: ignore  # Set in __post_init__ workaround
 
-        Some providers (Vast.ai) have higher latency and need longer timeouts.
+    @staticmethod
+    def get_provider_multiplier(provider: str) -> float:
+        """Get timeout multiplier for a provider.
+
+        Returns:
+            Multiplier to apply to base timeouts (e.g., 1.5 for Vast.ai).
         """
         adjustments = {
             "vast": 1.5,       # 50% longer for Vast.ai
@@ -207,13 +218,106 @@ class LoopTimeouts:
             "vultr": 1.1,      # 10% longer for Vultr
             "hetzner": 1.0,    # Standard for Hetzner
         }
-        multiplier = adjustments.get(provider.lower(), 1.0)
+        return adjustments.get(provider.lower(), 1.0)
+
+    @staticmethod
+    def get_for_provider(provider: str) -> dict[str, float]:
+        """Get provider-specific timeout adjustments.
+
+        Some providers (Vast.ai) have higher latency and need longer timeouts.
+        """
+        multiplier = LoopTimeouts.get_provider_multiplier(provider)
         return {
             "health_check": LoopTimeouts.HEALTH_CHECK * multiplier,
             "ssh_connect": LoopTimeouts.SSH_CONNECT * multiplier,
             "http_standard": LoopTimeouts.HTTP_STANDARD * multiplier,
             "peer_probe": LoopTimeouts.PEER_PROBE * multiplier,
         }
+
+    @staticmethod
+    def get_adaptive_timeout(
+        base_timeout: float,
+        provider: str = "",
+        adaptive_timeout: float | None = None,
+        weight_adaptive: float = 0.7,
+    ) -> float:
+        """Get timeout combining provider defaults with learned adaptive values.
+
+        January 2026 Sprint 10: Enables intelligent timeout selection that learns
+        from actual network conditions while respecting provider-specific baselines.
+
+        Args:
+            base_timeout: Static base timeout in seconds (e.g., HEALTH_CHECK)
+            provider: Provider name for static adjustment (e.g., "vast")
+            adaptive_timeout: Learned timeout from AdaptiveTimeoutTracker, or None
+            weight_adaptive: Weight for adaptive value (0.0 = all static, 1.0 = all adaptive)
+
+        Returns:
+            Blended timeout in seconds.
+
+        Example:
+            # In a loop that needs adaptive health check timeout:
+            from scripts.p2p.transport_cascade import TransportCascade
+
+            cascade = TransportCascade.get_instance()
+            adaptive = cascade.get_adaptive_timeout(target_node)
+
+            timeout = LoopTimeouts.get_adaptive_timeout(
+                base_timeout=LoopTimeouts.HEALTH_CHECK,
+                provider="vast",
+                adaptive_timeout=adaptive,
+            )
+        """
+        # Start with static provider-adjusted timeout
+        multiplier = LoopTimeouts.get_provider_multiplier(provider) if provider else 1.0
+        static_timeout = base_timeout * multiplier
+
+        if adaptive_timeout is None or adaptive_timeout <= 0:
+            # No adaptive data, use static
+            return static_timeout
+
+        # Blend static and adaptive: weighted average
+        # - weight_adaptive=0.7 means 70% adaptive, 30% static
+        # - Provides stability from static while responding to real conditions
+        weight_static = 1.0 - weight_adaptive
+        blended = (adaptive_timeout * weight_adaptive) + (static_timeout * weight_static)
+
+        # Clamp to reasonable bounds (0.5x to 2.0x of base)
+        min_timeout = base_timeout * 0.5
+        max_timeout = base_timeout * 2.0
+        return max(min_timeout, min(max_timeout, blended))
+
+    @staticmethod
+    def get_adaptive_health_check(
+        provider: str = "",
+        adaptive_timeout: float | None = None,
+    ) -> float:
+        """Convenience method for adaptive health check timeout."""
+        return LoopTimeouts.get_adaptive_timeout(
+            base_timeout=LoopTimeouts.HEALTH_CHECK,
+            provider=provider,
+            adaptive_timeout=adaptive_timeout,
+        )
+
+    @staticmethod
+    def get_adaptive_peer_probe(
+        provider: str = "",
+        adaptive_timeout: float | None = None,
+        is_nat_blocked: bool = False,
+    ) -> float:
+        """Convenience method for adaptive peer probe timeout.
+
+        Args:
+            provider: Provider name for static adjustment
+            adaptive_timeout: Learned timeout from transport cascade
+            is_nat_blocked: If True, uses longer NAT-blocked timeout as base
+        """
+        base = LoopTimeouts.PEER_PROBE_NAT if is_nat_blocked else LoopTimeouts.PEER_PROBE
+        return LoopTimeouts.get_adaptive_timeout(
+            base_timeout=base,
+            provider=provider,
+            adaptive_timeout=adaptive_timeout,
+        )
 
 
 # Network ports (re-export for convenience)

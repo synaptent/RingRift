@@ -2683,6 +2683,42 @@ class FeedbackLoopController(HandlerBase):
                         register_multi_harness_results,
                     )
 
+                    # January 3, 2026 (Session 8): Wait for model distribution before evaluation
+                    # This prevents wasting 45-60s evaluating with stale baseline models
+                    # on cluster nodes that haven't received the new model yet.
+                    try:
+                        from app.coordination.unified_distribution_daemon import (
+                            wait_for_model_availability,
+                        )
+                        from app.config.coordination_defaults import DistributionDefaults
+
+                        # Wait for model to be distributed to at least MIN_NODES_FOR_PROMOTION nodes
+                        # with a reasonable timeout (default 180s for distribution + buffer)
+                        distribution_timeout = getattr(
+                            DistributionDefaults, "DISTRIBUTION_TIMEOUT_SECONDS", 180.0
+                        )
+                        success, node_count = await wait_for_model_availability(
+                            model_path=model_path,
+                            min_nodes=getattr(DistributionDefaults, "MIN_NODES_FOR_PROMOTION", 3),
+                            timeout=distribution_timeout,
+                        )
+
+                        if success:
+                            logger.info(
+                                f"[FeedbackLoopController] Model {config_key} distributed to "
+                                f"{node_count} nodes, proceeding with evaluation"
+                            )
+                        else:
+                            logger.warning(
+                                f"[FeedbackLoopController] Model {config_key} only on {node_count} nodes "
+                                f"after {distribution_timeout}s, proceeding anyway"
+                            )
+                    except ImportError:
+                        logger.debug(
+                            "[FeedbackLoopController] Distribution verification not available, "
+                            "proceeding with evaluation"
+                        )
+
                     gauntlet = MultiHarnessGauntlet(default_games_per_baseline=30)
                     result = await gauntlet.evaluate_model(
                         model_path=model_path,

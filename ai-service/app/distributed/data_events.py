@@ -145,6 +145,7 @@ class DataEventType(Enum):
     CURRICULUM_REBALANCED = "curriculum_rebalanced"
     CURRICULUM_ADVANCED = "curriculum_advanced"  # Move to harder curriculum tier
     CURRICULUM_ADVANCEMENT_NEEDED = "curriculum_advancement_needed"  # Dec 29, 2025: Signal to advance curriculum (from stagnant Elo)
+    CURRICULUM_PROPAGATE = "curriculum_propagate"  # Jan 2026: Propagate curriculum advancement to similar configs
     WEIGHT_UPDATED = "weight_updated"
     ELO_SIGNIFICANT_CHANGE = "elo_significant_change"  # Triggers curriculum rebalance
 
@@ -339,6 +340,12 @@ class DataEventType(Enum):
     SSH_LIVENESS_CHECK_FAILED = "ssh_liveness_check_failed"  # SSH check failed (timeout/refused/auth)
     SSH_NODE_UNRESPONSIVE = "ssh_node_unresponsive"  # Node unresponsive via SSH after retries
     SSH_NODE_RECOVERED = "ssh_node_recovered"  # Previously unresponsive node now responds via SSH
+
+    # Circuit Breaker events (January 2026 Sprint 10)
+    CIRCUIT_BREAKER_OPENED = "circuit_breaker_opened"  # Node circuit breaker opened (too many failures)
+    CIRCUIT_BREAKER_CLOSED = "circuit_breaker_closed"  # Node circuit breaker closed (recovered)
+    CIRCUIT_BREAKER_HALF_OPEN = "circuit_breaker_half_open"  # Circuit testing recovery
+    CIRCUIT_BREAKER_THRESHOLD = "circuit_breaker_threshold"  # Too many open circuits (>20% of nodes)
 
     # Lock/Synchronization events (December 2025)
     LOCK_TIMEOUT = "lock_timeout"

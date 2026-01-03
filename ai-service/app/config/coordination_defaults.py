@@ -2287,6 +2287,9 @@ class SelfplayPriorityWeightDefaults:
     DATA_DEFICIT_WEIGHT: float = _env_float("RINGRIFT_DATA_DEFICIT_WEIGHT", 0.25)
     QUALITY_WEIGHT: float = _env_float("RINGRIFT_QUALITY_WEIGHT", 0.15)
     VOI_WEIGHT: float = _env_float("RINGRIFT_VOI_WEIGHT", 0.20)
+    # January 2026 Sprint 10: Diversity weight for maximizing opponent variety
+    # Prioritizes configs with less opponent variety to improve training robustness
+    DIVERSITY_WEIGHT: float = _env_float("RINGRIFT_DIVERSITY_WEIGHT", 0.10)
 
     # Dynamic weight bounds - prevent any single factor from dominating
     STALENESS_WEIGHT_MIN: float = _env_float("RINGRIFT_STALENESS_WEIGHT_MIN", 0.15)
@@ -2301,6 +2304,9 @@ class SelfplayPriorityWeightDefaults:
     QUALITY_WEIGHT_MAX: float = _env_float("RINGRIFT_QUALITY_WEIGHT_MAX", 0.25)
     VOI_WEIGHT_MIN: float = _env_float("RINGRIFT_VOI_WEIGHT_MIN", 0.10)
     VOI_WEIGHT_MAX: float = _env_float("RINGRIFT_VOI_WEIGHT_MAX", 0.35)
+    # January 2026 Sprint 10: Diversity weight bounds
+    DIVERSITY_WEIGHT_MIN: float = _env_float("RINGRIFT_DIVERSITY_WEIGHT_MIN", 0.05)
+    DIVERSITY_WEIGHT_MAX: float = _env_float("RINGRIFT_DIVERSITY_WEIGHT_MAX", 0.20)
 
     # Cluster state thresholds for weight adjustment triggers
     IDLE_GPU_HIGH_THRESHOLD: float = _env_float("RINGRIFT_IDLE_GPU_HIGH_THRESHOLD", 0.50)
@@ -2365,6 +2371,8 @@ class SelfplayPriorityWeightDefaults:
             "data_deficit": (self.DATA_DEFICIT_WEIGHT_MIN, self.DATA_DEFICIT_WEIGHT_MAX),
             "quality": (self.QUALITY_WEIGHT_MIN, self.QUALITY_WEIGHT_MAX),
             "voi": (self.VOI_WEIGHT_MIN, self.VOI_WEIGHT_MAX),
+            # January 2026 Sprint 10: Diversity weight bounds
+            "diversity": (self.DIVERSITY_WEIGHT_MIN, self.DIVERSITY_WEIGHT_MAX),
         }
 
 

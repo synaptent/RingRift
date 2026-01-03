@@ -49,6 +49,12 @@ try:
 except ImportError:
     _HAS_EVENT_EMITTERS = False
 
+# Jan 2026: Import centralized timeouts from loops
+try:
+    from scripts.p2p.loops.loop_constants import LoopTimeouts
+except ImportError:
+    LoopTimeouts = None  # type: ignore[misc, assignment]
+
 
 class TrainingCoordinator(EventSubscriptionMixin):
     """Coordinates training job dispatch and completion workflows.
@@ -770,13 +776,22 @@ class TrainingCoordinator(EventSubscriptionMixin):
             local_model_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Build rsync command
+            # Jan 2026: Use centralized timeouts from LoopTimeouts
+            ssh_connect_timeout = 30
+            rsync_timeout = 120
+            async_timeout = 180.0
+            if LoopTimeouts is not None:
+                ssh_connect_timeout = int(LoopTimeouts.SSH_CONNECT)
+                rsync_timeout = int(LoopTimeouts.RSYNC_TRANSFER)
+                async_timeout = LoopTimeouts.RSYNC_TRANSFER * 1.5  # Extra margin for async wrapper
+
             ssh_cmd = (
                 f"ssh -p {ssh_port} -i {ssh_key} "
-                f"-o StrictHostKeyChecking=no -o ConnectTimeout=30"
+                f"-o StrictHostKeyChecking=no -o ConnectTimeout={ssh_connect_timeout}"
             )
 
             cmd = [
-                "rsync", "-az", "--timeout=120",
+                "rsync", "-az", f"--timeout={rsync_timeout}",
                 "-e", ssh_cmd,
                 f"{ssh_user}@{host}:{remote_model_path}",
                 str(local_model_path),
@@ -791,7 +806,7 @@ class TrainingCoordinator(EventSubscriptionMixin):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=180.0)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=async_timeout)
 
             if proc.returncode != 0:
                 stderr_text = stderr.decode() if stderr else "unknown error"

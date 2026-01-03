@@ -554,7 +554,8 @@ class DaemonManagerConfig:
 
     # Dependency wait behavior (Dec 27, 2025)
     # start(wait_for_deps=True) will poll these dependencies until ready.
-    dependency_wait_timeout: float = 30.0
+    # Jan 3, 2026: Increased from 30s to 60s to accommodate slow DATA_PIPELINE startup
+    dependency_wait_timeout: float = 60.0
     dependency_poll_interval: float = 0.5
 
     # Dec 2025: Use centralized defaults from coordination_defaults.py

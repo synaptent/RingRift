@@ -37,6 +37,8 @@ IMPROVEMENT_BOOST_WEIGHT = _priority_weight_defaults.IMPROVEMENT_BOOST_WEIGHT
 DATA_DEFICIT_WEIGHT = _priority_weight_defaults.DATA_DEFICIT_WEIGHT
 QUALITY_WEIGHT = _priority_weight_defaults.QUALITY_WEIGHT
 VOI_WEIGHT = _priority_weight_defaults.VOI_WEIGHT
+# January 2026 Sprint 10: Diversity weight for opponent variety maximization
+DIVERSITY_WEIGHT = _priority_weight_defaults.DIVERSITY_WEIGHT
 
 # Staleness thresholds (hours)
 FRESH_DATA_THRESHOLD = _priority_weight_defaults.FRESH_DATA_THRESHOLD
@@ -62,6 +64,9 @@ class DynamicWeights:
     - Configs at Elo target: Many at target → reduce velocity weight (focus elsewhere)
     - Average model Elo: Higher Elo → boost curriculum weight (harder positions needed)
 
+    January 2026 Sprint 10: Added diversity weight for opponent variety maximization.
+    When diversity is low (same opponents repeatedly), boost diversity weight.
+
     All weights are bounded by DYNAMIC_WEIGHT_BOUNDS to prevent any single factor
     from dominating allocation decisions.
     """
@@ -74,6 +79,8 @@ class DynamicWeights:
     data_deficit: float = DATA_DEFICIT_WEIGHT
     quality: float = QUALITY_WEIGHT
     voi: float = VOI_WEIGHT
+    # January 2026 Sprint 10: Diversity weight for opponent variety
+    diversity: float = DIVERSITY_WEIGHT
 
     # Cluster state that drove these weights (for debugging/logging)
     idle_gpu_fraction: float = 0.0
@@ -93,6 +100,7 @@ class DynamicWeights:
             "data_deficit": self.data_deficit,
             "quality": self.quality,
             "voi": self.voi,
+            "diversity": self.diversity,
             "idle_gpu_fraction": self.idle_gpu_fraction,
             "training_queue_depth": self.training_queue_depth,
             "configs_at_target_fraction": self.configs_at_target_fraction,
@@ -131,6 +139,11 @@ class ConfigPriority:
     # Game count normalization fields
     target_training_samples: int = DEFAULT_TRAINING_SAMPLES_TARGET
     samples_per_game_estimate: float = 50.0  # Historical average samples per game
+
+    # January 2026 Sprint 10: Diversity metrics for opponent variety
+    # Lower diversity_score means less variety in opponents (needs more diverse games)
+    diversity_score: float = 1.0  # 0.0 = low diversity, 1.0 = high diversity
+    opponent_types_seen: int = 0  # Number of distinct opponent types played against
 
     # Computed priority
     priority_score: float = 0.0
@@ -243,3 +256,19 @@ class ConfigPriority:
             gap_factor * 0.3 +          # 30% weight on improvement potential
             info_factor * 0.3           # 30% weight on learning efficiency
         )
+
+    @property
+    def diversity_factor(self) -> float:
+        """Compute diversity factor (0-1, higher = needs more diversity).
+
+        January 2026 Sprint 10: Prioritizes configs with low opponent variety.
+        Configs that have played against few distinct opponent types get
+        boosted priority to maximize training robustness.
+
+        A low diversity_score (few opponent types) returns a high factor,
+        encouraging allocation of games with diverse opponents.
+        """
+        # Invert diversity_score: low diversity → high factor
+        # diversity_score of 0.0 → factor of 1.0 (max boost)
+        # diversity_score of 1.0 → factor of 0.0 (no boost needed)
+        return max(0.0, 1.0 - self.diversity_score)

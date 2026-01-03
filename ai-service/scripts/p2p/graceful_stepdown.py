@@ -37,9 +37,16 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 logger = logging.getLogger(__name__)
 
-# Step-down configuration
-DEFAULT_DRAIN_TIMEOUT = 30.0  # seconds to wait for work to complete
-DEFAULT_STATE_TRANSFER_TIMEOUT = 10.0  # seconds for state transfer
+# Step-down configuration - import centralized timeouts
+try:
+    from scripts.p2p.loops.loop_constants import LoopTimeouts
+    DEFAULT_DRAIN_TIMEOUT = LoopTimeouts.DRAIN_TIMEOUT
+    DEFAULT_STATE_TRANSFER_TIMEOUT = LoopTimeouts.STATE_TRANSFER
+except ImportError:
+    # Fallback for standalone usage
+    DEFAULT_DRAIN_TIMEOUT = 30.0
+    DEFAULT_STATE_TRANSFER_TIMEOUT = 10.0
+
 DEFAULT_ANNOUNCEMENT_DELAY = 2.0  # seconds to wait after announcement
 
 

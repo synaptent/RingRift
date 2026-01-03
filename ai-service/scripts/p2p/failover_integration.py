@@ -133,9 +133,22 @@ class FailoverIntegrationMixin(P2PMixinBase):
             cloudflare = CloudflareHTTPTransport()
             self._transport_cascade.register_transport(cloudflare)
 
-            # Register Tier 4: P2P Relay
+            # Register Tier 4: P2P Relay with multi-relay failover (Jan 3, 2026)
             relay = P2PRelayTransport(port=getattr(self, "port", 8770))
             relay.set_leader_node(getattr(self, "leader_id", None))
+
+            # Discover and add all relay-capable nodes from config
+            relay_nodes = self._discover_relay_capable_nodes()
+            for node_id in relay_nodes:
+                relay.add_relay_node(node_id)
+                self._log_debug(f"Added relay-capable node: {node_id}")
+
+            if relay_nodes:
+                self._log_info(
+                    f"Multi-relay failover enabled with {len(relay_nodes)} relays: "
+                    f"{', '.join(relay_nodes[:3])}{'...' if len(relay_nodes) > 3 else ''}"
+                )
+
             self._transport_cascade.register_transport(relay)
 
             # Try to add notification transports if credentials available
@@ -395,6 +408,87 @@ class FailoverIntegrationMixin(P2PMixinBase):
                 if hasattr(transport, "set_leader_node"):
                     transport.set_leader_node(leader_id)
 
+    def _discover_relay_capable_nodes(self) -> list[str]:
+        """Discover nodes marked as relay-capable in distributed_hosts.yaml.
+
+        Jan 3, 2026: Added for multi-relay failover to prevent SPOF when
+        the primary relay (vultr-a100-20gb) goes down.
+
+        Nodes with `relay_capable: true` in their config are eligible to
+        serve as P2P relays for NAT-blocked nodes.
+
+        Returns:
+            List of node IDs that can serve as relays (sorted by preference)
+        """
+        relay_nodes: list[str] = []
+
+        try:
+            from app.config.cluster_config import get_config_cache
+
+            config_cache = get_config_cache()
+            config = config_cache.get_config()
+
+            if not config or "hosts" not in config:
+                self._log_debug("No hosts config available for relay discovery")
+                return relay_nodes
+
+            # Find nodes with relay_capable: true
+            for node_id, node_config in config["hosts"].items():
+                if not isinstance(node_config, dict):
+                    continue
+
+                # Check if node is relay-capable
+                if node_config.get("relay_capable", False):
+                    # Also verify node has P2P enabled and is not ourselves
+                    if node_config.get("p2p_enabled", False) and node_id != getattr(self, "node_id", None):
+                        relay_nodes.append(node_id)
+
+            # Sort by preference: voters first, then by role
+            def relay_priority(node_id: str) -> tuple[int, int]:
+                """Higher priority = lower number. Voters first, then coordinators."""
+                node_config = config["hosts"].get(node_id, {})
+                role = node_config.get("role", "")
+
+                # Voters are most reliable (P2P always running)
+                is_voter = node_id in getattr(self, "voter_node_ids", [])
+
+                # Priority tiers: 0=voter, 1=coordinator, 2=backbone, 3=other
+                if is_voter:
+                    tier = 0
+                elif role == "coordinator":
+                    tier = 1
+                elif role == "backbone":
+                    tier = 2
+                else:
+                    tier = 3
+
+                return (tier, hash(node_id) % 100)  # Tie-breaker by consistent hash
+
+            relay_nodes.sort(key=relay_priority)
+
+            self._log_debug(f"Discovered {len(relay_nodes)} relay-capable nodes: {relay_nodes}")
+
+        except ImportError:
+            self._log_debug("cluster_config not available for relay discovery")
+        except Exception as e:
+            self._log_error(f"Error discovering relay nodes: {e}")
+
+        return relay_nodes
+
+    def get_relay_health_summary(self) -> dict[str, Any]:
+        """Get health summary of all relay nodes.
+
+        Jan 3, 2026: Exposes relay transport's health tracking for monitoring.
+        """
+        if not self._transport_cascade:
+            return {"error": "Transport cascade not initialized"}
+
+        for transport in self._transport_cascade._transports:
+            if hasattr(transport, "get_relay_health_summary"):
+                return transport.get_relay_health_summary()
+
+        return {"error": "No relay transport found"}
+
     def get_failover_stats(self) -> dict[str, Any]:
         """Get comprehensive failover system statistics."""
         stats: dict[str, Any] = {
@@ -408,6 +502,9 @@ class FailoverIntegrationMixin(P2PMixinBase):
                 "transports": [t.name for t in self._transport_cascade._transports],
                 "health": self._transport_cascade.get_all_health(),
             }
+
+            # Add relay health summary (Jan 3, 2026)
+            stats["relay_health"] = self.get_relay_health_summary()
 
         if self._protocol_union:
             stats["protocol_union"] = self._protocol_union.get_stats()

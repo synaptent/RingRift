@@ -175,7 +175,17 @@ class MomentumToCurriculumBridge:
             if hasattr(DataEventType, 'ELO_VELOCITY_CHANGED'):
                 router.subscribe(DataEventType.ELO_VELOCITY_CHANGED, self._on_elo_velocity_changed)
 
-            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED, ELO_SIGNIFICANT_CHANGE, SELFPLAY_ALLOCATION_UPDATED, MODEL_PROMOTED, TIER_PROMOTION, CROSSBOARD_PROMOTION, CURRICULUM_ADVANCEMENT_NEEDED, ELO_VELOCITY_CHANGED")
+            # January 2026 Sprint 10: Subscribe to CURRICULUM_ADVANCED for cross-board
+            # propagation (+5-15 Elo). When one config advances, similar configs can benefit.
+            if hasattr(DataEventType, 'CURRICULUM_ADVANCED'):
+                router.subscribe(DataEventType.CURRICULUM_ADVANCED, self._on_curriculum_advanced)
+
+            # January 2026 Sprint 10: Subscribe to CURRICULUM_PROPAGATE to receive
+            # curriculum advancements propagated from similar configs.
+            if hasattr(DataEventType, 'CURRICULUM_PROPAGATE'):
+                router.subscribe(DataEventType.CURRICULUM_PROPAGATE, self._on_curriculum_propagate)
+
+            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED, ELO_SIGNIFICANT_CHANGE, SELFPLAY_ALLOCATION_UPDATED, MODEL_PROMOTED, TIER_PROMOTION, CROSSBOARD_PROMOTION, CURRICULUM_ADVANCEMENT_NEEDED, ELO_VELOCITY_CHANGED, CURRICULUM_ADVANCED, CURRICULUM_PROPAGATE")
 
             # December 29, 2025: Only set _event_subscribed = True after successful subscription
             # Previously this was in finally block which caused race condition:
@@ -227,6 +237,12 @@ class MomentumToCurriculumBridge:
                 # January 2026 Sprint 10: Unsubscribe from ELO_VELOCITY_CHANGED
                 if hasattr(DataEventType, 'ELO_VELOCITY_CHANGED'):
                     router.unsubscribe(DataEventType.ELO_VELOCITY_CHANGED, self._on_elo_velocity_changed)
+                # January 2026 Sprint 10: Unsubscribe from CURRICULUM_ADVANCED
+                if hasattr(DataEventType, 'CURRICULUM_ADVANCED'):
+                    router.unsubscribe(DataEventType.CURRICULUM_ADVANCED, self._on_curriculum_advanced)
+                # January 2026 Sprint 10: Unsubscribe from CURRICULUM_PROPAGATE
+                if hasattr(DataEventType, 'CURRICULUM_PROPAGATE'):
+                    router.unsubscribe(DataEventType.CURRICULUM_PROPAGATE, self._on_curriculum_propagate)
             self._event_subscribed = False
         except (ImportError, AttributeError, TypeError, RuntimeError):
             # ImportError: modules not available
@@ -750,6 +766,225 @@ class MomentumToCurriculumBridge:
 
         except (AttributeError, KeyError, TypeError, ValueError) as e:
             logger.warning(f"[MomentumToCurriculumBridge] Error handling Elo velocity: {e}")
+
+    def _on_curriculum_advanced(self, event) -> None:
+        """Handle CURRICULUM_ADVANCED event - propagate to similar configs.
+
+        January 2026 Sprint 10: Cross-board curriculum propagation (+5-15 Elo).
+        When one config (e.g., square8_2p) achieves a curriculum advancement,
+        similar configs (e.g., hex8_2p, hexagonal_2p) can benefit from reduced
+        exploration and accelerated progression.
+
+        Similarity is based on:
+        - Same number of players (required)
+        - Similar board types (hex->hex, square->square preferred)
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event if isinstance(event, dict) else {}
+
+            config_key = extract_config_key(payload)
+            old_tier = payload.get("old_tier", "")
+            new_tier = payload.get("new_tier", "")
+            trigger = payload.get("trigger", "unknown")
+            source = payload.get("source", "")
+
+            if not config_key:
+                return
+
+            # Don't propagate propagated events (prevent infinite loops)
+            if source == "curriculum_propagation":
+                return
+
+            # Don't propagate crossboard_promotion events (already affect multiple configs)
+            if "crossboard" in trigger.lower() or "crossboard" in new_tier.lower():
+                return
+
+            logger.info(
+                f"[MomentumToCurriculumBridge] CURRICULUM_ADVANCED: {config_key} "
+                f"{old_tier} -> {new_tier} (trigger={trigger}), checking for propagation"
+            )
+
+            # Find similar configs to propagate to
+            similar_configs = self._get_similar_configs(config_key)
+
+            if not similar_configs:
+                logger.debug(f"[MomentumToCurriculumBridge] No similar configs for {config_key}")
+                return
+
+            # Emit CURRICULUM_PROPAGATE for each similar config
+            for target_config in similar_configs:
+                self._emit_curriculum_propagate(
+                    source_config=config_key,
+                    target_config=target_config,
+                    advancement_tier=new_tier,
+                    original_trigger=trigger,
+                )
+
+            logger.info(
+                f"[MomentumToCurriculumBridge] Propagated curriculum advancement from "
+                f"{config_key} to {len(similar_configs)} similar configs: {similar_configs}"
+            )
+
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(f"[MomentumToCurriculumBridge] Error handling curriculum advanced: {e}")
+
+    def _on_curriculum_propagate(self, event) -> None:
+        """Handle CURRICULUM_PROPAGATE event - apply propagated advancement.
+
+        January 2026 Sprint 10: Receive curriculum advancement from similar config.
+        Apply a reduced boost (50% of normal) to benefit from cross-board learning.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event if isinstance(event, dict) else {}
+
+            source_config = payload.get("source_config", "")
+            target_config = payload.get("target_config", "")
+            advancement_tier = payload.get("advancement_tier", "")
+            propagation_weight = payload.get("propagation_weight", 0.5)
+
+            if not target_config:
+                return
+
+            logger.info(
+                f"[MomentumToCurriculumBridge] Received CURRICULUM_PROPAGATE: "
+                f"{source_config} -> {target_config}, tier={advancement_tier}"
+            )
+
+            # Apply curriculum weight boost (reduced compared to direct advancement)
+            try:
+                from app.training.curriculum_feedback import get_curriculum_feedback
+
+                curriculum = get_curriculum_feedback()
+                if curriculum:
+                    current_weights = curriculum.get_curriculum_weights()
+                    old_weight = current_weights.get(target_config, 1.0)
+
+                    # Apply propagation boost (50% of normal boost = 10% weight increase)
+                    boost_multiplier = 1.0 + (0.20 * propagation_weight)  # 10% boost at 0.5 weight
+                    new_weight = min(old_weight * boost_multiplier, 2.0)  # Cap at 2.0
+
+                    if new_weight > old_weight:
+                        curriculum.update_weight(
+                            config_key=target_config,
+                            new_weight=new_weight,
+                            source=f"propagation_from_{source_config}",
+                        )
+                        self._last_weights[target_config] = new_weight
+
+                        logger.info(
+                            f"[MomentumToCurriculumBridge] Applied propagated boost to {target_config}: "
+                            f"{old_weight:.2f} -> {new_weight:.2f} (from {source_config})"
+                        )
+
+                        # Emit curriculum rebalanced event
+                        self._emit_rebalance_event([target_config], {target_config: new_weight})
+
+            except (ImportError, AttributeError) as e:
+                logger.debug(f"[MomentumToCurriculumBridge] Could not apply propagation: {e}")
+
+            self._last_sync_time = time.time()
+
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(f"[MomentumToCurriculumBridge] Error handling curriculum propagate: {e}")
+
+    def _get_similar_configs(self, config_key: str) -> list[str]:
+        """Get similar configs for cross-board curriculum propagation.
+
+        January 2026 Sprint 10: Identifies configs that can benefit from
+        curriculum advancements in a source config.
+
+        Similarity criteria:
+        1. Same number of players (required)
+        2. Same board family preferred (hex->hex, square->square)
+        3. Excludes the source config itself
+
+        Args:
+            config_key: Source config key (e.g., "square8_2p")
+
+        Returns:
+            List of similar config keys to propagate to
+        """
+        parsed = parse_config_key(config_key)
+        if not parsed or not parsed.num_players:
+            return []
+
+        source_board = parsed.board_type or ""
+        source_players = parsed.num_players
+
+        # Determine board family
+        if source_board.startswith("hex"):
+            source_family = "hex"
+        elif source_board.startswith("square"):
+            source_family = "square"
+        else:
+            source_family = source_board
+
+        # All known board configurations
+        ALL_BOARDS = ["hex8", "hexagonal", "square8", "square19"]
+        ALL_PLAYERS = [2, 3, 4]
+
+        similar_configs = []
+        for board in ALL_BOARDS:
+            for players in ALL_PLAYERS:
+                candidate_key = f"{board}_{players}p"
+
+                # Skip source config
+                if candidate_key == config_key:
+                    continue
+
+                # Require same number of players
+                if players != source_players:
+                    continue
+
+                # Prefer same board family, but include all same-player configs
+                if board.startswith("hex"):
+                    candidate_family = "hex"
+                elif board.startswith("square"):
+                    candidate_family = "square"
+                else:
+                    candidate_family = board
+
+                # Include same-family configs with higher priority
+                # (for now, include all same-player configs)
+                similar_configs.append(candidate_key)
+
+        return similar_configs
+
+    def _emit_curriculum_propagate(
+        self,
+        source_config: str,
+        target_config: str,
+        advancement_tier: str,
+        original_trigger: str,
+    ) -> None:
+        """Emit CURRICULUM_PROPAGATE event for cross-board propagation.
+
+        January 2026 Sprint 10: Signals that a curriculum advancement
+        should be propagated to a similar config.
+        """
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+            if router:
+                router.publish_sync(
+                    "CURRICULUM_PROPAGATE",
+                    {
+                        "source_config": source_config,
+                        "target_config": target_config,
+                        "advancement_tier": advancement_tier,
+                        "original_trigger": original_trigger,
+                        "propagation_weight": 0.5,  # 50% weight for propagated boosts
+                        "timestamp": time.time(),
+                    },
+                    source="curriculum_integration",
+                )
+                logger.debug(
+                    f"[MomentumToCurriculumBridge] Emitted CURRICULUM_PROPAGATE: "
+                    f"{source_config} -> {target_config}"
+                )
+        except (ImportError, AttributeError, TypeError, RuntimeError) as e:
+            logger.debug(f"Failed to emit curriculum propagate event: {e}")
 
     def _sync_weights_for_momentum(
         self,

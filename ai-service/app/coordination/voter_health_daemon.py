@@ -75,8 +75,9 @@ class VoterHealthConfig:
     enable_ssh_fallback: bool = True
     quorum_size: int = 4
     quorum_warning_threshold: int = 5  # Warn when only 5 voters online (quorum + 1)
-    # January 3, 2026: Reduced from 30s to 10s for faster startup detection
-    startup_grace_seconds: int = 10
+    # January 3, 2026: Reverted 10s→30s after Session 8 analysis showed
+    # P2P initialization takes 8-12s; 10s caused false-positive restarts.
+    startup_grace_seconds: int = 30
     p2p_port: int = 8770
 
     @classmethod

@@ -351,6 +351,14 @@ class SelfplayScheduler(HandlerBase):
         self._low_velocity_count: dict[str, int] = {}
         self._last_plateau_emission: dict[str, float] = {}  # Avoid spamming events
 
+        # January 2026 Sprint 10: Diversity tracking for opponent variety maximization
+        # Track opponent types seen per config: config_key -> set of opponent types
+        self._opponent_types_by_config: dict[str, set[str]] = {}
+        # Computed diversity scores: config_key -> diversity score (0.0=low, 1.0=high)
+        self._diversity_scores: dict[str, float] = {}
+        # Maximum opponent types for diversity calculation (8 = full diversity)
+        self._max_opponent_types = 8
+
         # Dec 30, 2025: Extracted quality cache class (reduces code, enables testing)
         # ConfigStateCache handles TTL, invalidation, and daemon integration
         self._quality_cache = ConfigStateCache(
@@ -678,6 +686,10 @@ class SelfplayScheduler(HandlerBase):
             else:
                 priority.elo_uncertainty = BASE_UNCERTAINTY
 
+            # January 2026 Sprint 10: Update diversity score and opponent count
+            priority.diversity_score = self.get_diversity_score(config_key)
+            priority.opponent_types_seen = self.get_opponent_types_seen(config_key)
+
             # Compute priority score
             priority.priority_score = self._compute_priority_score(priority)
 
@@ -861,6 +873,8 @@ class SelfplayScheduler(HandlerBase):
             current_elo=priority.current_elo,
             elo_uncertainty=priority.elo_uncertainty,
             target_elo=priority.target_elo,
+            # January 2026 Sprint 10: Diversity score from opponent tracking
+            diversity_score=priority.diversity_score,
         )
 
     def _compute_priority_score(self, priority: ConfigPriority) -> float:
@@ -2269,6 +2283,12 @@ class SelfplayScheduler(HandlerBase):
             if config_key in self._config_priorities:
                 # Reset staleness for this config
                 self._config_priorities[config_key].staleness_hours = 0.0
+
+                # January 2026 Sprint 10: Record opponent type for diversity tracking
+                # Extract opponent type from event (e.g., "heuristic", "policy", "gumbel", "nnue")
+                opponent_type = event.payload.get("opponent_type") or event.payload.get("engine_mode")
+                if opponent_type:
+                    self.record_opponent(config_key, str(opponent_type))
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling selfplay complete: {e}")
 
@@ -3777,6 +3797,66 @@ class SelfplayScheduler(HandlerBase):
             Elo change per hour (can be negative for regression)
         """
         return self._elo_velocity.get(config_key, 0.0)
+
+    # =========================================================================
+    # Diversity Tracking (January 2026 Sprint 10)
+    # =========================================================================
+
+    def record_opponent(self, config_key: str, opponent_type: str) -> None:
+        """Record that a config played against an opponent type.
+
+        January 2026 Sprint 10: Tracks opponent variety for diversity maximization.
+        Configs that play against more diverse opponents get higher priority to
+        maximize training robustness.
+
+        Args:
+            config_key: Config like "hex8_2p"
+            opponent_type: Type of opponent (e.g., "heuristic", "policy", "gumbel")
+        """
+        if config_key not in self._opponent_types_by_config:
+            self._opponent_types_by_config[config_key] = set()
+        self._opponent_types_by_config[config_key].add(opponent_type)
+        # Recompute diversity score
+        self._diversity_scores[config_key] = self._compute_diversity_score(config_key)
+
+    def _compute_diversity_score(self, config_key: str) -> float:
+        """Compute diversity score for a config.
+
+        Args:
+            config_key: Config like "hex8_2p"
+
+        Returns:
+            Diversity score between 0.0 (low diversity) and 1.0 (high diversity)
+        """
+        opponents_seen = self._opponent_types_by_config.get(config_key, set())
+        if not opponents_seen:
+            return 0.0  # No opponents seen = low diversity
+        return min(1.0, len(opponents_seen) / self._max_opponent_types)
+
+    def get_diversity_score(self, config_key: str) -> float:
+        """Get diversity score for a config.
+
+        January 2026 Sprint 10: Used in priority calculation to boost configs
+        with low opponent variety.
+
+        Args:
+            config_key: Config like "hex8_2p"
+
+        Returns:
+            Diversity score between 0.0 (low diversity) and 1.0 (high diversity)
+        """
+        return self._diversity_scores.get(config_key, 0.0)
+
+    def get_opponent_types_seen(self, config_key: str) -> int:
+        """Get number of distinct opponent types played by a config.
+
+        Args:
+            config_key: Config like "hex8_2p"
+
+        Returns:
+            Number of distinct opponent types
+        """
+        return len(self._opponent_types_by_config.get(config_key, set()))
 
     # =========================================================================
     # Status & Metrics

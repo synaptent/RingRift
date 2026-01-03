@@ -45,6 +45,12 @@ try:
 except ImportError:
     DataEventType = None  # type: ignore[misc, assignment]
 
+# Jan 2026: Import centralized timeouts from loops
+try:
+    from scripts.p2p.loops.loop_constants import LoopTimeouts
+except ImportError:
+    LoopTimeouts = None  # type: ignore[misc, assignment]
+
 
 def _get_event_emitter() -> Callable[[str, dict], None] | None:
     """Get the event emitter function, initializing if needed (thread-safe).
@@ -1163,14 +1169,17 @@ class SyncPlanner(EventSubscriptionMixin):
         manifest = cluster_manifest
         if not manifest:
             logger.info("Collecting fresh cluster manifest for training sync...")
-            # Dec 2025: Reduced from 5 minutes to 2 minutes, with cached fallback
+            # Jan 2026: Use centralized timeout from LoopTimeouts
+            manifest_timeout = 120.0  # Default fallback
+            if LoopTimeouts is not None:
+                manifest_timeout = LoopTimeouts.MANIFEST_COLLECTION
             try:
                 manifest = await asyncio.wait_for(
                     collect_manifest(),
-                    timeout=120.0  # 2 minutes max (reduced from 5)
+                    timeout=manifest_timeout,
                 )
             except asyncio.TimeoutError:
-                logger.warning("Manifest collection timed out after 2 minutes, trying cached")
+                logger.warning(f"Manifest collection timed out after {manifest_timeout}s, trying cached")
                 # Try to get cached manifest as fallback (sync method)
                 try:
                     cached = self.get_cached_manifest()

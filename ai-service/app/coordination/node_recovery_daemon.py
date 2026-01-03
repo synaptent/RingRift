@@ -247,10 +247,12 @@ class NodeRecoveryDaemon(HandlerBase):
         """Return event subscriptions for HandlerBase.
 
         December 2025: Converted from _subscribe_to_events() for HandlerBase pattern.
+        January 2026: Added NODE_SUSPECT for early fault detection.
         """
         return {
             "P2P_NODES_DEAD": self._on_nodes_dead,
             "P2P_NODE_DEAD": self._on_single_node_dead,
+            "NODE_SUSPECT": self._on_node_suspect,
         }
 
     def _on_nodes_dead(self, event) -> None:
@@ -297,6 +299,60 @@ class NodeRecoveryDaemon(HandlerBase):
             logger.info(
                 f"[NodeRecoveryDaemon] Unknown node {node_id} reported dead, "
                 f"will track on next cluster scan"
+            )
+
+    def _on_node_suspect(self, event) -> None:
+        """Handle NODE_SUSPECT event for early fault detection.
+
+        January 2026: Added for proactive recovery. NODE_SUSPECT is emitted when
+        a node shows signs of degradation (slow responses, intermittent failures)
+        before it's confirmed dead. This allows:
+        1. Preemptive workload migration
+        2. Early alerting
+        3. Reduced failure blast radius
+
+        The node is marked as "suspect" (not "unreachable") and gets a partial
+        failure increment. If suspicion accumulates, soft recovery may be triggered.
+        """
+        payload = event.payload if hasattr(event, 'payload') else event
+        node_id = payload.get("node_id")
+        reason = payload.get("reason", "unspecified")
+        severity = payload.get("severity", "low")  # low, medium, high
+
+        if not node_id:
+            logger.debug("[NodeRecoveryDaemon] Received NODE_SUSPECT without node_id")
+            return
+
+        # Severity-based failure weight (0.25 for low, 0.5 for medium, 1.0 for high)
+        failure_weight = {"low": 0.25, "medium": 0.5, "high": 1.0}.get(severity, 0.25)
+
+        if node_id in self._node_states:
+            node = self._node_states[node_id]
+            # Increment failures fractionally based on severity
+            node.consecutive_failures += failure_weight
+            if node.status == "running":
+                node.status = "suspect"
+            logger.info(
+                f"[NodeRecoveryDaemon] Node {node_id} suspected: {reason} "
+                f"(severity={severity}, failures={node.consecutive_failures:.1f})"
+            )
+
+            # If suspicion accumulates past soft_restart threshold, log warning
+            if node.consecutive_failures >= self.config.escalation_soft_restart_threshold:
+                logger.warning(
+                    f"[NodeRecoveryDaemon] Node {node_id} accumulated enough suspicion "
+                    f"({node.consecutive_failures:.1f}) for soft restart consideration"
+                )
+        else:
+            # Create minimal state for unknown node
+            self._node_states[node_id] = NodeInfo(
+                node_id=node_id,
+                host=payload.get("host", ""),
+                status="suspect",
+                consecutive_failures=failure_weight,
+            )
+            logger.info(
+                f"[NodeRecoveryDaemon] New suspect node {node_id}: {reason}"
             )
 
     async def stop(self) -> None:

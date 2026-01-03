@@ -45,6 +45,12 @@ try:
 except ImportError:
     DEFAULT_PORT = 8770  # Fallback if constants unavailable
 
+# Jan 2026: Import centralized timeouts for adaptive usage
+try:
+    from .loop_constants import LoopTimeouts
+except ImportError:
+    LoopTimeouts = None  # type: ignore
+
 # Import Tailscale discovery constants (Dec 30, 2025)
 try:
     from app.p2p.constants import (
@@ -168,12 +174,20 @@ class IpDiscoveryLoop(BaseLoop):
             logger.debug(f"[NetworkDiscovery] DNS resolution failed for {hostname}: {e}")
             return None
 
-    async def _is_reachable(self, ip: str, port: int = 22) -> bool:
-        """Quick check if IP is reachable via TCP."""
+    async def _is_reachable(self, ip: str, port: int = 22, provider: str = "") -> bool:
+        """Quick check if IP is reachable via TCP.
+
+        Jan 2026: Uses adaptive timeout from LoopTimeouts for provider-specific delays.
+        """
+        # Use adaptive health check timeout if available
+        timeout = 5.0  # Default fallback
+        if LoopTimeouts is not None:
+            timeout = LoopTimeouts.get_adaptive_health_check(provider=provider)
+
         try:
             _, writer = await asyncio.wait_for(
                 asyncio.open_connection(ip, port),
-                timeout=5.0,
+                timeout=timeout,
             )
             writer.close()
             await writer.wait_closed()
@@ -701,9 +715,20 @@ class TailscalePeerDiscoveryLoop(BaseLoop):
 
         Returns:
             Dict of peer_id -> peer_info, or None if command fails
+
+        Jan 2026: Uses adaptive timeout from LoopTimeouts for subprocess operations.
         """
         import json
         import subprocess
+
+        # Jan 2026: Use adaptive timeout for subprocess operations
+        subprocess_timeout = 10
+        async_timeout = 15.0
+        if LoopTimeouts is not None:
+            # Use health check timeout as base for subprocess operations
+            base_timeout = LoopTimeouts.get_adaptive_health_check()
+            subprocess_timeout = int(base_timeout * 2)  # Subprocess gets 2x base
+            async_timeout = base_timeout * 3  # Async wrapper gets 3x base
 
         try:
             loop = asyncio.get_running_loop()
@@ -714,10 +739,10 @@ class TailscalePeerDiscoveryLoop(BaseLoop):
                         ["tailscale", "status", "--json"],
                         capture_output=True,
                         text=True,
-                        timeout=10,
+                        timeout=subprocess_timeout,
                     ),
                 ),
-                timeout=15.0,
+                timeout=async_timeout,
             )
             if result.returncode != 0:
                 logger.debug(f"[TailscalePeerDiscovery] tailscale status failed: {result.stderr}")

@@ -181,6 +181,7 @@ RELAY_ROUTES = [
     Route("POST", "/relay/heartbeat", "handle_relay_heartbeat"),
     Route("GET", "/relay/peers", "handle_relay_peers"),
     Route("GET", "/relay/status", "handle_relay_status"),
+    Route("GET", "/relay/health", "handle_relay_health"),  # Jan 3, 2026: Multi-relay failover health
     Route("POST", "/relay/enqueue", "handle_relay_enqueue"),
 ]
 

@@ -91,8 +91,15 @@ except ImportError:
 # Jan 2026: Circuit breaker for voter promotion
 # Prevents voter churn during cluster instability
 VOTER_PROMOTION_CIRCUIT_BREAKER_FAILURES = 3  # Open CB after 3 failed promotions
-VOTER_PROMOTION_CIRCUIT_BREAKER_TIMEOUT = 300  # 5 minutes before retry
-VOTER_PROMOTION_COOLOFF_PERIOD = 300  # 5 minutes between promotions
+
+# Use centralized timeout from LoopTimeouts
+try:
+    from scripts.p2p.loops.loop_constants import LoopTimeouts
+    VOTER_PROMOTION_CIRCUIT_BREAKER_TIMEOUT = LoopTimeouts.VOTER_PROMOTION_CB
+except ImportError:
+    VOTER_PROMOTION_CIRCUIT_BREAKER_TIMEOUT = 300  # 5 minutes fallback
+
+VOTER_PROMOTION_COOLOFF_PERIOD = VOTER_PROMOTION_CIRCUIT_BREAKER_TIMEOUT  # Match CB timeout
 
 
 class VoterPromotionCircuitBreaker:

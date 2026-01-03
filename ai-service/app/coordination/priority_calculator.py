@@ -300,6 +300,8 @@ class DynamicWeights:
 
     Weights are adjusted based on cluster conditions to optimize resource allocation.
     All weights are bounded to prevent any single factor from dominating.
+
+    January 2026 Sprint 10: Added diversity weight for opponent variety maximization.
     """
     staleness: float = 0.30
     velocity: float = 0.10
@@ -310,6 +312,8 @@ class DynamicWeights:
     data_deficit: float = 0.10
     quality: float = 0.05
     voi: float = 0.02
+    # January 2026 Sprint 10: Diversity weight for opponent variety
+    diversity: float = 0.10
 
     # Cluster state that drove these weights (for debugging)
     idle_gpu_fraction: float = 0.0
@@ -329,6 +333,7 @@ class DynamicWeights:
             "data_deficit": self.data_deficit,
             "quality": self.quality,
             "voi": self.voi,
+            "diversity": self.diversity,
             "idle_gpu_fraction": self.idle_gpu_fraction,
             "training_queue_depth": self.training_queue_depth,
             "configs_at_target_fraction": self.configs_at_target_fraction,
@@ -415,6 +420,13 @@ def compute_dynamic_weights(
     weights.quality = clamp_weight("quality", base_weights.quality)
     weights.voi = clamp_weight("voi", base_weights.voi)
 
+    # January 2026 Sprint 10: Diversity weight
+    # Boost diversity weight when idle GPUs are available (more capacity for diverse games)
+    diversity_adj = base_weights.diversity
+    if cluster_state.idle_gpu_fraction > idle_gpu_high_threshold:
+        diversity_adj = base_weights.diversity * 1.3  # More capacity → boost diversity
+    weights.diversity = clamp_weight("diversity", diversity_adj)
+
     return weights
 
 
@@ -445,6 +457,8 @@ class PriorityInputs:
     current_elo: float = 1500.0
     elo_uncertainty: float = 200.0
     target_elo: float = 2000.0
+    # January 2026 Sprint 10: Diversity score for opponent variety (0.0=low, 1.0=high)
+    diversity_score: float = 1.0
 
 
 class PriorityCalculator:
@@ -535,8 +549,13 @@ class PriorityCalculator:
         elo_gap = max(0.0, inputs.target_elo - inputs.current_elo)
         voi = compute_voi_score(inputs.elo_uncertainty, elo_gap, info_gain) * w.voi
 
+        # January 2026 Sprint 10: Diversity factor
+        # Low diversity_score (few opponent types) → high diversity_factor → boost priority
+        diversity_factor = max(0.0, 1.0 - inputs.diversity_score)
+        diversity = diversity_factor * w.diversity
+
         # Combine factors
-        score = staleness + velocity + training + exploration + curriculum + improvement + architecture + quality + data_deficit + voi
+        score = staleness + velocity + training + exploration + curriculum + improvement + architecture + quality + data_deficit + voi + diversity
 
         # Apply exploration boost as multiplier
         score *= inputs.exploration_boost

@@ -49,6 +49,13 @@ try:
 except ImportError:
     GOSSIP_FAILURE_SUSPECT_THRESHOLD = 5  # Fallback
 
+# Jan 2026: Use centralized timeout from LoopTimeouts
+try:
+    from scripts.p2p.loops.loop_constants import LoopTimeouts
+    _GOSSIP_LOCK_TIMEOUT = LoopTimeouts.GOSSIP_LOCK
+except ImportError:
+    _GOSSIP_LOCK_TIMEOUT = 5.0  # Fallback
+
 
 class GossipHealthTracker:
     """Tracks gossip protocol health per peer.
@@ -308,9 +315,10 @@ class GossipProtocolMixin(P2PMixinBase):
 
         # Dec 30, 2025: Async lock for gossip state mutations to prevent race conditions
         # Uses TimeoutAsyncLockWrapper to prevent deadlocks on contention
+        # Jan 2026: Use centralized _GOSSIP_LOCK_TIMEOUT from LoopTimeouts
         if not hasattr(self, "_gossip_state_lock"):
             from .network import TimeoutAsyncLockWrapper
-            self._gossip_state_lock = TimeoutAsyncLockWrapper(timeout=5.0)
+            self._gossip_state_lock = TimeoutAsyncLockWrapper(timeout=_GOSSIP_LOCK_TIMEOUT)
 
         # Dec 29, 2025: Restore persisted gossip state on startup
         # This allows faster cluster state recovery after P2P restarts
@@ -335,9 +343,10 @@ class GossipProtocolMixin(P2PMixinBase):
 
         # Acquire lock with timeout to prevent deadlocks
         # Graceful fallback if lock unavailable (e.g., during initialization)
+        # Jan 2026: Use centralized _GOSSIP_LOCK_TIMEOUT from LoopTimeouts
         lock = getattr(self, "_gossip_state_lock", None)
         if lock is not None:
-            acquired = await lock.acquire(timeout=5.0)
+            acquired = await lock.acquire(timeout=_GOSSIP_LOCK_TIMEOUT)
             if not acquired:
                 self._log_warning("Gossip state lock acquisition timed out during cleanup")
                 return

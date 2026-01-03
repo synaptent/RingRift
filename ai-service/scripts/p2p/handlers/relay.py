@@ -388,3 +388,37 @@ class RelayHandlersMixin(BaseP2PHandler):
 
         except Exception as e:
             return self.error_response(str(e), status=500)
+
+    async def handle_relay_health(self, request: web.Request) -> web.Response:
+        """GET /relay/health - Get relay transport health for failover monitoring.
+
+        Jan 3, 2026: Added for multi-relay failover monitoring. Shows health
+        of all configured relay nodes and their success rates.
+
+        Returns:
+            JSON with relay health summary including:
+            - total_relays: Number of configured relays
+            - healthy_relays: Number of healthy relays
+            - unhealthy_relays: Number of unhealthy relays
+            - relays: Per-relay health details
+        """
+        try:
+            if self.auth_token and not self._is_request_authorized(request):
+                return self.error_response("unauthorized", status=401)
+
+            # Get relay health summary from failover integration
+            if hasattr(self, "get_relay_health_summary"):
+                health_summary = self.get_relay_health_summary()
+            else:
+                health_summary = {"error": "Relay health tracking not available"}
+
+            return self.json_response(
+                {
+                    "success": True,
+                    "node_id": self.node_id,
+                    "relay_health": health_summary,
+                }
+            )
+
+        except Exception as e:
+            return self.error_response(str(e), status=500)

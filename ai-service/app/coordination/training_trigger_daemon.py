@@ -1341,6 +1341,20 @@ class TrainingTriggerDaemon(HandlerBase):
             # Record to FeedbackAccelerator for Elo momentum tracking
             await self._record_to_feedback_accelerator(config_key, elo, elo_delta)
 
+            # January 2026 Sprint 10: Immediately attempt training after evaluation
+            # This reduces evaluation→training latency by triggering training
+            # as soon as evaluation completes instead of waiting for the next cycle.
+            logger.info(
+                f"[TrainingTriggerDaemon] {config_key}: Checking immediate training "
+                f"after evaluation (intensity={state.training_intensity})"
+            )
+            triggered = await self._maybe_trigger_training(config_key)
+            if triggered:
+                logger.info(
+                    f"[TrainingTriggerDaemon] {config_key}: Immediate training triggered "
+                    f"after evaluation completion"
+                )
+
         except Exception as e:
             logger.error(f"[TrainingTriggerDaemon] Error handling evaluation: {e}")
 

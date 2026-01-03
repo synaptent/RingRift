@@ -1583,7 +1583,8 @@ async def create_data_server() -> None:
         from app.distributed.sync_coordinator import SyncCoordinator
 
         sync = SyncCoordinator.get_instance()
-        await sync.start_server()
+        # Jan 3, 2026: Fixed method name - SyncCoordinator has start_data_server(), not start_server()
+        await sync.start_data_server()
         await _wait_for_daemon(sync)
     except ImportError as e:
         logger.error(f"SyncCoordinator data server not available: {e}")
