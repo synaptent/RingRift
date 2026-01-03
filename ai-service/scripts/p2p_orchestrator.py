@@ -28248,8 +28248,9 @@ print(json.dumps({{
                 )
                 output_dir.mkdir(parents=True, exist_ok=True)
 
-                # Normalize board type for hybrid script (uses 'hex' not 'hexagonal')
-                board_arg = "hex" if board_type == "hexagonal" else board_type
+                # Board type is passed directly - run_self_play_soak.py accepts:
+                # 'hex8', 'hexagonal', 'square8', 'square19'
+                board_arg = board_type
 
                 # Use venv python if available, otherwise fall back to system python3
                 venv_python = Path(self.ringrift_path, "ai-service", "venv", "bin", "python")
