@@ -110,6 +110,20 @@ class BackupStats:
     total_bytes_synced: int = 0
 
 
+@dataclass
+class DatabaseBackupResult:
+    """Result of backing up a single database."""
+
+    db_path: str
+    config_key: str  # e.g., "hex8_2p"
+    game_count: int
+    owc_path: str | None = None  # Path on OWC if backed up
+    s3_key: str | None = None  # S3 key if backed up
+    owc_success: bool = False
+    s3_success: bool = False
+    error: str | None = None
+
+
 class UnifiedBackupDaemon(HandlerBase):
     """Daemon that backs up all selfplay games to OWC and S3.
 
@@ -194,6 +208,8 @@ class UnifiedBackupDaemon(HandlerBase):
             return 0
 
         backed_up = 0
+        results: list[DatabaseBackupResult] = []
+
         for db_info in databases:
             if not db_info.path.exists():
                 continue
@@ -202,47 +218,63 @@ class UnifiedBackupDaemon(HandlerBase):
             if db_info.game_count == 0:
                 continue
 
+            # Extract config_key from db_info
+            config_key = f"{db_info.board_type}_{db_info.num_players}p"
+
+            result = DatabaseBackupResult(
+                db_path=str(db_info.path),
+                config_key=config_key,
+                game_count=db_info.game_count,
+            )
+
             try:
                 # Backup to OWC
                 if self.config.enable_owc_backup:
-                    owc_success = await self._sync_to_owc(db_info.path)
-                    if owc_success:
+                    owc_path = await self._sync_to_owc(db_info.path)
+                    if owc_path:
                         self.stats.owc_syncs_completed += 1
+                        result.owc_success = True
+                        result.owc_path = owc_path
                     else:
                         self.stats.owc_syncs_failed += 1
 
                 # Backup to S3
                 if self.config.enable_s3_backup:
-                    s3_success = await self._push_to_s3(db_info.path)
-                    if s3_success:
+                    s3_key = await self._push_to_s3(db_info.path)
+                    if s3_key:
                         self.stats.s3_pushes_completed += 1
+                        result.s3_success = True
+                        result.s3_key = s3_key
                     else:
                         self.stats.s3_pushes_failed += 1
 
                 backed_up += 1
                 self.stats.databases_backed_up += 1
+                results.append(result)
 
             except Exception as e:
                 logger.warning(f"[UnifiedBackup] Failed to backup {db_info.path.name}: {e}")
                 self.stats.last_error = str(e)
                 self.stats.last_error_time = time.time()
+                result.error = str(e)
+                results.append(result)
 
         self.stats.last_backup_time = time.time()
 
         if backed_up > 0:
             logger.info(f"[UnifiedBackup] Backed up {backed_up} databases")
-            await self._emit_backup_completed(backed_up)
+            await self._emit_backup_completed(results)
 
         return backed_up
 
-    async def _sync_to_owc(self, db_path: Path) -> bool:
+    async def _sync_to_owc(self, db_path: Path) -> str | None:
         """Sync a database to OWC external drive.
 
         Args:
             db_path: Path to the database file.
 
         Returns:
-            True if sync succeeded.
+            Remote path on OWC if sync succeeded, None otherwise.
         """
         try:
             # Determine remote path based on db type
@@ -287,31 +319,31 @@ class UnifiedBackupDaemon(HandlerBase):
 
             if result.returncode == 0:
                 logger.debug(f"[UnifiedBackup] Synced {db_path.name} to OWC")
-                return True
+                return remote_path
             else:
                 logger.warning(
                     f"[UnifiedBackup] rsync to OWC failed: {result.stderr.decode()[:200]}"
                 )
-                return False
+                return None
 
         except subprocess.TimeoutExpired:
             logger.warning(f"[UnifiedBackup] OWC sync timed out for {db_path.name}")
-            return False
+            return None
         except subprocess.CalledProcessError as e:
             logger.warning(f"[UnifiedBackup] OWC sync failed: {e}")
-            return False
+            return None
         except Exception as e:
             logger.error(f"[UnifiedBackup] OWC sync error: {e}")
-            return False
+            return None
 
-    async def _push_to_s3(self, db_path: Path) -> bool:
+    async def _push_to_s3(self, db_path: Path) -> str | None:
         """Push a database to S3.
 
         Args:
             db_path: Path to the database file.
 
         Returns:
-            True if push succeeded.
+            S3 key if push succeeded, None otherwise.
         """
         try:
             # Determine S3 key based on db type
@@ -346,22 +378,22 @@ class UnifiedBackupDaemon(HandlerBase):
                     self.stats.total_bytes_synced += db_path.stat().st_size
                 except OSError:
                     pass
-                return True
+                return s3_key
             else:
                 logger.warning(
                     f"[UnifiedBackup] S3 push failed: {result.stderr.decode()[:200]}"
                 )
-                return False
+                return None
 
         except subprocess.TimeoutExpired:
             logger.warning(f"[UnifiedBackup] S3 push timed out for {db_path.name}")
-            return False
+            return None
         except FileNotFoundError:
             logger.warning("[UnifiedBackup] AWS CLI not found - S3 backup disabled")
-            return False
+            return None
         except Exception as e:
             logger.error(f"[UnifiedBackup] S3 push error: {e}")
-            return False
+            return None
 
     async def trigger_owc_s3_mirror(self) -> bool:
         """Trigger the OWC→S3 mirror script on mac-studio.
@@ -401,16 +433,43 @@ class UnifiedBackupDaemon(HandlerBase):
             logger.error(f"[UnifiedBackup] Failed to trigger OWC→S3 mirror: {e}")
             return False
 
-    async def _emit_backup_completed(self, count: int) -> None:
-        """Emit BACKUP_COMPLETED event."""
+    async def _emit_backup_completed(self, results: list[DatabaseBackupResult]) -> None:
+        """Emit BACKUP_COMPLETED event with per-database details.
+
+        Args:
+            results: List of backup results for each database.
+        """
+        # Build per-database details for ClusterManifest tracking
+        backup_details = []
+        for result in results:
+            detail = {
+                "config_key": result.config_key,
+                "game_count": result.game_count,
+                "db_path": result.db_path,
+            }
+            if result.owc_success and result.owc_path:
+                detail["owc_path"] = result.owc_path
+                detail["owc_host"] = self.config.owc_host
+            if result.s3_success and result.s3_key:
+                detail["s3_key"] = result.s3_key
+                detail["s3_bucket"] = self.config.s3_bucket
+            if result.error:
+                detail["error"] = result.error
+            backup_details.append(detail)
+
         await self._safe_emit_event_async(
             "BACKUP_COMPLETED",
             {
                 "source": "unified_backup",
-                "databases_backed_up": count,
+                "databases_backed_up": len([r for r in results if r.owc_success or r.s3_success]),
                 "timestamp": time.time(),
                 "owc_enabled": self.config.enable_owc_backup,
                 "s3_enabled": self.config.enable_s3_backup,
+                "owc_host": self.config.owc_host,
+                "owc_base_path": self.config.owc_base_path,
+                "s3_bucket": self.config.s3_bucket,
+                # Per-database backup details for ClusterManifest
+                "backup_details": backup_details,
             }
         )
 

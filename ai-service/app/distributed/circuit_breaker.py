@@ -75,6 +75,16 @@ __all__ = [
     "DEFAULT_HEALTH_PROBE_TIMEOUT",
     "start_recovery_probing",
     "stop_recovery_probing",
+    # Per-transport circuit breakers (January 2026 - Phase 1)
+    "get_transport_breaker",
+    "check_transport_circuit",
+    "record_transport_success",
+    "record_transport_failure",
+    "get_open_transports_for_host",
+    "get_available_transports_for_host",
+    "reset_transport_breakers_for_host",
+    "get_all_transport_breaker_states",
+    "TRANSPORT_CONFIGS",
 ]
 
 T = TypeVar("T")
@@ -976,6 +986,181 @@ def get_training_breaker() -> CircuitBreaker:
             success_threshold=1,
         )
     return _training_breaker
+
+
+# =============================================================================
+# Per-Transport Circuit Breaker (January 2026 - Phase 1 Critical Hardening)
+# =============================================================================
+
+# Registry for per-(host, transport) circuit breakers
+_transport_breakers: dict[str, CircuitBreaker] = {}
+_transport_breakers_lock = RLock()
+
+# Transport-specific configurations (recovery timeouts, failure thresholds)
+TRANSPORT_CONFIGS = {
+    "http": {"failure_threshold": 5, "recovery_timeout": 30.0},
+    "ssh": {"failure_threshold": 3, "recovery_timeout": 60.0},
+    "rsync": {"failure_threshold": 2, "recovery_timeout": 90.0},
+    "p2p": {"failure_threshold": 3, "recovery_timeout": 45.0},
+    "aria2": {"failure_threshold": 2, "recovery_timeout": 120.0},
+    "tailscale": {"failure_threshold": 3, "recovery_timeout": 60.0},
+    "base64": {"failure_threshold": 2, "recovery_timeout": 30.0},
+}
+
+
+def get_transport_breaker(host: str, transport: str = "default") -> CircuitBreaker:
+    """Get a circuit breaker for a specific (host, transport) combination.
+
+    This enables per-transport failover: if HTTP fails for a host, SSH can
+    still work because they have separate circuit breakers.
+
+    January 2026: Created as part of P2P critical hardening (Phase 1).
+    Problem: Global breaker would mark entire node as unhealthy when only
+    one transport failed, defeating the 6-tier transport cascade.
+
+    Args:
+        host: Hostname or IP of the target
+        transport: Transport type ("http", "ssh", "rsync", "p2p", "aria2", etc.)
+
+    Returns:
+        Circuit breaker for this (host, transport) combination
+
+    Example:
+        # HTTP fails - this breaker opens
+        http_breaker = get_transport_breaker("node-1", "http")
+        http_breaker.record_failure("node-1")
+
+        # SSH still works - separate breaker
+        ssh_breaker = get_transport_breaker("node-1", "ssh")
+        if ssh_breaker.can_execute("node-1"):
+            # Use SSH fallback
+            pass
+    """
+    key = f"{host}:{transport}"
+
+    with _transport_breakers_lock:
+        if key not in _transport_breakers:
+            config = TRANSPORT_CONFIGS.get(transport, {})
+            _transport_breakers[key] = CircuitBreaker(
+                failure_threshold=config.get("failure_threshold", DEFAULT_FAILURE_THRESHOLD),
+                recovery_timeout=config.get("recovery_timeout", DEFAULT_RECOVERY_TIMEOUT),
+                half_open_max_calls=DEFAULT_HALF_OPEN_MAX_CALLS,
+                success_threshold=1,
+                operation_type=f"{transport}:{host}",
+            )
+        return _transport_breakers[key]
+
+
+def check_transport_circuit(host: str, transport: str = "default") -> bool:
+    """Check if a transport to a host is allowed (circuit not open).
+
+    Args:
+        host: Target host
+        transport: Transport type
+
+    Returns:
+        True if request allowed, False if circuit is open
+    """
+    return get_transport_breaker(host, transport).can_execute(host)
+
+
+def record_transport_success(host: str, transport: str = "default") -> None:
+    """Record successful transport operation.
+
+    Args:
+        host: Target host
+        transport: Transport type
+    """
+    get_transport_breaker(host, transport).record_success(host)
+
+
+def record_transport_failure(
+    host: str,
+    transport: str = "default",
+    error: Exception | None = None
+) -> None:
+    """Record failed transport operation.
+
+    Args:
+        host: Target host
+        transport: Transport type
+        error: Optional exception that caused the failure
+    """
+    get_transport_breaker(host, transport).record_failure(host, error)
+
+
+def get_open_transports_for_host(host: str) -> list[str]:
+    """Get list of transports with open circuits for a host.
+
+    Args:
+        host: Target host
+
+    Returns:
+        List of transport names with open circuits
+    """
+    open_transports = []
+    with _transport_breakers_lock:
+        for key, breaker in _transport_breakers.items():
+            if key.startswith(f"{host}:"):
+                transport = key.split(":", 1)[1]
+                if breaker.get_state(host) == CircuitState.OPEN:
+                    open_transports.append(transport)
+    return open_transports
+
+
+def get_available_transports_for_host(host: str) -> list[str]:
+    """Get list of transports that can be used for a host (circuit not open).
+
+    Args:
+        host: Target host
+
+    Returns:
+        List of transport names with closed or half-open circuits
+    """
+    available = []
+    with _transport_breakers_lock:
+        for key, breaker in _transport_breakers.items():
+            if key.startswith(f"{host}:"):
+                transport = key.split(":", 1)[1]
+                if breaker.can_execute(host):
+                    available.append(transport)
+    return available
+
+
+def reset_transport_breakers_for_host(host: str) -> int:
+    """Reset all transport circuit breakers for a host.
+
+    Useful when a host is known to be back online after maintenance.
+
+    Args:
+        host: Target host
+
+    Returns:
+        Number of breakers reset
+    """
+    reset_count = 0
+    with _transport_breakers_lock:
+        for key, breaker in _transport_breakers.items():
+            if key.startswith(f"{host}:"):
+                breaker.reset(host)
+                reset_count += 1
+    return reset_count
+
+
+def get_all_transport_breaker_states() -> dict[str, dict[str, CircuitStatus]]:
+    """Get status of all transport circuit breakers grouped by host.
+
+    Returns:
+        Dict mapping host -> {transport -> CircuitStatus}
+    """
+    result: dict[str, dict[str, CircuitStatus]] = {}
+    with _transport_breakers_lock:
+        for key, breaker in _transport_breakers.items():
+            host, transport = key.split(":", 1)
+            if host not in result:
+                result[host] = {}
+            result[host][transport] = breaker.get_status(host)
+    return result
 
 
 def format_circuit_status(status: CircuitStatus) -> str:

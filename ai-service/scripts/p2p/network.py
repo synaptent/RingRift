@@ -37,11 +37,22 @@ try:
         CircuitOpenError,
         CircuitState,
         get_host_breaker,
+        # Per-transport circuit breakers (January 2026 - Phase 1)
+        get_transport_breaker,
+        check_transport_circuit,
+        record_transport_success,
+        record_transport_failure,
     )
     HAS_CIRCUIT_BREAKER = True
+    HAS_TRANSPORT_BREAKER = True
 except ImportError:
     HAS_CIRCUIT_BREAKER = False
+    HAS_TRANSPORT_BREAKER = False
     get_host_breaker = None
+    get_transport_breaker = None
+    check_transport_circuit = None
+    record_transport_success = None
+    record_transport_failure = None
     CircuitOpenError = Exception
     CircuitState = None
 
@@ -256,4 +267,113 @@ async def peer_request(
                 return {"status": resp.status, "error": await resp.text()}
     except Exception as e:
         record_peer_failure(peer_host, e)
+        return None
+
+
+# =============================================================================
+# Per-Transport Circuit Breaker Functions (January 2026 - Phase 1)
+# =============================================================================
+
+def check_peer_transport_circuit(peer_host: str, transport: str = "http") -> bool:
+    """Check if a specific transport to a peer is available.
+
+    Unlike check_peer_circuit() which uses a global breaker, this checks
+    a per-(host, transport) circuit breaker, enabling failover between
+    transports when one fails.
+
+    January 2026: Created as part of P2P critical hardening (Phase 1).
+
+    Args:
+        peer_host: Hostname or IP of the peer
+        transport: Transport type ("http", "ssh", "rsync", "p2p", etc.)
+
+    Returns:
+        True if transport is available (circuit closed/half-open), False if open
+    """
+    if not HAS_TRANSPORT_BREAKER:
+        return check_peer_circuit(peer_host)  # Fallback to global breaker
+    return check_transport_circuit(peer_host, transport)
+
+
+def record_peer_transport_success(peer_host: str, transport: str = "http") -> None:
+    """Record successful transport operation with a peer.
+
+    Args:
+        peer_host: Hostname or IP of the peer
+        transport: Transport type ("http", "ssh", "rsync", etc.)
+    """
+    if HAS_TRANSPORT_BREAKER:
+        record_transport_success(peer_host, transport)
+    else:
+        record_peer_success(peer_host)
+
+
+def record_peer_transport_failure(
+    peer_host: str,
+    transport: str = "http",
+    error: Exception | None = None
+) -> None:
+    """Record failed transport operation with a peer.
+
+    Args:
+        peer_host: Hostname or IP of the peer
+        transport: Transport type ("http", "ssh", "rsync", etc.)
+        error: Optional exception that caused the failure
+    """
+    if HAS_TRANSPORT_BREAKER:
+        record_transport_failure(peer_host, transport, error)
+    else:
+        record_peer_failure(peer_host, error)
+
+
+async def peer_request_with_transport(
+    session: ClientSession,
+    method: str,
+    url: str,
+    peer_host: str,
+    transport: str = "http",
+    headers: dict[str, str] | None = None,
+    json: dict[str, Any] | None = None,
+    timeout: float | None = None,
+) -> dict[str, Any] | None:
+    """Make a transport-specific circuit-breaker-protected request to a peer.
+
+    Like peer_request() but uses per-transport circuit breakers, enabling
+    failover between transports when one fails.
+
+    January 2026: Created as part of P2P critical hardening (Phase 1).
+
+    Args:
+        session: aiohttp ClientSession to use
+        method: HTTP method (GET, POST, etc.)
+        url: Full URL to request
+        peer_host: Hostname/IP for circuit breaker tracking
+        transport: Transport type for circuit breaker isolation
+        headers: Optional headers dict
+        json: Optional JSON payload for POST/PUT
+        timeout: Optional request timeout in seconds
+
+    Returns:
+        Response JSON if successful, None if circuit open or request failed
+    """
+    # Check transport-specific circuit first
+    if not check_peer_transport_circuit(peer_host, transport):
+        return None
+
+    try:
+        kwargs = {"headers": headers} if headers else {}
+        if json is not None:
+            kwargs["json"] = json
+        if timeout:
+            kwargs["timeout"] = ClientTimeout(total=timeout)
+
+        async with session.request(method, url, **kwargs) as resp:
+            if resp.status == 200:
+                record_peer_transport_success(peer_host, transport)
+                return await resp.json()
+            else:
+                # Non-200 isn't necessarily a failure (might be expected)
+                return {"status": resp.status, "error": await resp.text()}
+    except Exception as e:
+        record_peer_transport_failure(peer_host, transport, e)
         return None

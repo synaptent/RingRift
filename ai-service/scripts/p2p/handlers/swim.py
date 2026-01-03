@@ -22,6 +22,10 @@ from typing import TYPE_CHECKING, Any
 from aiohttp import web
 
 from scripts.p2p.handlers.base import BaseP2PHandler
+from scripts.p2p.handlers.timeout_decorator import (
+    handler_timeout,
+    HANDLER_TIMEOUT_GOSSIP,
+)
 
 if TYPE_CHECKING:
     pass
@@ -71,6 +75,7 @@ class SwimHandlersMixin(BaseP2PHandler):
     _swim_manager: Any  # Optional[SwimMembershipManager]
     _swim_started: bool
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_swim_status(self, request: web.Request) -> web.Response:
         """GET /swim/status - Get SWIM membership status and configuration.
 
@@ -137,6 +142,7 @@ class SwimHandlersMixin(BaseP2PHandler):
                 },
             )
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_swim_members(self, request: web.Request) -> web.Response:
         """GET /swim/members - Get list of SWIM members with their states.
 

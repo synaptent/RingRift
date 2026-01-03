@@ -26,6 +26,10 @@ from typing import TYPE_CHECKING, Any
 from aiohttp import web
 
 from scripts.p2p.handlers.base import BaseP2PHandler
+from scripts.p2p.handlers.timeout_decorator import (
+    handler_timeout,
+    HANDLER_TIMEOUT_GOSSIP,
+)
 
 if TYPE_CHECKING:
     pass
@@ -77,6 +81,7 @@ class RaftHandlersMixin(BaseP2PHandler):
     _raft_job_assignments: Any  # Optional[ReplicatedJobAssignments]
     _raft_initialized: bool
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_raft_status(self, request: web.Request) -> web.Response:
         """GET /raft/status - Get Raft consensus status and configuration.
 
@@ -178,6 +183,7 @@ class RaftHandlersMixin(BaseP2PHandler):
                 },
             )
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_raft_work_queue(self, request: web.Request) -> web.Response:
         """GET /raft/work - Get work queue status.
 
@@ -241,6 +247,7 @@ class RaftHandlersMixin(BaseP2PHandler):
                 details={"enabled": RAFT_ENABLED},
             )
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_raft_jobs(self, request: web.Request) -> web.Response:
         """GET /raft/jobs - Get job assignments status.
 
@@ -307,6 +314,7 @@ class RaftHandlersMixin(BaseP2PHandler):
                 details={"enabled": RAFT_ENABLED},
             )
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_raft_lock(self, request: web.Request) -> web.Response:
         """POST /raft/lock/{name} - Acquire a distributed lock.
 
@@ -389,6 +397,7 @@ class RaftHandlersMixin(BaseP2PHandler):
             logger.error(f"Error in handle_raft_lock: {e}", exc_info=True)
             return self.error_response(str(e), status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_raft_unlock(self, request: web.Request) -> web.Response:
         """DELETE /raft/lock/{name} - Release a distributed lock.
 

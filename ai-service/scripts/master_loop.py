@@ -1191,6 +1191,9 @@ class MasterLoopController:
             DaemonType.MEMORY_MONITOR,
             # December 31, 2025: Stale model fallback for uninterrupted selfplay
             DaemonType.STALE_FALLBACK,
+            # January 3, 2026: Unified backup to OWC and S3
+            # Backs up all selfplay games to both destinations for disaster recovery
+            DaemonType.UNIFIED_BACKUP,
         ]
 
         # S3 backup daemons - only if AWS credentials are configured (December 2025)

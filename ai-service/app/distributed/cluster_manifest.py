@@ -73,6 +73,7 @@ __all__ = [
     # Enums
     "DataType",
     "NodeRole",
+    "DataSource",  # January 2026: S3/OWC unified sync
     # Data classes
     "GameLocation",
     "ModelLocation",
@@ -80,6 +81,7 @@ __all__ = [
     "CheckpointLocation",
     "SyncReceipt",
     "TorrentMetadata",
+    "ExternalStorageLocation",  # January 2026: S3/OWC tracking
     "NodeCapacity",
     "NodeInventory",
     "SyncCandidateNode",
@@ -130,6 +132,17 @@ class NodeRole(str, Enum):
     COORDINATOR = "coordinator"
     STORAGE = "storage"
     EXCLUDED = "excluded"
+
+
+class DataSource(str, Enum):
+    """Source of data in the cluster.
+
+    January 2026: Added for unified data sync across all storage locations.
+    """
+    LOCAL = "local"  # Local filesystem on a cluster node
+    P2P = "p2p"  # P2P network (other cluster nodes)
+    S3 = "s3"  # Amazon S3 bucket
+    OWC = "owc"  # OWC external drive (mac-studio)
 
 
 @dataclass
@@ -268,6 +281,61 @@ class TorrentMetadata:
             web_seeds=data.get("web_seeds", []),
             created_at=data.get("created_at", 0.0),
             last_seen=data.get("last_seen", 0.0),
+        )
+
+
+@dataclass
+class ExternalStorageLocation:
+    """Location of data in external storage (S3 or OWC).
+
+    January 2026: Added for unified data sync tracking.
+    Represents a database or file stored in S3 or OWC external drive.
+    """
+    config_key: str  # e.g., "hex8_2p"
+    source: DataSource  # S3 or OWC
+    path: str  # S3 key or OWC path
+    game_count: int = 0
+    file_size: int = 0
+    board_type: str | None = None
+    num_players: int | None = None
+    registered_at: float = 0.0
+    last_verified: float = 0.0
+    # S3-specific fields
+    s3_bucket: str | None = None
+    # OWC-specific fields
+    owc_host: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "config_key": self.config_key,
+            "source": self.source.value,
+            "path": self.path,
+            "game_count": self.game_count,
+            "file_size": self.file_size,
+            "board_type": self.board_type,
+            "num_players": self.num_players,
+            "registered_at": self.registered_at,
+            "last_verified": self.last_verified,
+            "s3_bucket": self.s3_bucket,
+            "owc_host": self.owc_host,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ExternalStorageLocation":
+        """Create from dictionary."""
+        return cls(
+            config_key=data["config_key"],
+            source=DataSource(data["source"]),
+            path=data["path"],
+            game_count=data.get("game_count", 0),
+            file_size=data.get("file_size", 0),
+            board_type=data.get("board_type"),
+            num_players=data.get("num_players"),
+            registered_at=data.get("registered_at", 0.0),
+            last_verified=data.get("last_verified", 0.0),
+            s3_bucket=data.get("s3_bucket"),
+            owc_host=data.get("owc_host"),
         )
 
 
@@ -631,6 +699,23 @@ class ClusterManifest:
                 PRIMARY KEY (file_path, synced_to)
             );
 
+            -- External storage locations table (January 2026)
+            -- Tracks data in S3 and OWC external drive for unified visibility
+            CREATE TABLE IF NOT EXISTS external_storage_locations (
+                config_key TEXT NOT NULL,       -- e.g., "hex8_2p"
+                source TEXT NOT NULL,           -- "s3" or "owc"
+                path TEXT NOT NULL,             -- S3 key or OWC path
+                game_count INTEGER DEFAULT 0,
+                file_size INTEGER DEFAULT 0,
+                board_type TEXT,
+                num_players INTEGER,
+                registered_at REAL NOT NULL,
+                last_verified REAL DEFAULT 0,
+                s3_bucket TEXT,                 -- For S3 entries
+                owc_host TEXT,                  -- For OWC entries
+                PRIMARY KEY (config_key, source, path)
+            );
+
             -- Metadata table
             CREATE TABLE IF NOT EXISTS manifest_metadata (
                 key TEXT PRIMARY KEY,
@@ -681,6 +766,11 @@ class ClusterManifest:
                 ON sync_receipts(file_path);
             CREATE INDEX IF NOT EXISTS idx_sync_receipts_verified
                 ON sync_receipts(file_path, verified);
+            -- January 2026: External storage indexes for unified data discovery
+            CREATE INDEX IF NOT EXISTS idx_external_storage_config
+                ON external_storage_locations(config_key);
+            CREATE INDEX IF NOT EXISTS idx_external_storage_source
+                ON external_storage_locations(source);
 
             -- Initialize metadata
             INSERT OR IGNORE INTO manifest_metadata (key, value, updated_at)
@@ -741,10 +831,15 @@ class ClusterManifest:
             router.subscribe("GAMES_UPLOADED_TO_S3", self._on_s3_upload)
             router.subscribe("GAMES_UPLOADED_TO_OWC", self._on_owc_upload)
 
+            # January 2026: Subscribe to BACKUP_COMPLETED from UnifiedBackupDaemon
+            # This provides per-database details for S3/OWC registration
+            router.subscribe("BACKUP_COMPLETED", self._on_backup_completed)
+
             self._subscribed = True
             logger.info(
                 "[ClusterManifest] Subscribed to real-time events "
-                "(NEW_GAMES_AVAILABLE, GAMES_UPLOADED_TO_S3, GAMES_UPLOADED_TO_OWC)"
+                "(NEW_GAMES_AVAILABLE, GAMES_UPLOADED_TO_S3, GAMES_UPLOADED_TO_OWC, "
+                "BACKUP_COMPLETED)"
             )
             return True
 
@@ -853,6 +948,84 @@ class ClusterManifest:
 
         except Exception as e:
             logger.debug(f"[ClusterManifest] Error handling GAMES_UPLOADED_TO_OWC: {e}")
+
+    async def _on_backup_completed(self, event: Any) -> None:
+        """Handle BACKUP_COMPLETED event from UnifiedBackupDaemon.
+
+        Registers S3 and OWC locations for each database that was backed up.
+        This provides unified visibility of data across all storage locations.
+
+        Expected payload structure (from unified_backup_daemon.py):
+        {
+            "source": "unified_backup_daemon",
+            "success": True,
+            "backup_details": [
+                {
+                    "config_key": "hex8_2p",
+                    "game_count": 1234,
+                    "db_path": "/path/to/local.db",
+                    "owc_path": "/Volumes/RingRift-Data/...",  # if backed up
+                    "owc_host": "mac-studio",                  # if backed up
+                    "s3_key": "databases/...",                 # if backed up
+                    "s3_bucket": "ringrift-models-..."         # if backed up
+                },
+                ...
+            ]
+        }
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event
+
+            # Skip failed backups
+            if not payload.get("success", False):
+                return
+
+            backup_details = payload.get("backup_details", [])
+            if not backup_details:
+                return
+
+            s3_registered = 0
+            owc_registered = 0
+
+            for detail in backup_details:
+                config_key = detail.get("config_key", "")
+                game_count = detail.get("game_count", 0)
+
+                if not config_key:
+                    continue
+
+                # Register S3 location if backed up to S3
+                s3_key = detail.get("s3_key")
+                s3_bucket = detail.get("s3_bucket")
+                if s3_key and s3_bucket:
+                    self.register_s3_location(
+                        s3_key=s3_key,
+                        config_key=config_key,
+                        game_count=game_count,
+                        s3_bucket=s3_bucket,
+                    )
+                    s3_registered += 1
+
+                # Register OWC location if backed up to OWC
+                owc_path = detail.get("owc_path")
+                owc_host = detail.get("owc_host")
+                if owc_path and owc_host:
+                    self.register_owc_location(
+                        owc_path=owc_path,
+                        config_key=config_key,
+                        game_count=game_count,
+                        owc_host=owc_host,
+                    )
+                    owc_registered += 1
+
+            if s3_registered > 0 or owc_registered > 0:
+                logger.info(
+                    f"[ClusterManifest] BACKUP_COMPLETED: registered "
+                    f"{s3_registered} S3 + {owc_registered} OWC locations"
+                )
+
+        except Exception as e:
+            logger.warning(f"[ClusterManifest] Error handling BACKUP_COMPLETED: {e}")
 
     def _migrate_schema(self, conn: sqlite3.Connection) -> None:
         """Apply schema migrations for existing databases.
@@ -1386,6 +1559,207 @@ class ClusterManifest:
         """
         all_torrents = self.list_all_torrents()
         return [t for t in all_torrents if len(t.seeders) >= min_seeders]
+
+    # =========================================================================
+    # External Storage Registry (January 2026 - S3/OWC Unified Sync)
+    # =========================================================================
+
+    def register_s3_location(
+        self,
+        s3_key: str,
+        config_key: str,
+        game_count: int,
+        file_size: int = 0,
+        s3_bucket: str | None = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
+    ) -> None:
+        """Register a database uploaded to S3.
+
+        Args:
+            s3_key: S3 key (path within bucket)
+            config_key: Configuration key (e.g., "hex8_2p")
+            game_count: Number of games in the database
+            file_size: File size in bytes
+            s3_bucket: S3 bucket name (default from env)
+            board_type: Board type
+            num_players: Number of players
+        """
+        now = time.time()
+        bucket = s3_bucket or os.getenv("RINGRIFT_S3_BUCKET", "ringrift-models-20251214")
+
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO external_storage_locations
+                (config_key, source, path, game_count, file_size, board_type,
+                 num_players, registered_at, last_verified, s3_bucket, owc_host)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+            """, (config_key, DataSource.S3.value, s3_key, game_count, file_size,
+                  board_type, num_players, now, now, bucket))
+            conn.commit()
+
+        logger.debug(f"Registered S3 location: {s3_key} ({game_count} games)")
+
+    def register_owc_location(
+        self,
+        owc_path: str,
+        config_key: str,
+        game_count: int,
+        file_size: int = 0,
+        owc_host: str | None = None,
+        board_type: str | None = None,
+        num_players: int | None = None,
+    ) -> None:
+        """Register a database synced to OWC drive.
+
+        Args:
+            owc_path: Path on OWC drive
+            config_key: Configuration key (e.g., "hex8_2p")
+            game_count: Number of games in the database
+            file_size: File size in bytes
+            owc_host: OWC host (default from env)
+            board_type: Board type
+            num_players: Number of players
+        """
+        now = time.time()
+        host = owc_host or os.getenv("OWC_HOST", "mac-studio")
+
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT OR REPLACE INTO external_storage_locations
+                (config_key, source, path, game_count, file_size, board_type,
+                 num_players, registered_at, last_verified, s3_bucket, owc_host)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+            """, (config_key, DataSource.OWC.value, owc_path, game_count, file_size,
+                  board_type, num_players, now, now, host))
+            conn.commit()
+
+        logger.debug(f"Registered OWC location: {owc_path} ({game_count} games)")
+
+    def find_external_storage_for_config(
+        self,
+        config_key: str,
+    ) -> list[ExternalStorageLocation]:
+        """Find all external storage locations for a config.
+
+        Args:
+            config_key: Configuration key (e.g., "hex8_2p")
+
+        Returns:
+            List of ExternalStorageLocation entries
+        """
+        with self._connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT config_key, source, path, game_count, file_size, board_type,
+                       num_players, registered_at, last_verified, s3_bucket, owc_host
+                FROM external_storage_locations
+                WHERE config_key = ?
+                ORDER BY game_count DESC
+            """, (config_key,))
+
+            return [
+                ExternalStorageLocation(
+                    config_key=row[0],
+                    source=DataSource(row[1]),
+                    path=row[2],
+                    game_count=row[3],
+                    file_size=row[4],
+                    board_type=row[5],
+                    num_players=row[6],
+                    registered_at=row[7],
+                    last_verified=row[8],
+                    s3_bucket=row[9],
+                    owc_host=row[10],
+                )
+                for row in cursor.fetchall()
+            ]
+
+    def find_across_all_sources(
+        self,
+        config_key: str,
+    ) -> dict[DataSource, list[dict[str, Any]]]:
+        """Find data for a config across LOCAL, P2P, S3, OWC.
+
+        This is the primary method for unified data visibility.
+        Training can use this to find the best data source.
+
+        Args:
+            config_key: Configuration key (e.g., "hex8_2p")
+
+        Returns:
+            Dictionary mapping DataSource to list of locations:
+            {
+                DataSource.LOCAL: [{db_path, game_count, ...}],
+                DataSource.P2P: [{node_id, db_path, game_count, ...}],
+                DataSource.S3: [{s3_key, game_count, s3_bucket, ...}],
+                DataSource.OWC: [{owc_path, game_count, owc_host, ...}],
+            }
+        """
+        result: dict[DataSource, list[dict[str, Any]]] = {
+            DataSource.LOCAL: [],
+            DataSource.P2P: [],
+            DataSource.S3: [],
+            DataSource.OWC: [],
+        }
+
+        # Parse config key
+        parts = config_key.split("_")
+        board_type = parts[0] if parts else None
+        num_players = int(parts[1].rstrip("p")) if len(parts) > 1 else None
+
+        # Find LOCAL and P2P databases
+        db_locations = self.find_databases_for_config(
+            config_key=config_key,
+            board_type=board_type,
+            num_players=num_players,
+        )
+
+        for loc in db_locations:
+            node_id = loc.get("node_id", "")
+            if node_id == self.node_id:
+                result[DataSource.LOCAL].append(loc)
+            else:
+                result[DataSource.P2P].append(loc)
+
+        # Find S3 and OWC external storage
+        external = self.find_external_storage_for_config(config_key)
+        for ext in external:
+            if ext.source == DataSource.S3:
+                result[DataSource.S3].append({
+                    "s3_key": ext.path,
+                    "game_count": ext.game_count,
+                    "file_size": ext.file_size,
+                    "s3_bucket": ext.s3_bucket,
+                    "registered_at": ext.registered_at,
+                })
+            elif ext.source == DataSource.OWC:
+                result[DataSource.OWC].append({
+                    "owc_path": ext.path,
+                    "game_count": ext.game_count,
+                    "file_size": ext.file_size,
+                    "owc_host": ext.owc_host,
+                    "registered_at": ext.registered_at,
+                })
+
+        return result
+
+    def get_total_games_across_sources(self, config_key: str) -> dict[str, int]:
+        """Get total game count per source for a config.
+
+        Args:
+            config_key: Configuration key (e.g., "hex8_2p")
+
+        Returns:
+            Dictionary mapping source name to game count
+        """
+        sources = self.find_across_all_sources(config_key)
+        return {
+            source.value: sum(loc.get("game_count", 0) for loc in locations)
+            for source, locations in sources.items()
+        }
 
     # =========================================================================
     # Database Location Registry (delegated to DataLocationRegistry)
