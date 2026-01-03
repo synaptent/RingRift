@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 from aiohttp import web
 
 from .base import BaseP2PHandler
+from .timeout_decorator import handler_timeout, HANDLER_TIMEOUT_GOSSIP
 
 if TYPE_CHECKING:
     from scripts.p2p.loops.tailscale_discovery_loop import TailscalePeerDiscoveryLoop
@@ -53,6 +54,7 @@ class NetworkHealthMixin(BaseP2PHandler):
     peers: dict
     _tailscale_discovery_loop: TailscalePeerDiscoveryLoop | None
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_network_health(self, request: web.Request) -> web.Response:
         """GET /network/health - Cross-verification health report.
 
@@ -122,6 +124,7 @@ class NetworkHealthMixin(BaseP2PHandler):
             logger.exception("Error generating network health report")
             return self.error_response(f"Health check failed: {e}", status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_network_reconnect(self, request: web.Request) -> web.Response:
         """POST /network/reconnect - Force reconnection to missing peers.
 
@@ -209,6 +212,7 @@ class NetworkHealthMixin(BaseP2PHandler):
             logger.exception("Error during network reconnect")
             return self.error_response(f"Reconnect failed: {e}", status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_network_status(self, request: web.Request) -> web.Response:
         """GET /network/status - Detailed network status for debugging.
 

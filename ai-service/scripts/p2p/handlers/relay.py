@@ -36,6 +36,11 @@ from typing import TYPE_CHECKING, Any
 from aiohttp import web
 
 from scripts.p2p.handlers.base import BaseP2PHandler
+from scripts.p2p.handlers.timeout_decorator import (
+    handler_timeout,
+    HANDLER_TIMEOUT_GOSSIP,
+    HANDLER_TIMEOUT_TOURNAMENT,
+)
 
 if TYPE_CHECKING:
     from scripts.p2p.models import NodeInfo
@@ -99,6 +104,7 @@ class RelayHandlersMixin(BaseP2PHandler):
     leader_id: str | None
     auth_token: str | None
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_relay_heartbeat(self, request: web.Request) -> web.Response:
         """POST /relay/heartbeat - Accept heartbeat from NAT-blocked node.
 
@@ -233,6 +239,7 @@ class RelayHandlersMixin(BaseP2PHandler):
         except Exception as e:
             return self.error_response(str(e), status=400)
 
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_relay_enqueue(self, request: web.Request) -> web.Response:
         """POST /relay/enqueue - Enqueue a command for a NAT-blocked node on this relay.
 
@@ -285,6 +292,7 @@ class RelayHandlersMixin(BaseP2PHandler):
 
         return self.json_response({"success": True, "id": cmd_id})
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_relay_peers(self, request: web.Request) -> web.Response:
         """GET /relay/peers - Get list of all peers including NAT-blocked ones.
 
@@ -329,6 +337,7 @@ class RelayHandlersMixin(BaseP2PHandler):
         except Exception as e:
             return self.error_response(str(e), status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_relay_status(self, request: web.Request) -> web.Response:
         """GET /relay/status - Get relay queue status for debugging.
 
@@ -389,6 +398,7 @@ class RelayHandlersMixin(BaseP2PHandler):
         except Exception as e:
             return self.error_response(str(e), status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_relay_health(self, request: web.Request) -> web.Response:
         """GET /relay/health - Get relay transport health for failover monitoring.
 

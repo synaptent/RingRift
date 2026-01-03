@@ -30,6 +30,10 @@ from typing import TYPE_CHECKING, Any
 from aiohttp import web
 
 from scripts.p2p.handlers.base import BaseP2PHandler
+from scripts.p2p.handlers.timeout_decorator import (
+    handler_timeout,
+    HANDLER_TIMEOUT_ADMIN,
+)
 
 if TYPE_CHECKING:
     pass
@@ -62,6 +66,7 @@ class AdminHandlersMixin(BaseP2PHandler):
     # Type hints for IDE support
     ringrift_path: str
 
+    @handler_timeout(HANDLER_TIMEOUT_ADMIN)
     async def handle_git_status(self, request: web.Request) -> web.Response:
         """Get git status for this node.
 
@@ -93,6 +98,7 @@ class AdminHandlersMixin(BaseP2PHandler):
         except Exception as e:
             return self.error_response(str(e), status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_ADMIN)
     async def handle_git_update(self, request: web.Request) -> web.Response:
         """Manually trigger a git update on this node.
 
@@ -141,6 +147,7 @@ class AdminHandlersMixin(BaseP2PHandler):
         except Exception as e:
             return self.error_response(str(e), status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_ADMIN)
     async def handle_admin_restart(self, request: web.Request) -> web.Response:
         """Force restart the orchestrator process.
 
@@ -173,6 +180,7 @@ class AdminHandlersMixin(BaseP2PHandler):
     # Peer Administration (Phase 8 - Dec 28, 2025)
     # =========================================================================
 
+    @handler_timeout(HANDLER_TIMEOUT_ADMIN)
     async def handle_purge_retired_peers(self, request: web.Request) -> web.Response:
         """Purge retired peers from the cluster registry.
 
@@ -211,6 +219,7 @@ class AdminHandlersMixin(BaseP2PHandler):
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_ADMIN)
     async def handle_purge_stale_peers(self, request: web.Request) -> web.Response:
         """Purge stale peers based on heartbeat age.
 
@@ -273,6 +282,7 @@ class AdminHandlersMixin(BaseP2PHandler):
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_ADMIN)
     async def handle_admin_unretire(self, request: web.Request) -> web.Response:
         """Unretire a specific peer node.
 
@@ -347,6 +357,7 @@ class AdminHandlersMixin(BaseP2PHandler):
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_ADMIN)
     async def handle_admin_reset_node_jobs(self, request: web.Request) -> web.Response:
         """Reset job counts for a specific node (for zombie cleanup).
 
@@ -412,6 +423,7 @@ class AdminHandlersMixin(BaseP2PHandler):
             logger.error(f"Error in handle_admin_reset_node_jobs: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_ADMIN)
     async def handle_admin_add_peer(self, request: web.Request) -> web.Response:
         """Add a peer to this node's peer list without restart.
 
@@ -520,6 +532,7 @@ class AdminHandlersMixin(BaseP2PHandler):
             logger.error(f"Error in handle_admin_add_peer: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_ADMIN)
     async def handle_admin_ping_work(self, request: web.Request) -> web.Response:
         """Respond to work acceptance probe for frozen leader detection.
 
@@ -590,6 +603,7 @@ class AdminHandlersMixin(BaseP2PHandler):
                 "error": str(e),
             }, status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_ADMIN)
     async def handle_admin_clear_nat_blocked(self, request: web.Request) -> web.Response:
         """Clear NAT-blocked status on all or specific peers.
 

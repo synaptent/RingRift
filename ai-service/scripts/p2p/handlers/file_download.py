@@ -21,6 +21,16 @@ try:
 except ImportError:
     web = None  # type: ignore
 
+try:
+    from .timeout_decorator import handler_timeout, HANDLER_TIMEOUT_DELIVERY
+except ImportError:
+    # Fallback if decorator not available
+    def handler_timeout(seconds):
+        def decorator(func):
+            return func
+        return decorator
+    HANDLER_TIMEOUT_DELIVERY = 120.0
+
 if TYPE_CHECKING:
     from aiohttp import web
 
@@ -114,6 +124,7 @@ class FileDownloadHandler:
             status=status,
         )
 
+    @handler_timeout(HANDLER_TIMEOUT_DELIVERY)
     async def handle_model_download(self, request: "web.Request") -> "web.StreamResponse":
         """GET /files/models/{path:.*} - Download a model file.
 
@@ -131,6 +142,7 @@ class FileDownloadHandler:
         file_path: Path = result  # type: ignore
         return await self._stream_file(request, file_path)
 
+    @handler_timeout(HANDLER_TIMEOUT_DELIVERY)
     async def handle_data_download(self, request: "web.Request") -> "web.StreamResponse":
         """GET /files/data/{path:.*} - Download a data file (database, NPZ).
 
@@ -178,6 +190,7 @@ class FileDownloadHandler:
         logger.info(f"Served file via HTTP: {file_path.name} ({stat.st_size / 1024 / 1024:.1f} MB)")
         return resp
 
+    @handler_timeout(HANDLER_TIMEOUT_DELIVERY)
     async def handle_list_files(self, request: "web.Request") -> "web.Response":
         """GET /files/list - List available files for download.
 
@@ -227,6 +240,7 @@ class FileDownloadHandler:
             "node_id": getattr(self.orchestrator, "node_id", "unknown"),
         })
 
+    @handler_timeout(HANDLER_TIMEOUT_DELIVERY)
     async def handle_file_info(self, request: "web.Request") -> "web.Response":
         """GET /files/info - Get info about a specific file.
 

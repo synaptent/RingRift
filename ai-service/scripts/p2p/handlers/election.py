@@ -36,6 +36,10 @@ import aiohttp
 from aiohttp import web
 
 from scripts.p2p.handlers.base import BaseP2PHandler
+from scripts.p2p.handlers.timeout_decorator import (
+    handler_timeout,
+    HANDLER_TIMEOUT_GOSSIP,
+)
 
 # Dec 2025: Use consolidated handler utilities
 from scripts.p2p.handlers.handlers_base import get_event_bridge
@@ -104,6 +108,7 @@ class ElectionHandlersMixin(BaseP2PHandler):
     leader_id: str | None
     election_in_progress: bool
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_election(self, request: web.Request) -> web.Response:
         """Handle election message from another node."""
         try:
@@ -154,6 +159,7 @@ class ElectionHandlersMixin(BaseP2PHandler):
         except Exception as e:
             return self.error_response(str(e), status=400)
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_lease_request(self, request: web.Request) -> web.Response:
         """Voter endpoint: grant/renew an exclusive leader lease.
 
@@ -260,6 +266,7 @@ class ElectionHandlersMixin(BaseP2PHandler):
                 details={"granted": False},
             )
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_voter_grant_status(self, request: web.Request) -> web.Response:
         """Read-only voter endpoint: return our currently granted leader lease.
 
@@ -282,6 +289,7 @@ class ElectionHandlersMixin(BaseP2PHandler):
         except Exception as e:
             return self.error_response(str(e), status=400)
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_lease_revoke(self, request: web.Request) -> web.Response:
         """Voter endpoint: revoke lease when leader steps down.
 
@@ -331,6 +339,7 @@ class ElectionHandlersMixin(BaseP2PHandler):
         except Exception as e:
             return self.error_response(str(e), status=400)
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_election_reset(self, request: web.Request) -> web.Response:
         """Reset stuck election state to allow fresh leader election.
 
@@ -381,6 +390,7 @@ class ElectionHandlersMixin(BaseP2PHandler):
             logger.error(f"Error resetting election: {e}")
             return self.error_response(str(e), status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_election_force_leader(self, request: web.Request) -> web.Response:
         """Force a specific node to become leader (emergency override).
 
@@ -460,6 +470,7 @@ class ElectionHandlersMixin(BaseP2PHandler):
             logger.error(f"Error forcing leader: {e}")
             return self.error_response(str(e), status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_election_request(self, request: web.Request) -> web.Response:
         """Handle election request from non-voter nodes.
 
@@ -576,6 +587,7 @@ class ElectionHandlersMixin(BaseP2PHandler):
             logger.error(f"Error handling election request: {e}")
             return self.error_response(str(e), status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_provisional_leader_claim(self, request: web.Request) -> web.Response:
         """Handle provisional leadership claim from another node.
 
@@ -674,6 +686,7 @@ class ElectionHandlersMixin(BaseP2PHandler):
             logger.error(f"Error handling provisional leader claim: {e}")
             return self.error_response(str(e), status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_leader_state_change(self, request: web.Request) -> web.Response:
         """Handle leader step-down broadcast from peers.
 

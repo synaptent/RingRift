@@ -42,6 +42,10 @@ from typing import TYPE_CHECKING, Any
 from aiohttp import web
 
 from scripts.p2p.handlers.base import BaseP2PHandler
+from scripts.p2p.handlers.timeout_decorator import (
+    handler_timeout,
+    HANDLER_TIMEOUT_TOURNAMENT,
+)
 
 if TYPE_CHECKING:
     pass
@@ -82,6 +86,7 @@ class JobsApiHandlersMixin(BaseP2PHandler):
     ssh_tournament_runs: dict
     training_coordinator: Any
 
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_api_jobs_list(self, request: web.Request) -> web.Response:
         """GET /api/jobs - List all jobs with optional filtering.
 
@@ -178,6 +183,7 @@ class JobsApiHandlersMixin(BaseP2PHandler):
         except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_api_jobs_submit(self, request: web.Request) -> web.Response:
         """POST /api/jobs - Submit a new job via REST API.
 
@@ -301,6 +307,7 @@ class JobsApiHandlersMixin(BaseP2PHandler):
         except ImportError:
             return None
 
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_api_job_get(self, request: web.Request) -> web.Response:
         """GET /api/jobs/{job_id} - Get details for a specific job.
 
@@ -396,6 +403,7 @@ class JobsApiHandlersMixin(BaseP2PHandler):
         except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_api_job_cancel(self, request: web.Request) -> web.Response:
         """POST /api/jobs/{job_id}/cancel - Cancel a pending or running job.
 

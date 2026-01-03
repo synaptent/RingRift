@@ -32,6 +32,10 @@ from typing import TYPE_CHECKING
 from aiohttp import web
 
 from scripts.p2p.handlers.base import BaseP2PHandler
+from scripts.p2p.handlers.timeout_decorator import (
+    handler_timeout,
+    HANDLER_TIMEOUT_TOURNAMENT,
+)
 
 if TYPE_CHECKING:
     pass
@@ -71,6 +75,7 @@ class ManifestHandlersMixin(BaseP2PHandler):
     local_data_manifest: object | None
     cluster_data_manifest: object | None
 
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_data_manifest(self, request: web.Request) -> web.Response:
         """Return this node's local data manifest.
 
@@ -88,6 +93,7 @@ class ManifestHandlersMixin(BaseP2PHandler):
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_cluster_data_manifest(self, request: web.Request) -> web.Response:
         """Leader-only: Return cluster-wide data manifest.
 
@@ -136,6 +142,7 @@ class ManifestHandlersMixin(BaseP2PHandler):
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_refresh_manifest(self, request: web.Request) -> web.Response:
         """Force refresh of local data manifest."""
         try:
@@ -153,6 +160,7 @@ class ManifestHandlersMixin(BaseP2PHandler):
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
 
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_data_inventory(self, request: web.Request) -> web.Response:
         """Return cluster-wide game inventory with counts by config and node.
 

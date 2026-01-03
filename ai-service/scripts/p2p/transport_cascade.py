@@ -23,6 +23,32 @@ from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# Per-Transport Circuit Breaker Integration (January 2026 - Phase 2)
+# =============================================================================
+# Import per-transport circuit breaker functions to enable transport-level failover
+try:
+    from scripts.p2p.network import (
+        check_peer_transport_circuit,
+        record_peer_transport_success,
+        record_peer_transport_failure,
+        HAS_TRANSPORT_BREAKER,
+    )
+except ImportError:
+    # Graceful fallback if network module not available
+    HAS_TRANSPORT_BREAKER = False
+
+    def check_peer_transport_circuit(peer_host: str, transport: str = "http") -> bool:
+        return True  # Allow all if breakers not available
+
+    def record_peer_transport_success(peer_host: str, transport: str = "http") -> None:
+        pass
+
+    def record_peer_transport_failure(
+        peer_host: str, transport: str = "http", error: Exception | None = None
+    ) -> None:
+        pass
+
 
 class TransportTier(Enum):
     """Transport tiers ordered by preference (fastest/cheapest first)."""
@@ -661,6 +687,16 @@ class TransportCascade:
             effective_timeout = max(timeout, adaptive_timeout)
 
         for transport in transports:
+            # Jan 2026 Phase 2: Check per-transport circuit breaker BEFORE attempting
+            # This enables transport-level failover - skip transports with OPEN circuits
+            if not check_peer_transport_circuit(target, transport.name):
+                errors.append(f"{transport.name}: circuit OPEN (skipped)")
+                logger.debug(
+                    f"[TransportCascade] Skipping {transport.name} -> {target}: "
+                    f"circuit breaker is OPEN"
+                )
+                continue
+
             # Check availability first
             try:
                 if not await transport.is_available(target):
@@ -769,6 +805,15 @@ class TransportCascade:
         timeout: float,
     ) -> TransportResult:
         """Helper to try a single transport with error handling."""
+        # Jan 2026 Phase 2: Check per-transport circuit breaker first
+        if not check_peer_transport_circuit(target, transport.name):
+            return TransportResult(
+                success=False,
+                transport_name=transport.name,
+                latency_ms=0,
+                error="circuit OPEN",
+            )
+
         start_time = time.time()
         try:
             if not await transport.is_available(target):
@@ -836,6 +881,10 @@ class TransportCascade:
         if self._global_circuit_breaker:
             self._global_circuit_breaker.record_success(transport_name, target)
 
+        # Jan 2026 Phase 2: Record success to per-transport circuit breaker
+        # This helps the circuit transition from half-open to closed
+        record_peer_transport_success(target, transport_name)
+
         # Jan 2026: Record latency for adaptive timeout learning
         if self._adaptive_timeouts_enabled:
             self._adaptive_timeout_tracker.record_latency(target, latency_ms)
@@ -852,6 +901,10 @@ class TransportCascade:
 
         if self._global_circuit_breaker:
             self._global_circuit_breaker.record_failure(transport_name, target)
+
+        # Jan 2026 Phase 2: Record failure to per-transport circuit breaker
+        # This may trip the circuit, enabling failover to other transports
+        record_peer_transport_failure(target, transport_name)
 
         logger.debug(
             f"Transport failure: {transport_name} -> {target} "
