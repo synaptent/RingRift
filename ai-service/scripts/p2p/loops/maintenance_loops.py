@@ -26,14 +26,14 @@ from typing import Any, Callable, Coroutine
 
 from .base import BaseLoop
 
+from .loop_constants import LoopIntervals, AUTO_UPDATE_ENABLED
+
 logger = logging.getLogger(__name__)
 
 
-# Default interval for git update checks (5 minutes)
-GIT_UPDATE_CHECK_INTERVAL = float(os.environ.get("RINGRIFT_GIT_UPDATE_INTERVAL", "300"))
-
-# Feature flag to enable/disable auto-updates
-AUTO_UPDATE_ENABLED = os.environ.get("RINGRIFT_P2P_AUTO_UPDATE", "").lower() in ("1", "true", "yes")
+# Backward-compat alias (Sprint 10: use LoopIntervals.GIT_UPDATE_CHECK instead)
+GIT_UPDATE_CHECK_INTERVAL = LoopIntervals.GIT_UPDATE_CHECK
+# AUTO_UPDATE_ENABLED is now imported from loop_constants
 
 
 @dataclass

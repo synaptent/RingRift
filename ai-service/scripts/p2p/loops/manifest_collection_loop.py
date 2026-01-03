@@ -27,15 +27,16 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
 from .base import BackoffConfig, BaseLoop
+from .loop_constants import LoopIntervals
 
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
 
-# Constants
-DEFAULT_COLLECTION_INTERVAL = 300  # 5 minutes
-INITIAL_DELAY = 60.0  # Wait before first collection to let HTTP server stabilize
+# Backward-compat aliases (Sprint 10: use LoopIntervals.* instead)
+DEFAULT_COLLECTION_INTERVAL = LoopIntervals.MANIFEST_COLLECTION
+INITIAL_DELAY = LoopIntervals.MANIFEST_INITIAL_DELAY
 
 
 class NodeRole(Enum):

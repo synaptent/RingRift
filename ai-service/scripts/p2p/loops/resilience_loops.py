@@ -28,11 +28,12 @@ from dataclasses import dataclass
 from typing import Any, Callable, Coroutine, Protocol
 
 from .base import BaseLoop
+from .loop_constants import LoopIntervals
 
 logger = logging.getLogger(__name__)
 
-# Constants
-STALE_PROCESS_CHECK_INTERVAL = 300  # 5 minutes between stale process checks
+# Backward-compat alias (Sprint 10: use LoopIntervals.STALE_PROCESS_CHECK instead)
+STALE_PROCESS_CHECK_INTERVAL = LoopIntervals.STALE_PROCESS_CHECK
 
 
 # =============================================================================

@@ -59,7 +59,23 @@ __all__ = [
     "CoordinatorHealthState",
     "CoordinatorRunState",
     "ErrorSeverity",
+    # January 2026 - Unified Health State (Phase 4.1)
+    "HealthStatus",
+    "HealthStatusInfo",
+    "to_health_status",
 ]
+
+
+# =============================================================================
+# Canonical Health Status (January 2026 - Phase 4.1)
+# =============================================================================
+
+# Re-export from health subpackage for convenience
+from app.coordination.health import (
+    HealthStatus,
+    HealthStatusInfo,
+    to_health_status,
+)
 
 
 class BackpressureLevel(str, Enum):

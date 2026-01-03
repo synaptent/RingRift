@@ -44,11 +44,39 @@ logger = logging.getLogger(__name__)
 
 
 class HealthLevel(str, Enum):
-    """Health status levels."""
+    """Health status levels.
+
+    DEPRECATED (January 2026): Use app.coordination.health.HealthStatus instead.
+    This enum will be removed in Q2 2026.
+
+    Migration:
+        from app.coordination.health import HealthStatus, from_legacy_health_level
+
+        # Convert existing HealthLevel to HealthStatus
+        status = from_legacy_health_level(HealthLevel.OK)  # Returns HealthStatus.HEALTHY
+
+        # Or use HealthStatus directly
+        status = HealthStatus.HEALTHY
+
+    Mapping:
+        OK -> HealthStatus.HEALTHY
+        WARNING -> HealthStatus.DEGRADED
+        ERROR -> HealthStatus.UNHEALTHY
+        UNKNOWN -> HealthStatus.UNKNOWN
+    """
     OK = "ok"
     WARNING = "warning"
     ERROR = "error"
     UNKNOWN = "unknown"
+
+    def to_health_status(self):
+        """Convert to canonical HealthStatus.
+
+        Returns:
+            HealthStatus equivalent of this HealthLevel.
+        """
+        from app.coordination.health import from_legacy_health_level
+        return from_legacy_health_level(self)
 
 
 @dataclass

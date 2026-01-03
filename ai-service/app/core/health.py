@@ -51,11 +51,39 @@ __all__ = [
 
 
 class HealthState(Enum):
-    """Health states for components."""
+    """Health states for components.
+
+    DEPRECATED (January 2026): Use app.coordination.health.HealthStatus instead.
+    This enum will be removed in Q2 2026.
+
+    Migration:
+        from app.coordination.health import HealthStatus, from_legacy_health_state
+
+        # Convert existing HealthState to HealthStatus
+        status = from_legacy_health_state(HealthState.HEALTHY)  # Returns HealthStatus.HEALTHY
+
+        # Or use HealthStatus directly
+        status = HealthStatus.HEALTHY
+
+    Mapping:
+        HEALTHY -> HealthStatus.HEALTHY
+        DEGRADED -> HealthStatus.DEGRADED
+        UNHEALTHY -> HealthStatus.UNHEALTHY
+        UNKNOWN -> HealthStatus.UNKNOWN
+    """
     HEALTHY = "healthy"
     DEGRADED = "degraded"  # Working but not optimal
     UNHEALTHY = "unhealthy"
     UNKNOWN = "unknown"
+
+    def to_health_status(self):
+        """Convert to canonical HealthStatus.
+
+        Returns:
+            HealthStatus equivalent of this HealthState.
+        """
+        from app.coordination.health import from_legacy_health_state
+        return from_legacy_health_state(self)
 
 
 class ProbeType(Enum):

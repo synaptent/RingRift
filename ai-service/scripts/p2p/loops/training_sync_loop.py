@@ -24,15 +24,16 @@ import time
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
 from .base import BackoffConfig, BaseLoop
+from .loop_constants import LoopIntervals, LoopThresholds
 
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
 
-# Constants
-DEFAULT_TRAINING_SYNC_INTERVAL = 300  # 5 minutes
-MAX_DISK_USAGE_PERCENT = 70  # Don't sync if disk > 70%
+# Backward-compat aliases (Sprint 10: use LoopIntervals/LoopThresholds instead)
+DEFAULT_TRAINING_SYNC_INTERVAL = LoopIntervals.TRAINING_SYNC
+MAX_DISK_USAGE_PERCENT = LoopThresholds.MAX_DISK_USAGE_PERCENT
 
 
 class TrainingSyncLoop(BaseLoop):

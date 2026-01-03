@@ -25,16 +25,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from .base import BackoffConfig, BaseLoop
+from .loop_constants import LoopIntervals
 
 if TYPE_CHECKING:
     from scripts.p2p.types import NodeRole
 
 logger = logging.getLogger(__name__)
 
-# Constants
-POPULATOR_INTERVAL = 60  # 1 minute between population attempts
-INITIAL_DELAY = 30  # Delay before first run
-ALL_TARGETS_MET_INTERVAL = 300  # 5 minutes when all targets met
+# Backward-compat aliases (Sprint 10: use LoopIntervals.* instead)
+POPULATOR_INTERVAL = LoopIntervals.QUEUE_POPULATOR
+INITIAL_DELAY = LoopIntervals.QUEUE_POPULATOR_INITIAL_DELAY
+ALL_TARGETS_MET_INTERVAL = LoopIntervals.QUEUE_POPULATOR_ALL_MET
 
 
 class QueuePopulatorLoop(BaseLoop):

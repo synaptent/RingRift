@@ -47,6 +47,15 @@ from .base import (
     LoopManager,
     LoopStats,
 )
+from .loop_constants import (
+    AUTO_UPDATE_ENABLED,
+    DEFAULT_DISCOVERY_PORT,
+    DEFAULT_P2P_PORT,
+    JobDefaults,
+    LoopIntervals,
+    LoopLimits,
+    LoopThresholds,
+)
 from .coordination_loops import (
     AutoScalingConfig,
     AutoScalingLoop,
@@ -148,6 +157,14 @@ __all__ = [
     "BaseLoop",
     "LoopManager",
     "LoopStats",
+    # Constants (Sprint 10)
+    "AUTO_UPDATE_ENABLED",
+    "DEFAULT_DISCOVERY_PORT",
+    "DEFAULT_P2P_PORT",
+    "JobDefaults",
+    "LoopIntervals",
+    "LoopLimits",
+    "LoopThresholds",
     # Queue
     "QueuePopulatorLoop",
     # Elo

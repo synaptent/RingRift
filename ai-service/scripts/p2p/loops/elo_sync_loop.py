@@ -27,16 +27,17 @@ import logging
 from typing import TYPE_CHECKING, Any, Callable
 
 from .base import BackoffConfig, BaseLoop
+from .loop_constants import LoopIntervals, LoopLimits
 
 if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
 
-# Constants
-DEFAULT_SYNC_INTERVAL = 300  # 5 minutes default
-MAX_INIT_RETRIES = 5  # Phase 15.1.3: Max initialization attempts
-REENABLE_CHECK_INTERVAL = 3600  # 1 hour: Check if we can re-enable after failure
+# Backward-compat aliases (Sprint 10: use LoopIntervals/LoopLimits instead)
+DEFAULT_SYNC_INTERVAL = LoopIntervals.ELO_SYNC
+MAX_INIT_RETRIES = LoopLimits.MAX_INIT_RETRIES
+REENABLE_CHECK_INTERVAL = LoopIntervals.REENABLE_CHECK
 
 
 class EloSyncLoop(BaseLoop):
