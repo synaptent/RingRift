@@ -44,14 +44,14 @@ logger = logging.getLogger(__name__)
 # Type variable for handler return type
 T = TypeVar("T")
 
-# January 2026: Use centralized timeouts from loop_constants where applicable
+# January 2026: Use centralized timeouts from loop_constants
 try:
     from scripts.p2p.loops.loop_constants import LoopTimeouts
-    DEFAULT_HANDLER_TIMEOUT = LoopTimeouts.HTTP_LONG  # 30.0 seconds default
-    HANDLER_TIMEOUT_GOSSIP = LoopTimeouts.HTTP_LONG  # 30.0 - critical for cluster
-    HANDLER_TIMEOUT_TOURNAMENT = 60.0  # Not in LoopTimeouts - handler-specific
-    HANDLER_TIMEOUT_DELIVERY = LoopTimeouts.SYNC_LOCK  # 120.0 - may involve file I/O
-    HANDLER_TIMEOUT_ADMIN = LoopTimeouts.SYNC_OPERATION  # 300.0 - manual ops
+    DEFAULT_HANDLER_TIMEOUT = LoopTimeouts.HANDLER_GOSSIP  # 30.0 seconds default
+    HANDLER_TIMEOUT_GOSSIP = LoopTimeouts.HANDLER_GOSSIP  # 30.0 - critical for cluster
+    HANDLER_TIMEOUT_TOURNAMENT = LoopTimeouts.HANDLER_TOURNAMENT  # 60.0 - job handlers
+    HANDLER_TIMEOUT_DELIVERY = LoopTimeouts.HANDLER_DELIVERY  # 120.0 - file I/O
+    HANDLER_TIMEOUT_ADMIN = LoopTimeouts.HANDLER_ADMIN  # 300.0 - manual ops
 except ImportError:
     # Fallback values matching LoopTimeouts defaults
     DEFAULT_HANDLER_TIMEOUT = 30.0
@@ -250,7 +250,7 @@ class HandlerTimeoutMiddleware:
 
     def __init__(
         self,
-        default_timeout: float = 60.0,
+        default_timeout: float = HANDLER_TIMEOUT_TOURNAMENT,
         route_timeouts: dict[str, float] | None = None,
     ):
         """Initialize middleware.

@@ -203,6 +203,25 @@ class LoopTimeouts:
     SUBPROCESS_QUICK: float = 5.0            # Quick subprocess calls
     SUBPROCESS_LONG: float = 30.0            # Long subprocess calls
 
+    # SQLite database timeouts (lock acquisition)
+    SQLITE_LOCK_QUICK: float = 5.0           # Quick lock, fail-fast acceptable
+    SQLITE_LOCK_STANDARD: float = 10.0       # Standard transaction lock
+    SQLITE_LOCK_LONG: float = 30.0           # Long-running DB operations
+
+    # HTTP handler timeouts (web endpoint processing)
+    HANDLER_GOSSIP: float = 30.0             # Gossip/status handlers
+    HANDLER_TOURNAMENT: float = 60.0         # Tournament/gauntlet handlers
+    HANDLER_DELIVERY: float = 120.0          # File delivery handlers
+    HANDLER_ADMIN: float = 300.0             # Admin/long-running handlers
+
+    # Job and work queue timeouts
+    WORK_QUEUE_ITEM: float = 3600.0          # 1 hour per work queue item
+    LONG_RUNNING_JOB: float = 21600.0        # 6 hours for training/gauntlet jobs
+
+    # Lock acquisition timeouts
+    LOCK_QUICK: float = 30.0                 # Short lock window
+    LOCK_STANDARD: float = 60.0              # Standard lock window
+
     # Provider-specific multipliers (higher latency = higher multiplier)
     PROVIDER_MULTIPLIERS: dict = None  # type: ignore  # Set in __post_init__ workaround
 

@@ -38,6 +38,13 @@ from aiohttp import web
 from scripts.p2p.handlers.base import BaseP2PHandler
 from scripts.p2p.handlers.timeout_decorator import handler_timeout, HANDLER_TIMEOUT_TOURNAMENT
 
+# January 2026: Use centralized timeouts from LoopTimeouts
+try:
+    from scripts.p2p.loops.loop_constants import LoopTimeouts
+    LONG_RUNNING_JOB_TIMEOUT = int(LoopTimeouts.LONG_RUNNING_JOB)
+except ImportError:
+    LONG_RUNNING_JOB_TIMEOUT = 6 * 60 * 60  # 6 hours fallback
+
 if TYPE_CHECKING:
     from scripts.p2p.models import NodeRole
 
@@ -105,7 +112,7 @@ class SSHTournamentHandlersMixin(BaseP2PHandler):
             include_nonready = bool(data.get("include_nonready", False))
             max_parallel_per_host = data.get("max_parallel_per_host")
             remote_output_dir = str(data.get("remote_output_dir") or "results/tournaments/ssh_shards")
-            job_timeout_sec = int(data.get("job_timeout_sec", 6 * 60 * 60) or (6 * 60 * 60))
+            job_timeout_sec = int(data.get("job_timeout_sec", LONG_RUNNING_JOB_TIMEOUT) or LONG_RUNNING_JOB_TIMEOUT)
             retries = int(data.get("retries", 1) or 1)
             dry_run = bool(data.get("dry_run", False))
 

@@ -35,6 +35,13 @@ from scripts.p2p.handlers.base import BaseP2PHandler
 from scripts.p2p.handlers.timeout_decorator import handler_timeout, HANDLER_TIMEOUT_TOURNAMENT
 from scripts.p2p.handlers.handlers_base import get_event_bridge
 
+# January 2026: Use centralized timeouts from LoopTimeouts
+try:
+    from scripts.p2p.loops.loop_constants import LoopTimeouts
+    WORK_QUEUE_ITEM_TIMEOUT = LoopTimeouts.WORK_QUEUE_ITEM
+except ImportError:
+    WORK_QUEUE_ITEM_TIMEOUT = 3600.0  # 1 hour fallback
+
 if TYPE_CHECKING:
     from app.coordination.unified_queue_populator import UnifiedQueuePopulator as QueuePopulator
 
@@ -141,7 +148,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             work_type = data.get("work_type", "selfplay")
             priority = data.get("priority", 50)
             config = data.get("config", {})
-            timeout = data.get("timeout_seconds", 3600.0)
+            timeout = data.get("timeout_seconds", WORK_QUEUE_ITEM_TIMEOUT)
             depends_on = data.get("depends_on", [])
             force = data.get("force", False)  # Dec 28, 2025: Allow bypassing backpressure
 
@@ -229,7 +236,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     work_type = item_data.get("work_type", "selfplay")
                     priority = item_data.get("priority", 50)
                     config = item_data.get("config", {})
-                    timeout = item_data.get("timeout_seconds", 3600.0)
+                    timeout = item_data.get("timeout_seconds", WORK_QUEUE_ITEM_TIMEOUT)
                     depends_on = item_data.get("depends_on", [])
 
                     item = WorkItem(
