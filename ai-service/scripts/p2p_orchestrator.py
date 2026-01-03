@@ -8417,6 +8417,137 @@ class P2POrchestrator(
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Tailscale discovery error: {e}")
 
+    async def _reconnect_missing_tailscale_peers(self) -> int:
+        """Force reconnect to peers online in Tailscale but missing from P2P mesh.
+
+        January 2026 (Phase 1.1): Fixes peer discovery asymmetry where P2P shows
+        5-7 peers while Tailscale shows 40 online. This method is called during
+        startup after Tailscale discovery to ensure all reachable peers are connected.
+
+        The root cause is that SWIM gossip and heartbeat loops may not discover all
+        peers during initial bootstrap, especially when nodes start asynchronously.
+        This method performs a targeted reconnection sweep.
+
+        Returns:
+            Number of peers successfully reconnected.
+        """
+        import json
+        import subprocess
+
+        logger.info("[NetworkHealth] Running Tailscale-to-P2P reconnection sweep...")
+
+        try:
+            # Get Tailscale status
+            result = subprocess.run(
+                ["tailscale", "status", "--json"],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode != 0:
+                logger.warning(f"Tailscale status failed: {result.stderr}")
+                return 0
+
+            ts_data = json.loads(result.stdout)
+            ts_peers = ts_data.get("Peer", {})
+
+            # Build map of Tailscale IPs to online status
+            ts_online: dict[str, bool] = {}
+            for peer_info in ts_peers.values():
+                ts_ips = peer_info.get("TailscaleIPs", [])
+                is_online = peer_info.get("Online", False)
+                for ip in ts_ips:
+                    if "." in ip:  # IPv4
+                        ts_online[ip] = is_online
+
+            # Get config hosts for IP-to-node mapping
+            config_hosts = self._load_distributed_hosts().get("hosts", {})
+            ip_to_node = {
+                h.get("tailscale_ip"): (name, h)
+                for name, h in config_hosts.items()
+                if h.get("tailscale_ip") and h.get("p2p_enabled", True)
+            }
+
+            # Get current P2P peer IDs
+            p2p_peer_ids = set()
+            with self.peers_lock:
+                for peer_id, peer_info in self.peers.items():
+                    is_alive = getattr(peer_info, "is_alive", lambda: True)
+                    if (callable(is_alive) and is_alive()) or (not callable(is_alive) and is_alive):
+                        p2p_peer_ids.add(peer_id)
+
+            # Find and reconnect missing peers
+            reconnected = 0
+            attempted = 0
+
+            for ts_ip, is_online in ts_online.items():
+                if not is_online:
+                    continue
+
+                if ts_ip not in ip_to_node:
+                    continue
+
+                node_name, node_config = ip_to_node[ts_ip]
+
+                # Skip if already connected in P2P
+                if node_name in p2p_peer_ids:
+                    continue
+
+                attempted += 1
+                port = node_config.get("p2p_port", DEFAULT_PORT)
+
+                try:
+                    # Try to reconnect via heartbeat
+                    success = await self._reconnect_discovered_peer(node_name, ts_ip, port)
+                    if success:
+                        reconnected += 1
+                        logger.debug(f"[NetworkHealth] Reconnected {node_name}")
+                except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+                    logger.debug(f"[NetworkHealth] Failed to reconnect {node_name}: {e}")
+
+            if reconnected > 0:
+                logger.info(
+                    f"[NetworkHealth] Reconnection sweep complete: "
+                    f"{reconnected}/{attempted} peers reconnected"
+                )
+            elif attempted > 0:
+                logger.warning(
+                    f"[NetworkHealth] Reconnection sweep: "
+                    f"0/{attempted} peers reconnected (check network connectivity)"
+                )
+            else:
+                logger.debug("[NetworkHealth] No missing peers to reconnect")
+
+            # Emit metric for observability
+            try:
+                from app.coordination.event_router import safe_emit_event
+                safe_emit_event(
+                    "P2P_DISCOVERY_GAP",
+                    {
+                        "tailscale_online": sum(1 for v in ts_online.values() if v),
+                        "p2p_connected": len(p2p_peer_ids),
+                        "gap": attempted,
+                        "reconnected": reconnected,
+                        "node_id": self.node_id,
+                    },
+                    source="p2p_orchestrator",
+                )
+            except ImportError:
+                pass
+
+            return reconnected
+
+        except FileNotFoundError:
+            logger.debug("[NetworkHealth] Tailscale not installed")
+            return 0
+        except json.JSONDecodeError as e:
+            logger.warning(f"[NetworkHealth] Tailscale status JSON parse error: {e}")
+            return 0
+        except subprocess.TimeoutExpired:
+            logger.warning("[NetworkHealth] Tailscale status command timed out")
+            return 0
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"[NetworkHealth] Reconnection sweep error: {e}")
+            return 0
+
     async def _convert_jsonl_to_db(self, data_dir: Path, games_dir: Path) -> int:
         """Convert JSONL selfplay files to SQLite DB format for training.
 
@@ -11305,6 +11436,31 @@ class P2POrchestrator(
                 "available": True,
                 "node_count": len(stats),
                 "nodes": stats,
+            })
+        except Exception as e:  # noqa: BLE001
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_dispatch_stats(self, request: web.Request) -> web.Response:
+        """GET /dispatch/stats - Get work queue dispatch statistics.
+
+        Jan 3, 2026: Added for observability into job dispatch filtering.
+        Returns claim rejection stats showing why jobs aren't being dispatched
+        to idle GPU nodes.
+        """
+        try:
+            from app.coordination.work_queue import get_work_queue
+
+            wq = get_work_queue()
+            if wq is None:
+                return web.json_response({
+                    "available": False,
+                    "message": "Work queue not initialized",
+                })
+
+            return web.json_response({
+                "available": True,
+                "claim_rejection_stats": wq.get_claim_rejection_stats(),
+                "queue_stats": wq.get_queue_stats(),
             })
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
@@ -28849,6 +29005,9 @@ print(json.dumps({{
             app.router.add_get('/connectivity/transport_stats', self.handle_transport_stats)
             app.router.add_post('/connectivity/probe_vast', self.handle_probe_vast_nodes)
 
+            # Dispatch diagnostics (Jan 3, 2026)
+            app.router.add_get('/dispatch/stats', self.handle_dispatch_stats)
+
             # Gauntlet evaluation routes
             app.router.add_post('/gauntlet/execute', self.handle_gauntlet_execute)
             app.router.add_get('/gauntlet/status', self.handle_gauntlet_status)
@@ -29247,6 +29406,9 @@ print(json.dumps({{
 
             if peers_after > peers_before:
                 logger.info(f"[Bootstrap] Tailscale discovery found {peers_after - peers_before} new peer(s)")
+                # January 2026: Force reconnect to any peers online in Tailscale but missing from P2P
+                # This fixes peer discovery asymmetry where P2P shows 5-7 peers while Tailscale shows 40
+                await self._reconnect_missing_tailscale_peers()
             else:
                 # Tailscale discovery didn't find peers - try config-based seeds
                 logger.info("[Bootstrap] Tailscale discovery found no peers, trying config-based seeds...")
