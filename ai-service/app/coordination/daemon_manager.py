@@ -1780,6 +1780,11 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             # to never start when master_loop.py called start() individually.
             await self._ensure_health_loop_running()
 
+            # January 2026 Sprint 10: Ensure recovery probing is running
+            # Previously only started via start_all() callback, not when using
+            # individual start() calls from master_loop.py.
+            await self._ensure_recovery_probing_running()
+
             # Dec 2025: Emit DAEMON_STARTED event for coordination_bootstrap handlers
             await self._emit_daemon_started(daemon_type)
         return result
@@ -1843,6 +1848,30 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 name="daemon_health_loop"
             )
             logger.info("[DaemonManager] Started health monitoring loop")
+
+    async def _ensure_recovery_probing_running(self) -> None:
+        """Ensure circuit breaker recovery probing is running.
+
+        January 2026 Sprint 10: Extracted from start_all() callback to allow
+        individual start() calls to also start recovery probing. This fixes
+        an issue where master_loop.py calling start() individually would never
+        start recovery probing, causing circuits to take longer to recover.
+
+        Safe to call multiple times - will only start probing once.
+        """
+        # Use a class attribute to track if we've started probing
+        if getattr(self, "_recovery_probing_started", False):
+            return
+
+        try:
+            from app.distributed.circuit_breaker import start_recovery_probing
+
+            task = start_recovery_probing(interval=30.0)
+            if task:
+                self._recovery_probing_started = True
+                logger.info("[DaemonManager] Started circuit breaker recovery probing")
+        except (ImportError, RuntimeError) as e:
+            logger.debug(f"[DaemonManager] Circuit breaker probing not started: {e}")
 
     async def _wait_for_dependencies(self, daemon_type: DaemonType) -> None:
         """Wait for all dependencies of a daemon to be ready before starting.

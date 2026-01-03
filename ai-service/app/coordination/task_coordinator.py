@@ -48,6 +48,8 @@ Usage:
     coordinator.unregister_task(task_id)
 """
 
+from __future__ import annotations
+
 import contextlib
 import fcntl
 import json
