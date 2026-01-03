@@ -1884,8 +1884,10 @@ class P2POrchestrator(
 
         # Load persisted state
         self._load_state()
+        # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+        # Note: This is called during __init__ so ULSM may not exist yet, but _set_leader handles that
         if self.leader_id == self.node_id:
-            self.role = NodeRole.LEADER
+            self._set_leader(self.node_id, reason="startup_restore_leadership", save_state=False)
 
         # Self info
         self.self_info = self._create_self_info()
@@ -10527,9 +10529,9 @@ class P2POrchestrator(
             # If the failed node was leader, trigger election
             if node_name == self.leader_id:
                 logger.warning(f"Leader {node_name} failed (Serf detected) - triggering election")
-                self.leader_id = None
+                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                self._set_leader(None, reason="serf_leader_failed", save_state=True)
                 self.election_in_progress = False  # Allow new election
-                self._save_state()
 
     async def _handle_serf_member_update(self, members: list) -> None:
         """Handle Serf member-update events (tag changes)."""
@@ -10814,16 +10816,11 @@ class P2POrchestrator(
                 return web.json_response({"accepted": True})
 
             logger.info(f"Accepting leader announcement: {new_leader}")
-            self.leader_id = new_leader
+            # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+            self._set_leader(new_leader, reason="accept_coordinator_announcement", save_state=True)
             self.leader_lease_id = lease_id
             self.leader_lease_expires = lease_expires if lease_expires else time.time() + LEADER_LEASE_DURATION
 
-            if new_leader == self.node_id:
-                self.role = NodeRole.LEADER
-            else:
-                self.role = NodeRole.FOLLOWER
-
-            self._save_state()
             return web.json_response({"accepted": True})
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=400)
@@ -20469,8 +20466,8 @@ print(json.dumps({{
                         # leader, step down to converge quickly.
                         if self.role == NodeRole.LEADER and leader_id > self.node_id:
                             logger.info(f"Bootstrap: stepping down for leader {leader_id}")
-                            self.role = NodeRole.FOLLOWER
-                        self.leader_id = leader_id
+                        # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                        self._set_leader(leader_id, reason="bootstrap_discover_leader", save_state=False)
                 except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError, KeyError, ValueError):
                     continue
 
@@ -20646,10 +20643,10 @@ print(json.dumps({{
                     # Adopt leader if provided
                     leader_id = str(data.get("leader_id") or "").strip()
                     if leader_id and leader_id != self.node_id:
-                        self.leader_id = leader_id
                         if self.role == NodeRole.LEADER:
                             logger.info(f"Stepping down for discovered leader: {leader_id}")
-                            self.role = NodeRole.FOLLOWER
+                        # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                        self._set_leader(leader_id, reason="continuous_bootstrap_discover_leader", save_state=False)
 
                     # Handle cluster epoch (Phase 29)
                     incoming_epoch = data.get("cluster_epoch")
@@ -20865,8 +20862,8 @@ print(json.dumps({{
                     if leader_id and leader_id != self.node_id:
                         if self.leader_id != leader_id:
                             logger.info(f"Adopted leader from relay: {leader_id}")
-                        self.leader_id = leader_id
-                        self.role = NodeRole.FOLLOWER
+                        # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                        self._set_leader(leader_id, reason="relay_poll_adopt_leader", save_state=False)
 
                     return {
                         "success": True,
@@ -21075,7 +21072,6 @@ print(json.dumps({{
                             if self.leader_id != info.node_id or self.role != NodeRole.FOLLOWER:
                                 logger.info(f"Following configured leader from heartbeat: {info.node_id}")
                             prev_leader = self.leader_id
-                            self.leader_id = info.node_id
                             # Provisional lease: allow time for the leader to send
                             # a /coordinator lease renewal after we discover it via
                             # heartbeat (prevents leaderless oscillation right after
@@ -21083,7 +21079,8 @@ print(json.dumps({{
                             if prev_leader != info.node_id or not self._is_leader_lease_valid():
                                 self.leader_lease_id = ""
                                 self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
-                            self.role = NodeRole.FOLLOWER
+                            # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                            self._set_leader(info.node_id, reason="heartbeat_configured_leader", save_state=False)
 
                 # Send to discovered peers (skip NAT-blocked peers and ambiguous endpoints).
                 async with AsyncLockWrapper(self.peers_lock):
@@ -21140,11 +21137,11 @@ print(json.dumps({{
                                 if self.leader_id != info.node_id:
                                     logger.info(f"Adopted leader from heartbeat: {info.node_id}")
                                 prev_leader = self.leader_id
-                                self.leader_id = info.node_id
                                 if prev_leader != info.node_id or not self._is_leader_lease_valid():
                                     self.leader_lease_id = ""
                                     self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
-                                self.role = NodeRole.FOLLOWER
+                                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                                self._set_leader(info.node_id, reason="heartbeat_adopt_leader", save_state=False)
                         else:
                             async with AsyncLockWrapper(self.peers_lock):
                                 existing = self.peers.get(peer.node_id)
@@ -21226,12 +21223,11 @@ print(json.dumps({{
                 # Health-based leadership: step down if we can't reach enough peers
                 if self.role == NodeRole.LEADER and not self._check_leader_health():
                     logger.info("Stepping down due to degraded health")
-                    self.role = NodeRole.FOLLOWER
-                    self.leader_id = None
+                    # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                    self._set_leader(None, reason="degraded_health", save_state=True)
                     self.leader_lease_id = ""
                     self.leader_lease_expires = 0.0
                     self._release_voter_grant_if_self()
-                    self._save_state()
                     continue  # Skip leader duties this cycle
 
                 # P0 Dec 2025: Monitor leader heartbeat for early warning
@@ -21415,8 +21411,8 @@ print(json.dumps({{
                 # Update leader if this voter claims leadership
                 if info.role == NodeRole.LEADER and info.node_id != self.node_id and self.leader_id != info.node_id:
                     logger.info(f"Discovered leader from voter heartbeat: {info.node_id}")
-                    self.leader_id = info.node_id
-                    self.role = NodeRole.FOLLOWER
+                    # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                    self._set_leader(info.node_id, reason="voter_heartbeat_discover_leader", save_state=False)
                     self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
 
                 return True
@@ -22002,10 +21998,9 @@ print(json.dumps({{
 
         if self.leader_id != leader.node_id:
             logger.info(f"Adopted existing leader from peers: {leader.node_id}")
-        self.leader_id = leader.node_id
+        # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+        self._set_leader(leader.node_id, reason="join_existing_leader", save_state=True)
         self.last_leader_seen = time.time()  # Track when we last had a functioning leader
-        self.role = NodeRole.FOLLOWER
-        self._save_state()
         return True
 
     async def _check_dead_peers_async(self):
@@ -22120,11 +22115,11 @@ print(json.dumps({{
                 await self._complete_step_down_async(TransitionReason.LEASE_EXPIRED)
             else:
                 # Another node's stale lease - just clear locally, no broadcast needed
-                self.leader_id = None
+                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                self._set_leader(None, reason="stale_remote_lease", save_state=False)
                 self.leader_lease_id = ""
                 self.leader_lease_expires = 0.0
                 self.last_lease_renewal = 0.0
-                self.role = NodeRole.FOLLOWER
                 # Dec 31, 2025: Set invalidation window to prevent gossip from re-setting stale leader
                 # Window = 60 seconds - enough time for election to complete
                 self._leader_invalidation_until = time.time() + 60.0
@@ -22148,11 +22143,11 @@ print(json.dumps({{
                     logger.info(f"Leader {self.leader_id} is {reason}, starting election")
                     # Dec 2025: Emit LEADER_LOST before clearing leader_id
                     old_leader_id = self.leader_id
-                    self.leader_id = None
+                    # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                    self._set_leader(None, reason=f"leader_{reason}", save_state=False)
                     self.leader_lease_id = ""
                     self.leader_lease_expires = 0.0
                     self.last_lease_renewal = 0.0
-                    self.role = NodeRole.FOLLOWER
                     # Dec 31, 2025: Set invalidation window to prevent gossip from re-setting dead leader
                     self._leader_invalidation_until = time.time() + 60.0
                     asyncio.create_task(self._emit_leader_lost(old_leader_id, reason))
@@ -22167,11 +22162,11 @@ print(json.dumps({{
                 # Clear the leader and allow election
                 logger.warning(f"Leader {self.leader_id} not found in peers dict, clearing stale leader")
                 old_leader_id = self.leader_id
-                self.leader_id = None
+                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                self._set_leader(None, reason="leader_unknown_peer", save_state=False)
                 self.leader_lease_id = ""
                 self.leader_lease_expires = 0.0
                 self.last_lease_renewal = 0.0
-                self.role = NodeRole.FOLLOWER
                 self._leader_invalidation_until = time.time() + 60.0
                 asyncio.create_task(self._emit_leader_lost(old_leader_id, "unknown_peer"))
 
@@ -22383,11 +22378,11 @@ print(json.dumps({{
         # jobs (while still "thinking" it has a leader).
         if self.leader_id and not self._is_leader_lease_valid():
             logger.info(f"Clearing stale/expired leader lease: leader_id={self.leader_id}")
-            self.leader_id = None
+            # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+            self._set_leader(None, reason="stale_lease_sync", save_state=False)
             self.leader_lease_id = ""
             self.leader_lease_expires = 0.0
             self.last_lease_renewal = 0.0
-            self.role = NodeRole.FOLLOWER
             # CRITICAL: Check quorum before starting election to prevent quorum bypass
             if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
                 logger.warning("Skipping election after stale lease clear (sync): no voter quorum available")
@@ -22406,11 +22401,11 @@ print(json.dumps({{
                     logger.info(f"Leader {self.leader_id} is {reason}, starting election")
                     # Dec 2025: Emit LEADER_LOST before clearing stale/ineligible leader
                     old_leader_id = self.leader_id
-                    self.leader_id = None
+                    # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                    self._set_leader(None, reason=f"leader_{reason}_sync", save_state=False)
                     self.leader_lease_id = ""
                     self.leader_lease_expires = 0.0
                     self.last_lease_renewal = 0.0
-                    self.role = NodeRole.FOLLOWER
                     asyncio.create_task(self._emit_leader_lost(old_leader_id, reason))
                     # CRITICAL: Check quorum before starting election to prevent quorum bypass
                     if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
@@ -22421,11 +22416,11 @@ print(json.dumps({{
                 # Dec 31, 2025: Leader not in peers dict - unknown/unreachable leader
                 logger.warning(f"Leader {self.leader_id} not found in peers dict (sync), clearing stale leader")
                 old_leader_id = self.leader_id
-                self.leader_id = None
+                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                self._set_leader(None, reason="leader_unknown_peer_sync", save_state=False)
                 self.leader_lease_id = ""
                 self.leader_lease_expires = 0.0
                 self.last_lease_renewal = 0.0
-                self.role = NodeRole.FOLLOWER
                 self._leader_invalidation_until = time.time() + 60.0
                 asyncio.create_task(self._emit_leader_lost(old_leader_id, "unknown_peer"))
 
@@ -22488,7 +22483,8 @@ print(json.dumps({{
             if leader_ok:
                 return
             # Drop stale/ineligible leader so we don't keep advertising it.
-            self.leader_id = None
+            # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+            self._set_leader(None, reason="stale_ineligible_leader", save_state=False)
             self.leader_lease_id = ""
             self.leader_lease_expires = 0.0
         if self._maybe_adopt_leader_from_peers():
@@ -22589,8 +22585,8 @@ print(json.dumps({{
         lease_expires = await self._acquire_voter_lease_quorum(lease_id, int(LEADER_LEASE_DURATION))
         if getattr(self, "voter_node_ids", []) and not lease_expires:
             logger.error(f"Failed to obtain voter lease quorum; refusing leadership: {self.node_id}")
-            self.role = NodeRole.FOLLOWER
-            self.leader_id = None
+            # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+            self._set_leader(None, reason="election_failed_no_quorum", save_state=False)
             self.leader_lease_id = ""
             self.leader_lease_expires = 0.0
             self.last_lease_renewal = 0.0
@@ -22599,8 +22595,8 @@ print(json.dumps({{
             return
 
         logger.info(f"I am now the leader: {self.node_id}")
-        self.role = NodeRole.LEADER
-        self.leader_id = self.node_id
+        # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+        self._set_leader(self.node_id, reason="become_leader", save_state=False)
         self.last_leader_seen = time.time()  # Track when we last had a functioning leader
         # Dec 31, 2025: Track leadership acquisition time and reset quorum fail counters
         self._last_become_leader_time = time.time()
@@ -22868,8 +22864,8 @@ print(json.dumps({{
         import uuid
         now = time.time()
 
-        self.role = NodeRole.LEADER
-        self.leader_id = self.node_id
+        # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+        self._set_leader(self.node_id, reason=f"promote_provisional_{reason}", save_state=False)
         self.last_leader_seen = now
 
         # Create a new lease ID to mark full leadership
@@ -23194,8 +23190,8 @@ print(json.dumps({{
         logger.info(f"EMERGENCY COORDINATOR: Taking leadership without voter quorum "
               f"(quorum missing for {int(quorum_missing_duration)}s, {len(candidates)} candidates)")
 
-        self.role = NodeRole.LEADER
-        self.leader_id = self.node_id
+        # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+        self._set_leader(self.node_id, reason="emergency_coordinator", save_state=False)
         self.last_leader_seen = now
         self._emergency_coordinator_since = now
 
@@ -23982,7 +23978,8 @@ print(json.dumps({{
                             with contextlib.suppress(Exception):
                                 leader_peer = self.peers.get(claimed_leader)
                                 if leader_peer and leader_peer.is_alive():
-                                    self.leader_id = claimed_leader
+                                    # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                                    self._set_leader(claimed_leader, reason="gossip_accept_leader", save_state=False)
                                     self.last_leader_seen = now
                                     logger.debug(f"Gossip: Accepted leader {claimed_leader} from {sender_id}")
                                 elif not leader_peer:
@@ -24101,8 +24098,8 @@ print(json.dumps({{
             if incoming_leader and incoming_leader != self.node_id:
                 if self.role == NodeRole.LEADER:
                     logger.info(f"Stepping down: higher epoch cluster has leader {incoming_leader}")
-                    self.role = NodeRole.FOLLOWER
-                self.leader_id = incoming_leader
+                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                self._set_leader(incoming_leader, reason="higher_epoch_leader", save_state=False)
 
     # Gossip metrics methods (provided by GossipProtocolMixin after Dec 28, 2025 merge):
     # _record_gossip_metrics, _record_gossip_compression, _reset_gossip_metrics_hourly
@@ -25827,8 +25824,8 @@ print(json.dumps({{
             )
             if self._quorum_fail_count >= 3:
                 logger.info(f"Lost voter quorum (3 consecutive failures); stepping down: {self.node_id}")
-                self.role = NodeRole.FOLLOWER
-                self.leader_id = None
+                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                self._set_leader(None, reason="lost_voter_quorum", save_state=False)
                 self.leader_lease_id = ""
                 self.leader_lease_expires = 0.0
                 self.last_lease_renewal = 0.0
@@ -25859,8 +25856,8 @@ print(json.dumps({{
             elif arbiter_leader:
                 # Arbiter says someone else is leader - defer to arbiter
                 logger.info(f"Arbiter reports different leader ({arbiter_leader}); stepping down")
-                self.role = NodeRole.FOLLOWER
-                self.leader_id = arbiter_leader
+                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                self._set_leader(arbiter_leader, reason="arbiter_override", save_state=False)
                 self.leader_lease_id = ""
                 self.leader_lease_expires = 0.0
                 self.last_lease_renewal = 0.0
@@ -25870,8 +25867,8 @@ print(json.dumps({{
             else:
                 # Arbiter also unreachable - step down to be safe
                 logger.error(f"Failed to renew voter lease quorum and arbiter unreachable; stepping down: {self.node_id}")
-                self.role = NodeRole.FOLLOWER
-                self.leader_id = None
+                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                self._set_leader(None, reason="arbiter_unreachable", save_state=False)
                 self.leader_lease_id = ""
                 self.leader_lease_expires = 0.0
                 self.last_lease_renewal = 0.0
@@ -25953,12 +25950,11 @@ print(json.dumps({{
                 leased_leader = await self._determine_leased_leader_from_voters()
                 if leased_leader and leased_leader != self.node_id:
                     logger.info(f"VOTER ACK CHECK: Voters grant to {leased_leader}, not us; stepping down")
-                    self.role = NodeRole.FOLLOWER
-                    self.leader_id = leased_leader
+                    # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                    self._set_leader(leased_leader, reason="voter_ack_check_other_leader", save_state=True)
                     self.leader_lease_id = ""
                     self.leader_lease_expires = 0.0
                     self._release_voter_grant_if_self()
-                    self._save_state()
                     return True
             return False  # No split-brain detected
 
@@ -25976,12 +25972,11 @@ print(json.dumps({{
                     detected_leaders=leaders_detected,
                     resolution_action="step_down_non_voter",
                 )
-                self.role = NodeRole.FOLLOWER
-                self.leader_id = None
+                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                self._set_leader(None, reason="split_brain_non_voter", save_state=True)
                 self.leader_lease_id = ""
                 self.leader_lease_expires = 0.0
                 self._release_voter_grant_if_self()
-                self._save_state()
                 return True
 
             leased_leader = await self._determine_leased_leader_from_voters()
@@ -25989,12 +25984,11 @@ print(json.dumps({{
                 print(
                     f"[P2P] SPLIT-BRAIN resolved by voter quorum: stepping down for lease-holder {leased_leader}"
                 )
-                self.role = NodeRole.FOLLOWER
-                self.leader_id = leased_leader
+                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                self._set_leader(leased_leader, reason="split_brain_voter_quorum", save_state=True)
                 self.leader_lease_id = ""
                 self.leader_lease_expires = 0.0
                 self._release_voter_grant_if_self()
-                self._save_state()
                 return True
 
         # Find the highest-priority *eligible* leader (including ourselves).
@@ -26024,8 +26018,8 @@ print(json.dumps({{
                 detected_leaders=leaders_detected,
                 resolution_action="step_down_bully",
             )
-            self.role = NodeRole.FOLLOWER
-            self.leader_id = highest_leader.node_id
+            # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+            self._set_leader(highest_leader.node_id, reason="split_brain_resolution", save_state=False)
             self.leader_lease_id = ""
             self.leader_lease_expires = 0.0
             # Jan 1, 2026: Phase 3B-C - notify voters before releasing local grant
