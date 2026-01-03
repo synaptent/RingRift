@@ -56,6 +56,7 @@ Usage:
 Created: December 2025
 Purpose: Unified health interface (consolidation phase)
 Updated: December 27, 2025 - Added ClusterHealthDashboard for job scheduling gates
+Updated: January 2026 - Added canonical HealthStatus from Phase 4.1
 """
 
 from __future__ import annotations
@@ -67,6 +68,25 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Canonical Health Status (January 2026 - Phase 4.1)
+# =============================================================================
+
+# Re-export canonical HealthStatus for convenience
+from app.coordination.health import (
+    HealthStatus,
+    HealthStatusInfo,
+    to_health_status,
+    from_legacy_health_state,
+    from_legacy_health_level,
+    from_legacy_system_health_level,
+    from_legacy_node_health_state,
+    get_health_score,
+    from_health_score,
+)
+
 
 # Re-export system-level health from unified_health_manager
 from app.coordination.unified_health_manager import (
@@ -101,6 +121,36 @@ if TYPE_CHECKING:
 # =============================================================================
 # Convenience Functions (unified interface)
 # =============================================================================
+
+
+def get_node_health_status(node_id: str) -> HealthStatus:
+    """Get health status for a specific node in canonical form.
+
+    January 2026: Uses canonical HealthStatus from Phase 4.1.
+
+    Args:
+        node_id: The node identifier
+
+    Returns:
+        HealthStatus (HEALTHY, DEGRADED, UNHEALTHY, OFFLINE, etc.)
+    """
+    details = get_health_orchestrator().get_node_health(node_id)
+    if details is None:
+        return HealthStatus.UNKNOWN
+    return from_legacy_node_health_state(details.state)
+
+
+def get_cluster_health_status() -> HealthStatus:
+    """Get overall cluster health in canonical form.
+
+    January 2026: Uses canonical HealthStatus from Phase 4.1.
+
+    Returns:
+        HealthStatus representing aggregate cluster health
+    """
+    level = get_system_health_level()
+    return from_legacy_system_health_level(level)
+
 
 def get_node_health(node_id: str) -> NodeHealthDetails | None:
     """Get health details for a specific node.
