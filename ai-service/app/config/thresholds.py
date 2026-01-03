@@ -785,6 +785,9 @@ SQLITE_TIMEOUT = 30
 # SQLite short operations timeout (seconds)
 SQLITE_SHORT_TIMEOUT = 10
 
+# SQLite heavy merge operations timeout (seconds) - consolidation daemons
+SQLITE_MERGE_TIMEOUT = 60
+
 # SQLite PRAGMA settings (December 2025 - consolidated)
 # busy_timeout in milliseconds - how long to wait for locks
 # December 29, 2025: Increased standard from 10s to 30s for cluster operations

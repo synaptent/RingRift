@@ -57,6 +57,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.config.thresholds import SQLITE_CONNECT_TIMEOUT
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -421,7 +423,7 @@ class TrainingFreshnessChecker:
         """Get game count from a database."""
         try:
             import sqlite3
-            with sqlite3.connect(db_path, timeout=5.0) as conn:
+            with sqlite3.connect(db_path, timeout=SQLITE_CONNECT_TIMEOUT) as conn:
                 cursor = conn.execute("SELECT COUNT(*) FROM games")
                 return cursor.fetchone()[0]
         except Exception as e:
@@ -445,7 +447,7 @@ class TrainingFreshnessChecker:
             import sqlite3
             from datetime import datetime
 
-            with sqlite3.connect(db_path, timeout=5.0) as conn:
+            with sqlite3.connect(db_path, timeout=SQLITE_CONNECT_TIMEOUT) as conn:
                 # Get the newest game's created_at timestamp
                 cursor = conn.execute(
                     "SELECT MAX(created_at) FROM games WHERE created_at IS NOT NULL"

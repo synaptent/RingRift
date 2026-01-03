@@ -39,6 +39,7 @@ from typing import Any, Optional, TYPE_CHECKING
 
 from app.utils.yaml_utils import safe_load_yaml
 from app.coordination.singleton_mixin import SingletonMixin
+from app.config.thresholds import SQLITE_CONNECT_TIMEOUT
 
 # Import interfaces for type hints (no circular dependency)
 # December 2025: IResourceTargets/IResourceTargetManager enable protocol-based typing
@@ -365,7 +366,7 @@ class ResourceTargetManager(SingletonMixin):
             return None
         try:
             # December 27, 2025: Use context manager to prevent connection leaks
-            with sqlite3.connect(self._db_path, timeout=5.0) as conn:
+            with sqlite3.connect(self._db_path, timeout=SQLITE_CONNECT_TIMEOUT) as conn:
                 conn.row_factory = sqlite3.Row
                 row = conn.execute(
                     "SELECT gpu_count, gpu_name, cpu_count, memory_gb, has_gpu FROM node_resources WHERE node_id = ?",

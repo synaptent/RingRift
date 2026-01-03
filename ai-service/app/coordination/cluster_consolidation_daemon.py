@@ -47,6 +47,7 @@ from typing import Any
 
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.contracts import CoordinatorStatus
+from app.config.thresholds import SQLITE_TIMEOUT, SQLITE_MERGE_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -682,7 +683,7 @@ class ClusterConsolidationDaemon(HandlerBase):
 
         target_conn = None
         try:
-            target_conn = sqlite3.connect(str(canonical_db), timeout=60.0)
+            target_conn = sqlite3.connect(str(canonical_db), timeout=SQLITE_MERGE_TIMEOUT)
 
             for source_db in synced_dbs:
                 try:
@@ -737,7 +738,7 @@ class ClusterConsolidationDaemon(HandlerBase):
 
         source_conn = None
         try:
-            source_conn = sqlite3.connect(str(source_db), timeout=30.0)
+            source_conn = sqlite3.connect(str(source_db), timeout=SQLITE_TIMEOUT)
             source_conn.row_factory = sqlite3.Row
 
             # Query games for this config
@@ -849,7 +850,7 @@ class ClusterConsolidationDaemon(HandlerBase):
         """Ensure canonical database has correct schema."""
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+        with sqlite3.connect(str(db_path), timeout=SQLITE_TIMEOUT) as conn:
             # Main games table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS games (
@@ -941,7 +942,7 @@ class ClusterConsolidationDaemon(HandlerBase):
             return set()
 
         try:
-            with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+            with sqlite3.connect(str(db_path), timeout=SQLITE_TIMEOUT) as conn:
                 cursor = conn.execute("SELECT game_id FROM games")
                 return {row[0] for row in cursor.fetchall()}
         except sqlite3.Error:

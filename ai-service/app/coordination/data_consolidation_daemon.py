@@ -29,6 +29,7 @@ from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.event_utils import parse_config_key
 from app.coordination.health_check_helper import HealthCheckHelper
 from app.coordination.contracts import CoordinatorStatus
+from app.config.thresholds import SQLITE_TIMEOUT, SQLITE_CONNECT_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -525,7 +526,7 @@ class DataConsolidationDaemon(HandlerBase):
         """Check if a database has games for the specified config."""
         # December 27, 2025: Use context manager to prevent connection leaks
         try:
-            with sqlite3.connect(str(db_path), timeout=5.0) as conn:
+            with sqlite3.connect(str(db_path), timeout=SQLITE_CONNECT_TIMEOUT) as conn:
                 cursor = conn.execute("""
                     SELECT COUNT(*) FROM games
                     WHERE board_type = ? AND num_players = ?
@@ -547,7 +548,7 @@ class DataConsolidationDaemon(HandlerBase):
 
         # December 27, 2025: Use context manager to prevent connection leaks
         try:
-            with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+            with sqlite3.connect(str(db_path), timeout=SQLITE_TIMEOUT) as conn:
                 cursor = conn.execute("SELECT game_id FROM games")
                 game_ids = {row[0] for row in cursor.fetchall()}
                 return game_ids
@@ -560,7 +561,7 @@ class DataConsolidationDaemon(HandlerBase):
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
         # December 27, 2025: Use context manager to prevent connection leaks
-        with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+        with sqlite3.connect(str(db_path), timeout=SQLITE_TIMEOUT) as conn:
             # Main games table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS games (
@@ -706,9 +707,9 @@ class DataConsolidationDaemon(HandlerBase):
         source_conn = None
         target_conn = None
         try:
-            source_conn = sqlite3.connect(str(source_db), timeout=30.0)
+            source_conn = sqlite3.connect(str(source_db), timeout=SQLITE_TIMEOUT)
             source_conn.row_factory = sqlite3.Row
-            target_conn = sqlite3.connect(str(target_db), timeout=30.0)
+            target_conn = sqlite3.connect(str(target_db), timeout=SQLITE_TIMEOUT)
 
             # December 29, 2025: Get target database columns to filter source columns
             # This prevents INSERT errors when source has columns target doesn't have

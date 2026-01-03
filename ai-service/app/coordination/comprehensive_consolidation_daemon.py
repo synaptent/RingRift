@@ -38,6 +38,7 @@ from typing import Any
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.contracts import CoordinatorStatus
 from app.utils.game_discovery import GameDiscovery, DatabaseInfo, ALL_BOARD_TYPES, ALL_PLAYER_COUNTS
+from app.config.thresholds import SQLITE_TIMEOUT
 
 logger = logging.getLogger(__name__)
 
@@ -494,7 +495,7 @@ class ComprehensiveConsolidationDaemon(HandlerBase):
             return set()
 
         try:
-            with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+            with sqlite3.connect(str(db_path), timeout=SQLITE_TIMEOUT) as conn:
                 cursor = conn.execute("SELECT game_id FROM games")
                 return {row[0] for row in cursor.fetchall()}
         except sqlite3.Error as e:
@@ -556,9 +557,9 @@ class ComprehensiveConsolidationDaemon(HandlerBase):
         target_conn = None
 
         try:
-            source_conn = sqlite3.connect(str(source_db), timeout=30.0)
+            source_conn = sqlite3.connect(str(source_db), timeout=SQLITE_TIMEOUT)
             source_conn.row_factory = sqlite3.Row
-            target_conn = sqlite3.connect(str(target_db), timeout=30.0)
+            target_conn = sqlite3.connect(str(target_db), timeout=SQLITE_TIMEOUT)
 
             # Get target columns
             target_cursor = target_conn.execute("PRAGMA table_info(games)")
@@ -685,7 +686,7 @@ class ComprehensiveConsolidationDaemon(HandlerBase):
         """Ensure canonical database has correct schema."""
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with sqlite3.connect(str(db_path), timeout=30.0) as conn:
+        with sqlite3.connect(str(db_path), timeout=SQLITE_TIMEOUT) as conn:
             # Main games table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS games (
@@ -778,7 +779,7 @@ class ComprehensiveConsolidationDaemon(HandlerBase):
 
     def _ensure_tracking_schema(self) -> None:
         """Ensure tracking database has correct schema."""
-        with sqlite3.connect(str(self._daemon_config.tracking_db_path), timeout=30.0) as conn:
+        with sqlite3.connect(str(self._daemon_config.tracking_db_path), timeout=SQLITE_TIMEOUT) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS consolidation_tracking (
                     config_key TEXT PRIMARY KEY,
@@ -798,7 +799,7 @@ class ComprehensiveConsolidationDaemon(HandlerBase):
         import json
 
         try:
-            with sqlite3.connect(str(self._daemon_config.tracking_db_path), timeout=30.0) as conn:
+            with sqlite3.connect(str(self._daemon_config.tracking_db_path), timeout=SQLITE_TIMEOUT) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("SELECT * FROM consolidation_tracking")
                 for row in cursor:
@@ -836,7 +837,7 @@ class ComprehensiveConsolidationDaemon(HandlerBase):
 
         # Compute hash of game IDs for change detection
         try:
-            with sqlite3.connect(str(canonical_db), timeout=30.0) as conn:
+            with sqlite3.connect(str(canonical_db), timeout=SQLITE_TIMEOUT) as conn:
                 cursor = conn.execute("SELECT game_id FROM games ORDER BY game_id")
                 ids_str = ",".join(row[0] for row in cursor)
                 ids_hash = hashlib.sha256(ids_str.encode()).hexdigest()[:16]
@@ -859,7 +860,7 @@ class ComprehensiveConsolidationDaemon(HandlerBase):
         import json
 
         try:
-            with sqlite3.connect(str(self._daemon_config.tracking_db_path), timeout=30.0) as conn:
+            with sqlite3.connect(str(self._daemon_config.tracking_db_path), timeout=SQLITE_TIMEOUT) as conn:
                 for record in self._tracking_records.values():
                     conn.execute("""
                         INSERT OR REPLACE INTO consolidation_tracking

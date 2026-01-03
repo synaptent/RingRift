@@ -50,6 +50,7 @@ from app.coordination.types import WorkStatus  # noqa: E402
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult  # noqa: E402
 from app.utils.disk_utils import is_enospc_error, handle_enospc_error
 from app.coordination.event_utils import parse_config_key
+from app.config.thresholds import SQLITE_CONNECT_TIMEOUT, SQLITE_SHORT_TIMEOUT
 
 # Jan 2, 2026: Strategy pattern for Raft/SQLite backends
 from app.coordination.work_queue_backends import (
@@ -748,7 +749,7 @@ class WorkQueue:
                 os.makedirs(self.db_path.parent, exist_ok=True)
 
                 # Use context manager to ensure connection is closed on any exception
-                with sqlite3.connect(str(self.db_path), timeout=10.0) as conn:
+                with sqlite3.connect(str(self.db_path), timeout=SQLITE_SHORT_TIMEOUT) as conn:
                     cursor = conn.cursor()
 
                     # Enable WAL mode for better crash recovery and concurrent access
@@ -2054,7 +2055,7 @@ class WorkQueue:
             return
 
         try:
-            with sqlite3.connect(self.db_path, timeout=5.0) as conn:
+            with sqlite3.connect(self.db_path, timeout=SQLITE_CONNECT_TIMEOUT) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     UPDATE backpressure_state SET
@@ -2087,7 +2088,7 @@ class WorkQueue:
             return
 
         try:
-            with sqlite3.connect(self.db_path, timeout=5.0) as conn:
+            with sqlite3.connect(self.db_path, timeout=SQLITE_CONNECT_TIMEOUT) as conn:
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT active, activations, rejections, last_activation_at, last_rejection_at

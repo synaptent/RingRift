@@ -48,6 +48,7 @@ __all__ = [
 # December 2025: Use consolidated daemon stats base class
 from app.coordination.daemon_stats import CleanupDaemonStats
 from app.coordination.event_utils import parse_config_key
+from app.config.thresholds import SQLITE_CONNECT_TIMEOUT
 
 
 @dataclass
@@ -887,7 +888,7 @@ class MaintenanceDaemon:
                 # December 30, 2025: Wrap blocking SQLite in asyncio.to_thread
                 def _count_games(path: str) -> int:
                     try:
-                        with sqlite3.connect(path, timeout=5.0) as conn:
+                        with sqlite3.connect(path, timeout=SQLITE_CONNECT_TIMEOUT) as conn:
                             cursor = conn.execute("SELECT COUNT(*) FROM games")
                             return cursor.fetchone()[0]
                     except (sqlite3.Error, OSError, IndexError):
