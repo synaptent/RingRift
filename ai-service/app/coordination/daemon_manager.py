@@ -3504,6 +3504,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.METRICS_ANALYSIS,  # Phase 21.2: Analyze training metrics for feedback
         DaemonType.ELO_SYNC,  # Dec 2025: Sync Elo ratings across cluster nodes
         DaemonType.DATA_CONSOLIDATION,  # Dec 27, 2025: Consolidate scattered data files
+        DaemonType.CLUSTER_CONSOLIDATION,  # Jan 2026: Pull games from cluster nodes (coordinator-only)
         DaemonType.COORDINATOR_DISK_MANAGER,  # Dec 27, 2025: Manage coordinator disk space
     ],
 
