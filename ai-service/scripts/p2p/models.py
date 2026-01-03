@@ -979,3 +979,270 @@ class ClusterSyncPlan:
         d = d.copy()
         d['sync_jobs'] = [DataSyncJob.from_dict(j) for j in d.get('sync_jobs', [])]
         return cls(**d)
+
+
+# ============================================
+# Phase 1: P2P Hardening - Jan 3, 2026
+# Per-peer circuit breaker and health scoring
+# ============================================
+
+@dataclass
+class PeerCircuitBreaker:
+    """Per-peer circuit breaker for isolating flaky nodes.
+
+    Jan 3, 2026: Sprint 10+ P2P hardening. Provides finer-grained failure
+    isolation than per-transport breakers. When a specific peer has repeated
+    failures, we can stop routing requests to it without affecting other peers.
+
+    States:
+        - closed: Normal operation, requests allowed
+        - open: Breaker tripped, requests blocked for recovery_timeout
+        - half-open: Testing recovery, allow single request
+
+    Usage:
+        breaker = PeerCircuitBreaker(peer_id="vast-12345")
+        if breaker.should_allow_request():
+            try:
+                result = await send_request(peer)
+                breaker.record_success()
+            except Exception:
+                breaker.record_failure()
+    """
+    peer_id: str
+    failure_count: int = 0
+    success_count: int = 0
+    state: str = "closed"  # closed, open, half-open
+    last_failure_time: float = 0.0
+    last_success_time: float = 0.0
+    last_state_change: float = 0.0
+    # Configuration
+    failure_threshold: int = 3  # Failures before opening
+    success_threshold: int = 2  # Successes in half-open to close
+    recovery_timeout: float = 30.0  # Seconds before half-open
+
+    def record_failure(self) -> None:
+        """Record a failure and potentially trip the breaker."""
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        self.success_count = 0  # Reset success streak
+
+        if self.state == "closed" and self.failure_count >= self.failure_threshold:
+            self.state = "open"
+            self.last_state_change = time.time()
+        elif self.state == "half-open":
+            # Any failure in half-open goes back to open
+            self.state = "open"
+            self.last_state_change = time.time()
+
+    def record_success(self) -> None:
+        """Record a success and potentially close the breaker."""
+        self.success_count += 1
+        self.last_success_time = time.time()
+
+        if self.state == "half-open" and self.success_count >= self.success_threshold:
+            self.state = "closed"
+            self.failure_count = 0
+            self.last_state_change = time.time()
+        elif self.state == "closed":
+            # Decay failure count on success in closed state
+            self.failure_count = max(0, self.failure_count - 1)
+
+    def should_allow_request(self) -> bool:
+        """Check if a request should be allowed through."""
+        now = time.time()
+
+        if self.state == "closed":
+            return True
+        elif self.state == "open":
+            # Check if recovery timeout has passed
+            if now - self.last_state_change > self.recovery_timeout:
+                self.state = "half-open"
+                self.last_state_change = now
+                self.success_count = 0
+                return True
+            return False
+        else:  # half-open
+            # Allow test requests in half-open state
+            return True
+
+    def reset(self) -> None:
+        """Reset the circuit breaker to closed state."""
+        self.state = "closed"
+        self.failure_count = 0
+        self.success_count = 0
+        self.last_state_change = time.time()
+
+    def is_open(self) -> bool:
+        """Check if breaker is currently open (blocking requests)."""
+        return self.state == "open"
+
+    def is_half_open(self) -> bool:
+        """Check if breaker is in half-open (testing) state."""
+        return self.state == "half-open"
+
+    def to_dict(self) -> dict:
+        """Serialize for JSON/state persistence."""
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "PeerCircuitBreaker":
+        """Deserialize from dict."""
+        return cls(**d)
+
+
+@dataclass
+class PeerHealthScore:
+    """Composite health score for a peer node.
+
+    Jan 3, 2026: Sprint 10+ P2P hardening. Combines multiple metrics into
+    a single health score (0.0-1.0) for proactive failure detection.
+    Nodes with low health scores can be deprioritized for job dispatch
+    before they become completely unreachable.
+
+    Metrics:
+        - success_rate: Recent request success rate (last 100 requests)
+        - avg_latency_ms: Average response latency
+        - availability_percent: Uptime in observation window
+
+    Usage:
+        score = PeerHealthScore(peer_id="vast-12345")
+        score.record_request(success=True, latency_ms=50.0)
+        if score.composite_score < 0.7:
+            emit_event(PEER_HEALTH_DEGRADED, {"peer_id": score.peer_id})
+    """
+    peer_id: str
+    # Rolling metrics (last 100 requests)
+    success_count: int = 0
+    failure_count: int = 0
+    total_latency_ms: float = 0.0
+    request_count: int = 0
+    # Availability tracking
+    first_seen: float = 0.0
+    last_seen: float = 0.0
+    offline_duration_seconds: float = 0.0
+    # Score caching
+    _cached_score: float = 1.0
+    _cache_time: float = 0.0
+
+    def __post_init__(self):
+        if self.first_seen == 0.0:
+            self.first_seen = time.time()
+        if self.last_seen == 0.0:
+            self.last_seen = time.time()
+
+    @property
+    def success_rate(self) -> float:
+        """Calculate success rate from recent requests."""
+        total = self.success_count + self.failure_count
+        if total == 0:
+            return 1.0  # Assume healthy if no data
+        return self.success_count / total
+
+    @property
+    def avg_latency_ms(self) -> float:
+        """Calculate average latency from recent requests."""
+        if self.request_count == 0:
+            return 0.0
+        return self.total_latency_ms / self.request_count
+
+    @property
+    def availability_percent(self) -> float:
+        """Calculate availability as percentage of time online."""
+        now = time.time()
+        total_time = now - self.first_seen
+        if total_time <= 0:
+            return 1.0
+        online_time = total_time - self.offline_duration_seconds
+        return max(0.0, min(1.0, online_time / total_time))
+
+    @property
+    def composite_score(self) -> float:
+        """Calculate weighted composite health score (0.0-1.0).
+
+        Weights:
+            - success_rate: 50% (most important - actual request outcomes)
+            - latency: 30% (performance indicator)
+            - availability: 20% (historical reliability)
+        """
+        # Recalculate at most once per second
+        now = time.time()
+        if now - self._cache_time < 1.0:
+            return self._cached_score
+
+        # Success rate component (0-1)
+        success_component = self.success_rate * 0.5
+
+        # Latency component (0-1): 0ms = 1.0, 1000ms+ = 0.0
+        latency_normalized = 1.0 - min(self.avg_latency_ms / 1000.0, 1.0)
+        latency_component = latency_normalized * 0.3
+
+        # Availability component (0-1)
+        availability_component = self.availability_percent * 0.2
+
+        self._cached_score = success_component + latency_component + availability_component
+        self._cache_time = now
+        return self._cached_score
+
+    def record_request(self, success: bool, latency_ms: float = 0.0) -> None:
+        """Record a request outcome for health tracking."""
+        if success:
+            self.success_count += 1
+        else:
+            self.failure_count += 1
+
+        if latency_ms > 0:
+            self.total_latency_ms += latency_ms
+            self.request_count += 1
+
+        self.last_seen = time.time()
+
+        # Decay old data - keep only ~100 recent requests
+        total = self.success_count + self.failure_count
+        if total > 150:
+            decay_factor = 100.0 / total
+            self.success_count = int(self.success_count * decay_factor)
+            self.failure_count = int(self.failure_count * decay_factor)
+            self.total_latency_ms *= decay_factor
+            self.request_count = int(self.request_count * decay_factor)
+
+    def record_offline(self, duration_seconds: float) -> None:
+        """Record an offline period."""
+        self.offline_duration_seconds += duration_seconds
+
+    def is_degraded(self, threshold: float = 0.7) -> bool:
+        """Check if peer health is below acceptable threshold."""
+        return self.composite_score < threshold
+
+    def is_critical(self, threshold: float = 0.4) -> bool:
+        """Check if peer health is critically low."""
+        return self.composite_score < threshold
+
+    def to_dict(self) -> dict:
+        """Serialize for JSON/API response."""
+        return {
+            "peer_id": self.peer_id,
+            "success_rate": round(self.success_rate, 3),
+            "avg_latency_ms": round(self.avg_latency_ms, 1),
+            "availability_percent": round(self.availability_percent, 3),
+            "composite_score": round(self.composite_score, 3),
+            "is_degraded": self.is_degraded(),
+            "is_critical": self.is_critical(),
+            "request_count": self.request_count,
+            "first_seen": self.first_seen,
+            "last_seen": self.last_seen,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "PeerHealthScore":
+        """Deserialize from persistence."""
+        # Handle both full dict and simplified API response
+        return cls(
+            peer_id=d["peer_id"],
+            success_count=d.get("success_count", 0),
+            failure_count=d.get("failure_count", 0),
+            total_latency_ms=d.get("total_latency_ms", 0.0),
+            request_count=d.get("request_count", 0),
+            first_seen=d.get("first_seen", 0.0),
+            last_seen=d.get("last_seen", 0.0),
+            offline_duration_seconds=d.get("offline_duration_seconds", 0.0),
+        )

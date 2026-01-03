@@ -683,6 +683,8 @@ from scripts.p2p.models import (
     ImprovementLoopState,
     NodeDataManifest,
     NodeInfo,
+    PeerCircuitBreaker,  # Jan 3, 2026: Sprint 10+ P2P hardening
+    PeerHealthScore,     # Jan 3, 2026: Sprint 10+ P2P hardening
     SSHTournamentRun,
     TrainingJob,
     TrainingThresholds,
@@ -1540,6 +1542,11 @@ class P2POrchestrator(
 
         # Circuit breaker for fault-tolerant peer communication
         self._circuit_registry = get_circuit_registry()
+
+        # Jan 3, 2026 (Sprint 10+): Per-peer circuit breakers and health scoring
+        # Finer-grained failure isolation than per-transport breakers
+        self._peer_circuit_breakers: dict[str, PeerCircuitBreaker] = {}
+        self._peer_health_scores: dict[str, PeerHealthScore] = {}
 
         # Phase 3: Training pipeline state (leader-only)
         self.training_jobs: dict[str, TrainingJob] = {}
@@ -10011,6 +10018,96 @@ class P2POrchestrator(
                 "alternate_ipv4_count": sum(1 for ip in getattr(self, "alternate_ips", set()) or set() if ":" not in ip),
                 "alternate_ipv6_count": sum(1 for ip in getattr(self, "alternate_ips", set()) or set() if ":" in ip),
             },
+        })
+
+    async def handle_peer_health(self, request: web.Request) -> web.Response:
+        """Return per-peer health scores and circuit breaker status.
+
+        Jan 3, 2026: Sprint 10+ P2P hardening endpoint. Provides visibility into
+        per-peer health metrics for monitoring and debugging:
+        - PeerHealthScore: Composite health from success rate, latency, availability
+        - PeerCircuitBreaker: Per-peer failure isolation state
+
+        Query parameters:
+            degraded_only: If "true", only return peers with health < 0.7
+            include_breakers: If "true" (default), include circuit breaker state
+
+        Returns:
+            {
+                "peers": {
+                    "peer-id": {
+                        "health": {...},     # PeerHealthScore.to_dict()
+                        "circuit_breaker": {...}  # PeerCircuitBreaker state
+                    }
+                },
+                "summary": {
+                    "total_peers": 25,
+                    "healthy": 20,
+                    "degraded": 3,
+                    "critical": 1,
+                    "open_breakers": 1
+                }
+            }
+        """
+        degraded_only = request.query.get("degraded_only", "false").lower() == "true"
+        include_breakers = request.query.get("include_breakers", "true").lower() != "false"
+
+        result: dict[str, Any] = {}
+        summary = {
+            "total_peers": 0,
+            "healthy": 0,
+            "degraded": 0,
+            "critical": 0,
+            "open_breakers": 0,
+        }
+
+        # Get all known peers
+        with self.peers_lock:
+            peer_ids = list(self.peers.keys())
+
+        for peer_id in peer_ids:
+            health_score = self._peer_health_scores.get(peer_id)
+            breaker = self._peer_circuit_breakers.get(peer_id)
+
+            # Skip if no health data
+            if not health_score and not breaker:
+                continue
+
+            # Filter by degraded_only
+            if degraded_only and health_score and not health_score.is_degraded():
+                continue
+
+            summary["total_peers"] += 1
+
+            peer_data: dict[str, Any] = {}
+
+            if health_score:
+                peer_data["health"] = health_score.to_dict()
+                if health_score.is_critical():
+                    summary["critical"] += 1
+                elif health_score.is_degraded():
+                    summary["degraded"] += 1
+                else:
+                    summary["healthy"] += 1
+
+            if include_breakers and breaker:
+                peer_data["circuit_breaker"] = {
+                    "state": breaker.state,
+                    "failure_count": breaker.failure_count,
+                    "success_count": breaker.success_count,
+                    "last_failure_time": breaker.last_failure_time,
+                    "last_success_time": breaker.last_success_time,
+                    "last_state_change": breaker.last_state_change,
+                }
+                if breaker.is_open():
+                    summary["open_breakers"] += 1
+
+            result[peer_id] = peer_data
+
+        return web.json_response({
+            "peers": result,
+            "summary": summary,
+            "timestamp": time.time(),
         })
 
     async def handle_external_work(self, request: web.Request) -> web.Response:
@@ -22951,13 +23048,29 @@ print(json.dumps({{
 
         HEALTH-BASED PEER SELECTION: Considers multiple factors to pick
         the best peer for data sync, avoiding overloaded or unreliable nodes.
+
+        Jan 3, 2026: Updated to use PeerHealthScore for composite tracking and
+        PeerCircuitBreaker for fine-grained failure isolation.
         """
         with self.peers_lock:
             peer = self.peers.get(peer_id)
         if not peer or not peer.is_alive():
             return 0.0
 
-        score = 100.0
+        # Check per-peer circuit breaker first (Jan 3, 2026)
+        breaker = self._peer_circuit_breakers.get(peer_id)
+        if breaker and not breaker.should_allow_request():
+            return 0.0  # Circuit is open, don't use this peer
+
+        # Use PeerHealthScore if available (Jan 3, 2026)
+        health_score = self._peer_health_scores.get(peer_id)
+        if health_score:
+            # Convert composite score (0-1) to (0-100) and apply resource penalties
+            base_score = health_score.composite_score * 100.0
+        else:
+            base_score = 100.0
+
+        score = base_score
 
         # Penalize high resource usage
         cpu = float(getattr(peer, "cpu_percent", 0) or 0)
@@ -22980,7 +23093,7 @@ print(json.dumps({{
         if getattr(peer, "has_gpu", False):
             score += 10
 
-        # Check circuit breaker
+        # Legacy circuit breaker check (for backward compatibility)
         circuit_breaker = getattr(self, "_p2p_circuit_breaker", {})
         breaker_info = circuit_breaker.get(peer_id, {})
         if breaker_info.get("open_until", 0) > time.time():
@@ -22988,19 +23101,40 @@ print(json.dumps({{
 
         return max(0.0, min(100.0, score))
 
-    def _record_p2p_sync_result(self, peer_id: str, success: bool):
+    def _record_p2p_sync_result(self, peer_id: str, success: bool, latency_ms: float = 0.0):
         """Record P2P sync result for circuit breaker, metrics, and reputation.
 
         CIRCUIT BREAKER: After 3 consecutive failures, open circuit for 5 minutes.
         This prevents wasting time on unreliable peers.
 
         PEER REPUTATION: Also records sync result for reputation tracking.
+
+        Jan 3, 2026: Updated to use PeerCircuitBreaker and PeerHealthScore classes
+        for fine-grained tracking. Legacy dict-based breaker kept for compatibility.
         """
         if not hasattr(self, "_p2p_circuit_breaker"):
             self._p2p_circuit_breaker = {}
         if not hasattr(self, "_p2p_sync_metrics"):
             self._p2p_sync_metrics = {"success": 0, "failure": 0, "bytes": 0}
 
+        # Jan 3, 2026: Use new PeerCircuitBreaker class
+        if peer_id not in self._peer_circuit_breakers:
+            self._peer_circuit_breakers[peer_id] = PeerCircuitBreaker(peer_id=peer_id)
+        peer_breaker = self._peer_circuit_breakers[peer_id]
+
+        # Jan 3, 2026: Use new PeerHealthScore class
+        if peer_id not in self._peer_health_scores:
+            self._peer_health_scores[peer_id] = PeerHealthScore(peer_id=peer_id)
+        health_score = self._peer_health_scores[peer_id]
+
+        # Record for new classes
+        health_score.record_request(success=success, latency_ms=latency_ms)
+        if success:
+            peer_breaker.record_success()
+        else:
+            peer_breaker.record_failure()
+
+        # Legacy dict-based breaker (for backward compatibility)
         breaker = self._p2p_circuit_breaker.get(peer_id, {"failures": 0, "open_until": 0})
 
         # Record for reputation tracking
@@ -23020,6 +23154,13 @@ print(json.dumps({{
                 logger.info(f"CIRCUIT BREAKER: Opening circuit for {peer_id} (3 failures)")
 
         self._p2p_circuit_breaker[peer_id] = breaker
+
+        # Jan 3, 2026: Log if peer health is degraded
+        if health_score.is_degraded():
+            logger.warning(
+                f"PEER_HEALTH_DEGRADED: {peer_id} score={health_score.composite_score:.2f}, "
+                f"success_rate={health_score.success_rate:.2f}"
+            )
 
     async def _p2p_data_sync(self):
         """DECENTRALIZED: Nodes sync data directly with peers without leader coordination.
@@ -28964,6 +29105,8 @@ print(json.dumps({{
             app.router.add_post('/heartbeat', self.handle_heartbeat)
             app.router.add_get('/status', self.handle_status)
             app.router.add_get('/external_work', self.handle_external_work)
+            # Jan 3, 2026: Sprint 10+ P2P hardening - peer health scoring endpoint
+            app.router.add_get('/peer-health', self.handle_peer_health)
                 # Work queue routes (centralized work distribution)
             app.router.add_post('/work/add', self.handle_work_add)
             app.router.add_post('/work/add_batch', self.handle_work_add_batch)

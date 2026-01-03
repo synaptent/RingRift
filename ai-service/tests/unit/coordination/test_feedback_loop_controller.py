@@ -741,3 +741,121 @@ class TestFeedbackLoopEventHandlers:
                 handler(event)
             except Exception as e:
                 pytest.fail(f"{handler.__name__} raised {e} with None payload")
+
+
+class TestTrainingTimeoutReachedHandler:
+    """Test _on_training_timeout_reached handler.
+
+    Jan 3, 2026: Tests for the critical gap fix - TRAINING_TIMEOUT_REACHED
+    was emitted but had no handler until now.
+    """
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        reset_feedback_loop_controller()
+
+    def test_timeout_handler_boosts_exploration(self):
+        """Test timeout triggers exploration boost."""
+        controller = get_feedback_loop_controller()
+
+        # Pre-populate state with normal exploration
+        state = controller._get_or_create_state("hex8_2p")
+        state.current_exploration_boost = 1.0
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "timeout_hours": 4.0,
+            "job_id": "training-job-123",
+        }
+
+        controller._on_training_timeout_reached(event)
+
+        state = controller.get_state("hex8_2p")
+        # Should boost exploration by 1.5x
+        assert state.current_exploration_boost == 1.5
+        # Should set expiry time
+        assert hasattr(state, 'exploration_boost_expires_at')
+        assert state.exploration_boost_expires_at > time.time()
+
+    def test_timeout_handler_caps_exploration_boost(self):
+        """Test exploration boost is capped at 2.5x."""
+        controller = get_feedback_loop_controller()
+
+        # Pre-populate state with already high exploration
+        state = controller._get_or_create_state("hex8_2p")
+        state.current_exploration_boost = 2.0
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "timeout_hours": 8.0,
+        }
+
+        controller._on_training_timeout_reached(event)
+
+        state = controller.get_state("hex8_2p")
+        # 2.0 * 1.5 = 3.0, but capped at 2.5
+        assert state.current_exploration_boost == 2.5
+
+    def test_timeout_handler_boosts_games_multiplier(self):
+        """Test timeout increases games multiplier for more selfplay."""
+        controller = get_feedback_loop_controller()
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "square8_4p",
+            "timeout_hours": 6.0,
+        }
+
+        controller._on_training_timeout_reached(event)
+
+        state = controller.get_state("square8_4p")
+        # Default 1.0 * 1.5 = 1.5
+        assert state.games_multiplier == 1.5
+
+    def test_timeout_handler_tracks_consecutive_timeouts(self):
+        """Test handler tracks consecutive timeout count."""
+        controller = get_feedback_loop_controller()
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_3p",
+            "timeout_hours": 3.0,
+        }
+
+        # First timeout
+        controller._on_training_timeout_reached(event)
+        state = controller.get_state("hex8_3p")
+        assert state.consecutive_timeouts == 1
+
+        # Second timeout
+        controller._on_training_timeout_reached(event)
+        state = controller.get_state("hex8_3p")
+        assert state.consecutive_timeouts == 2
+
+    def test_timeout_handler_handles_missing_config_key(self):
+        """Test handler gracefully handles missing config_key."""
+        controller = get_feedback_loop_controller()
+
+        event = MagicMock()
+        event.payload = {
+            "timeout_hours": 5.0,
+            # Missing config_key
+        }
+
+        # Should not raise, just log warning
+        controller._on_training_timeout_reached(event)
+
+    def test_timeout_handler_exception_safety(self):
+        """Test handler doesn't raise on malformed events."""
+        controller = get_feedback_loop_controller()
+
+        # Test with None payload
+        event = MagicMock()
+        event.payload = None
+
+        try:
+            controller._on_training_timeout_reached(event)
+        except Exception as e:
+            pytest.fail(f"Handler raised {e} with None payload")

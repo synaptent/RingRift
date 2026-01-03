@@ -548,6 +548,13 @@ class FeedbackLoopController(HandlerBase):
                 bus.subscribe(DataEventType.PLATEAU_DETECTED, self._on_plateau_detected)
                 event_count += 1
 
+            # Jan 3, 2026: Subscribe to TRAINING_TIMEOUT_REACHED for timeout recovery
+            # Closes feedback loop: training timeout → exploration boost, selfplay priority bump
+            # Critical gap fix: event was emitted at training_trigger_daemon.py:3314 but had no handler
+            if hasattr(DataEventType, 'TRAINING_TIMEOUT_REACHED'):
+                bus.subscribe(DataEventType.TRAINING_TIMEOUT_REACHED, self._on_training_timeout_reached)
+                event_count += 1
+
             logger.info(f"[FeedbackLoopController] Subscribed to {event_count} event types")
 
             # December 29, 2025: Only set _subscribed = True after successful subscription
@@ -3294,6 +3301,78 @@ class FeedbackLoopController(HandlerBase):
                 )
             except ImportError:
                 pass
+
+    def _on_training_timeout_reached(self, event: Any) -> None:
+        """Handle TRAINING_TIMEOUT_REACHED - training job exceeded timeout threshold.
+
+        Jan 3, 2026: Closes critical gap where TRAINING_TIMEOUT_REACHED was emitted
+        at training_trigger_daemon.py:3314 but had no subscriber/handler.
+
+        Triggers recovery actions:
+        1. Boost exploration to help break potential training plateau
+        2. Increase selfplay games multiplier to generate fresh data
+        3. Track timeout for metrics/observability
+
+        Expected improvement: Faster recovery from stuck training situations,
+        contributing to overall Elo gains via reduced downtime.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = extract_config_key(payload)
+            timeout_hours = payload.get("timeout_hours", 0)
+            training_job_id = payload.get("job_id", "")
+
+            if not config_key:
+                logger.warning("[FeedbackLoopController] TRAINING_TIMEOUT_REACHED missing config_key")
+                return
+
+            logger.warning(
+                f"[FeedbackLoopController] Training timeout for {config_key} after {timeout_hours}h, "
+                f"triggering recovery actions (job_id={training_job_id})"
+            )
+
+            state = self._get_or_create_state(config_key)
+
+            # 1. Boost exploration to help break potential training plateau
+            old_exploration = getattr(state, 'current_exploration_boost', 1.0)
+            state.current_exploration_boost = min(old_exploration * 1.5, 2.5)
+            state.exploration_boost_expires_at = time.time() + 3600  # 1 hour boost
+
+            # 2. Increase selfplay games multiplier to generate fresh data
+            old_games_mult = getattr(state, 'games_multiplier', 1.0)
+            state.games_multiplier = min(old_games_mult * 1.5, 2.5)
+
+            # 3. Track consecutive timeouts for escalation
+            if not hasattr(state, 'consecutive_timeouts'):
+                state.consecutive_timeouts = 0
+            state.consecutive_timeouts += 1
+            state.last_timeout_time = time.time()
+
+            logger.info(
+                f"[FeedbackLoopController] Timeout recovery applied to {config_key}: "
+                f"exploration={old_exploration:.2f}→{state.current_exploration_boost:.2f}, "
+                f"games_mult={old_games_mult:.2f}→{state.games_multiplier:.2f}, "
+                f"consecutive_timeouts={state.consecutive_timeouts}"
+            )
+
+            # 4. Emit exploration boost event to propagate to SelfplayScheduler
+            try:
+                from app.coordination.event_router import emit_exploration_boost
+
+                _safe_create_task(
+                    emit_exploration_boost(
+                        config_key=config_key,
+                        boost_factor=state.current_exploration_boost,
+                        reason="timeout_recovery",
+                        source="feedback_loop_controller",
+                    ),
+                    "exploration_boost_timeout_recovery"
+                )
+            except ImportError:
+                pass
+
+        except (AttributeError, TypeError, KeyError, ValueError) as e:
+            logger.error(f"[FeedbackLoopController] Error handling training timeout: {e}")
 
     def _on_quality_check_failed(self, event) -> None:
         """Handle QUALITY_CHECK_FAILED - data quality check failed.
