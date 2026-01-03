@@ -1455,6 +1455,8 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 daemon_type,
                 runner,
                 depends_on=list(spec.depends_on) if spec.depends_on else None,
+                soft_depends_on=list(spec.soft_depends_on) if spec.soft_depends_on else None,
+                startup_mode=spec.startup_mode,
                 health_check_interval=spec.health_check_interval,
                 auto_restart=spec.auto_restart,
                 max_restarts=spec.max_restarts,
@@ -1468,6 +1470,8 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         daemon_type: DaemonType,
         factory: Callable[[], Coroutine[Any, Any, None]],
         depends_on: list[DaemonType] | None = None,
+        soft_depends_on: list[DaemonType] | None = None,
+        startup_mode: str = "degraded",
         health_check_interval: float | None = None,
         auto_restart: bool = True,
         max_restarts: int = 5,
@@ -1478,7 +1482,13 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         Args:
             daemon_type: Type of daemon
             factory: Async function that runs the daemon
-            depends_on: List of daemons that must be running first
+            depends_on: List of daemons that must be running first (hard deps)
+            soft_depends_on: List of daemons that should be running if available.
+                Jan 2, 2026: Startup continues with warning if these are missing.
+            startup_mode: How to handle missing soft deps.
+                - "strict": Fail startup if soft deps missing
+                - "degraded": Start in degraded mode (default)
+                - "local": Start in local-only mode
             health_check_interval: Health check interval for this daemon.
                 If None, uses critical_daemon_health_interval (15s) for critical
                 daemons, or 60s for others. (P11-HIGH-2 Dec 2025)
@@ -1513,6 +1523,8 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         self._daemons[daemon_type] = DaemonInfo(
             daemon_type=daemon_type,
             depends_on=depends_on or [],
+            soft_depends_on=soft_depends_on or [],
+            startup_mode=startup_mode,
             health_check_interval=health_check_interval,
             auto_restart=auto_restart,
             max_restarts=max_restarts,

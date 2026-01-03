@@ -27,7 +27,15 @@ class DaemonSpec:
     Attributes:
         runner_name: Name of the runner function in daemon_runners module.
             Must be a valid attribute name like "create_auto_sync".
-        depends_on: List of daemon types that must be running first.
+        depends_on: Hard dependencies that MUST be running first.
+            Startup fails if these are not ready within timeout.
+        soft_depends_on: Soft dependencies that SHOULD be running.
+            Jan 2, 2026: Startup continues with warning if these are not ready.
+            Useful for optional integrations or degraded operation mode.
+        startup_mode: How to handle startup when dependencies are missing.
+            - "strict": Fail if any dependency (hard or soft) is missing
+            - "degraded": Start in degraded mode if soft deps missing
+            - "local": Start in local-only mode (skip cluster deps)
         health_check_interval: Custom health check interval (None = use defaults).
         auto_restart: Whether to auto-restart on failure.
         max_restarts: Maximum restart attempts.
@@ -38,6 +46,8 @@ class DaemonSpec:
 
     runner_name: str
     depends_on: tuple[DaemonType, ...] = field(default_factory=tuple)
+    soft_depends_on: tuple[DaemonType, ...] = field(default_factory=tuple)
+    startup_mode: str = "degraded"  # Default to degraded for resilience
     health_check_interval: float | None = None
     auto_restart: bool = True
     max_restarts: int = 5
@@ -210,9 +220,13 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     # =========================================================================
     # Training & Pipeline
     # =========================================================================
+    # Jan 2, 2026: DATA_PIPELINE uses soft deps for AUTO_SYNC to enable local-only mode
+    # when cluster is unavailable. Starts in degraded mode if sync daemons are down.
     DaemonType.DATA_PIPELINE: DaemonSpec(
         runner_name="create_data_pipeline",
         depends_on=(DaemonType.EVENT_ROUTER,),
+        soft_depends_on=(DaemonType.AUTO_SYNC,),
+        startup_mode="degraded",  # Allow local-only operation
         category="pipeline",
         health_check_interval=30.0,  # Dec 2025: Critical for data flow
     ),
@@ -227,9 +241,13 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         category="pipeline",
         health_check_interval=60.0,  # Dec 2025: Coordinates selfplay jobs
     ),
+    # Jan 2, 2026: TRAINING_TRIGGER uses soft deps for cluster daemons
+    # to enable local-only training when cluster sync is unavailable.
     DaemonType.TRAINING_TRIGGER: DaemonSpec(
         runner_name="create_training_trigger",
         depends_on=(DaemonType.EVENT_ROUTER, DaemonType.AUTO_EXPORT),
+        soft_depends_on=(DaemonType.AUTO_SYNC, DaemonType.DATA_PIPELINE),
+        startup_mode="degraded",  # Enable local-only mode
         category="pipeline",
         health_check_interval=120.0,  # Dec 2025: Training jobs are long-running
     ),

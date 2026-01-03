@@ -464,6 +464,17 @@ class PipelineStage(Enum):
     COMPLETE = "complete"
 
 
+class OperationMode(Enum):
+    """Operation mode for graceful degradation.
+
+    Jan 2, 2026: Added to support degraded startup when cluster is unavailable.
+    """
+
+    FULL = "full"        # All systems connected, full functionality
+    DEGRADED = "degraded"  # Some cluster connectivity missing, reduced features
+    LOCAL_ONLY = "local"   # Only local data processing, no cluster sync
+
+
 @dataclass
 class StageTransition:
     """Record of a stage transition."""
@@ -641,6 +652,10 @@ class DataPipelineOrchestrator(
         self._active_optimization: str | None = None  # "cmaes" or "nas"
         self._optimization_run_id: str | None = None
         self._optimization_start_time: float = 0.0
+
+        # Jan 2, 2026: Operation mode for graceful degradation
+        self._operation_mode = OperationMode.FULL
+        self._missing_dependencies: list[str] = []
 
         # Resource constraint tracking (December 2025)
         self._paused: bool = False
@@ -951,6 +966,8 @@ class DataPipelineOrchestrator(
 
         Subscribes to events and begins tracking pipeline state.
         Idempotent - calling on an already running orchestrator is a no-op.
+
+        Jan 2, 2026: Detects operation mode for graceful degradation.
         """
         if self._coordinator_status == CoordinatorStatus.RUNNING:
             return  # Already running
@@ -958,14 +975,28 @@ class DataPipelineOrchestrator(
         self._coordinator_status = CoordinatorStatus.RUNNING
         self._start_time = time.time()
 
+        # Jan 2, 2026: Detect operation mode based on available dependencies
+        self._operation_mode, self._missing_dependencies = await self._detect_operation_mode()
+        if self._operation_mode != OperationMode.FULL:
+            logger.warning(
+                f"[{self.name}] Starting in {self._operation_mode.value} mode. "
+                f"Missing dependencies: {self._missing_dependencies}"
+            )
+
         # Subscribe to events
         self.subscribe_to_events()
         self.subscribe_to_data_events()
 
+        # Jan 2, 2026: Subscribe to local-only events if in degraded/local mode
+        if self._operation_mode in (OperationMode.DEGRADED, OperationMode.LOCAL_ONLY):
+            self._subscribe_local_only_events()
+
         # Register with coordinator registry
         register_coordinator(self)
 
-        logger.info(f"[{self.name}] Started")
+        logger.info(
+            f"[{self.name}] Started (mode={self._operation_mode.value})"
+        )
 
     async def stop(self) -> None:
         """Stop the orchestrator gracefully.
@@ -983,6 +1014,105 @@ class DataPipelineOrchestrator(
 
         self._coordinator_status = CoordinatorStatus.STOPPED
         logger.info(f"[{self.name}] Stopped")
+
+    async def _detect_operation_mode(self) -> tuple[OperationMode, list[str]]:
+        """Detect operation mode based on available dependencies.
+
+        Jan 2, 2026: Added for graceful degradation support.
+
+        Returns:
+            Tuple of (OperationMode, list of missing dependency names)
+        """
+        missing: list[str] = []
+
+        # Check P2P cluster availability (fast timeout)
+        p2p_available = await self._check_p2p_availability(timeout=5.0)
+        if not p2p_available:
+            missing.append("P2P cluster")
+
+        # Check if AUTO_SYNC daemon is running
+        try:
+            from app.coordination.daemon_manager import get_daemon_manager
+            from app.coordination.daemon_types import DaemonState, DaemonType
+
+            dm = get_daemon_manager()
+            auto_sync_info = dm._daemons.get(DaemonType.AUTO_SYNC)
+            if auto_sync_info is None or auto_sync_info.state != DaemonState.RUNNING:
+                missing.append("AUTO_SYNC daemon")
+        except (ImportError, AttributeError):
+            missing.append("DaemonManager")
+
+        # Determine mode
+        if not missing:
+            return OperationMode.FULL, []
+        elif "P2P cluster" in missing and "AUTO_SYNC daemon" in missing:
+            return OperationMode.LOCAL_ONLY, missing
+        else:
+            return OperationMode.DEGRADED, missing
+
+    async def _check_p2p_availability(self, timeout: float = 5.0) -> bool:
+        """Check if P2P cluster is reachable.
+
+        Args:
+            timeout: Timeout in seconds for the check
+
+        Returns:
+            True if P2P cluster is reachable
+        """
+        try:
+            import aiohttp
+
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as session:
+                async with session.get("http://localhost:8770/status") as response:
+                    return response.status == 200
+        except Exception:
+            return False
+
+    def _subscribe_local_only_events(self) -> None:
+        """Subscribe to events that work in local-only mode.
+
+        Jan 2, 2026: These events don't require cluster connectivity.
+        """
+        try:
+            from app.coordination.event_router import get_router
+
+            router = get_router()
+
+            # Local file-based events that work without cluster
+            local_events = [
+                "LOCAL_NPZ_CREATED",
+                "LOCAL_GAME_SAVED",
+                "LOCAL_MODEL_SAVED",
+            ]
+
+            for event_type in local_events:
+                router.subscribe(event_type, self._on_local_event)
+
+            logger.info(
+                f"[{self.name}] Subscribed to {len(local_events)} local-only events"
+            )
+        except ImportError:
+            logger.debug(f"[{self.name}] Event router not available for local events")
+
+    async def _on_local_event(self, event: dict[str, Any]) -> None:
+        """Handle local events in degraded/local-only mode.
+
+        Args:
+            event: Event data dict
+        """
+        event_type = event.get("type", "unknown")
+        logger.debug(f"[{self.name}] Received local event: {event_type}")
+
+        # Trigger local pipeline stages based on event type
+        if event_type == "LOCAL_NPZ_CREATED":
+            config_key = event.get("config_key")
+            if config_key:
+                logger.info(
+                    f"[{self.name}] Local NPZ created for {config_key}, "
+                    f"triggering local training check"
+                )
 
     async def run_forever(self) -> None:
         """Run the orchestrator forever (for DaemonManager compatibility).

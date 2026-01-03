@@ -891,6 +891,14 @@ class AutoExportDaemon(HandlerBase):
             state.export_in_progress = True
 
             try:
+                # Sprint 8 (Jan 2, 2026): Validate export readiness before starting
+                valid, validation_msg = await self._validate_export_readiness(config_key, state)
+                if not valid:
+                    logger.info(
+                        f"[AutoExportDaemon] Skipping export for {config_key}: {validation_msg}"
+                    )
+                    return False
+
                 logger.info(
                     f"[AutoExportDaemon] Starting export for {config_key} "
                     f"({state.games_since_last_export} games pending)"
@@ -1028,6 +1036,75 @@ class AutoExportDaemon(HandlerBase):
                 return int(match.group(1))
 
         return None
+
+    async def _validate_export_readiness(
+        self, config_key: str, state: ConfigExportState
+    ) -> tuple[bool, str]:
+        """Validate that export data meets quality thresholds.
+
+        Sprint 8 (Jan 2, 2026): Pre-export validation to prevent low-quality
+        training data from entering the pipeline.
+
+        Args:
+            config_key: Configuration key (e.g., "hex8_2p")
+            state: Export state for this configuration
+
+        Returns:
+            Tuple of (valid, message). If not valid, message explains why.
+        """
+        # Check if validation is enabled
+        if ExportValidationDefaults is None:
+            return True, "Validation not available (fallback mode)"
+
+        if not ExportValidationDefaults.ENABLED:
+            return True, "Validation disabled"
+
+        games_pending = state.games_since_last_export
+
+        # Bootstrap mode: Skip validation for configs with few total games
+        if state.total_exported_samples < ExportValidationDefaults.BOOTSTRAP_MODE_THRESHOLD:
+            logger.debug(
+                f"[AutoExportDaemon] Bootstrap mode for {config_key}: "
+                f"{state.total_exported_samples} < {ExportValidationDefaults.BOOTSTRAP_MODE_THRESHOLD}"
+            )
+            return True, f"Bootstrap mode (samples: {state.total_exported_samples})"
+
+        # Check minimum games
+        if games_pending < ExportValidationDefaults.MIN_GAMES:
+            msg = (
+                f"Insufficient games: {games_pending} < {ExportValidationDefaults.MIN_GAMES}"
+            )
+            logger.warning(f"[AutoExportDaemon] Export validation failed for {config_key}: {msg}")
+            await self._emit_export_validation_failed(config_key, msg)
+            return False, msg
+
+        # Note: Quality scoring would require scanning games - expensive.
+        # For now, trust that completed games meeting min_moves threshold are sufficient.
+        # Future: Add lightweight quality sampling here.
+
+        return True, "Validation passed"
+
+    async def _emit_export_validation_failed(
+        self, config_key: str, reason: str
+    ) -> None:
+        """Emit EXPORT_VALIDATION_FAILED event.
+
+        Sprint 8 (Jan 2, 2026): Notify subscribers that export was blocked.
+        """
+        try:
+            from app.coordination.event_router import emit_event
+            from app.distributed.data_events import DataEventType
+
+            await emit_event(
+                DataEventType.EXPORT_VALIDATION_FAILED,
+                {
+                    "config_key": config_key,
+                    "reason": reason,
+                    "timestamp": time.time(),
+                },
+            )
+        except Exception as e:
+            logger.debug(f"[AutoExportDaemon] Failed to emit validation failed event: {e}")
 
     async def _emit_export_started(
         self, config_key: str, games_pending: int

@@ -551,7 +551,7 @@ def rsync_push(
             ssh_opts = " ".join(config.get_ssh_options())
             ssh_cmd = f"ssh -p {port} {ssh_opts}"
 
-            cmd = ["rsync", "-avz", "--progress"]
+            cmd = ["rsync", "-avz", "--progress", "--partial"]  # Jan 2, 2026: Enable resume
             cmd.extend(["-e", ssh_cmd])
 
             if config.compress:
@@ -685,7 +685,7 @@ def rsync_pull(
             ssh_opts = " ".join(config.get_ssh_options())
             ssh_cmd = f"ssh -p {port} {ssh_opts}"
 
-            cmd = ["rsync", "-avz", "--progress"]
+            cmd = ["rsync", "-avz", "--progress", "--partial"]  # Jan 2, 2026: Enable resume
             cmd.extend(["-e", ssh_cmd])
 
             if config.compress:

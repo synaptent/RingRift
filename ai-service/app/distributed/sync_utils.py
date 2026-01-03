@@ -301,7 +301,7 @@ def rsync_file(
     try:
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
-        rsync_args = ["rsync", "-az", f"--timeout={timeout}"]
+        rsync_args = ["rsync", "-az", "--partial", f"--timeout={timeout}"]
 
         # Build SSH command using centralized helper
         ssh_cmd = build_ssh_command_for_rsync(host)
@@ -344,7 +344,7 @@ async def rsync_file_async(
     try:
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
-        rsync_args = ["rsync", "-az", f"--timeout={timeout}"]
+        rsync_args = ["rsync", "-az", "--partial", f"--timeout={timeout}"]
 
         # Build SSH command using centralized helper
         ssh_cmd = build_ssh_command_for_rsync(host)
@@ -402,7 +402,7 @@ def rsync_directory(
     try:
         local_dir.mkdir(parents=True, exist_ok=True)
 
-        rsync_args = ["rsync", "-az", f"--timeout={timeout}"]
+        rsync_args = ["rsync", "-az", "--partial", f"--timeout={timeout}"]
 
         if delete:
             rsync_args.append("--delete")
@@ -467,7 +467,7 @@ async def rsync_directory_async(
     try:
         local_dir.mkdir(parents=True, exist_ok=True)
 
-        rsync_args = ["rsync", "-az", f"--timeout={timeout}"]
+        rsync_args = ["rsync", "-az", "--partial", f"--timeout={timeout}"]
 
         if delete:
             rsync_args.append("--delete")
@@ -537,7 +537,7 @@ def rsync_push_file(
             logger.warning(f"Local file not found: {local_path}")
             return False
 
-        rsync_args = ["rsync", "-az", f"--timeout={timeout}"]
+        rsync_args = ["rsync", "-az", "--partial", f"--timeout={timeout}"]
 
         # Build SSH command using centralized helper
         ssh_cmd = build_ssh_command_for_rsync(host)
@@ -582,7 +582,7 @@ async def rsync_push_file_async(
             logger.warning(f"Local file not found: {local_path}")
             return False
 
-        rsync_args = ["rsync", "-az", f"--timeout={timeout}"]
+        rsync_args = ["rsync", "-az", "--partial", f"--timeout={timeout}"]
 
         # Build SSH command using centralized helper
         ssh_cmd = build_ssh_command_for_rsync(host)
@@ -665,7 +665,7 @@ def rsync_file_verified(
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
         # 3. Run rsync with --checksum flag
-        rsync_args = ["rsync", "-az", "--checksum", f"--timeout={timeout}"]
+        rsync_args = ["rsync", "-az", "--partial", "--checksum", f"--timeout={timeout}"]
 
         ssh_cmd = build_ssh_command_for_rsync(host)
         rsync_args.extend(["-e", ssh_cmd])
@@ -779,7 +779,7 @@ async def rsync_file_verified_async(
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
         # 3. Run rsync with --checksum flag
-        rsync_args = ["rsync", "-az", "--checksum", f"--timeout={timeout}"]
+        rsync_args = ["rsync", "-az", "--partial", "--checksum", f"--timeout={timeout}"]
 
         ssh_cmd = build_ssh_command_for_rsync(host)
         rsync_args.extend(["-e", ssh_cmd])
@@ -896,7 +896,7 @@ def rsync_push_file_verified(
         result.bytes_transferred = local_path.stat().st_size
 
         # 2. Run rsync with --checksum flag
-        rsync_args = ["rsync", "-az", "--checksum", f"--timeout={timeout}"]
+        rsync_args = ["rsync", "-az", "--partial", "--checksum", f"--timeout={timeout}"]
 
         ssh_cmd = build_ssh_command_for_rsync(host)
         rsync_args.extend(["-e", ssh_cmd])
@@ -993,7 +993,7 @@ async def rsync_push_file_verified_async(
         result.bytes_transferred = local_path.stat().st_size
 
         # 2. Run rsync with --checksum flag
-        rsync_args = ["rsync", "-az", "--checksum", f"--timeout={timeout}"]
+        rsync_args = ["rsync", "-az", "--partial", "--checksum", f"--timeout={timeout}"]
 
         ssh_cmd = build_ssh_command_for_rsync(host)
         rsync_args.extend(["-e", ssh_cmd])
@@ -1096,7 +1096,7 @@ def rsync_directory_verified(
         # Track files before sync for comparison
         files_before = set(local_dir.rglob("*")) if local_dir.exists() else set()
 
-        rsync_args = ["rsync", "-az", "--checksum", f"--timeout={timeout}"]
+        rsync_args = ["rsync", "-az", "--partial", "--checksum", f"--timeout={timeout}"]
 
         if delete:
             rsync_args.append("--delete")
@@ -1190,7 +1190,7 @@ async def rsync_directory_verified_async(
         # Track files before sync for comparison
         files_before = set(local_dir.rglob("*")) if local_dir.exists() else set()
 
-        rsync_args = ["rsync", "-az", "--checksum", f"--timeout={timeout}"]
+        rsync_args = ["rsync", "-az", "--partial", "--checksum", f"--timeout={timeout}"]
 
         if delete:
             rsync_args.append("--delete")

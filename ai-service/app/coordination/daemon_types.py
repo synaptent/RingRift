@@ -504,6 +504,14 @@ class DaemonInfo:
     # Dependencies
     depends_on: list[DaemonType] = field(default_factory=list)
 
+    # Jan 2, 2026: Soft dependencies that allow degraded startup
+    soft_depends_on: list[DaemonType] = field(default_factory=list)
+    startup_mode: str = "degraded"  # "strict", "degraded", or "local"
+
+    # Degraded mode tracking
+    missing_soft_deps: list[DaemonType] = field(default_factory=list)
+    degraded_mode: bool = False
+
     # Stability tracking for restart count reset
     stable_since: float = 0.0  # When daemon became stable (no errors)
     last_failure_time: float = 0.0  # When the last failure occurred

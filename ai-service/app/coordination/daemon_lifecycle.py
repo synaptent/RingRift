@@ -211,13 +211,18 @@ class DaemonLifecycleManager:
                 logger.debug(f"{daemon_type.value} already running")
                 return True
 
-            # Check dependencies - wait for them to be READY not just RUNNING
-            # Dec 2025: Added timeout to prevent deadlocks
-            DEPENDENCY_READY_TIMEOUT = 30.0  # seconds
+            # Jan 2, 2026: Dependency handling with soft dependency support
+            HARD_DEPENDENCY_TIMEOUT = 30.0  # seconds for hard deps
+            SOFT_DEPENDENCY_TIMEOUT = 5.0   # seconds for soft deps (shorter)
+
+            # Track missing soft dependencies for health reporting
+            missing_soft_deps: list[DaemonType] = []
+
+            # Check HARD dependencies - these MUST be ready
             for dep in info.depends_on:
                 dep_info = self._daemons.get(dep)
                 if dep_info is None or dep_info.state != DaemonState.RUNNING:
-                    logger.warning(f"Cannot start {daemon_type.value}: dependency {dep.value} not running")
+                    logger.warning(f"Cannot start {daemon_type.value}: hard dependency {dep.value} not running")
                     return False
                 # P0.3: Wait for dependency to signal readiness with timeout
                 if dep_info.ready_event and not dep_info.ready_event.is_set():
@@ -230,7 +235,7 @@ class DaemonLifecycleManager:
                         try:
                             await asyncio.wait_for(
                                 dep_info.ready_event.wait(),
-                                timeout=DEPENDENCY_READY_TIMEOUT,
+                                timeout=HARD_DEPENDENCY_TIMEOUT,
                             )
                         finally:
                             await self._lock.acquire()
@@ -251,10 +256,58 @@ class DaemonLifecycleManager:
 
                     except asyncio.TimeoutError:
                         logger.error(
-                            f"Dependency {dep.value} not ready after {DEPENDENCY_READY_TIMEOUT}s, "
+                            f"Hard dependency {dep.value} not ready after {HARD_DEPENDENCY_TIMEOUT}s, "
                             f"cannot start {daemon_type.value}"
                         )
                         return False
+
+            # Jan 2, 2026: Check SOFT dependencies - warnings only, don't block startup
+            startup_mode = getattr(info, "startup_mode", "degraded")
+            for soft_dep in getattr(info, "soft_depends_on", ()):
+                soft_dep_info = self._daemons.get(soft_dep)
+                if soft_dep_info is None or soft_dep_info.state != DaemonState.RUNNING:
+                    missing_soft_deps.append(soft_dep)
+                    if startup_mode == "strict":
+                        logger.warning(
+                            f"Cannot start {daemon_type.value}: soft dependency {soft_dep.value} "
+                            f"not running (startup_mode=strict)"
+                        )
+                        return False
+                    else:
+                        logger.warning(
+                            f"Starting {daemon_type.value} in degraded mode: "
+                            f"soft dependency {soft_dep.value} not available"
+                        )
+                    continue
+
+                # Wait briefly for soft deps to be ready, but don't fail on timeout
+                if soft_dep_info.ready_event and not soft_dep_info.ready_event.is_set():
+                    try:
+                        self._lock.release()
+                        try:
+                            await asyncio.wait_for(
+                                soft_dep_info.ready_event.wait(),
+                                timeout=SOFT_DEPENDENCY_TIMEOUT,
+                            )
+                        finally:
+                            await self._lock.acquire()
+                    except asyncio.TimeoutError:
+                        missing_soft_deps.append(soft_dep)
+                        if startup_mode == "strict":
+                            logger.warning(
+                                f"Cannot start {daemon_type.value}: soft dependency {soft_dep.value} "
+                                f"not ready (startup_mode=strict)"
+                            )
+                            return False
+                        logger.warning(
+                            f"Soft dependency {soft_dep.value} not ready after {SOFT_DEPENDENCY_TIMEOUT}s, "
+                            f"starting {daemon_type.value} in degraded mode"
+                        )
+
+            # Store missing soft deps for health reporting
+            if missing_soft_deps:
+                info.missing_soft_deps = missing_soft_deps
+                info.degraded_mode = True
 
             # Get factory
             factory = self._factories.get(daemon_type)

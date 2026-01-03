@@ -113,7 +113,8 @@ class SyncPlannerConfig:
     December 28, 2025: Now uses centralized PeerDefaults for timeout values.
     """
 
-    # Dec 28, 2025: Use centralized PeerDefaults.MANIFEST_TIMEOUT (300s = 5 minutes)
+    # Jan 2, 2026 (Sprint 8): Use centralized PeerDefaults.MANIFEST_TIMEOUT (60s = 1 minute)
+    # Reduced from 300s to pick up new game data faster
     manifest_cache_age_seconds: int = int(PeerDefaults.MANIFEST_TIMEOUT)
     # Dec 28, 2025: Use centralized PeerDefaults.BOOTSTRAP_INTERVAL (60s = 1 minute)
     manifest_collection_interval: int = int(PeerDefaults.BOOTSTRAP_INTERVAL)
@@ -933,14 +934,14 @@ class SyncPlanner(EventSubscriptionMixin):
             logger.error(f"Failed to save manifest cache: {e}")
             return False
 
-    def load_manifest_from_cache(self, max_age_seconds: int = 300) -> "NodeDataManifest | None":
+    def load_manifest_from_cache(self, max_age_seconds: int = 60) -> "NodeDataManifest | None":
         """Load manifest from disk cache if fresh enough.
 
         Returns cached manifest if it exists and is not too old, otherwise None.
         This speeds up startup by avoiding full data directory scans.
 
         Args:
-            max_age_seconds: Maximum age of cache to consider valid (default 5 minutes)
+            max_age_seconds: Maximum age of cache to consider valid (default 60s)
 
         Returns:
             NodeDataManifest if cache is valid, None otherwise
@@ -980,7 +981,7 @@ class SyncPlanner(EventSubscriptionMixin):
             logger.debug(f"Failed to load manifest cache: {e}")
             return None
 
-    def collect_local_manifest_cached(self, max_cache_age: int = 300) -> "NodeDataManifest":
+    def collect_local_manifest_cached(self, max_cache_age: int = 60) -> "NodeDataManifest":
         """Collect manifest with disk caching support.
 
         First tries to load from disk cache, then falls back to in-memory cache,

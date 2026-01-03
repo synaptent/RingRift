@@ -150,6 +150,12 @@ class TrainingTriggerConfig:
     # January 2026: Log aggregated game counts from all sources (local, cluster, S3, OWC)
     # Provides visibility into cluster-wide game availability for training decisions
     log_aggregated_game_counts: bool = True
+    # Jan 2, 2026: Local-only mode - skip cluster checks when cluster is unavailable
+    local_only_mode: bool = False
+    # Jan 2, 2026: Timeout for cluster availability check before falling back to local mode
+    cluster_availability_timeout_seconds: float = 10.0
+    # Jan 2, 2026: Auto-detect local-only mode based on cluster availability
+    auto_detect_local_mode: bool = True
 
 
 @dataclass
@@ -442,6 +448,10 @@ class TrainingTriggerDaemon(HandlerBase):
         self._architecture_training_times: dict[tuple[str, str], float] = {}
         # Track active training per architecture
         self._active_architecture_training: dict[tuple[str, str], bool] = {}
+        # Jan 2, 2026: Local-only mode for training without cluster connectivity
+        # When enabled, skips cluster GPU checks and uses only local NPZ files
+        self._local_only_mode: bool = self._daemon_config.local_only_mode
+        self._cluster_available: bool = True  # Assume available until checked
 
     def _init_state_db(self) -> None:
         """Initialize the SQLite state database (Phase 3 - December 2025).
@@ -2278,11 +2288,75 @@ class TrainingTriggerDaemon(HandlerBase):
         # Assume GPU available if we can't check
         return True
 
+    async def _check_cluster_availability(self) -> bool:
+        """Check if cluster is available with fast timeout (Jan 2, 2026).
+
+        Used by auto_detect_local_mode to determine if we should fall back
+        to local-only mode when cluster is unreachable.
+
+        Returns:
+            True if cluster is reachable, False otherwise
+        """
+        timeout = self._daemon_config.cluster_availability_timeout_seconds
+
+        try:
+            # Check P2P status endpoint
+            import aiohttp
+
+            p2p_url = "http://localhost:8770/status"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(p2p_url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        alive_peers = data.get("alive_peers", 0)
+                        if alive_peers > 0:
+                            return True
+                        # No peers alive - cluster not functional
+                        logger.debug(
+                            "[TrainingTriggerDaemon] Cluster check: no alive peers"
+                        )
+                        return False
+
+        except ImportError:
+            logger.debug("[TrainingTriggerDaemon] aiohttp not available for cluster check")
+        except asyncio.TimeoutError:
+            logger.debug(
+                f"[TrainingTriggerDaemon] Cluster check timed out after {timeout}s"
+            )
+        except Exception as e:
+            logger.debug(f"[TrainingTriggerDaemon] Cluster check failed: {e}")
+
+        return False
+
+    def _scan_local_npz_files(self) -> list[tuple[str, str, int, Path]]:
+        """Scan local NPZ files for training in local-only mode (Jan 2, 2026).
+
+        Returns list of (config_key, board_type, num_players, npz_path) tuples
+        for all valid NPZ files found locally.
+        """
+        results: list[tuple[str, str, int, Path]] = []
+
+        training_dir = Path(__file__).resolve().parent.parent.parent / "data" / "training"
+        if not training_dir.exists():
+            return results
+
+        for npz_path in training_dir.glob("*.npz"):
+            board_type, num_players = self._parse_config_from_filename(npz_path.stem)
+            if board_type is None or num_players is None:
+                continue
+
+            config_key = f"{board_type}_{num_players}p"
+            results.append((config_key, board_type, num_players, npz_path))
+
+        return results
+
     async def _ensure_fresh_data(self, board_type: str, num_players: int) -> bool:
         """Ensure training data is fresh, triggering sync if needed (December 2025).
 
         Uses training_freshness module to check data age and trigger sync
         if data is stale. This closes the data freshness feedback loop.
+
+        Jan 2, 2026: In local-only mode, skips sync and just checks if local data exists.
 
         Args:
             board_type: Board type for training
@@ -2291,6 +2365,20 @@ class TrainingTriggerDaemon(HandlerBase):
         Returns:
             True if data is now fresh, False if sync failed or timed out
         """
+        # Jan 2, 2026: In local-only mode, just check if local NPZ exists
+        if self._local_only_mode:
+            config_key = f"{board_type}_{num_players}p"
+            local_npz = Path(f"data/training/{config_key}.npz")
+            if local_npz.exists():
+                logger.debug(
+                    f"[TrainingTriggerDaemon] Local-only mode: using existing NPZ for {config_key}"
+                )
+                return True
+            logger.debug(
+                f"[TrainingTriggerDaemon] Local-only mode: no NPZ for {config_key}"
+            )
+            return False
+
         try:
             from app.coordination.training_freshness import (
                 DataFreshnessChecker,
@@ -2337,6 +2425,8 @@ class TrainingTriggerDaemon(HandlerBase):
         Queries local NPZ files, TrainingDataManifest (S3/OWC), and ClusterManifest
         to find total available samples across all data sources.
 
+        Jan 2, 2026: In local-only mode, skips remote data sources (S3, OWC, Cluster).
+
         Args:
             config_key: Configuration identifier (e.g., "hex8_2p")
             min_samples_needed: Minimum samples required for training
@@ -2360,6 +2450,13 @@ class TrainingTriggerDaemon(HandlerBase):
                 )
         except Exception as e:
             logger.debug(f"[TrainingTriggerDaemon] Local NPZ check failed: {e}")
+
+        # Jan 2, 2026: Skip remote sources in local-only mode
+        if self._local_only_mode:
+            logger.debug(
+                f"[TrainingTriggerDaemon] Local-only mode: skipping remote data sources for {config_key}"
+            )
+            return total_samples, best_remote_path
 
         # 2. Check TrainingDataManifest for S3/OWC data
         try:
@@ -3057,7 +3154,26 @@ class TrainingTriggerDaemon(HandlerBase):
         December 30, 2025: Removed _coordinator_skip check. The daemon now runs
         on all nodes, including coordinators. On coordinator nodes, training jobs
         are dispatched to the work queue via _dispatch_to_queue mode.
+
+        January 2, 2026: Added auto_detect_local_mode to enable local-only training
+        when cluster is unreachable.
         """
+        # Jan 2, 2026: Auto-detect local-only mode if enabled
+        if self._daemon_config.auto_detect_local_mode and not self._daemon_config.local_only_mode:
+            was_available = self._cluster_available
+            self._cluster_available = await self._check_cluster_availability()
+
+            if was_available and not self._cluster_available:
+                self._local_only_mode = True
+                logger.warning(
+                    "[TrainingTriggerDaemon] Cluster unavailable, switching to local-only mode"
+                )
+            elif not was_available and self._cluster_available:
+                self._local_only_mode = False
+                logger.info(
+                    "[TrainingTriggerDaemon] Cluster recovered, switching to normal mode"
+                )
+
         # December 29, 2025 (Phase 2): Check for timed-out training jobs
         await self._check_training_timeouts()
 
@@ -3219,7 +3335,10 @@ class TrainingTriggerDaemon(HandlerBase):
         healthy = self._running
 
         # December 29, 2025 (Phase 4): Include backpressure status in message
-        if self._evaluation_backpressure:
+        # Jan 2, 2026: Include local-only mode in message
+        if self._local_only_mode:
+            message = "Running (local-only mode)"
+        elif self._evaluation_backpressure:
             message = "Running (evaluation backpressure active)"
         else:
             message = "Running" if healthy else "Daemon stopped"
@@ -3244,6 +3363,10 @@ class TrainingTriggerDaemon(HandlerBase):
                 "retries_queued": self._retry_stats["retries_queued"],
                 "retries_succeeded": self._retry_stats["retries_succeeded"],
                 "retries_exhausted": self._retry_stats["retries_exhausted"],
+                # Jan 2, 2026: Local-only mode status
+                "local_only_mode": self._local_only_mode,
+                "cluster_available": self._cluster_available,
+                "auto_detect_local_mode": self._daemon_config.auto_detect_local_mode,
             },
         )
 

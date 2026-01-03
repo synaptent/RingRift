@@ -2627,7 +2627,8 @@ class PeerDefaults:
     GOSSIP_INTERVAL: float = _env_float("RINGRIFT_PEER_GOSSIP_INTERVAL", 15.0)
 
     # Manifest collection timeout (seconds) - for data manifest requests
-    MANIFEST_TIMEOUT: float = _env_float("RINGRIFT_PEER_MANIFEST_TIMEOUT", 300.0)
+    # Jan 2, 2026 (Sprint 8): Reduced from 300s to 60s for faster sync of new games
+    MANIFEST_TIMEOUT: float = _env_float("RINGRIFT_PEER_MANIFEST_TIMEOUT", 60.0)
 
     # Election timeout (seconds) - for leader election
     ELECTION_TIMEOUT: float = _env_float("RINGRIFT_PEER_ELECTION_TIMEOUT", 30.0)

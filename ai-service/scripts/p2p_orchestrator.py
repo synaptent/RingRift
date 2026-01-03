@@ -21352,6 +21352,57 @@ print(json.dumps({{
 
         return recovered
 
+    def _compute_connectivity_score(self, peer: NodeInfo) -> float:
+        """Compute connectivity score for leader eligibility ranking.
+
+        Jan 2, 2026: Added to support leader eligibility refinement.
+
+        Score components (0.0 to 1.0):
+        - 0.4: Direct reachability (not NAT-blocked, not force_relay)
+        - 0.3: Transport success rate (based on consecutive_failures)
+        - 0.2: Connected peers (based on visible_peers if available)
+        - 0.1: Role weight (leaders get slight boost)
+
+        Returns:
+            float: Connectivity score between 0.0 and 1.0
+        """
+        score = 0.0
+
+        # Direct reachability: 0.4 points
+        nat_blocked = getattr(peer, "nat_blocked", False)
+        force_relay = getattr(peer, "force_relay_mode", False)
+        if not nat_blocked and not force_relay:
+            score += 0.4
+        elif not nat_blocked:
+            # Force relay but not NAT blocked - partial credit
+            score += 0.2
+
+        # Transport success rate: 0.3 points
+        failures = int(getattr(peer, "consecutive_failures", 0) or 0)
+        if failures == 0:
+            score += 0.3
+        elif failures < 3:
+            score += 0.2
+        elif failures < MAX_CONSECUTIVE_FAILURES:
+            score += 0.1
+
+        # Connected peers: 0.2 points
+        visible_peers = int(getattr(peer, "visible_peers", 0) or 0)
+        if visible_peers >= 10:
+            score += 0.2
+        elif visible_peers >= 5:
+            score += 0.15
+        elif visible_peers >= 2:
+            score += 0.1
+
+        # Role weight: 0.1 points
+        if peer.role == NodeRole.LEADER:
+            score += 0.1
+        elif peer.role == NodeRole.FOLLOWER:
+            score += 0.05
+
+        return min(1.0, score)
+
     def _is_leader_eligible(
         self,
         peer: NodeInfo,
@@ -21359,7 +21410,11 @@ print(json.dumps({{
         *,
         require_alive: bool = True,
     ) -> bool:
-        """Heuristic: leaders must be directly reachable and uniquely addressable."""
+        """Heuristic: leaders must be directly reachable and uniquely addressable.
+
+        Jan 2, 2026: Enhanced to reject NAT-blocked and force_relay_mode nodes,
+        and require minimum connectivity score of 0.3.
+        """
         if require_alive and not peer.is_alive():
             return False
         voters = list(getattr(self, "voter_node_ids", []) or [])
@@ -21367,7 +21422,14 @@ print(json.dumps({{
             return False
         if int(getattr(peer, "consecutive_failures", 0) or 0) >= MAX_CONSECUTIVE_FAILURES:
             return False
+        # Jan 2, 2026: Reject NAT-blocked nodes
         if getattr(peer, "nat_blocked", False):
+            return False
+        # Jan 2, 2026: Reject force_relay_mode nodes (can't serve peers directly)
+        if getattr(peer, "force_relay_mode", False):
+            return False
+        # Jan 2, 2026: Require minimum connectivity score
+        if self._compute_connectivity_score(peer) < 0.3:
             return False
         key = self._endpoint_key(peer)
         return not (key and key in conflict_keys)

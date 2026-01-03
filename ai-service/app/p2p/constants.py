@@ -507,6 +507,40 @@ SWIM_PING_INTERVAL = float(os.environ.get("RINGRIFT_SWIM_PING_INTERVAL", "1.0") 
 # Increased indirect probes from 3 to 7 per SWIM paper for better success rate
 SWIM_INDIRECT_PING_COUNT = int(os.environ.get("RINGRIFT_SWIM_INDIRECT_PING_COUNT", "7") or 7)
 
+# Jan 2, 2026: Tiered SWIM timeouts based on node connectivity type
+# Direct nodes (DC, well-connected): Shorter timeouts for faster detection
+# Relay nodes (NAT-blocked): Longer timeouts to account for relay latency
+SWIM_FAILURE_TIMEOUT_DIRECT = float(
+    os.environ.get("RINGRIFT_SWIM_FAILURE_TIMEOUT_DIRECT", "10.0") or 10.0
+)
+SWIM_FAILURE_TIMEOUT_RELAY = float(
+    os.environ.get("RINGRIFT_SWIM_FAILURE_TIMEOUT_RELAY", "25.0") or 25.0
+)
+SWIM_SUSPICION_TIMEOUT_DIRECT = float(
+    os.environ.get("RINGRIFT_SWIM_SUSPICION_TIMEOUT_DIRECT", "6.0") or 6.0
+)
+SWIM_SUSPICION_TIMEOUT_RELAY = float(
+    os.environ.get("RINGRIFT_SWIM_SUSPICION_TIMEOUT_RELAY", "15.0") or 15.0
+)
+
+
+def get_swim_timeouts_for_node(nat_blocked: bool = False, force_relay: bool = False) -> tuple[float, float]:
+    """Get SWIM failure and suspicion timeouts based on node connectivity.
+
+    Jan 2, 2026: Tiered timeouts reduce false positives for relay-dependent nodes
+    while maintaining fast detection for directly-connected nodes.
+
+    Args:
+        nat_blocked: True if node is NAT-blocked
+        force_relay: True if node uses force_relay_mode
+
+    Returns:
+        Tuple of (failure_timeout, suspicion_timeout) in seconds
+    """
+    if nat_blocked or force_relay:
+        return SWIM_FAILURE_TIMEOUT_RELAY, SWIM_SUSPICION_TIMEOUT_RELAY
+    return SWIM_FAILURE_TIMEOUT_DIRECT, SWIM_SUSPICION_TIMEOUT_DIRECT
+
 # ============================================
 # Feature Flags
 # ============================================

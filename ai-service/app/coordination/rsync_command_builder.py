@@ -198,6 +198,7 @@ class RsyncCommandBuilder:
             f"--bwlimit={bandwidth_kbps}",
             "--timeout=60",
             "--delay-updates",
+            "--partial",  # Jan 2, 2026 (Sprint 8): Enable resume of interrupted transfers
         ]
         if use_progress:
             args.append("--progress")
@@ -236,6 +237,7 @@ class RsyncCommandBuilder:
             "rsync",
             "-az",
             "--timeout=60",
+            "--partial",  # Jan 2, 2026 (Sprint 8): Enable resume of interrupted transfers
             "-e", ssh_options.to_string(),
             remote_full,
             str(local_path),
@@ -278,6 +280,7 @@ class RsyncCommandBuilder:
             "rsync",
             "-avz",
             "--compress",
+            "--partial",  # Jan 2, 2026 (Sprint 8): Enable resume of interrupted transfers
         ]
 
         if bandwidth_kbps:

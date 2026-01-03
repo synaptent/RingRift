@@ -351,7 +351,7 @@ def build_rsync_command_for_db(
     parent_dir = str(db_path.parent) + "/"
     db_name = db_path.name
 
-    cmd = ["rsync", "-avz", "--compress"]
+    cmd = ["rsync", "-avz", "--compress", "--partial"]  # Jan 2, 2026: Enable resume
 
     # Include the database and its WAL files
     # Note: Order matters - rsync processes rules in order
