@@ -38,8 +38,14 @@ from typing import Any, Callable, Coroutine
 
 logger = logging.getLogger(__name__)
 
+# January 2026: Use centralized timeouts from loop_constants
+try:
+    from scripts.p2p.loops.loop_constants import LoopTimeouts
+    DEFAULT_PROBE_TIMEOUT = LoopTimeouts.LEADER_PROBE  # 5.0 seconds per probe
+except ImportError:
+    DEFAULT_PROBE_TIMEOUT = 5.0  # Fallback
+
 # Probe configuration
-DEFAULT_PROBE_TIMEOUT = 5.0  # seconds per probe
 DEFAULT_PROBE_INTERVAL = 15.0  # seconds between probes
 FAST_PROBE_INTERVAL = 5.0  # seconds when leader is unstable
 MIN_PROBES_FOR_DECISION = 2  # require 2+ transports to agree

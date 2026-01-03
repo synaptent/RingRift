@@ -34,6 +34,15 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# January 2026: Use centralized subprocess timeouts from loop_constants
+try:
+    from scripts.p2p.loops.loop_constants import LoopTimeouts
+    SUBPROCESS_QUICK_TIMEOUT = LoopTimeouts.SUBPROCESS_QUICK  # 5.0
+    SUBPROCESS_LONG_TIMEOUT = LoopTimeouts.SUBPROCESS_LONG  # 30.0
+except ImportError:
+    SUBPROCESS_QUICK_TIMEOUT = 5.0
+    SUBPROCESS_LONG_TIMEOUT = 30.0
+
 
 class ResourceDetector:
     """Standalone resource detector for system resources and capabilities.
@@ -82,7 +91,7 @@ class ResourceDetector:
                 ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=int(SUBPROCESS_QUICK_TIMEOUT),
             )
             if result.returncode == 0 and result.stdout.strip():
                 self._cached_gpu = (True, result.stdout.strip().split("\n")[0])
@@ -103,7 +112,7 @@ class ResourceDetector:
                 ["python3", "-c", "import torch; print(torch.backends.mps.is_available())"],
                 capture_output=True,
                 text=True,
-                timeout=10,
+                timeout=int(SUBPROCESS_QUICK_TIMEOUT * 2),  # 10s - Python import takes longer
             )
             if "True" in result.stdout:
                 self._cached_gpu = (True, "Apple MPS")

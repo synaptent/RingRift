@@ -40,11 +40,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Import constants from P2P module
+# January 2026: Use centralized timeouts from loop_constants
 try:
-    from scripts.p2p.constants import PEER_TIMEOUT
+    from scripts.p2p.loops.loop_constants import LoopTimeouts
+    PEER_TIMEOUT = LoopTimeouts.PEER_DEAD_TIMEOUT  # 60.0 seconds
 except ImportError:
-    PEER_TIMEOUT = 60.0
+    PEER_TIMEOUT = 60.0  # Fallback - peer considered dead after this
 
 
 class NetworkDiscoveryMixin(BaseP2PHandler):

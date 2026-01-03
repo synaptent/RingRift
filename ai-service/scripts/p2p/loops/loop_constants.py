@@ -188,6 +188,9 @@ class LoopTimeouts:
     CONVERGENCE_TIMEOUT: float = 120.0       # Post-healing convergence check
     PARTITION_DISCOVERY: float = 30.0        # Peer discovery during healing
 
+    # Peer management
+    PEER_DEAD_TIMEOUT: float = 60.0          # Peer considered dead after this
+
     # Sync and transfer
     SYNC_LOCK: float = 120.0                 # Sync operation lock
     SYNC_OPERATION: float = 300.0            # Full sync timeout

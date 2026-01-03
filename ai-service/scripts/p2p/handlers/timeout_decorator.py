@@ -44,12 +44,21 @@ logger = logging.getLogger(__name__)
 # Type variable for handler return type
 T = TypeVar("T")
 
-# Default timeouts by handler category
-DEFAULT_HANDLER_TIMEOUT = 30.0
-HANDLER_TIMEOUT_GOSSIP = 30.0
-HANDLER_TIMEOUT_TOURNAMENT = 60.0
-HANDLER_TIMEOUT_DELIVERY = 120.0
-HANDLER_TIMEOUT_ADMIN = 300.0
+# January 2026: Use centralized timeouts from loop_constants where applicable
+try:
+    from scripts.p2p.loops.loop_constants import LoopTimeouts
+    DEFAULT_HANDLER_TIMEOUT = LoopTimeouts.HTTP_LONG  # 30.0 seconds default
+    HANDLER_TIMEOUT_GOSSIP = LoopTimeouts.HTTP_LONG  # 30.0 - critical for cluster
+    HANDLER_TIMEOUT_TOURNAMENT = 60.0  # Not in LoopTimeouts - handler-specific
+    HANDLER_TIMEOUT_DELIVERY = LoopTimeouts.SYNC_LOCK  # 120.0 - may involve file I/O
+    HANDLER_TIMEOUT_ADMIN = LoopTimeouts.SYNC_OPERATION  # 300.0 - manual ops
+except ImportError:
+    # Fallback values matching LoopTimeouts defaults
+    DEFAULT_HANDLER_TIMEOUT = 30.0
+    HANDLER_TIMEOUT_GOSSIP = 30.0
+    HANDLER_TIMEOUT_TOURNAMENT = 60.0
+    HANDLER_TIMEOUT_DELIVERY = 120.0
+    HANDLER_TIMEOUT_ADMIN = 300.0
 
 
 def handler_timeout(
