@@ -434,6 +434,15 @@ LOOP_MANAGEMENT_ROUTES = [
 ]
 
 # ===========================================================================
+# Circuit Breaker Routes (January 2026)
+# For monitoring circuit breaker states across the cluster
+# ===========================================================================
+
+CIRCUIT_BREAKER_ROUTES = [
+    Route("GET", "/circuit-breakers/status", "handle_circuit_breaker_status"),
+]
+
+# ===========================================================================
 # All Route Groups
 # ===========================================================================
 
@@ -468,6 +477,7 @@ ALL_ROUTE_GROUPS = {
     "canonical_api": CANONICAL_API_ROUTES,
     "jobs_api": JOBS_API_ROUTES,
     "loop_management": LOOP_MANAGEMENT_ROUTES,
+    "circuit_breaker": CIRCUIT_BREAKER_ROUTES,
 }
 
 

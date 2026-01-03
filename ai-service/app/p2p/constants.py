@@ -118,9 +118,17 @@ LEADER_LEASE_DURATION = 300  # seconds (5 minutes)
 LEADER_LEASE_RENEW_INTERVAL = 15  # How often leader renews lease
 
 # Leaderless fallback - trigger local training when no leader for this long
-# Reduced from 180s (3min) to 30s for faster decentralized operation (Dec 2025)
-# With Serf integration providing reliable failure detection, we can act quickly
-LEADERLESS_TRAINING_TIMEOUT = 30  # 30 seconds - quick fallback for resilience
+# Jan 2026: Made adaptive based on election timeout + gossip convergence.
+# 30s was too short - caused training duplication during normal elections.
+# Now: max(45s, ELECTION_TIMEOUT + 15s gossip + 15s buffer)
+# NOTE: GOSSIP_INTERVAL (defined later) is typically 15s. We use the literal here
+# to avoid forward reference issues during module loading.
+LEADERLESS_TRAINING_TIMEOUT_BASE = 45  # Minimum base timeout
+_GOSSIP_INTERVAL_DEFAULT = 15  # Matches GOSSIP_INTERVAL default
+LEADERLESS_TRAINING_TIMEOUT = max(
+    LEADERLESS_TRAINING_TIMEOUT_BASE,
+    ELECTION_TIMEOUT + _GOSSIP_INTERVAL_DEFAULT + 15,  # Election + gossip + buffer
+)  # Adaptive timeout for leaderless training
 
 # Leader work dispatch timeout - if leader exists but hasn't dispatched work in this long,
 # allow nodes to self-assign work. This prevents idle clusters when leader is present

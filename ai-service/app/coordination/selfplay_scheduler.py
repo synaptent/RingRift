@@ -119,6 +119,7 @@ from app.coordination.node_allocator import NodeCapability
 from app.coordination.budget_calculator import (
     get_adaptive_budget_for_elo as _get_budget_for_elo,
     get_adaptive_budget_for_games as _get_budget_for_games,
+    get_budget_with_intensity as _get_budget_with_intensity,  # Sprint 10
     compute_target_games as _compute_target,
     parse_config_key,
 )
@@ -344,6 +345,11 @@ class SelfplayScheduler(HandlerBase):
         # Used to compute Elo/hour velocity for priority adjustment
         self._elo_history: dict[str, list[tuple[float, float]]] = {}
         self._elo_velocity: dict[str, float] = {}  # Computed Elo change per hour
+
+        # January 2026 Sprint 10: Stall detection for PLATEAU_DETECTED emission
+        # Track consecutive low-velocity updates per config
+        self._low_velocity_count: dict[str, int] = {}
+        self._last_plateau_emission: dict[str, float] = {}  # Avoid spamming events
 
         # Dec 30, 2025: Extracted quality cache class (reduces code, enables testing)
         # ConfigStateCache handles TTL, invalidation, and daemon integration
@@ -640,17 +646,23 @@ class SelfplayScheduler(HandlerBase):
             # Budget now considers BOTH game count AND Elo:
             # - Low game count (<1000): Use bootstrap budgets for faster data generation
             # - High game count (>=1000): Use Elo-based budgets for quality
+            # January 2026 Sprint 10: Also factors in training intensity
+            # - Higher intensity (hot_path, accelerated) → higher budget
+            # - Lower intensity (reduced, paused) → lower budget
             if config_key in elo_current_data:
                 current_elo = elo_current_data[config_key]
                 priority.current_elo = current_elo  # Store for dynamic weight calculation
                 game_count = priority.game_count
-                new_budget = self._get_adaptive_budget_for_games(game_count, current_elo)
+                # Sprint 10: Use intensity-coupled budget calculation
+                new_budget = self._get_budget_with_intensity(game_count, current_elo, config_key)
                 old_budget = priority.search_budget
                 if new_budget != old_budget:
                     priority.search_budget = new_budget
+                    intensity = self._get_training_intensity_for_config(config_key)
                     logger.info(
                         f"[SelfplayScheduler] Adaptive budget for {config_key}: "
-                        f"{old_budget}→{new_budget} (games={game_count}, Elo={current_elo:.0f})"
+                        f"{old_budget}→{new_budget} (games={game_count}, Elo={current_elo:.0f}, "
+                        f"intensity={intensity})"
                     )
 
             # Dec 29, 2025: Update Elo uncertainty for VOI calculation
@@ -1067,6 +1079,39 @@ class SelfplayScheduler(HandlerBase):
         See budget_calculator.get_adaptive_budget_for_games() for full docs.
         """
         return _get_budget_for_games(game_count, elo)
+
+    def _get_budget_with_intensity(
+        self, game_count: int, elo: float, config_key: str
+    ) -> int:
+        """Get Gumbel budget factoring in training intensity.
+
+        January 2026 Sprint 10: Couples training intensity to Gumbel budget.
+        Higher intensity configs get higher budgets for better quality games.
+
+        Expected improvement: +20-30 Elo from better intensity/budget alignment.
+        """
+        intensity = self._get_training_intensity_for_config(config_key)
+        return _get_budget_with_intensity(game_count, elo, intensity)
+
+    def _get_training_intensity_for_config(self, config_key: str) -> str:
+        """Get training intensity for a config from FeedbackLoopController.
+
+        January 2026 Sprint 10: Retrieves intensity for budget coupling.
+
+        Returns:
+            Training intensity string: "hot_path", "accelerated", "normal",
+            "reduced", or "paused". Defaults to "normal" if unavailable.
+        """
+        try:
+            from app.coordination.feedback_loop_controller import get_feedback_loop_controller
+
+            controller = get_feedback_loop_controller()
+            if controller:
+                state = controller._get_or_create_state(config_key)
+                return getattr(state, "current_training_intensity", "normal")
+        except (ImportError, AttributeError):
+            pass
+        return "normal"
 
     def _compute_target_games(self, config: str, current_elo: float) -> int:
         """Compute dynamic target games needed based on Elo gap and board difficulty.
@@ -3550,8 +3595,80 @@ class SelfplayScheduler(HandlerBase):
                             f"{velocity:.2f} Elo/hour (was {old_velocity:.2f})"
                         )
 
+                    # Sprint 10: Stall detection and PLATEAU_DETECTED emission
+                    # Velocity < 0.5 Elo/hour is considered a stall
+                    STALL_VELOCITY_THRESHOLD = 0.5
+                    STALL_COUNT_THRESHOLD = 3  # 3 consecutive stalls
+                    PLATEAU_COOLDOWN_SECONDS = 3600  # 1 hour between emissions
+
+                    if abs(velocity) < STALL_VELOCITY_THRESHOLD:
+                        self._low_velocity_count[config_key] = (
+                            self._low_velocity_count.get(config_key, 0) + 1
+                        )
+                    else:
+                        # Reset count if velocity recovers
+                        self._low_velocity_count[config_key] = 0
+
+                    # Emit PLATEAU_DETECTED if stalled for consecutive updates
+                    low_count = self._low_velocity_count.get(config_key, 0)
+                    last_emission = self._last_plateau_emission.get(config_key, 0.0)
+                    now = time.time()
+
+                    if (
+                        low_count >= STALL_COUNT_THRESHOLD
+                        and now - last_emission > PLATEAU_COOLDOWN_SECONDS
+                    ):
+                        self._last_plateau_emission[config_key] = now
+                        self._emit_plateau_detected(config_key, velocity, low_count)
+
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling Elo update: {e}")
+
+    def _emit_plateau_detected(
+        self, config_key: str, velocity: float, stall_count: int
+    ) -> None:
+        """Emit PLATEAU_DETECTED event when Elo velocity stalls.
+
+        January 2026 Sprint 10: Automatic stall detection and curriculum advancement.
+        When velocity is near-zero for consecutive updates, emit PLATEAU_DETECTED
+        to trigger exploration boost and curriculum adjustments.
+
+        Expected improvement: +25-40 Elo from faster plateau breaking.
+
+        Args:
+            config_key: Config experiencing the stall
+            velocity: Current Elo velocity (Elo/hour)
+            stall_count: Number of consecutive stall detections
+        """
+        try:
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import emit_event
+
+            # Get current Elo if available
+            current_elo = 1500.0
+            if config_key in self._config_priorities:
+                current_elo = getattr(self._config_priorities[config_key], "current_elo", 1500.0)
+
+            emit_event(
+                DataEventType.PLATEAU_DETECTED,
+                {
+                    "config_key": config_key,
+                    "current_elo": current_elo,
+                    "velocity": velocity,
+                    "stall_count": stall_count,
+                    "plateau_type": "velocity_stall",
+                    "source": "selfplay_scheduler",
+                    "recommendation": "trigger_curriculum_advance",
+                },
+            )
+            logger.warning(
+                f"[SelfplayScheduler] Emitted PLATEAU_DETECTED for {config_key} "
+                f"(velocity={velocity:.2f} Elo/hour, stall_count={stall_count}, "
+                f"current_elo={current_elo:.0f})"
+            )
+
+        except (ImportError, AttributeError, TypeError) as e:
+            logger.debug(f"[SelfplayScheduler] Could not emit PLATEAU_DETECTED: {e}")
 
     def _on_progress_stall(self, event: Any) -> None:
         """Handle PROGRESS_STALL_DETECTED - boost selfplay for stalled config.

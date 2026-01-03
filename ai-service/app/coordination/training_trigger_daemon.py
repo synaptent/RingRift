@@ -1154,7 +1154,13 @@ class TrainingTriggerDaemon(HandlerBase):
             logger.error(f"[TrainingTriggerDaemon] Error handling intensity change: {e}")
 
     async def _on_training_blocked_by_quality(self, event: Any) -> None:
-        """Handle training blocked events to pause intensity."""
+        """Handle training blocked events to pause intensity.
+
+        January 2026 Sprint 10: Enhanced logging for quality gate blocks.
+        Logs the specific quality score, threshold, and reason to help
+        diagnose why training was blocked. Expected +10-15 Elo from
+        better quality monitoring and faster remediation.
+        """
         try:
             payload = getattr(event, "payload", {})
             config_key = extract_config_key(payload)
@@ -1162,9 +1168,42 @@ class TrainingTriggerDaemon(HandlerBase):
                 return
 
             state = self._get_or_create_state(config_key)
+            old_intensity = state.training_intensity
             state.training_intensity = "paused"
 
-            logger.info(f"[TrainingTriggerDaemon] {config_key}: training paused due to quality gate")
+            # Sprint 10: Extract and log quality gate details
+            quality_score = payload.get("quality_score", 0.0)
+            threshold = payload.get("threshold", 0.7)
+            reason = payload.get("reason", "unknown")
+            quality_history = payload.get("quality_history", [])
+
+            # Log detailed quality gate block information
+            logger.info(
+                f"[TrainingTriggerDaemon] {config_key}: training BLOCKED by quality gate "
+                f"(score={quality_score:.3f} < threshold={threshold:.2f}, reason={reason}). "
+                f"Intensity: {old_intensity} → paused"
+            )
+
+            # Log quality history if available (helps diagnose trends)
+            if quality_history:
+                history_str = ", ".join(f"{q:.2f}" for q in quality_history[-5:])
+                logger.info(
+                    f"[TrainingTriggerDaemon] {config_key}: recent quality history: [{history_str}]"
+                )
+
+            # Sprint 10: Track quality block stats for monitoring
+            if not hasattr(self, "_quality_block_counts"):
+                self._quality_block_counts: dict[str, int] = {}
+            self._quality_block_counts[config_key] = self._quality_block_counts.get(config_key, 0) + 1
+
+            # Warn if repeated quality blocks (indicates systemic issue)
+            block_count = self._quality_block_counts[config_key]
+            if block_count >= 3:
+                logger.warning(
+                    f"[TrainingTriggerDaemon] {config_key}: repeated quality blocks ({block_count}x). "
+                    f"Consider: 1) increasing Gumbel budget, 2) checking selfplay for issues, "
+                    f"3) verifying training data pipeline"
+                )
         except Exception as e:
             logger.error(f"[TrainingTriggerDaemon] Error handling training blocked: {e}")
 

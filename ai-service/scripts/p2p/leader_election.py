@@ -88,6 +88,100 @@ try:
 except ImportError:
     DYNAMIC_VOTER_PROMOTION_DELAY = 60
 
+# Jan 2026: Circuit breaker for voter promotion
+# Prevents voter churn during cluster instability
+VOTER_PROMOTION_CIRCUIT_BREAKER_FAILURES = 3  # Open CB after 3 failed promotions
+VOTER_PROMOTION_CIRCUIT_BREAKER_TIMEOUT = 300  # 5 minutes before retry
+VOTER_PROMOTION_COOLOFF_PERIOD = 300  # 5 minutes between promotions
+
+
+class VoterPromotionCircuitBreaker:
+    """Circuit breaker to prevent voter churn during instability.
+
+    Jan 2026: Added for Phase 1 - Dynamic Voter Promotion safety.
+
+    Opens the circuit breaker when:
+    - Multiple promotion attempts fail in quick succession
+    - Cluster health drops below threshold
+
+    When open, voter promotions are blocked until:
+    - Timeout expires, OR
+    - Manual reset is triggered
+    """
+
+    def __init__(
+        self,
+        failure_threshold: int = VOTER_PROMOTION_CIRCUIT_BREAKER_FAILURES,
+        timeout_seconds: float = VOTER_PROMOTION_CIRCUIT_BREAKER_TIMEOUT,
+    ):
+        self._failure_threshold = failure_threshold
+        self._timeout_seconds = timeout_seconds
+        self._failure_count = 0
+        self._last_failure_time = 0.0
+        self._opened_at = 0.0
+        self._last_promotion_time = 0.0
+
+    @property
+    def is_open(self) -> bool:
+        """Check if circuit breaker is open (blocking promotions)."""
+        if self._opened_at == 0.0:
+            return False
+        # Check if timeout has expired
+        if time.time() - self._opened_at > self._timeout_seconds:
+            self._reset()
+            return False
+        return True
+
+    @property
+    def cooloff_active(self) -> bool:
+        """Check if cooloff period is active after a recent promotion."""
+        if self._last_promotion_time == 0.0:
+            return False
+        return time.time() - self._last_promotion_time < VOTER_PROMOTION_COOLOFF_PERIOD
+
+    def record_failure(self) -> None:
+        """Record a promotion failure."""
+        now = time.time()
+        # Reset failure count if last failure was long ago
+        if now - self._last_failure_time > self._timeout_seconds:
+            self._failure_count = 0
+        self._failure_count += 1
+        self._last_failure_time = now
+
+        if self._failure_count >= self._failure_threshold:
+            self._opened_at = now
+            logger.warning(
+                f"[VoterPromotion] Circuit breaker OPENED after {self._failure_count} failures"
+            )
+
+    def record_success(self) -> None:
+        """Record a successful promotion."""
+        self._failure_count = 0
+        self._last_failure_time = 0.0
+        self._last_promotion_time = time.time()
+        if self._opened_at > 0:
+            logger.info("[VoterPromotion] Circuit breaker CLOSED after successful promotion")
+            self._opened_at = 0.0
+
+    def _reset(self) -> None:
+        """Reset the circuit breaker."""
+        self._failure_count = 0
+        self._last_failure_time = 0.0
+        self._opened_at = 0.0
+
+    def get_status(self) -> dict[str, Any]:
+        """Get circuit breaker status for monitoring."""
+        now = time.time()
+        return {
+            "is_open": self.is_open,
+            "cooloff_active": self.cooloff_active,
+            "failure_count": self._failure_count,
+            "failure_threshold": self._failure_threshold,
+            "time_since_last_failure": now - self._last_failure_time if self._last_failure_time else None,
+            "time_until_reset": max(0, self._timeout_seconds - (now - self._opened_at)) if self._opened_at else None,
+            "cooloff_remaining": max(0, VOTER_PROMOTION_COOLOFF_PERIOD - (now - self._last_promotion_time)) if self._last_promotion_time else None,
+        }
+
 
 class LeaderElectionMixin(P2PMixinBase):
     """Mixin providing core leader election logic.
@@ -129,6 +223,15 @@ class LeaderElectionMixin(P2PMixinBase):
     voter_grant_expires: float
     peers_lock: "RLock"
     peers: dict[str, Any]  # dict[str, NodeInfo]
+
+    # Jan 2026: Circuit breaker for voter promotion (singleton per mixin instance)
+    _voter_promotion_cb: VoterPromotionCircuitBreaker | None = None
+
+    def _get_voter_promotion_cb(self) -> VoterPromotionCircuitBreaker:
+        """Get or create the voter promotion circuit breaker."""
+        if self._voter_promotion_cb is None:
+            self._voter_promotion_cb = VoterPromotionCircuitBreaker()
+        return self._voter_promotion_cb
 
     def _has_voter_quorum(self) -> bool:
         """Return True if we currently see enough voter nodes alive.
@@ -400,10 +503,28 @@ class LeaderElectionMixin(P2PMixinBase):
         This is the main entry point for dynamic voter management.
         Call this periodically (e.g., in membership loop or health check).
 
+        Jan 2026: Added circuit breaker and cooloff protection to prevent
+        voter churn during cluster instability.
+
         Returns:
             True if a voter was promoted
         """
         if not self._should_promote_voter():
+            return False
+
+        # Jan 2026: Check circuit breaker - block promotions during instability
+        cb = self._get_voter_promotion_cb()
+        if cb.is_open:
+            self._log_debug(
+                "[DynamicVoter] Circuit breaker OPEN - skipping promotion check"
+            )
+            return False
+
+        # Jan 2026: Check cooloff period - prevent rapid successive promotions
+        if cb.cooloff_active:
+            self._log_debug(
+                "[DynamicVoter] Cooloff period active - skipping promotion"
+            )
             return False
 
         # Get ranked candidates
@@ -421,7 +542,15 @@ class LeaderElectionMixin(P2PMixinBase):
             f"uptime={best['uptime']:.0f}s, error_rate={best['error_rate']:.2%})"
         )
 
-        return await self._promote_to_voter(best["node_id"])
+        success = await self._promote_to_voter(best["node_id"])
+
+        # Jan 2026: Record result in circuit breaker
+        if success:
+            cb.record_success()
+        else:
+            cb.record_failure()
+
+        return success
 
     async def _broadcast_voter_change(self, action: str, node_id: str) -> int:
         """Broadcast voter list change to all peers.

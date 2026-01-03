@@ -11222,6 +11222,55 @@ class P2POrchestrator(
             logger.error(f"Loops status error: {e}")
             return web.json_response({"error": str(e)}, status=500)
 
+    async def handle_circuit_breaker_status(self, request: web.Request) -> web.Response:
+        """GET /circuit-breakers/status - Get status of all circuit breakers.
+
+        January 2026: Added for P2P reliability monitoring.
+
+        Returns status of:
+        - voter_promotion: Prevents voter churn during cluster instability
+        - transport_cascade: Transport failover circuit breaker
+        """
+        try:
+            status: dict[str, Any] = {"circuit_breakers": {}}
+
+            # 1. Voter Promotion Circuit Breaker (from LeaderElectionMixin)
+            try:
+                cb = self._get_voter_promotion_cb()
+                status["circuit_breakers"]["voter_promotion"] = cb.get_status()
+            except AttributeError:
+                status["circuit_breakers"]["voter_promotion"] = {"error": "Not available"}
+
+            # 2. Global Transport Circuit Breaker (from transport_cascade)
+            try:
+                from scripts.p2p.transport_cascade import get_global_circuit_breaker
+                gcb = get_global_circuit_breaker()
+                stats = gcb.get_stats()
+                # Add is_open for consistency with VoterPromotionCircuitBreaker
+                stats["is_open"] = gcb.is_open
+                status["circuit_breakers"]["transport_cascade"] = stats
+            except (ImportError, AttributeError) as e:
+                status["circuit_breakers"]["transport_cascade"] = {
+                    "error": f"Not available: {e}"
+                }
+
+            # 3. Summary: count open circuit breakers
+            open_count = 0
+            for name, cb_status in status["circuit_breakers"].items():
+                if isinstance(cb_status, dict) and cb_status.get("is_open"):
+                    open_count += 1
+
+            status["summary"] = {
+                "total_circuit_breakers": len(status["circuit_breakers"]),
+                "open_count": open_count,
+                "health": "degraded" if open_count > 0 else "healthy",
+            }
+
+            return web.json_response(status)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Circuit breaker status error: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
     # Relay Handlers moved to scripts/p2p/handlers/relay.py
     # Inherited from RelayHandlersMixin: handle_relay_heartbeat, handle_relay_enqueue,
     # handle_relay_peers, handle_relay_status
