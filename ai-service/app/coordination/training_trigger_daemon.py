@@ -53,6 +53,10 @@ from app.config.coordination_defaults import (
     SyncDefaults,
 )
 from app.config.env import env
+from app.config.thresholds import (
+    get_quality_confidence,
+    apply_quality_confidence_weighting,
+)
 from app.coordination.event_handler_utils import extract_config_from_path, extract_config_key
 from app.coordination.event_utils import make_config_key, parse_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
@@ -927,12 +931,65 @@ class TrainingTriggerDaemon(HandlerBase):
         Dec 30, 2025: Added player-count-based threshold reduction.
         3p/4p configs get lower thresholds since they generate fewer games.
 
+        Jan 3, 2026: Added game-count-based graduated thresholds for bootstrap.
+        Configs with limited training data get lower thresholds to enable faster
+        iteration during the bootstrap phase.
+
         Args:
             config_key: Configuration identifier
 
         Returns:
             Minimum sample count required to trigger training
         """
+        # Extract player count from config_key using utility (Dec 30, 2025)
+        player_count = 2  # Default
+        parsed = parse_config_key(config_key)
+        if parsed:
+            player_count = parsed.num_players
+
+        # Jan 3, 2026: Game-count-based graduated thresholds for bootstrap configs
+        # This enables faster training iteration for configs with limited data
+        try:
+            from app.utils.game_discovery import count_games_for_config
+
+            if parsed:
+                game_count = count_games_for_config(parsed.board_type, parsed.num_players)
+
+                # Graduated thresholds based on available game data
+                # Enables faster iteration during bootstrap while maintaining quality
+                if game_count < 500:
+                    threshold = 500
+                    logger.debug(
+                        f"[TrainingTriggerDaemon] {config_key}: bootstrap tier 1 "
+                        f"({game_count} games → {threshold} samples)"
+                    )
+                    return threshold
+                elif game_count < 1000:
+                    threshold = 1000
+                    logger.debug(
+                        f"[TrainingTriggerDaemon] {config_key}: bootstrap tier 2 "
+                        f"({game_count} games → {threshold} samples)"
+                    )
+                    return threshold
+                elif game_count < 2000:
+                    threshold = 2000
+                    logger.debug(
+                        f"[TrainingTriggerDaemon] {config_key}: bootstrap tier 3 "
+                        f"({game_count} games → {threshold} samples)"
+                    )
+                    return threshold
+                elif game_count < 5000:
+                    threshold = 3000
+                    logger.debug(
+                        f"[TrainingTriggerDaemon] {config_key}: bootstrap tier 4 "
+                        f"({game_count} games → {threshold} samples)"
+                    )
+                    return threshold
+                # else: fall through to normal threshold logic (≥5000 games)
+
+        except (ImportError, ValueError, OSError) as e:
+            logger.debug(f"[TrainingTriggerDaemon] Game count check failed: {e}")
+
         # Dec 30, 2025: Player-count-based threshold multipliers
         # Multiplayer configs (3p, 4p) generate fewer games, so we lower the threshold
         # to allow training to proceed with less data
@@ -941,12 +998,6 @@ class TrainingTriggerDaemon(HandlerBase):
             3: 0.6,    # 3p: 60% threshold (3000 samples)
             4: 0.4,    # 4p: 40% threshold (2000 samples)
         }
-
-        # Extract player count from config_key using utility (Dec 30, 2025)
-        player_count = 2  # Default
-        parsed = parse_config_key(config_key)
-        if parsed:
-            player_count = parsed.num_players
 
         multiplier = player_count_multipliers.get(player_count, 1.0)
         base_threshold = self.config.min_samples_threshold
@@ -1172,17 +1223,10 @@ class TrainingTriggerDaemon(HandlerBase):
     def _compute_quality_confidence(self, games_assessed: int) -> float:
         """Compute confidence factor based on number of games assessed.
 
-        Sprint 12 Session 8: Quality scores from small sample sizes are less reliable.
-        This method returns a confidence factor that weights the quality score:
-        - <50 games: 50% credibility (high uncertainty)
-        - 50-500 games: 75% credibility (moderate confidence)
-        - 500+ games: 100% credibility (reliable assessment)
+        Sprint 12 Session 8: Delegates to centralized thresholds.py for consistent
+        confidence tier definitions across the codebase.
 
-        The effective quality score is:
-            adjusted = (confidence * quality) + ((1-confidence) * 0.5)
-
-        This biases uncertain assessments toward neutral (0.5) rather than
-        blindly trusting small sample quality scores.
+        See app.config.thresholds.get_quality_confidence() for tier definitions.
 
         Args:
             games_assessed: Number of games used in quality assessment
@@ -1190,20 +1234,17 @@ class TrainingTriggerDaemon(HandlerBase):
         Returns:
             Confidence factor between 0.5 and 1.0
         """
-        if games_assessed >= 500:
-            return 1.0
-        elif games_assessed >= 50:
-            return 0.75
-        else:
-            return 0.5
+        return get_quality_confidence(games_assessed)
 
     def _apply_confidence_weighting(
         self, quality_score: float, games_assessed: int
     ) -> float:
         """Apply confidence weighting to quality score.
 
-        Sprint 12 Session 8: Quality scores from small sample sizes are weighted
-        toward neutral (0.5) to avoid overconfident decisions based on limited data.
+        Sprint 12 Session 8: Delegates to centralized thresholds.py for consistent
+        confidence weighting across the codebase.
+
+        See app.config.thresholds.apply_quality_confidence_weighting() for formula.
 
         Args:
             quality_score: Raw quality score (0.0-1.0)
@@ -1212,10 +1253,7 @@ class TrainingTriggerDaemon(HandlerBase):
         Returns:
             Confidence-adjusted quality score
         """
-        confidence = self._compute_quality_confidence(games_assessed)
-        # Bias toward neutral (0.5) when confidence is low
-        adjusted = (confidence * quality_score) + ((1 - confidence) * 0.5)
-        return adjusted
+        return apply_quality_confidence_weighting(quality_score, games_assessed)
 
     def _get_decayed_quality_score(
         self, state: ConfigTrainingState, current_time: float | None = None
@@ -2682,6 +2720,52 @@ class TrainingTriggerDaemon(HandlerBase):
                     return True, "no quality data (proceeding anyway)"
 
             if quality < quality_threshold:
+                # January 3, 2026: Relax quality gate for data-starved or stalled configs
+                # This prevents configs with limited data from being permanently blocked
+                # while maintaining quality floor to prevent garbage data training
+                MINIMUM_QUALITY_FLOOR = 0.40  # Absolute minimum (prevents garbage)
+                DATA_STARVED_THRESHOLD = 5000  # Configs with <5K games are bootstrapping
+                TRAINING_STALL_HOURS = 24.0  # Emergency override after 24h stall
+
+                allow_degraded = False
+                degraded_reason = ""
+
+                # Check if quality meets minimum floor
+                if quality >= MINIMUM_QUALITY_FLOOR:
+                    # Get game count for this config
+                    try:
+                        from app.utils.game_discovery import count_games_for_config
+                        from app.coordination.event_utils import parse_config_key
+
+                        parsed = parse_config_key(config_key)
+                        if parsed:
+                            game_count = count_games_for_config(
+                                parsed.board_type, parsed.num_players
+                            )
+                            if game_count < DATA_STARVED_THRESHOLD:
+                                allow_degraded = True
+                                degraded_reason = (
+                                    f"bootstrap mode ({game_count} < {DATA_STARVED_THRESHOLD} games)"
+                                )
+                    except (ImportError, ValueError, OSError) as e:
+                        logger.debug(f"[TrainingTriggerDaemon] Game count check failed: {e}")
+
+                    # Check if training is stalled (emergency override)
+                    if not allow_degraded:
+                        state = self._training_states.get(config_key)
+                        if state and state.last_training_time > 0:
+                            hours_since = (time.time() - state.last_training_time) / 3600
+                            if hours_since > TRAINING_STALL_HOURS:
+                                allow_degraded = True
+                                degraded_reason = f"training stalled ({hours_since:.1f}h > {TRAINING_STALL_HOURS}h)"
+
+                if allow_degraded:
+                    logger.info(
+                        f"[TrainingTriggerDaemon] {config_key}: quality gate RELAXED - "
+                        f"allowing degraded quality ({quality:.2f}) for {degraded_reason}"
+                    )
+                    return True, f"quality degraded but allowed ({quality:.2f}, {degraded_reason})"
+
                 # Quality too low - block training and emit event
                 logger.warning(
                     f"[TrainingTriggerDaemon] {config_key}: quality gate FAILED "

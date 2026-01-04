@@ -307,6 +307,29 @@ class AutoPromotionDaemon(HandlerBase):
         # Check if ready for promotion decision
         await self._check_promotion(candidate)
 
+    def _get_canonical_heuristic_win_rate(self, config_key: str) -> float | None:
+        """Get the current canonical model's heuristic win rate for Tier 3.5 check.
+
+        January 3, 2026: Added to enable Tier 3.5 significant improvement promotion.
+        If a new model beats the current canonical by >10%, it should promote even
+        if it doesn't meet aspirational thresholds.
+
+        Returns:
+            Heuristic win rate of current canonical model, or None if not available.
+        """
+        try:
+            from app.coordination.elo_progress_tracker import get_elo_progress_tracker
+
+            tracker = get_elo_progress_tracker()
+            snapshot = tracker.get_latest_snapshot(config_key)
+
+            if snapshot and snapshot.vs_heuristic_win_rate is not None:
+                return snapshot.vs_heuristic_win_rate
+            return None
+        except (ImportError, OSError, RuntimeError) as e:
+            logger.debug(f"[AutoPromotion] Could not get canonical heuristic rate: {e}")
+            return None
+
     async def _check_promotion(self, candidate: PromotionCandidate) -> None:
         """Check if candidate meets promotion criteria.
 
@@ -374,6 +397,9 @@ class AutoPromotionDaemon(HandlerBase):
         # Dec 31, 2025: Pass game_count to enable graduated thresholds
         # Configs with limited training data get easier thresholds during bootstrap
         game_count = candidate.training_game_count if candidate.training_game_count > 0 else None
+        # Jan 3, 2026: Pass current_vs_heuristic_rate to enable Tier 3.5 significant improvement
+        # This allows models with >10% improvement over canonical to promote even if not aspirational
+        current_vs_heuristic = self._get_canonical_heuristic_win_rate(candidate.config_key)
         should_promote, reason = should_promote_model(
             config_key=candidate.config_key,
             vs_random_rate=random_win_rate,
@@ -382,6 +408,7 @@ class AutoPromotionDaemon(HandlerBase):
             current_best_elo=current_best_elo,
             model_elo=model_elo,
             game_count=game_count,
+            current_vs_heuristic_rate=current_vs_heuristic,
         )
 
         if should_promote:
