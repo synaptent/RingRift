@@ -1700,6 +1700,10 @@ class FeedbackLoopController(HandlerBase):
                 config_key, policy_accuracy, value_accuracy
             )
 
+            # Jan 2026: Record training feedback to Elo database
+            # This populates the training_feedback table for Elo velocity tracking
+            self._record_training_feedback_to_db(config_key, state)
+
         except (AttributeError, TypeError, KeyError, RuntimeError) as e:
             logger.error(f"[FeedbackLoopController] Error handling training complete: {e}")
 
@@ -1770,6 +1774,61 @@ class FeedbackLoopController(HandlerBase):
             pass  # Event system not available
         except (AttributeError, TypeError, RuntimeError) as e:
             logger.debug(f"[FeedbackLoopController] Failed to emit curriculum event: {e}")
+
+    def _record_training_feedback_to_db(
+        self,
+        config_key: str,
+        state: "FeedbackState",
+    ) -> None:
+        """Record training feedback to Elo database for velocity tracking.
+
+        January 2026: Added to fix empty training_feedback table.
+        This enables Elo velocity tracking and curriculum progression signals.
+        """
+        try:
+            from app.training.elo_service import EloService
+
+            parsed = parse_config_key(config_key)
+            if not parsed:
+                return
+
+            elo_service = EloService.get_instance()
+
+            # Get current best Elo for this config
+            best_elo = state.last_elo or 1500.0
+
+            # Compute Elo delta from previous training
+            prev_elo_key = f"_prev_elo_{config_key}"
+            prev_elo = getattr(self, prev_elo_key, 1500.0)
+            elo_delta = best_elo - prev_elo
+            setattr(self, prev_elo_key, best_elo)
+
+            # Get iteration count
+            iter_key = f"_training_iteration_{config_key}"
+            iteration = getattr(self, iter_key, 0) + 1
+            setattr(self, iter_key, iteration)
+
+            # Get curriculum stage from state
+            curriculum_stage = getattr(state, "curriculum_stage", 0)
+
+            elo_service.record_training_feedback(
+                board_type=parsed.board_type,
+                num_players=parsed.num_players,
+                iteration=iteration,
+                best_elo=best_elo,
+                elo_delta=elo_delta,
+                curriculum_stage=curriculum_stage,
+            )
+
+            logger.debug(
+                f"[FeedbackLoopController] Recorded training feedback for {config_key}: "
+                f"iter={iteration}, elo={best_elo:.0f}, delta={elo_delta:+.0f}"
+            )
+
+        except ImportError:
+            pass  # EloService not available
+        except (AttributeError, TypeError, RuntimeError) as e:
+            logger.warning(f"[FeedbackLoopController] Failed to record training feedback: {e}")
 
     def _on_evaluation_complete(self, event: Any) -> None:
         """Handle evaluation completion.

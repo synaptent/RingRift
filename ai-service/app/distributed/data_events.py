@@ -135,6 +135,12 @@ class DataEventType(Enum):
     MODEL_EVALUATION_BLOCKED = "model_evaluation_blocked"  # Dec 2025 Phase 3: Model not distributed for eval
     ELO_UPDATED = "elo_updated"
     HARNESS_EVALUATION_COMPLETED = "harness_evaluation_completed"  # Dec 31, 2025: Per-harness Elo tracking
+    # Sprint 13 Session 4 (Jan 3, 2026): Model evaluation automation
+    EVALUATION_REQUESTED = "evaluation_requested"  # Request to evaluate a model (from scanner daemon)
+    EVALUATION_QUEUED = "evaluation_queued"  # Model added to persistent eval queue
+    EVALUATION_RECOVERED = "evaluation_recovered"  # Stuck evaluation recovered and requeued
+    EVALUATION_STUCK = "evaluation_stuck"  # Evaluation stuck detected (exceeded timeout)
+    UNEVALUATED_MODELS_FOUND = "unevaluated_models_found"  # Scanner found models without Elo ratings
 
     # Promotion events
     PROMOTION_CANDIDATE = "promotion_candidate"
@@ -234,6 +240,10 @@ class DataEventType(Enum):
     REGRESSION_SEVERE = "regression_severe"  # Severity: severe
     REGRESSION_CRITICAL = "regression_critical"  # Severity: critical - rollback recommended
     REGRESSION_CLEARED = "regression_cleared"  # Model recovered from regression
+
+    # Model import events (Sprint 13 Session 4 - Jan 3, 2026)
+    MODEL_IMPORTED = "model_imported"  # Model imported from OWC drive
+    OWC_MODELS_DISCOVERED = "owc_models_discovered"  # OWC scan discovered models (observability)
 
     # P2P/Model sync events
     P2P_MODEL_SYNCED = "p2p_model_synced"

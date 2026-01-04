@@ -2306,8 +2306,10 @@ class SelfplayPriorityWeightDefaults:
         export RINGRIFT_ELO_VELOCITY_WEIGHT=0.15
     """
     # Priority calculation weights (baseline values, adjusted dynamically)
-    STALENESS_WEIGHT: float = _env_float("RINGRIFT_STALENESS_WEIGHT", 0.30)
-    ELO_VELOCITY_WEIGHT: float = _env_float("RINGRIFT_ELO_VELOCITY_WEIGHT", 0.20)
+    # Jan 2026: Reduced STALENESS_WEIGHT and ELO_VELOCITY_WEIGHT to prevent
+    # freshness bias that was causing underserved configs to get < 100 games/day
+    STALENESS_WEIGHT: float = _env_float("RINGRIFT_STALENESS_WEIGHT", 0.15)
+    ELO_VELOCITY_WEIGHT: float = _env_float("RINGRIFT_ELO_VELOCITY_WEIGHT", 0.10)
     TRAINING_NEED_WEIGHT: float = _env_float("RINGRIFT_TRAINING_NEED_WEIGHT", 0.10)
     EXPLORATION_BOOST_WEIGHT: float = _env_float("RINGRIFT_EXPLORATION_BOOST_WEIGHT", 0.10)
     CURRICULUM_WEIGHT: float = _env_float("RINGRIFT_CURRICULUM_WEIGHT", 0.10)
@@ -2353,25 +2355,29 @@ class SelfplayPriorityWeightDefaults:
         "RINGRIFT_DATA_STARVATION_EMERGENCY_THRESHOLD", 100
     )
     DATA_STARVATION_CRITICAL_THRESHOLD: int = _env_int(
-        "RINGRIFT_DATA_STARVATION_CRITICAL_THRESHOLD", 1000
+        # Jan 2026: Lowered from 1000 to 500 to catch more underserved configs
+        "RINGRIFT_DATA_STARVATION_CRITICAL_THRESHOLD", 500
     )
     DATA_STARVATION_ULTRA_MULTIPLIER: float = _env_float(
         # Dec 31, 2025: Increased from 25x to 100x for 48h autonomous operation
-        # Configs with < 20 games desperately need data; 100x ensures they get priority
-        "RINGRIFT_DATA_STARVATION_ULTRA_MULTIPLIER", 100.0
+        # Jan 2026: Increased to 200x to ensure critically starved configs get priority
+        "RINGRIFT_DATA_STARVATION_ULTRA_MULTIPLIER", 200.0
     )
     DATA_STARVATION_EMERGENCY_MULTIPLIER: float = _env_float(
-        "RINGRIFT_DATA_STARVATION_EMERGENCY_MULTIPLIER", 10.0
+        # Jan 2026: Increased from 10x to 50x to address allocation imbalance
+        "RINGRIFT_DATA_STARVATION_EMERGENCY_MULTIPLIER", 50.0
     )
     DATA_STARVATION_CRITICAL_MULTIPLIER: float = _env_float(
-        "RINGRIFT_DATA_STARVATION_CRITICAL_MULTIPLIER", 5.0
+        # Jan 2026: Increased from 5x to 20x to address allocation imbalance
+        "RINGRIFT_DATA_STARVATION_CRITICAL_MULTIPLIER", 20.0
     )
 
     # Data poverty tier - configs below this threshold get moderate priority boost
     # Dec 30, 2025: Added to bridge gap between CRITICAL (1000) and no boost
-    DATA_POVERTY_THRESHOLD: int = _env_int("RINGRIFT_DATA_POVERTY_THRESHOLD", 5000)
+    # Jan 2026: Lowered threshold to 3000, increased multiplier to 5.0
+    DATA_POVERTY_THRESHOLD: int = _env_int("RINGRIFT_DATA_POVERTY_THRESHOLD", 3000)
     DATA_POVERTY_MULTIPLIER: float = _env_float(
-        "RINGRIFT_DATA_POVERTY_MULTIPLIER", 2.5  # Moderate boost for <5000 games
+        "RINGRIFT_DATA_POVERTY_MULTIPLIER", 5.0  # Stronger boost for <3000 games
     )
 
     # Staleness thresholds (hours)

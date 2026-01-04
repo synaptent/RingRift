@@ -135,6 +135,16 @@ class DaemonType(Enum):
     # Imports training data from external archive drive for underserved configs
     OWC_IMPORT = "owc_import"
 
+    # OWC model import (Sprint 13 Session 4 - Jan 3, 2026)
+    # Imports MODEL FILES (not databases) from OWC drive for Elo evaluation
+    # OWC has 1000s of trained models that have never been evaluated
+    OWC_MODEL_IMPORT = "owc_model_import"
+
+    # Unevaluated model scanner (Sprint 13 Session 4 - Jan 3, 2026)
+    # Scans all model sources (local, OWC, cluster, registry) for models without Elo ratings
+    # Queues them for evaluation with curriculum-aware priority
+    UNEVALUATED_MODEL_SCANNER = "unevaluated_model_scanner"
+
     # DEPRECATED (Dec 2025): Use AutoSyncDaemon(strategy="ephemeral") - removal Q2 2026
     EPHEMERAL_SYNC = "ephemeral_sync"
 

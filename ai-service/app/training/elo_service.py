@@ -2033,6 +2033,57 @@ class EloService:
 
         return feedback
 
+    def record_training_feedback(
+        self,
+        board_type: str,
+        num_players: int,
+        iteration: int,
+        best_elo: float,
+        elo_delta: float,
+        epochs_multiplier: float = 1.0,
+        lr_multiplier: float = 1.0,
+        curriculum_stage: int = 0,
+    ) -> bool:
+        """Record training feedback signal to database.
+
+        January 2026: Added to fix empty training_feedback table.
+        Called after TRAINING_COMPLETED to track Elo progression and
+        enable curriculum velocity tracking.
+
+        Args:
+            board_type: Board type (e.g., "hex8", "square8")
+            num_players: Number of players
+            iteration: Training iteration number
+            best_elo: Current best Elo for this config
+            elo_delta: Elo change since last training
+            epochs_multiplier: Training epochs multiplier used
+            lr_multiplier: Learning rate multiplier used
+            curriculum_stage: Current curriculum stage (0-3)
+
+        Returns:
+            True if recording succeeded, False otherwise
+        """
+        try:
+            with self._transaction() as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO training_feedback
+                    (board_type, num_players, iteration, best_elo, elo_delta,
+                     epochs_multiplier, lr_multiplier, curriculum_stage, timestamp)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    board_type, num_players, iteration, best_elo, elo_delta,
+                    epochs_multiplier, lr_multiplier, curriculum_stage,
+                    time.time()
+                ))
+            logger.debug(
+                f"Recorded training feedback: {board_type}_{num_players}p "
+                f"iter={iteration} elo={best_elo:.0f} delta={elo_delta:+.0f}"
+            )
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to record training feedback: {e}")
+            return False
+
     def record_iteration_elo(
         self,
         participant_id: str,

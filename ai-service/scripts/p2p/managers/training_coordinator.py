@@ -577,7 +577,7 @@ class TrainingCoordinator(EventSubscriptionMixin):
                 if job.status in ("pending", "queued", "running") and job.worker_node
             }
 
-        worker_node: Any = None
+        # Jan 2026: Build candidate list sorted by suitability for retry logic
         if job_type == "nnue":
             # NNUE training prefers accelerator nodes (CUDA/MPS).
             # Exclude nodes already running training to enable parallel training across configs
@@ -586,40 +586,21 @@ class TrainingCoordinator(EventSubscriptionMixin):
                 # Fall back to allowing nodes with training if no free GPU nodes
                 gpu_nodes = [n for n in healthy_nodes if n.has_gpu]
             gpu_nodes.sort(key=lambda n: (-n.gpu_power_score(), n.get_load_score()))
-            worker_node = gpu_nodes[0] if gpu_nodes else None
+            candidate_nodes = gpu_nodes
         else:
             # CMA-ES is CPU-heavy. Prefer high-CPU nodes (vast nodes have 256-512 CPUs).
-            # Use cpu_power_score() to prioritize vast nodes over lambda nodes.
             cpu_nodes = [n for n in healthy_nodes if n.is_cpu_only_node() and n.node_id not in nodes_with_training]
             if not cpu_nodes:
                 cpu_nodes = [n for n in healthy_nodes if n.is_cpu_only_node()]
             candidates = cpu_nodes if cpu_nodes else healthy_nodes
-            # Sort by CPU power (descending) then load score (ascending)
             candidates.sort(key=lambda n: (-n.cpu_power_score(), n.get_load_score()))
-            worker_node = candidates[0] if candidates else None
+            candidate_nodes = candidates
 
-        if not worker_node:
+        if not candidate_nodes:
             logger.info(f"No suitable worker for {job_type} training job")
             return None
 
-        job.worker_node = worker_node.node_id
         job.status = "queued"
-
-        # Reserve the GPU node for training (December 2025)
-        # This prevents selfplay jobs from being scheduled on this node
-        try:
-            from app.coordination.task_coordinator import TaskCoordinator
-            task_coordinator = TaskCoordinator.get_instance()
-            reserved = task_coordinator.reserve_for_training(
-                [worker_node.node_id],
-                duration_seconds=7200.0,  # 2 hours
-                config_key=config_key,
-            )
-            if reserved:
-                logger.info(f"Reserved {worker_node.node_id} for training job {job_id}")
-        except (ImportError, AttributeError, RuntimeError) as e:
-            # Continue without reservation if TaskCoordinator unavailable
-            logger.debug(f"Could not reserve node for training: {e}")
 
         # Store job
         with training_lock:
@@ -640,67 +621,113 @@ class TrainingCoordinator(EventSubscriptionMixin):
             job.resume_from_checkpoint = True
             logger.info(f"Resuming training from checkpoint: {resume_checkpoint} (epoch {resume_epoch})")
 
-        # Send to worker
-        try:
-            from aiohttp import ClientTimeout
+        # Jan 2026: Retry dispatch with fallback nodes if initial dispatch fails
+        # This addresses NAT-blocked or temporarily unhealthy training nodes
+        MAX_DISPATCH_RETRIES = 3
+        tried_nodes: set[str] = set()
 
-            # Use shared network utility to avoid circular import with p2p_orchestrator
-            from scripts.p2p.network import get_client_session
+        for attempt in range(MAX_DISPATCH_RETRIES):
+            # Select next best node that hasn't been tried
+            available_nodes = [n for n in candidate_nodes if n.node_id not in tried_nodes]
+            if not available_nodes:
+                logger.warning(
+                    f"All {len(tried_nodes)} candidate nodes exhausted for {job_type} dispatch"
+                )
+                break
 
-            endpoint = f"/training/{job_type}/start"
-            timeout = ClientTimeout(total=30)
-            async with get_client_session(timeout) as session:
-                payload = {
-                    "job_id": job_id,
-                    "board_type": board_type,
-                    "num_players": num_players,
-                    "epochs": job.epochs,
-                    "batch_size": job.batch_size,
-                    "learning_rate": job.learning_rate,
-                    # TRAINING CHECKPOINTING: Include resume info
-                    "resume_checkpoint": resume_checkpoint,
-                    "resume_epoch": resume_epoch,
-                }
-                last_err: str | None = None
-                for url in self.urls_for_peer(worker_node, endpoint):
-                    try:
-                        async with session.post(url, json=payload, headers=self.auth_headers()) as resp:
-                            if resp.status != 200:
-                                last_err = f"http_{resp.status}"
-                                continue
-                            result = await resp.json()
-                        if result.get("success"):
-                            job.status = "running"
-                            job.started_at = time.time()
-                            logger.info(f"Started {job_type} training job {job_id} on {worker_node.node_id}")
-                            self.save_state_callback()
+            worker_node = available_nodes[0]
+            tried_nodes.add(worker_node.node_id)
 
-                            # Dec 2025: Emit TRAINING_STARTED event for pipeline coordination
-                            if _HAS_EVENT_EMITTERS:
+            # Update job with current worker
+            job.worker_node = worker_node.node_id
+
+            # Send to worker
+            try:
+                from aiohttp import ClientTimeout
+
+                # Use shared network utility to avoid circular import with p2p_orchestrator
+                from scripts.p2p.network import get_client_session
+
+                endpoint = f"/training/{job_type}/start"
+                timeout = ClientTimeout(total=30)
+                async with get_client_session(timeout) as session:
+                    payload = {
+                        "job_id": job_id,
+                        "board_type": board_type,
+                        "num_players": num_players,
+                        "epochs": job.epochs,
+                        "batch_size": job.batch_size,
+                        "learning_rate": job.learning_rate,
+                        # TRAINING CHECKPOINTING: Include resume info
+                        "resume_checkpoint": resume_checkpoint,
+                        "resume_epoch": resume_epoch,
+                    }
+                    last_err: str | None = None
+                    for url in self.urls_for_peer(worker_node, endpoint):
+                        try:
+                            async with session.post(url, json=payload, headers=self.auth_headers()) as resp:
+                                if resp.status != 200:
+                                    last_err = f"http_{resp.status}"
+                                    continue
+                                result = await resp.json()
+                            if result.get("success"):
+                                job.status = "running"
+                                job.started_at = time.time()
+                                logger.info(f"Started {job_type} training job {job_id} on {worker_node.node_id}")
+                                self.save_state_callback()
+
+                                # Dec 2025: Emit TRAINING_STARTED event for pipeline coordination
+                                if _HAS_EVENT_EMITTERS:
+                                    try:
+                                        emit_training_started_sync(
+                                            config_key=config_key,
+                                            node_name=worker_node.node_id,
+                                            job_id=job_id,
+                                            job_type=job_type,
+                                        )
+                                        logger.debug(f"Emitted TRAINING_STARTED for {config_key}")
+                                    except Exception as e:
+                                        logger.warning(f"Failed to emit TRAINING_STARTED: {e}")
+
+                                # Reserve the GPU node for training (December 2025)
+                                # This prevents selfplay jobs from being scheduled on this node
                                 try:
-                                    emit_training_started_sync(
+                                    from app.coordination.task_coordinator import TaskCoordinator
+                                    task_coordinator = TaskCoordinator.get_instance()
+                                    reserved = task_coordinator.reserve_for_training(
+                                        [worker_node.node_id],
+                                        duration_seconds=7200.0,  # 2 hours
                                         config_key=config_key,
-                                        node_name=worker_node.node_id,
-                                        job_id=job_id,
-                                        job_type=job_type,
                                     )
-                                    logger.debug(f"Emitted TRAINING_STARTED for {config_key}")
-                                except Exception as e:
-                                    logger.warning(f"Failed to emit TRAINING_STARTED: {e}")
+                                    if reserved:
+                                        logger.info(f"Reserved {worker_node.node_id} for training job {job_id}")
+                                except (ImportError, AttributeError, RuntimeError) as e:
+                                    # Continue without reservation if TaskCoordinator unavailable
+                                    logger.debug(f"Could not reserve node for training: {e}")
 
-                            return job
-                        job.status = "failed"
-                        job.error_message = str(result.get("error") or "Unknown error")
-                        return job
-                    except Exception as e:
-                        last_err = str(e)
-                        continue
-                job.status = "failed"
-                job.error_message = last_err or "dispatch_failed"
-        except Exception as e:
-            job.status = "failed"
-            job.error_message = str(e)
-            logger.error(f"Failed to dispatch {job_type} training to {worker_node.node_id}: {e}")
+                                return job
+                            # Worker rejected the job - don't retry same node
+                            last_err = str(result.get("error") or "Unknown error")
+                            break
+                        except Exception as e:
+                            last_err = str(e)
+                            continue
+
+                    # All URLs for this node failed
+                    logger.info(
+                        f"Dispatch to {worker_node.node_id} failed (attempt {attempt + 1}/{MAX_DISPATCH_RETRIES}): "
+                        f"{last_err}, trying next node..."
+                    )
+            except Exception as e:
+                logger.info(
+                    f"Dispatch to {worker_node.node_id} failed (attempt {attempt + 1}/{MAX_DISPATCH_RETRIES}): "
+                    f"{e}, trying next node..."
+                )
+
+        # All retries exhausted
+        job.status = "failed"
+        job.error_message = f"All {len(tried_nodes)} dispatch attempts failed"
+        logger.error(f"Failed to dispatch {job_type} training after {len(tried_nodes)} attempts")
 
         return job
 
