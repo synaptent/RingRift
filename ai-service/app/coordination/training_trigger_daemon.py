@@ -204,6 +204,9 @@ class ConfigTrainingState:
     # from blocking training when conditions have changed
     last_quality_score: float = 0.7  # Default to minimum threshold
     last_quality_update: float = 0.0  # Timestamp when quality was last updated
+    # Sprint 12 Session 8: Quality score confidence based on game count
+    # Configs with few games get lower confidence (more uncertainty about true quality)
+    games_assessed: int = 0  # Number of games used in quality assessment
 
 
 @dataclass
@@ -1165,6 +1168,54 @@ class TrainingTriggerDaemon(HandlerBase):
 
         except Exception as e:
             logger.error(f"[TrainingTriggerDaemon] Error handling training completion: {e}")
+
+    def _compute_quality_confidence(self, games_assessed: int) -> float:
+        """Compute confidence factor based on number of games assessed.
+
+        Sprint 12 Session 8: Quality scores from small sample sizes are less reliable.
+        This method returns a confidence factor that weights the quality score:
+        - <50 games: 50% credibility (high uncertainty)
+        - 50-500 games: 75% credibility (moderate confidence)
+        - 500+ games: 100% credibility (reliable assessment)
+
+        The effective quality score is:
+            adjusted = (confidence * quality) + ((1-confidence) * 0.5)
+
+        This biases uncertain assessments toward neutral (0.5) rather than
+        blindly trusting small sample quality scores.
+
+        Args:
+            games_assessed: Number of games used in quality assessment
+
+        Returns:
+            Confidence factor between 0.5 and 1.0
+        """
+        if games_assessed >= 500:
+            return 1.0
+        elif games_assessed >= 50:
+            return 0.75
+        else:
+            return 0.5
+
+    def _apply_confidence_weighting(
+        self, quality_score: float, games_assessed: int
+    ) -> float:
+        """Apply confidence weighting to quality score.
+
+        Sprint 12 Session 8: Quality scores from small sample sizes are weighted
+        toward neutral (0.5) to avoid overconfident decisions based on limited data.
+
+        Args:
+            quality_score: Raw quality score (0.0-1.0)
+            games_assessed: Number of games used in assessment
+
+        Returns:
+            Confidence-adjusted quality score
+        """
+        confidence = self._compute_quality_confidence(games_assessed)
+        # Bias toward neutral (0.5) when confidence is low
+        adjusted = (confidence * quality_score) + ((1 - confidence) * 0.5)
+        return adjusted
 
     def _get_decayed_quality_score(
         self, state: ConfigTrainingState, current_time: float | None = None
