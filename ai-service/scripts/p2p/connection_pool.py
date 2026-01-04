@@ -338,6 +338,26 @@ class PeerConnectionPool:
                 stats.total_requests += 1
                 return conn
 
+            # Check global limit before creating new connection
+            total_connections = self._get_total_connections()
+            if total_connections >= self._config.max_total_connections:
+                # Global limit reached - wait for any connection to be released
+                logger.debug(
+                    f"Global connection limit reached ({total_connections}/{self._config.max_total_connections}), "
+                    f"waiting for connection to {peer_id}"
+                )
+                # Wait on this peer's pool - connections will be returned as others finish
+                conn = await asyncio.wait_for(
+                    pool.get(),
+                    timeout=self._config.connection_timeout,
+                )
+                conn.mark_used()
+                active.add(conn)
+                stats.active_connections = len(active)
+                stats.idle_connections = pool.qsize()
+                stats.total_requests += 1
+                return conn
+
             # Create new connection
             conn = await self._create_connection(peer_id, peer_address)
             active.add(conn)
@@ -411,6 +431,16 @@ class PeerConnectionPool:
             # aiohttp not available
             logger.warning("aiohttp not available for connection pooling")
             raise RuntimeError("aiohttp required for connection pooling")
+
+    def _get_total_connections(self) -> int:
+        """Get total connection count across all peers.
+
+        Returns:
+            Total number of active + idle connections.
+        """
+        total_active = sum(len(active) for active in self._active_connections.values())
+        total_idle = sum(pool.qsize() for pool in self._pools.values())
+        return total_active + total_idle
 
     def mark_connection_unhealthy(self, peer_id: str) -> None:
         """Mark all connections to a peer as unhealthy.

@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config.thresholds import PROMOTION_WIN_RATE_THRESHOLD
+from app.coordination.event_utils import make_config_key
 from app.coordination.pipeline_actions import (
     StageCompletionResult,
     trigger_data_sync,
@@ -181,7 +182,7 @@ class PipelineTrigger:
             import numpy as np
 
             training_dir = self.config.ai_service_root / "data" / "training"
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
 
             # Look for NPZ files matching this config
             npz_patterns = [
@@ -319,7 +320,7 @@ class PipelineTrigger:
     ) -> PrerequisiteResult:
         """Check if model file exists."""
         try:
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
 
             if model_path:
                 path = Path(model_path)
@@ -361,7 +362,7 @@ class PipelineTrigger:
         try:
             import subprocess
 
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
 
             # Check for running training processes
             result = await asyncio.to_thread(
@@ -458,7 +459,7 @@ class PipelineTrigger:
         Returns:
             StageCompletionResult
         """
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
         iteration = self._get_iteration(config_key)
 
         logger.info(f"[PipelineTrigger] Triggering sync for {config_key} (iteration {iteration})")
@@ -492,7 +493,7 @@ class PipelineTrigger:
         Returns:
             StageCompletionResult
         """
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
         iteration = self._get_iteration(config_key)
 
         logger.info(f"[PipelineTrigger] Triggering export for {config_key} (iteration {iteration})")
@@ -542,7 +543,7 @@ class PipelineTrigger:
         Returns:
             StageCompletionResult
         """
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
         iteration = self._get_iteration(config_key)
 
         logger.info(f"[PipelineTrigger] Triggering training for {config_key} (iteration {iteration})")
@@ -612,7 +613,7 @@ class PipelineTrigger:
         Returns:
             StageCompletionResult
         """
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
         iteration = self._get_iteration(config_key)
 
         logger.info(f"[PipelineTrigger] Triggering evaluation for {config_key} (iteration {iteration})")
@@ -669,7 +670,7 @@ class PipelineTrigger:
         Returns:
             StageCompletionResult
         """
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
         iteration = self._get_iteration(config_key)
 
         logger.info(f"[PipelineTrigger] Triggering promotion for {config_key} (iteration {iteration})")

@@ -54,7 +54,7 @@ from app.config.coordination_defaults import (
 )
 from app.config.env import env
 from app.coordination.event_handler_utils import extract_config_from_path, extract_config_key
-from app.coordination.event_utils import parse_config_key
+from app.coordination.event_utils import make_config_key, parse_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.utils.retry import RetryConfig
 
@@ -162,6 +162,12 @@ class TrainingTriggerConfig:
     cluster_availability_timeout_seconds: float = 10.0
     # Jan 2, 2026: Auto-detect local-only mode based on cluster availability
     auto_detect_local_mode: bool = True
+    # January 3, 2026: Quality score confidence decay
+    # Quality scores decay over time to prevent stale assessments from blocking training.
+    # After half_life hours, quality confidence drops by 50% toward the decay floor.
+    quality_decay_half_life_hours: float = 1.0  # Quality confidence halves every hour
+    quality_decay_floor: float = 0.5  # Never decay below this quality level
+    quality_decay_enabled: bool = True  # Enable/disable decay mechanism
 
 
 @dataclass
@@ -193,6 +199,11 @@ class ConfigTrainingState:
     consecutive_failures: int = 0
     # December 29, 2025: Track model path for event emission
     _pending_model_path: str = ""  # Path where current training will save model
+    # January 3, 2026: Quality score tracking with confidence decay
+    # Quality scores decay over time if not refreshed, preventing stale assessments
+    # from blocking training when conditions have changed
+    last_quality_score: float = 0.7  # Default to minimum threshold
+    last_quality_update: float = 0.0  # Timestamp when quality was last updated
 
 
 @dataclass
@@ -1068,6 +1079,46 @@ class TrainingTriggerDaemon(HandlerBase):
         except Exception as e:
             logger.error(f"[TrainingTriggerDaemon] Error handling training completion: {e}")
 
+    def _get_decayed_quality_score(
+        self, state: ConfigTrainingState, current_time: float | None = None
+    ) -> float:
+        """Apply confidence decay to stored quality score.
+
+        January 3, 2026: Quality scores decay over time to prevent stale assessments
+        from blocking training. If no new quality data arrives, the effective quality
+        score drops toward the decay floor, potentially unblocking training.
+
+        Uses exponential decay: effective_quality = floor + (score - floor) * 0.5^(age/half_life)
+
+        Args:
+            state: The config's training state containing quality score and timestamp
+            current_time: Current timestamp (defaults to time.time())
+
+        Returns:
+            Decayed quality score (never below quality_decay_floor)
+        """
+        if not self.config.quality_decay_enabled:
+            return state.last_quality_score
+
+        if state.last_quality_update <= 0:
+            # No quality data yet - use default
+            return state.last_quality_score
+
+        current_time = current_time or time.time()
+        age_hours = (current_time - state.last_quality_update) / 3600.0
+
+        if age_hours <= 0:
+            return state.last_quality_score
+
+        # Exponential decay toward floor
+        floor = self.config.quality_decay_floor
+        half_life = self.config.quality_decay_half_life_hours
+        decay_factor = 0.5 ** (age_hours / half_life)
+
+        # Decay from current score toward floor
+        decayed = floor + (state.last_quality_score - floor) * decay_factor
+        return max(floor, decayed)
+
     def _intensity_from_quality(
         self, quality_score: float, config_key: str | None = None
     ) -> str:
@@ -1124,7 +1175,12 @@ class TrainingTriggerDaemon(HandlerBase):
             logger.error(f"[TrainingTriggerDaemon] Error handling training threshold: {e}")
 
     async def _on_quality_score_updated(self, event: Any) -> None:
-        """Handle quality score updates to keep intensity in sync."""
+        """Handle quality score updates to keep intensity in sync.
+
+        January 3, 2026: Now stores quality score and timestamp for confidence decay.
+        When quality scores become stale (no updates), they decay toward a floor value,
+        potentially unblocking training that was blocked by high quality gates.
+        """
         try:
             payload = getattr(event, "payload", {})
             config_key = extract_config_key(payload)
@@ -1133,6 +1189,11 @@ class TrainingTriggerDaemon(HandlerBase):
 
             quality_score = float(payload.get("quality_score", 0.0))
             state = self._get_or_create_state(config_key)
+
+            # Jan 3, 2026: Store quality score and timestamp for decay calculation
+            state.last_quality_score = quality_score
+            state.last_quality_update = time.time()
+
             state.training_intensity = self._intensity_from_quality(quality_score, config_key)
 
             logger.debug(
@@ -2416,6 +2477,10 @@ class TrainingTriggerDaemon(HandlerBase):
         Blocks training if data quality is below threshold, ensuring we only
         train on high-quality data.
 
+        January 3, 2026: Added quality confidence decay. When quality data is stale
+        (no recent updates), the effective quality score decays toward a floor value.
+        This prevents stale high-quality assessments from blocking training indefinitely.
+
         Expected improvement: +15-20 Elo from better training data quality.
 
         Args:
@@ -2442,12 +2507,22 @@ class TrainingTriggerDaemon(HandlerBase):
             quality = quality_monitor.get_quality_for_config(config_key)
 
             if quality is None:
-                # No quality data available - allow training with warning
-                logger.debug(
-                    f"[TrainingTriggerDaemon] {config_key}: no quality data available, "
-                    f"proceeding with training"
-                )
-                return True, "no quality data (proceeding anyway)"
+                # Jan 3, 2026: No fresh quality data - try decayed stored quality
+                state = self._training_states.get(config_key)
+                if state and state.last_quality_update > 0:
+                    decayed_quality = self._get_decayed_quality_score(state)
+                    logger.debug(
+                        f"[TrainingTriggerDaemon] {config_key}: using decayed quality "
+                        f"{decayed_quality:.2f} (original: {state.last_quality_score:.2f})"
+                    )
+                    quality = decayed_quality
+                else:
+                    # No quality data available at all - allow training with warning
+                    logger.debug(
+                        f"[TrainingTriggerDaemon] {config_key}: no quality data available, "
+                        f"proceeding with training"
+                    )
+                    return True, "no quality data (proceeding anyway)"
 
             if quality < quality_threshold:
                 # Quality too low - block training and emit event

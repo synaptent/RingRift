@@ -380,6 +380,13 @@ class LeaderHealthProbe:
                 error="timeout",
             )
         except Exception as e:
+            # Close session on connection errors so it gets recreated on next probe
+            if self._http_session:
+                try:
+                    await self._http_session.close()
+                except Exception:
+                    pass
+                self._http_session = None
             return ProbeResult(
                 transport=ProbeTransport.HTTP_DIRECT,
                 success=False,
@@ -424,6 +431,13 @@ class LeaderHealthProbe:
                 error="timeout",
             )
         except Exception as e:
+            # Close session on connection errors so it gets recreated on next probe
+            if self._http_session:
+                try:
+                    await self._http_session.close()
+                except Exception:
+                    pass
+                self._http_session = None
             return ProbeResult(
                 transport=ProbeTransport.HTTP_TAILSCALE,
                 success=False,
@@ -563,6 +577,13 @@ class LeaderHealthProbe:
             )
         except Exception as e:
             self._work_acceptance_failures += 1
+            # Close session on connection errors so it gets recreated on next probe
+            if self._http_session:
+                try:
+                    await self._http_session.close()
+                except Exception:
+                    pass
+                self._http_session = None
             return ProbeResult(
                 transport=ProbeTransport.WORK_ACCEPTANCE,
                 success=False,

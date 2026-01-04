@@ -2039,6 +2039,52 @@ class FeedbackLoopController(HandlerBase):
         except (AttributeError, TypeError, KeyError, RuntimeError) as e:
             logger.error(f"[FeedbackLoopController] Error handling evaluation failed: {e}")
 
+    def _calculate_regression_amplitude(
+        self, elo_drop: float, consecutive_regressions: int
+    ) -> tuple[float, int]:
+        """Calculate response amplitude based on regression severity.
+
+        January 3, 2026: Implements proportional response to regression severity.
+        Larger Elo drops and repeated regressions trigger stronger responses.
+
+        The amplitude formula:
+        - Base boost: 1.5x (EXPLORATION_BOOST_RECOVERY)
+        - Elo scaling: +0.1x per 50 Elo drop (capped at +0.5x)
+        - Consecutive scaling: +0.15x per consecutive regression
+
+        Args:
+            elo_drop: Magnitude of Elo regression (positive value)
+            consecutive_regressions: Number of consecutive regression events
+
+        Returns:
+            Tuple of (exploration_boost, target_games):
+            - exploration_boost: Scaled boost factor (1.5x to 2.5x range)
+            - target_games: Number of selfplay games to request (500 to 2000 range)
+        """
+        # Base values
+        base_boost = EXPLORATION_BOOST_RECOVERY  # 1.5x
+        base_games = 500
+
+        # Scale exploration boost by Elo drop magnitude
+        # +0.1x per 50 Elo drop, capped at +0.5x
+        elo_boost = min(0.5, (elo_drop / 50.0) * 0.1)
+
+        # Scale by consecutive regressions (+0.15x each, capped at +0.5x)
+        consecutive_boost = min(0.5, consecutive_regressions * 0.15)
+
+        # Combined boost, capped at EXPLORATION_BOOST_MAX (2.0)
+        exploration_boost = min(
+            EXPLORATION_BOOST_MAX,
+            base_boost + elo_boost + consecutive_boost
+        )
+
+        # Scale target games based on severity
+        # More severe regressions get more games to recover from
+        severity_factor = 1.0 + (elo_drop / 100.0) * 0.5 + consecutive_regressions * 0.3
+        target_games = min(2000, int(base_games * severity_factor))
+
+        return exploration_boost, target_games
+
     def _on_regression_detected(self, event: Any) -> None:
         """Handle REGRESSION_DETECTED event.
 
@@ -2046,6 +2092,9 @@ class FeedbackLoopController(HandlerBase):
         1. Exploration boost (1.5x to generate more diverse data)
         2. SELFPLAY_TARGET_UPDATED event to request additional games
         3. Log the action for monitoring
+
+        January 3, 2026: Added amplitude scaling - response intensity is now
+        proportional to regression severity (Elo drop magnitude and consecutive count).
 
         This closes the feedback loop: REGRESSION_DETECTED → exploration boost →
         more diverse selfplay → better training data → recovery.
@@ -2064,29 +2113,31 @@ class FeedbackLoopController(HandlerBase):
             state = self._get_or_create_state(config_key)
             state.consecutive_failures += 1
 
+            # Jan 3, 2026: Calculate amplitude-scaled response based on severity
+            exploration_boost, target_games = self._calculate_regression_amplitude(
+                elo_drop, consecutive_regressions
+            )
+
             logger.warning(
                 f"[FeedbackLoopController] Regression detected for {config_key}: "
                 f"elo_drop={elo_drop:.0f}, consecutive={consecutive_regressions}, "
-                f"total_failures={state.consecutive_failures}"
+                f"total_failures={state.consecutive_failures}, "
+                f"amplitude_boost={exploration_boost:.2f}x, target_games={target_games}"
             )
 
             # Set exploration boost to generate more diverse data
             # Use max to preserve any higher existing boost
-            exploration_boost = EXPLORATION_BOOST_RECOVERY
             old_boost = state.current_exploration_boost
             new_boost = max(state.current_exploration_boost, exploration_boost)
             state.current_exploration_boost = new_boost
 
             logger.info(
                 f"[FeedbackLoopController] Increased exploration boost for {config_key}: "
-                f"{old_boost:.2f}x → {new_boost:.2f}x (regression response)"
+                f"{old_boost:.2f}x → {new_boost:.2f}x (regression amplitude response)"
             )
 
             # Emit SELFPLAY_TARGET_UPDATED to request more diverse selfplay games
             if HAS_SELFPLAY_EVENTS and emit_selfplay_target_updated:
-                # Calculate target games based on regression severity
-                base_games = 500
-                target_games = int(base_games * (1 + 0.3 * consecutive_regressions))
 
                 try:
                     # Dec 2025: Use get_running_loop() instead of deprecated get_event_loop()

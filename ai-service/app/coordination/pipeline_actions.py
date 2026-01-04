@@ -50,6 +50,7 @@ except ImportError:
 
 # December 30, 2025: Centralized retry config for consistency
 from app.utils.retry import RetryConfig
+from app.coordination.event_utils import make_config_key
 
 # Import event emitter for training triggered events (December 2025)
 try:

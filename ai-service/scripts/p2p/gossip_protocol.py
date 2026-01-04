@@ -247,6 +247,7 @@ class GossipHealthTracker:
         for peer_id in stale_peers:
             self._failure_counts.pop(peer_id, None)
             self._last_success.pop(peer_id, None)
+            self._last_failure.pop(peer_id, None)  # Jan 3, 2026: Clean up backoff tracking
             self._suspect_emitted.discard(peer_id)
 
         return len(stale_peers)
@@ -568,9 +569,10 @@ class GossipProtocolMixin(P2PMixinBase):
                         f"{attempt.number}/{attempt.max_attempts}): {e}"
                     )
                 await attempt.wait_async()
-            except Exception as e:
+            except (aiohttp.ClientError, json.JSONDecodeError, ValueError, AttributeError, KeyError) as e:
+                # Jan 3, 2026: Narrowed from broad Exception to specific types
                 # Non-transient error - don't retry
-                self._log_warning(f"Unexpected error probing {peer.node_id}: {e}")
+                self._log_warning(f"Unexpected error probing {peer.node_id}: {type(e).__name__}: {e}")
                 return None
 
         return None
@@ -639,10 +641,11 @@ class GossipProtocolMixin(P2PMixinBase):
                                     f"{old_host} -> {new_host}"
                                 )
                             self.peers[peer.node_id].mark_endpoint_validated()
-            except Exception as e:
+            except (asyncio.TimeoutError, OSError, aiohttp.ClientError, ValueError, AttributeError, KeyError) as e:
+                # Jan 3, 2026: Narrowed from broad Exception to specific types
                 if self.verbose:
                     self._log_debug(
-                        f"Failed to validate endpoint for {peer.node_id}: {e}"
+                        f"Failed to validate endpoint for {peer.node_id}: {type(e).__name__}: {e}"
                     )
 
         if refreshed > 0:
@@ -715,8 +718,8 @@ class GossipProtocolMixin(P2PMixinBase):
                 # Dec 30, 2025: Log timeout/network errors at debug level
                 self._log_debug(f"[EndpointProbe] {peer.node_id} IP {ip} probe failed: {type(e).__name__}")
                 continue
-            except Exception as e:
-                # Dec 30, 2025: Log unexpected errors
+            except (aiohttp.ClientError, json.JSONDecodeError, ValueError, AttributeError, KeyError) as e:
+                # Jan 3, 2026: Narrowed from broad Exception to specific types
                 self._log_debug(f"[EndpointProbe] {peer.node_id} IP {ip} unexpected error: {type(e).__name__}: {e}")
                 continue
 
@@ -1204,6 +1207,14 @@ class GossipProtocolMixin(P2PMixinBase):
             default_timeout = 5
 
         for peer_id in selected_ids:
+            # Jan 3, 2026: Skip peers in backoff period (exponential backoff for failures)
+            if self.health_tracker.should_skip_peer(peer_id):
+                backoff_remaining = self.health_tracker.get_backoff_seconds(peer_id)
+                self._log_debug(
+                    f"[Gossip] Skipping {peer_id} - in backoff ({backoff_remaining:.1f}s remaining)"
+                )
+                continue
+
             with self.peers_lock:
                 peer = self.peers.get(peer_id)
             if peer and peer.is_alive():
@@ -1923,9 +1934,10 @@ class GossipProtocolMixin(P2PMixinBase):
         except ImportError:
             # Cluster manifest not available (e.g., minimal node)
             pass
-        except Exception as e:
+        except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+            # Jan 3, 2026: Narrowed from broad Exception to specific types
             # Log but don't fail on sync errors
-            self._log_debug(f"Model location sync failed: {e}")
+            self._log_debug(f"Model location sync failed: {type(e).__name__}: {e}")
 
     def _process_circuit_breaker_states(
         self, source_node: str, cb_states: dict[str, dict]

@@ -41,7 +41,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional
 
 # Canonical types (December 2025 consolidation)
 from app.coordination.types import BackpressureLevel, BoardType
-from app.coordination.event_utils import parse_config_key
+from app.coordination.event_utils import make_config_key, parse_config_key
 from app.coordination.event_handler_utils import (
     extract_config_key,
     extract_board_type,

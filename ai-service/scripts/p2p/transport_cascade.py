@@ -328,6 +328,8 @@ class TransportCascade:
         self._min_tier = int(os.environ.get("RINGRIFT_TRANSPORT_MIN_TIER", "1"))
         self._max_tier = int(os.environ.get("RINGRIFT_TRANSPORT_MAX_TIER", "5"))
         self._timeout_per_transport = float(os.environ.get("RINGRIFT_TRANSPORT_TIMEOUT", "10"))
+        # Total timeout for the entire cascade (prevents 360s+ hangs with 6 tiers)
+        self._total_timeout = float(os.environ.get("RINGRIFT_TRANSPORT_TOTAL_TIMEOUT", "30"))
 
         # Jan 2026: Adaptive timeout learning (Phase 2.3)
         self._adaptive_timeouts_enabled = (
@@ -604,6 +606,7 @@ class TransportCascade:
         min_tier: TransportTier | None = None,
         max_tier: TransportTier | None = None,
         timeout_per_transport: float | None = None,
+        total_timeout: float | None = None,
         parallel_probe: bool = False,
     ) -> TransportResult:
         """
@@ -615,6 +618,7 @@ class TransportCascade:
             min_tier: Minimum tier to try (default: TIER_1_FAST)
             max_tier: Maximum tier to try (default: TIER_5_EXTERNAL)
             timeout_per_transport: Timeout per transport attempt
+            total_timeout: Maximum total time for entire cascade (default: 30s)
             parallel_probe: If True, try all transports in each tier simultaneously
 
         Returns:
@@ -641,6 +645,10 @@ class TransportCascade:
         effective_min = min_tier or TransportTier(self._min_tier)
         effective_max = max_tier or TransportTier(self._max_tier)
         effective_timeout = timeout_per_transport or self._timeout_per_transport
+        effective_total_timeout = total_timeout or self._total_timeout
+
+        # Track cascade start time for total timeout enforcement
+        cascade_start_time = time.time()
 
         # Filter transports by tier
         eligible = [
@@ -662,11 +670,13 @@ class TransportCascade:
 
         if parallel_probe:
             return await self._cascade_parallel(
-                target, payload, sorted_transports, effective_timeout
+                target, payload, sorted_transports, effective_timeout,
+                cascade_start_time, effective_total_timeout,
             )
         else:
             return await self._cascade_sequential(
-                target, payload, sorted_transports, effective_timeout
+                target, payload, sorted_transports, effective_timeout,
+                cascade_start_time, effective_total_timeout,
             )
 
     async def _cascade_sequential(
@@ -675,8 +685,10 @@ class TransportCascade:
         payload: bytes,
         transports: list[BaseTransport],
         timeout: float,
+        cascade_start_time: float,
+        total_timeout: float,
     ) -> TransportResult:
-        """Try transports sequentially."""
+        """Try transports sequentially with total timeout enforcement."""
         errors = []
 
         # Jan 2026: Use adaptive timeout if enabled and we have historical data
@@ -687,6 +699,22 @@ class TransportCascade:
             effective_timeout = max(timeout, adaptive_timeout)
 
         for transport in transports:
+            # Check total timeout before each attempt
+            elapsed = time.time() - cascade_start_time
+            remaining = total_timeout - elapsed
+            if remaining <= 0:
+                logger.debug(
+                    f"[TransportCascade] Total timeout ({total_timeout}s) exceeded after {elapsed:.1f}s"
+                )
+                return TransportResult(
+                    success=False,
+                    transport_name="total_timeout_exceeded",
+                    latency_ms=elapsed * 1000,
+                    error=f"Total cascade timeout ({total_timeout}s) exceeded after trying {len(errors)} transports",
+                )
+
+            # Clamp per-transport timeout to remaining time
+            clamped_timeout = min(effective_timeout, remaining)
             # Jan 2026 Phase 2: Check per-transport circuit breaker BEFORE attempting
             # This enables transport-level failover - skip transports with OPEN circuits
             if not check_peer_transport_circuit(target, transport.name):
@@ -711,7 +739,7 @@ class TransportCascade:
             try:
                 result = await asyncio.wait_for(
                     transport.send(target, payload),
-                    timeout=effective_timeout,
+                    timeout=clamped_timeout,
                 )
                 latency_ms = (time.time() - start_time) * 1000
 
@@ -724,7 +752,7 @@ class TransportCascade:
 
             except asyncio.TimeoutError:
                 self._record_failure(target, transport.name)
-                errors.append(f"{transport.name}: timeout ({effective_timeout:.1f}s)")
+                errors.append(f"{transport.name}: timeout ({clamped_timeout:.1f}s)")
 
             except Exception as e:
                 self._record_failure(target, transport.name)
@@ -744,8 +772,10 @@ class TransportCascade:
         payload: bytes,
         transports: list[BaseTransport],
         timeout: float,
+        cascade_start_time: float,
+        total_timeout: float,
     ) -> TransportResult:
-        """Try all transports in parallel within each tier."""
+        """Try all transports in parallel within each tier with total timeout enforcement."""
         # Group by tier
         by_tier: dict[TransportTier, list[BaseTransport]] = {}
         for t in transports:
@@ -762,13 +792,29 @@ class TransportCascade:
 
         # Try each tier
         for tier in sorted(by_tier.keys(), key=lambda t: t.value):
+            # Check total timeout before each tier
+            elapsed = time.time() - cascade_start_time
+            remaining = total_timeout - elapsed
+            if remaining <= 0:
+                logger.debug(
+                    f"[TransportCascade] Total timeout ({total_timeout}s) exceeded after {elapsed:.1f}s"
+                )
+                return TransportResult(
+                    success=False,
+                    transport_name="total_timeout_exceeded",
+                    latency_ms=elapsed * 1000,
+                    error=f"Total cascade timeout ({total_timeout}s) exceeded after trying {len(errors)} transports",
+                )
+
+            # Clamp per-transport timeout to remaining time
+            clamped_timeout = min(effective_timeout, remaining)
             tier_transports = by_tier[tier]
 
             # Create tasks for all transports in this tier
             tasks = []
             for transport in tier_transports:
                 task = asyncio.create_task(
-                    self._try_transport(target, payload, transport, effective_timeout)
+                    self._try_transport(target, payload, transport, clamped_timeout)
                 )
                 tasks.append((transport.name, task))
 
