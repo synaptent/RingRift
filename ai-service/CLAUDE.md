@@ -2,17 +2,17 @@
 
 AI assistant context for the Python AI training service. Complements `AGENTS.md` with operational knowledge.
 
-**Last Updated**: January 4, 2026 (Sprint 17.1)
+**Last Updated**: January 4, 2026 (Sprint 17.2)
 
 ## Infrastructure Health Status (Verified Jan 4, 2026)
 
 | Component            | Status    | Evidence                                                  |
 | -------------------- | --------- | --------------------------------------------------------- |
 | **P2P Network**      | GREEN     | A- (91/100), 32+ health mechanisms, 8 recovery daemons    |
-| **Training Loop**    | GREEN     | A (95/100), 5/5 feedback loops wired, 6/6 pipeline stages |
-| **Code Quality**     | GREEN     | 99% consolidated, 319 coordination modules, 1044 tests    |
+| **Training Loop**    | GREEN     | A (95/100), 5/5 feedback loops wired, 7/7 pipeline stages |
+| **Code Quality**     | GREEN     | 99% consolidated, 326 coordination modules, 1044+ tests   |
 | **Leader Election**  | WORKING   | Bully algorithm with voter quorum, split-brain detection  |
-| **Work Queue**       | HEALTHY   | 34 alive peers, nebius-backbone-1 as leader               |
+| **Work Queue**       | HEALTHY   | 30 alive peers, 7/7 voters, nebius-backbone-1 as leader   |
 | **Model Evaluation** | AUTOMATED | OWC import + unevaluated scan + stale re-eval pipeline    |
 
 ## Sprint 17: Cluster Resilience Integration (Jan 4, 2026)
@@ -44,6 +44,24 @@ Session 16-17 resilience components are now fully integrated and bootstrapped:
 | Early Quorum Escalation   | Skip to P2P restart after 2 failed healing attempts with quorum lost | `p2p_recovery_daemon.py`      |
 | Training Heartbeat Events | TRAINING_HEARTBEAT event for watchdog monitoring                     | `distributed_lock.py`         |
 | TRAINING_PROCESS_KILLED   | Event emitted when stuck training process killed                     | `training_watchdog_daemon.py` |
+
+**Sprint 17.2 Session (Jan 4, 2026):**
+
+| Fix                     | Purpose                                                    | Files                           |
+| ----------------------- | ---------------------------------------------------------- | ------------------------------- |
+| P2P Status Parsing      | Fixed voter detection using peers dict and voter_quorum_ok | `cluster_update_coordinator.py` |
+| Daemon Registry Entries | Added 8 missing daemon specs for resilience daemons        | `daemon_registry.py`            |
+| Cluster Update          | Deployed 34e0a810 to 30+ nodes with P2P restart            | All cluster nodes               |
+| Quorum-Safe Updates     | Verified 7/7 voters alive with healthy quorum              | P2P cluster                     |
+
+**Assessment Results (Jan 4, 2026):**
+
+| Assessment Area | Grade    | Score  | Key Findings                                       |
+| --------------- | -------- | ------ | -------------------------------------------------- |
+| P2P Network     | A-       | 91/100 | 32+ health mechanisms, 25-45s mean recovery time   |
+| Training Loop   | A        | 95/100 | 7 pipeline stages, 5 feedback loops, quality gates |
+| Consolidation   | -        | 99%    | Only minor incremental opportunities remain        |
+| 48h Autonomous  | VERIFIED | -      | All 4 autonomous daemons functional                |
 
 **Sprint 17.2 Consolidation Opportunities (Identified):**
 
