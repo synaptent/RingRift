@@ -54,6 +54,7 @@ high-impact wiring. For the full list, see `../EVENT_REFERENCE_AUTO.md` and `../
 - **Subscribers**:
   - `unified_health_manager.py` - Tracks failure patterns
   - `daemon_manager.py` - May trigger recovery
+  - `training_data_recovery_daemon.py` - Detects corruption, triggers NPZ re-export (Sprint 13.3)
 
 ### TRAINING_PROGRESS
 
@@ -83,6 +84,20 @@ high-impact wiring. For the full list, see `../EVENT_REFERENCE_AUTO.md` and `../
 - **Emitter**: `anomaly_detector.py`
 - **Subscribers**:
   - `unified_feedback.py` - Adjusts learning rate
+
+### TRAINING_DATA_RECOVERED (Jan 3, 2026 Sprint 13.3)
+
+- **Emitter**: `training_data_recovery_daemon.py`
+- **Subscribers**:
+  - `training_coordinator.py` - Re-enables training for config
+  - `unified_health_manager.py` - Clears failure state
+
+### TRAINING_DATA_RECOVERY_FAILED (Jan 3, 2026 Sprint 13.3)
+
+- **Emitter**: `training_data_recovery_daemon.py`
+- **Subscribers**:
+  - `daemon_manager.py` - May escalate to manual intervention alert
+  - `unified_health_manager.py` - Tracks recovery failures
 
 ---
 
