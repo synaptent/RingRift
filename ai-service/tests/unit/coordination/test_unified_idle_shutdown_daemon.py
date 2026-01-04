@@ -72,7 +72,8 @@ class TestProviderDefaults:
         """Test Vast provider defaults are defined."""
         assert "vast" in PROVIDER_DEFAULTS
         defaults = PROVIDER_DEFAULTS["vast"]
-        assert defaults["idle_threshold_seconds"] == 900  # 15 minutes
+        # Jan 2026: Updated from 900s to 1800s (Sprint 3.5)
+        assert defaults["idle_threshold_seconds"] == 1800  # 30 minutes
         assert defaults["min_nodes_to_retain"] == 0
 
     def test_runpod_defaults_exist(self):
@@ -129,7 +130,8 @@ class TestIdleShutdownConfig:
     def test_for_provider_vast(self):
         """Test factory method for Vast provider."""
         config = IdleShutdownConfig.for_provider("vast")
-        assert config.idle_threshold_seconds == 900
+        # Jan 2026: Updated from 900s to 1800s (Sprint 3.5)
+        assert config.idle_threshold_seconds == 1800
         assert config.min_nodes_to_retain == 0
         assert config.provider_name == "vast"
 

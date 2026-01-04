@@ -538,8 +538,10 @@ class TestTrainingDataSyncDaemon:
         """Test creating a daemon instance."""
         daemon = TrainingDataSyncDaemon()
         assert daemon._running is False
-        assert daemon._task is None
-        assert daemon._stats == {}
+        # Jan 2026: HandlerBase uses individual attributes instead of _task and _stats dict
+        assert daemon._syncs_completed == 0
+        assert daemon._syncs_failed == 0
+        assert daemon._bytes_transferred == 0
 
     def test_daemon_with_custom_config(self, sync_config):
         """Test creating daemon with custom config."""
@@ -558,8 +560,8 @@ class TestTrainingDataSyncDaemon:
         await daemon.start()
 
         assert daemon._running is True
-        assert daemon._task is not None
-        assert "started_at" in daemon._stats
+        # Jan 2026: HandlerBase tracks started_at in _stats.started_at (float, not dict key)
+        assert daemon._stats.started_at > 0
 
         await daemon.stop()
 
@@ -570,11 +572,11 @@ class TestTrainingDataSyncDaemon:
         daemon._get_pending_training_configs = AsyncMock(return_value=[])
 
         await daemon.start()
-        first_task = daemon._task
+        first_start_time = daemon._stats.started_at
 
-        # Starting again should not create new task
+        # Starting again should not reset started_at
         await daemon.start()
-        assert daemon._task is first_task
+        assert daemon._stats.started_at == first_start_time
 
         await daemon.stop()
 
@@ -588,8 +590,8 @@ class TestTrainingDataSyncDaemon:
         assert daemon._running is True
 
         await daemon.stop()
+        # Jan 2026: HandlerBase sets _running = False on stop
         assert daemon._running is False
-        assert daemon._task is None
 
     @pytest.mark.asyncio
     async def test_daemon_stop_not_running(self, sync_config):
@@ -625,20 +627,20 @@ class TestTrainingDataSyncDaemon:
             "app.coordination.training_data_sync_daemon.sync_training_data_for_config",
             side_effect=mock_sync,
         ):
-            # Initialize stats (normally done by start())
+            # Initialize daemon state (normally done by start())
             daemon._running = True
-            daemon._stats = {
-                "syncs_completed": 0,
-                "syncs_failed": 0,
-                "bytes_transferred": 0,
-            }
+            daemon._syncs_completed = 0
+            daemon._syncs_failed = 0
+            daemon._bytes_transferred = 0
             try:
-                await asyncio.wait_for(daemon._run_loop(), timeout=0.5)
+                # Jan 2026: _run_loop renamed to _run_cycle after HandlerBase migration
+                await asyncio.wait_for(daemon._run_cycle(), timeout=0.5)
             except asyncio.TimeoutError:
                 pass
 
         assert len(sync_results) == 2
-        assert daemon._stats["syncs_completed"] == 2
+        # Jan 2026: _stats dict replaced with individual attributes after HandlerBase migration
+        assert daemon._syncs_completed == 2
 
 
 class TestDaemonHealthCheck:
@@ -675,11 +677,10 @@ class TestDaemonHealthCheck:
         """Test health check with high error rate."""
         daemon = TrainingDataSyncDaemon(config=sync_config)
         daemon._running = True
-        daemon._stats = {
-            "syncs_completed": 2,
-            "syncs_failed": 8,  # 80% error rate
-            "bytes_transferred": 1024,
-        }
+        # Jan 2026: Use individual attributes instead of _stats dict
+        daemon._syncs_completed = 2
+        daemon._syncs_failed = 8  # 80% error rate
+        daemon._bytes_transferred = 1024
 
         health = daemon.health_check()
 
@@ -810,12 +811,14 @@ class TestSingletonPattern:
     def test_get_after_reset_creates_new_instance(self):
         """Test that get after reset creates fresh instance."""
         daemon1 = get_training_data_sync_daemon()
-        daemon1._stats["test_key"] = "test_value"
+        # Jan 2026: Set a daemon-specific attribute instead of dict key
+        daemon1._syncs_completed = 999
 
         reset_training_data_sync_daemon()
         daemon2 = get_training_data_sync_daemon()
 
-        assert "test_key" not in daemon2._stats
+        # Fresh instance has zero syncs_completed
+        assert daemon2._syncs_completed == 0
 
 
 # =============================================================================

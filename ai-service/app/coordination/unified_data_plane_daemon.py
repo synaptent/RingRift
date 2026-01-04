@@ -75,6 +75,8 @@ from app.coordination.protocols import (
     register_coordinator,
     unregister_coordinator,
 )
+# January 2026: HandlerBase for unified lifecycle management
+from app.coordination.handler_base import HandlerBase
 
 logger = logging.getLogger(__name__)
 
@@ -332,7 +334,7 @@ class EventBridge:
 # =============================================================================
 
 
-class UnifiedDataPlaneDaemon(CoordinatorProtocol):
+class UnifiedDataPlaneDaemon(HandlerBase, CoordinatorProtocol):
     """Unified daemon for all data synchronization.
 
     Consolidates AutoSyncDaemon, S3NodeSyncDaemon, dynamic_data_distribution,
@@ -349,6 +351,8 @@ class UnifiedDataPlaneDaemon(CoordinatorProtocol):
     - Replication check: Ensure min replication factor
     - S3 backup: Periodic backup to S3 (optional)
     - Manifest broadcast: Share manifest with peers
+
+    January 2026: Migrated to HandlerBase for unified lifecycle management.
     """
 
     def __init__(
@@ -360,19 +364,36 @@ class UnifiedDataPlaneDaemon(CoordinatorProtocol):
     ):
         """Initialize the Unified Data Plane Daemon.
 
+        January 2026: Added HandlerBase initialization.
+
         Args:
             config: Daemon configuration
             catalog: DataCatalog instance
             planner: SyncPlanner instance
             transport: TransportManager instance
         """
-        self._config = config or DataPlaneConfig.from_env()
+        # Store config and stats locally first (before super().__init__ which
+        # overwrites _daemon_config via _config setter and _stats with HandlerStats)
+        daemon_config = config or DataPlaneConfig.from_env()
         self._catalog = catalog or get_data_catalog()
         self._planner = planner or get_sync_planner()
         self._transport = transport or get_transport_manager()
 
         self._node_id = socket.gethostname()
+
+        # January 2026: Initialize HandlerBase
+        # Note: This daemon uses multiple specialized loops rather than a single cycle
+        # Always enabled - the daemon is always available when instantiated
+        super().__init__(
+            name="unified_data_plane",
+            config={"enabled": True},
+            cycle_interval=daemon_config.catalog_refresh_interval,
+        )
+
+        # Set _daemon_config and _stats AFTER super().__init__() to avoid overwrites
+        self._daemon_config = daemon_config
         self._stats = DataPlaneStats()
+
         self._running = False
 
         # Status
@@ -386,16 +407,31 @@ class UnifiedDataPlaneDaemon(CoordinatorProtocol):
         self._tasks: list[asyncio.Task] = []
 
         # Sync semaphore
-        self._sync_semaphore = asyncio.Semaphore(self._config.max_concurrent_syncs)
+        self._sync_semaphore = asyncio.Semaphore(self._daemon_config.max_concurrent_syncs)
 
         logger.info(f"[UnifiedDataPlane] Initialized on {self._node_id}")
 
+    # Backward-compatible config access
+    @property
+    def _config(self) -> DataPlaneConfig:
+        """Backward-compatible config access."""
+        return self._daemon_config
+
+    @_config.setter
+    def _config(self, value: DataPlaneConfig) -> None:
+        """Backward-compatible config setter."""
+        self._daemon_config = value
+
     # =========================================================================
-    # Lifecycle - CoordinatorProtocol
+    # Lifecycle - CoordinatorProtocol + HandlerBase
     # =========================================================================
 
     async def start(self) -> None:
-        """Start the daemon."""
+        """Start the daemon.
+
+        January 2026: Migrated to HandlerBase lifecycle management.
+        Note: This daemon uses multiple specialized loops, not _run_cycle().
+        """
         if self._running:
             return
 
@@ -405,39 +441,8 @@ class UnifiedDataPlaneDaemon(CoordinatorProtocol):
         self._status = CoordinatorStatus.STARTING
 
         try:
-            # Register with coordinator registry
-            register_coordinator("unified_data_plane", self)
-
-            # Start event bridge
-            await self._event_bridge.start()
-
-            # Start sync planner
-            await self._planner.start()
-
-            # Start background tasks
-            self._tasks = [
-                asyncio.create_task(
-                    self._catalog_refresh_loop(),
-                    name="data_plane_catalog_refresh",
-                ),
-                asyncio.create_task(
-                    self._replication_loop(),
-                    name="data_plane_replication",
-                ),
-                asyncio.create_task(
-                    self._manifest_broadcast_loop(),
-                    name="data_plane_manifest",
-                ),
-            ]
-
-            # Start S3 backup if enabled
-            if self._config.s3_enabled:
-                self._tasks.append(
-                    asyncio.create_task(
-                        self._s3_backup_loop(),
-                        name="data_plane_s3_backup",
-                    )
-                )
+            # January 2026: HandlerBase manages event subscriptions
+            await super().start()
 
             self._status = CoordinatorStatus.RUNNING
             logger.info("[UnifiedDataPlane] Started successfully")
@@ -447,14 +452,82 @@ class UnifiedDataPlaneDaemon(CoordinatorProtocol):
             logger.error(f"[UnifiedDataPlane] Failed to start: {e}")
             raise
 
+    async def _on_start(self) -> None:
+        """Lifecycle hook called after HandlerBase starts.
+
+        January 2026: Moved coordinator registration and task creation here.
+        """
+        # Register with coordinator registry
+        register_coordinator("unified_data_plane", self)
+
+        # Start event bridge
+        await self._event_bridge.start()
+
+        # Start sync planner
+        await self._planner.start()
+
+        # Start background tasks
+        self._tasks = [
+            asyncio.create_task(
+                self._catalog_refresh_loop(),
+                name="data_plane_catalog_refresh",
+            ),
+            asyncio.create_task(
+                self._replication_loop(),
+                name="data_plane_replication",
+            ),
+            asyncio.create_task(
+                self._manifest_broadcast_loop(),
+                name="data_plane_manifest",
+            ),
+        ]
+
+        # Start S3 backup if enabled
+        if self._daemon_config.s3_enabled:
+            self._tasks.append(
+                asyncio.create_task(
+                    self._s3_backup_loop(),
+                    name="data_plane_s3_backup",
+                )
+            )
+
+    async def _run_cycle(self) -> None:
+        """Run one cycle of data plane work.
+
+        January 2026: HandlerBase lifecycle hook.
+        Note: This daemon uses specialized loops (_catalog_refresh_loop, etc.)
+        so _run_cycle() just ensures background tasks are alive.
+        """
+        # Check if any background tasks have failed and restart them
+        alive_tasks = [t for t in self._tasks if not t.done()]
+        if len(alive_tasks) < len(self._tasks):
+            logger.warning(
+                f"[UnifiedDataPlane] Some background tasks completed/failed: "
+                f"{len(alive_tasks)}/{len(self._tasks)} alive"
+            )
+
     async def stop(self) -> None:
-        """Stop the daemon."""
+        """Stop the daemon.
+
+        January 2026: Migrated to HandlerBase lifecycle management.
+        """
         if not self._running:
             return
 
         self._running = False
         self._status = CoordinatorStatus.STOPPING
 
+        # January 2026: HandlerBase handles task cleanup
+        await super().stop()
+
+        self._status = CoordinatorStatus.STOPPED
+        logger.info("[UnifiedDataPlane] Stopped")
+
+    async def _on_stop(self) -> None:
+        """Lifecycle hook called when HandlerBase stops.
+
+        January 2026: Moved cleanup logic here.
+        """
         # Stop event bridge
         await self._event_bridge.stop()
 
@@ -473,9 +546,6 @@ class UnifiedDataPlaneDaemon(CoordinatorProtocol):
 
         # Unregister
         unregister_coordinator("unified_data_plane")
-
-        self._status = CoordinatorStatus.STOPPED
-        logger.info("[UnifiedDataPlane] Stopped")
 
     def health_check(self) -> HealthCheckResult:
         """Check daemon health.

@@ -75,6 +75,7 @@ import fcntl
 import logging
 import os
 import socket
+import threading
 import time
 import uuid
 from contextlib import contextmanager, suppress
@@ -276,7 +277,7 @@ class RaftLockWrapper:
 # Unified Lock Protocol (December 2025)
 # =============================================================================
 
-from typing import Generator, Protocol, runtime_checkable
+from typing import Any, Generator, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -973,14 +974,241 @@ def cleanup_stale_locks(
     return stats
 
 
+# =============================================================================
+# Training Lock with Automatic Heartbeat (January 4, 2026)
+# =============================================================================
+
+# Training lock configuration constants
+TRAINING_LOCK_TTL_SECONDS = 4 * 60 * 60  # 4 hours
+TRAINING_HEARTBEAT_INTERVAL_SECONDS = 5 * 60  # 5 minutes
+TRAINING_LOCK_MAX_AGE_HOURS = 6.0  # Auto-release after 6 hours
+
+
+class TrainingLockWithHeartbeat:
+    """Training lock with automatic heartbeat to prevent stale lock deadlocks.
+
+    January 4, 2026: Created to prevent training lock deadlocks that caused
+    4+ day training stalls. Features:
+
+    1. 4-hour TTL on training locks
+    2. Automatic heartbeat every 5 minutes (extends TTL)
+    3. Emits TRAINING_LOCK_TIMEOUT if lock expires without heartbeat
+    4. Thread-safe cleanup on release or crash
+
+    Usage:
+        lock = TrainingLockWithHeartbeat("square8_2p")
+        if lock.acquire():
+            try:
+                # Training code - heartbeat runs automatically in background
+                train_model(...)
+            finally:
+                lock.release()
+
+    Or as context manager:
+        with TrainingLockWithHeartbeat("square8_2p") as lock:
+            if lock.acquired:
+                train_model(...)
+    """
+
+    def __init__(self, config_key: str):
+        """Initialize a training lock with automatic heartbeat.
+
+        Args:
+            config_key: Config identifier (e.g., "square8_2p")
+        """
+        self.config_key = config_key
+        self._lock = DistributedLock(
+            f"training:{config_key}",
+            lock_timeout=TRAINING_LOCK_TTL_SECONDS,
+        )
+        self._acquired = False
+        self._heartbeat_thread: threading.Thread | None = None
+        self._stop_heartbeat = threading.Event()
+        self._lock_acquired_time: float | None = None
+
+    @property
+    def acquired(self) -> bool:
+        """Check if lock is currently held."""
+        return self._acquired
+
+    def acquire(self, timeout: int = DEFAULT_ACQUIRE_TIMEOUT) -> bool:
+        """Acquire the training lock and start heartbeat thread.
+
+        Args:
+            timeout: Maximum time to wait for lock (seconds)
+
+        Returns:
+            True if lock acquired, False otherwise
+        """
+        if self._acquired:
+            return True
+
+        if self._lock.acquire(timeout=timeout):
+            self._acquired = True
+            self._lock_acquired_time = time.time()
+            self._start_heartbeat_thread()
+            logger.info(
+                f"Training lock acquired: {self.config_key} "
+                f"(TTL: {TRAINING_LOCK_TTL_SECONDS}s, heartbeat: {TRAINING_HEARTBEAT_INTERVAL_SECONDS}s)"
+            )
+            return True
+        return False
+
+    def release(self) -> None:
+        """Release the training lock and stop heartbeat thread."""
+        if not self._acquired:
+            return
+
+        self._stop_heartbeat_thread()
+        self._lock.release()
+        self._acquired = False
+
+        hold_time = time.time() - (self._lock_acquired_time or time.time())
+        logger.info(
+            f"Training lock released: {self.config_key} "
+            f"(held for {hold_time:.1f}s)"
+        )
+
+    def _start_heartbeat_thread(self) -> None:
+        """Start background heartbeat thread."""
+        self._stop_heartbeat.clear()
+        self._heartbeat_thread = threading.Thread(
+            target=self._heartbeat_loop,
+            name=f"training-lock-heartbeat-{self.config_key}",
+            daemon=True,
+        )
+        self._heartbeat_thread.start()
+
+    def _stop_heartbeat_thread(self) -> None:
+        """Stop background heartbeat thread."""
+        self._stop_heartbeat.set()
+        if self._heartbeat_thread is not None:
+            self._heartbeat_thread.join(timeout=2.0)
+            self._heartbeat_thread = None
+
+    def _heartbeat_loop(self) -> None:
+        """Background loop that sends periodic heartbeats."""
+        while not self._stop_heartbeat.wait(timeout=TRAINING_HEARTBEAT_INTERVAL_SECONDS):
+            if not self._acquired:
+                break
+
+            # Check if we've exceeded max age (6 hours)
+            if self._lock_acquired_time:
+                age_hours = (time.time() - self._lock_acquired_time) / 3600
+                if age_hours > TRAINING_LOCK_MAX_AGE_HOURS:
+                    logger.warning(
+                        f"Training lock exceeded max age: {self.config_key} "
+                        f"(age: {age_hours:.1f}h > {TRAINING_LOCK_MAX_AGE_HOURS}h)"
+                    )
+                    self._emit_timeout_event("max_age_exceeded")
+                    self._acquired = False  # Mark as not acquired
+                    self._lock.release()
+                    break
+
+            # Send heartbeat
+            if self._lock.heartbeat():
+                logger.debug(f"Training lock heartbeat: {self.config_key}")
+            else:
+                logger.warning(f"Training lock heartbeat failed: {self.config_key}")
+                self._emit_timeout_event("heartbeat_failed")
+                self._acquired = False
+                break
+
+    def _emit_timeout_event(self, reason: str) -> None:
+        """Emit TRAINING_LOCK_TIMEOUT event."""
+        try:
+            from app.distributed.data_events import DataEventType, get_event_bus
+
+            hold_time = time.time() - (self._lock_acquired_time or time.time())
+            get_event_bus().emit(
+                DataEventType.TRAINING_LOCK_TIMEOUT,
+                {
+                    "config_key": self.config_key,
+                    "reason": reason,
+                    "hold_time_seconds": hold_time,
+                    "max_age_hours": TRAINING_LOCK_MAX_AGE_HOURS,
+                    "ttl_seconds": TRAINING_LOCK_TTL_SECONDS,
+                    "timestamp": time.time(),
+                },
+            )
+        except (ImportError, Exception) as e:
+            logger.debug(f"Could not emit TRAINING_LOCK_TIMEOUT: {e}")
+
+    def __enter__(self) -> "TrainingLockWithHeartbeat":
+        """Context manager entry."""
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Context manager exit."""
+        self.release()
+
+
+def acquire_training_lock_with_heartbeat(
+    config_key: str,
+    timeout: int = DEFAULT_ACQUIRE_TIMEOUT,
+) -> TrainingLockWithHeartbeat | None:
+    """Acquire a training lock with automatic heartbeat.
+
+    January 4, 2026: Recommended over acquire_training_lock() for long-running
+    training jobs. Automatically heartbeats to prevent TTL expiry.
+
+    Args:
+        config_key: Config identifier (e.g., "square8_2p")
+        timeout: Maximum time to wait for lock
+
+    Returns:
+        TrainingLockWithHeartbeat instance if acquired, None otherwise
+    """
+    lock = TrainingLockWithHeartbeat(config_key)
+    if lock.acquire(timeout=timeout):
+        return lock
+    return None
+
+
+@contextmanager
+def training_lock_with_heartbeat(
+    config_key: str,
+    timeout: int = DEFAULT_ACQUIRE_TIMEOUT,
+) -> Generator[TrainingLockWithHeartbeat | None, None, None]:
+    """Context manager for training lock with automatic heartbeat.
+
+    January 4, 2026: Recommended over training_lock() for long-running jobs.
+
+    Usage:
+        with training_lock_with_heartbeat("square8_2p") as lock:
+            if lock and lock.acquired:
+                # Do training - heartbeat runs automatically
+                train_model(...)
+            else:
+                print("Could not acquire lock")
+    """
+    lock = TrainingLockWithHeartbeat(config_key)
+    acquired = lock.acquire(timeout=timeout)
+
+    try:
+        yield lock if acquired else None
+    finally:
+        if acquired:
+            lock.release()
+
+
 __all__ = [
     # Constants
     "DEFAULT_ACQUIRE_TIMEOUT",
     "DEFAULT_LOCK_TIMEOUT",
+    # Training lock constants (January 4, 2026)
+    "TRAINING_LOCK_TTL_SECONDS",
+    "TRAINING_HEARTBEAT_INTERVAL_SECONDS",
+    "TRAINING_LOCK_MAX_AGE_HOURS",
     # Backend types (Dec 30, 2025)
     "LockBackendType",
     # Main class
     "DistributedLock",
+    # Training lock with heartbeat (January 4, 2026)
+    "TrainingLockWithHeartbeat",
+    "acquire_training_lock_with_heartbeat",
+    "training_lock_with_heartbeat",
     # Raft support (Dec 30, 2025)
     "RaftLockWrapper",
     "reset_raft_cache",

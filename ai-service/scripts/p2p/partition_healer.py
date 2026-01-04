@@ -807,6 +807,128 @@ class PartitionHealer:
         logger.warning(f"[ConvergenceCheck] {msg}")
         return False, msg
 
+    async def verify_update_convergence(
+        self,
+        updated_nodes: list[str],
+        timeout_seconds: float = 120.0,
+        agreement_threshold: float | None = None,
+    ) -> bool:
+        """Verify updated nodes have rejoined mesh and gossip converged.
+
+        January 3, 2026 - Sprint 16.2: Added for quorum-safe rolling updates.
+
+        This method is called by QuorumSafeUpdateCoordinator after restarting
+        nodes to verify they've rejoined the P2P mesh and gossip has converged.
+
+        Args:
+            updated_nodes: Node IDs that were just updated/restarted
+            timeout_seconds: Maximum time to wait for convergence (default: 120s)
+            agreement_threshold: Override for convergence threshold (default: from config)
+
+        Returns:
+            True if all nodes visible and gossip converged, False on timeout
+
+        Example:
+            >>> healer = get_partition_healer()
+            >>> converged = await healer.verify_update_convergence(
+            ...     updated_nodes=["lambda-gh200-1", "lambda-gh200-2"],
+            ...     timeout_seconds=120.0,
+            ... )
+            >>> if not converged:
+            ...     logger.error("Nodes failed to rejoin mesh after update")
+        """
+        if not updated_nodes:
+            return True  # Nothing to verify
+
+        agreement_threshold = (
+            agreement_threshold
+            or PartitionHealingDefaults.CONVERGENCE_AGREEMENT_THRESHOLD
+        )
+        check_interval = PartitionHealingDefaults.CONVERGENCE_CHECK_INTERVAL
+        updated_set = set(updated_nodes)
+
+        logger.info(
+            f"[UpdateConvergence] Waiting for {len(updated_nodes)} nodes to rejoin mesh "
+            f"(timeout={timeout_seconds}s, threshold={agreement_threshold*100:.0f}%)"
+        )
+
+        start_time = time.time()
+        check_count = 0
+
+        while (time.time() - start_time) < timeout_seconds:
+            check_count += 1
+
+            # Discover all currently visible peers
+            known_peers = await self.discover_all_peers()
+
+            # Check which updated nodes are now visible
+            visible_updated = set()
+            for node_id, peer in known_peers.items():
+                if node_id in updated_set and peer.best_address:
+                    # Try to reach the node
+                    view = await self.get_peer_view(peer.best_address)
+                    if view is not None:
+                        visible_updated.add(node_id)
+
+            missing = updated_set - visible_updated
+            visibility_ratio = len(visible_updated) / len(updated_set)
+
+            logger.debug(
+                f"[UpdateConvergence] Check {check_count}: "
+                f"{len(visible_updated)}/{len(updated_set)} updated nodes visible "
+                f"({visibility_ratio*100:.1f}%)"
+            )
+
+            if missing:
+                logger.debug(f"[UpdateConvergence] Missing nodes: {missing}")
+
+            # All updated nodes visible, now verify full gossip convergence
+            if not missing:
+                # Use existing convergence validation
+                remaining_timeout = timeout_seconds - (time.time() - start_time)
+                if remaining_timeout > 10:  # Need at least 10s for convergence check
+                    converged, msg = await self._validate_convergence(
+                        known_peers,
+                        timeout=remaining_timeout,
+                    )
+                    if converged:
+                        elapsed = time.time() - start_time
+                        logger.info(
+                            f"[UpdateConvergence] All {len(updated_nodes)} nodes rejoined "
+                            f"and gossip converged in {elapsed:.1f}s"
+                        )
+                        return True
+                    else:
+                        # Convergence failed but nodes are visible - keep trying
+                        logger.debug(
+                            f"[UpdateConvergence] Nodes visible but gossip not converged: {msg}"
+                        )
+
+            await asyncio.sleep(check_interval)
+
+        # Timeout reached
+        elapsed = time.time() - start_time
+        visible_updated = set()
+        try:
+            known_peers = await self.discover_all_peers()
+            for node_id in updated_set:
+                if node_id in known_peers:
+                    peer = known_peers[node_id]
+                    if peer.best_address:
+                        view = await self.get_peer_view(peer.best_address)
+                        if view is not None:
+                            visible_updated.add(node_id)
+        except Exception as e:
+            logger.debug(f"[UpdateConvergence] Error in final check: {e}")
+
+        missing = updated_set - visible_updated
+        logger.warning(
+            f"[UpdateConvergence] Timeout after {elapsed:.1f}s. "
+            f"{len(visible_updated)}/{len(updated_set)} nodes visible. "
+            f"Missing: {missing or 'none (convergence issue)'}"
+        )
+        return False
+
     async def run_healing_pass(self) -> HealingResult:
         """
         Run a single healing pass: discover, detect partitions, heal.

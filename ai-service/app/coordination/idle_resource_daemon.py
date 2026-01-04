@@ -53,6 +53,8 @@ from app.coordination.protocols import (
 from app.core.async_context import safe_create_task
 # December 2025: Use consolidated daemon stats base class
 from app.coordination.daemon_stats import JobDaemonStats
+# January 2026: HandlerBase for unified lifecycle management
+from app.coordination.handler_base import HandlerBase
 
 # SSH fallback for node discovery when P2P is unavailable (Dec 2025)
 try:
@@ -339,20 +341,29 @@ class ClusterIdleState:
         return self.idle_nodes > 0
 
 
-class IdleResourceDaemon:
+class IdleResourceDaemon(HandlerBase):
     """Daemon that monitors idle resources and spawns selfplay jobs.
 
     Continuously scans cluster for underutilized GPUs and automatically
     spawns selfplay jobs to maximize resource usage.
+
+    January 2026: Migrated to HandlerBase for unified lifecycle management.
     """
 
     def __init__(self, config: IdleResourceConfig | None = None):
-        self.config = config or IdleResourceConfig.from_env()
+        self._daemon_config = config or IdleResourceConfig.from_env()
         self.node_id = socket.gethostname()
-        self._running = False
-        self._stats = SpawnStats()
+
+        # Initialize HandlerBase with cycle_interval from config
+        super().__init__(
+            name="idle_resource_daemon",
+            config={"enabled": self._daemon_config.enabled},
+            cycle_interval=self._daemon_config.check_interval_seconds,
+        )
+
+        self._spawn_stats = SpawnStats()
         self._monitor_task: asyncio.Task | None = None
-        self._semaphore = asyncio.Semaphore(self.config.max_concurrent_spawns)
+        self._semaphore = asyncio.Semaphore(self._daemon_config.max_concurrent_spawns)
 
         # Track node states
         self._node_states: dict[str, NodeStatus] = {}
@@ -386,10 +397,289 @@ class IdleResourceDaemon:
         self._errors_count: int = 0
         self._last_error: str = ""
 
+        # Event handler state (January 2026: initialized here for HandlerBase)
+        self._backpressure_active: set[str] = set()
+        self._backpressure_spawn_reduction: float = 1.0
+        self._memory_pressure_active: bool = False
+        self._memory_pressure_spawn_reduction: float = 1.0
+        self._cluster_health_reduction: float = 1.0
+        self._selfplay_rate_adjustments: dict[str, dict[str, Any]] = {}
+        self._quality_degraded_configs: dict[str, dict[str, Any]] = {}
+        self._priority_configs: dict[str, dict[str, Any]] = {}
+
         logger.info(
             f"IdleResourceDaemon initialized: node={self.node_id}, "
-            f"interval={self.config.check_interval_seconds}s, "
-            f"idle_threshold={self.config.idle_threshold_percent}%"
+            f"interval={self._daemon_config.check_interval_seconds}s, "
+            f"idle_threshold={self._daemon_config.idle_threshold_percent}%"
+        )
+
+    @property
+    def config(self) -> IdleResourceConfig:
+        """Backward-compatible config access."""
+        return self._daemon_config
+
+    @config.setter
+    def config(self, value: IdleResourceConfig) -> None:
+        """Backward-compatible config setter."""
+        self._daemon_config = value
+
+    @property
+    def _stats(self) -> SpawnStats:
+        """Backward-compatible stats access."""
+        return self._spawn_stats
+
+    @_stats.setter
+    def _stats(self, value: SpawnStats) -> None:
+        """Backward-compatible stats setter."""
+        self._spawn_stats = value
+
+    def _get_event_subscriptions(self) -> dict[str, Any]:
+        """Return event subscriptions for HandlerBase.
+
+        January 2026: Migrated from _wire_*_events() methods.
+        """
+        subscriptions: dict[str, Any] = {}
+
+        try:
+            from app.coordination.event_router import DataEventType
+
+            # Backpressure events
+            if hasattr(DataEventType, 'BACKPRESSURE_ACTIVATED'):
+                subscriptions[DataEventType.BACKPRESSURE_ACTIVATED.value] = self._on_backpressure_activated
+            if hasattr(DataEventType, 'BACKPRESSURE_RELEASED'):
+                subscriptions[DataEventType.BACKPRESSURE_RELEASED.value] = self._on_backpressure_released
+            if hasattr(DataEventType, 'MEMORY_PRESSURE'):
+                subscriptions[DataEventType.MEMORY_PRESSURE.value] = self._on_memory_pressure
+            if hasattr(DataEventType, 'RESOURCE_CONSTRAINT'):
+                subscriptions[DataEventType.RESOURCE_CONSTRAINT.value] = self._on_memory_pressure
+
+            # P2P health events
+            if hasattr(DataEventType, 'NODE_UNHEALTHY'):
+                subscriptions[DataEventType.NODE_UNHEALTHY.value] = self._on_node_unhealthy
+            if hasattr(DataEventType, 'NODE_RECOVERED'):
+                subscriptions[DataEventType.NODE_RECOVERED.value] = self._on_node_recovered
+            if hasattr(DataEventType, 'P2P_CLUSTER_UNHEALTHY'):
+                subscriptions[DataEventType.P2P_CLUSTER_UNHEALTHY.value] = self._on_cluster_unhealthy
+            if hasattr(DataEventType, 'P2P_CLUSTER_HEALTHY'):
+                subscriptions[DataEventType.P2P_CLUSTER_HEALTHY.value] = self._on_cluster_healthy
+
+            # Cluster state events
+            if hasattr(DataEventType, 'CLUSTER_UNDERUTILIZED'):
+                subscriptions[DataEventType.CLUSTER_UNDERUTILIZED.value] = self._on_cluster_underutilized
+            if hasattr(DataEventType, 'CLUSTER_UTILIZATION_RECOVERED'):
+                subscriptions[DataEventType.CLUSTER_UTILIZATION_RECOVERED.value] = self._on_cluster_utilization_recovered
+            if hasattr(DataEventType, 'IDLE_STATE_BROADCAST'):
+                subscriptions[DataEventType.IDLE_STATE_BROADCAST.value] = self._on_idle_state_broadcast
+            if hasattr(DataEventType, 'IDLE_STATE_REQUEST'):
+                subscriptions[DataEventType.IDLE_STATE_REQUEST.value] = self._on_idle_state_request
+
+            # Selfplay target events
+            if hasattr(DataEventType, 'SELFPLAY_TARGET_UPDATED'):
+                subscriptions[DataEventType.SELFPLAY_TARGET_UPDATED.value] = self._on_selfplay_target_updated
+
+            # Quality events
+            if hasattr(DataEventType, 'QUALITY_DEGRADED'):
+                subscriptions[DataEventType.QUALITY_DEGRADED.value] = self._on_quality_degraded
+
+            # Selfplay rate events
+            if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
+                subscriptions[DataEventType.SELFPLAY_RATE_CHANGED.value] = self._on_selfplay_rate_changed
+
+            logger.info(
+                f"[IdleResourceDaemon] Subscribed to {len(subscriptions)} events via HandlerBase"
+            )
+
+        except ImportError:
+            logger.debug("[IdleResourceDaemon] Event router not available, event handling disabled")
+
+        return subscriptions
+
+    # =========================================================================
+    # Event handlers (January 2026: Extracted from _wire_*_events methods)
+    # =========================================================================
+
+    def _on_backpressure_activated(self, event: Any) -> None:
+        """Handle BACKPRESSURE_ACTIVATED - reduce spawn rate."""
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        node_id = payload.get("node_id", "unknown")
+        resource_type = payload.get("resource_type", "unknown")
+        usage_pct = payload.get("usage_pct", 0)
+
+        logger.info(
+            f"[IdleResourceDaemon] Backpressure activated on {node_id}: "
+            f"{resource_type} at {usage_pct:.1f}%"
+        )
+
+        self._backpressure_active.add(node_id)
+        if len(self._backpressure_active) > 0:
+            self._backpressure_spawn_reduction = 0.5  # 50% reduction
+
+    def _on_backpressure_released(self, event: Any) -> None:
+        """Handle BACKPRESSURE_RELEASED - resume normal rate."""
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        node_id = payload.get("node_id", "unknown")
+
+        logger.info(f"[IdleResourceDaemon] Backpressure released on {node_id}")
+
+        self._backpressure_active.discard(node_id)
+        if len(self._backpressure_active) == 0:
+            self._backpressure_spawn_reduction = 1.0  # No reduction
+
+    def _on_memory_pressure(self, event: Any) -> None:
+        """Handle MEMORY_PRESSURE or RESOURCE_CONSTRAINT - pause spawning."""
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        source = payload.get("source", "unknown")
+        gpu_utilization = payload.get("gpu_utilization", 0)
+        ram_utilization = payload.get("ram_utilization", 0)
+
+        logger.warning(
+            f"[IdleResourceDaemon] Memory pressure detected: "
+            f"source={source}, GPU={gpu_utilization:.1%}, RAM={ram_utilization:.1%}"
+        )
+
+        self._memory_pressure_active = True
+        self._memory_pressure_spawn_reduction = 0.0  # Complete pause
+
+    def _on_node_unhealthy(self, event: Any) -> None:
+        """Handle NODE_UNHEALTHY - reduce cluster health factor."""
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        node_id = payload.get("node_id", "unknown")
+        reason = payload.get("reason", "unknown")
+
+        logger.warning(f"[IdleResourceDaemon] Node unhealthy: {node_id}, reason={reason}")
+
+        # Reduce cluster health factor
+        self._cluster_health_reduction = max(0.5, self._cluster_health_reduction - 0.1)
+
+    def _on_node_recovered(self, event: Any) -> None:
+        """Handle NODE_RECOVERED - restore cluster health factor."""
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        node_id = payload.get("node_id", "unknown")
+
+        logger.info(f"[IdleResourceDaemon] Node recovered: {node_id}")
+
+        # Restore cluster health factor
+        self._cluster_health_reduction = min(1.0, self._cluster_health_reduction + 0.1)
+
+    def _on_cluster_unhealthy(self, event: Any) -> None:
+        """Handle P2P_CLUSTER_UNHEALTHY - reduce spawning."""
+        logger.warning("[IdleResourceDaemon] Cluster unhealthy, reducing spawning")
+        self._cluster_health_reduction = 0.5
+
+    def _on_cluster_healthy(self, event: Any) -> None:
+        """Handle P2P_CLUSTER_HEALTHY - resume normal spawning."""
+        logger.info("[IdleResourceDaemon] Cluster healthy, resuming normal spawning")
+        self._cluster_health_reduction = 1.0
+
+    def _on_cluster_underutilized(self, event: Any) -> None:
+        """Handle CLUSTER_UNDERUTILIZED - increase spawning."""
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        utilization = payload.get("utilization", 0)
+
+        logger.info(
+            f"[IdleResourceDaemon] Cluster underutilized at {utilization:.1f}%, "
+            "increasing spawn rate"
+        )
+
+    def _on_cluster_utilization_recovered(self, event: Any) -> None:
+        """Handle CLUSTER_UTILIZATION_RECOVERED - normal spawning."""
+        logger.info("[IdleResourceDaemon] Cluster utilization recovered")
+
+    def _on_idle_state_broadcast(self, event: Any) -> None:
+        """Handle IDLE_STATE_BROADCAST - update cluster idle states."""
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        node_id = payload.get("node_id", "")
+        if not node_id or node_id == self.node_id:
+            return  # Ignore own broadcasts
+
+        # Update cluster idle state
+        self._cluster_idle_states[node_id] = NodeIdleState(
+            node_id=node_id,
+            idle_since=payload.get("idle_since", 0),
+            gpu_utilization=payload.get("gpu_utilization", 0),
+            gpu_memory_gb=payload.get("gpu_memory_gb", 0),
+            active_jobs=payload.get("active_jobs", 0),
+            timestamp=time.time(),
+        )
+
+    def _on_idle_state_request(self, event: Any) -> None:
+        """Handle IDLE_STATE_REQUEST - broadcast local state."""
+        # Trigger a broadcast of local state
+        self._last_broadcast_time = 0  # Force immediate broadcast
+
+    def _on_selfplay_target_updated(self, event: Any) -> None:
+        """Handle SELFPLAY_TARGET_UPDATED - update priority configs."""
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        config_key = extract_config_key(payload)
+        if not config_key:
+            return
+
+        target_games = payload.get("target_games", 0)
+        priority = payload.get("priority", 0)
+
+        self._priority_configs[config_key] = {
+            "target_games": target_games,
+            "priority": priority,
+            "timestamp": time.time(),
+        }
+
+        logger.debug(
+            f"[IdleResourceDaemon] SELFPLAY_TARGET_UPDATED: {config_key} "
+            f"target={target_games}, priority={priority}"
+        )
+
+    def _on_quality_degraded(self, event: Any) -> None:
+        """Handle QUALITY_DEGRADED - reduce spawning for affected config."""
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        config_key = extract_config_key(payload)
+        if not config_key:
+            return
+
+        quality_score = payload.get("quality_score", 1.0)
+        severity = payload.get("severity", "low")
+
+        # Map severity to reduction factor
+        reduction_map = {"critical": 0.0, "high": 0.25, "medium": 0.5, "low": 0.75}
+        reduction_factor = reduction_map.get(severity, 0.75)
+
+        self._quality_degraded_configs[config_key] = {
+            "quality_score": quality_score,
+            "severity": severity,
+            "reduction_factor": reduction_factor,
+            "timestamp": time.time(),
+        }
+
+        logger.warning(
+            f"[IdleResourceDaemon] QUALITY_DEGRADED: {config_key} "
+            f"quality={quality_score:.2f}, severity={severity}, "
+            f"reduction={reduction_factor:.0%}"
+        )
+
+    def _on_selfplay_rate_changed(self, event: Any) -> None:
+        """Handle SELFPLAY_RATE_CHANGED - adjust GPU allocation for affected config."""
+        payload = event if isinstance(event, dict) else getattr(event, "payload", {})
+        config_key = extract_config_key(payload)
+        new_rate = payload.get("new_rate", 1.0)
+        old_rate = payload.get("old_rate", 1.0)
+        reason = payload.get("reason", "unknown")
+
+        if not config_key:
+            return
+
+        self._selfplay_rate_adjustments[config_key] = {
+            "rate_multiplier": new_rate,
+            "previous_rate": old_rate,
+            "change_percent": abs(new_rate - old_rate) / max(old_rate, 0.01) * 100,
+            "reason": reason,
+            "timestamp": time.time(),
+        }
+
+        change_pct = abs(new_rate - old_rate) / max(old_rate, 0.01) * 100
+        direction = "increased" if new_rate > old_rate else "decreased"
+        logger.info(
+            f"[IdleResourceDaemon] SELFPLAY_RATE_CHANGED: {config_key} "
+            f"rate {direction} by {change_pct:.1f}% "
+            f"({old_rate:.2f} → {new_rate:.2f}), reason={reason}"
         )
 
     def _get_dynamic_max_spawns(self) -> int:
@@ -639,7 +929,11 @@ class IdleResourceDaemon:
         }
 
     async def start(self) -> None:
-        """Start the idle resource daemon."""
+        """Start the idle resource daemon.
+
+        January 2026: Migrated to HandlerBase lifecycle management.
+        Event subscriptions are now handled via _get_event_subscriptions().
+        """
         # December 2025: Coordinator-only mode check
         # This daemon spawns selfplay processes - should NEVER run on coordinator nodes
         from app.config.env import env
@@ -651,7 +945,7 @@ class IdleResourceDaemon:
             )
             return
 
-        if not self.config.enabled:
+        if not self._daemon_config.enabled:
             self._coordinator_status = CoordinatorStatus.STOPPED
             logger.info("IdleResourceDaemon disabled by config")
             return
@@ -664,38 +958,41 @@ class IdleResourceDaemon:
         self._start_time = time.time()
         logger.info(f"Starting IdleResourceDaemon on {self.node_id}")
 
+        # January 2026: HandlerBase handles event subscriptions and monitoring loop
+        await super().start()
+
+    async def _on_start(self) -> None:
+        """Lifecycle hook called after HandlerBase starts.
+
+        January 2026: Moved coordinator registration here.
+        """
         # Register with coordinator protocol
         try:
             register_coordinator("idle_resource", self)
         except Exception as e:
             logger.debug(f"Failed to register coordinator: {e}")
 
-        # December 2025: Subscribe to backpressure events
-        self._wire_backpressure_events()
+    async def _run_cycle(self) -> None:
+        """Run one cycle of idle resource monitoring.
 
-        # December 2025: Subscribe to P2P cluster health events
-        self._wire_p2p_health_events()
+        January 2026: HandlerBase lifecycle - called every cycle_interval seconds.
+        Replaces the old _monitor_loop() while loop.
+        """
+        await self._check_and_spawn()
 
-        # December 2025: Subscribe to cluster-wide idle state broadcast
-        self._wire_cluster_state_events()
-
-        # December 2025: Subscribe to selfplay priority updates from feedback loop
-        self._wire_selfplay_target_events()
-
-        # December 27, 2025: Subscribe to quality degradation events
-        self._wire_quality_events()
-
-        # December 29, 2025: Subscribe to selfplay rate change events
-        self._wire_selfplay_rate_events()
-
-        # Start monitoring loop
-        self._monitor_task = safe_create_task(
-            self._monitor_loop(),
-            name="idle_resource_monitor"
-        )
+    # =========================================================================
+    # DEPRECATED METHODS (January 2026)
+    # The following _wire_*_events() methods are now obsolete.
+    # Event subscriptions are handled via _get_event_subscriptions() using
+    # the HandlerBase lifecycle. These methods are kept temporarily for
+    # backward compatibility but will be removed in Q2 2026.
+    # =========================================================================
 
     def _wire_backpressure_events(self) -> None:
         """Subscribe to backpressure events for cluster-wide coordination.
+
+        DEPRECATED: January 2026 - Use _get_event_subscriptions() instead.
+        Event handlers are now class methods (_on_backpressure_activated, etc.)
 
         December 2025: When any node experiences resource pressure, we should
         reduce spawning cluster-wide to avoid overwhelming the pipeline.
@@ -1424,7 +1721,10 @@ class IdleResourceDaemon:
         )
 
     async def stop(self) -> None:
-        """Stop the idle resource daemon."""
+        """Stop the idle resource daemon.
+
+        January 2026: Migrated to HandlerBase lifecycle management.
+        """
         if self._coordinator_status == CoordinatorStatus.STOPPED:
             return  # Already stopped
 
@@ -1432,33 +1732,39 @@ class IdleResourceDaemon:
         logger.info("Stopping IdleResourceDaemon...")
         self._running = False
 
-        # Stop monitor task
-        if self._monitor_task:
-            self._monitor_task.cancel()
-            try:
-                await self._monitor_task
-            except asyncio.CancelledError:
-                pass
+        # January 2026: HandlerBase handles task cancellation
+        await super().stop()
 
+        self._coordinator_status = CoordinatorStatus.STOPPED
+        logger.info(
+            f"IdleResourceDaemon stopped. Stats: "
+            f"{self._spawn_stats.successful_spawns}/{self._spawn_stats.total_spawns} spawns, "
+            f"{self._spawn_stats.games_spawned} games"
+        )
+
+    async def _on_stop(self) -> None:
+        """Lifecycle hook called when HandlerBase stops.
+
+        January 2026: Moved coordinator unregistration here.
+        """
         # Unregister coordinator
         try:
             unregister_coordinator("idle_resource")
         except Exception as e:
             logger.debug(f"[IdleResourceDaemon] Failed to unregister coordinator: {e}")
 
-        self._coordinator_status = CoordinatorStatus.STOPPED
-        logger.info(
-            f"IdleResourceDaemon stopped. Stats: "
-            f"{self._stats.successful_spawns}/{self._stats.total_spawns} spawns, "
-            f"{self._stats.games_spawned} games"
-        )
-
+    # NOTE: _monitor_loop() is now obsolete - HandlerBase calls _run_cycle() instead.
+    # Keeping for backward compatibility with any code that may reference it.
     async def _monitor_loop(self) -> None:
-        """Main monitoring loop."""
+        """Main monitoring loop (DEPRECATED - use _run_cycle instead).
+
+        January 2026: HandlerBase now manages the loop via _run_cycle().
+        This method is kept for backward compatibility only.
+        """
         while self._running:
             try:
                 await self._check_and_spawn()
-                await asyncio.sleep(self.config.check_interval_seconds)
+                await asyncio.sleep(self._daemon_config.check_interval_seconds)
             except asyncio.CancelledError:
                 break
             except Exception as e:

@@ -298,6 +298,7 @@ class DataEventType(Enum):
     PARTITION_HEALING_STARTED = "partition_healing_started"  # Healing pass initiated
     PARTITION_HEALED = "partition_healed"  # Partitions successfully healed
     PARTITION_HEALING_FAILED = "partition_healing_failed"  # Healing attempt failed
+    HEALING_CONVERGENCE_FAILED = "healing_convergence_failed"  # Jan 4, 2026: Healing reported success but gossip didn't converge
     P2P_RECOVERY_NEEDED = "p2p_recovery_needed"  # Jan 3, 2026: Max escalation reached, manual intervention needed
 
     # Progress monitoring events (December 2025 - 48h autonomous operation)

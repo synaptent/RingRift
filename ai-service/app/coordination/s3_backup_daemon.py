@@ -252,6 +252,22 @@ class S3BackupDaemon(HandlerBase):
             await self._run_backup()
         logger.info("S3BackupDaemon stopped")
 
+    async def run(self) -> None:
+        """Run the daemon main loop (blocking).
+
+        Jan 2026: Added for backward compatibility after HandlerBase migration.
+        Blocks until the daemon is stopped.
+        """
+        await self.start()
+        # Wait for the main loop task to complete
+        if self._task:
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        # Call cleanup hooks when done
+        await self._on_stop()
+
     def _on_model_promoted(self, event: dict[str, Any] | Any) -> None:
         """Handle MODEL_PROMOTED event (sync callback)."""
         # Handle both RouterEvent and dict payloads

@@ -194,7 +194,9 @@ class EvaluationConfig:
         return self.board_timeout_seconds.get(board_type, self.evaluation_timeout_seconds)
 
     # Deduplication settings (December 2025)
-    dedup_cooldown_seconds: float = 300.0  # 5 minute cooldown per model
+    # January 4, 2026: Reduced from 300s to 30s to allow rapid re-evaluations
+    # after training. Previous 5-minute window was skipping valid evaluations.
+    dedup_cooldown_seconds: float = 30.0  # 30 second cooldown per model
     dedup_max_tracked_models: int = 1000  # Max models to track for dedup
 
     # December 29, 2025 (Phase 4): Backpressure settings

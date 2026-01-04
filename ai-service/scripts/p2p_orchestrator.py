@@ -723,6 +723,7 @@ from scripts.p2p.metrics_manager import MetricsManager
 from scripts.p2p.resource_detector import ResourceDetector, ResourceDetectorMixin
 from scripts.p2p.event_emission_mixin import EventEmissionMixin
 from scripts.p2p.failover_integration import FailoverIntegrationMixin
+from scripts.p2p.relay_leader_propagator import RelayLeaderPropagatorMixin  # Phase 1: NAT-blocked leader propagation (Jan 4, 2026)
 from scripts.p2p.leadership_state_machine import (
     LeadershipStateMachine,
     LeaderState,
@@ -1300,6 +1301,7 @@ class P2POrchestrator(
     SwimHandlersMixin,    # /swim/* HTTP handlers
     RaftHandlersMixin,    # /raft/* HTTP handlers
     ResourceDetectorMixin,  # Resource detection delegation (Dec 28, 2025)
+    RelayLeaderPropagatorMixin,  # NAT-blocked leader propagation via gossip (Jan 4, 2026 - Phase 1)
     EventEmissionMixin,     # Event emission consolidation (Dec 28, 2025 - Phase 8)
     FailoverIntegrationMixin,  # Multi-layer transport failover (Dec 30, 2025 - Phase 9)
 ):
@@ -1318,6 +1320,7 @@ class P2POrchestrator(
     - SSHTournamentHandlersMixin: SSH tournament handlers (handle_ssh_tournament_*)
     - NetworkUtilsMixin: Peer address parsing, URL building, Tailscale detection
     - PeerManagerMixin: Peer discovery, reputation tracking, cache management
+    - RelayLeaderPropagatorMixin: NAT-blocked leader propagation via gossip (Jan 4, 2026)
     """
 
     def __init__(
@@ -18317,8 +18320,94 @@ print(json.dumps(result))
                 return True
 
             elif work_type == "tournament":
-                # Start tournament
-                logger.info(f"Executing tournament work: {config}")
+                # Start tournament evaluation
+                # Jan 4, 2026: Fixed to actually execute tournament via JobManager
+                # Previously this was a no-op that just logged and returned True
+                from scripts.p2p.models import DistributedTournamentState
+
+                board_type = config.get("board_type", "square8")
+                num_players = config.get("num_players", 2)
+                games_per_pairing = config.get("games", 2)
+                job_id = f"tournament-{work_id}"
+
+                # Discover models for this config
+                config_key = f"{board_type}_{num_players}p"
+                agent_ids = []
+                try:
+                    # Try to get models from model registry or filesystem
+                    from app.models.discovery import discover_models
+                    models = discover_models(
+                        board_type=board_type,
+                        num_players=num_players,
+                        model_type="nn",
+                    )
+                    # Sort by modified time (most recent first) and take top 5
+                    models.sort(key=lambda m: m.modified_at or 0, reverse=True)
+                    agent_ids = [str(m.path) for m in models[:5]] if models else []
+                except (ImportError, ValueError, AttributeError, RuntimeError):
+                    pass
+
+                # Fallback: use canonical model if available
+                if len(agent_ids) < 2:
+                    canonical_path = f"models/canonical_{config_key}.pth"
+                    if Path(canonical_path).exists():
+                        agent_ids = [canonical_path]
+                    # Add heuristic baseline for comparison
+                    agent_ids.append(f"heuristic:{config_key}")
+
+                if len(agent_ids) < 2:
+                    logger.warning(
+                        f"Tournament {work_id}: Not enough agents for {config_key} "
+                        f"(found {len(agent_ids)}), skipping"
+                    )
+                    return False
+
+                logger.info(
+                    f"Executing tournament work {work_id}: {board_type}/{num_players}p "
+                    f"with {len(agent_ids)} agents"
+                )
+
+                # Create tournament state (matches /tournament/start handler pattern)
+                pairings = []
+                for i, a1 in enumerate(agent_ids):
+                    for a2 in agent_ids[i + 1:]:
+                        for game_num in range(games_per_pairing):
+                            pairings.append({
+                                "agent1": a1,
+                                "agent2": a2,
+                                "game_num": game_num,
+                                "status": "pending",
+                            })
+
+                state = DistributedTournamentState(
+                    job_id=job_id,
+                    board_type=board_type,
+                    num_players=num_players,
+                    agent_ids=agent_ids,
+                    games_per_pairing=games_per_pairing,
+                    total_matches=len(pairings),
+                    pending_matches=pairings,
+                    status="running",
+                    started_at=time.time(),
+                    last_update=time.time(),
+                )
+
+                # Find available workers
+                with self.peers_lock:
+                    workers = [p.node_id for p in self.peers.values() if p.is_healthy()]
+                state.worker_nodes = workers
+
+                # Register state before running
+                self.distributed_tournament_state[job_id] = state
+
+                # Run tournament via job manager
+                async def _run_tournament_task():
+                    try:
+                        await self.job_manager.run_distributed_tournament(job_id)
+                    except Exception as e:
+                        logger.exception(f"Tournament task failed for {job_id}: {e}")
+
+                asyncio.create_task(_run_tournament_task())
                 return True
 
             else:
@@ -29274,8 +29363,8 @@ print(json.dumps({{
                 # January 4, 2026: Emit QUORUM_VALIDATION_FAILED event for monitoring.
                 # This enables dashboards and alert systems to track pre-startup quorum issues.
                 try:
-                    from app.distributed.data_events import DataEventType, emit_event
-                    emit_event(
+                    from app.distributed.data_events import DataEventType, get_event_bus
+                    get_event_bus().emit(
                         DataEventType.QUORUM_VALIDATION_FAILED,
                         {
                             "node_id": self.node_id,

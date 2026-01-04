@@ -41,6 +41,7 @@ from typing import Any
 
 from app.coordination.event_handler_utils import extract_config_key
 from app.coordination.event_utils import make_config_key
+from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.training_data_manifest import (
     DataSource,
     OWC_BASE_PATH,
@@ -51,6 +52,7 @@ from app.coordination.training_data_manifest import (
     TrainingDataEntry,
     get_training_data_manifest,
 )
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -537,50 +539,59 @@ async def sync_best_fresh_data(
     return await sync_training_data_for_config(config_key, force=force)
 
 
-@dataclass
-class TrainingDataSyncDaemon:
+class TrainingDataSyncDaemon(HandlerBase):
     """Daemon that proactively syncs training data.
 
     This daemon monitors for pending/active training jobs and ensures
     the best training data is available before training starts.
+
+    January 2026: Migrated to HandlerBase for unified lifecycle management.
     """
 
-    config: TrainingDataSyncConfig = field(
-        default_factory=TrainingDataSyncConfig.from_env
-    )
-    _running: bool = field(default=False, repr=False)
-    _task: asyncio.Task | None = field(default=None, repr=False)
-    _stats: dict[str, Any] = field(default_factory=dict, repr=False)
+    def __init__(
+        self,
+        config: TrainingDataSyncConfig | None = None,
+    ):
+        """Initialize the daemon.
 
-    async def start(self) -> None:
-        """Start the daemon."""
-        if self._running:
-            logger.warning("TrainingDataSyncDaemon already running")
-            return
+        Args:
+            config: Sync configuration. Uses env-based defaults if not provided.
+        """
+        self._daemon_config = config or TrainingDataSyncConfig.from_env()
 
-        self._running = True
-        self._stats = {
-            "started_at": datetime.now(tz=timezone.utc).isoformat(),
-            "syncs_completed": 0,
-            "syncs_failed": 0,
-            "bytes_transferred": 0,
+        # Initialize HandlerBase with cycle_interval from config
+        super().__init__(
+            name="training_data_sync_daemon",
+            config={"emit_events": self._daemon_config.emit_events},
+            cycle_interval=self._daemon_config.check_interval_seconds,
+        )
+
+        # Daemon-specific stats
+        self._syncs_completed = 0
+        self._syncs_failed = 0
+        self._bytes_transferred = 0
+        self._manifest_refreshes = 0
+
+    @property
+    def config(self) -> TrainingDataSyncConfig:
+        """Backward-compatible config access."""
+        return self._daemon_config
+
+    @config.setter
+    def config(self, value: TrainingDataSyncConfig) -> None:
+        """Allow config update."""
+        self._daemon_config = value
+
+    def _get_event_subscriptions(self) -> dict[str, Callable]:
+        """Return event subscriptions for HandlerBase.
+
+        Returns:
+            Dict mapping event names to handler methods.
+        """
+        return {
+            "npz_export_complete": self._on_npz_export,
+            "training_started": self._on_training_started,
         }
-        self._task = asyncio.create_task(self._run_loop())
-        self._subscribe_to_events()
-        logger.info("TrainingDataSyncDaemon started")
-
-    def _subscribe_to_events(self) -> None:
-        """Subscribe to data pipeline events."""
-        try:
-            from app.coordination.event_router import get_event_bus
-            from app.distributed.data_events import DataEventType
-
-            bus = get_event_bus()
-            bus.subscribe(DataEventType.NPZ_EXPORT_COMPLETE, self._on_npz_export)
-            bus.subscribe(DataEventType.TRAINING_STARTED, self._on_training_started)
-            logger.debug("TrainingDataSyncDaemon subscribed to pipeline events")
-        except (ImportError, AttributeError) as e:
-            logger.debug(f"Event bus not available, skipping subscriptions: {e}")
 
     async def _on_npz_export(self, event) -> None:
         """Handle NPZ export completion - refresh manifest."""
@@ -594,9 +605,7 @@ class TrainingDataSyncDaemon:
             try:
                 manifest = await get_training_data_manifest()
                 await manifest.refresh_local()
-                self._stats["manifest_refreshes"] = (
-                    self._stats.get("manifest_refreshes", 0) + 1
-                )
+                self._manifest_refreshes += 1
             except (OSError, IOError) as e:
                 logger.warning(f"Failed to refresh manifest: {e}")
 
@@ -617,57 +626,51 @@ class TrainingDataSyncDaemon:
             else:
                 logger.warning(f"Data sync issue for {config_key}: {result.error}")
 
-    async def stop(self) -> None:
-        """Stop the daemon."""
-        self._running = False
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
-            self._task = None
+    async def _on_stop(self) -> None:
+        """Cleanup on shutdown (HandlerBase lifecycle hook)."""
         logger.info("TrainingDataSyncDaemon stopped")
 
-    async def _run_loop(self) -> None:
-        """Main daemon loop."""
-        while self._running:
-            try:
-                # Check for pending training jobs
-                pending = await self._get_pending_training_configs()
+    async def _run_cycle(self) -> None:
+        """Main daemon cycle (HandlerBase lifecycle hook).
 
-                for config_key in pending:
-                    if not self._running:
-                        break
+        Checks for pending training jobs and syncs data for each.
+        """
+        try:
+            # Check for pending training jobs
+            pending = await self._get_pending_training_configs()
 
-                    result = await sync_training_data_for_config(
-                        config_key, config=self.config
-                    )
+            for config_key in pending:
+                if not self._running:
+                    break
 
-                    if result.success:
-                        self._stats["syncs_completed"] += 1
-                        self._stats["bytes_transferred"] += result.bytes_transferred
-                        if result.bytes_transferred > 0:
-                            logger.info(
-                                f"Synced {config_key}: "
-                                f"{result.bytes_transferred / 1024 / 1024:.1f}MB "
-                                f"from {result.source.value}"
-                            )
-                    else:
-                        self._stats["syncs_failed"] += 1
-                        if result.error:
-                            logger.warning(f"Failed to sync {config_key}: {result.error}")
+                result = await sync_training_data_for_config(
+                    config_key, config=self._daemon_config
+                )
 
-                    # Emit event if configured
-                    if self.config.emit_events:
-                        await self._emit_sync_event(result)
+                if result.success:
+                    self._syncs_completed += 1
+                    self._bytes_transferred += result.bytes_transferred
+                    if result.bytes_transferred > 0:
+                        logger.info(
+                            f"Synced {config_key}: "
+                            f"{result.bytes_transferred / 1024 / 1024:.1f}MB "
+                            f"from {result.source.value}"
+                        )
+                else:
+                    self._syncs_failed += 1
+                    if result.error:
+                        logger.warning(f"Failed to sync {config_key}: {result.error}")
 
-            except (OSError, IOError, asyncio.CancelledError) as e:
-                # File/network errors or task cancellation in sync loop
-                logger.exception(f"Error in sync loop: {e}")
+                # Emit event if configured
+                if self._daemon_config.emit_events:
+                    await self._emit_sync_event(result)
 
-            # Wait before next check
-            await asyncio.sleep(self.config.check_interval_seconds)
+        except asyncio.CancelledError:
+            raise
+        except (OSError, IOError) as e:
+            # File/network errors in sync cycle
+            logger.exception(f"Error in sync cycle: {e}")
+            self._record_error(f"Sync cycle error: {e}", e)
 
     async def _get_pending_training_configs(self) -> list[str]:
         """Get configs with pending or active training jobs.
@@ -744,13 +747,13 @@ class TrainingDataSyncDaemon:
         except Exception as e:
             logger.debug(f"Failed to emit sync event: {e}")
 
-    def health_check(self) -> "HealthCheckResult":
+    def health_check(self) -> HealthCheckResult:
         """Return health check status.
 
         Returns:
             HealthCheckResult for DaemonManager integration.
         """
-        from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+        from app.coordination.contracts import CoordinatorStatus
         from app.coordination.health_check_helper import HealthCheckHelper
 
         if not self._running:
@@ -758,43 +761,53 @@ class TrainingDataSyncDaemon:
                 healthy=False,
                 status=CoordinatorStatus.STOPPED,
                 message="TrainingDataSyncDaemon is not running",
-                details={"stats": self._stats},
+                details=self._get_stats_dict(),
             )
 
-        # Check for recent activity
-        syncs_completed = self._stats.get("syncs_completed", 0)
-        syncs_failed = self._stats.get("syncs_failed", 0)
-
         # Check error rate using HealthCheckHelper (degraded if >50% failure rate)
+        total_syncs = self._syncs_completed + self._syncs_failed
         is_healthy, msg = HealthCheckHelper.check_error_rate(
-            errors=syncs_failed,
-            cycles=syncs_completed + syncs_failed,
+            errors=self._syncs_failed,
+            cycles=total_syncs,
             threshold=0.5,
         )
-        error_rate = syncs_failed / max(syncs_completed + syncs_failed, 1)
+        error_rate = self._syncs_failed / max(total_syncs, 1)
 
         if not is_healthy:
             return HealthCheckResult(
                 healthy=True,  # Still running but degraded
                 status=CoordinatorStatus.DEGRADED,
                 message=f"High sync {msg}",
-                details={
-                    "running": True,
-                    "error_rate": error_rate,
-                    "stats": self._stats,
-                },
+                details=self._get_stats_dict(error_rate=error_rate),
             )
 
         return HealthCheckResult(
             healthy=True,
             status=CoordinatorStatus.RUNNING,
-            message=f"TrainingDataSyncDaemon healthy: {syncs_completed} syncs, {self._stats.get('bytes_transferred', 0) / 1024 / 1024:.1f}MB transferred",
-            details={
-                "running": True,
-                "error_rate": error_rate,
-                "stats": self._stats,
-            },
+            message=f"TrainingDataSyncDaemon healthy: {self._syncs_completed} syncs, {self._bytes_transferred / 1024 / 1024:.1f}MB transferred",
+            details=self._get_stats_dict(error_rate=error_rate),
         )
+
+    def _get_stats_dict(self, error_rate: float = 0.0) -> dict[str, Any]:
+        """Get stats as dictionary for health check details.
+
+        Args:
+            error_rate: Current error rate.
+
+        Returns:
+            Dictionary with all daemon stats.
+        """
+        return {
+            "running": self._running,
+            "error_rate": error_rate,
+            "syncs_completed": self._syncs_completed,
+            "syncs_failed": self._syncs_failed,
+            "bytes_transferred": self._bytes_transferred,
+            "manifest_refreshes": self._manifest_refreshes,
+            "uptime_seconds": time.time() - self._stats.started_at if self._stats.started_at > 0 else 0,
+            "cycles_completed": self._stats.cycles_completed,
+            "errors_count": self._stats.errors_count,
+        }
 
 
 # Singleton instance

@@ -444,7 +444,7 @@ class EventEmissionMixin(P2PMixinBase):
             leader_id: The new leader node ID
             term: Election term number
         """
-        return await self._emit_event_safe(
+        result = await self._emit_event_safe(
             "emit_leader_elected",
             "LEADER_ELECTED",
             leader_id,
@@ -453,6 +453,22 @@ class EventEmissionMixin(P2PMixinBase):
             term=term,
             source="p2p_orchestrator",
         )
+
+        # Jan 4, 2026: Propagate leader info via gossip for NAT-blocked nodes
+        # This ensures all nodes (including those behind NAT) learn about
+        # the new leader through gossip state propagation
+        if leader_id == getattr(self, "node_id", None):
+            if hasattr(self, "_propagate_leader_via_gossip"):
+                try:
+                    self._propagate_leader_via_gossip(force=True)
+                except Exception as e:
+                    # Don't let propagation failure affect election
+                    import logging
+                    logging.getLogger(__name__).debug(
+                        f"Leader propagation failed (non-critical): {e}"
+                    )
+
+        return result
 
     async def _emit_leader_lost(
         self,

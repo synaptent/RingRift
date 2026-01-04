@@ -97,6 +97,10 @@ class P2PRecoveryConfig:
     voter_quorum_monitoring_enabled: bool = True
     min_voters_for_healthy_quorum: int = 5  # Trigger recovery if < 5 of 7 voters healthy
     voter_quorum_size: int = 4  # Quorum threshold (out of 7 total voters)
+    # January 4, 2026: Dynamic recovery cooldown during quorum loss.
+    # When quorum is lost, use aggressive 60s cooldown instead of normal 5 min.
+    # This prevents multi-day stalls from slow recovery during quorum loss events.
+    quorum_loss_cooldown_seconds: int = 60  # 1 minute during quorum loss
 
     @classmethod
     def from_env(cls) -> "P2PRecoveryConfig":
@@ -226,6 +230,9 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
         self._last_voter_quorum_check: dict[str, Any] = {}
         self._quorum_at_risk_consecutive = 0  # Consecutive checks with quorum at risk
         self._quorum_recovery_triggered = 0  # Total proactive recoveries triggered
+        # January 4, 2026: Track quorum loss state for dynamic cooldown.
+        # When True, _get_effective_cooldown() returns 60s instead of 5min.
+        self._quorum_lost = False
         # Jan 2026 Session 8: Track previous voter state for fine-grained events
         self._last_online_voters: set[str] = set()
         # Jan 3, 2026 Session 7: Partition healing coordination
@@ -312,10 +319,18 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
         return self.config.max_consecutive_failures
 
     def _get_effective_cooldown(self) -> int:
-        """Get the effective base cooldown based on NAT-blocked status.
+        """Get the effective base cooldown based on quorum/NAT status.
 
-        Jan 2026: NAT-blocked nodes use shorter cooldown for faster recovery.
+        January 4, 2026: Dynamic cooldown priorities:
+        1. Quorum lost -> 60s (most aggressive, enables faster recovery)
+        2. NAT-blocked -> 60s (faster recovery for connection-prone nodes)
+        3. Normal -> 300s (5 min base cooldown)
+
+        This prevents multi-day stalls from slow recovery during quorum loss.
         """
+        # Quorum loss takes priority - use aggressive cooldown to recover faster
+        if self._quorum_lost:
+            return self.config.quorum_loss_cooldown_seconds
         if self._check_is_nat_blocked():
             return self.config.nat_blocked_cooldown_seconds
         return self.config.restart_cooldown_seconds
@@ -355,12 +370,18 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
         - Prioritized voter reconnection
         - Faster health check interval
         - Leader election if needed
+
+        January 4, 2026: Sets _quorum_lost flag to enable dynamic 60s recovery
+        cooldown instead of normal 5 minute cooldown.
         """
         logger.critical(
             f"QUORUM LOST - initiating emergency recovery "
             f"(online_voters={event.get('online_voters', '?')}, "
             f"quorum={event.get('quorum_size', '?')})"
         )
+
+        # January 4, 2026: Enable aggressive recovery cooldown during quorum loss
+        self._quorum_lost = True
 
         # Track for health reporting
         self._quorum_recovery_attempts += 1
@@ -531,20 +552,42 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
 
         Jan 3, 2026 Session 7: Partition healing completed successfully.
         Reset failure counters since the partition was healed without restart.
+
+        January 4, 2026: Added convergence validation. After healing is reported,
+        wait 5s for gossip to propagate and verify healthy_ratio >= 0.95 to
+        confirm the partition fix actually converged across the cluster.
         """
         nodes_healed = event.get("nodes_healed", 0)
         duration_seconds = event.get("duration_seconds", 0)
 
         logger.info(
-            f"[P2PRecovery] Partition healed successfully: "
+            f"[P2PRecovery] Partition healed reported: "
             f"{nodes_healed} nodes reconnected in {duration_seconds:.1f}s"
         )
 
+        # January 4, 2026: Convergence validation - wait for gossip propagation
+        convergence_validated = await self._validate_healing_convergence()
+
         self._healing_in_progress = False
         self._healing_started_time = None  # Session 9: Clear healing timeout
-        # Reset consecutive failures since partition was healed without restart
-        self._consecutive_failures = 0
-        self._consecutive_healing_failures = 0  # Session 9: Reset healing failure counter
+
+        if convergence_validated:
+            logger.info(
+                f"[P2PRecovery] Partition healing convergence VALIDATED: "
+                f"gossip healthy ratio >= 0.95"
+            )
+            # Reset consecutive failures since partition was fully healed
+            self._consecutive_failures = 0
+            self._consecutive_healing_failures = 0  # Session 9: Reset healing failure counter
+        else:
+            logger.warning(
+                f"[P2PRecovery] Partition healing reported success but convergence "
+                f"validation FAILED - gossip healthy ratio < 0.95"
+            )
+            # Don't reset failure counters - healing didn't fully converge
+            self._consecutive_healing_failures += 1
+            # Emit event for monitoring
+            self._try_emit_convergence_failure(nodes_healed)
 
     async def _on_partition_healing_failed(self, event: Any) -> None:
         """Handle PARTITION_HEALING_FAILED - escalate to P2P restart if needed.
@@ -601,6 +644,97 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
                 return False
 
         return True
+
+    # =========================================================================
+    # Healing Convergence Validation (January 4, 2026)
+    # =========================================================================
+
+    async def _validate_healing_convergence(
+        self,
+        wait_seconds: float = 5.0,
+        min_healthy_ratio: float = 0.95,
+    ) -> bool:
+        """Validate that partition healing actually converged across the cluster.
+
+        January 4, 2026: After partition_healer reports success, wait for gossip
+        to propagate and verify that the cluster has actually converged to a
+        healthy state. This prevents premature success reports.
+
+        Args:
+            wait_seconds: Time to wait for gossip propagation (default: 5s)
+            min_healthy_ratio: Minimum healthy ratio to consider converged (0.95)
+
+        Returns:
+            True if gossip healthy ratio >= min_healthy_ratio, False otherwise
+        """
+        import asyncio
+
+        # Wait for gossip to propagate
+        logger.debug(
+            f"[ConvergenceValidation] Waiting {wait_seconds}s for gossip propagation"
+        )
+        await asyncio.sleep(wait_seconds)
+
+        # Check gossip health
+        try:
+            healthy_ratio = self._get_gossip_healthy_ratio()
+            logger.info(
+                f"[ConvergenceValidation] Gossip healthy ratio: {healthy_ratio:.2%} "
+                f"(threshold: {min_healthy_ratio:.0%})"
+            )
+            return healthy_ratio >= min_healthy_ratio
+        except Exception as e:
+            logger.warning(
+                f"[ConvergenceValidation] Failed to get gossip health: {e}"
+            )
+            # If we can't check, assume not converged
+            return False
+
+    def _get_gossip_healthy_ratio(self) -> float:
+        """Get the current gossip healthy ratio from P2P status.
+
+        Returns:
+            Ratio of healthy peers (0.0-1.0), or 0.0 if unavailable.
+        """
+        try:
+            import requests
+
+            # Query local P2P orchestrator status
+            response = requests.get(
+                f"http://localhost:{self.config.p2p_port}/status",
+                timeout=5.0,
+            )
+            if response.status_code == 200:
+                status = response.json()
+                alive_peers = status.get("alive_peers", 0)
+                total_peers = status.get("total_peers", 0)
+                if total_peers > 0:
+                    return alive_peers / total_peers
+            return 0.0
+        except Exception:
+            return 0.0
+
+    def _try_emit_convergence_failure(self, nodes_healed: int) -> None:
+        """Emit HEALING_CONVERGENCE_FAILED event for monitoring.
+
+        January 4, 2026: Emitted when partition healing reported success but
+        gossip convergence validation failed.
+        """
+        try:
+            from app.distributed.data_events import DataEventType, get_event_bus
+
+            get_event_bus().emit(
+                DataEventType.HEALING_CONVERGENCE_FAILED,
+                {
+                    "nodes_healed": nodes_healed,
+                    "reason": "gossip_healthy_ratio_below_threshold",
+                    "threshold": 0.95,
+                    "consecutive_failures": self._consecutive_healing_failures,
+                    "timestamp": time.time(),
+                },
+            )
+        except (ImportError, Exception) as e:
+            logger.debug(f"Could not emit HEALING_CONVERGENCE_FAILED: {e}")
 
     # =========================================================================
     # HealthCoordinator Integration (Jan 3, 2026 Sprint 12 Session 10)
@@ -1143,11 +1277,15 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
                     )
                     await self._trigger_proactive_quorum_recovery(offline_voters, severity)
             else:
-                if self._quorum_at_risk_consecutive > 0:
+                if self._quorum_at_risk_consecutive > 0 or self._quorum_lost:
                     logger.info(
                         f"Voter quorum restored: {online_count}/{total_voters} voters online "
                         f"(was at risk for {self._quorum_at_risk_consecutive} checks)"
                     )
+                    # January 4, 2026: Clear quorum loss flag to restore normal cooldown
+                    if self._quorum_lost:
+                        logger.info("Quorum restored - reverting to normal recovery cooldown")
+                        self._quorum_lost = False
                 self._quorum_at_risk_consecutive = 0
 
             return quorum_healthy, details
@@ -1733,6 +1871,9 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
             "consecutive_at_risk_checks": self._quorum_at_risk_consecutive,
             "recovery_triggered_count": self._quorum_recovery_triggered,
             "last_check": self._last_voter_quorum_check,
+            # January 4, 2026: Dynamic cooldown state
+            "quorum_lost": self._quorum_lost,
+            "effective_cooldown_seconds": self._get_effective_cooldown(),
         }
 
         # Jan 3, 2026: HealthCoordinator integration status
@@ -1775,6 +1916,8 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
             "quorum_recovery_attempts": self._quorum_recovery_attempts,
             "quorum_recovery_triggered": self._quorum_recovery_triggered,
             "last_voter_quorum_check": self._last_voter_quorum_check,
+            # January 4, 2026: Persist quorum loss state for faster recovery after restart
+            "quorum_lost": self._quorum_lost,
             "persisted_at": time.time(),
         }
 
@@ -1798,6 +1941,8 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
         self._quorum_recovery_attempts = state.get("quorum_recovery_attempts", 0)
         self._quorum_recovery_triggered = state.get("quorum_recovery_triggered", 0)
         self._last_voter_quorum_check = state.get("last_voter_quorum_check", {})
+        # January 4, 2026: Restore quorum loss state for continued aggressive recovery
+        self._quorum_lost = state.get("quorum_lost", False)
 
         # Log restoration summary
         persisted_at = state.get("persisted_at", 0)

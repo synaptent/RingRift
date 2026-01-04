@@ -33,6 +33,8 @@ __all__ = [
     "IdleShutdownConfig",
     "NodeIdleStatus",
     "UnifiedIdleShutdownDaemon",
+    "get_idle_shutdown_daemon",
+    "reset_idle_shutdown_daemon",
 ]
 
 import asyncio
@@ -40,8 +42,9 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
+from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.providers.base import (
     CloudProvider,
     Instance,
@@ -226,8 +229,11 @@ class NodeIdleStatus:
         return self.idle_since > 0
 
 
-class UnifiedIdleShutdownDaemon:
-    """Provider-agnostic daemon that monitors nodes and terminates idle ones."""
+class UnifiedIdleShutdownDaemon(HandlerBase):
+    """Provider-agnostic daemon that monitors nodes and terminates idle ones.
+
+    January 2026: Migrated to HandlerBase for unified lifecycle management.
+    """
 
     def __init__(
         self,
@@ -242,78 +248,71 @@ class UnifiedIdleShutdownDaemon:
         """
         self._provider = provider
         provider_name = provider.name if hasattr(provider, 'name') else str(provider.provider_type.name).lower()
-        self.config = config or IdleShutdownConfig.for_provider(provider_name)
-        self.config.provider_name = provider_name
+        self._daemon_config = config or IdleShutdownConfig.for_provider(provider_name)
+        self._daemon_config.provider_name = provider_name
+        self._daemon_name = f"{provider_name}_idle_daemon"
 
-        self._running = False
-        self._task: asyncio.Task | None = None
+        # Initialize HandlerBase with cycle_interval from config
+        super().__init__(
+            name=self._daemon_name,
+            config={"provider": provider_name},
+            cycle_interval=float(self._daemon_config.check_interval_seconds),
+        )
+
         self._node_status: dict[str, NodeIdleStatus] = {}
         self._draining_nodes: dict[str, float] = {}  # instance_id -> drain_started
         self._terminated_count = 0
         self._cost_saved = 0.0
         self._last_check_time = 0.0
 
-        self._daemon_name = f"{provider_name}_idle_daemon"
+    @property
+    def config(self) -> IdleShutdownConfig:
+        """Backward-compatible config access."""
+        return self._daemon_config
 
-    async def start(self) -> None:
-        """Start the daemon."""
-        if not self.config.enabled:
+    @config.setter
+    def config(self, value: IdleShutdownConfig) -> None:
+        """Backward-compatible config setter."""
+        self._daemon_config = value
+
+    def _get_event_subscriptions(self) -> dict[str, Callable]:
+        """Return event subscriptions for HandlerBase.
+
+        January 2026: Migrated from _subscribe_to_events().
+        """
+        return {
+            "training_started": self._on_training_started,
+            "selfplay_complete": self._on_selfplay_completed,
+            "work_started": self._on_work_started,
+            "work_claimed": self._on_work_claimed,
+            "task_spawned": self._on_task_spawned,
+        }
+
+    async def _on_start(self) -> None:
+        """Initialize daemon on startup (HandlerBase lifecycle hook)."""
+        if not self._daemon_config.enabled:
             logger.info(f"[{self._daemon_name}] Disabled by configuration")
+            self._running = False
             return
 
         if not self._provider.is_configured():
             logger.warning(f"[{self._daemon_name}] Provider not configured, daemon disabled")
+            self._running = False
             return
-
-        self._running = True
 
         # Register as coordinator
         if HAS_PROTOCOLS:
             register_coordinator(
                 self._daemon_name,
                 CoordinatorStatus.ACTIVE,
-                metadata={"config": self.config.__dict__},
+                metadata={"config": self._daemon_config.__dict__},
             )
 
         logger.info(
-            f"[{self._daemon_name}] Started with idle_threshold={self.config.idle_threshold_seconds}s, "
-            f"min_nodes={self.config.min_nodes_to_retain}, dry_run={self.config.dry_run}"
+            f"[{self._daemon_name}] Started with idle_threshold={self._daemon_config.idle_threshold_seconds}s, "
+            f"min_nodes={self._daemon_config.min_nodes_to_retain}, dry_run={self._daemon_config.dry_run}"
         )
 
-        # Subscribe to relevant events (December 2025)
-        await self._subscribe_to_events()
-
-        try:
-            await self._run_loop()
-        finally:
-            self._running = False
-            if HAS_PROTOCOLS:
-                unregister_coordinator(self._daemon_name)
-
-    async def _subscribe_to_events(self) -> None:
-        """Subscribe to events that affect idle detection.
-
-        Dec 2025: Added subscriptions for activity events that should cancel drain periods.
-        When activity is detected on a draining node, we cancel the drain to prevent
-        premature termination.
-        """
-        try:
-            from app.coordination.event_router import DataEventType, get_event_router
-
-            router = get_event_router()
-            router.subscribe(DataEventType.TRAINING_STARTED, self._on_training_started)
-            router.subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_completed)
-
-            # Dec 2025: Additional events that indicate node activity - cancel drain
-            router.subscribe(DataEventType.WORK_STARTED, self._on_work_started)
-            router.subscribe(DataEventType.WORK_CLAIMED, self._on_work_claimed)
-            router.subscribe(DataEventType.TASK_SPAWNED, self._on_task_spawned)
-
-            logger.info(f"[{self._daemon_name}] Subscribed to 5 activity events")
-        except ImportError:
-            logger.debug(f"[{self._daemon_name}] Event router not available")
-        except Exception as e:
-            logger.warning(f"[{self._daemon_name}] Failed to subscribe: {e}")
 
     def _cancel_drain_for_host(self, hostname: str, reason: str) -> bool:
         """Cancel drain period for a node if it's currently draining.
@@ -407,26 +406,30 @@ class UnifiedIdleShutdownDaemon:
         except Exception as e:
             logger.debug(f"[{self._daemon_name}] Error handling task_spawned: {e}")
 
-    async def stop(self) -> None:
-        """Stop the daemon."""
-        self._running = False
-        if self._task:
-            self._task.cancel()
-            try:
-                await self._task
-            except asyncio.CancelledError:
-                pass
+    async def _on_stop(self) -> None:
+        """Cleanup on shutdown (HandlerBase lifecycle hook)."""
+        if HAS_PROTOCOLS:
+            unregister_coordinator(self._daemon_name)
+        logger.info(f"[{self._daemon_name}] Stopped")
 
-    async def _run_loop(self) -> None:
-        """Main daemon loop."""
-        while self._running:
-            try:
-                await self._check_and_terminate_idle_nodes()
-                self._last_check_time = time.time()
-            except Exception as e:
-                logger.error(f"[{self._daemon_name}] Error in check loop: {e}", exc_info=True)
+    async def _run_cycle(self) -> None:
+        """Main daemon cycle (HandlerBase lifecycle hook).
 
-            await asyncio.sleep(self.config.check_interval_seconds)
+        January 2026: Migrated from _run_loop().
+        """
+        if not self._daemon_config.enabled:
+            return
+        if not self._provider.is_configured():
+            return
+
+        try:
+            await self._check_and_terminate_idle_nodes()
+            self._last_check_time = time.time()
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.error(f"[{self._daemon_name}] Error in check cycle: {e}", exc_info=True)
+            self._record_error(f"Cycle error: {e}", e)
 
     async def _get_gpu_utilization(self, instance: Instance) -> tuple[float, float, float]:
         """Get GPU utilization for an instance.
@@ -712,55 +715,58 @@ class UnifiedIdleShutdownDaemon:
                 f"Total: {self._terminated_count} terminated, ${self._cost_saved:.2f}/hr saved"
             )
 
-    def health_check(self) -> "HealthCheckResult":
-        """Check daemon health (December 2025: CoordinatorProtocol compliance).
+    def health_check(self) -> HealthCheckResult:
+        """Check daemon health.
+
+        January 2026: Updated for HandlerBase migration.
 
         Returns:
             HealthCheckResult with status and details
         """
-        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
-
         if not self._running:
             return HealthCheckResult(
-                healthy=False,
-                status=CoordinatorStatus.STOPPED,
+                healthy=True,
                 message=f"{self._daemon_name} not running",
             )
 
         # Check if checks are running
         if self._last_check_time > 0:
             time_since_last = time.time() - self._last_check_time
-            if time_since_last > self.config.check_interval_seconds * 3:
+            if time_since_last > self._daemon_config.check_interval_seconds * 3:
                 return HealthCheckResult(
                     healthy=False,
-                    status=CoordinatorStatus.DEGRADED,
                     message=f"{self._daemon_name} stale ({time_since_last:.0f}s since last check)",
                     details=self.get_stats(),
                 )
 
+        uptime = time.time() - self._stats.started_at if self._stats.started_at > 0 else 0
         return HealthCheckResult(
             healthy=True,
-            status=CoordinatorStatus.RUNNING,
-            message=f"{self._daemon_name} running ({self._terminated_count} terminated, ${self._cost_saved:.2f}/hr saved)",
+            message=f"{self._daemon_name} healthy ({self._terminated_count} terminated, ${self._cost_saved:.2f}/hr saved, uptime={uptime:.0f}s)",
             details=self.get_stats(),
         )
 
     def get_stats(self) -> dict[str, Any]:
         """Get current daemon statistics."""
+        uptime = time.time() - self._stats.started_at if self._stats.started_at > 0 else 0
         return {
+            "name": self._daemon_name,
             "running": self._running,
-            "provider": self.config.provider_name,
+            "uptime_seconds": uptime,
+            "provider": self._daemon_config.provider_name,
             "terminated_count": self._terminated_count,
             "cost_saved_per_hour": self._cost_saved,
             "tracked_nodes": len(self._node_status),
             "draining_nodes": len(self._draining_nodes),
             "last_check_time": self._last_check_time,
+            "cycles_completed": self._stats.cycles_completed,
+            "errors_count": self._stats.errors_count,
             "config": {
-                "enabled": self.config.enabled,
-                "idle_threshold_seconds": self.config.idle_threshold_seconds,
-                "min_nodes_to_retain": self.config.min_nodes_to_retain,
-                "drain_period_seconds": self.config.drain_period_seconds,
-                "dry_run": self.config.dry_run,
+                "enabled": self._daemon_config.enabled,
+                "idle_threshold_seconds": self._daemon_config.idle_threshold_seconds,
+                "min_nodes_to_retain": self._daemon_config.min_nodes_to_retain,
+                "drain_period_seconds": self._daemon_config.drain_period_seconds,
+                "dry_run": self._daemon_config.dry_run,
             },
         }
 
@@ -805,3 +811,48 @@ def create_runpod_idle_daemon() -> UnifiedIdleShutdownDaemon:
         )
     except ImportError:
         raise ImportError("RunPod provider not available")
+
+
+# =============================================================================
+# Module-level singleton accessors (January 2026)
+# =============================================================================
+
+# Per-provider singleton instances
+_daemon_instances: dict[str, UnifiedIdleShutdownDaemon] = {}
+
+
+def get_idle_shutdown_daemon(
+    provider: CloudProvider,
+    config: IdleShutdownConfig | None = None,
+) -> UnifiedIdleShutdownDaemon:
+    """Get or create the singleton idle shutdown daemon for a provider.
+
+    Args:
+        provider: Cloud provider instance
+        config: Optional configuration
+
+    Returns:
+        UnifiedIdleShutdownDaemon singleton for the given provider
+    """
+    provider_name = provider.name if hasattr(provider, 'name') else str(provider.provider_type.name).lower()
+
+    if provider_name not in _daemon_instances:
+        _daemon_instances[provider_name] = UnifiedIdleShutdownDaemon(
+            provider=provider,
+            config=config,
+        )
+    return _daemon_instances[provider_name]
+
+
+def reset_idle_shutdown_daemon(provider_name: str | None = None) -> None:
+    """Reset the singleton daemon instance(s).
+
+    Args:
+        provider_name: If provided, only reset the daemon for this provider.
+                       If None, reset all daemon instances.
+    """
+    global _daemon_instances
+    if provider_name is not None:
+        _daemon_instances.pop(provider_name, None)
+    else:
+        _daemon_instances.clear()

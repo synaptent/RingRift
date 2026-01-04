@@ -3,21 +3,34 @@
 Update all cluster nodes to the latest code from GitHub.
 
 Usage:
+    # Safe mode (RECOMMENDED) - preserves quorum during rolling updates
+    python scripts/update_all_nodes.py --safe-mode --restart-p2p
+
+    # Legacy mode (not recommended for production)
     python scripts/update_all_nodes.py [--commit HASH] [--restart-p2p] [--dry-run]
+
+January 3, 2026 - Sprint 16.2:
+    Added --safe-mode flag for quorum-safe rolling updates. This mode uses
+    QuorumSafeUpdateCoordinator to batch updates by node type and verify
+    cluster health between batches.
+
+    Problem: Simultaneous P2P restarts on 10+ nodes caused quorum loss cascade.
+    Solution: Safe mode updates non-voters in parallel, then voters one at a time.
 """
 
 import argparse
 import asyncio
 import logging
 import sys
+import warnings
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 import yaml
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.core.ssh import SSHClient, SSHConfig, SSHResult
+from app.core.ssh import SSHClient, SSHConfig
 
 logging.basicConfig(
     level=logging.INFO,
@@ -343,11 +356,31 @@ def print_summary(results: Dict[str, Tuple[bool, str]]):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Update all cluster nodes to latest code")
+    parser = argparse.ArgumentParser(
+        description="Update all cluster nodes to latest code",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+    # Safe mode (RECOMMENDED for production)
+    python scripts/update_all_nodes.py --safe-mode --restart-p2p
+
+    # Safe mode with custom convergence timeout
+    python scripts/update_all_nodes.py --safe-mode --restart-p2p --convergence-timeout 180
+
+    # Update only non-voter nodes (safest, no quorum risk)
+    python scripts/update_all_nodes.py --safe-mode --skip-voters --restart-p2p
+
+    # Dry run to preview batches
+    python scripts/update_all_nodes.py --safe-mode --restart-p2p --dry-run
+
+    # Legacy mode (not recommended, shows warning)
+    python scripts/update_all_nodes.py --restart-p2p
+"""
+    )
     parser.add_argument(
         '--commit',
-        default='88ca80cb2',
-        help='Git commit hash to update to (default: 88ca80cb2)'
+        default='main',
+        help='Git commit/branch to update to (default: main)'
     )
     parser.add_argument(
         '--restart-p2p',
@@ -371,6 +404,35 @@ def main():
         help='Include coordinator nodes (local-mac) in updates'
     )
 
+    # January 3, 2026 - Sprint 16.2: Quorum-safe rolling updates
+    parser.add_argument(
+        '--safe-mode',
+        action='store_true',
+        help='Use quorum-safe rolling updates (RECOMMENDED for production)'
+    )
+    parser.add_argument(
+        '--batch-delay',
+        type=int,
+        default=30,
+        help='Seconds between voter batches in safe mode (default: 30)'
+    )
+    parser.add_argument(
+        '--skip-voters',
+        action='store_true',
+        help='Only update non-voter nodes (safest, no quorum risk)'
+    )
+    parser.add_argument(
+        '--skip-non-voters',
+        action='store_true',
+        help='Only update voter nodes (for testing voter updates)'
+    )
+    parser.add_argument(
+        '--convergence-timeout',
+        type=int,
+        default=120,
+        help='Seconds to wait for cluster convergence (default: 120)'
+    )
+
     args = parser.parse_args()
 
     if args.dry_run:
@@ -380,22 +442,100 @@ def main():
     logger.info(f"Restart P2P: {args.restart_p2p}")
     logger.info(f"Include coordinators: {args.include_coordinators}")
 
-    # Run updates
-    results = asyncio.run(update_all_nodes(
-        args.commit,
-        args.restart_p2p,
-        args.dry_run,
-        args.max_parallel,
-        args.include_coordinators
-    ))
+    # January 3, 2026 - Sprint 16.2: Use QuorumSafeUpdateCoordinator in safe mode
+    if args.safe_mode:
+        logger.info("SAFE MODE: Using quorum-safe rolling updates")
 
-    # Print summary
-    print_summary(results)
+        try:
+            from scripts.cluster_update_coordinator import (
+                QuorumSafeUpdateCoordinator,
+                UpdateCoordinatorConfig,
+            )
+        except ImportError as e:
+            logger.error(f"Failed to import QuorumSafeUpdateCoordinator: {e}")
+            logger.error("Please ensure scripts/cluster_update_coordinator.py exists")
+            sys.exit(1)
 
-    # Exit with error if any updates failed
-    failed_count = sum(1 for success, _ in results.values() if not success)
-    if failed_count > 0:
-        sys.exit(1)
+        config = UpdateCoordinatorConfig(
+            convergence_timeout=args.convergence_timeout,
+            voter_update_delay=args.batch_delay,
+            max_parallel_non_voters=args.max_parallel,
+            dry_run=args.dry_run,
+        )
+        coordinator = QuorumSafeUpdateCoordinator(config=config)
+
+        try:
+            result = asyncio.run(coordinator.update_cluster(
+                target_commit=args.commit,
+                restart_p2p=args.restart_p2p,
+                dry_run=args.dry_run,
+                skip_voters=args.skip_voters,
+                skip_non_voters=args.skip_non_voters,
+            ))
+
+            # Print safe mode summary
+            print("\n" + "="*80)
+            print("QUORUM-SAFE UPDATE SUMMARY")
+            print("="*80)
+
+            if result.success:
+                print(f"\n✅ Update completed successfully")
+                print(f"   Batches completed: {result.batches_completed}")
+                print(f"   Nodes updated: {result.nodes_updated}")
+                if result.nodes_skipped:
+                    print(f"   Nodes skipped: {result.nodes_skipped}")
+                print(f"   Duration: {result.duration_seconds:.1f}s")
+            else:
+                print(f"\n❌ Update failed")
+                print(f"   Error: {result.error_message}")
+                if result.failed_batch:
+                    print(f"   Failed batch: {result.failed_batch}")
+                if result.rollback_performed:
+                    print(f"   Rollback: Performed successfully")
+
+            print("="*80 + "\n")
+
+            if not result.success:
+                sys.exit(1)
+
+        except KeyboardInterrupt:
+            logger.warning("Update interrupted by user")
+            sys.exit(130)
+        except Exception as e:
+            logger.error(f"Safe mode update failed: {e}")
+            sys.exit(1)
+
+    else:
+        # Legacy mode - warn about quorum risk
+        if args.restart_p2p:
+            warnings.warn(
+                "Running without --safe-mode with --restart-p2p can cause quorum loss. "
+                "Consider using: python scripts/update_all_nodes.py --safe-mode --restart-p2p",
+                UserWarning,
+                stacklevel=2,
+            )
+            logger.warning(
+                "⚠️  WARNING: Running without --safe-mode. "
+                "Simultaneous P2P restarts may cause quorum loss. "
+                "Use --safe-mode for production updates."
+            )
+
+        # Run legacy parallel updates
+        results = asyncio.run(update_all_nodes(
+            args.commit,
+            args.restart_p2p,
+            args.dry_run,
+            args.max_parallel,
+            args.include_coordinators
+        ))
+
+        # Print summary
+        print_summary(results)
+
+        # Exit with error if any updates failed
+        failed_count = sum(1 for success, _ in results.values() if not success)
+        if failed_count > 0:
+            sys.exit(1)
 
 
 if __name__ == '__main__':

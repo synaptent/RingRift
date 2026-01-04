@@ -179,7 +179,7 @@ class TestS3BackupDaemonInit:
 
     def test_is_running_property(self, daemon):
         """Test is_running property."""
-        assert daemon.is_running() is False
+        assert daemon.is_running is False  # Property, not method after HandlerBase migration
 
 
 # =============================================================================
@@ -199,7 +199,7 @@ class TestS3BackupDaemonHealthCheck:
     def test_health_check_when_running_healthy(self, daemon):
         """Test health check when running and healthy."""
         daemon._running = True
-        daemon._start_time = time.time()
+        daemon._stats.started_at = time.time()
         result = daemon.health_check()
         assert result.healthy is True
         assert "healthy" in result.message.lower()
@@ -207,7 +207,7 @@ class TestS3BackupDaemonHealthCheck:
     def test_health_check_degraded_many_pending(self, daemon):
         """Test health check degraded with many pending promotions."""
         daemon._running = True
-        daemon._start_time = time.time()
+        daemon._stats.started_at = time.time()
         # Add > 10 pending promotions
         daemon._pending_promotions = [{"timestamp": time.time()} for _ in range(15)]
         result = daemon.health_check()
@@ -217,7 +217,7 @@ class TestS3BackupDaemonHealthCheck:
     def test_health_check_degraded_stalled(self, daemon):
         """Test health check degraded when stalled."""
         daemon._running = True
-        daemon._start_time = time.time()
+        daemon._stats.started_at = time.time()
         daemon._pending_promotions = [{"timestamp": time.time()}]
         daemon._last_backup_time = time.time() - 2000  # >30 minutes ago
         result = daemon.health_check()
@@ -246,7 +246,7 @@ class TestS3BackupDaemonMetrics:
     def test_get_metrics_with_activity(self, daemon):
         """Test metrics with activity."""
         daemon._running = True
-        daemon._start_time = time.time() - 100
+        daemon._stats.started_at = time.time() - 100
         daemon._events_processed = 5
         daemon._successful_backups = 3
         daemon._failed_backups = 1
@@ -384,23 +384,21 @@ class TestS3BackupDaemonDebounce:
 
 
 class TestS3BackupDaemonLifecycle:
-    """Test S3BackupDaemon lifecycle."""
+    """Test S3BackupDaemon lifecycle.
+
+    Jan 2026: Updated for HandlerBase migration.
+    """
 
     @pytest.mark.asyncio
     async def test_start_sets_running(self, daemon):
         """Test that start sets running flag."""
-        async def stop_after_start():
-            await asyncio.sleep(0.1)
-            daemon._running = False
+        # Mock _run_cycle to set _running = False after first call
+        daemon._run_cycle = AsyncMock(side_effect=lambda: setattr(daemon, "_running", False))
 
-        # Start with early termination
-        with patch.object(daemon, "_check_pending_backups", new_callable=AsyncMock):
-            task = asyncio.create_task(daemon.start())
-            await stop_after_start()
-            await asyncio.wait_for(task, timeout=1.0)
+        await daemon.run()
 
         # Should have started
-        assert daemon._start_time > 0
+        assert daemon._stats.started_at > 0
 
     @pytest.mark.asyncio
     async def test_stop_sets_not_running(self, daemon):
@@ -414,24 +412,24 @@ class TestS3BackupDaemonLifecycle:
 
     @pytest.mark.asyncio
     async def test_stop_processes_pending(self, daemon):
-        """Test that stop processes pending backups."""
+        """Test that stop processes pending backups via _on_stop."""
         daemon._running = True
         daemon._pending_promotions = [{"model_path": "/test.pth"}]
 
         with patch.object(daemon, "_run_backup", new_callable=AsyncMock) as mock_backup:
-            await daemon.stop()
+            await daemon._on_stop()  # Test lifecycle hook directly
             mock_backup.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_start_idempotent(self, daemon):
         """Test that start is idempotent."""
         daemon._running = True
-        original_time = daemon._start_time = time.time() - 100
+        original_time = daemon._stats.started_at = time.time() - 100
 
         await daemon.start()  # Should return immediately
 
         # Start time should not change
-        assert daemon._start_time == original_time
+        assert daemon._stats.started_at == original_time
 
 
 # =============================================================================

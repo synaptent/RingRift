@@ -794,6 +794,69 @@ class HealthCoordinator:
 
             return False
 
+    def is_safe_to_update(
+        self,
+        updating_voters: list[str],
+        quorum_required: int = 4,
+    ) -> tuple[bool, str]:
+        """Check if cluster can safely update given voters.
+
+        This method is used by QuorumSafeUpdateCoordinator to verify that
+        updating specific voter nodes won't cause quorum loss.
+
+        January 3, 2026 - Sprint 16.2: Added for quorum-safe rolling updates.
+
+        Args:
+            updating_voters: List of voter node IDs that will be updated/restarted
+            quorum_required: Minimum voters needed for quorum (default: 4 from VOTER_MIN_QUORUM)
+
+        Returns:
+            (safe, reason) - Whether update is safe and explanation
+
+        Example:
+            >>> coordinator = get_health_coordinator()
+            >>> safe, reason = coordinator.is_safe_to_update(["lambda-gh200-1"])
+            >>> if not safe:
+            ...     logger.error(f"Cannot update: {reason}")
+        """
+        with self._lock:
+            state = self.get_cluster_health()
+
+            # Check current quorum health
+            if state.quorum_health == QuorumHealthLevel.LOST:
+                return False, "Quorum already lost, cannot update"
+
+            if state.quorum_health == QuorumHealthLevel.MINIMUM:
+                return False, f"Quorum at minimum ({quorum_required} voters), cannot risk any updates"
+
+            # Calculate remaining voters after update
+            # alive_peers includes all alive nodes; we need to filter to just voters
+            # For safety, we use the total_peers as upper bound on voters
+            alive_voters = state.alive_peers  # Best approximation from current state
+
+            # Account for the updating voters being taken offline
+            remaining_after_update = alive_voters - len(updating_voters)
+
+            if remaining_after_update < quorum_required:
+                return False, (
+                    f"Update would leave {remaining_after_update} voters alive, "
+                    f"need {quorum_required} for quorum"
+                )
+
+            # Check overall health - don't update during degraded state
+            if state.overall_health == OverallHealthLevel.CRITICAL:
+                return False, "Cluster in CRITICAL health, resolve issues before updating"
+
+            # Additional safety: warn if updating would leave us at minimum
+            if remaining_after_update == quorum_required:
+                logger.warning(
+                    "Update will leave cluster at minimum quorum (%d voters). "
+                    "Proceed with caution.",
+                    quorum_required,
+                )
+
+            return True, f"Safe to update. {remaining_after_update} voters will remain."
+
     # =========================================================================
     # Utility Methods
     # =========================================================================
