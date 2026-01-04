@@ -84,14 +84,15 @@ This orchestrates:
 
 - P2P Network: A- (91/100) - 37 alive peers (74%), 7 recovery daemons, <2.5 min MTTR
 - Training Loop: A (95/100) - 488 games across configs, all 12 canonical models trained
-- Code Quality: 100% HandlerBase migration, 1,847 SQLite ops tracked for async migration
-- 48h Autonomous: VERIFIED - All 4 autonomous daemons functional, cluster updated
+- Code Quality: 100% HandlerBase migration, async SQLite helpers added (commit 87a3d17)
+- 48h Autonomous: VERIFIED - All 4 autonomous daemons functional, cluster deployed
 
-**Sprint 17.3 Focus:**
+**Sprint 17.3 Improvement Plan** (see `ai-service/SPRINT_17.3_PLAN.md`):
 
-- SQLite async safety (asyncio.to_thread wrapping for 1,847 operations)
-- Large file decomposition (selfplay_scheduler 4,743 LOC → 5 modules)
-- Handler consolidation (89 handlers → unified patterns)
+- Priority 1: SQLite async safety (1,847 ops → asyncio.to_thread wrapping)
+- Priority 2: Large file decomposition (selfplay_scheduler 4,743 LOC → 5 modules)
+- Priority 3: Handler consolidation (89 handlers → unified patterns)
+- Async utilities: `app/utils/async_utils.py` (async_sqlite_execute, async_sqlite_fetchall)
 
 ## Board Configurations
 
