@@ -2096,11 +2096,19 @@ class FeedbackLoopController(HandlerBase):
         January 3, 2026: Added amplitude scaling - response intensity is now
         proportional to regression severity (Elo drop magnitude and consecutive count).
 
+        January 3, 2026: Added deduplication to prevent duplicate handling when
+        both FeedbackLoopController and UnifiedFeedbackOrchestrator are running.
+
         This closes the feedback loop: REGRESSION_DETECTED → exploration boost →
         more diverse selfplay → better training data → recovery.
         """
         try:
-            payload = event.payload if hasattr(event, "payload") else {}
+            payload = event.payload if hasattr(event, "payload") else event if isinstance(event, dict) else {}
+
+            # January 3, 2026: Check for duplicate event (via HandlerBase)
+            if self._is_duplicate_event(payload):
+                logger.debug("[FeedbackLoopController] Skipping duplicate REGRESSION_DETECTED")
+                return
 
             config_key = extract_config_key(payload)
             elo_drop = payload.get("elo_drop", 0.0)

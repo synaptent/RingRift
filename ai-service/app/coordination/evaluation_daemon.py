@@ -484,6 +484,23 @@ class EvaluationDaemon(BaseEventHandler):
                     await asyncio.sleep(1.0)
                     continue
 
+                # January 3, 2026: Check model exists before evaluation
+                from pathlib import Path
+                if not Path(model_path).exists():
+                    logger.warning(
+                        f"[EvaluationDaemon] Model not found: {model_path}"
+                    )
+                    safe_emit_event(
+                        DataEventType.EVALUATION_FAILED,
+                        {
+                            "model_path": model_path,
+                            "reason": "model_not_found",
+                            "config_key": request.get("config_key", "unknown"),
+                        },
+                    )
+                    self.stats.failed_evaluations += 1
+                    continue
+
                 # Run evaluation
                 self._active_evaluations.add(model_path)
                 try:

@@ -3924,6 +3924,94 @@ class SelfplayScheduler(HandlerBase):
         """
         return self._elo_velocity.get(config_key, 0.0)
 
+    def initialize_elo_velocities_from_db(self) -> int:
+        """Initialize Elo velocities from database history at startup.
+
+        January 3, 2026: Fixes cold start gap where velocities are 0.0 until
+        ELO_VELOCITY_CHANGED events fire (5-30 min delay). This method queries
+        the elo_history table to bootstrap velocity calculations.
+
+        Returns:
+            Number of configs with initialized velocities.
+
+        Called from: master_loop.py after SelfplayScheduler initialization.
+        """
+        try:
+            from app.training.elo_service import get_elo_service
+
+            service = get_elo_service()
+            if not service:
+                logger.debug("[SelfplayScheduler] Elo service not available for velocity init")
+                return 0
+
+            # Query elo_history for last 24 hours per config
+            now = time.time()
+            cutoff = now - 86400  # 24 hours
+            initialized_count = 0
+
+            # Query all distinct configs from elo_history
+            with service._get_connection() as conn:
+                cursor = conn.execute(
+                    """
+                    SELECT DISTINCT board_type || '_' || num_players || 'p' as config_key
+                    FROM elo_history
+                    WHERE timestamp > ?
+                    """,
+                    (cutoff,),
+                )
+                configs = [row[0] for row in cursor.fetchall()]
+
+            for config_key in configs:
+                parts = config_key.rsplit("_", 1)
+                if len(parts) != 2:
+                    continue
+                board_type = parts[0]
+                try:
+                    num_players = int(parts[1].rstrip("p"))
+                except ValueError:
+                    continue
+
+                # Query history for this config
+                with service._get_connection() as conn:
+                    cursor = conn.execute(
+                        """
+                        SELECT timestamp, rating
+                        FROM elo_history
+                        WHERE board_type = ? AND num_players = ?
+                        AND timestamp > ?
+                        ORDER BY timestamp ASC
+                        """,
+                        (board_type, num_players, cutoff),
+                    )
+                    history = [(row[0], row[1]) for row in cursor.fetchall()]
+
+                if len(history) < 2:
+                    continue
+
+                # Initialize history
+                self._elo_history[config_key] = history
+
+                # Calculate velocity
+                hours = (history[-1][0] - history[0][0]) / 3600
+                if hours > 0.5:  # Need at least 30 min
+                    velocity = (history[-1][1] - history[0][1]) / hours
+                    self._elo_velocity[config_key] = velocity
+                    initialized_count += 1
+                    logger.debug(
+                        f"[SelfplayScheduler] Initialized Elo velocity for {config_key}: "
+                        f"{velocity:.2f} Elo/hour (from {len(history)} samples)"
+                    )
+
+            if initialized_count > 0:
+                logger.info(
+                    f"[SelfplayScheduler] Initialized Elo velocities for {initialized_count} configs from DB"
+                )
+            return initialized_count
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error initializing velocities from DB: {e}")
+            return 0
+
     # =========================================================================
     # Diversity Tracking (January 2026 Sprint 10)
     # =========================================================================
