@@ -78,6 +78,19 @@ from app.coordination.evaluation_queue import (
     RequestStatus,
 )
 
+# January 3, 2026 (Sprint 16.2): Hashgraph consensus for multi-node evaluation
+# Enables Byzantine-tolerant Elo updates via virtual voting
+try:
+    from app.coordination.hashgraph import (
+        get_evaluation_consensus_manager,
+        EvaluationConsensusConfig,
+    )
+    HAS_HASHGRAPH_CONSENSUS = True
+except ImportError:
+    HAS_HASHGRAPH_CONSENSUS = False
+    get_evaluation_consensus_manager = None
+    EvaluationConsensusConfig = None
+
 __all__ = [
     "EvaluationConfig",
     "EvaluationDaemon",
@@ -1094,6 +1107,14 @@ class EvaluationDaemon(BaseEventHandler):
                 # December 30, 2025: Architecture for multi-arch tracking
                 architecture=architecture,
             )
+
+            # January 3, 2026 (Sprint 16.2): Submit to hashgraph consensus
+            # This enables multi-node evaluation aggregation for BFT Elo
+            await self._submit_to_hashgraph_consensus(
+                model_path=model_path,
+                win_rate=result.get("overall_win_rate", 0.0),
+                games_played=games_played,
+            )
         except ImportError:
             logger.debug("[EvaluationDaemon] Event emitters not available")
         except Exception as e:  # noqa: BLE001
@@ -1126,6 +1147,79 @@ class EvaluationDaemon(BaseEventHandler):
             logger.debug("[EvaluationDaemon] Event emitters not available")
         except Exception as e:  # noqa: BLE001
             logger.debug(f"[EvaluationDaemon] Failed to emit started event: {e}")
+
+    async def _submit_to_hashgraph_consensus(
+        self,
+        model_path: str,
+        win_rate: float,
+        games_played: int,
+    ) -> None:
+        """Submit evaluation result to hashgraph consensus for BFT Elo updates.
+
+        January 3, 2026 (Sprint 16.2): Enables multi-node evaluation consensus.
+
+        When multiple nodes evaluate the same model, their results are aggregated
+        using virtual voting to produce a Byzantine-tolerant consensus win rate.
+        This prevents:
+        - Single faulty node from corrupting Elo (GPU errors, timeouts)
+        - Single malicious node from manipulating ratings
+        - Inconsistent Elo between cluster nodes
+
+        Args:
+            model_path: Path to the evaluated model
+            win_rate: Win rate from this node's evaluation (0.0 to 1.0)
+            games_played: Number of games in this evaluation
+        """
+        if not HAS_HASHGRAPH_CONSENSUS:
+            logger.debug("[EvaluationDaemon] Hashgraph consensus not available")
+            return
+
+        try:
+            import socket
+
+            # Compute model hash for consensus tracking
+            model_hash = hashlib.sha256(model_path.encode()).hexdigest()[:16]
+            node_id = socket.gethostname()
+
+            # Get consensus manager
+            consensus = get_evaluation_consensus_manager()
+            if consensus is None:
+                logger.debug("[EvaluationDaemon] Consensus manager not initialized")
+                return
+
+            # Submit evaluation result to hashgraph DAG
+            event = await consensus.submit_evaluation_result(
+                model_hash=model_hash,
+                evaluator_node=node_id,
+                win_rate=win_rate,
+                games_played=games_played,
+            )
+
+            logger.info(
+                f"[EvaluationDaemon] Submitted to hashgraph consensus: "
+                f"model={model_hash[:8]}, win_rate={win_rate:.1%}, "
+                f"games={games_played}, event={event.event_hash[:8]}"
+            )
+
+            # Emit event for monitoring
+            try:
+                safe_emit_event(
+                    DataEventType.EVALUATION_SUBMITTED,
+                    {
+                        "model_path": model_path,
+                        "model_hash": model_hash,
+                        "evaluator_node": node_id,
+                        "win_rate": win_rate,
+                        "games_played": games_played,
+                        "event_hash": event.event_hash,
+                    },
+                )
+            except Exception as emit_err:  # noqa: BLE001
+                logger.debug(f"[EvaluationDaemon] Failed to emit submission event: {emit_err}")
+
+        except Exception as e:  # noqa: BLE001
+            # Don't fail evaluation just because consensus submission failed
+            logger.warning(f"[EvaluationDaemon] Failed to submit to hashgraph: {e}")
 
     async def _emit_evaluation_failed(
         self,

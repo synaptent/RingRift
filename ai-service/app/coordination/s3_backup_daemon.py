@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.utils.retry import RetryConfig
 
 logger = logging.getLogger(__name__)
@@ -89,7 +90,7 @@ class BackupResult:
     duration_seconds: float = 0.0
 
 
-class S3BackupDaemon:
+class S3BackupDaemon(HandlerBase):
     """Daemon that automatically backs up to S3 after model promotion.
 
     Watches for MODEL_PROMOTED events and syncs models (and optionally
@@ -97,11 +98,17 @@ class S3BackupDaemon:
 
     This ensures that promoted models are safely stored off-cluster
     and can be recovered if all cluster nodes are lost.
+
+    Jan 2026: Migrated to HandlerBase for unified lifecycle management.
     """
 
     def __init__(self, config: S3BackupConfig | None = None):
-        self.config = config or S3BackupConfig()
-        self._running = False
+        self._daemon_config = config or S3BackupConfig()
+        super().__init__(
+            name="S3BackupDaemon",
+            config={"s3_bucket": self._daemon_config.s3_bucket},
+            cycle_interval=30.0,  # Check every 30s (matches previous sleep)
+        )
         self._last_backup_time: float = 0.0
         self._pending_promotions: list[dict[str, Any]] = []
         self._backup_lock = asyncio.Lock()
@@ -113,28 +120,23 @@ class S3BackupDaemon:
         self._pending_event: asyncio.Event | None = None
 
         # Metrics
-        self._start_time: float = 0.0
         self._events_processed: int = 0
         self._successful_backups: int = 0
         self._failed_backups: int = 0
         self._total_files_uploaded: int = 0
 
     @property
-    def name(self) -> str:
-        """Unique name identifying this daemon."""
-        return "S3BackupDaemon"
+    def config(self) -> S3BackupConfig:
+        """Backward-compatible config access."""
+        return self._daemon_config
 
-    def is_running(self) -> bool:
-        """Check if the daemon is currently running."""
-        return self._running
-
-    def health_check(self) -> "HealthCheckResult":
+    def health_check(self) -> HealthCheckResult:
         """Check daemon health for CoordinatorProtocol compliance.
 
         December 2025: Updated to return HealthCheckResult instead of bool.
-        Used by DaemonManager for crash detection and auto-restart.
+        Jan 2026: Migrated to HandlerBase.
         """
-        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+        from app.coordination.protocols import CoordinatorStatus
 
         if not self._running:
             return HealthCheckResult(
@@ -174,9 +176,9 @@ class S3BackupDaemon:
 
     def get_metrics(self) -> dict[str, Any]:
         """Get daemon metrics."""
-        uptime = time.time() - self._start_time if self._start_time > 0 else 0.0
+        uptime = time.time() - self._stats.started_at if self._stats.started_at > 0 else 0.0
         return {
-            "name": self.name,
+            "name": self._name,
             "running": self._running,
             "uptime_seconds": uptime,
             "events_processed": self._events_processed,
@@ -185,17 +187,15 @@ class S3BackupDaemon:
             "failed_backups": self._failed_backups,
             "total_files_uploaded": self._total_files_uploaded,
             "last_backup_time": self._last_backup_time,
-            "s3_bucket": self.config.s3_bucket,
+            "s3_bucket": self._daemon_config.s3_bucket,
         }
 
-    async def start(self) -> None:
-        """Start the daemon and subscribe to events."""
-        if self._running:
-            return
+    async def _on_start(self) -> None:
+        """Initialize daemon on startup.
 
-        logger.info(f"S3BackupDaemon starting (bucket: {self.config.s3_bucket})")
-        self._running = True
-        self._start_time = time.time()
+        Jan 2026: Migrated to HandlerBase lifecycle hook.
+        """
+        logger.info(f"S3BackupDaemon starting (bucket: {self._daemon_config.s3_bucket})")
 
         # Initialize event for wake-up
         self._pending_event = asyncio.Event()
@@ -213,44 +213,44 @@ class S3BackupDaemon:
         except Exception as e:
             logger.error(f"Failed to subscribe to MODEL_PROMOTED: {e}")
 
-        # Main loop
-        while self._running:
-            try:
-                # Check for pending backups with debounce
-                await self._check_pending_backups()
+    async def _run_cycle(self) -> None:
+        """Main cycle - check for pending backups.
 
-                # Wait for event or timeout
-                if self._pending_event is not None:
-                    try:
-                        await asyncio.wait_for(
-                            self._pending_event.wait(),
-                            timeout=30.0
-                        )
-                        self._pending_event.clear()
-                    except asyncio.TimeoutError:
-                        pass
+        Jan 2026: Migrated from start() loop to HandlerBase _run_cycle().
+        """
+        try:
+            # Check for pending backups with debounce
+            await self._check_pending_backups()
 
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error in S3 backup daemon loop: {e}")
-                await asyncio.sleep(60.0)
+            # Wait for event or timeout (event-based wake-up optimization)
+            if self._pending_event is not None:
+                try:
+                    await asyncio.wait_for(
+                        self._pending_event.wait(),
+                        timeout=self._cycle_interval
+                    )
+                    self._pending_event.clear()
+                except asyncio.TimeoutError:
+                    pass
 
-        logger.info("S3BackupDaemon stopped")
+        except asyncio.CancelledError:
+            raise  # Let HandlerBase handle cancellation
+        except Exception as e:
+            logger.error(f"Error in S3 backup daemon cycle: {e}")
+            self._record_error(f"Cycle error: {e}", e)
 
-    async def stop(self) -> None:
-        """Stop the daemon gracefully."""
-        if not self._running:
-            return
+    async def _on_stop(self) -> None:
+        """Cleanup on shutdown.
 
-        self._running = False
-
+        Jan 2026: Migrated to HandlerBase lifecycle hook.
+        """
         # Process any remaining pending backups
         if self._pending_promotions:
             logger.info(
                 f"Processing {len(self._pending_promotions)} pending backups before shutdown"
             )
             await self._run_backup()
+        logger.info("S3BackupDaemon stopped")
 
     def _on_model_promoted(self, event: dict[str, Any] | Any) -> None:
         """Handle MODEL_PROMOTED event (sync callback)."""
@@ -482,13 +482,13 @@ class S3BackupDaemonAdapter:
         if self._daemon:
             await self._daemon.stop()
 
-    def health_check(self) -> "HealthCheckResult":
+    def health_check(self) -> HealthCheckResult:
         """Check adapter health for DaemonManager integration.
 
         December 2025: Added for CoordinatorProtocol compliance.
-        Delegates to underlying daemon if running.
+        Jan 2026: Uses HandlerBase's HealthCheckResult.
         """
-        from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+        from app.coordination.protocols import CoordinatorStatus
 
         if self._daemon is None:
             return HealthCheckResult(
@@ -511,9 +511,30 @@ async def main() -> None:
 
     daemon = S3BackupDaemon()
     try:
-        await daemon.start()
+        await daemon.run()  # run() blocks until stopped
     except KeyboardInterrupt:
         await daemon.stop()
+
+
+# Module-level singleton accessors
+_daemon_instance: S3BackupDaemon | None = None
+
+
+def get_s3_backup_daemon(config: S3BackupConfig | None = None) -> S3BackupDaemon:
+    """Get or create the S3BackupDaemon singleton.
+
+    Jan 2026: Added for HandlerBase singleton pattern.
+    """
+    global _daemon_instance
+    if _daemon_instance is None:
+        _daemon_instance = S3BackupDaemon(config)
+    return _daemon_instance
+
+
+def reset_s3_backup_daemon() -> None:
+    """Reset the S3BackupDaemon singleton (for testing)."""
+    global _daemon_instance
+    _daemon_instance = None
 
 
 if __name__ == "__main__":

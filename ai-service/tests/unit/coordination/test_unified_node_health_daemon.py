@@ -204,7 +204,7 @@ class TestDaemonCycle:
         daemon = daemon_with_mocks
         daemon._last_health_check = 0  # Set to 0 so it's due
 
-        await daemon._daemon_cycle()
+        await daemon._run_cycle()
 
         daemon._run_health_check.assert_called_once()
 
@@ -214,7 +214,7 @@ class TestDaemonCycle:
         daemon = daemon_with_mocks
         daemon._last_health_check = time.time()  # Just ran
 
-        await daemon._daemon_cycle()
+        await daemon._run_cycle()
 
         daemon._run_health_check.assert_not_called()
 
@@ -225,7 +225,7 @@ class TestDaemonCycle:
         daemon.config.enable_recovery = True
         daemon._last_recovery_check = 0
 
-        await daemon._daemon_cycle()
+        await daemon._run_cycle()
 
         daemon._run_recovery_check.assert_called_once()
 
@@ -236,7 +236,7 @@ class TestDaemonCycle:
         daemon.config.enable_recovery = False
         daemon._last_recovery_check = 0
 
-        await daemon._daemon_cycle()
+        await daemon._run_cycle()
 
         daemon._run_recovery_check.assert_not_called()
 
@@ -247,7 +247,7 @@ class TestDaemonCycle:
         daemon.config.enable_optimization = True
         daemon._last_optimization = 0
 
-        await daemon._daemon_cycle()
+        await daemon._run_cycle()
 
         daemon._run_optimization.assert_called_once()
 
@@ -258,7 +258,7 @@ class TestDaemonCycle:
         daemon.config.enable_p2p_auto_deploy = True
         daemon._last_p2p_deploy = 0
 
-        await daemon._daemon_cycle()
+        await daemon._run_cycle()
 
         daemon._run_p2p_deploy.assert_called_once()
 
@@ -340,7 +340,7 @@ class TestDaemonLifecycle:
             daemon = UnifiedNodeHealthDaemon()
             # Mock expensive methods
             daemon._run_health_check = AsyncMock()
-            daemon._daemon_cycle = AsyncMock()
+            daemon._run_cycle = AsyncMock()
             daemon._cleanup = AsyncMock()
 
             return daemon
@@ -358,25 +358,32 @@ class TestDaemonLifecycle:
         asyncio.create_task(stop_after_cycle())
         await daemon.run()
 
-        # Should have been set to True initially
-        assert daemon._start_time > 0
+        # Should have been set to True initially (HandlerBase uses _stats.started_at)
+        assert daemon._stats.started_at > 0
 
     @pytest.mark.asyncio
     async def test_run_calls_cleanup_on_exit(self, daemon_for_lifecycle):
         """Test run() calls cleanup when stopped."""
         daemon = daemon_for_lifecycle
-        daemon._running = False  # Exit immediately
+        # Ensure health_orchestrator.stop is async-compatible for _cleanup
+        daemon.health_orchestrator.stop = AsyncMock()
+        daemon.lambda_mgr.close = AsyncMock()
+        # Make _run_cycle set _running to False so the loop exits after one iteration
+        async def stop_after_run_cycle():
+            daemon._running = False
+        daemon._run_cycle = AsyncMock(side_effect=stop_after_run_cycle)
 
         await daemon.run()
 
         daemon._cleanup.assert_called_once()
 
-    def test_stop_sets_running_false(self, daemon_for_lifecycle):
+    @pytest.mark.asyncio
+    async def test_stop_sets_running_false(self, daemon_for_lifecycle):
         """Test stop() sets _running to False."""
         daemon = daemon_for_lifecycle
         daemon._running = True
 
-        daemon.stop()
+        await daemon.stop()
 
         assert daemon._running is False
 
@@ -421,7 +428,8 @@ class TestStatsTracking:
         assert daemon._recoveries_attempted == 0
         assert daemon._optimizations_run == 0
         assert daemon._p2p_deploys_run == 0
-        assert daemon._start_time == 0.0
+        # HandlerBase uses _stats.started_at instead of _start_time
+        assert daemon._stats.started_at == 0.0
 
 
 class TestHealthCheckResult:
@@ -528,6 +536,9 @@ class TestGracefulShutdown:
         mock_task = daemon._tasks[0]
         mock_task.cancel = MagicMock()
         mock_task.cancelled = MagicMock(return_value=False)
+        # Ensure all async methods in _cleanup are AsyncMock
+        daemon.health_orchestrator.stop = AsyncMock()
+        daemon.lambda_mgr.close = AsyncMock()
 
         await daemon._cleanup()
 

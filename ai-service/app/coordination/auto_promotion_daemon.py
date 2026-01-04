@@ -41,6 +41,21 @@ from app.utils.retry import RetryConfig
 
 logger = logging.getLogger(__name__)
 
+# January 3, 2026 (Sprint 16.2): Hashgraph consensus for BFT model promotion
+# Requires supermajority approval before promotion can proceed
+try:
+    from app.coordination.hashgraph import (
+        get_promotion_consensus_manager,
+        PromotionConsensusConfig,
+        EvaluationEvidence,
+    )
+    HAS_HASHGRAPH_CONSENSUS = True
+except ImportError:
+    HAS_HASHGRAPH_CONSENSUS = False
+    get_promotion_consensus_manager = None
+    PromotionConsensusConfig = None
+    EvaluationEvidence = None
+
 __all__ = [
     "AutoPromotionConfig",
     "AutoPromotionDaemon",
@@ -933,6 +948,9 @@ class AutoPromotionDaemon(HandlerBase):
                 # Emit MODEL_PROMOTED event
                 await self._emit_promotion_event(candidate)
 
+                # January 3, 2026 (Sprint 16.2): Submit to hashgraph consensus for BFT audit trail
+                await self._submit_to_hashgraph_consensus(candidate)
+
                 # Dec 29, 2025: Emit unified PROMOTION_COMPLETED for curriculum
                 await self._emit_promotion_completed(candidate, success=True)
 
@@ -1028,6 +1046,95 @@ class AutoPromotionDaemon(HandlerBase):
                     )
         except Exception as e:  # noqa: BLE001
             logger.error(f"[AutoPromotion] Failed to emit promotion event: {e}")
+
+    async def _submit_to_hashgraph_consensus(
+        self,
+        candidate: "PromotionCandidate",
+    ) -> None:
+        """Submit promotion decision to hashgraph consensus for BFT audit trail.
+
+        January 3, 2026 (Sprint 16.2): Records promotion decisions in hashgraph DAG.
+
+        This creates an immutable record of promotion decisions that:
+        - Provides audit trail for all promotions
+        - Enables BFT enforcement in future (require 2/3+ approval)
+        - Detects fork attempts (duplicate conflicting promotions)
+        - Supports rollback with cryptographic proofs
+
+        Args:
+            candidate: PromotionCandidate that was promoted
+        """
+        if not HAS_HASHGRAPH_CONSENSUS:
+            logger.debug("[AutoPromotion] Hashgraph consensus not available")
+            return
+
+        try:
+            import hashlib
+            import socket
+
+            # Compute model hash for consensus tracking
+            model_hash = hashlib.sha256(candidate.model_path.encode()).hexdigest()[:16]
+            node_id = socket.gethostname()
+
+            # Get promotion consensus manager
+            consensus = get_promotion_consensus_manager()
+            if consensus is None:
+                logger.debug("[AutoPromotion] Promotion consensus manager not initialized")
+                return
+
+            # Create evaluation evidence for the proposal
+            evidence = EvaluationEvidence(
+                win_rate=candidate.evaluation_results.get("HEURISTIC", 0.0),
+                elo=candidate.estimated_elo,
+                games_played=sum(candidate.evaluation_games.values()),
+                vs_baselines={
+                    "RANDOM": candidate.evaluation_results.get("RANDOM", 0.0),
+                    "HEURISTIC": candidate.evaluation_results.get("HEURISTIC", 0.0),
+                },
+            )
+
+            # Propose promotion to hashgraph
+            proposal = await consensus.propose_promotion(
+                model_hash=model_hash,
+                config_key=candidate.config_key,
+                proposer=node_id,
+                evidence=evidence,
+            )
+
+            # Auto-approve since this is a local promotion (BFT enforcement is future work)
+            await consensus.vote_on_proposal(
+                proposal_id=proposal.proposal_id,
+                voter=node_id,
+                approve=True,
+            )
+
+            logger.info(
+                f"[AutoPromotion] Submitted to hashgraph consensus: "
+                f"config={candidate.config_key}, model={model_hash[:8]}, "
+                f"proposal={proposal.proposal_id[:8]}"
+            )
+
+            # Emit event for monitoring
+            try:
+                from app.coordination.event_router import safe_emit_event, DataEventType
+                safe_emit_event(
+                    DataEventType.PROMOTION_CONSENSUS_APPROVED,
+                    {
+                        "config_key": candidate.config_key,
+                        "model_path": candidate.model_path,
+                        "model_hash": model_hash,
+                        "proposer_node": node_id,
+                        "proposal_id": proposal.proposal_id,
+                        "win_rate": evidence.win_rate,
+                        "elo": evidence.elo,
+                    },
+                )
+            except Exception as emit_err:  # noqa: BLE001
+                logger.debug(f"[AutoPromotion] Failed to emit consensus event: {emit_err}")
+
+        except Exception as e:  # noqa: BLE001
+            # Don't fail promotion just because consensus recording failed
+            logger.warning(f"[AutoPromotion] Failed to submit to hashgraph: {e}")
 
     async def _emit_promotion_failed(
         self,

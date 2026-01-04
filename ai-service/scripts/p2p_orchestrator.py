@@ -21608,8 +21608,8 @@ print(json.dumps({{
                     if peer.node_id in self.peers:
                         self.peers[peer.node_id].nat_blocked = True
                         self.peers[peer.node_id].nat_blocked_since = time.time()
-                        # Set relay to best available relay node
-                        relay_node = self._select_best_relay()
+                        # Set relay to best available relay node (with configured fallback)
+                        relay_node = self._select_best_relay(for_peer=peer.node_id)
                         if relay_node:
                             self.peers[peer.node_id].relay_via = relay_node
 
@@ -21645,8 +21645,8 @@ print(json.dumps({{
             )
 
             if not relay_healthy:
-                # Find a new relay
-                new_relay = self._select_best_relay()
+                # Find a new relay (with configured fallback)
+                new_relay = self._select_best_relay(for_peer=peer.node_id)
                 if new_relay and new_relay != relay_id:
                     logger.info(
                         f"[RelayHealthCheck] Relay {relay_id} unhealthy for {peer.node_id}, "
@@ -21656,15 +21656,34 @@ print(json.dumps({{
                         if peer.node_id in self.peers:
                             self.peers[peer.node_id].relay_via = new_relay
 
-    def _select_best_relay(self) -> str:
-        """Select the best relay node based on connectivity and load."""
+    def _select_best_relay(self, for_peer: str = "") -> str:
+        """Select the best relay node based on connectivity and load.
+
+        January 4, 2026: Multi-relay failover support. When for_peer is provided,
+        checks configured relay_primary/secondary/tertiary from distributed_hosts.yaml
+        before falling back to automatic selection. This ensures NAT-blocked nodes
+        have deterministic relay paths that survive leader changes.
+
+        Args:
+            for_peer: Optional peer node_id to look up configured relay preferences.
+
+        Returns:
+            Node ID of the best relay, or empty string if none available.
+        """
+        # January 4, 2026: Check configured relay preferences for this peer
+        if for_peer:
+            configured_relays = self._get_configured_relays(for_peer)
+            for relay_id in configured_relays:
+                with self.peers_lock:
+                    relay_peer = self.peers.get(relay_id)
+                if relay_peer and self._is_valid_relay(relay_peer):
+                    return relay_id
+
+        # Fall back to automatic selection
         with self.peers_lock:
             candidates = [
                 p for p in self.peers.values()
-                if p.is_alive()
-                and not p.nat_blocked
-                and p.node_id != self.node_id
-                and (getattr(p, "consecutive_failures", 0) or 0) < 2
+                if self._is_valid_relay(p)
             ]
 
         if not candidates:
@@ -21682,6 +21701,39 @@ print(json.dumps({{
         # Lowest load
         candidates.sort(key=lambda p: getattr(p, "load_score", 100))
         return candidates[0].node_id if candidates else ""
+
+    def _is_valid_relay(self, peer: "NodeInfo") -> bool:
+        """Check if a peer is a valid relay candidate."""
+        return (
+            peer.is_alive()
+            and not getattr(peer, "nat_blocked", False)
+            and peer.node_id != self.node_id
+            and (getattr(peer, "consecutive_failures", 0) or 0) < 2
+        )
+
+    def _get_configured_relays(self, peer_id: str) -> list[str]:
+        """Get configured relay nodes for a peer from distributed_hosts.yaml.
+
+        January 4, 2026: Multi-relay failover configuration.
+
+        Returns:
+            List of relay node IDs in priority order [primary, secondary, tertiary].
+        """
+        try:
+            from app.config.cluster_config import load_cluster_config
+
+            config = load_cluster_config()
+            hosts_raw = getattr(config, "hosts_raw", {}) or {}
+            host_config = hosts_raw.get(peer_id, {})
+
+            relays = []
+            for key in ["relay_primary", "relay_secondary", "relay_tertiary"]:
+                relay_id = host_config.get(key, "")
+                if relay_id:
+                    relays.append(relay_id)
+            return relays
+        except (ImportError, AttributeError, KeyError, TypeError):
+            return []
 
     # NOTE: _manifest_collection_loop removed Dec 27, 2025
     # Now handled by ManifestCollectionLoop via LoopManager
@@ -29006,7 +29058,8 @@ print(json.dumps({{
                         logger.info(f"Relay enqueue via {relay_node_id} failed for {peer_id}: {last_err}")
                         # Dec 30, 2025: Automatic relay failover
                         # If the current relay is unreachable, try to find a new one
-                        new_relay = self._select_best_relay()
+                        # January 4, 2026: Pass peer_id for configured relay preferences
+                        new_relay = self._select_best_relay(for_peer=peer_id)
                         if new_relay and new_relay != relay_node_id:
                             logger.info(
                                 f"[RelayFailover] Switching {peer_id} relay: "
@@ -29218,6 +29271,23 @@ print(json.dumps({{
                 )
                 status["warnings"].append(msg)
                 logger.warning(f"[Startup Validation] {msg}")
+                # January 4, 2026: Emit QUORUM_VALIDATION_FAILED event for monitoring.
+                # This enables dashboards and alert systems to track pre-startup quorum issues.
+                try:
+                    from app.distributed.data_events import DataEventType, emit_event
+                    emit_event(
+                        DataEventType.QUORUM_VALIDATION_FAILED,
+                        {
+                            "node_id": self.node_id,
+                            "reachable_voters": reachable_count,
+                            "total_voters": len(self.voter_node_ids),
+                            "quorum_required": self.voter_quorum_size,
+                            "unreachable": status["voters"]["unreachable"],
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        },
+                    )
+                except (ImportError, Exception) as e:
+                    logger.debug(f"[Startup Validation] Could not emit quorum validation event: {e}")
             else:
                 logger.info(
                     f"[Startup Validation] Voter quorum OK: "

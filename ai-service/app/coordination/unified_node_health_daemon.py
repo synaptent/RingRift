@@ -191,9 +191,19 @@ class UnifiedNodeHealthDaemon(HandlerBase):
         """Run the daemon main loop.
 
         January 2026: Backward-compatible wrapper around HandlerBase.start().
+        This method blocks until the daemon is stopped, unlike start() which
+        spawns a background task and returns immediately.
         For new code, prefer using start() directly.
         """
         await self.start()
+        # Wait for the main loop task to complete
+        if self._task:
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        # Call cleanup hooks when done
+        await self._on_stop()
 
     async def _on_start(self) -> None:
         """Called when daemon starts (HandlerBase lifecycle hook)."""
@@ -463,6 +473,10 @@ class UnifiedNodeHealthDaemon(HandlerBase):
 
     async def _cleanup(self) -> None:
         """Cleanup on shutdown."""
+        # Cancel any pending tasks
+        for task in self._tasks:
+            if not task.cancelled():
+                task.cancel()
         await self.health_orchestrator.stop()
         await self.lambda_mgr.close()
 
@@ -482,24 +496,25 @@ class UnifiedNodeHealthDaemon(HandlerBase):
 
         # Check if health checks are running successfully
         time_since_last_check = time.time() - self._last_health_check
-        if time_since_last_check > self.config.health_check_interval * 3:
+        if time_since_last_check > self._daemon_config.health_check_interval * 3:
             return HealthCheckResult(
                 healthy=False,
-                status=CoordinatorStatus.DEGRADED,
+                status="degraded",
                 message=f"Health checks stale ({time_since_last_check:.0f}s since last check)",
                 details=self.get_stats(),
             )
 
         return HealthCheckResult(
             healthy=True,
-            status=CoordinatorStatus.RUNNING,
+            status="healthy",
             message=f"UnifiedNodeHealthDaemon running ({self._health_checks_run} checks)",
             details=self.get_stats(),
         )
 
     def get_stats(self) -> dict[str, Any]:
         """Get daemon statistics."""
-        uptime = time.time() - self._start_time if self._start_time else 0
+        # January 2026: Use HandlerBase's _stats.started_at instead of _start_time
+        uptime = time.time() - self._stats.started_at if self._stats.started_at else 0
 
         # Get latest P2P coverage
         p2p_coverage = None
@@ -626,6 +641,37 @@ def main():
     except KeyboardInterrupt:
         logger.info("[Daemon] Interrupted")
         sys.exit(0)
+
+
+# ============================================================================
+# Singleton Access (January 2026: Added for HandlerBase migration)
+# ============================================================================
+
+_daemon_instance: UnifiedNodeHealthDaemon | None = None
+
+
+def get_unified_node_health_daemon(
+    config: DaemonConfig | None = None,
+) -> UnifiedNodeHealthDaemon:
+    """Get the singleton UnifiedNodeHealthDaemon instance.
+
+    Args:
+        config: Optional configuration (only used on first call)
+
+    Returns:
+        The singleton daemon instance
+    """
+    global _daemon_instance
+
+    if _daemon_instance is None:
+        _daemon_instance = UnifiedNodeHealthDaemon(config)
+    return _daemon_instance
+
+
+def reset_unified_node_health_daemon() -> None:
+    """Reset the singleton (for testing)."""
+    global _daemon_instance
+    _daemon_instance = None
 
 
 if __name__ == "__main__":

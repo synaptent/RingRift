@@ -16,6 +16,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import shutil
@@ -279,7 +280,8 @@ class DataCleanupDaemon(HandlerBase):
 
         for db_path in databases:
             try:
-                assessment = self._assess_database(db_path)
+                # Jan 3, 2026: Wrap blocking SQLite in asyncio.to_thread()
+                assessment = await asyncio.to_thread(self._assess_database, db_path)
                 self._cleanup_stats.record_database_scan()
 
                 # Skip canonical databases if configured

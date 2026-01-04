@@ -64,11 +64,14 @@ class VoterHealthConfig:
     """
 
     enabled: bool = True
-    check_interval_seconds: int = 30  # Faster than P2P recovery (60s)
-    # January 3, 2026: Increased from 2 to 3 to reduce false positives from
-    # transient network hiccups. Slightly slower offline detection but fewer
-    # spurious QUORUM_AT_RISK alerts.
-    consecutive_failures_before_offline: int = 3
+    # January 4, 2026: Reduced from 30s to 10s for faster quorum loss detection.
+    # Combined with 2 failures threshold, detects offline voter in ~20s vs 90s.
+    # This prevents quorum cascade failures that caused 4+ day training stalls.
+    check_interval_seconds: int = 10
+    # January 4, 2026: Reverted from 3 to 2 for faster detection. The false
+    # positive concern is less critical than quorum cascade prevention.
+    # Fast detection (20s) + multi-transport fallback = acceptable accuracy.
+    consecutive_failures_before_offline: int = 2
     p2p_timeout_seconds: float = 5.0
     tailscale_timeout_seconds: float = 10.0
     ssh_timeout_seconds: float = 15.0

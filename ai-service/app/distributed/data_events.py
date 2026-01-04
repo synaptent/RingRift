@@ -140,6 +140,7 @@ class DataEventType(Enum):
     EVALUATION_QUEUED = "evaluation_queued"  # Model added to persistent eval queue
     EVALUATION_RECOVERED = "evaluation_recovered"  # Stuck evaluation recovered and requeued
     EVALUATION_STUCK = "evaluation_stuck"  # Evaluation stuck detected (exceeded timeout)
+    EVALUATION_SUBMITTED = "evaluation_submitted"  # Jan 3, 2026: Eval result submitted to hashgraph consensus
     UNEVALUATED_MODELS_FOUND = "unevaluated_models_found"  # Scanner found models without Elo ratings
 
     # Promotion events
@@ -149,6 +150,7 @@ class DataEventType(Enum):
     PROMOTION_FAILED = "promotion_failed"
     PROMOTION_REJECTED = "promotion_rejected"
     MODEL_UPDATED = "model_updated"  # Model metadata or path updated (pre-promotion)
+    PROMOTION_CONSENSUS_APPROVED = "promotion_consensus_approved"  # Jan 3, 2026: BFT promotion via hashgraph
 
     # Curriculum events
     CURRICULUM_REBALANCED = "curriculum_rebalanced"
@@ -288,6 +290,7 @@ class DataEventType(Enum):
     QUORUM_RESTORED = "quorum_restored"  # Quorum threshold crossed (was lost, now OK)
     QUORUM_AT_RISK = "quorum_at_risk"  # Quorum marginal (e.g., exactly at threshold)
     QUORUM_RECOVERY_STARTED = "quorum_recovery_started"  # Recovery initiated after quorum lost
+    QUORUM_VALIDATION_FAILED = "quorum_validation_failed"  # Jan 4, 2026: Pre-startup quorum check failed
 
     # Partition healing events (January 2026)
     PARTITION_HEALING_STARTED = "partition_healing_started"  # Healing pass initiated
