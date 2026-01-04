@@ -45,7 +45,13 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, TypeVar, ParamSpec
+from typing import Any, Callable, TypeVar
+
+# ParamSpec requires Python 3.10+, use typing_extensions for 3.9 compatibility
+try:
+    from typing import ParamSpec
+except ImportError:
+    from typing_extensions import ParamSpec
 
 # Integration with existing trace context
 from app.core.logging_config import (

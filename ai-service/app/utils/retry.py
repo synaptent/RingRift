@@ -45,7 +45,13 @@ import random
 import time
 from collections.abc import Awaitable, Callable, Generator
 from dataclasses import dataclass, field
-from typing import Any, ParamSpec, TypeVar
+from typing import Any, TypeVar
+
+# ParamSpec requires Python 3.10+, use typing_extensions for 3.9 compatibility
+try:
+    from typing import ParamSpec
+except ImportError:
+    from typing_extensions import ParamSpec
 
 logger = logging.getLogger(__name__)
 
