@@ -2,7 +2,7 @@
 
 AI assistant context for the Python AI training service. Complements `AGENTS.md` with operational knowledge.
 
-**Last Updated**: January 4, 2026 (Sprint 17.2)
+**Last Updated**: January 4, 2026 (Sprint 17.3)
 
 ## Infrastructure Health Status (Verified Jan 4, 2026)
 
@@ -45,6 +45,14 @@ Session 16-17 resilience components are now fully integrated and bootstrapped:
 | Training Heartbeat Events | TRAINING_HEARTBEAT event for watchdog monitoring                     | `distributed_lock.py`         |
 | TRAINING_PROCESS_KILLED   | Event emitted when stuck training process killed                     | `training_watchdog_daemon.py` |
 
+**Sprint 17.3 Session (Jan 4, 2026):**
+
+| Fix                     | Purpose                                                 | Files                                                              |
+| ----------------------- | ------------------------------------------------------- | ------------------------------------------------------------------ |
+| Async SQLite in P2P     | Wrapped blocking SQLite operations in asyncio.to_thread | `abtest.py`, `delivery.py`, `tables.py`, `training_coordinator.py` |
+| quality_analysis.py Fix | Moved `__future__` import to file start (syntax error)  | `quality_analysis.py`                                              |
+| Cluster Update          | Deployed async fixes to 20+ nodes with P2P restart      | All cluster nodes                                                  |
+
 **Sprint 17.2 Session (Jan 4, 2026):**
 
 | Fix                     | Purpose                                                    | Files                           |
@@ -59,7 +67,7 @@ Session 16-17 resilience components are now fully integrated and bootstrapped:
 | Assessment Area | Grade    | Score  | Key Findings                                             |
 | --------------- | -------- | ------ | -------------------------------------------------------- |
 | P2P Network     | A-       | 91/100 | 32+ health mechanisms, 7 recovery daemons, <2.5 min MTTR |
-| Training Loop   | A+       | 99%+   | 6 pipeline stages, 5 feedback loops, 270 event types     |
+| Training Loop   | A+       | 99%+   | 6 pipeline stages, 5 feedback loops, 292 event types     |
 | Consolidation   | A        | 100%   | All daemons migrated to HandlerBase/MonitorBase          |
 | 48h Autonomous  | VERIFIED | -      | All 4 autonomous daemons functional                      |
 
@@ -77,7 +85,7 @@ _Training Loop:_
 
 - 6 complete pipeline stages: SELFPLAY → SYNC → NPZ_EXPORT → NPZ_COMBINATION → TRAINING → EVALUATION
 - 5 feedback loops fully wired: Quality→Training, Elo velocity→Selfplay, Regression→Curriculum, Loss anomaly→Exploration, Promotion→Curriculum
-- 270 event types with 590+ event handlers
+- 292 event types with 590+ event handlers
 - Quality gates with confidence weighting (<50: 50%, 50-500: 75%, 500+: 100%)
 
 **Sprint 17.2 Consolidation Opportunities (Identified Jan 4, 2026):**
@@ -278,15 +286,15 @@ Four parallel exploration agents completed infrastructure assessment:
 
 **Current Metrics (Jan 3, 2026):**
 
-| Metric                | Count | Notes                                   |
-| --------------------- | ----- | --------------------------------------- |
-| Daemon Types          | 109   | DaemonType enum members                 |
-| Event Types           | 271   | DataEventType enum members              |
-| Coordination Modules  | 306   | In app/coordination/                    |
-| Test Files            | 1,044 | Comprehensive coverage                  |
-| Health Checks (coord) | 162   | Modules with health_check() methods     |
-| Health Checks (P2P)   | 31    | P2P modules with health_check() methods |
-| Retry Infrastructure  | 26    | Files using RetryConfig                 |
+| Metric                | Count | Notes                                              |
+| --------------------- | ----- | -------------------------------------------------- |
+| Daemon Types          | 112   | DaemonType enum members (106 active, 6 deprecated) |
+| Event Types           | 292   | DataEventType enum members                         |
+| Coordination Modules  | 306   | In app/coordination/                               |
+| Test Files            | 1,044 | Comprehensive coverage                             |
+| Health Checks (coord) | 162   | Modules with health_check() methods                |
+| Health Checks (P2P)   | 31    | P2P modules with health_check() methods            |
+| Retry Infrastructure  | 26    | Files using RetryConfig                            |
 
 **Sprint 16.1 Minor Improvements (Jan 3, 2026):**
 
@@ -312,8 +320,8 @@ Targeted improvements based on comprehensive assessment:
 | Health Check Coverage | -     | 53%     | 162/306 coordination, 31 P2P modules with health_check()       |
 | Test Coverage         | 99%+  | -       | 1,044 test files for 306 coordination modules                  |
 | Consolidation         | -     | 99%     | Deprecated modules archived, retry/event patterns consolidated |
-| Daemon Types          | -     | 109     | DaemonType enum verified                                       |
-| Event Types           | -     | 270     | DataEventType enum verified                                    |
+| Daemon Types          | -     | 112     | DaemonType enum (106 active, 6 deprecated)                     |
+| Event Types           | -     | 292     | DataEventType enum verified                                    |
 
 **Automated Model Evaluation Pipeline (Session 13.5):**
 
@@ -390,7 +398,7 @@ IMPORTANT: Exploration agents reported gaps that were **already implemented**:
 
 **Infrastructure Maturity**: The infrastructure is PRODUCTION-READY with:
 
-- 270 event types defined, 5/5 feedback loops wired
+- 292 event types defined, 5/5 feedback loops wired
 - Cross-config curriculum propagation with weighted hierarchy (80%/60%/40% weights)
 - CIRCUIT_RESET subscriber active (Session 10)
 - No critical gaps remain - future work is incremental consolidation
@@ -548,7 +556,7 @@ IMPORTANT: Exploration agents reported gaps that were **already implemented**:
   - Elo velocity → training intensity amplification (`training_trigger_daemon.py:_apply_velocity_amplification()`)
   - Exploration boost → temperature integration (`selfplay_runner.py:_on_exploration_boost()`)
   - Regression → curriculum tier rollback (`feedback_loop_controller.py:_on_regression_detected()`)
-- **Event types verified**: 240 DataEventType members in data_events.py
+- **Event types verified**: 292 DataEventType members in data_events.py
 
 **Key Improvements (Jan 3, 2026 - Sprint 12 Session 9):**
 
@@ -732,10 +740,10 @@ python scripts/update_all_nodes.py --restart-p2p
 
 | Module                                 | Purpose                                           |
 | -------------------------------------- | ------------------------------------------------- |
-| `daemon_manager.py`                    | Lifecycle for 109 daemon types (~2,000 LOC)       |
+| `daemon_manager.py`                    | Lifecycle for 112 daemon types (~2,000 LOC)       |
 | `daemon_registry.py`                   | Declarative daemon specs (DaemonSpec dataclass)   |
 | `daemon_runners.py`                    | 124 async runner functions                        |
-| `event_router.py`                      | Unified event bus (270 event types, SHA256 dedup) |
+| `event_router.py`                      | Unified event bus (292 event types, SHA256 dedup) |
 | `selfplay_scheduler.py`                | Priority-based selfplay allocation (~3,800 LOC)   |
 | `budget_calculator.py`                 | Gumbel budget tiers, target games calculation     |
 | `progress_watchdog_daemon.py`          | Stall detection for 48h autonomous operation      |
@@ -1145,7 +1153,7 @@ weights = tracker.get_compute_weights(board_type="hex8", num_players=2)
 
 ## Daemon System
 
-109 daemon types (103 active, 6 deprecated). Three-layer architecture:
+112 daemon types (106 active, 6 deprecated). Three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative `DAEMON_REGISTRY: Dict[DaemonType, DaemonSpec]`
 2. **`daemon_manager.py`** - Lifecycle coordinator (start/stop, health, auto-restart)
@@ -1207,10 +1215,10 @@ Automatic retry for transient failures (GPU OOM, timeouts):
 
 **Integration Status**: 99.5% COMPLETE (Jan 3, 2026)
 
-270 event types defined in DataEventType enum. All critical event flows are fully wired.
+292 event types defined in DataEventType enum. All critical event flows are fully wired.
 5/5 feedback loops verified functional. Only minor informational gaps remain.
 
-270 event types across 3 layers:
+292 event types across 3 layers:
 
 1. **In-memory EventBus** - Local daemon communication
 2. **Stage events** - Pipeline stage completion
@@ -1240,7 +1248,7 @@ Selfplay → NEW_GAMES_AVAILABLE → DataPipeline → TRAINING_THRESHOLD_REACHED
 
 **Complete Event Documentation:**
 
-- `docs/architecture/EVENT_SUBSCRIPTION_MATRIX.md` - Critical event wiring matrix (DataEventType: 211 events)
+- `docs/architecture/EVENT_SUBSCRIPTION_MATRIX.md` - Critical event wiring matrix (DataEventType: 292 events)
 - `docs/architecture/EVENT_FLOW_INTEGRATION.md` - Event flow diagrams and integration patterns
 
 ```python
@@ -1485,7 +1493,7 @@ ringrift_sentinel (C binary, ~310 LOC)
 master_loop_watchdog.py
     |
     v supervises
-master_loop.py → DaemonManager → 109 daemon types
+master_loop.py → DaemonManager → 112 daemon types
 ```
 
 **Layer 1 - Hierarchical Process Supervision:**
@@ -1827,8 +1835,8 @@ Comprehensive exploration verified the following are ALREADY COMPLETE:
 | **Event Emitters**     | PROGRESS_STALL_DETECTED, PROGRESS_RECOVERED, REGRESSION_CLEARED | ✅ progress_watchdog_daemon.py:394,414, regression_detector.py:508 |
 | **Pipeline Stages**    | SELFPLAY → SYNC → NPZ_EXPORT → TRAINING                         | ✅ data_pipeline_orchestrator.py:756-900                           |
 | **Code Consolidation** | Event patterns (16 files)                                       | ✅ event_utils.py, event_handler_utils.py                          |
-| **Daemon Counts**      | 89 types (78 active, 11 deprecated)                             | ✅ Verified via DaemonType enum (Dec 30, 2025)                     |
-| **Event Types**        | 211 DataEventType members                                       | ✅ Verified via DataEventType enum (Dec 30, 2025)                  |
+| **Daemon Counts**      | 112 types (106 active, 6 deprecated)                            | ✅ Verified via DaemonType enum (Jan 4, 2026)                      |
+| **Event Types**        | 292 DataEventType members                                       | ✅ Verified via DataEventType enum (Jan 4, 2026)                   |
 | **Startup Order**      | EVENT_ROUTER → FEEDBACK_LOOP → DATA_PIPELINE → sync daemons     | ✅ master_loop.py:1109-1119 (race condition fixed Dec 2025)        |
 
 **Important for future agents**: Before implementing suggested improvements, VERIFY current state.

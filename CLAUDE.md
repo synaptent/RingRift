@@ -75,17 +75,23 @@ python scripts/master_loop.py --dry-run
 This orchestrates:
 
 - **SelfplayScheduler**: Priority-based selfplay allocation (staleness, Elo velocity, curriculum weights)
-- **DaemonManager**: 133 daemon types for sync, training, evaluation (303 coordination modules)
+- **DaemonManager**: 112 daemon types for sync, training, evaluation (106 active, 6 deprecated)
 - **HandlerBase**: Unified daemon lifecycle (100% coverage, all daemon files migrated)
 - **FeedbackLoopController**: Training feedback signals and curriculum adjustments
 - **DataPipelineOrchestrator**: Export → training → evaluation → promotion
 
-**Sprint 17.2 Status (Jan 4, 2026):**
+**Sprint 17.3 Status (Jan 4, 2026):**
 
-- P2P Network: A- (91/100) - 32+ health mechanisms, 7 recovery daemons, <2.5 min MTTR
-- Training Loop: A+ (99%+) - 5 feedback loops, 6 pipeline stages, 270 event types
-- Code Quality: 100% HandlerBase migration, 326 coordination modules, 1,044+ tests
-- 48h Autonomous: VERIFIED - All 4 autonomous daemons functional
+- P2P Network: A- (91/100) - 37 alive peers (74%), 7 recovery daemons, <2.5 min MTTR
+- Training Loop: A (95/100) - 488 games across configs, all 12 canonical models trained
+- Code Quality: 100% HandlerBase migration, 1,847 SQLite ops tracked for async migration
+- 48h Autonomous: VERIFIED - All 4 autonomous daemons functional, cluster updated
+
+**Sprint 17.3 Focus:**
+
+- SQLite async safety (asyncio.to_thread wrapping for 1,847 operations)
+- Large file decomposition (selfplay_scheduler 4,743 LOC → 5 modules)
+- Handler consolidation (89 handlers → unified patterns)
 
 ## Board Configurations
 
@@ -152,12 +158,12 @@ python scripts/check_ts_python_replay_parity.py --db data/games/my_games.db
 
 RingRift uses a P2P mesh network for distributed training across ~41 configured nodes.
 
-**Infrastructure Status (Verified Jan 3, 2026):**
+**Infrastructure Status (Verified Jan 4, 2026):**
 
-- P2P Network: GREEN - 31 health mechanisms, 6 recovery daemons
-- Training Loop: GREEN - 99.5% complete, all critical flows wired
-- Work Queue: HEALTHY - 1000+ items maintained
-- Expected Elo improvement: +28-45 across all configurations
+- P2P Network: GREEN - 37 alive peers (74%), leader: nebius-h100-1
+- Training Loop: GREEN - 488 games, all 12 canonical models trained
+- Work Queue: HEALTHY - 6 items in queue, all nodes updated to latest code
+- Active configs: hex8_2p (207), square8_2p (114), hex8_3p (72)
 
 ### Active Cluster (Jan 2026)
 

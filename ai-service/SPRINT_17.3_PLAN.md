@@ -1,0 +1,171 @@
+# Sprint 17.3: P2P Stability & Consolidation Plan
+
+**Date**: January 4, 2026
+**Status**: Assessment Complete, Ready for Implementation
+
+## Current State Assessment
+
+### P2P Network Health: A- (91/100)
+
+**Strengths:**
+
+- 37 alive peers (74% of 50 total configured)
+- Leader (nebius-h100-1) healthy, last seen 15s ago
+- Work queue operational with 6 items
+- All nodes updated to latest code (git pull + P2P restart completed)
+
+**Concerns:**
+
+- Local node showing high memory (87%) and CPU (93%) utilization
+- GPU utilization at 0% on coordinator (expected - no GPU work on Mac)
+- 13 peers not responding (26% failure rate)
+
+### Training Loop Health: A (95/100)
+
+**Strengths:**
+
+- 488 games in selfplay.db across all configurations
+- All 12 canonical models trained (hex8/square8/square19/hexagonal × 2/3/4p)
+- Large databases indicate healthy data generation:
+  - canonical_square19_2p.db: 10.8GB
+  - canonical_hexagonal_4p.db: 9.4GB
+  - canonical_square8_4p.db: 8.7GB
+
+**Data Distribution:**
+
+- hex8_2p: 207 games (most active)
+- square8_2p: 114 games
+- hex8_3p: 72 games
+- square8_3p: 59 games
+- Less activity on 4p configs (expected - longer games)
+
+### Code Quality Assessment
+
+**Scale:**
+
+- 237,956 total LOC in app/coordination
+- 136 Daemon class definitions across 87 files
+- 89 Handler class definitions across 85 files
+- 1,847 SQLite operations across 134 files
+
+**Top 5 Largest Files (consolidation candidates):**
+
+1. selfplay_scheduler.py: 4,743 LOC
+2. feedback_loop_controller.py: 4,200 LOC
+3. training_trigger_daemon.py: 4,126 LOC
+4. daemon_manager.py: 3,693 LOC
+5. data_pipeline_orchestrator.py: 3,416 LOC
+
+## Consolidation Opportunities
+
+### Priority 1: SQLite Async Safety (Critical)
+
+**Problem**: 1,847 blocking SQLite operations can cause event loop stalls
+**Solution**: Wrap all sqlite3 operations in asyncio.to_thread()
+
+**High-Impact Files (by operation count):**
+
+1. app/db/game_replay.py: 106 ops
+2. app/distributed/unified_manifest.py: 74 ops
+3. app/tournament/unified_elo_db.py: 67 ops
+4. app/distributed/cluster_manifest.py: 65 ops
+5. app/training/elo_service.py: 65 ops
+
+**Estimated Effort**: 8-12 hours
+**Expected Impact**: +15% event loop responsiveness, reduced async timeouts
+
+### Priority 2: Large File Decomposition
+
+**selfplay_scheduler.py (4,743 LOC)**:
+
+- Extract: StalenessTracker (~800 LOC)
+- Extract: EloVelocityCalculator (~600 LOC)
+- Extract: CurriculumWeightManager (~700 LOC)
+- Extract: AllocationOptimizer (~900 LOC)
+- Core: SelfplayScheduler (~1,700 LOC)
+
+**feedback_loop_controller.py (4,200 LOC)**:
+
+- Extract: QualityFeedbackProcessor (~700 LOC)
+- Extract: TrainingFeedbackProcessor (~800 LOC)
+- Extract: CurriculumFeedbackProcessor (~600 LOC)
+- Extract: ExplorationFeedbackProcessor (~500 LOC)
+- Core: FeedbackLoopController (~1,600 LOC)
+
+**Estimated Effort**: 12-16 hours
+**Expected Impact**: Improved maintainability, clearer ownership, easier testing
+
+### Priority 3: Handler Pattern Unification
+
+**Current State**: 89 Handler classes, some duplicating functionality
+
+**Recommended Consolidation:**
+
+1. Merge sync-related handlers (6 handlers → 1 UnifiedSyncHandler)
+2. Merge feedback handlers (5 handlers → 1 UnifiedFeedbackHandler)
+3. Merge health check handlers (4 handlers → 1 UnifiedHealthHandler)
+
+**Estimated Effort**: 6-8 hours
+**Expected Impact**: Reduced code duplication, simplified event routing
+
+## Implementation Plan
+
+### Phase 1: SQLite Async Safety (Day 1-2)
+
+1. Create asyncio.to_thread wrapper utility
+2. Migrate high-impact files (game_replay.py, unified_manifest.py, etc.)
+3. Add async SQLite connection pool
+4. Update all daemon sqlite operations
+
+### Phase 2: selfplay_scheduler Decomposition (Day 2-3)
+
+1. Extract StalenessTracker with tests
+2. Extract EloVelocityCalculator with tests
+3. Extract CurriculumWeightManager with tests
+4. Extract AllocationOptimizer with tests
+5. Update imports and integration
+
+### Phase 3: Handler Consolidation (Day 3-4)
+
+1. Create UnifiedSyncHandler
+2. Create UnifiedFeedbackHandler
+3. Migrate existing handlers
+4. Update event subscriptions
+
+### Phase 4: Documentation & Validation (Day 4)
+
+1. Update CLAUDE.md with new architecture
+2. Update AGENTS.md with new patterns
+3. Run full test suite
+4. Deploy to cluster
+
+## Metrics to Track
+
+**P2P Health:**
+
+- Peer availability: Target >85% (currently 74%)
+- Leader stability: No unexpected elections
+- Work queue depth: Target 1000+ items
+
+**Training Loop:**
+
+- Games per hour across all configs
+- Model Elo progression
+- Export/training pipeline latency
+
+**Code Quality:**
+
+- Largest file size: Target <2,000 LOC
+- SQLite async coverage: Target 100%
+- Test coverage: Maintain >99%
+
+## Next Steps
+
+1. [ ] Create async SQLite utility module
+2. [ ] Start with game_replay.py migration (106 ops)
+3. [ ] Extract StalenessTracker from selfplay_scheduler
+4. [ ] Update documentation
+
+---
+
+_Generated by Sprint 17.3 Assessment_
