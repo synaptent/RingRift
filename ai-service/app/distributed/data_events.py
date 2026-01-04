@@ -376,6 +376,9 @@ class DataEventType(Enum):
     FAST_FAILURE_RECOVERY = "fast_failure_recovery"  # 30-minute escalation triggered
     FAST_FAILURE_RECOVERED = "fast_failure_recovered"  # Cluster returned to healthy state
 
+    # Jan 4, 2026: Cluster resilience orchestration (Phase 6 - P2P resilience)
+    RESILIENCE_ESCALATION = "resilience_escalation"  # Coordinated escalation across components
+
     # Cluster status events
     CLUSTER_STATUS_CHANGED = "cluster_status_changed"
     CLUSTER_STALL_DETECTED = "cluster_stall_detected"  # Dec 2025: Node(s) stuck with no game progress

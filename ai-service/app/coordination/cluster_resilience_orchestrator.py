@@ -197,6 +197,12 @@ class ClusterResilienceOrchestrator(CoordinatorBase, SingletonMixin):
         self._on_degraded: list[Callable[[ResilienceScore], None]] = []
         self._on_critical: list[Callable[[ResilienceScore], None]] = []
 
+        # Jan 4, 2026: Phase 6 - Track resilience component states
+        self._autonomous_queue_active = False
+        self._fast_failure_tier: str = "healthy"
+        self._utilization_recovery_active = False
+        self._escalation_count = 0
+
         logger.info(
             "ClusterResilienceOrchestrator initialized",
             extra={
@@ -217,11 +223,39 @@ class ClusterResilienceOrchestrator(CoordinatorBase, SingletonMixin):
     async def _on_start(self) -> None:
         """Start the orchestrator."""
         self._running = True
+
+        # Jan 4, 2026: Phase 6 - Subscribe to resilience events
+        self._subscribe_to_resilience_events()
+
         self._monitor_task = asyncio.create_task(
             self._monitor_loop(),
             name="resilience_monitor",
         )
         logger.info("ClusterResilienceOrchestrator started")
+
+    def _subscribe_to_resilience_events(self) -> None:
+        """Subscribe to resilience-related events from Phases 2-4."""
+        try:
+            from app.coordination.event_router import subscribe
+
+            # Phase 2: Autonomous queue events
+            subscribe("autonomous_queue_activated", self._on_autonomous_queue_activated)
+            subscribe("autonomous_queue_deactivated", self._on_autonomous_queue_deactivated)
+
+            # Phase 3: Utilization recovery events
+            subscribe("utilization_recovery_started", self._on_utilization_recovery_started)
+            subscribe("utilization_recovery_completed", self._on_utilization_recovery_completed)
+            subscribe("utilization_recovery_failed", self._on_utilization_recovery_failed)
+
+            # Phase 4: Fast failure detection events
+            subscribe("fast_failure_alert", self._on_fast_failure_alert)
+            subscribe("fast_failure_recovery", self._on_fast_failure_recovery)
+            subscribe("fast_failure_recovered", self._on_fast_failure_recovered)
+
+            logger.info("Subscribed to resilience events (Phases 2-4)")
+
+        except ImportError as e:
+            logger.warning(f"Could not subscribe to resilience events: {e}")
 
     async def _on_stop(self) -> None:
         """Stop the orchestrator."""
@@ -337,7 +371,7 @@ class ClusterResilienceOrchestrator(CoordinatorBase, SingletonMixin):
             )
 
             controller = get_memory_pressure_controller()
-            state = controller.get_state()
+            state = controller.current_state
 
             # Map tier to score
             tier_scores = {
@@ -348,8 +382,8 @@ class ClusterResilienceOrchestrator(CoordinatorBase, SingletonMixin):
                 MemoryPressureTier.EMERGENCY: 0.0,
             }
 
-            score = tier_scores.get(state.current_tier, 0.5)
-            is_healthy = state.current_tier in (
+            score = tier_scores.get(state.tier, 0.5)
+            is_healthy = state.tier in (
                 MemoryPressureTier.NORMAL,
                 MemoryPressureTier.CAUTION,
             )
@@ -358,11 +392,11 @@ class ClusterResilienceOrchestrator(CoordinatorBase, SingletonMixin):
                 name="memory",
                 score=score,
                 is_healthy=is_healthy,
-                message=f"Memory at {state.memory_percent:.1f}% ({state.current_tier.value})",
+                message=f"Memory at {state.ram_percent:.1f}% ({state.tier.value})",
                 details={
-                    "tier": state.current_tier.value,
-                    "percent": state.memory_percent,
-                    "tier_changes": state.tier_changes,
+                    "tier": state.tier.value,
+                    "percent": state.ram_percent,
+                    "ram_used_gb": state.ram_used_gb,
                 },
                 last_check_time=time.time(),
             )
@@ -399,7 +433,17 @@ class ClusterResilienceOrchestrator(CoordinatorBase, SingletonMixin):
         try:
             from app.coordination.standby_coordinator import get_standby_coordinator
 
-            standby = get_standby_coordinator()
+            try:
+                standby = get_standby_coordinator()
+            except TypeError:
+                # StandbyCoordinator not fully implemented
+                return ComponentHealth(
+                    name="coordinator",
+                    score=0.5,
+                    is_healthy=True,
+                    message="StandbyCoordinator not configured",
+                    last_check_time=time.time(),
+                )
             state = standby.get_state()
 
             if standby.is_primary:
@@ -454,27 +498,40 @@ class ClusterResilienceOrchestrator(CoordinatorBase, SingletonMixin):
         """Get P2P quorum health score."""
         try:
             # Try to get quorum health from P2P health coordinator
-            from scripts.p2p.health_coordinator import get_health_coordinator
+            from scripts.p2p.health_coordinator import (
+                QuorumHealthLevel,
+                get_health_coordinator,
+            )
 
             hc = get_health_coordinator()
-            health = hc.get_health()
+            health = hc.get_cluster_health()
 
-            quorum_score = health.quorum_health
-            is_healthy = quorum_score >= 0.5
+            # Map QuorumHealthLevel to score
+            quorum_scores = {
+                QuorumHealthLevel.HEALTHY: 1.0,
+                QuorumHealthLevel.DEGRADED: 0.7,
+                QuorumHealthLevel.MINIMUM: 0.4,
+                QuorumHealthLevel.LOST: 0.0,
+            }
+            quorum_score = quorum_scores.get(health.quorum_health, 0.5)
+            is_healthy = health.quorum_health in (QuorumHealthLevel.HEALTHY, QuorumHealthLevel.DEGRADED)
 
             return ComponentHealth(
                 name="quorum",
                 score=quorum_score,
                 is_healthy=is_healthy,
-                message=f"Quorum health: {quorum_score:.1%}",
+                message=f"Quorum: {health.quorum_health.value} ({health.alive_peers} peers)",
                 details={
-                    "overall_health": health.overall_health,
-                    "level": health.level.value if hasattr(health.level, "value") else str(health.level),
+                    "overall_health": health.overall_health.value,
+                    "quorum_level": health.quorum_health.value,
+                    "alive_peers": health.alive_peers,
+                    "overall_score": health.overall_score,
                 },
                 last_check_time=time.time(),
             )
 
-        except ImportError:
+        except (ImportError, AttributeError, TypeError) as e:
+            logger.debug(f"HealthCoordinator not available: {e}")
             # Fallback - try to check P2P status directly
             try:
                 import json
@@ -679,6 +736,152 @@ class ClusterResilienceOrchestrator(CoordinatorBase, SingletonMixin):
             message=f"Cluster resilience: {score.overall:.1%}",
             details={"score": score.to_dict()},
         )
+
+    # =========================================================================
+    # Event Handlers (Phase 6 - Jan 4, 2026)
+    # =========================================================================
+
+    def _on_autonomous_queue_activated(self, event: dict[str, Any]) -> None:
+        """Handle autonomous queue activation."""
+        self._autonomous_queue_active = True
+        logger.info(
+            "Autonomous queue activated - leader unavailable",
+            extra={"node_id": event.get("node_id"), "reason": event.get("reason")},
+        )
+        self._escalation_count += 1
+
+    def _on_autonomous_queue_deactivated(self, event: dict[str, Any]) -> None:
+        """Handle autonomous queue deactivation."""
+        self._autonomous_queue_active = False
+        logger.info(
+            "Autonomous queue deactivated - leader resumed",
+            extra={"node_id": event.get("node_id")},
+        )
+
+    def _on_utilization_recovery_started(self, event: dict[str, Any]) -> None:
+        """Handle utilization recovery start."""
+        self._utilization_recovery_active = True
+        logger.info(
+            "Utilization recovery started",
+            extra={
+                "node_id": event.get("node_id"),
+                "idle_gpu_percent": event.get("idle_gpu_percent"),
+                "work_items_injected": event.get("work_items_injected"),
+            },
+        )
+
+    def _on_utilization_recovery_completed(self, event: dict[str, Any]) -> None:
+        """Handle utilization recovery completion."""
+        self._utilization_recovery_active = False
+        logger.info(
+            "Utilization recovery completed",
+            extra={
+                "node_id": event.get("node_id"),
+                "work_items_processed": event.get("work_items_processed"),
+            },
+        )
+
+    def _on_utilization_recovery_failed(self, event: dict[str, Any]) -> None:
+        """Handle utilization recovery failure."""
+        self._utilization_recovery_active = False
+        logger.error(
+            "Utilization recovery failed",
+            extra={
+                "node_id": event.get("node_id"),
+                "error": event.get("error"),
+            },
+        )
+        self._escalation_count += 1
+
+    def _on_fast_failure_alert(self, event: dict[str, Any]) -> None:
+        """Handle fast failure alert (10-min detection)."""
+        tier = event.get("tier", "alert")
+        self._fast_failure_tier = tier
+        logger.warning(
+            f"Fast failure alert - tier: {tier}",
+            extra={
+                "tier": tier,
+                "signals": event.get("signals"),
+                "no_leader_seconds": event.get("no_leader_seconds"),
+            },
+        )
+        self._escalation_count += 1
+
+        # Emit coordinated escalation event
+        self._emit_escalation_event(tier, event)
+
+    def _on_fast_failure_recovery(self, event: dict[str, Any]) -> None:
+        """Handle fast failure recovery (30-min escalation)."""
+        tier = event.get("tier", "recovery")
+        self._fast_failure_tier = tier
+        logger.warning(
+            f"Fast failure recovery triggered - tier: {tier}",
+            extra={
+                "tier": tier,
+                "boost_factor": event.get("boost_factor"),
+                "autonomous_triggered": event.get("autonomous_triggered"),
+            },
+        )
+        self._escalation_count += 1
+
+    def _on_fast_failure_recovered(self, event: dict[str, Any]) -> None:
+        """Handle fast failure recovered (cluster healthy)."""
+        previous_tier = self._fast_failure_tier
+        self._fast_failure_tier = "healthy"
+        logger.info(
+            f"Fast failure recovered - was at tier: {previous_tier}",
+            extra={
+                "previous_tier": previous_tier,
+                "signals": event.get("signals"),
+            },
+        )
+
+    def _emit_escalation_event(self, tier: str, original_event: dict[str, Any]) -> None:
+        """Emit a coordinated escalation event for cluster-wide response."""
+        try:
+            from app.coordination.event_router import emit_event
+
+            emit_event(
+                "resilience_escalation",
+                {
+                    "tier": tier,
+                    "escalation_count": self._escalation_count,
+                    "autonomous_queue_active": self._autonomous_queue_active,
+                    "utilization_recovery_active": self._utilization_recovery_active,
+                    "fast_failure_tier": self._fast_failure_tier,
+                    "original_event": original_event,
+                    "node_id": env.node_id,
+                    "timestamp": time.time(),
+                },
+            )
+        except ImportError:
+            pass
+
+    def get_resilience_state(self) -> dict[str, Any]:
+        """Get current resilience component states."""
+        return {
+            "autonomous_queue_active": self._autonomous_queue_active,
+            "fast_failure_tier": self._fast_failure_tier,
+            "utilization_recovery_active": self._utilization_recovery_active,
+            "escalation_count": self._escalation_count,
+            "last_score": self._last_score.to_dict() if self._last_score else None,
+        }
+
+    async def get_stats(self) -> dict[str, Any]:
+        """Get current statistics (required by CoordinatorBase)."""
+        score = self._last_score or self.get_resilience_score()
+        return {
+            "name": self.name,
+            "running": self._running,
+            "resilience_score": score.overall,
+            "resilience_level": score.level.value,
+            "degraded_components": score.degraded_components,
+            "recommended_actions": [a.value for a in score.recommended_actions],
+            "escalation_count": self._escalation_count,
+            "autonomous_queue_active": self._autonomous_queue_active,
+            "fast_failure_tier": self._fast_failure_tier,
+            "utilization_recovery_active": self._utilization_recovery_active,
+        }
 
 
 # =============================================================================

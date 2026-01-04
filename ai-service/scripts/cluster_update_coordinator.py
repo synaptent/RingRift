@@ -324,20 +324,36 @@ class QuorumSafeUpdateCoordinator:
                     alive_peers = data.get("alive_peers", 0)
                     leader_id = data.get("leader_id")
 
-                    # Get alive voters from peer list
-                    alive_peers_list = data.get("alive_peers_list", [])
-                    alive_voters = [p for p in alive_peers_list if p in self._voter_node_ids]
+                    # Get alive voters - P2P status uses 'peers' dict and 'voter_quorum_ok'
+                    # First try the voters_alive count directly from P2P
+                    voter_quorum_ok = data.get("voter_quorum_ok", False)
+                    voters_alive_count = data.get("voters_alive", 0)
 
-                    # Determine quorum level
-                    voter_count = len(alive_voters)
-                    if voter_count < self.QUORUM_REQUIRED:
-                        level = QuorumHealthLevel.LOST
-                    elif voter_count == self.QUORUM_REQUIRED:
-                        level = QuorumHealthLevel.MINIMUM
-                    elif voter_count == self.QUORUM_REQUIRED + 1:
-                        level = QuorumHealthLevel.DEGRADED
+                    # Extract peer names from 'peers' dict (P2P uses this format)
+                    peers_dict = data.get("peers", {})
+                    alive_peers_list = list(peers_dict.keys()) if peers_dict else []
+
+                    # Match peer names to voter IDs (handle both formats)
+                    alive_voters = []
+                    for peer_name in alive_peers_list:
+                        # Check both raw name and name without port
+                        clean_name = peer_name.split(":")[0] if ":" in peer_name else peer_name
+                        if peer_name in self._voter_node_ids or clean_name in self._voter_node_ids:
+                            alive_voters.append(peer_name)
+
+                    # Use P2P's voter_quorum_ok if available, otherwise calculate
+                    voter_count = max(len(alive_voters), voters_alive_count)
+                    if voter_quorum_ok:
+                        # P2P says quorum is OK - trust it
+                        if voter_count >= self.QUORUM_REQUIRED + 2:
+                            level = QuorumHealthLevel.HEALTHY
+                        elif voter_count == self.QUORUM_REQUIRED + 1:
+                            level = QuorumHealthLevel.DEGRADED
+                        else:
+                            level = QuorumHealthLevel.MINIMUM
                     else:
-                        level = QuorumHealthLevel.HEALTHY
+                        # P2P says quorum is lost
+                        level = QuorumHealthLevel.LOST
 
                     return ClusterHealth(
                         quorum_level=level,
