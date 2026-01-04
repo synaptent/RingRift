@@ -535,9 +535,41 @@ python -m app.training.train --board-type hex8 --num-players 2 --data-path data/
 # Cluster status
 curl -s http://localhost:8770/status | python3 -c 'import sys,json; d=json.load(sys.stdin); print(f"Leader: {d.get(\"leader_id\")}, Alive: {d.get(\"alive_peers\")}")'
 
-# Update all cluster nodes
+# Update all cluster nodes (RECOMMENDED: use --safe-mode)
+python scripts/update_all_nodes.py --safe-mode --restart-p2p
+```
+
+### Quorum-Safe Cluster Updates (Sprint 16.2 - Jan 3, 2026)
+
+The `--safe-mode` flag ensures quorum is preserved during rolling updates by:
+
+1. Updating non-voter nodes in parallel first
+2. Updating voter nodes one at a time
+3. Verifying cluster convergence between batches
+4. Automatic rollback on failure
+
+```bash
+# Safe rolling update (RECOMMENDED for production)
+python scripts/update_all_nodes.py --safe-mode --restart-p2p
+
+# Safe mode with longer convergence wait
+python scripts/update_all_nodes.py --safe-mode --restart-p2p --convergence-timeout 180
+
+# Update only non-voters (safest, no quorum risk)
+python scripts/update_all_nodes.py --safe-mode --skip-voters --restart-p2p
+
+# Dry run to preview batches
+python scripts/update_all_nodes.py --safe-mode --restart-p2p --dry-run
+
+# Legacy mode (not recommended, shows warning)
 python scripts/update_all_nodes.py --restart-p2p
 ```
+
+**Key Components:**
+
+- `scripts/cluster_update_coordinator.py` - QuorumSafeUpdateCoordinator class
+- `scripts/p2p/health_coordinator.py` - `is_safe_to_update()` method
+- `scripts/p2p/partition_healer.py` - `verify_update_convergence()` method
 
 ## Cluster Infrastructure (Dec 2025)
 
@@ -1293,6 +1325,88 @@ These architectural improvements prevent recurring issues:
 | <500 | 150 | Bootstrap tier 2 - fast iteration |
 | <1000 | 200 | Bootstrap tier 3 - balanced |
 | ≥1000 | Elo-based | STANDARD/QUALITY/ULTIMATE/MASTER |
+
+## Cluster Resilience Architecture (Session 16 - Jan 2026)
+
+4-layer architecture for automatic recovery from coordinator failures. Prevents 4+ hour outages caused by memory exhaustion.
+
+**Architecture:**
+
+```
+launchd/systemd (OS-level, always running)
+    |
+    v KeepAlive
+ringrift_sentinel (C binary, ~310 LOC)
+    |
+    v monitors /tmp/ringrift_watchdog.heartbeat
+master_loop_watchdog.py
+    |
+    v supervises
+master_loop.py → DaemonManager → 109 daemon types
+```
+
+**Layer 1 - Hierarchical Process Supervision:**
+
+| Component                     | Location           | Purpose                           |
+| ----------------------------- | ------------------ | --------------------------------- |
+| `ringrift_sentinel.c`         | `deploy/sentinel/` | C binary, survives Python crashes |
+| `heartbeat.py`                | `scripts/lib/`     | HeartbeatWriter/Reader for health |
+| `com.ringrift.sentinel.plist` | `config/launchd/`  | macOS service config              |
+
+**Layer 2 - Proactive Memory Management:**
+
+| Tier      | RAM % | Action                                 |
+| --------- | ----- | -------------------------------------- |
+| CAUTION   | 60%   | Log warning, emit event                |
+| WARNING   | 70%   | Pause selfplay, reduce batch sizes     |
+| CRITICAL  | 80%   | Kill non-essential daemons, trigger GC |
+| EMERGENCY | 90%   | Graceful shutdown, notify standby      |
+
+Key module: `app/coordination/memory_pressure_controller.py`
+
+**Layer 3 - Distributed Coordinator Resilience:**
+
+| Component                | Location                         | Purpose                  |
+| ------------------------ | -------------------------------- | ------------------------ |
+| `standby_coordinator.py` | `app/coordination/`              | Primary/standby failover |
+| Gossip coordinator state | `scripts/p2p/gossip_protocol.py` | State replication        |
+
+Events: `COORDINATOR_FAILOVER`, `COORDINATOR_HANDOFF`, `COORDINATOR_EMERGENCY_SHUTDOWN`
+
+**Layer 4 - Unified Health Aggregation:**
+
+`cluster_resilience_orchestrator.py` provides resilience scoring:
+
+| Weight | Component   | Description                   |
+| ------ | ----------- | ----------------------------- |
+| 30%    | Memory      | MemoryPressureController tier |
+| 30%    | Coordinator | Primary/standby health        |
+| 25%    | Quorum      | P2P voter quorum              |
+| 15%    | Daemon      | DaemonManager health          |
+
+Early warning at <70% resilience score. Recovery recommendations based on degraded components.
+
+**Installation (macOS):**
+
+```bash
+cd ai-service/deploy/sentinel
+make && sudo make install
+sudo cp ../../config/launchd/com.ringrift.sentinel.plist /Library/LaunchDaemons/
+sudo launchctl load /Library/LaunchDaemons/com.ringrift.sentinel.plist
+```
+
+**Verification:**
+
+```bash
+# Check heartbeat
+stat /tmp/ringrift_watchdog.heartbeat
+
+# Check memory tier
+curl -s http://localhost:8790/status | jq '.memory_pressure_tier'
+
+# Check resilience score
+curl -s http://localhost:8790/status | jq '.resilience_score'
+```
 
 ## Type Consolidation (Dec 2025)
 
