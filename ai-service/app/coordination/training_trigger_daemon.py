@@ -49,10 +49,6 @@ from app.config.coordination_defaults import (
     SyncDefaults,
 )
 from app.config.env import env
-from app.config.thresholds import (
-    get_quality_confidence,
-    apply_quality_confidence_weighting,
-)
 from app.coordination.event_handler_utils import extract_config_from_path, extract_config_key
 from app.coordination.event_utils import make_config_key, parse_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
@@ -63,6 +59,19 @@ from app.coordination.training_trigger_types import (
     TrainingDecision,
     ArchitectureSpec,
     MultiArchitectureConfig,
+)
+# Jan 4, 2026 - Sprint 17.9: Quality gate functions moved to training_quality_gates.py
+from app.coordination.training_quality_gates import (
+    compute_quality_confidence,
+    apply_confidence_weighting,
+    compute_decayed_quality_score,
+    intensity_from_quality,
+    check_quality_gate_conditions,
+    get_quality_from_state,
+    QualityGateResult,
+    MINIMUM_QUALITY_FLOOR,
+    DATA_STARVED_THRESHOLD,
+    TRAINING_STALL_HOURS,
 )
 from app.utils.retry import RetryConfig
 
@@ -922,10 +931,8 @@ class TrainingTriggerDaemon(HandlerBase):
     def _compute_quality_confidence(self, games_assessed: int) -> float:
         """Compute confidence factor based on number of games assessed.
 
-        Sprint 12 Session 8: Delegates to centralized thresholds.py for consistent
-        confidence tier definitions across the codebase.
-
-        See app.config.thresholds.get_quality_confidence() for tier definitions.
+        Jan 4, 2026 - Sprint 17.9: Delegates to training_quality_gates.py.
+        See compute_quality_confidence() for tier definitions.
 
         Args:
             games_assessed: Number of games used in quality assessment
@@ -933,17 +940,15 @@ class TrainingTriggerDaemon(HandlerBase):
         Returns:
             Confidence factor between 0.5 and 1.0
         """
-        return get_quality_confidence(games_assessed)
+        return compute_quality_confidence(games_assessed)
 
     def _apply_confidence_weighting(
         self, quality_score: float, games_assessed: int
     ) -> float:
         """Apply confidence weighting to quality score.
 
-        Sprint 12 Session 8: Delegates to centralized thresholds.py for consistent
-        confidence weighting across the codebase.
-
-        See app.config.thresholds.apply_quality_confidence_weighting() for formula.
+        Jan 4, 2026 - Sprint 17.9: Delegates to training_quality_gates.py.
+        See apply_confidence_weighting() for formula.
 
         Args:
             quality_score: Raw quality score (0.0-1.0)
@@ -952,18 +957,15 @@ class TrainingTriggerDaemon(HandlerBase):
         Returns:
             Confidence-adjusted quality score
         """
-        return apply_quality_confidence_weighting(quality_score, games_assessed)
+        return apply_confidence_weighting(quality_score, games_assessed)
 
     def _get_decayed_quality_score(
         self, state: ConfigTrainingState, current_time: float | None = None
     ) -> float:
         """Apply confidence decay to stored quality score.
 
-        January 3, 2026: Quality scores decay over time to prevent stale assessments
-        from blocking training. If no new quality data arrives, the effective quality
-        score drops toward the decay floor, potentially unblocking training.
-
-        Uses exponential decay: effective_quality = floor + (score - floor) * 0.5^(age/half_life)
+        Jan 4, 2026 - Sprint 17.9: Delegates to training_quality_gates.py.
+        See compute_decayed_quality_score() for decay formula.
 
         Args:
             state: The config's training state containing quality score and timestamp
@@ -972,52 +974,32 @@ class TrainingTriggerDaemon(HandlerBase):
         Returns:
             Decayed quality score (never below quality_decay_floor)
         """
-        if not self.config.quality_decay_enabled:
-            return state.last_quality_score
-
-        if state.last_quality_update <= 0:
-            # No quality data yet - use default
-            return state.last_quality_score
-
         current_time = current_time or time.time()
-        age_hours = (current_time - state.last_quality_update) / 3600.0
-
-        if age_hours <= 0:
-            return state.last_quality_score
-
-        # Exponential decay toward floor
-        floor = self.config.quality_decay_floor
-        half_life = self.config.quality_decay_half_life_hours
-        decay_factor = 0.5 ** (age_hours / half_life)
-
-        # Decay from current score toward floor
-        decayed = floor + (state.last_quality_score - floor) * decay_factor
-        return max(floor, decayed)
+        return compute_decayed_quality_score(
+            last_quality_score=state.last_quality_score,
+            last_quality_update=state.last_quality_update,
+            current_time=current_time,
+            decay_enabled=self.config.quality_decay_enabled,
+            half_life_hours=self.config.quality_decay_half_life_hours,
+            decay_floor=self.config.quality_decay_floor,
+        )
 
     def _intensity_from_quality(
         self, quality_score: float, config_key: str | None = None
     ) -> str:
         """Map quality scores to training intensity.
 
-        January 2026 (Phase 2.2): Uses config-specific quality thresholds from
-        QualityGateDefaults. 4-player configs require higher quality (0.65) than
-        2-player configs (0.50) since 4-player games have higher variance.
+        Jan 4, 2026 - Sprint 17.9: Delegates to training_quality_gates.py.
+        See intensity_from_quality() for threshold mapping.
 
         Args:
             quality_score: The data quality score (0.0 to 1.0)
             config_key: Optional config key (e.g., "hex8_4p") for per-config thresholds
-        """
-        # Get config-specific minimum threshold (4p configs need higher quality)
-        min_threshold = QualityGateDefaults.get_quality_threshold(config_key or "")
 
-        if quality_score >= 0.90:
-            return "hot_path"
-        if quality_score >= 0.80:
-            return "accelerated"
-        if quality_score >= 0.65:
-            return "normal"
-        if quality_score >= min_threshold:
-            return "reduced"
+        Returns:
+            Training intensity: "hot_path", "accelerated", "normal", "reduced", or "paused"
+        """
+        return intensity_from_quality(quality_score, config_key)
         return "paused"
 
     async def _on_training_threshold_reached(self, event: Any) -> None:

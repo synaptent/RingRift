@@ -43,6 +43,7 @@ from typing import Any
 
 from app.coordination.event_handler_utils import extract_config_key
 from app.coordination.event_utils import make_config_key, parse_config_key
+from app.coordination.feedback.cluster_health_mixin import FeedbackClusterHealthMixin
 from app.coordination.handler_base import HandlerBase
 from app.coordination.protocols import HealthCheckResult
 
@@ -246,7 +247,7 @@ class AdaptiveTrainingSignal:
         }
 
 
-class FeedbackLoopController(HandlerBase):
+class FeedbackLoopController(FeedbackClusterHealthMixin, HandlerBase):
     """Central controller orchestrating all feedback signals.
 
     Subscribes to:
@@ -262,6 +263,7 @@ class FeedbackLoopController(HandlerBase):
     - TemperatureScheduler: Exploration rate adjustments
     - SelfplayScheduler: Target games and priorities (via SELFPLAY_TARGET_UPDATED)
 
+    January 2026 Sprint 17.9: Cluster health handlers extracted to FeedbackClusterHealthMixin.
     December 30, 2025: Now inherits from HandlerBase for unified singleton
     management, health checks, and error tracking. Event subscriptions remain
     in _subscribe_to_events() due to complex conditional logic (coexistence
@@ -3364,103 +3366,8 @@ class FeedbackLoopController(HandlerBase):
             },
         }
 
-    def _on_daemon_status_changed(self, event) -> None:
-        """Handle DAEMON_STATUS_CHANGED - daemon health state transitions.
-
-        Monitors daemon health and adjusts feedback loop behavior if critical
-        daemons (training, evaluation, sync) are stuck or crashed.
-
-        Added: December 2025
-        """
-        payload = event.payload if hasattr(event, "payload") else {}
-        daemon_name = payload.get("daemon_name", "")
-        old_status = payload.get("old_status", "")
-        new_status = payload.get("new_status", "")
-        hostname = payload.get("hostname", "")
-
-        logger.info(
-            f"[FeedbackLoopController] Daemon status changed: {daemon_name} on {hostname} "
-            f"{old_status} -> {new_status}"
-        )
-
-        # Gap 3 fix (Dec 2025): If critical training daemon crashed, pause training via feedback_accelerator
-        if new_status in ["error", "stuck", "crashed"]:
-            if "training" in daemon_name.lower() or "coordinator" in daemon_name.lower():
-                logger.warning(
-                    f"[FeedbackLoopController] Critical daemon {daemon_name} unhealthy, "
-                    f"pausing training allocation"
-                )
-
-                # Pause all training via feedback_accelerator
-                try:
-                    from app.training.feedback_accelerator import get_feedback_accelerator
-
-                    accelerator = get_feedback_accelerator()
-
-                    # Pause training for all tracked configs
-                    for config_key in self._states.keys():
-                        accelerator.signal_training_needed(
-                            config_key=config_key,
-                            urgency="none",
-                            reason=f"daemon_unhealthy_{daemon_name}",
-                        )
-                        logger.info(
-                            f"[FeedbackLoopController] Paused training for {config_key} "
-                            f"due to unhealthy daemon {daemon_name}"
-                        )
-                except ImportError:
-                    logger.debug("[FeedbackLoopController] feedback_accelerator not available")
-                except (AttributeError, TypeError, RuntimeError) as e:
-                    logger.debug(f"[FeedbackLoopController] Failed to pause training: {e}")
-
-    def _on_p2p_cluster_unhealthy(self, event) -> None:
-        """Handle P2P_CLUSTER_UNHEALTHY - cluster connectivity issues.
-
-        When cluster health degrades, adjusts sync and training strategies
-        to minimize dependency on unreliable nodes.
-
-        Added: December 2025
-        """
-        payload = event.payload if hasattr(event, "payload") else {}
-        dead_nodes = payload.get("dead_nodes", [])
-        alive_nodes = payload.get("alive_nodes", [])
-
-        logger.warning(
-            f"[FeedbackLoopController] P2P cluster unhealthy: "
-            f"{len(dead_nodes)} dead, {len(alive_nodes)} alive"
-        )
-
-        # Gap 4 fix (Dec 2025): If too many nodes dead, pause training via feedback_accelerator
-        if len(dead_nodes) > len(alive_nodes):
-            logger.error(
-                "[FeedbackLoopController] Majority of cluster dead, pausing training"
-            )
-            self._cluster_healthy = False
-
-            # Pause all training via feedback_accelerator
-            try:
-                from app.training.feedback_accelerator import get_feedback_accelerator
-
-                accelerator = get_feedback_accelerator()
-
-                # Pause training for all tracked configs
-                for config_key in self._states.keys():
-                    accelerator.signal_training_needed(
-                        config_key=config_key,
-                        urgency="none",
-                        reason="cluster_unhealthy_majority_dead",
-                    )
-                    logger.info(
-                        f"[FeedbackLoopController] Paused training for {config_key} "
-                        f"due to cluster health (dead={len(dead_nodes)}, alive={len(alive_nodes)})"
-                    )
-            except ImportError:
-                logger.debug("[FeedbackLoopController] feedback_accelerator not available")
-            except (AttributeError, TypeError, RuntimeError) as e:
-                logger.debug(f"[FeedbackLoopController] Failed to pause training: {e}")
-
-        else:
-            self._cluster_healthy = True
+    # NOTE: _on_daemon_status_changed and _on_p2p_cluster_unhealthy are now
+    # provided by FeedbackClusterHealthMixin (Sprint 17.9)
 
     def _on_training_rollback_needed(self, event) -> None:
         """Handle TRAINING_ROLLBACK_NEEDED - training needs checkpoint rollback.
@@ -3903,133 +3810,8 @@ class FeedbackLoopController(HandlerBase):
         except Exception as e:
             logger.debug(f"[FeedbackLoopController] Failed to emit exploration adjustment: {e}")
 
-    def _on_cluster_capacity_changed(self, event) -> None:
-        """Handle CLUSTER_CAPACITY_CHANGED - cluster resources changed.
-
-        Dec 27, 2025: Closes cluster capacity → workload feedback loop.
-        When cluster capacity changes (nodes added/removed), this handler:
-        1. Adjusts selfplay rate targets
-        2. Updates training batch sizes if needed
-        3. Logs capacity changes for monitoring
-
-        Args:
-            event: Event with payload containing capacity, change_type, node_count
-        """
-        payload = event.payload if hasattr(event, "payload") else {}
-        capacity = payload.get("capacity", 1.0)  # 0.0-1.0
-        change_type = payload.get("change_type", "unknown")  # added, removed, scaled
-        node_count = payload.get("node_count", 0)
-        gpu_count = payload.get("gpu_count", 0)
-
-        # Update cluster capacity tracking
-        prev_capacity = getattr(self, "_cluster_capacity", 1.0)
-        self._cluster_capacity = capacity
-
-        # Log significant capacity changes
-        capacity_delta = capacity - prev_capacity
-        if abs(capacity_delta) > 0.1:
-            logger.info(
-                f"[FeedbackLoopController] Cluster capacity changed: "
-                f"{prev_capacity:.1%} → {capacity:.1%} ({change_type}), "
-                f"nodes={node_count}, gpus={gpu_count}"
-            )
-
-            # If capacity dropped significantly, emit warning
-            if capacity_delta < -0.2:
-                logger.warning(
-                    f"[FeedbackLoopController] Significant capacity drop detected: "
-                    f"{abs(capacity_delta):.1%} reduction. "
-                    "Training/selfplay rates may need adjustment."
-                )
-
-    def _on_health_check_passed(self, event) -> None:
-        """Handle HEALTH_CHECK_PASSED - node health check succeeded.
-
-        Dec 27, 2025: Closes node health → feedback loop.
-        When a node passes health check, this handler:
-        1. Updates node availability tracking
-        2. May resume jobs on recovered nodes
-
-        Args:
-            event: Event with payload containing node_id, node_ip, check_type, latency_ms
-        """
-        payload = event.payload if hasattr(event, "payload") else {}
-        node_id = payload.get("node_id", "unknown")
-        check_type = payload.get("check_type", "general")
-        latency_ms = payload.get("latency_ms")
-
-        # Track node as available
-        if not hasattr(self, "_available_nodes"):
-            self._available_nodes: set = set()
-        self._available_nodes.add(node_id)
-
-        # Log recovery from previous failure
-        if not hasattr(self, "_failed_nodes"):
-            self._failed_nodes: set = set()
-        if node_id in self._failed_nodes:
-            self._failed_nodes.discard(node_id)
-            # Reset failure count on recovery (Dec 30, 2025)
-            if hasattr(self, "_node_failure_counts") and node_id in self._node_failure_counts:
-                del self._node_failure_counts[node_id]
-            logger.info(
-                f"[FeedbackLoopController] Node {node_id} recovered from health failure "
-                f"(check_type={check_type}, latency={latency_ms}ms)"
-            )
-
-    def _on_health_check_failed(self, event) -> None:
-        """Handle HEALTH_CHECK_FAILED - node health check failed.
-
-        Dec 27, 2025: Closes node health → feedback loop.
-        When a node fails health check, this handler:
-        1. Marks node as unavailable
-        2. May trigger job redistribution if node was running jobs
-        3. Emits warning for monitoring
-
-        Args:
-            event: Event with payload containing node_id, reason, node_ip, check_type, error
-        """
-        payload = event.payload if hasattr(event, "payload") else {}
-        node_id = payload.get("node_id", "unknown")
-        reason = payload.get("reason", "unknown")
-        check_type = payload.get("check_type", "general")
-        error = payload.get("error", "")
-
-        # Track node as failed
-        if not hasattr(self, "_failed_nodes"):
-            self._failed_nodes: set = set()
-        self._failed_nodes.add(node_id)
-
-        # Remove from available nodes
-        if not hasattr(self, "_available_nodes"):
-            self._available_nodes: set = set()
-        self._available_nodes.discard(node_id)
-
-        # Count consecutive failures for this node
-        if not hasattr(self, "_node_failure_counts"):
-            self._node_failure_counts: dict[str, int] = {}
-        self._node_failure_counts[node_id] = self._node_failure_counts.get(node_id, 0) + 1
-        failure_count = self._node_failure_counts[node_id]
-
-        # LRU cleanup: limit to 100 entries max (Dec 30, 2025)
-        MAX_FAILURE_TRACKING_NODES = 100
-        if len(self._node_failure_counts) > MAX_FAILURE_TRACKING_NODES:
-            # Remove entries with lowest counts (least concerning)
-            sorted_nodes = sorted(
-                self._node_failure_counts.items(), key=lambda x: x[1], reverse=True
-            )
-            self._node_failure_counts = dict(sorted_nodes[:MAX_FAILURE_TRACKING_NODES])
-
-        # Log warning for repeated failures
-        if failure_count >= 3:
-            logger.warning(
-                f"[FeedbackLoopController] Node {node_id} has failed {failure_count} "
-                f"consecutive health checks (reason={reason}, check_type={check_type}). "
-                "Consider removing from active pool."
-            )
-        else:
-            logger.debug(
-                f"[FeedbackLoopController] Node {node_id} health check failed: {reason}"
-            )
+    # NOTE: _on_cluster_capacity_changed, _on_health_check_passed, _on_health_check_failed
+    # are now provided by FeedbackClusterHealthMixin (Sprint 17.9)
 
     def signal_selfplay_quality(self, config_key: str, quality_score: float) -> None:
         """Manually signal selfplay quality (for testing/manual intervention)."""
