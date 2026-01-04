@@ -2182,7 +2182,7 @@ async def wait_for_model_distribution(
     import asyncio
     import time
 
-    config_key = f"{board_type}_{num_players}p"
+    config_key = make_config_key(board_type, num_players)
     model_name = f"canonical_{config_key}.pth"
     models_dir = ROOT / "models"
     model_path = models_dir / model_name
@@ -2363,7 +2363,7 @@ def check_model_availability(
         if check_model_availability("hex8", 2, validate=False):
             logger.info("Model file exists (may still be downloading)")
     """
-    config_key = f"{board_type}_{num_players}p"
+    config_key = make_config_key(board_type, num_players)
     model_name = f"canonical_{config_key}.pth"
     models_dir = ROOT / "models"
     model_path = models_dir / model_name
