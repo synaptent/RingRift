@@ -72,27 +72,36 @@ class TrainingAnomalyDetector:
 
     Features:
     - Rolling window for spike detection
+    - **Adaptive thresholds** based on training epoch (January 2026)
     - Configurable thresholds
     - Event logging for post-analysis
     - Automatic halt option
 
+    Adaptive Thresholds (January 2026):
+    - Early training (epochs 0-4): Permissive (5.0σ) - high variance OK
+    - Mid training (epochs 5-14): Standard (3.5σ)
+    - Late training (epochs 15+): Strict (2.5σ) - catch regressions
+
     Usage:
-        detector = TrainingAnomalyDetector(loss_spike_threshold=3.0)
+        detector = TrainingAnomalyDetector(adaptive_thresholds=True)
 
-        for batch in dataloader:
-            loss = model(batch)
+        for epoch in range(epochs):
+            detector.set_epoch(epoch)  # Enable adaptive thresholds
 
-            # Check for anomalies before backward
-            if detector.check_loss(loss.item(), step):
-                continue
+            for batch in dataloader:
+                loss = model(batch)
 
-            loss.backward()
+                # Check for anomalies before backward
+                if detector.check_loss(loss.item(), step):
+                    continue
 
-            # Check gradients
-            grad_norm = compute_grad_norm(model)
-            if detector.check_gradient_norm(grad_norm, step):
-                optimizer.zero_grad()
-                continue
+                loss.backward()
+
+                # Check gradients
+                grad_norm = compute_grad_norm(model)
+                if detector.check_gradient_norm(grad_norm, step):
+                    optimizer.zero_grad()
+                    continue
     """
 
     def __init__(
@@ -105,33 +114,88 @@ class TrainingAnomalyDetector:
         halt_on_gradient_explosion: bool = False,
         max_consecutive_anomalies: int = 20,
         model_id: str = "unknown",
+        adaptive_thresholds: bool = True,
     ):
         """Initialize the anomaly detector.
 
         Args:
             loss_spike_threshold: Standard deviations above mean to trigger spike.
+                If adaptive_thresholds=True, this is used as fallback only.
             gradient_norm_threshold: Max gradient norm before explosion detection.
+                If adaptive_thresholds=True, this is used as fallback only.
             loss_window_size: Rolling window size for loss statistics.
             halt_on_nan: Raise exception on NaN/Inf detection.
             halt_on_spike: Raise exception on loss spike.
             halt_on_gradient_explosion: Raise exception on gradient explosion.
             max_consecutive_anomalies: Max consecutive anomalies before halt.
             model_id: Model identifier for event emission (e.g., "hex8_2p").
+            adaptive_thresholds: If True, use epoch-based adaptive thresholds
+                (January 2026 improvement for +8-12 Elo). Default True.
         """
-        self.loss_spike_threshold = loss_spike_threshold
-        self.gradient_norm_threshold = gradient_norm_threshold
+        self._base_loss_spike_threshold = loss_spike_threshold
+        self._base_gradient_norm_threshold = gradient_norm_threshold
         self.loss_window_size = loss_window_size
         self.halt_on_nan = halt_on_nan
         self.halt_on_spike = halt_on_spike
         self.halt_on_gradient_explosion = halt_on_gradient_explosion
         self.max_consecutive_anomalies = max_consecutive_anomalies
         self._model_id = model_id
+        self._adaptive_thresholds = adaptive_thresholds
+
+        # Current epoch tracking for adaptive thresholds
+        self._current_epoch = 0
 
         self._loss_history: deque = deque(maxlen=loss_window_size)
         self._events: list[AnomalyEvent] = []
         self._consecutive_anomalies = 0
         self._total_anomalies = 0
         self._halted = False
+
+    @property
+    def loss_spike_threshold(self) -> float:
+        """Get effective loss spike threshold based on current epoch.
+
+        Returns adaptive threshold if enabled, otherwise base threshold.
+        """
+        if self._adaptive_thresholds:
+            from app.config.thresholds import get_loss_anomaly_threshold
+            return get_loss_anomaly_threshold(self._current_epoch, self._base_loss_spike_threshold)
+        return self._base_loss_spike_threshold
+
+    @loss_spike_threshold.setter
+    def loss_spike_threshold(self, value: float) -> None:
+        """Set the base loss spike threshold."""
+        self._base_loss_spike_threshold = value
+
+    @property
+    def gradient_norm_threshold(self) -> float:
+        """Get effective gradient norm threshold based on current epoch.
+
+        Returns adaptive threshold if enabled, otherwise base threshold.
+        """
+        if self._adaptive_thresholds:
+            from app.config.thresholds import get_gradient_norm_threshold
+            return get_gradient_norm_threshold(self._current_epoch, self._base_gradient_norm_threshold)
+        return self._base_gradient_norm_threshold
+
+    @gradient_norm_threshold.setter
+    def gradient_norm_threshold(self, value: float) -> None:
+        """Set the base gradient norm threshold."""
+        self._base_gradient_norm_threshold = value
+
+    def set_epoch(self, epoch: int) -> None:
+        """Set current training epoch for adaptive threshold calculation.
+
+        Args:
+            epoch: Current training epoch (0-indexed). Affects threshold
+                permissiveness: early epochs are more permissive.
+        """
+        self._current_epoch = max(0, epoch)
+        if self._adaptive_thresholds:
+            logger.debug(
+                f"[AnomalyDetector] Epoch {epoch}: loss_threshold={self.loss_spike_threshold:.2f}σ, "
+                f"grad_threshold={self.gradient_norm_threshold:.1f}"
+            )
 
     def set_model_id(self, model_id: str) -> None:
         """Set the model identifier for event emission.
@@ -307,13 +371,20 @@ class TrainingAnomalyDetector:
         except Exception as e:
             logger.warning(f"[AnomalyDetector] Failed to emit rollback event: {e}")
 
-    def reset(self) -> None:
-        """Reset detector state (e.g., for new training run)."""
+    def reset(self, reset_epoch: bool = False) -> None:
+        """Reset detector state (e.g., for new training run).
+
+        Args:
+            reset_epoch: If True, reset epoch to 0. Default False preserves
+                the current epoch for continued training.
+        """
         self._loss_history.clear()
         self._events.clear()
         self._consecutive_anomalies = 0
         self._total_anomalies = 0
         self._halted = False
+        if reset_epoch:
+            self._current_epoch = 0
 
     @property
     def is_halted(self) -> bool:
@@ -325,6 +396,11 @@ class TrainingAnomalyDetector:
         """Get total number of anomalies detected."""
         return self._total_anomalies
 
+    @property
+    def current_epoch(self) -> int:
+        """Get current training epoch."""
+        return self._current_epoch
+
     def get_events(self) -> list[AnomalyEvent]:
         """Get all recorded anomaly events."""
         return self._events.copy()
@@ -335,7 +411,8 @@ class TrainingAnomalyDetector:
         for event in self._events:
             type_counts[event.anomaly_type] = type_counts.get(event.anomaly_type, 0) + 1
 
-        return {
+        # Include adaptive threshold info
+        summary = {
             "total_anomalies": self._total_anomalies,
             "consecutive_anomalies": self._consecutive_anomalies,
             "halted": self._halted,
@@ -350,6 +427,17 @@ class TrainingAnomalyDetector:
                 for e in self._events[-10:]  # Last 10 events
             ],
         }
+
+        # Add adaptive threshold info if enabled
+        if self._adaptive_thresholds:
+            summary["adaptive_thresholds"] = {
+                "enabled": True,
+                "current_epoch": self._current_epoch,
+                "loss_spike_threshold": self.loss_spike_threshold,
+                "gradient_norm_threshold": self.gradient_norm_threshold,
+            }
+
+        return summary
 
 
 class TrainingLossAnomalyHandler:

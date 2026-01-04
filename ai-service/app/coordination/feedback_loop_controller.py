@@ -974,6 +974,11 @@ class FeedbackLoopController(HandlerBase):
         Closes the critical feedback loop: training loss spike detected →
         trigger quality check and/or exploration boost.
 
+        Uses adaptive severe count thresholds (January 2026):
+        - Early training (epochs 0-4): 5 consecutive anomalies before escalation
+        - Mid training (epochs 5-14): 3 consecutive anomalies
+        - Late training (epochs 15+): 2 consecutive anomalies (catch early)
+
         Actions:
         1. Log the anomaly for monitoring
         2. Trigger quality check on training data
@@ -993,10 +998,15 @@ class FeedbackLoopController(HandlerBase):
             if not config_key:
                 return
 
+            # Get adaptive severe count threshold based on epoch
+            from app.config.thresholds import get_severe_anomaly_count
+            severe_count_threshold = get_severe_anomaly_count(epoch)
+
             logger.warning(
                 f"[FeedbackLoopController] Training loss anomaly for {config_key}: "
                 f"loss={loss_value:.4f} (expected={expected_loss:.4f}, "
-                f"deviation={deviation:.2f}σ), epoch={epoch}, severity={severity}"
+                f"deviation={deviation:.2f}σ), epoch={epoch}, severity={severity}, "
+                f"severe_threshold={severe_count_threshold}"
             )
 
             # Track anomaly count for escalation
@@ -1009,8 +1019,9 @@ class FeedbackLoopController(HandlerBase):
             # Trigger quality check on training data
             self._trigger_quality_check(config_key, reason="training_loss_anomaly")
 
-            # If severe (>3σ deviation) or consecutive anomalies, boost exploration
-            if severity == "severe" or state.loss_anomaly_count >= LOSS_ANOMALY_SEVERE_COUNT:
+            # If severe or consecutive anomalies exceed adaptive threshold, boost exploration
+            # Early training is more permissive (5 anomalies), late training is strict (2 anomalies)
+            if severity == "severe" or state.loss_anomaly_count >= severe_count_threshold:
                 self._boost_exploration_for_anomaly(config_key, state.loss_anomaly_count)
 
         except (AttributeError, TypeError, KeyError, RuntimeError) as e:

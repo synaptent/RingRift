@@ -44,6 +44,8 @@ Usage:
 
 import contextlib
 
+from app.utils.retry import RetryConfig  # Jan 2026: Centralized retry pattern
+
 # =============================================================================
 # Submodule Exports (December 2025 - organized for maintainability)
 # =============================================================================
@@ -112,12 +114,15 @@ def _init_with_retry(
 
     Returns:
         (instance, success, error_message)
-    """
-    import time as _time
 
+    Jan 2026: Migrated to RetryConfig for centralized retry behavior.
+    """
     last_error = None
 
-    for attempt in range(max_retries):
+    # Jan 2026: Use RetryConfig for centralized retry pattern
+    retry_config = RetryConfig(max_attempts=max_retries, base_delay=base_delay, max_delay=8.0)
+
+    for attempt in retry_config.attempts():
         try:
             instance, subscribed = init_func()
 
@@ -125,8 +130,8 @@ def _init_with_retry(
                 raise RuntimeError(f"{name} failed to subscribe to events")
 
             if logger:
-                if attempt > 0:
-                    logger.info(f"[init_with_retry] {name} succeeded on attempt {attempt + 1}")
+                if not attempt.is_first:
+                    logger.info(f"[init_with_retry] {name} succeeded on attempt {attempt.number}")
                 else:
                     logger.info(f"[initialize_all_coordinators] {name} wired")
 
@@ -136,15 +141,14 @@ def _init_with_retry(
             last_error = str(e)
             if logger:
                 logger.warning(
-                    f"[init_with_retry] {name} attempt {attempt + 1}/{max_retries} failed: {e}"
+                    f"[init_with_retry] {name} attempt {attempt.number}/{retry_config.max_attempts} failed: {e}"
                 )
 
-            if attempt < max_retries - 1:
-                delay = base_delay * (2**attempt)
-                _time.sleep(delay)
+            if attempt.should_retry:
+                attempt.wait()
 
     if logger:
-        logger.error(f"[initialize_all_coordinators] {name} failed after {max_retries} attempts")
+        logger.error(f"[initialize_all_coordinators] {name} failed after {retry_config.max_attempts} attempts")
 
     return (None, False, last_error)
 
