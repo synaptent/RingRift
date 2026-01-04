@@ -152,7 +152,7 @@ class TestCompleteTrainingAsync:
         if job_id:
             # Complete it
             result = await training_coordinator.complete_training_async(
-                job_id, success=True, metadata={"final_loss": 0.05}
+                job_id, status="completed", final_val_loss=0.05, final_elo=1450.0
             )
             assert result is True
 

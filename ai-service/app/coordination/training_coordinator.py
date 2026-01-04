@@ -2174,8 +2174,9 @@ class TrainingCoordinator:
     async def complete_training_async(
         self,
         job_id: str,
-        success: bool = True,
-        metadata: dict[str, Any] | None = None,
+        status: str = "completed",
+        final_val_loss: float | None = None,
+        final_elo: float | None = None,
     ) -> bool:
         """Async wrapper for complete_training().
 
@@ -2183,8 +2184,9 @@ class TrainingCoordinator:
 
         Args:
             job_id: The training job ID
-            success: Whether training completed successfully
-            metadata: Optional completion metadata
+            status: Final status (completed, failed)
+            final_val_loss: Final validation loss
+            final_elo: Final Elo rating
 
         Returns:
             True if training was completed, False otherwise
@@ -2193,7 +2195,7 @@ class TrainingCoordinator:
         """
         import asyncio
         return await asyncio.to_thread(
-            self.complete_training, job_id, success, metadata
+            self.complete_training, job_id, status, final_val_loss, final_elo
         )
 
     async def get_status_async(self) -> dict[str, Any]:

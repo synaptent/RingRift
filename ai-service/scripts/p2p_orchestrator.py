@@ -11310,7 +11310,13 @@ class P2POrchestrator(
         num_players = data.get("num_players", 2)
         num_games = data.get("num_games", 200)
         engine_mode = data.get("engine_mode", "gumbel-mcts")
-        priority = data.get("priority", 50)
+        # Jan 4, 2026: Convert priority from string or int to int
+        priority_raw = data.get("priority", 50)
+        if isinstance(priority_raw, str):
+            priority_map = {"low": 25, "normal": 50, "high": 75, "critical": 100}
+            priority = priority_map.get(priority_raw.lower(), 50)
+        else:
+            priority = int(priority_raw)
         force = data.get("force", False)
 
         # If we're the leader, add work directly to queue
