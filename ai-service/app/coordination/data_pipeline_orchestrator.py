@@ -137,17 +137,20 @@ logger = logging.getLogger(__name__)
 # Circuit Breaker for Pipeline Fault Tolerance (December 2025)
 # =============================================================================
 
-# December 2025: Import canonical CircuitBreaker and CircuitState
+# January 3, 2026: Use unified circuit breaker from circuit_breaker_base
+# Sprint 13.2 migration from app.distributed.circuit_breaker
 try:
-    from app.distributed.circuit_breaker import (
-        CircuitBreaker as CanonicalCircuitBreaker,
+    from app.coordination.circuit_breaker_base import (
+        CircuitConfig,
         CircuitState as CircuitBreakerState,
+        OperationCircuitBreaker,
     )
     _HAS_CANONICAL_CIRCUIT_BREAKER = True
 except ImportError:
-    # Fallback if canonical module unavailable
+    # Fallback if module unavailable
     _HAS_CANONICAL_CIRCUIT_BREAKER = False
-    CanonicalCircuitBreaker = None
+    OperationCircuitBreaker = None  # type: ignore
+    CircuitConfig = None  # type: ignore
 
     class CircuitBreakerState(Enum):
         """Circuit breaker states (fallback)."""
@@ -213,16 +216,19 @@ class PipelineCircuitBreaker:
         self._db_path = Path(db_path) if db_path else self.DEFAULT_DB_PATH
         self._init_persistence_db()
 
-        if _HAS_CANONICAL_CIRCUIT_BREAKER and CanonicalCircuitBreaker:
-            self._breaker = CanonicalCircuitBreaker(
+        # January 3, 2026: Use OperationCircuitBreaker from circuit_breaker_base
+        if _HAS_CANONICAL_CIRCUIT_BREAKER and OperationCircuitBreaker:
+            config = CircuitConfig(
                 failure_threshold=failure_threshold,
                 recovery_timeout=recovery_timeout,
                 half_open_max_calls=half_open_max_calls,
                 success_threshold=1,
                 operation_type="pipeline",
+                emit_events=True,  # Emit events for pipeline monitoring
             )
+            self._breaker = OperationCircuitBreaker(config=config)
         else:
-            # Minimal fallback for missing canonical module
+            # Minimal fallback for missing module
             self._breaker = None
             self._fallback_state = CircuitBreakerState.CLOSED
             self._fallback_failure_count = 0

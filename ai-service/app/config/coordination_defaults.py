@@ -3052,6 +3052,29 @@ class GossipDefaults:
     # Maximum gossip message size in bytes (1MB default)
     MAX_MESSAGE_SIZE_BYTES: int = _env_int("RINGRIFT_GOSSIP_MAX_MESSAGE_SIZE", 1_048_576)
 
+    # =========================================================================
+    # January 3, 2026 Sprint 12 Session 10: Timeout Centralization
+    # Migrated from hardcoded values in gossip_protocol.py
+    # =========================================================================
+
+    # Dead peer detection: seconds since last seen before marking as dead
+    DEAD_PEER_TIMEOUT: float = _env_float("RINGRIFT_GOSSIP_DEAD_PEER_TIMEOUT", 300.0)
+
+    # Cleanup interval: minimum seconds between gossip state cleanup passes
+    CLEANUP_INTERVAL: float = _env_float("RINGRIFT_GOSSIP_CLEANUP_INTERVAL", 300.0)
+
+    # NAT-blocked peer timeout: longer timeout for peers behind NAT/relay (seconds)
+    NAT_PEER_TIMEOUT: float = _env_float("RINGRIFT_GOSSIP_NAT_TIMEOUT", 120.0)
+
+    # Circuit breaker cutoff: only process CB states from last N seconds
+    CIRCUIT_CUTOFF_SECONDS: float = _env_float("RINGRIFT_GOSSIP_CB_CUTOFF", 300.0)
+
+    # Stale state threshold: gossip states older than this are cleaned up (seconds)
+    STALE_STATE_SECONDS: float = _env_float("RINGRIFT_GOSSIP_STALE_STATE", 600.0)
+
+    # State TTL: how long gossip states are cached before expiring (seconds)
+    STATE_TTL: float = _env_float("RINGRIFT_GOSSIP_STATE_TTL", 3600.0)
+
 
 # =============================================================================
 # Convenience Functions

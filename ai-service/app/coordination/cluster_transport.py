@@ -224,8 +224,15 @@ class NodeConfig:
 TransportResult = _CanonicalTransportResult
 
 
-# Use canonical circuit breaker from distributed module
-from app.distributed.circuit_breaker import CircuitBreaker
+# January 3, 2026: Use unified circuit breaker from circuit_breaker_base
+# Sprint 13.2 migration from app.distributed.circuit_breaker
+from app.coordination.circuit_breaker_base import (
+    CircuitConfig,
+    OperationCircuitBreaker,
+)
+
+# Backward-compat alias (deprecated - use OperationCircuitBreaker)
+CircuitBreaker = OperationCircuitBreaker
 
 # Import HealthCheckResult for DaemonManager integration
 try:
@@ -258,19 +265,22 @@ class ClusterTransport:
             self.p2p_url = get_local_p2p_url()
         self.connect_timeout = connect_timeout
         self.operation_timeout = operation_timeout
-        # Canonical circuit breaker (tracks all targets internally)
-        self._circuit_breaker = CircuitBreaker(
+        # January 3, 2026: Use unified OperationCircuitBreaker from circuit_breaker_base
+        # Node-level circuit breaker (tracks all targets internally)
+        node_config = CircuitConfig(
             failure_threshold=DEFAULT_FAILURE_THRESHOLD,
             recovery_timeout=float(DEFAULT_RECOVERY_TIMEOUT),
             operation_type="cluster_transport",
         )
+        self._circuit_breaker = OperationCircuitBreaker(config=node_config)
         # Jan 2, 2026: Per-(node, transport) circuit breakers for faster failover
         # Key format: "{hostname}:{transport}" e.g. "node-001:tailscale"
-        self._transport_circuit_breaker = CircuitBreaker(
+        transport_config = CircuitConfig(
             failure_threshold=2,  # Fewer failures needed to skip transport
             recovery_timeout=60.0,  # Try again after 60 seconds
             operation_type="transport_specific",
         )
+        self._transport_circuit_breaker = OperationCircuitBreaker(config=transport_config)
 
     def can_attempt(self, node_id: str) -> bool:
         """Check if circuit allows operation for a node."""

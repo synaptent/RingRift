@@ -1651,6 +1651,80 @@ CONSECUTIVE_SUCCESS_THRESHOLD = 3
 
 
 # =============================================================================
+# Quality Score Confidence Thresholds (January 2026 - Sprint 12 Session 8)
+# =============================================================================
+# Quality scores from small sample sizes are less reliable.
+# Confidence weighting biases small-sample scores toward neutral (0.5).
+#
+# Expected improvement: +8-15 Elo from avoiding overconfident training decisions.
+
+# Games assessed tier boundaries for confidence levels
+QUALITY_CONFIDENCE_TIER_LOW = 50       # <50 games: 50% credibility
+QUALITY_CONFIDENCE_TIER_MEDIUM = 500   # 50-500 games: 75% credibility
+# 500+ games: 100% credibility (full trust)
+
+# Confidence factors by tier
+QUALITY_CONFIDENCE_FACTOR_LOW = 0.5     # Low sample: heavily biased to neutral
+QUALITY_CONFIDENCE_FACTOR_MEDIUM = 0.75  # Medium sample: moderately biased
+QUALITY_CONFIDENCE_FACTOR_HIGH = 1.0     # High sample: full credibility
+
+# Neutral quality score for confidence weighting
+QUALITY_NEUTRAL_SCORE = 0.5
+
+
+def get_quality_confidence(games_assessed: int) -> float:
+    """Get confidence factor based on number of games assessed.
+
+    Sprint 12 Session 8: Quality scores from small sample sizes are less reliable.
+    This function returns a confidence factor that biases scores toward neutral.
+
+    Args:
+        games_assessed: Number of games in quality assessment
+
+    Returns:
+        Confidence factor (0.5 to 1.0)
+
+    Example:
+        >>> get_quality_confidence(10)   # Low: 0.5
+        >>> get_quality_confidence(100)  # Medium: 0.75
+        >>> get_quality_confidence(1000) # High: 1.0
+    """
+    if games_assessed >= QUALITY_CONFIDENCE_TIER_MEDIUM:
+        return QUALITY_CONFIDENCE_FACTOR_HIGH
+    elif games_assessed >= QUALITY_CONFIDENCE_TIER_LOW:
+        return QUALITY_CONFIDENCE_FACTOR_MEDIUM
+    else:
+        return QUALITY_CONFIDENCE_FACTOR_LOW
+
+
+def apply_quality_confidence_weighting(
+    quality_score: float, games_assessed: int
+) -> float:
+    """Apply confidence weighting to quality score.
+
+    Sprint 12 Session 8: Quality scores from small sample sizes are weighted
+    toward neutral (0.5) to avoid overconfident decisions based on limited data.
+
+    Formula: adjusted = (confidence * quality) + ((1-confidence) * 0.5)
+
+    Args:
+        quality_score: Raw quality score (0.0 to 1.0)
+        games_assessed: Number of games in assessment
+
+    Returns:
+        Confidence-weighted quality score (0.0 to 1.0)
+
+    Example:
+        >>> apply_quality_confidence_weighting(0.8, 10)   # ~0.65 (biased toward 0.5)
+        >>> apply_quality_confidence_weighting(0.8, 100)  # ~0.725
+        >>> apply_quality_confidence_weighting(0.8, 1000) # 0.8 (full trust)
+    """
+    confidence = get_quality_confidence(games_assessed)
+    adjusted = (confidence * quality_score) + ((1 - confidence) * QUALITY_NEUTRAL_SCORE)
+    return adjusted
+
+
+# =============================================================================
 # Dynamic Loss Anomaly Thresholds (January 2026)
 # =============================================================================
 # Adaptive thresholds based on training maturity:

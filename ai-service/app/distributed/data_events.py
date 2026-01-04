@@ -122,6 +122,8 @@ class DataEventType(Enum):
     TRAINING_LOCK_ACQUIRED = "training_lock_acquired"  # Dec 30, 2025: Training lock acquired for config
     TRAINING_SLOT_UNAVAILABLE = "training_slot_unavailable"  # Dec 30, 2025: Training slot not available
     TRAINING_TIMEOUT_REACHED = "training_timeout_reached"  # Jan 3, 2026: Training exceeded time limit
+    TRAINING_DATA_RECOVERED = "training_data_recovered"  # Jan 3, 2026 Sprint 13.3: NPZ re-exported after corruption
+    TRAINING_DATA_RECOVERY_FAILED = "training_data_recovery_failed"  # Jan 3, 2026 Sprint 13.3: NPZ re-export failed
 
     # Evaluation events
     EVALUATION_STARTED = "evaluation_started"
@@ -354,6 +356,7 @@ class DataEventType(Enum):
     CIRCUIT_BREAKER_HALF_OPEN = "circuit_breaker_half_open"  # Circuit testing recovery
     CIRCUIT_BREAKER_THRESHOLD = "circuit_breaker_threshold"  # Too many open circuits (>20% of nodes)
     ESCALATION_TIER_CHANGED = "escalation_tier_changed"  # Circuit breaker escalation tier changed (Sprint 12)
+    CIRCUIT_RESET = "circuit_reset"  # Circuit breaker proactively reset after peer recovery (Sprint 12 Session 8)
 
     # Lock/Synchronization events (December 2025)
     LOCK_TIMEOUT = "lock_timeout"

@@ -957,6 +957,37 @@ async def create_training_data_sync() -> None:
         raise
 
 
+async def create_training_data_recovery() -> None:
+    """Create and run training data recovery daemon (January 2026 Sprint 13.3).
+
+    Auto-recovery from training data corruption by re-exporting NPZ files.
+
+    Features:
+    - Subscribes to TRAINING_FAILED events
+    - Detects data corruption patterns
+    - Triggers NPZ re-export from canonical databases
+    - Emits TRAINING_DATA_RECOVERED / TRAINING_DATA_RECOVERY_FAILED
+    """
+    try:
+        from app.coordination.training_data_recovery_daemon import (
+            TrainingDataRecoveryDaemon,
+            get_training_data_recovery_daemon,
+        )
+
+        daemon = get_training_data_recovery_daemon()
+        await daemon.start()
+
+        # Keep running until stopped
+        while True:
+            await asyncio.sleep(60)
+            if not daemon._is_running:
+                break
+
+    except ImportError as e:
+        logger.error(f"TrainingDataRecoveryDaemon not available: {e}")
+        raise
+
+
 async def create_owc_import() -> None:
     """Create and run OWC import daemon (December 29, 2025).
 
@@ -2941,6 +2972,7 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.AUTO_SYNC.name: create_auto_sync,
         DaemonType.TRAINING_NODE_WATCHER.name: create_training_node_watcher,
         DaemonType.TRAINING_DATA_SYNC.name: create_training_data_sync,
+        DaemonType.TRAINING_DATA_RECOVERY.name: create_training_data_recovery,
         DaemonType.OWC_IMPORT.name: create_owc_import,
         DaemonType.EPHEMERAL_SYNC.name: create_ephemeral_sync,
         DaemonType.GOSSIP_SYNC.name: create_gossip_sync,

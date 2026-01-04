@@ -51,6 +51,7 @@ from app.coordination.protocols import (
     register_coordinator,
     unregister_coordinator,
 )
+from app.coordination.handler_base import HandlerBase
 from app.utils.retry import RetryConfig  # Jan 2026: Centralized retry pattern
 from app.coordination.event_utils import make_config_key
 
@@ -198,7 +199,7 @@ class DeliveryResult:
 # Unified Distribution Daemon
 # =============================================================================
 
-class UnifiedDistributionDaemon:
+class UnifiedDistributionDaemon(HandlerBase):
     """Daemon that distributes models and NPZ files to cluster nodes.
 
     Consolidates ModelDistributionDaemon and NPZDistributionDaemon into a single
@@ -210,12 +211,19 @@ class UnifiedDistributionDaemon:
     - SHA256 checksum verification before and after transfer
     - Per-node delivery tracking with metrics
     - CoordinatorProtocol integration for health monitoring
+
+    January 2026: Migrated to HandlerBase for unified lifecycle management.
     """
 
     def __init__(self, config: DistributionConfig | None = None):
         self.config = config or DistributionConfig()
-        self._running = False
         self._last_sync_time: float = 0.0
+
+        # Initialize HandlerBase with 5s cycle (matches original loop sleep)
+        super().__init__(
+            name="unified_distribution_daemon",
+            cycle_interval=5.0,
+        )
 
         # Pending items for distribution
         self._pending_items: list[dict[str, Any]] = []
@@ -223,9 +231,8 @@ class UnifiedDistributionDaemon:
         self._pending_event: asyncio.Event | None = None
         self._sync_lock = asyncio.Lock()
 
-        # CoordinatorProtocol state
+        # CoordinatorProtocol state (HandlerBase provides _running, _start_time, _recent_errors)
         self._coordinator_status = CoordinatorStatus.INITIALIZING
-        self._start_time: float = 0.0
         self._events_processed: int = 0
         self._errors_count: int = 0
         self._last_error: str = ""
@@ -257,6 +264,71 @@ class UnifiedDistributionDaemon:
                 logger.debug("[UnifiedDistributionDaemon] Delivery ledger initialized")
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"[UnifiedDistributionDaemon] Failed to init ledger: {e}")
+
+    # =========================================================================
+    # HandlerBase Implementation
+    # =========================================================================
+
+    def _get_event_subscriptions(self) -> dict:
+        """Declarative event subscriptions for HandlerBase.
+
+        January 2026: Migrated from _subscribe_to_events() for HandlerBase integration.
+        Subscribes to 7 distribution-related events.
+        """
+        subscriptions = {
+            # Model events
+            "MODEL_PROMOTED": self._on_model_promoted,
+            "MODEL_UPDATED": self._on_model_updated,
+            "MODEL_DISTRIBUTION_STARTED": self._on_model_distribution_started,
+            "MODEL_DISTRIBUTION_FAILED": self._on_model_distribution_failed,
+            # December 29, 2025: Background prefetch and re-distribution
+            "TRAINING_PROGRESS": self._on_training_progress_for_prefetch,
+            "MODEL_EVALUATION_BLOCKED": self._on_model_evaluation_blocked,
+            # NPZ events
+            "npz_export_complete": self._on_npz_exported,
+        }
+        return subscriptions
+
+    async def _run_cycle(self) -> None:
+        """Main work cycle - process pending items and periodic sync.
+
+        January 2026: Migrated from inline loop in start() for HandlerBase.
+        Called every 5 seconds (cycle_interval).
+        """
+        try:
+            # Process any pending distribution items
+            if self._pending_items:
+                await self._process_pending_items()
+
+            # Periodic sync check
+            if time.time() - self._last_sync_time > self.config.poll_interval_seconds:
+                await self._periodic_sync_check()
+
+            self._record_success()
+        except (OSError, RuntimeError, ValueError) as e:
+            logger.error(f"Error in distribution daemon cycle: {e}")
+            self._errors_count += 1
+            self._last_error = str(e)
+            self._record_error(str(e))
+
+    async def _on_start(self) -> None:
+        """Called when daemon starts - set up pending event.
+
+        January 2026: Migrated from start() for HandlerBase.
+        """
+        self._pending_event = asyncio.Event()
+        self._coordinator_status = CoordinatorStatus.RUNNING
+        register_coordinator(self)
+        logger.info("UnifiedDistributionDaemon started via HandlerBase")
+
+    async def _on_stop(self) -> None:
+        """Called when daemon stops - cleanup.
+
+        January 2026: Migrated from stop() for HandlerBase.
+        """
+        self._coordinator_status = CoordinatorStatus.STOPPED
+        unregister_coordinator(self.name)
+        logger.info("UnifiedDistributionDaemon stopped via HandlerBase")
 
     # =========================================================================
     # CoordinatorProtocol Implementation
@@ -314,6 +386,8 @@ class UnifiedDistributionDaemon:
     def health_check(self) -> HealthCheckResult:
         """Check daemon health status for DaemonManager integration.
 
+        January 2026: Updated to use HandlerBase _recent_errors tracking.
+
         Returns:
             HealthCheckResult indicating:
             - UNHEALTHY if daemon is in error state
@@ -328,6 +402,12 @@ class UnifiedDistributionDaemon:
                 healthy=True,
                 status=CoordinatorStatus.STOPPED,
                 message="Daemon is stopped",
+            )
+
+        # January 2026: Check HandlerBase recent errors
+        if len(self._recent_errors) > 10:
+            return HealthCheckResult.degraded(
+                f"{len(self._recent_errors)} recent errors",
             )
 
         # Check for high failure rate
@@ -358,6 +438,7 @@ class UnifiedDistributionDaemon:
                 "successful_distributions": self._successful_distributions,
                 "model_distributions": self._model_distributions,
                 "npz_distributions": self._npz_distributions,
+                "recent_errors_count": len(self._recent_errors),
             },
         )
 
@@ -534,135 +615,23 @@ class UnifiedDistributionDaemon:
             return (False, 0)
 
     # =========================================================================
-    # Lifecycle
+    # Lifecycle (January 2026: Delegates to HandlerBase)
     # =========================================================================
 
     async def start(self) -> None:
-        """Start the daemon and subscribe to events."""
-        if self._coordinator_status == CoordinatorStatus.RUNNING:
-            return
+        """Start the daemon via HandlerBase.
 
-        logger.info("UnifiedDistributionDaemon starting...")
-        self._running = True
-        self._coordinator_status = CoordinatorStatus.RUNNING
-        self._start_time = time.time()
-        self._pending_event = asyncio.Event()
-
-        register_coordinator(self)
-
-        # Subscribe to distribution events
-        self._subscribe_to_events()
-
-        # Main loop - Dec 2025 fix: Use while True to prevent natural exit
-        # which triggers daemon restart loop. Only exit via CancelledError.
-        try:
-            while True:
-                try:
-                    if self._pending_items:
-                        await self._process_pending_items()
-
-                    # Periodic sync check
-                    if time.time() - self._last_sync_time > self.config.poll_interval_seconds:
-                        await self._periodic_sync_check()
-
-                    # Wait for event or timeout
-                    if self._pending_event:
-                        try:
-                            await asyncio.wait_for(self._pending_event.wait(), timeout=5.0)
-                            self._pending_event.clear()
-                        except asyncio.TimeoutError:
-                            pass
-                    else:
-                        await asyncio.sleep(5.0)
-
-                except (OSError, RuntimeError, ValueError) as e:
-                    logger.error(f"Error in distribution daemon loop: {e}")
-                    self._errors_count += 1
-                    self._last_error = str(e)
-                    await asyncio.sleep(10.0)
-        except asyncio.CancelledError:
-            logger.info("UnifiedDistributionDaemon cancelled")
-        finally:
-            self._running = False
-            self._coordinator_status = CoordinatorStatus.STOPPED
-            unregister_coordinator(self.name)
-            logger.info("UnifiedDistributionDaemon stopped")
+        January 2026: Migrated to HandlerBase for unified lifecycle.
+        HandlerBase handles event subscriptions and main loop.
+        """
+        await super().start()
 
     async def stop(self) -> None:
-        """Stop the daemon gracefully."""
-        if self._coordinator_status == CoordinatorStatus.STOPPED:
-            return
+        """Stop the daemon via HandlerBase.
 
-        self._coordinator_status = CoordinatorStatus.STOPPING
-        self._running = False
-        unregister_coordinator(self.name)
-        self._coordinator_status = CoordinatorStatus.STOPPED
-
-    def _subscribe_to_events(self, max_retries: int = 3) -> None:
-        """Subscribe to MODEL_PROMOTED and NPZ_EXPORT_COMPLETE events.
-
-        December 28, 2025: Added retry logic with exponential backoff for
-        robustness during startup when event bus may not be ready.
-
-        Jan 2026: Migrated to RetryConfig for centralized retry behavior.
-
-        Args:
-            max_retries: Maximum retry attempts before falling back to polling
+        January 2026: Migrated to HandlerBase for unified lifecycle.
         """
-        # Jan 2026: Use RetryConfig for centralized retry pattern
-        # Exponential backoff: 1s, 2s, 4s (base_delay=1.0)
-        retry_config = RetryConfig(max_attempts=max_retries, base_delay=1.0, max_delay=8.0)
-
-        for attempt in retry_config.attempts():
-            try:
-                from app.coordination.event_router import DataEventType, subscribe
-
-                # Model events
-                subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
-                subscribe(DataEventType.MODEL_UPDATED, self._on_model_updated)
-                subscribe(DataEventType.MODEL_DISTRIBUTION_STARTED, self._on_model_distribution_started)
-                subscribe(DataEventType.MODEL_DISTRIBUTION_FAILED, self._on_model_distribution_failed)
-                logger.info("Subscribed to MODEL_PROMOTED, MODEL_UPDATED events")
-
-                # December 29, 2025: Background model prefetch during training
-                # Subscribe to TRAINING_PROGRESS to start distributing checkpoints
-                # before training completes, reducing post-training latency
-                subscribe(DataEventType.TRAINING_PROGRESS, self._on_training_progress_for_prefetch)
-                logger.info("Subscribed to TRAINING_PROGRESS for background prefetch")
-
-                # December 29, 2025: Re-distribute models blocked from evaluation
-                # When evaluation is blocked due to insufficient model distribution,
-                # prioritize re-distribution of that model
-                subscribe(DataEventType.MODEL_EVALUATION_BLOCKED, self._on_model_evaluation_blocked)
-                logger.info("Subscribed to MODEL_EVALUATION_BLOCKED for re-distribution")
-
-                # NPZ events
-                try:
-                    from app.coordination.event_router import StageEvent
-                    subscribe(StageEvent.NPZ_EXPORT_COMPLETE, self._on_npz_exported)
-                    logger.info("Subscribed to NPZ_EXPORT_COMPLETE events")
-                except (ImportError, AttributeError):
-                    subscribe("npz_export_complete", self._on_npz_exported)
-                    logger.info("Subscribed to npz_export_complete string events")
-
-                # Success - exit retry loop
-                return
-
-            except ImportError as e:
-                if attempt.should_retry:
-                    logger.warning(
-                        f"Event system not ready, retry {attempt.number}/{retry_config.max_attempts} "
-                        f"in {attempt.delay:.1f}s: {e}"
-                    )
-                    attempt.wait()
-                else:
-                    logger.warning(
-                        f"Event system not available after {retry_config.max_attempts} attempts ({e}), "
-                        "will poll for new files"
-                    )
-            except Exception as e:
-                logger.warning(f"Subscription failed: {e}, will poll for new files")
-                return
+        await super().stop()
 
     # =========================================================================
     # Event Handlers
@@ -966,6 +935,10 @@ class UnifiedDistributionDaemon:
         # Deduplicate
         model_paths = list(set(model_paths))
         logger.info(f"Distributing {len(model_paths)} models to {len(target_nodes)} nodes")
+
+        # Sprint 13.1: Emit MODEL_DISTRIBUTION_STARTED event
+        # This enables coordination with other daemons waiting for distribution
+        await self._emit_distribution_started_event(len(model_paths), len(target_nodes))
 
         success = await self._run_smart_distribution(
             model_paths, target_nodes, DataType.MODEL
@@ -1922,6 +1895,37 @@ class UnifiedDistributionDaemon:
             except Exception as e:  # noqa: BLE001
                 logger.debug(f"[UnifiedDistributionDaemon] Failed to record to ledger: {e}")
 
+    async def _emit_distribution_started_event(
+        self, total_models: int, target_hosts: int
+    ) -> None:
+        """Emit MODEL_DISTRIBUTION_STARTED event.
+
+        Sprint 13.1: This event signals that distribution has begun,
+        enabling coordination with other components waiting for model availability.
+
+        Args:
+            total_models: Number of models being distributed
+            target_hosts: Number of target hosts
+        """
+        try:
+            from app.coordination.event_router import emit
+
+            await emit(
+                event_type="MODEL_DISTRIBUTION_STARTED",
+                data={
+                    "total_models": total_models,
+                    "target_hosts": target_hosts,
+                    "timestamp": time.time(),
+                    "node_id": os.environ.get("RINGRIFT_NODE_ID", "unknown"),
+                },
+            )
+            logger.info(
+                f"Emitted MODEL_DISTRIBUTION_STARTED: "
+                f"{total_models} models to {target_hosts} hosts"
+            )
+        except (ImportError, RuntimeError, TypeError) as e:
+            logger.debug(f"Failed to emit distribution started event: {e}")
+
     async def _emit_completion_event(
         self, data_type: DataType, items: list[dict[str, Any]]
     ) -> None:
@@ -2561,6 +2565,35 @@ async def wait_for_model_availability(
 
 
 # =============================================================================
+# Singleton Accessors (January 2026: HandlerBase pattern)
+# =============================================================================
+
+
+def get_distribution_daemon(
+    config: DistributionConfig | None = None,
+) -> UnifiedDistributionDaemon:
+    """Get the singleton UnifiedDistributionDaemon instance.
+
+    January 2026: Now delegates to HandlerBase.get_instance() singleton pattern.
+
+    Args:
+        config: Optional configuration (only used on first call)
+
+    Returns:
+        The singleton daemon instance
+    """
+    return UnifiedDistributionDaemon.get_instance(config)
+
+
+def reset_distribution_daemon() -> None:
+    """Reset the singleton UnifiedDistributionDaemon instance.
+
+    January 2026: Now delegates to HandlerBase.reset_instance().
+    """
+    UnifiedDistributionDaemon.reset_instance()
+
+
+# =============================================================================
 # Standalone Entry Point
 # =============================================================================
 
@@ -2572,7 +2605,7 @@ async def main() -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-    daemon = UnifiedDistributionDaemon()
+    daemon = get_distribution_daemon()
     try:
         await daemon.start()
     except KeyboardInterrupt:

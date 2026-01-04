@@ -53,6 +53,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.coordination.event_handler_utils import extract_config_key
+from app.coordination.handler_base import HandlerBase
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 
 
 def get_node_id() -> str:
@@ -168,68 +170,78 @@ class FileManifest:
     # files: {relative_path: {size, mtime, sha256, type}}
 
 
-class S3NodeSyncDaemon:
+class S3NodeSyncDaemon(HandlerBase):
     """Daemon for bi-directional S3 sync on cluster nodes.
 
     Runs on every cluster node to ensure data is backed up to S3
     and training data is available when needed.
+
+    January 2026: Migrated to HandlerBase for unified lifecycle management.
     """
 
     def __init__(self, config: S3NodeSyncConfig | None = None):
         self.config = config or S3NodeSyncConfig()
         self.node_id = get_node_id()
-        self._running = False
 
-        # Stats
-        self._start_time: float = 0.0
+        # Initialize HandlerBase with cycle interval from config
+        super().__init__(
+            name=f"s3_node_sync_{self.node_id}",
+            cycle_interval=self.config.sync_interval_seconds,
+        )
+
+        # Stats (in addition to HandlerBase stats)
         self._last_push_time: float = 0.0
         self._last_pull_time: float = 0.0
         self._push_count: int = 0
         self._pull_count: int = 0
         self._bytes_uploaded: int = 0
         self._bytes_downloaded: int = 0
-        self._errors: int = 0
 
         # Local manifest cache
         self._local_manifest: FileManifest | None = None
 
-    @property
-    def name(self) -> str:
-        return f"S3NodeSyncDaemon-{self.node_id}"
+    # =========================================================================
+    # HandlerBase Implementation
+    # =========================================================================
 
-    def _schedule_async(self, coro: Any, operation_name: str = "operation") -> None:
-        """Safely schedule an async operation from a sync context.
+    def _get_event_subscriptions(self) -> dict:
+        """Return event subscriptions for HandlerBase.
 
-        December 30, 2025: Added to fix "no running event loop" errors when
-        event handlers are called from sync code.
-
-        Args:
-            coro: Coroutine to schedule
-            operation_name: Name for logging purposes
+        Enables event-driven sync instead of just interval-based:
+        - TRAINING_COMPLETED: Push new model to S3 immediately
+        - SELFPLAY_COMPLETE: Push games to S3 after significant batches
+        - MODEL_PROMOTED: Trigger high-priority model backup
         """
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(coro)
-        except RuntimeError:
-            # No running event loop - try to get the main loop
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.run_coroutine_threadsafe(coro, loop)
-                else:
-                    # Last resort: run in new loop (blocking, but works)
-                    logger.debug(f"Running {operation_name} synchronously (no event loop)")
-                    asyncio.run(coro)
-            except Exception as e:
-                logger.debug(f"Could not schedule {operation_name}: {e}")
+        return {
+            "training_completed": self._on_training_completed,
+            "selfplay_complete": self._on_selfplay_complete,
+            "model_promoted": self._on_model_promoted,
+        }
 
-    def is_running(self) -> bool:
-        return self._running
+    async def _on_start(self) -> None:
+        """Hook called before main loop starts."""
+        logger.info(
+            f"S3NodeSyncDaemon starting on {self.node_id} "
+            f"(bucket: {self.config.s3_bucket}, interval: {self.config.sync_interval_seconds}s)"
+        )
+        # Initial sync
+        await self._run_push_cycle()
 
-    def health_check(self) -> "HealthCheckResult":
-        """Check daemon health."""
-        # Import from contracts (zero dependencies)
-        from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+    async def _on_stop(self) -> None:
+        """Hook called after main loop stops."""
+        # Final push before shutdown
+        logger.info("Running final S3 push before shutdown")
+        await self._run_push_cycle()
+        logger.info(f"S3NodeSyncDaemon stopped on {self.node_id}")
+
+    async def _run_cycle(self) -> None:
+        """Main work loop iteration - push local data to S3."""
+        await self._run_push_cycle()
+
+    def health_check(self) -> HealthCheckResult:
+        """Check daemon health. Overrides HandlerBase for S3-specific checks."""
+        # Get base health check
+        base_health = super().health_check()
 
         if not self._running:
             return HealthCheckResult(
@@ -243,97 +255,30 @@ class S3NodeSyncDaemon:
         if time_since_push > self.config.sync_interval_seconds * 2:
             return HealthCheckResult(
                 healthy=False,
-                status="degraded",
+                status=CoordinatorStatus.DEGRADED,
                 message=f"No push in {time_since_push:.0f}s",
                 details={
                     "push_count": self._push_count,
-                    "errors": self._errors,
+                    "errors_count": self._stats.errors_count,
+                    **base_health.details,
                 },
             )
 
         return HealthCheckResult(
             healthy=True,
             status=CoordinatorStatus.RUNNING,
-            message=f"Healthy (pushes: {self._push_count}, errors: {self._errors})",
+            message=f"Healthy (pushes: {self._push_count}, errors: {self._stats.errors_count})",
             details={
                 "node_id": self.node_id,
                 "bytes_uploaded": self._bytes_uploaded,
                 "bytes_downloaded": self._bytes_downloaded,
+                **base_health.details,
             },
         )
 
-    async def start(self) -> None:
-        """Start the daemon."""
-        if self._running:
-            return
-
-        logger.info(
-            f"S3NodeSyncDaemon starting on {self.node_id} "
-            f"(bucket: {self.config.s3_bucket}, interval: {self.config.sync_interval_seconds}s)"
-        )
-        self._running = True
-        self._start_time = time.time()
-
-        # December 2025: Subscribe to events for immediate S3 sync
-        # This enables event-driven sync instead of just interval-based
-        self._subscribe_to_events()
-
-        # Initial sync
-        await self._run_push_cycle()
-
-        # Main loop
-        while self._running:
-            try:
-                await asyncio.sleep(self.config.sync_interval_seconds)
-
-                if not self._running:
-                    break
-
-                # Push local data to S3
-                await self._run_push_cycle()
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error in S3 sync loop: {e}")
-                self._errors += 1
-                await asyncio.sleep(60.0)
-
-        logger.info(f"S3NodeSyncDaemon stopped on {self.node_id}")
-
-    async def stop(self) -> None:
-        """Stop the daemon."""
-        if not self._running:
-            return
-
-        self._running = False
-
-        # Final push before shutdown
-        logger.info("Running final S3 push before shutdown")
-        await self._run_push_cycle()
-
-    def _subscribe_to_events(self) -> None:
-        """Subscribe to events for immediate S3 sync (December 2025).
-
-        This enables event-driven sync instead of just interval-based:
-        - TRAINING_COMPLETED: Push new model to S3 immediately
-        - SELFPLAY_COMPLETE: Push games to S3 after significant batches
-        - MODEL_PROMOTED: Trigger high-priority model backup
-        """
-        try:
-            from app.coordination.event_router import subscribe
-            from app.distributed.data_events import DataEventType
-
-            subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_completed)
-            subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
-            subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
-
-            logger.info("S3NodeSyncDaemon subscribed to training/selfplay/promotion events")
-
-        except ImportError as e:
-            logger.warning(f"Event router not available ({e}), using interval-only sync")
-        except Exception as e:
-            logger.error(f"Failed to subscribe to events: {e}")
+    # =========================================================================
+    # Event Handlers
+    # =========================================================================
 
     def _on_training_completed(self, event: Any) -> None:
         """Handle TRAINING_COMPLETED event - trigger immediate S3 push.
@@ -342,19 +287,18 @@ class S3NodeSyncDaemon:
         instead of waiting for the next interval-based sync.
         """
         try:
-            payload = getattr(event, "payload", event) if hasattr(event, "payload") else event
-            config_key = extract_config_key(payload)
-            model_path = payload.get("model_path", "")
+            payload = self._get_payload(event)
+            config_key = self._extract_config_key(payload)
 
             logger.info(f"Training completed for {config_key}, triggering S3 push")
 
-            # Schedule push on next loop iteration (non-blocking)
+            # Use HandlerBase's safe task creation
             if self._running:
-                self._schedule_async(self._push_models(), "S3 push models after training")
+                self._safe_create_task(self._push_models(), context="S3 push models after training")
+            self._record_success()
 
-        except Exception as e:
-            logger.warning(f"Error handling TRAINING_COMPLETED event: {e}")
-            self._errors += 1
+        except (KeyError, TypeError, ValueError) as e:
+            self._record_error(f"Error handling TRAINING_COMPLETED event: {e}", e)
 
     def _on_selfplay_complete(self, event: Any) -> None:
         """Handle SELFPLAY_COMPLETE event - trigger S3 push for significant batches.
@@ -363,9 +307,9 @@ class S3NodeSyncDaemon:
         to avoid excessive S3 operations from small selfplay runs.
         """
         try:
-            payload = getattr(event, "payload", event) if hasattr(event, "payload") else event
+            payload = self._get_payload(event)
             games_count = payload.get("games_count") or payload.get("games_added", 0)
-            config_key = extract_config_key(payload)
+            config_key = self._extract_config_key(payload)
 
             # Only sync for significant batches (>=100 games)
             if games_count >= 100:
@@ -374,13 +318,13 @@ class S3NodeSyncDaemon:
                     f"triggering S3 push"
                 )
                 if self._running:
-                    self._schedule_async(self._push_games(), "S3 push games")
+                    self._safe_create_task(self._push_games(), context="S3 push games")
             else:
                 logger.debug(f"Selfplay batch too small ({games_count} < 100), skipping S3 sync")
+            self._record_success()
 
-        except Exception as e:
-            logger.warning(f"Error handling SELFPLAY_COMPLETE event: {e}")
-            self._errors += 1
+        except (KeyError, TypeError, ValueError) as e:
+            self._record_error(f"Error handling SELFPLAY_COMPLETE event: {e}", e)
 
     def _on_model_promoted(self, event: Any) -> None:
         """Handle MODEL_PROMOTED event - high-priority model backup.
@@ -389,18 +333,17 @@ class S3NodeSyncDaemon:
         Promoted models are critical and should be backed up ASAP.
         """
         try:
-            payload = getattr(event, "payload", event) if hasattr(event, "payload") else event
-            model_path = payload.get("model_path", "")
-            config_key = extract_config_key(payload) or payload.get("board_type", "")
+            payload = self._get_payload(event)
+            config_key = self._extract_config_key(payload) or payload.get("board_type", "")
 
             logger.info(f"Model promoted ({config_key}), triggering high-priority S3 push")
 
             if self._running:
-                self._schedule_async(self._push_models(), "S3 push models")
+                self._safe_create_task(self._push_models(), context="S3 push promoted model")
+            self._record_success()
 
-        except Exception as e:
-            logger.warning(f"Error handling MODEL_PROMOTED event: {e}")
-            self._errors += 1
+        except (KeyError, TypeError, ValueError) as e:
+            self._record_error(f"Error handling MODEL_PROMOTED event: {e}", e)
 
     async def _run_push_cycle(self) -> SyncResult:
         """Run a push cycle - upload local data to S3."""
@@ -453,7 +396,7 @@ class S3NodeSyncDaemon:
             logger.error(f"Push cycle failed: {e}")
             result.success = False
             result.errors.append(str(e))
-            self._errors += 1
+            self._record_error(f"Push cycle failed: {e}", e)
 
         return result
 

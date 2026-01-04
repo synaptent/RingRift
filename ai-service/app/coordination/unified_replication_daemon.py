@@ -57,6 +57,8 @@ logger = logging.getLogger(__name__)
 # December 2025: Use consolidated daemon stats base classes
 from app.config.coordination_defaults import SyncDefaults
 from app.coordination.daemon_stats import DaemonStatsBase, JobDaemonStats, PerNodeSyncStats
+from app.coordination.handler_base import HandlerBase
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.utils.async_utils import fire_and_forget
 
 __all__ = [
@@ -268,11 +270,14 @@ class UnifiedReplicationConfig:
 # =============================================================================
 
 
-class UnifiedReplicationDaemon:
+class UnifiedReplicationDaemon(HandlerBase):
     """Unified daemon for replication monitoring and repair.
 
     Consolidates ReplicationMonitorDaemon and ReplicationRepairDaemon into
     a single daemon with shared state and coordinated operations.
+
+    January 2026: Migrated to HandlerBase for unified lifecycle and singleton.
+    Uses _run_cycle() for repair loop (1min) and _on_start() to spawn monitor loop (5min).
     """
 
     def __init__(self, config: UnifiedReplicationConfig | None = None):
@@ -284,10 +289,14 @@ class UnifiedReplicationDaemon:
         self.config = config or UnifiedReplicationConfig()
         self.node_id = socket.gethostname()
 
-        # Daemon state
-        self._running = False
+        # Initialize HandlerBase - repair loop is more frequent (1 min)
+        super().__init__(
+            name=f"unified_replication_{self.node_id}",
+            cycle_interval=self.config.repair_interval_seconds,
+        )
+
+        # Background task for monitor loop (different interval)
         self._monitor_task: asyncio.Task | None = None
-        self._repair_task: asyncio.Task | None = None
 
         # Monitoring state
         self._stats = ReplicationStats()
@@ -313,41 +322,55 @@ class UnifiedReplicationDaemon:
         # (Harvested from deprecated replication_monitor.py)
         self._node_sync_stats: dict[str, PerNodeSyncStats] = {}
 
-    async def start(self) -> None:
-        """Start both monitoring and repair loops."""
-        if self._running:
-            logger.warning("[UnifiedReplicationDaemon] Already running")
-            return
+    def _get_event_subscriptions(self) -> dict:
+        """Get declarative event subscriptions (HandlerBase pattern).
 
-        self._running = True
-        logger.info("[UnifiedReplicationDaemon] Starting monitoring and repair loops")
+        Returns:
+            Dict mapping event names to handler methods
+        """
+        return {
+            "NEW_GAMES_AVAILABLE": self._on_new_games,
+            "DATA_SYNC_COMPLETED": self._on_sync_completed,
+            "HOST_OFFLINE": self._on_host_offline,
+        }
 
-        # Subscribe to relevant events (December 2025)
-        await self._subscribe_to_events()
-
-        self._monitor_task = asyncio.create_task(
+    async def _on_start(self) -> None:
+        """Hook called after HandlerBase start (spawns monitor loop)."""
+        # Start monitor loop (runs on different interval than repair)
+        self._monitor_task = self._safe_create_task(
             self._monitor_loop(),
-            name="replication_monitor_loop",
+            context="replication_monitor_loop"
         )
-        self._repair_task = asyncio.create_task(
-            self._repair_loop(),
-            name="replication_repair_loop",
+        logger.info(
+            f"[UnifiedReplicationDaemon] Started monitoring and repair loops"
         )
 
-    async def _subscribe_to_events(self) -> None:
-        """Subscribe to replication-relevant events."""
+    async def _on_stop(self) -> None:
+        """Hook called before HandlerBase stop (cancels monitor loop)."""
+        if self._monitor_task and not self._monitor_task.done():
+            self._monitor_task.cancel()
+            try:
+                await asyncio.wait_for(self._monitor_task, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            self._monitor_task = None
+        logger.info("[UnifiedReplicationDaemon] Stopped")
+
+    async def _run_cycle(self) -> None:
+        """Run repair cycle (HandlerBase main work loop).
+
+        Called every cycle_interval (1 min) for repair operations.
+        """
         try:
-            from app.coordination.event_router import DataEventType, get_event_router
-
-            router = get_event_router()
-            router.subscribe(DataEventType.NEW_GAMES_AVAILABLE, self._on_new_games)
-            router.subscribe(DataEventType.DATA_SYNC_COMPLETED, self._on_sync_completed)
-            router.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
-            logger.info("[UnifiedReplicationDaemon] Subscribed to events")
-        except ImportError:
-            logger.debug("[UnifiedReplicationDaemon] Event router not available")
+            await self._run_repair_cycle()
+            self._record_success()
         except Exception as e:
-            logger.warning(f"[UnifiedReplicationDaemon] Failed to subscribe: {e}")
+            logger.error(f"[UnifiedReplicationDaemon] Repair error: {e}")
+            self._record_error(str(e))
+
+    async def start(self) -> None:
+        """Start both monitoring and repair loops (delegates to HandlerBase)."""
+        await super().start()
 
     async def _on_new_games(self, event) -> None:
         """Handle new games - may need replication check."""
@@ -375,29 +398,8 @@ class UnifiedReplicationDaemon:
             logger.debug(f"[UnifiedReplicationDaemon] Error handling offline: {e}")
 
     async def stop(self) -> None:
-        """Stop both loops gracefully."""
-        if not self._running:
-            return
-
-        logger.info("[UnifiedReplicationDaemon] Stopping...")
-        self._running = False
-
-        # Cancel tasks
-        if self._monitor_task and not self._monitor_task.done():
-            self._monitor_task.cancel()
-            try:
-                await asyncio.wait_for(self._monitor_task, timeout=5.0)
-            except (asyncio.CancelledError, asyncio.TimeoutError):
-                pass
-
-        if self._repair_task and not self._repair_task.done():
-            self._repair_task.cancel()
-            try:
-                await asyncio.wait_for(self._repair_task, timeout=5.0)
-            except (asyncio.CancelledError, asyncio.TimeoutError):
-                pass
-
-        logger.info("[UnifiedReplicationDaemon] Stopped")
+        """Stop both loops gracefully (delegates to HandlerBase)."""
+        await super().stop()
 
     @property
     def is_running(self) -> bool:
@@ -779,22 +781,6 @@ class UnifiedReplicationDaemon:
             if ts > prune_threshold
         }
 
-    async def _repair_loop(self) -> None:
-        """Main repair loop."""
-        logger.info(
-            f"[UnifiedReplicationDaemon] Repair loop started "
-            f"(interval={self.config.repair_interval_seconds}s)"
-        )
-
-        while self._running:
-            try:
-                await self._run_repair_cycle()
-                await asyncio.sleep(self.config.repair_interval_seconds)
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"[UnifiedReplicationDaemon] Repair error: {e}")
-                await asyncio.sleep(60)
 
     async def _run_repair_cycle(self) -> None:
         """Run one cycle of repair operations."""
@@ -1241,14 +1227,12 @@ class UnifiedReplicationDaemon:
 
         return {"score": round(score, 1), "status": status}
 
-    def health_check(self) -> "HealthCheckResult":
-        """Check daemon health (December 2025: CoordinatorProtocol compliance).
+    def health_check(self) -> HealthCheckResult:
+        """Check daemon health (January 2026: HandlerBase pattern).
 
         Returns:
             HealthCheckResult with status and details
         """
-        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
-
         if not self._running:
             return HealthCheckResult(
                 healthy=False,
@@ -1331,14 +1315,11 @@ class UnifiedReplicationDaemon:
 
 
 # =============================================================================
-# Singleton Management
+# Singleton Management (January 2026: Delegates to HandlerBase pattern)
 # =============================================================================
 
-_instance: UnifiedReplicationDaemon | None = None
-_lock = asyncio.Lock()
 
-
-async def get_replication_daemon(
+def get_replication_daemon(
     config: UnifiedReplicationConfig | None = None,
 ) -> UnifiedReplicationDaemon:
     """Get the singleton unified replication daemon.
@@ -1348,21 +1329,19 @@ async def get_replication_daemon(
 
     Returns:
         UnifiedReplicationDaemon instance
+
+    January 2026: Now delegates to HandlerBase.get_instance() singleton pattern.
+    Note: This is now synchronous (no longer async) since HandlerBase handles it.
     """
-    global _instance
-
-    if _instance is None:
-        async with _lock:
-            if _instance is None:
-                _instance = UnifiedReplicationDaemon(config)
-
-    return _instance
+    return UnifiedReplicationDaemon.get_instance(config)
 
 
 def reset_replication_daemon() -> None:
-    """Reset the singleton instance (for testing)."""
-    global _instance
-    _instance = None
+    """Reset the singleton instance (for testing).
+
+    January 2026: Now delegates to HandlerBase.reset_instance().
+    """
+    UnifiedReplicationDaemon.reset_instance()
 
 
 # =============================================================================

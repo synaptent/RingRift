@@ -48,6 +48,8 @@ logger = logging.getLogger(__name__)
 # December 2025: Use consolidated daemon stats base class
 from app.coordination.daemon_stats import EvaluationDaemonStats
 from app.coordination.event_utils import make_config_key, parse_config_key
+from app.coordination.handler_base import HandlerBase
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 
 # December 30, 2025: Game count for graduated thresholds
 from app.utils.game_discovery import get_game_counts_summary
@@ -171,11 +173,14 @@ class TournamentStats(EvaluationDaemonStats):
         self.evaluations_triggered += 1
 
 
-class TournamentDaemon:
+class TournamentDaemon(HandlerBase):
     """Daemon that automatically schedules tournaments based on events.
 
     Subscribes to training/promotion events and triggers appropriate
     evaluation tournaments using the existing tournament infrastructure.
+
+    January 2026: Migrated to HandlerBase for unified lifecycle and singleton.
+    Uses _on_start() to spawn multiple background tasks with different intervals.
     """
 
     def __init__(self, config: TournamentDaemonConfig | None = None):
@@ -187,51 +192,56 @@ class TournamentDaemon:
         self.config = config or TournamentDaemonConfig()
         self.node_id = socket.gethostname()
 
-        self._running = False
+        # Initialize HandlerBase - use evaluation queue check interval as cycle
+        super().__init__(
+            name=f"tournament_daemon_{self.node_id}",
+            cycle_interval=10.0,  # Check evaluation queue every 10s
+        )
+
+        # Background tasks for different intervals
         self._periodic_task: asyncio.Task | None = None
         self._calibration_task: asyncio.Task | None = None  # Dec 2025
         self._cross_nn_task: asyncio.Task | None = None  # Dec 2025
         self._stats = TournamentStats()
         self._evaluation_queue: asyncio.Queue = asyncio.Queue()
-        self._evaluation_task: asyncio.Task | None = None
-        self._subscribed = False
 
-    async def start(self) -> None:
-        """Start the tournament daemon."""
-        if self._running:
-            logger.warning("TournamentDaemon already running")
-            return
+    def _get_event_subscriptions(self) -> dict:
+        """Get declarative event subscriptions (HandlerBase pattern).
 
-        self._running = True
+        Returns:
+            Dict mapping event names to handler methods
+        """
+        subscriptions = {}
 
-        # Subscribe to events
-        self._subscribe_to_events()
+        if self.config.trigger_on_training_completed:
+            subscriptions["TRAINING_COMPLETED"] = self._on_training_completed
 
-        # Start evaluation worker
-        self._evaluation_task = asyncio.create_task(
-            self._evaluation_worker(),
-            name="tournament_evaluation_worker"
-        )
+        if self.config.trigger_on_model_promoted:
+            subscriptions["MODEL_PROMOTED"] = self._on_model_promoted
 
+        return subscriptions
+
+    async def _on_start(self) -> None:
+        """Hook called after HandlerBase start (spawns background tasks)."""
         # Start periodic ladder tournaments
         if self.config.enable_periodic_ladder:
-            self._periodic_task = asyncio.create_task(
+            self._periodic_task = self._safe_create_task(
                 self._periodic_ladder_loop(),
-                name="tournament_periodic_ladder"
+                context="tournament_periodic_ladder"
             )
 
         # Start calibration tournaments (Dec 2025)
         if self.config.enable_calibration_tournaments:
-            self._calibration_task = asyncio.create_task(
+            self._calibration_task = self._safe_create_task(
                 self._calibration_loop(),
-                name="tournament_calibration"
+                context="tournament_calibration"
             )
 
         # Start cross-NN version tournaments (Dec 2025)
         if self.config.enable_cross_nn_tournaments:
-            self._cross_nn_task = asyncio.create_task(
+            self._cross_nn_task = self._safe_create_task(
                 self._cross_nn_loop(),
-                name="tournament_cross_nn"
+                context="tournament_cross_nn"
             )
 
         logger.info(
@@ -240,14 +250,9 @@ class TournamentDaemon:
             f"cross_nn={self.config.enable_cross_nn_tournaments})"
         )
 
-    async def stop(self) -> None:
-        """Stop the tournament daemon."""
-        if not self._running:
-            return
-
-        self._running = False
-
-        # Cancel tasks
+    async def _on_stop(self) -> None:
+        """Hook called before HandlerBase stop (cancels background tasks)."""
+        # Cancel periodic task
         if self._periodic_task:
             self._periodic_task.cancel()
             try:
@@ -255,14 +260,6 @@ class TournamentDaemon:
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
             self._periodic_task = None
-
-        if self._evaluation_task:
-            self._evaluation_task.cancel()
-            try:
-                await asyncio.wait_for(self._evaluation_task, timeout=5.0)
-            except (asyncio.CancelledError, asyncio.TimeoutError):
-                pass
-            self._evaluation_task = None
 
         # Cancel calibration task (Dec 2025)
         if self._calibration_task:
@@ -284,40 +281,43 @@ class TournamentDaemon:
 
         logger.info("TournamentDaemon stopped")
 
+    async def _run_cycle(self) -> None:
+        """Process evaluation queue (HandlerBase main work loop).
+
+        Called every cycle_interval (10s) to check for pending evaluations.
+        """
+        try:
+            # Non-blocking check for evaluation request
+            try:
+                request = self._evaluation_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return  # Nothing to process
+
+            # Run evaluation
+            await self._run_evaluation(
+                model_path=request["model_path"],
+                board_type=request["board_type"],
+                num_players=request["num_players"],
+                trigger=request.get("trigger", "unknown"),
+            )
+            self._record_success()
+
+        except Exception as e:
+            logger.error(f"Error processing evaluation: {e}")
+            self._record_error(str(e))
+
+    async def start(self) -> None:
+        """Start the tournament daemon (delegates to HandlerBase)."""
+        await super().start()
+
+    async def stop(self) -> None:
+        """Stop the tournament daemon (delegates to HandlerBase)."""
+        await super().stop()
+
     def is_running(self) -> bool:
         """Check if daemon is running."""
         return self._running
 
-    def _subscribe_to_events(self) -> None:
-        """Subscribe to relevant events."""
-        if self._subscribed:
-            return
-
-        try:
-            from app.coordination.event_router import get_router, DataEventType
-
-            router = get_router()
-
-            if self.config.trigger_on_training_completed:
-                router.subscribe(
-                    DataEventType.TRAINING_COMPLETED,
-                    self._on_training_completed
-                )
-                logger.info("TournamentDaemon subscribed to TRAINING_COMPLETED")
-
-            if self.config.trigger_on_model_promoted:
-                router.subscribe(
-                    DataEventType.MODEL_PROMOTED,
-                    self._on_model_promoted
-                )
-                logger.info("TournamentDaemon subscribed to MODEL_PROMOTED")
-
-            self._subscribed = True
-
-        except ImportError as e:
-            logger.warning(f"Event router not available, running without event triggers: {e}")
-        except Exception as e:
-            logger.error(f"Failed to subscribe to events: {e}")
 
     def _on_training_completed(self, event) -> None:
         """Handle TRAINING_COMPLETED event."""
@@ -375,32 +375,6 @@ class TournamentDaemon:
             return parsed.board_type, parsed.num_players
         return None, None
 
-    async def _evaluation_worker(self) -> None:
-        """Worker that processes evaluation queue."""
-        while self._running:
-            try:
-                # Wait for evaluation request
-                try:
-                    request = await asyncio.wait_for(
-                        self._evaluation_queue.get(),
-                        timeout=10.0
-                    )
-                except asyncio.TimeoutError:
-                    continue
-
-                # Run evaluation
-                await self._run_evaluation(
-                    model_path=request["model_path"],
-                    board_type=request["board_type"],
-                    num_players=request["num_players"],
-                    trigger=request.get("trigger", "unknown"),
-                )
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Error in evaluation worker: {e}")
-                self._stats.record_failure(str(e))
 
     async def _periodic_ladder_loop(self) -> None:
         """Periodic ladder tournament loop."""
@@ -1423,11 +1397,13 @@ class TournamentDaemon:
         Returns:
             Status dict with stats and configuration
         """
-        return {
+        # Combine HandlerBase stats with daemon-specific stats
+        base_status = {
             "node_id": self.node_id,
             "running": self._running,
-            "subscribed": self._subscribed,
             "queue_size": self._evaluation_queue.qsize(),
+            "cycle_count": self._cycle_count,
+            "error_count": len(self._recent_errors),
             "stats": {
                 "tournaments_completed": self._stats.tournaments_completed,
                 "games_played": self._stats.games_played,
@@ -1445,15 +1421,14 @@ class TournamentDaemon:
                 "baselines": self.config.baselines,
             },
         }
+        return base_status
 
-    def health_check(self) -> "HealthCheckResult":
-        """Check daemon health (December 2025: CoordinatorProtocol compliance).
+    def health_check(self) -> HealthCheckResult:
+        """Check daemon health (January 2026: HandlerBase pattern).
 
         Returns:
             HealthCheckResult with status and details
         """
-        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
-
         if not self._running:
             return HealthCheckResult(
                 healthy=False,
@@ -1461,12 +1436,13 @@ class TournamentDaemon:
                 message="Tournament daemon not running",
             )
 
-        # Check for high error rate
-        if self._stats.errors_count > 10:
+        # Check for high error rate (use HandlerBase error tracking)
+        error_count = len(self._recent_errors)
+        if error_count > 10:
             return HealthCheckResult(
                 healthy=False,
                 status=CoordinatorStatus.DEGRADED,
-                message=f"Tournament daemon has {self._stats.errors_count} errors",
+                message=f"Tournament daemon has {error_count} recent errors",
                 details=self.get_status(),
             )
 
@@ -1478,8 +1454,7 @@ class TournamentDaemon:
         )
 
 
-# Module-level singleton
-_tournament_daemon: TournamentDaemon | None = None
+# Module-level singleton functions (delegate to HandlerBase pattern)
 
 
 def get_tournament_daemon(
@@ -1492,14 +1467,15 @@ def get_tournament_daemon(
 
     Returns:
         TournamentDaemon instance
+
+    January 2026: Now delegates to HandlerBase.get_instance() singleton pattern.
     """
-    global _tournament_daemon
-    if _tournament_daemon is None:
-        _tournament_daemon = TournamentDaemon(config)
-    return _tournament_daemon
+    return TournamentDaemon.get_instance(config)
 
 
 def reset_tournament_daemon() -> None:
-    """Reset the singleton (for testing)."""
-    global _tournament_daemon
-    _tournament_daemon = None
+    """Reset the singleton (for testing).
+
+    January 2026: Now delegates to HandlerBase.reset_instance().
+    """
+    TournamentDaemon.reset_instance()

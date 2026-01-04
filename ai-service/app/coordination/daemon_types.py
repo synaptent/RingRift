@@ -128,6 +128,9 @@ class DaemonType(Enum):
     # Training data sync (December 2025) - pre-training data sync from OWC/S3
     TRAINING_DATA_SYNC = "training_data_sync"
 
+    # Training data recovery (January 2026 Sprint 13.3) - auto-recover from NPZ corruption
+    TRAINING_DATA_RECOVERY = "training_data_recovery"
+
     # OWC external drive import (December 2025) - periodic import from OWC drive on mac-studio
     # Imports training data from external archive drive for underserved configs
     OWC_IMPORT = "owc_import"

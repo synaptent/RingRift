@@ -561,6 +561,100 @@ class P2PRecoveryDaemon(HandlerBase):
         return True
 
     # =========================================================================
+    # HealthCoordinator Integration (Jan 3, 2026 Sprint 12 Session 10)
+    # =========================================================================
+
+    def _get_health_coordinator_recommendation(self) -> tuple[str | None, dict | None]:
+        """Get recovery recommendation from HealthCoordinator if available.
+
+        Jan 3, 2026: Integrates with the centralized HealthCoordinator for
+        unified recovery decisions. This provides a secondary signal that
+        aggregates all health sources (gossip, circuit breakers, quorum, daemons).
+
+        Returns:
+            Tuple of (action_name, health_state) or (None, None) if unavailable
+        """
+        try:
+            from scripts.p2p.health_coordinator import (
+                get_health_coordinator,
+                RecoveryAction,
+            )
+
+            coordinator = get_health_coordinator()
+            action = coordinator.get_recovery_action()
+            health = coordinator.get_cluster_health()
+
+            return (
+                action.value if action else None,
+                {
+                    "overall_health": health.overall_health.value if health.overall_health else None,
+                    "quorum_health": health.quorum_health.value if health.quorum_health else None,
+                    "open_circuits": len(health.open_circuits) if health.open_circuits else 0,
+                    "unhealthy_peers": len(health.unhealthy_peers) if health.unhealthy_peers else 0,
+                    "health_score": health.health_score if hasattr(health, "health_score") else None,
+                }
+            )
+        except ImportError:
+            # HealthCoordinator not available (standalone mode or P2P not running)
+            logger.debug("HealthCoordinator not available for recovery decisions")
+            return None, None
+        except Exception as e:
+            # Don't let HealthCoordinator errors affect P2P recovery
+            logger.warning(f"Error getting HealthCoordinator recommendation: {e}")
+            return None, None
+
+    def _should_escalate_with_health_coordinator(
+        self,
+        local_decision: str,
+        status: dict,
+    ) -> bool:
+        """Check if HealthCoordinator recommends escalation beyond local decision.
+
+        Jan 3, 2026: Uses HealthCoordinator's unified view to detect cases where:
+        - Local checks pass but aggregated health is critical
+        - Circuit breakers are open that local checks don't see
+        - Quorum issues detected by HealthCoordinator but not local checks
+
+        Args:
+            local_decision: Current recovery decision ("healthy", "restart", "election", etc.)
+            status: Current P2P status dict
+
+        Returns:
+            True if HealthCoordinator recommends more aggressive recovery
+        """
+        action, health_state = self._get_health_coordinator_recommendation()
+
+        if action is None or health_state is None:
+            return False
+
+        # Log the HealthCoordinator's view for observability
+        logger.debug(
+            f"HealthCoordinator: action={action}, health={health_state.get('overall_health')}, "
+            f"score={health_state.get('health_score')}"
+        )
+
+        # Add to status for health reporting
+        status["health_coordinator"] = {
+            "action": action,
+            "health_state": health_state,
+        }
+
+        # Check for escalation scenarios
+        if local_decision == "healthy":
+            # Local says healthy, but HealthCoordinator recommends action
+            if action in ("restart_p2p", "trigger_election", "heal_partitions"):
+                overall = health_state.get("overall_health")
+                if overall in ("critical", "degraded"):
+                    logger.warning(
+                        f"HealthCoordinator disagrees with local healthy check: "
+                        f"action={action}, overall_health={overall}, "
+                        f"open_circuits={health_state.get('open_circuits')}"
+                    )
+                    return True
+
+        return False
+
+    # =========================================================================
     # Main Cycle
     # =========================================================================
 
@@ -588,6 +682,23 @@ class P2PRecoveryDaemon(HandlerBase):
         leader_id = status.get("leader_id")
         if leader_id:
             self._last_leader_seen_time = time.time()
+
+        # Jan 3, 2026: Consult HealthCoordinator for unified recovery decision
+        # This aggregates gossip, circuit breaker, quorum, and daemon health signals
+        local_decision = "healthy" if (is_healthy and not is_isolated) else "unhealthy"
+        should_escalate = self._should_escalate_with_health_coordinator(local_decision, status)
+
+        if should_escalate and is_healthy and not is_isolated:
+            # HealthCoordinator detected issues that local checks missed
+            logger.warning(
+                "HealthCoordinator recommends recovery despite local healthy check, "
+                "triggering partition healing"
+            )
+            healing_result = await self._trigger_partition_healing()
+            if not healing_result or healing_result.partitions_healed == 0:
+                # Healing didn't help, consider restart on next cycle
+                self._consecutive_failures += 1
+                return
 
         if is_healthy and not is_isolated:
             # Reset failure counter
@@ -1397,6 +1508,16 @@ class P2PRecoveryDaemon(HandlerBase):
                 },
             )
 
+        # Jan 3, 2026: Include HealthCoordinator info if available
+        health_coordinator_info = None
+        action, health_state = self._get_health_coordinator_recommendation()
+        if action is not None:
+            health_coordinator_info = {
+                "recommended_action": action,
+                "overall_health": health_state.get("overall_health") if health_state else None,
+                "health_score": health_state.get("health_score") if health_state else None,
+            }
+
         return HealthCheckResult(
             healthy=True,
             status=CoordinatorStatus.RUNNING,
@@ -1412,6 +1533,7 @@ class P2PRecoveryDaemon(HandlerBase):
                 "current_cooldown_seconds": self._get_current_cooldown(),
                 "cooldown_remaining_seconds": self._get_cooldown_remaining(),
                 "last_status": self._last_status,
+                "health_coordinator": health_coordinator_info,
             },
         )
 
@@ -1457,6 +1579,17 @@ class P2PRecoveryDaemon(HandlerBase):
             "consecutive_at_risk_checks": self._quorum_at_risk_consecutive,
             "recovery_triggered_count": self._quorum_recovery_triggered,
             "last_check": self._last_voter_quorum_check,
+        }
+
+        # Jan 3, 2026: HealthCoordinator integration status
+        action, health_state = self._get_health_coordinator_recommendation()
+        base_status["health_coordinator"] = {
+            "available": action is not None,
+            "recommended_action": action,
+            "overall_health": health_state.get("overall_health") if health_state else None,
+            "health_score": health_state.get("health_score") if health_state else None,
+            "open_circuits": health_state.get("open_circuits") if health_state else None,
+            "unhealthy_peers": health_state.get("unhealthy_peers") if health_state else None,
         }
 
         return base_status

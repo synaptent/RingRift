@@ -1,0 +1,1319 @@
+version: '1.0'
+generated: January 2026 (Sprint 14)
+total_events: 253
+events:
+  ADAPTIVE_PARAMS_CHANGED:
+    value: adaptive_params_changed
+    category: other
+    payload:
+      config_key:
+        type: any
+    emitters:
+      - app/coordination/feedback_loop_controller.py:1993
+  ARCHITECTURE_WEIGHTS_UPDATED:
+    value: architecture_weights_updated
+    category: other
+    payload:
+      config_key:
+        type: any
+      timestamp:
+        type: timestamp
+      weights:
+        type: any
+    emitters:
+      - app/coordination/architecture_feedback_controller.py:353
+  BACKPRESSURE_ACTIVATED:
+    value: backpressure_activated
+    category: resilience
+  BACKPRESSURE_RELEASED:
+    value: backpressure_released
+    category: resilience
+  BATCH_DISPATCHED:
+    value: batch_dispatched
+    category: other
+  BATCH_SCHEDULED:
+    value: batch_scheduled
+    category: other
+  BUDGET_ALERT:
+    value: budget_alert
+    category: other
+  BUDGET_EXCEEDED:
+    value: budget_exceeded
+    category: other
+  CACHE_INVALIDATED:
+    value: cache_invalidated
+    category: other
+  CAPACITY_LOW:
+    value: capacity_low
+    category: other
+  CAPACITY_RESTORED:
+    value: capacity_restored
+    category: other
+  CHECKPOINT_LOADED:
+    value: checkpoint_loaded
+    category: model
+  CHECKPOINT_SAVED:
+    value: checkpoint_saved
+    category: model
+  CIRCUIT_BREAKER_CLOSED:
+    value: circuit_breaker_closed
+    category: resilience
+  CIRCUIT_BREAKER_HALF_OPEN:
+    value: circuit_breaker_half_open
+    category: resilience
+  CIRCUIT_BREAKER_OPENED:
+    value: circuit_breaker_opened
+    category: resilience
+  CIRCUIT_BREAKER_THRESHOLD:
+    value: circuit_breaker_threshold
+    category: resilience
+  CIRCUIT_RESET:
+    value: circuit_reset
+    category: resilience
+    payload:
+      address:
+        type: any
+      node_id:
+        type: any
+      recovery_source:
+        type: string
+      timestamp:
+        type: any
+    emitters:
+      - scripts/p2p/loops/peer_recovery_loop.py:443
+  CLUSTER_CAPACITY_CHANGED:
+    value: cluster_capacity_changed
+    category: p2p
+  CLUSTER_P2P_RECOVERY_COMPLETED:
+    value: cluster_p2p_recovery_completed
+    category: health
+    emitters:
+      - scripts/master_loop.py:1843
+  CLUSTER_STALL_DETECTED:
+    value: cluster_stall_detected
+    category: p2p
+    payload:
+      stall_threshold:
+        type: any
+      stalled_nodes:
+        type: any
+      timestamp:
+        type: timestamp
+    emitters:
+      - app/coordination/cluster_status_monitor.py:1044
+  CLUSTER_STATUS_CHANGED:
+    value: cluster_status_changed
+    category: p2p
+    payload:
+      alerts:
+        type: any
+      healthy:
+        type: any
+      healthy_nodes:
+        type: any
+      node_count:
+        type: any
+    emitters:
+      - app/monitoring/unified_cluster_monitor.py:810
+  CLUSTER_UNDERUTILIZED:
+    value: cluster_underutilized
+    category: p2p
+    emitters:
+      - app/coordination/cluster_utilization_watchdog.py:337
+  CLUSTER_UTILIZATION_RECOVERED:
+    value: cluster_utilization_recovered
+    category: health
+    emitters:
+      - app/coordination/cluster_utilization_watchdog.py:366
+  CMAES_COMPLETED:
+    value: cmaes_completed
+    category: other
+  CMAES_TRIGGERED:
+    value: cmaes_triggered
+    category: other
+  CONFIG_DIVERGENCE_DETECTED:
+    value: config_divergence_detected
+    category: other
+  CONFIG_UPDATED:
+    value: config_updated
+    category: other
+  CONSOLIDATION_COMPLETE:
+    value: consolidation_complete
+    category: other
+  CONSOLIDATION_STARTED:
+    value: consolidation_started
+    category: other
+  COORDINATOR_HEALTHY:
+    value: coordinator_healthy
+    category: health
+  COORDINATOR_HEALTH_DEGRADED:
+    value: coordinator_health_degraded
+    category: health
+  COORDINATOR_HEARTBEAT:
+    value: coordinator_heartbeat
+    category: daemon
+  COORDINATOR_INIT_FAILED:
+    value: coordinator_init_failed
+    category: health
+  COORDINATOR_SHUTDOWN:
+    value: coordinator_shutdown
+    category: daemon
+  COORDINATOR_UNHEALTHY:
+    value: coordinator_unhealthy
+    category: health
+  CPU_PIPELINE_JOB_COMPLETED:
+    value: cpu_pipeline_job_completed
+    category: other
+  CROSSBOARD_PROMOTION:
+    value: crossboard_promotion
+    category: other
+  CURRICULUM_ADVANCED:
+    value: curriculum_advanced
+    category: curriculum
+  CURRICULUM_ADVANCEMENT_NEEDED:
+    value: curriculum_advancement_needed
+    category: curriculum
+  CURRICULUM_PROPAGATE:
+    value: curriculum_propagate
+    category: curriculum
+  CURRICULUM_REBALANCED:
+    value: curriculum_rebalanced
+    category: curriculum
+  DAEMON_CRASH_LOOP_DETECTED:
+    value: daemon_crash_loop_detected
+    category: daemon
+  DAEMON_PERMANENTLY_FAILED:
+    value: daemon_permanently_failed
+    category: health
+  DAEMON_STARTED:
+    value: daemon_started
+    category: daemon
+  DAEMON_STATUS_CHANGED:
+    value: daemon_status_changed
+    category: daemon
+  DAEMON_STOPPED:
+    value: daemon_stopped
+    category: daemon
+  DATABASE_CREATED:
+    value: database_created
+    category: data
+  DATA_BACKUP_COMPLETED:
+    value: data_backup_completed
+    category: data
+  DATA_FRESH:
+    value: data_fresh
+    category: data
+  DATA_QUALITY_ALERT:
+    value: data_quality_alert
+    category: data
+  DATA_STALE:
+    value: data_stale
+    category: data
+  DATA_SYNC_COMPLETED:
+    value: sync_completed
+    category: data
+    payload:
+      bytes_synced:
+        type: any
+      config_key:
+        type: any
+      duration:
+        type: any
+      entry_count:
+        type: any
+      games_synced:
+        type: any
+      host:
+        type: string
+      node_id:
+        type: any
+      reason:
+        type: any
+      source:
+        type: string
+      source_node:
+        type: any
+      sources_count:
+        type: integer
+      sync_type:
+        type: string
+      target_nodes:
+        type: any
+      timestamp:
+        type: timestamp
+    emitters:
+      - app/coordination/dual_backup_daemon.py:498
+      - app/coordination/owc_import_daemon.py:529
+      - app/coordination/s3_import_daemon.py:464
+  DATA_SYNC_FAILED:
+    value: sync_failed
+    category: data
+    payload:
+      config_key:
+        type: any
+      error:
+        type: any
+      host:
+        type: string
+      reason:
+        type: any
+      source:
+        type: string
+      source_node:
+        type: any
+      target_nodes:
+        type: any
+    emitters:
+      - app/coordination/unified_data_plane_daemon.py:607
+      - scripts/p2p/loops/training_sync_loop.py:198
+  DATA_SYNC_STARTED:
+    value: sync_started
+    category: data
+    payload:
+      host:
+        type: string
+      source:
+        type: string
+      sync_type:
+        type: string
+    emitters:
+      - scripts/p2p/loops/training_sync_loop.py:159
+  DEADLOCK_DETECTED:
+    value: deadlock_detected
+    category: other
+  DISK_CLEANUP_TRIGGERED:
+    value: disk_cleanup_triggered
+    category: other
+  DISK_SPACE_LOW:
+    value: disk_space_low
+    category: other
+  DISTRIBUTION_INCOMPLETE:
+    value: distribution_incomplete
+    category: sync
+    payload:
+      actual_nodes:
+        type: integer
+      model_path:
+        type: string (path)
+      required_nodes:
+        type: any
+      timeout_seconds:
+        type: timestamp
+    emitters:
+      - app/coordination/unified_distribution_daemon.py:602
+  DLQ_EVENTS_PURGED:
+    value: dlq_events_purged
+    category: other
+  DLQ_EVENTS_REPLAYED:
+    value: dlq_events_replayed
+    category: other
+  DLQ_STALE_EVENTS:
+    value: dlq_stale_events
+    category: other
+  ELO_SIGNIFICANT_CHANGE:
+    value: elo_significant_change
+    category: evaluation
+  ELO_UPDATED:
+    value: elo_updated
+    category: evaluation
+  ELO_VELOCITY_CHANGED:
+    value: elo_velocity_changed
+    category: evaluation
+  EPOCH_ADVANCED:
+    value: epoch_advanced
+    category: other
+  ERROR:
+    value: error
+    category: health
+  ESCALATION_TIER_CHANGED:
+    value: escalation_tier_changed
+    category: other
+  EVALUATION_BACKPRESSURE:
+    value: evaluation_backpressure
+    category: evaluation
+  EVALUATION_BACKPRESSURE_RELEASED:
+    value: evaluation_backpressure_released
+    category: evaluation
+  EVALUATION_COMPLETED:
+    value: evaluation_completed
+    category: evaluation
+  EVALUATION_FAILED:
+    value: evaluation_failed
+    category: evaluation
+    payload:
+      config_key:
+        type: any
+      model_path:
+        type: string (path)
+      reason:
+        type: string
+      source:
+        type: string
+    emitters:
+      - tests/integration/coordination/test_full_event_chain_e2e.py:708
+  EVALUATION_PROGRESS:
+    value: evaluation_progress
+    category: evaluation
+  EVALUATION_STARTED:
+    value: evaluation_started
+    category: evaluation
+  EXPLORATION_ADJUSTED:
+    value: exploration_adjusted
+    category: other
+  EXPLORATION_BOOST:
+    value: exploration_boost
+    category: other
+  EXPORT_VALIDATION_FAILED:
+    value: export_validation_failed
+    category: data
+    payload:
+      board_type:
+        type: any
+      config_key:
+        type: any
+      num_players:
+        type: integer
+      reason:
+        type: any
+      source:
+        type: string
+      timestamp:
+        type: timestamp
+    emitters:
+      - app/coordination/auto_export_daemon.py:1109
+      - app/coordination/auto_export_daemon.py:1252
+  GAME_SYNCED:
+    value: game_synced
+    category: selfplay
+  HANDLER_FAILED:
+    value: handler_failed
+    category: health
+  HANDLER_TIMEOUT:
+    value: handler_timeout
+    category: other
+  HARNESS_EVALUATION_COMPLETED:
+    value: harness_evaluation_completed
+    category: evaluation
+    emitters:
+      - app/coordination/tournament_daemon.py:820
+  HEALTH_ALERT:
+    value: health_alert
+    category: health
+    payload:
+      action:
+        type: string
+      alert:
+        type: string
+      reason:
+        type: string
+    emitters:
+      - scripts/master_loop.py:1727
+  HEALTH_CHECK_FAILED:
+    value: health_check_failed
+    category: health
+  HEALTH_CHECK_PASSED:
+    value: health_check_passed
+    category: health
+  HIGH_QUALITY_DATA_AVAILABLE:
+    value: high_quality_data_available
+    category: data
+  HOST_OFFLINE:
+    value: host_offline
+    category: other
+  HOST_ONLINE:
+    value: host_online
+    category: other
+  HYPERPARAMETER_UPDATED:
+    value: hyperparameter_updated
+    category: other
+    payload:
+      batch_size_multiplier:
+        type: any
+      config_key:
+        type: any
+      enable_cosine_annealing:
+        type: boolean
+      learning_rate_multiplier:
+        type: any
+      reason:
+        type: any
+      source:
+        type: string
+    emitters:
+      - app/coordination/feedback_loop_controller.py:1365
+  IDLE_RESOURCE_DETECTED:
+    value: idle_resource_detected
+    category: other
+  IDLE_STATE_BROADCAST:
+    value: idle_state_broadcast
+    category: other
+  IDLE_STATE_REQUEST:
+    value: idle_state_request
+    category: other
+  JOB_PREEMPTED:
+    value: job_preempted
+    category: other
+  JOB_SPAWN_FAILED:
+    value: job_spawn_failed
+    category: health
+  JOB_SPAWN_VERIFIED:
+    value: job_spawn_verified
+    category: other
+  LEADER_ELECTED:
+    value: leader_elected
+    category: p2p
+  LEADER_HEARTBEAT_MISSING:
+    value: leader_heartbeat_missing
+    category: p2p
+  LEADER_LEASE_EXPIRED:
+    value: leader_lease_expired
+    category: p2p
+  LEADER_LOST:
+    value: leader_lost
+    category: p2p
+  LEADER_STEPDOWN:
+    value: leader_stepdown
+    category: p2p
+  LOCK_TIMEOUT:
+    value: lock_timeout
+    category: other
+  LOW_QUALITY_DATA_WARNING:
+    value: low_quality_data_warning
+    category: data
+  MEMORY_PRESSURE:
+    value: memory_pressure
+    category: other
+    payload:
+      gpu_total_gb:
+        type: any
+      gpu_used_gb:
+        type: any
+      gpu_utilization:
+        type: any
+      ram_utilization:
+        type: any
+      source:
+        type: any
+      timestamp:
+        type: any
+    emitters:
+      - app/coordination/memory_monitor_daemon.py:483
+  METRICS_UPDATED:
+    value: metrics_updated
+    category: other
+  MODEL_CORRUPTED:
+    value: model_corrupted
+    category: model
+  MODEL_DISTRIBUTION_COMPLETE:
+    value: model_distribution_complete
+    category: model
+  MODEL_DISTRIBUTION_FAILED:
+    value: model_distribution_failed
+    category: model
+  MODEL_DISTRIBUTION_STARTED:
+    value: model_distribution_started
+    category: model
+  MODEL_EVALUATION_BLOCKED:
+    value: model_evaluation_blocked
+    category: evaluation
+  MODEL_PROMOTED:
+    value: model_promoted
+    category: model
+  MODEL_SYNC_REQUESTED:
+    value: model_sync_requested
+    category: model
+  MODEL_UPDATED:
+    value: model_updated
+    category: model
+  NAS_BEST_ARCHITECTURE:
+    value: nas_best_architecture
+    category: other
+  NAS_COMPLETED:
+    value: nas_completed
+    category: other
+  NAS_GENERATION_COMPLETE:
+    value: nas_generation_complete
+    category: other
+  NAS_STARTED:
+    value: nas_started
+    category: other
+  NAS_TRIGGERED:
+    value: nas_triggered
+    category: other
+  NETWORK_ISOLATION_DETECTED:
+    value: network_isolation_detected
+    category: other
+    emitters:
+      - app/coordination/p2p_recovery_daemon.py:1406
+  NEW_GAMES_AVAILABLE:
+    value: new_games
+    category: selfplay
+    payload:
+      config_key:
+        type: any
+      count:
+        type: any
+      source:
+        type: any
+      source_node:
+        type: any
+      timestamp:
+        type: timestamp
+      trigger:
+        type: string
+    emitters:
+      - app/coordination/data_pipeline_orchestrator.py:2666
+      - app/coordination/owc_import_daemon.py:512
+      - app/coordination/unified_data_plane_daemon.py:596
+  NODE_ACTIVATED:
+    value: node_activated
+    category: p2p
+  NODE_CAPACITY_UPDATED:
+    value: node_capacity_updated
+    category: p2p
+  NODE_INCOMPATIBLE_WITH_WORKLOAD:
+    value: node_incompatible_with_workload
+    category: p2p
+  NODE_OVERLOADED:
+    value: node_overloaded
+    category: p2p
+  NODE_PROVISIONED:
+    value: node_provisioned
+    category: p2p
+  NODE_PROVISION_FAILED:
+    value: node_provision_failed
+    category: health
+  NODE_RECOVERED:
+    value: node_recovered
+    category: health
+    payload:
+      address:
+        type: any
+      node_id:
+        type: any
+      recovery_source:
+        type: string
+      timestamp:
+        type: any
+    emitters:
+      - scripts/p2p/loops/peer_recovery_loop.py:283
+  NODE_RETIRED:
+    value: node_retired
+    category: p2p
+  NODE_SUSPECT:
+    value: node_suspect
+    category: p2p
+  NODE_TERMINATED:
+    value: node_terminated
+    category: p2p
+  NODE_UNHEALTHY:
+    value: node_unhealthy
+    category: health
+    payload:
+      disk_used_percent:
+        type: any
+      error:
+        type: any
+      gpu_utilization:
+        type: any
+      node_id:
+        type: any
+      node_ip:
+        type: any
+      node_name:
+        type: any
+      reason:
+        type: string
+      stall_duration_seconds:
+        type: any
+    emitters:
+      - app/coordination/unified_health_manager.py:1362
+      - app/monitoring/unified_cluster_monitor.py:853
+  NPZ_COMBINATION_COMPLETE:
+    value: npz_combination_complete
+    category: data
+    emitters:
+      - app/coordination/npz_combination_daemon.py:270
+      - app/coordination/pipeline_actions.py:754
+  NPZ_COMBINATION_FAILED:
+    value: npz_combination_failed
+    category: data
+    emitters:
+      - app/coordination/npz_combination_daemon.py:293
+      - app/coordination/pipeline_actions.py:780
+  NPZ_COMBINATION_STARTED:
+    value: npz_combination_started
+    category: data
+    emitters:
+      - app/coordination/npz_combination_daemon.py:317
+  NPZ_EXPORT_COMPLETE:
+    value: npz_export_complete
+    category: data
+  NPZ_EXPORT_STARTED:
+    value: npz_export_started
+    category: data
+  OPPONENT_MASTERED:
+    value: opponent_mastered
+    category: other
+  ORPHAN_GAMES_DETECTED:
+    value: orphan_games_detected
+    category: selfplay
+  ORPHAN_GAMES_REGISTERED:
+    value: orphan_games_registered
+    category: selfplay
+  P2P_CLUSTER_HEALTHY:
+    value: p2p_cluster_healthy
+    category: health
+  P2P_CLUSTER_UNHEALTHY:
+    value: p2p_cluster_unhealthy
+    category: health
+  P2P_CONNECTION_RESET_REQUESTED:
+    value: p2p_connection_reset_requested
+    category: other
+  P2P_HEALTH_RECOVERED:
+    value: p2p_health_recovered
+    category: health
+    emitters:
+      - app/coordination/p2p_recovery_daemon.py:1368
+  P2P_MODEL_SYNCED:
+    value: p2p_model_synced
+    category: model
+  P2P_NODES_DEAD:
+    value: p2p_nodes_dead
+    category: p2p
+  P2P_NODE_DEAD:
+    value: p2p_node_dead
+    category: p2p
+  P2P_RECOVERY_NEEDED:
+    value: p2p_recovery_needed
+    category: health
+    payload:
+      consecutive_failures:
+        type: any
+      escalation_level:
+        type: any
+      reason:
+        type: any
+      timestamp:
+        type: timestamp
+    emitters:
+      - scripts/p2p/partition_healer.py:855
+  P2P_RESTARTED:
+    value: p2p_restarted
+    category: other
+  P2P_RESTART_TRIGGERED:
+    value: p2p_restart_triggered
+    category: other
+    emitters:
+      - app/coordination/p2p_recovery_daemon.py:1352
+  P2P_SELFPLAY_SCALED:
+    value: p2p_selfplay_scaled
+    category: selfplay
+  PARITY_FAILURE_RATE_CHANGED:
+    value: parity_failure_rate_changed
+    category: health
+  PARITY_VALIDATION_COMPLETED:
+    value: parity_validation_completed
+    category: other
+  PARITY_VALIDATION_STARTED:
+    value: parity_validation_started
+    category: other
+  PARTITION_HEALED:
+    value: partition_healed
+    category: other
+    payload:
+      duration_ms:
+        type: any
+      nodes_reconnected:
+        type: any
+      partitions_found:
+        type: any
+      partitions_healed:
+        type: any
+      timestamp:
+        type: timestamp
+    emitters:
+      - scripts/p2p/partition_healer.py:663
+  PARTITION_HEALING_FAILED:
+    value: partition_healing_failed
+    category: health
+    payload:
+      error:
+        type: any
+      timestamp:
+        type: timestamp
+    emitters:
+      - scripts/p2p/partition_healer.py:797
+  PARTITION_HEALING_STARTED:
+    value: partition_healing_started
+    category: other
+    payload:
+      timestamp:
+        type: timestamp
+    emitters:
+      - scripts/p2p/partition_healer.py:784
+  PBT_COMPLETED:
+    value: pbt_completed
+    category: other
+  PBT_GENERATION_COMPLETE:
+    value: pbt_generation_complete
+    category: other
+  PBT_STARTED:
+    value: pbt_started
+    category: other
+  PER_BUFFER_REBUILT:
+    value: per_buffer_rebuilt
+    category: other
+  PER_PRIORITIES_UPDATED:
+    value: per_priorities_updated
+    category: other
+  PLATEAU_DETECTED:
+    value: plateau_detected
+    category: other
+    payload:
+      config_key:
+        type: any
+      current_elo:
+        type: number
+      plateau_type:
+        type: string
+      recommendation:
+        type: string
+      source:
+        type: string
+      stall_count:
+        type: integer
+      velocity:
+        type: number
+    emitters:
+      - app/coordination/selfplay_scheduler.py:3798
+  PROGRESS_RECOVERED:
+    value: progress_recovered
+    category: health
+    emitters:
+      - app/coordination/progress_watchdog_daemon.py:403
+  PROGRESS_STALL_DETECTED:
+    value: progress_stall_detected
+    category: monitoring
+    emitters:
+      - app/coordination/progress_watchdog_daemon.py:383
+  PROMOTION_CANDIDATE:
+    value: promotion_candidate
+    category: other
+  PROMOTION_FAILED:
+    value: promotion_failed
+    category: health
+  PROMOTION_REJECTED:
+    value: promotion_rejected
+    category: other
+  PROMOTION_ROLLED_BACK:
+    value: promotion_rolled_back
+    category: other
+  PROMOTION_STARTED:
+    value: promotion_started
+    category: other
+  QUALITY_CHECK_FAILED:
+    value: quality_check_failed
+    category: health
+  QUALITY_CHECK_REQUESTED:
+    value: quality_check_requested
+    category: quality
+  QUALITY_DEGRADED:
+    value: quality_degraded
+    category: quality
+  QUALITY_DISTRIBUTION_CHANGED:
+    value: quality_distribution_changed
+    category: sync
+  QUALITY_FEEDBACK_ADJUSTED:
+    value: quality_feedback_adjusted
+    category: quality
+  QUALITY_PENALTY_APPLIED:
+    value: quality_penalty_applied
+    category: quality
+  QUALITY_SCORE_UPDATED:
+    value: quality_score_updated
+    category: quality
+  QUORUM_AT_RISK:
+    value: quorum_at_risk
+    category: p2p
+    emitters:
+      - app/coordination/voter_health_daemon.py:598
+  QUORUM_LOST:
+    value: quorum_lost
+    category: p2p
+    emitters:
+      - app/coordination/voter_health_daemon.py:567
+  QUORUM_PRIORITY_RECONNECT:
+    value: quorum_priority_reconnect
+    category: p2p
+    emitters:
+      - app/coordination/p2p_recovery_daemon.py:1295
+  QUORUM_RECOVERY_STARTED:
+    value: quorum_recovery_started
+    category: health
+    emitters:
+      - app/coordination/p2p_recovery_daemon.py:339
+  QUORUM_RESTORED:
+    value: quorum_restored
+    category: p2p
+    emitters:
+      - app/coordination/voter_health_daemon.py:583
+  RECOVERY_COMPLETED:
+    value: recovery_completed
+    category: health
+  RECOVERY_FAILED:
+    value: recovery_failed
+    category: health
+  RECOVERY_INITIATED:
+    value: recovery_initiated
+    category: health
+  REGISTRY_UPDATED:
+    value: registry_updated
+    category: other
+  REGRESSION_CLEARED:
+    value: regression_cleared
+    category: monitoring
+  REGRESSION_CRITICAL:
+    value: regression_critical
+    category: monitoring
+  REGRESSION_DETECTED:
+    value: regression_detected
+    category: monitoring
+  REGRESSION_MINOR:
+    value: regression_minor
+    category: monitoring
+  REGRESSION_MODERATE:
+    value: regression_moderate
+    category: monitoring
+  REGRESSION_SEVERE:
+    value: regression_severe
+    category: monitoring
+  REPAIR_COMPLETED:
+    value: repair_completed
+    category: other
+  REPAIR_FAILED:
+    value: repair_failed
+    category: health
+  REPLICATION_ALERT:
+    value: replication_alert
+    category: sync
+  RESOURCE_CONSTRAINT:
+    value: resource_constraint
+    category: training
+    payload:
+      ram_total_gb:
+        type: any
+      ram_used_gb:
+        type: any
+      ram_utilization:
+        type: any
+      resource_type:
+        type: string
+      source:
+        type: any
+      timestamp:
+        type: any
+    emitters:
+      - app/coordination/memory_monitor_daemon.py:510
+  RESOURCE_CONSTRAINT_DETECTED:
+    value: resource_constraint_detected
+    category: training
+  S3_BACKUP_COMPLETED:
+    value: s3_backup_completed
+    category: other
+  SCHEDULER_REGISTERED:
+    value: scheduler_registered
+    category: other
+  SELFPLAY_ALLOCATION_UPDATED:
+    value: selfplay_allocation_updated
+    category: selfplay
+    emitters:
+      - app/coordination/selfplay_scheduler.py:4138
+  SELFPLAY_COMPLETE:
+    value: selfplay_complete
+    category: selfplay
+  SELFPLAY_RATE_CHANGED:
+    value: selfplay_rate_changed
+    category: selfplay
+    payload:
+      change_percent:
+        type: any
+      config_key:
+        type: any
+      new_rate:
+        type: any
+      old_rate:
+        type: any
+      reason:
+        type: string
+    emitters:
+      - app/coordination/selfplay_scheduler.py:2027
+      - app/coordination/selfplay_scheduler.py:2897
+  SELFPLAY_TARGET_UPDATED:
+    value: selfplay_target_updated
+    category: selfplay
+    payload:
+      anomaly_count:
+        type: integer
+      board_type:
+        type: any
+      config_key:
+        type: any
+      curriculum_weight:
+        type: any
+      dispatched:
+        type: any
+      elo_gap:
+        type: number
+      exploration_boost:
+        type: number
+      momentum_multiplier:
+        type: any
+      node_id:
+        type: any
+      num_players:
+        type: integer
+      priority:
+        type: string
+      reason:
+        type: string
+      search_budget:
+        type: any
+      source:
+        type: string
+      target_games:
+        type: integer
+      velocity:
+        type: number
+    emitters:
+      - app/coordination/feedback_loop_controller.py:1896
+      - app/coordination/feedback_loop_controller.py:2065
+      - app/coordination/selfplay_scheduler.py:2617
+  SOCKET_LEAK_DETECTED:
+    value: socket_leak_detected
+    category: other
+  SOCKET_LEAK_RECOVERED:
+    value: socket_leak_recovered
+    category: health
+  SPLIT_BRAIN_DETECTED:
+    value: split_brain_detected
+    category: other
+  SPLIT_BRAIN_RESOLVED:
+    value: split_brain_resolved
+    category: other
+  SSH_LIVENESS_CHECK_FAILED:
+    value: ssh_liveness_check_failed
+    category: health
+  SSH_LIVENESS_CHECK_STARTED:
+    value: ssh_liveness_check_started
+    category: other
+  SSH_LIVENESS_CHECK_SUCCEEDED:
+    value: ssh_liveness_check_succeeded
+    category: other
+  SSH_NODE_RECOVERED:
+    value: ssh_node_recovered
+    category: health
+  SSH_NODE_UNRESPONSIVE:
+    value: ssh_node_unresponsive
+    category: p2p
+  STATE_PERSISTED:
+    value: state_persisted
+    category: other
+  SYNC_CHECKSUM_FAILED:
+    value: sync_checksum_failed
+    category: sync
+  SYNC_FAILURE_CRITICAL:
+    value: sync_failure_critical
+    category: sync
+  SYNC_NODE_UNREACHABLE:
+    value: sync_node_unreachable
+    category: sync
+  SYNC_REQUEST:
+    value: sync_request
+    category: sync
+  SYNC_STALLED:
+    value: sync_stalled
+    category: sync
+  SYNC_TRIGGERED:
+    value: sync_triggered
+    category: sync
+    payload:
+      game_count:
+        type: any
+      host:
+        type: any
+      nodes_reconnected:
+        type: any
+      partitions_healed:
+        type: any
+      paths:
+        type: any
+      priority:
+        type: string
+      reason:
+        type: string
+      source:
+        type: string
+      timestamp:
+        type: timestamp
+      trigger:
+        type: string
+    emitters:
+      - app/coordination/data_pipeline_orchestrator.py:2640
+      - app/coordination/data_pipeline_orchestrator.py:3138
+      - app/coordination/training_data_sync_daemon.py:459
+  TASK_ABANDONED:
+    value: task_abandoned
+    category: other
+  TASK_CANCELLED:
+    value: task_cancelled
+    category: other
+  TASK_COMPLETED:
+    value: task_completed
+    category: other
+    payload:
+      board_type:
+        type: any
+      config_key:
+        type: any
+      duration_seconds:
+        type: any
+      node_id:
+        type: any
+      num_players:
+        type: integer
+      task_id:
+        type: any
+      task_type:
+        type: any
+    emitters:
+      - scripts/p2p_orchestrator.py:14491
+  TASK_FAILED:
+    value: task_failed
+    category: health
+    payload:
+      board_type:
+        type: any
+      config_key:
+        type: any
+      error:
+        type: any
+      node_id:
+        type: any
+      num_players:
+        type: integer
+      task_id:
+        type: any
+      task_type:
+        type: any
+    emitters:
+      - scripts/p2p_orchestrator.py:14501
+  TASK_HEARTBEAT:
+    value: task_heartbeat
+    category: other
+  TASK_ORPHANED:
+    value: task_orphaned
+    category: other
+  TASK_SPAWNED:
+    value: task_spawned
+    category: other
+  TIER_PROMOTION:
+    value: tier_promotion
+    category: other
+  TRAINING_BLOCKED_BY_QUALITY:
+    value: training_blocked_by_quality
+    category: training
+    payload:
+      config_key:
+        type: any
+      data_age_hours:
+        type: any
+      db_path:
+        type: string (path)
+      games_available:
+        type: any
+      quality_deficit:
+        type: any
+      quality_score:
+        type: any
+      reason:
+        type: string
+      recommendation:
+        type: string
+      source:
+        type: string
+      threshold:
+        type: number
+      threshold_hours:
+        type: any
+      timestamp:
+        type: timestamp
+    emitters:
+      - app/coordination/data_pipeline_orchestrator.py:2200
+      - app/coordination/data_pipeline_orchestrator.py:2854
+      - app/coordination/feedback_loop_controller.py:1178
+  TRAINING_COMPLETED:
+    value: training_completed
+    category: training
+    payload:
+      config_key:
+        type: any
+      final_loss:
+        type: any
+      model_path:
+        type: string (path)
+      source:
+        type: string
+    emitters:
+      - scripts/p2p_orchestrator.py:3967
+  TRAINING_EARLY_STOPPED:
+    value: training_early_stopped
+    category: training
+  TRAINING_FAILED:
+    value: training_failed
+    category: training
+  TRAINING_LOCK_ACQUIRED:
+    value: training_lock_acquired
+    category: training
+  TRAINING_LOSS_ANOMALY:
+    value: training_loss_anomaly
+    category: training
+  TRAINING_LOSS_TREND:
+    value: training_loss_trend
+    category: training
+  TRAINING_PROGRESS:
+    value: training_progress
+    category: training
+  TRAINING_ROLLBACK_COMPLETED:
+    value: training_rollback_completed
+    category: training
+  TRAINING_ROLLBACK_NEEDED:
+    value: training_rollback_needed
+    category: training
+  TRAINING_SLOT_UNAVAILABLE:
+    value: training_slot_unavailable
+    category: training
+  TRAINING_STARTED:
+    value: training_started
+    category: training
+  TRAINING_THRESHOLD_REACHED:
+    value: training_threshold
+    category: training
+    payload:
+      board_type:
+        type: any
+      config:
+        type: any
+      num_players:
+        type: integer
+      priority:
+        type: any
+      reason:
+        type: string
+    emitters:
+      - app/coordination/pipeline_event_handler_mixin.py:422
+      - app/coordination/pipeline_event_handler_mixin.py:477
+      - scripts/master_loop.py:1994
+  TRAINING_TIMEOUT_REACHED:
+    value: training_timeout_reached
+    category: training
+    payload:
+      config_key:
+        type: any
+      grace_seconds:
+        type: any
+      pid:
+        type: any
+      timeout_hours:
+        type: any
+      timestamp:
+        type: timestamp
+    emitters:
+      - app/coordination/training_trigger_daemon.py:3599
+  VOTER_DEMOTED:
+    value: voter_demoted
+    category: other
+    payload:
+      active_voters:
+        type: any
+      reason:
+        type: any
+      voter_id:
+        type: any
+    emitters:
+      - scripts/p2p/voter_health_monitor.py:432
+  VOTER_OFFLINE:
+    value: voter_offline
+    category: other
+    emitters:
+      - app/coordination/p2p_recovery_daemon.py:393
+      - app/coordination/voter_health_daemon.py:530
+  VOTER_ONLINE:
+    value: voter_online
+    category: other
+    emitters:
+      - app/coordination/p2p_recovery_daemon.py:404
+      - app/coordination/voter_health_daemon.py:547
+  VOTER_PROMOTED:
+    value: voter_promoted
+    category: other
+    payload:
+      active_voters:
+        type: any
+      voter_id:
+        type: any
+    emitters:
+      - scripts/p2p/voter_health_monitor.py:488
+  WEIGHT_UPDATED:
+    value: weight_updated
+    category: other
+  WORK_CANCELLED:
+    value: work_cancelled
+    category: other
+  WORK_CLAIMED:
+    value: work_claimed
+    category: other
+  WORK_COMPLETED:
+    value: work_completed
+    category: other
+  WORK_FAILED:
+    value: work_failed
+    category: health
+  WORK_QUEUED:
+    value: work_queued
+    category: other
+  WORK_QUEUE_RECOVERED:
+    value: work_queue_recovered
+    category: health
+    payload:
+      recovery_time:
+        type: any
+      stall_duration_seconds:
+        type: any
+    emitters:
+      - scripts/p2p/loops/job_loops.py:1123
+  WORK_QUEUE_STALLED:
+    value: work_queue_stalled
+    category: monitoring
+    payload:
+      blocked_configs:
+        type: any
+      idle_seconds:
+        type: any
+      pending_count:
+        type: integer
+      stall_detected_at:
+        type: any
+      threshold_seconds:
+        type: any
+    emitters:
+      - scripts/p2p/loops/job_loops.py:1093
+  WORK_RETRY:
+    value: work_retry
+    category: other
+  WORK_STARTED:
+    value: work_started
+    category: other
+  WORK_TIMEOUT:
+    value: work_timeout
+    category: other

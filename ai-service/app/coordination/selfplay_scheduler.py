@@ -2241,6 +2241,11 @@ class SelfplayScheduler(HandlerBase):
             if hasattr(DataEventType, 'VOTER_PROMOTED'):
                 _safe_subscribe(DataEventType.VOTER_PROMOTED, self._on_voter_promoted, "VOTER_PROMOTED")
 
+            # Jan 3, 2026 Session 10: Subscribe to CIRCUIT_RESET for proactive recovery monitoring
+            # When a circuit breaker is reset after proactive health probe, boost node priority
+            if hasattr(DataEventType, 'CIRCUIT_RESET'):
+                _safe_subscribe(DataEventType.CIRCUIT_RESET, self._on_circuit_reset, "CIRCUIT_RESET")
+
             # Dec 2025: Subscribe to regression events for curriculum rebalancing
             if hasattr(DataEventType, 'REGRESSION_DETECTED'):
                 _safe_subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected, "REGRESSION_DETECTED")
@@ -3412,6 +3417,52 @@ class SelfplayScheduler(HandlerBase):
 
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling voter promoted: {e}")
+
+    def _on_circuit_reset(self, event: Any) -> None:
+        """Handle CIRCUIT_RESET - node recovered via proactive health probe.
+
+        Jan 3, 2026 Session 10: When a circuit breaker is proactively reset
+        after a successful health probe (vs waiting for CB timeout), the node
+        is confirmed healthy. We restore full allocation and optionally give
+        a brief priority boost to help the recovered node catch up.
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            node_id = payload.get("node_id", "") or payload.get("peer_id", "")
+            source = payload.get("source", "unknown")
+            recovery_time_ms = payload.get("recovery_time_ms", 0)
+
+            if node_id:
+                # Track circuit reset stats
+                if not hasattr(self, "_circuit_reset_count"):
+                    self._circuit_reset_count: int = 0
+                self._circuit_reset_count += 1
+
+                # Remove from demoted voters if present
+                demoted_voters = getattr(self, "_demoted_voters", set())
+                was_demoted = node_id in demoted_voters
+                if was_demoted:
+                    self._demoted_voters.discard(node_id)
+
+                # Remove from unhealthy nodes if present
+                unhealthy = getattr(self, "_unhealthy_nodes", set())
+                was_unhealthy = node_id in unhealthy
+                if was_unhealthy:
+                    self._unhealthy_nodes.discard(node_id)
+
+                # Restore full allocation capacity
+                if node_id in self._node_capabilities:
+                    self._node_capabilities[node_id].current_load = 0.0
+
+                logger.info(
+                    f"[SelfplayScheduler] CIRCUIT_RESET: Node {node_id} recovered "
+                    f"via proactive probe (source={source}, time={recovery_time_ms}ms). "
+                    f"Restored to full capacity. "
+                    f"Total circuit resets: {self._circuit_reset_count}"
+                )
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling circuit reset: {e}")
 
     def _on_cluster_unhealthy(self, event: Any) -> None:
         """Handle P2P_CLUSTER_UNHEALTHY - reduce allocation rate.

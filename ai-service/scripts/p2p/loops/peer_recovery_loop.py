@@ -155,6 +155,7 @@ class PeerRecoveryLoop(BaseLoop):
         recover_peer: Callable[[Any], Coroutine[Any, Any, bool]],
         emit_event: Callable[[str, dict[str, Any]], None] | None = None,
         get_circuit_state: Callable[[str], str] | None = None,
+        reset_circuit: Callable[[str], bool] | None = None,
         config: PeerRecoveryConfig | None = None,
     ):
         """Initialize peer recovery loop.
@@ -168,6 +169,8 @@ class PeerRecoveryLoop(BaseLoop):
             emit_event: Optional callback to emit events (event_name, event_data)
             get_circuit_state: Optional callback to get circuit breaker state for peer.
                                Returns 'OPEN', 'HALF_OPEN', or 'CLOSED'.
+            reset_circuit: Optional callback to reset circuit breaker for a peer.
+                          Sprint 12 Session 8: Enables proactive circuit recovery.
             config: Recovery configuration
         """
         self.config = config or PeerRecoveryConfig()
@@ -183,6 +186,7 @@ class PeerRecoveryLoop(BaseLoop):
         self._recover_peer = recover_peer
         self._emit_event = emit_event
         self._get_circuit_state = get_circuit_state
+        self._reset_circuit = reset_circuit
 
         # Per-peer failure tracking for backoff
         self._peer_failures: dict[str, int] = {}  # node_id -> consecutive failures
@@ -208,6 +212,8 @@ class PeerRecoveryLoop(BaseLoop):
         # Filter peers that are ready to be probed (respecting backoff)
         now = time.time()
         ready_peers = []
+        circuit_broken_peers = []  # Sprint 12 Session 8: Track CB-open peers separately
+
         for peer in peers:
             node_id = self._get_peer_id(peer)
 
@@ -215,7 +221,11 @@ class PeerRecoveryLoop(BaseLoop):
             if self._get_circuit_state:
                 circuit_state = self._get_circuit_state(node_id)
                 if circuit_state == "OPEN":
-                    logger.debug(f"[PeerRecovery] Skipping {node_id}: circuit OPEN")
+                    # Sprint 12 Session 8: Don't skip - try proactive recovery
+                    if self._reset_circuit:
+                        circuit_broken_peers.append(peer)
+                    else:
+                        logger.debug(f"[PeerRecovery] Skipping {node_id}: circuit OPEN")
                     continue
 
             # Check backoff timer
@@ -228,6 +238,10 @@ class PeerRecoveryLoop(BaseLoop):
                 continue
 
             ready_peers.append(peer)
+
+        # Sprint 12 Session 8: Try proactive circuit recovery first
+        # This reduces mean recovery time from 180s to 5-15s
+        await self._try_proactive_circuit_recovery(circuit_broken_peers, now)
 
         if not ready_peers:
             logger.debug("[PeerRecovery] All retired peers in backoff")
@@ -374,3 +388,93 @@ class PeerRecoveryLoop(BaseLoop):
             "next_probe_in": max(0, next_probe - now) if next_probe else 0,
             "in_backoff": now < next_probe if next_probe else False,
         }
+
+    async def _try_proactive_circuit_recovery(
+        self, circuit_broken_peers: list[Any], now: float
+    ) -> None:
+        """Proactively probe circuit-broken peers and reset CB if healthy.
+
+        Sprint 12 Session 8: Reduces mean recovery time from 180s (CB default timeout)
+        to 5-15s by actively probing peers with open circuit breakers.
+
+        When a peer recovers (e.g., SSH node comes back online), the circuit stays
+        open until the CB timeout expires. This wastes recovery time. By proactively
+        probing and resetting the circuit, we can restore workload distribution faster.
+
+        Args:
+            circuit_broken_peers: List of peers with OPEN circuit breakers
+            now: Current timestamp for logging
+        """
+        if not circuit_broken_peers or not self._reset_circuit:
+            return
+
+        # Use a shorter timeout for proactive recovery probes
+        quick_timeout = min(5.0, self.config.probe_timeout_seconds)
+        recovered_count = 0
+
+        for peer in circuit_broken_peers[:self.config.max_probes_per_cycle]:
+            node_id = self._get_peer_id(peer)
+            address = self._get_peer_address(peer)
+
+            try:
+                self._stats_probes_sent += 1
+                self._peer_last_probe[node_id] = now
+
+                # Quick probe with shorter timeout
+                is_healthy = await asyncio.wait_for(
+                    self._probe_peer(address),
+                    timeout=quick_timeout,
+                )
+
+                if is_healthy:
+                    # Reset the circuit breaker to allow immediate traffic
+                    cb_reset = self._reset_circuit(node_id)
+                    if cb_reset:
+                        recovered_count += 1
+                        self._stats_recoveries += 1
+                        self._peer_failures.pop(node_id, None)
+                        self._peer_next_probe.pop(node_id, None)
+                        logger.info(
+                            f"[PeerRecovery] Proactive CB reset for {node_id} "
+                            f"(was circuit-broken, now healthy)"
+                        )
+
+                        if self._emit_event and self.config.emit_events:
+                            self._emit_event(
+                                "CIRCUIT_RESET",
+                                {
+                                    "node_id": node_id,
+                                    "address": address,
+                                    "recovery_source": "proactive_cb_recovery",
+                                    "timestamp": now,
+                                },
+                            )
+
+                        # Also attempt full peer recovery
+                        try:
+                            await self._recover_peer(peer)
+                        except Exception as e:
+                            logger.debug(
+                                f"[PeerRecovery] Peer recovery after CB reset "
+                                f"failed for {node_id}: {e}"
+                            )
+                else:
+                    logger.debug(
+                        f"[PeerRecovery] Proactive probe unhealthy for {node_id}"
+                    )
+
+            except asyncio.TimeoutError:
+                logger.debug(
+                    f"[PeerRecovery] Proactive probe timeout for {node_id} "
+                    f"({quick_timeout}s)"
+                )
+            except Exception as e:
+                logger.debug(
+                    f"[PeerRecovery] Proactive probe error for {node_id}: {e}"
+                )
+
+        if recovered_count > 0:
+            logger.info(
+                f"[PeerRecovery] Proactive CB recovery: {recovered_count} "
+                f"circuits reset this cycle"
+            )

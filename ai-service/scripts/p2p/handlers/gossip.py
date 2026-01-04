@@ -230,12 +230,26 @@ class GossipHandlersMixin(BaseP2PHandler):
         except (AttributeError):
             data = {}
 
+        # Jan 3, 2026 Sprint 13.3: Extract sender for per-peer lock
+        sender_id = data.get("sender", "")
+
         try:
             self._record_gossip_metrics("received")
 
             # Initialize gossip state storage if needed
             if not hasattr(self, "_gossip_peer_states"):
                 self._gossip_peer_states = {}
+
+            # Jan 3, 2026 Sprint 13.3: Acquire per-peer lock to serialize messages from same sender
+            # This prevents concurrent message handling from the same peer corrupting state
+            peer_lock = None
+            if sender_id and hasattr(self, "_get_peer_lock"):
+                peer_lock = self._get_peer_lock(sender_id)
+                try:
+                    await asyncio.wait_for(peer_lock.acquire(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    self._log_warning(f"[Gossip] Per-peer lock timeout for {sender_id}, proceeding without lock")
+                    peer_lock = None  # Proceed without lock on timeout
 
             # Process ALL states from peer
             peer_states = data.get("all_known_states", {})
@@ -313,3 +327,8 @@ class GossipHandlersMixin(BaseP2PHandler):
             # Dec 2025: Added logging for debugging anti-entropy failures
             logger.error(f"Error handling anti-entropy request: {e}", exc_info=True)
             return self.error_response(str(e), status=500)
+
+        finally:
+            # Jan 3, 2026 Sprint 13.3: Release per-peer lock
+            if peer_lock is not None and peer_lock.locked():
+                peer_lock.release()

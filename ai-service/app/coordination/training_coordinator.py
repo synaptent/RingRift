@@ -2325,6 +2325,258 @@ def wire_training_events() -> TrainingCoordinator:
     return coordinator
 
 
+# ============================================
+# TrainingCoordinatorDaemon - HandlerBase wrapper
+# January 3, 2026: Sprint 13.1 consolidation
+# ============================================
+
+# Import HandlerBase for daemon wrapper
+try:
+    from app.coordination.handler_base import HandlerBase
+    HAS_HANDLER_BASE = True
+except ImportError:
+    HAS_HANDLER_BASE = False
+    HandlerBase = object  # type: ignore[misc, assignment]
+
+
+class TrainingCoordinatorDaemon(HandlerBase if HAS_HANDLER_BASE else object):
+    """HandlerBase wrapper for TrainingCoordinator.
+
+    January 3, 2026: Sprint 13.1 - Migrates TrainingCoordinator to HandlerBase
+    pattern for standardized lifecycle management, health checks, and event handling.
+
+    This daemon provides:
+    - Periodic stale job cleanup (every cycle_interval seconds)
+    - Standardized health_check() for DaemonManager integration
+    - Event-driven architecture via HandlerBase subscriptions
+    - Unified lifecycle (start/stop) with graceful shutdown
+
+    Usage:
+        from app.coordination.training_coordinator import (
+            get_training_coordinator_daemon,
+        )
+
+        daemon = get_training_coordinator_daemon()
+        await daemon.start()
+
+        # Daemon runs periodic cleanup in background
+        # Stop gracefully when done
+        await daemon.stop()
+    """
+
+    _event_source = "TrainingCoordinatorDaemon"
+
+    def __init__(self, use_nfs: bool = True, cycle_interval: float = 300.0):
+        """Initialize the training coordinator daemon.
+
+        Args:
+            use_nfs: Whether to use NFS for cluster-wide coordination
+            cycle_interval: Seconds between cleanup cycles (default 5 minutes)
+        """
+        if not HAS_HANDLER_BASE:
+            raise ImportError("HandlerBase not available for TrainingCoordinatorDaemon")
+
+        super().__init__(
+            name="training_coordinator_daemon",
+            cycle_interval=cycle_interval,
+            dedup_enabled=True,
+        )
+
+        # Get or create the underlying TrainingCoordinator
+        self._coordinator = get_training_coordinator(use_nfs=use_nfs)
+        self._use_nfs = use_nfs
+
+        # Quality gate state (Sprint 13.1)
+        self._quality_blocked_configs: set[str] = set()
+
+        logger.info(
+            f"[TrainingCoordinatorDaemon] Initialized with cycle_interval={cycle_interval}s"
+        )
+
+    @property
+    def coordinator(self) -> TrainingCoordinator:
+        """Get the underlying TrainingCoordinator instance."""
+        return self._coordinator
+
+    async def _on_start(self) -> None:
+        """Called before main loop starts.
+
+        Initializes NFS/SQLite if needed and subscribes to cluster events.
+        """
+        # Coordinator already initializes in __init__, just log
+        logger.info(
+            f"[TrainingCoordinatorDaemon] Starting (db_path={self._coordinator._db_path})"
+        )
+
+    async def _on_stop(self) -> None:
+        """Called after main loop stops.
+
+        Performs graceful shutdown of the coordinator.
+        """
+        logger.info("[TrainingCoordinatorDaemon] Stopping...")
+        self._coordinator.close()
+
+    async def _run_cycle(self) -> None:
+        """Main work loop - runs periodic cleanup.
+
+        Called every cycle_interval seconds by HandlerBase.
+        """
+        try:
+            # Cleanup stale training jobs
+            cleaned = self._coordinator._cleanup_stale_jobs()
+            if cleaned > 0:
+                logger.info(f"[TrainingCoordinatorDaemon] Cleaned up {cleaned} stale jobs")
+
+            # Update stats
+            self._stats.cycles_completed += 1
+            self._stats.last_activity = time.time()
+
+        except Exception as e:
+            logger.error(f"[TrainingCoordinatorDaemon] Cycle error: {e}")
+            self._stats.errors_count += 1
+            self._stats.last_error = str(e)
+
+    def _get_event_subscriptions(self) -> dict[str, Any]:
+        """Get event subscriptions for this daemon.
+
+        Returns:
+            Dict mapping event names to handlers
+        """
+        return {
+            # Cluster health events (forwarded to coordinator)
+            "P2P_CLUSTER_HEALTHY": self._on_cluster_healthy,
+            "P2P_CLUSTER_UNHEALTHY": self._on_cluster_unhealthy,
+            "CLUSTER_CAPACITY_CHANGED": self._on_capacity_changed,
+            # Quality gate events (Sprint 13.1)
+            "TRAINING_BLOCKED_BY_QUALITY": self._on_training_blocked,
+            "QUALITY_SCORE_UPDATED": self._on_quality_updated,
+        }
+
+    async def _on_cluster_healthy(self, event: Any) -> None:
+        """Handle cluster healthy event."""
+        self._coordinator._on_cluster_healthy(event)
+
+    async def _on_cluster_unhealthy(self, event: Any) -> None:
+        """Handle cluster unhealthy event."""
+        self._coordinator._on_cluster_unhealthy(event)
+
+    async def _on_capacity_changed(self, event: Any) -> None:
+        """Handle capacity changed event."""
+        self._coordinator._on_capacity_changed(event)
+
+    async def _on_training_blocked(self, event: Any) -> None:
+        """Handle TRAINING_BLOCKED_BY_QUALITY event.
+
+        Sprint 13.1: Quality gate - block training for configs with low quality.
+        """
+        payload = self._get_payload(event)
+        config_key = self._extract_config_key(payload)
+        reason = payload.get("reason", "low_quality")
+
+        if config_key != "unknown":
+            self._quality_blocked_configs.add(config_key)
+            logger.warning(
+                f"[TrainingCoordinatorDaemon] Quality gate blocked: {config_key} ({reason})"
+            )
+
+    async def _on_quality_updated(self, event: Any) -> None:
+        """Handle QUALITY_SCORE_UPDATED event.
+
+        Sprint 13.1: Unblock configs that meet quality threshold.
+        """
+        payload = self._get_payload(event)
+        config_key = self._extract_config_key(payload)
+        quality_score = payload.get("quality_score", 0.0)
+
+        # Unblock if quality is above threshold (0.65 default)
+        quality_threshold = 0.65
+        if quality_score >= quality_threshold and config_key in self._quality_blocked_configs:
+            self._quality_blocked_configs.discard(config_key)
+            logger.info(
+                f"[TrainingCoordinatorDaemon] Quality gate cleared: "
+                f"{config_key} (score={quality_score:.2f})"
+            )
+
+    def is_quality_blocked(self, config_key: str) -> bool:
+        """Check if a config is blocked by quality gate.
+
+        Sprint 13.1: Quality gate integration.
+
+        Args:
+            config_key: Configuration key (e.g., "hex8_2p")
+
+        Returns:
+            True if blocked by quality gate
+        """
+        return config_key in self._quality_blocked_configs
+
+    def health_check(self) -> HealthCheckResult:
+        """Return health check for DaemonManager integration.
+
+        Returns:
+            HealthCheckResult with combined daemon and coordinator health.
+        """
+        # Get coordinator health
+        coord_health = self._coordinator.health_check()
+
+        # Combine with daemon-specific metrics
+        details = {
+            **coord_health.details,
+            "daemon_running": self._running,
+            "cycles_completed": self._stats.cycles_completed,
+            "quality_blocked_configs": list(self._quality_blocked_configs),
+            "last_cycle_time": self._stats.last_activity,
+        }
+
+        # Daemon is healthy if coordinator is healthy and daemon is running
+        healthy = coord_health.healthy and self._running
+
+        return HealthCheckResult(
+            healthy=healthy,
+            status="healthy" if healthy else "degraded",
+            message=f"TrainingCoordinatorDaemon: {coord_health.message}",
+            details=details,
+        )
+
+
+# Daemon singleton
+_daemon: TrainingCoordinatorDaemon | None = None
+_daemon_lock = threading.Lock()
+
+
+def get_training_coordinator_daemon(
+    use_nfs: bool = True,
+    cycle_interval: float = 300.0,
+) -> TrainingCoordinatorDaemon:
+    """Get the singleton TrainingCoordinatorDaemon instance.
+
+    Args:
+        use_nfs: Whether to use NFS for cluster coordination
+        cycle_interval: Seconds between cleanup cycles
+
+    Returns:
+        TrainingCoordinatorDaemon singleton
+    """
+    global _daemon
+    with _daemon_lock:
+        if _daemon is None:
+            _daemon = TrainingCoordinatorDaemon(
+                use_nfs=use_nfs,
+                cycle_interval=cycle_interval,
+            )
+        return _daemon
+
+
+def reset_training_coordinator_daemon() -> None:
+    """Reset the daemon singleton (for testing)."""
+    global _daemon
+    with _daemon_lock:
+        if _daemon is not None:
+            if _daemon._running:
+                logger.warning("[TrainingCoordinatorDaemon] Resetting running daemon")
+            _daemon = None
+
+
 __all__ = [
     # Main class
     "TrainingCoordinator",
@@ -2341,6 +2593,10 @@ __all__ = [
     "update_training_progress",
     # Event wiring
     "wire_training_events",
+    # Daemon (Sprint 13.1)
+    "TrainingCoordinatorDaemon",
+    "get_training_coordinator_daemon",
+    "reset_training_coordinator_daemon",
 ]
 
 

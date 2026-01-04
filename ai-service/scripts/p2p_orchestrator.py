@@ -21998,6 +21998,10 @@ print(json.dumps({{
 
         if self.leader_id != leader.node_id:
             logger.info(f"Adopted existing leader from peers: {leader.node_id}")
+            # Jan 3, 2026 Sprint 13.3: Record election latency for "adopted" outcome
+            # Only record if we were in an election (started_at > 0)
+            if getattr(self, "_election_started_at", 0) > 0:
+                self._record_election_latency("adopted")
         # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
         self._set_leader(leader.node_id, reason="join_existing_leader", save_state=True)
         self.last_leader_seen = time.time()  # Track when we last had a functioning leader
@@ -22448,6 +22452,8 @@ print(json.dumps({{
 
     async def _start_election(self):
         """Start leader election using Bully algorithm."""
+        # Jan 3, 2026 Sprint 13.3: Track election start time for latency metrics
+        self._start_election_timing()
         self._update_self_info()
 
         # NAT-blocked nodes cannot act as a leader because peers can't reach them.
@@ -22569,6 +22575,10 @@ print(json.dumps({{
         finally:
             self.election_in_progress = False
             if self.role == NodeRole.CANDIDATE:
+                # Jan 3, 2026 Sprint 13.3: Record election latency for "timeout" outcome
+                # Election ended without becoming leader or adopting one
+                if getattr(self, "_election_started_at", 0) > 0:
+                    self._record_election_latency("timeout")
                 self.role = NodeRole.FOLLOWER
 
     async def _become_leader(self):
@@ -22585,6 +22595,8 @@ print(json.dumps({{
         lease_expires = await self._acquire_voter_lease_quorum(lease_id, int(LEADER_LEASE_DURATION))
         if getattr(self, "voter_node_ids", []) and not lease_expires:
             logger.error(f"Failed to obtain voter lease quorum; refusing leadership: {self.node_id}")
+            # Jan 3, 2026 Sprint 13.3: Record election latency for "lost" outcome (no quorum)
+            self._record_election_latency("lost")
             # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
             self._set_leader(None, reason="election_failed_no_quorum", save_state=False)
             self.leader_lease_id = ""
@@ -22598,6 +22610,9 @@ print(json.dumps({{
         # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
         self._set_leader(self.node_id, reason="become_leader", save_state=False)
         self.last_leader_seen = time.time()  # Track when we last had a functioning leader
+
+        # Jan 3, 2026 Sprint 13.3: Record election latency for "won" outcome
+        self._record_election_latency("won")
         # Dec 31, 2025: Track leadership acquisition time and reset quorum fail counters
         self._last_become_leader_time = time.time()
         self._quorum_fail_count = 0

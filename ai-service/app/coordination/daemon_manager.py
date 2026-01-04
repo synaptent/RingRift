@@ -84,6 +84,13 @@ from app.coordination.cascade_breaker import (
     get_cascade_breaker,
 )
 
+# January 3, 2026: Unified circuit breaker base for daemon status checks
+from app.coordination.circuit_breaker_base import (
+    CircuitConfig,
+    CircuitState,
+    OperationCircuitBreaker,
+)
+
 # Daemon types extracted to dedicated module (Dec 2025)
 from app.coordination.daemon_types import (
     CRITICAL_DAEMONS,
@@ -159,6 +166,9 @@ class DaemonStatusCircuitBreaker:
     December 30, 2025: Added to fix P2P cluster connectivity issues where
     slow daemon status collection blocked HTTP health endpoints.
 
+    January 3, 2026: Refactored to use OperationCircuitBreaker internally
+    (Sprint 13.2 circuit breaker consolidation).
+
     When a daemon's status check fails (timeout or error) multiple times,
     the circuit opens and subsequent checks immediately return "circuit_open"
     until the reset timeout expires.
@@ -192,13 +202,21 @@ class DaemonStatusCircuitBreaker:
                 Defaults to CircuitBreakerDefaults.RECOVERY_TIMEOUT.
 
         Jan 2, 2026: Consolidated to use CircuitBreakerDefaults for consistency.
+        Jan 3, 2026: Refactored to use OperationCircuitBreaker internally.
         """
         if failure_threshold is None:
             failure_threshold = CircuitBreakerDefaults.FAILURE_THRESHOLD
         if reset_timeout is None:
             reset_timeout = CircuitBreakerDefaults.RECOVERY_TIMEOUT
-        self._failures: dict[str, int] = {}
-        self._open_until: dict[str, float] = {}
+        # Use unified OperationCircuitBreaker internally
+        config = CircuitConfig(
+            failure_threshold=failure_threshold,
+            recovery_timeout=reset_timeout,
+            operation_type="daemon_status",
+            emit_events=False,  # Don't emit events for status checks
+        )
+        self._breaker = OperationCircuitBreaker(config=config)
+        # Keep threshold/timeout for get_status() backward compatibility
         self._failure_threshold = failure_threshold
         self._reset_timeout = reset_timeout
 
@@ -208,33 +226,34 @@ class DaemonStatusCircuitBreaker:
         Returns True if circuit is open (too many recent failures),
         False if circuit is closed (ok to try health check).
         """
-        if daemon_name in self._open_until:
-            if time.time() < self._open_until[daemon_name]:
-                return True
-            # Reset after timeout expired
-            del self._open_until[daemon_name]
-            self._failures[daemon_name] = 0
-        return False
+        # Inverted logic: can_execute returns True if CLOSED, we return True if OPEN
+        return not self._breaker.can_execute(daemon_name)
 
     def record_failure(self, daemon_name: str) -> None:
         """Record a health check failure (timeout or error)."""
-        self._failures[daemon_name] = self._failures.get(daemon_name, 0) + 1
-        if self._failures[daemon_name] >= self._failure_threshold:
-            self._open_until[daemon_name] = time.time() + self._reset_timeout
+        self._breaker.record_failure(daemon_name)
 
     def record_success(self, daemon_name: str) -> None:
         """Record a successful health check."""
-        self._failures[daemon_name] = 0
-        if daemon_name in self._open_until:
-            del self._open_until[daemon_name]
+        self._breaker.record_success(daemon_name)
 
     def get_status(self) -> dict[str, Any]:
         """Get circuit breaker status for monitoring."""
+        summary = self._breaker.get_summary()
+        all_states = self._breaker.get_all_states()
+        # Build failure counts from circuit data
+        failure_counts = {
+            target: status.failure_count
+            for target, status in all_states.items()
+        }
         return {
-            "open_circuits": list(self._open_until.keys()),
-            "failure_counts": dict(self._failures),
+            "open_circuits": summary["open_targets"],
+            "failure_counts": failure_counts,
             "threshold": self._failure_threshold,
             "reset_timeout": self._reset_timeout,
+            # Additional info from OperationCircuitBreaker
+            "total_circuits": summary["total_targets"],
+            "half_open_circuits": summary["half_open"],
         }
 
 
