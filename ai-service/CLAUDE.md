@@ -2,13 +2,13 @@
 
 AI assistant context for the Python AI training service. Complements `AGENTS.md` with operational knowledge.
 
-**Last Updated**: January 4, 2026 (Sprint 17.0)
+**Last Updated**: January 4, 2026 (Sprint 17.1)
 
 ## Infrastructure Health Status (Verified Jan 4, 2026)
 
 | Component            | Status    | Evidence                                                  |
 | -------------------- | --------- | --------------------------------------------------------- |
-| **P2P Network**      | GREEN     | A- (91/100), 32+ health mechanisms, 7 recovery daemons    |
+| **P2P Network**      | GREEN     | A- (91/100), 32+ health mechanisms, 8 recovery daemons    |
 | **Training Loop**    | GREEN     | A (95/100), 5/5 feedback loops wired, 6/6 pipeline stages |
 | **Code Quality**     | GREEN     | 99% consolidated, 319 coordination modules, 1044 tests    |
 | **Leader Election**  | WORKING   | Bully algorithm with voter quorum, split-brain detection  |
@@ -33,9 +33,28 @@ Session 16-17 resilience components are now fully integrated and bootstrapped:
 | Daemon                          | Purpose                                          | Status    |
 | ------------------------------- | ------------------------------------------------ | --------- |
 | FastFailureDetector             | Tiered failure detection (5/10/30 min)           | ✅ ACTIVE |
-| TrainingWatchdogDaemon          | Stuck training process monitoring                | ✅ ACTIVE |
+| TrainingWatchdogDaemon          | Stuck training process monitoring (2h threshold) | ✅ ACTIVE |
 | UnderutilizationRecoveryHandler | Work injection on cluster underutilization       | ✅ ACTIVE |
 | WorkDiscoveryManager            | Multi-channel work discovery (leader/peer/local) | ✅ ACTIVE |
+
+**Sprint 17.1 Improvements (Jan 4, 2026):**
+
+| Feature                   | Purpose                                                              | Files                         |
+| ------------------------- | -------------------------------------------------------------------- | ----------------------------- |
+| Early Quorum Escalation   | Skip to P2P restart after 2 failed healing attempts with quorum lost | `p2p_recovery_daemon.py`      |
+| Training Heartbeat Events | TRAINING_HEARTBEAT event for watchdog monitoring                     | `distributed_lock.py`         |
+| TRAINING_PROCESS_KILLED   | Event emitted when stuck training process killed                     | `training_watchdog_daemon.py` |
+
+**Sprint 17.2 Consolidation Opportunities (Identified):**
+
+| Category                | Potential Savings | Priority | Description                                 |
+| ----------------------- | ----------------- | -------- | ------------------------------------------- |
+| Config parent class     | 150-200 LOC       | P1       | BaseCoordinationConfig for env var handling |
+| Event emission helper   | 30-40 LOC         | P1       | `_try_emit_event()` in HandlerBase          |
+| Health check template   | 80-120 LOC        | P1       | Template method in HandlerBase              |
+| Event handler normalize | 60-80 LOC         | P1       | `_extract_event_payload()` helper           |
+| Sync layer unification  | 150-200 LOC       | P2       | Unified subprocess timeout/error handling   |
+| Retry logic             | 40-60 LOC         | P2       | Apply RetryConfig to more daemons           |
 
 **Verification Commands:**
 
