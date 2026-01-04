@@ -45,6 +45,9 @@ Usage:
     # Get training urgency from intensity
     urgency = compute_training_urgency(result.quality_score, intensity)
 """
+from __future__ import annotations
+
+import logging
 import warnings
 
 warnings.warn(
@@ -55,10 +58,6 @@ warnings.warn(
     DeprecationWarning,
     stacklevel=2,
 )
-
-from __future__ import annotations
-
-import logging
 import sqlite3
 from dataclasses import dataclass, field
 from enum import Enum
