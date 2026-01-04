@@ -2,19 +2,19 @@
 
 AI assistant context for the Python AI training service. Complements `AGENTS.md` with operational knowledge.
 
-**Last Updated**: January 4, 2026 (Sprint 17.4 - Session 16.6)
+**Last Updated**: January 4, 2026 (Sprint 17.4 - Session 16.7)
 
 ## Infrastructure Health Status (Verified Jan 4, 2026)
 
-| Component            | Status    | Evidence                                                         |
-| -------------------- | --------- | ---------------------------------------------------------------- |
-| **P2P Network**      | GREEN     | A- (91/100), 211+ health_check(), 9 recovery daemons, <2.5m MTTR |
-| **Training Loop**    | GREEN     | A+ (96/100), 5/5 feedback loops wired, 6/6 pipeline stages       |
-| **Code Quality**     | GREEN     | 99% consolidated, 276 coordination modules, 63+ HandlerBase      |
-| **Leader Election**  | WORKING   | Bully algorithm with voter quorum, split-brain detection         |
-| **Work Queue**       | HEALTHY   | 28 alive peers, quorum OK, nebius-backbone-1 as leader           |
-| **Model Evaluation** | AUTOMATED | OWC import + unevaluated scan + stale re-eval pipeline           |
-| **SQLite Async**     | FIXED     | Critical P2P paths wrapped in asyncio.to_thread()                |
+| Component            | Status    | Evidence                                                        |
+| -------------------- | --------- | --------------------------------------------------------------- |
+| **P2P Network**      | GREEN     | A- (91/100), 32+ health_check(), 7 recovery daemons, <2.5m MTTR |
+| **Training Loop**    | GREEN     | A+ (96/100), 5/5 feedback loops wired, 6/6 pipeline stages      |
+| **Code Quality**     | GREEN     | 98% consolidated, 327 coordination modules, 77+ HandlerBase     |
+| **Leader Election**  | WORKING   | Bully algorithm with voter quorum, split-brain detection        |
+| **Work Queue**       | HEALTHY   | 16 alive peers, quorum OK, nebius-backbone-1 as leader          |
+| **Model Evaluation** | AUTOMATED | OWC import + unevaluated scan + stale re-eval pipeline          |
+| **SQLite Async**     | FIXED     | Metrics, WorkQueue, P2P paths wrapped in asyncio.to_thread()    |
 
 ## Sprint 17: Cluster Resilience Integration (Jan 4, 2026)
 
@@ -45,6 +45,17 @@ Session 16-17 resilience components are now fully integrated and bootstrapped:
 | Early Quorum Escalation   | Skip to P2P restart after 2 failed healing attempts with quorum lost | `p2p_recovery_daemon.py`      |
 | Training Heartbeat Events | TRAINING_HEARTBEAT event for watchdog monitoring                     | `distributed_lock.py`         |
 | TRAINING_PROCESS_KILLED   | Event emitted when stuck training process killed                     | `training_watchdog_daemon.py` |
+
+**Sprint 17.4 / Session 16.7 (Jan 4, 2026):**
+
+| Fix                          | Purpose                                                       | Files                                              |
+| ---------------------------- | ------------------------------------------------------------- | -------------------------------------------------- |
+| MetricsManager Async         | Added async_flush(), async_get_history(), async_record_metric | `metrics_manager.py`                               |
+| WorkQueue Async              | Added async wrappers for all SQLite operations                | `work_queue.py`                                    |
+| Config Parsing Consolidation | All 10 implementations now delegate to ConfigKey.parse()      | `canonical_naming.py`, `run_massive_tournament.py` |
+| Cluster Deployment           | Updated to commit 22309dcf with P2P restart                   | 16+ nodes updated                                  |
+| Comprehensive Assessment     | P2P A- (91/100), Training A+ (96/100), Consolidation 98%      | 3 parallel exploration agents                      |
+| Test Coverage                | Added test_handler_base_sqlite.py, test_work_queue_async.py   | 996 lines of new tests                             |
 
 **Sprint 17.4 / Session 16.6 (Jan 4, 2026):**
 
