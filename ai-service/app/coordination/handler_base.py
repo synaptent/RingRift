@@ -59,6 +59,7 @@ from typing import Any, Callable, ClassVar
 
 # Import canonical types from contracts.py (single source of truth)
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+from app.coordination.event_utils import make_config_key
 from app.coordination.safe_event_emitter import SafeEventEmitterMixin
 
 logger = logging.getLogger(__name__)
@@ -349,7 +350,7 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
         board_type = payload.get("board_type")
         num_players = payload.get("num_players")
         if board_type and num_players:
-            return f"{board_type}_{num_players}p"
+            return make_config_key(board_type, num_players)
         return "unknown"
 
     def _extract_board_config(self, payload: dict[str, Any]) -> tuple[str, int]:

@@ -47,6 +47,7 @@ from typing import Any
 
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.contracts import CoordinatorStatus
+from app.coordination.event_utils import make_config_key
 from app.config.thresholds import SQLITE_TIMEOUT, SQLITE_MERGE_TIMEOUT
 
 logger = logging.getLogger(__name__)
@@ -597,7 +598,7 @@ class ClusterConsolidationDaemon(HandlerBase):
 
         # Merge into each canonical config
         for board_type, num_players in CANONICAL_CONFIGS:
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
             canonical_db = self._daemon_config.canonical_dir / f"canonical_{config_key}.db"
 
             try:

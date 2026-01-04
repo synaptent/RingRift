@@ -38,6 +38,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.coordination.event_utils import make_config_key
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -224,7 +226,7 @@ class S3Inventory:
                 if match:
                     board_type = match.group(1)
                     num_players = int(match.group(2))
-                    config_key = f"{board_type}_{num_players}p"
+                    config_key = make_config_key(board_type, num_players)
 
                     if config_key not in stats.games_by_config:
                         stats.games_by_config[config_key] = S3GameCount(
@@ -297,7 +299,7 @@ class S3Inventory:
                 if match:
                     board_type = match.group(1)
                     num_players = int(match.group(2))
-                    config_key = f"{board_type}_{num_players}p"
+                    config_key = make_config_key(board_type, num_players)
 
                     if config_key not in stats.npz_by_config:
                         stats.npz_by_config[config_key] = {

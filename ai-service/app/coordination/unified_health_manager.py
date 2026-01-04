@@ -66,6 +66,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from app.coordination.coordinator_base import CoordinatorBase, CoordinatorStatus
+from app.coordination.event_utils import make_config_key
 from app.distributed.circuit_breaker import CircuitBreaker, CircuitState
 
 # Event emission for node health feedback loops (Phase 21.2 - Dec 2025)
@@ -956,7 +957,7 @@ class UnifiedHealthManager(CoordinatorBase):
         failure_rate = payload.get("failure_rate", 0.0)
         board_type = payload.get("board_type", "unknown")
         num_players = payload.get("num_players", 0)
-        config_key = payload.get("config_key", f"{board_type}_{num_players}p")
+        config_key = payload.get("config_key", make_config_key(board_type, num_players))
         total_games = payload.get("total_games", 0)
         failed_games = payload.get("failed_games", 0)
         source = payload.get("source", "unknown")

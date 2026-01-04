@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 # Database path
 from app.utils.paths import DATA_DIR
+from app.coordination.event_utils import make_config_key
 
 ELO_PROGRESS_DB = DATA_DIR / "elo_progress.db"
 
@@ -301,7 +302,7 @@ async def snapshot_all_configs() -> dict[str, EloSnapshot | None]:
     results: dict[str, EloSnapshot | None] = {}
 
     for board_type, num_players in ALL_CONFIGS:
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
 
         try:
             # Get leaderboard for this config

@@ -51,6 +51,8 @@ import warnings
 from datetime import datetime
 from typing import Any
 
+from app.coordination.event_utils import make_config_key
+
 logger = logging.getLogger(__name__)
 
 # Emit deprecation warning on import (December 2025)
@@ -1126,7 +1128,7 @@ async def emit_npz_export_complete(
     if not HAS_STAGE_EVENTS:
         return False
 
-    config_key = f"{board_type}_{num_players}p"
+    config_key = make_config_key(board_type, num_players)
 
     result = StageCompletionResult(
         event=StageEvent.NPZ_EXPORT_COMPLETE,

@@ -52,6 +52,8 @@ try:
 except ImportError:
     NUMPY_AVAILABLE = False
 
+from app.coordination.event_utils import make_config_key
+
 # Dec 30, 2025: Centralized SSH configuration
 try:
     from app.config.coordination_defaults import build_ssh_options
@@ -189,8 +191,8 @@ def extract_config_key(filename: str) -> str | None:
         match = re.search(pattern, name)
         if match:
             board_type = match.group(1)
-            num_players = match.group(2)
-            return f"{board_type}_{num_players}p"
+            num_players = int(match.group(2))
+            return make_config_key(board_type, num_players)
     return None
 
 

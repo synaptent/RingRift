@@ -38,6 +38,8 @@ import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from app.coordination.event_utils import make_config_key
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -290,7 +292,7 @@ class OWCInventory:
                 if match:
                     board_type = match.group(1)
                     num_players = int(match.group(2))
-                    config_key = f"{board_type}_{num_players}p"
+                    config_key = make_config_key(board_type, num_players)
 
                     if config_key not in stats.games_by_config:
                         stats.games_by_config[config_key] = OWCGameCount(
@@ -370,7 +372,7 @@ class OWCInventory:
                 if match:
                     board_type = match.group(1)
                     num_players = int(match.group(2))
-                    config_key = f"{board_type}_{num_players}p"
+                    config_key = make_config_key(board_type, num_players)
 
                     if config_key not in stats.npz_by_config:
                         stats.npz_by_config[config_key] = {

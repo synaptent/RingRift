@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Any
 from app.core.async_context import fire_and_forget
 from app.coordination.sync_mixin_base import SyncMixinBase
 from app.coordination.event_handler_utils import extract_config_key
+from app.coordination.event_utils import make_config_key
 
 if TYPE_CHECKING:
     from app.coordination.sync_strategies import AutoSyncConfig, SyncStats
@@ -169,7 +170,7 @@ class SyncEventMixin(SyncMixinBase):
             num_players = payload.get("num_players", 0)
             data_age_hours = payload.get("data_age_hours", 0.0)
 
-            config_key = f"{board_type}_{num_players}p" if board_type and num_players else "unknown"
+            config_key = make_config_key(board_type, num_players) if board_type and num_players else "unknown"
 
             logger.warning(
                 f"[AutoSyncDaemon] DATA_STALE received for {config_key}: "
@@ -307,7 +308,7 @@ class SyncEventMixin(SyncMixinBase):
             num_players = payload.get("num_players", 0)
             distributed_to = payload.get("distributed_to", [])
 
-            config_key = f"{board_type}_{num_players}p" if board_type and num_players else ""
+            config_key = make_config_key(board_type, num_players) if board_type and num_players else ""
 
             logger.info(
                 f"[AutoSyncDaemon] Model distribution complete: {model_id} "

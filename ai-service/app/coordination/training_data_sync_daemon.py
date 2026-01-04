@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 from app.coordination.event_handler_utils import extract_config_key
+from app.coordination.event_utils import make_config_key
 from app.coordination.training_data_manifest import (
     DataSource,
     OWC_BASE_PATH,
@@ -697,7 +698,7 @@ class TrainingDataSyncDaemon:
                                 for j, p2 in enumerate(parts):
                                     if p2 == "--num-players" and j + 1 < len(parts):
                                         num_players = parts[j + 1]
-                                        configs.add(f"{board_type}_{num_players}p")
+                                        configs.add(make_config_key(board_type, int(num_players)))
         except (OSError, subprocess.SubprocessError, FileNotFoundError):
             # pgrep may not exist or may fail on some systems
             pass

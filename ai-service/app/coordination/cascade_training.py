@@ -29,7 +29,7 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from app.coordination.event_utils import parse_config_key
+from app.coordination.event_utils import make_config_key, parse_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 
 if TYPE_CHECKING:
@@ -504,7 +504,7 @@ class CascadeTrainingOrchestrator(HandlerBase):
 
     async def _request_training(self, board_type: str, num_players: int) -> None:
         """Request training for a configuration."""
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
         logger.info(f"[CascadeTraining] Requesting training for {config_key}")
 
         await self._emit_event(

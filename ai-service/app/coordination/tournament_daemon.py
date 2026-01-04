@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 # December 2025: Use consolidated daemon stats base class
 from app.coordination.daemon_stats import EvaluationDaemonStats
-from app.coordination.event_utils import parse_config_key
+from app.coordination.event_utils import make_config_key, parse_config_key
 
 # December 30, 2025: Game count for graduated thresholds
 from app.utils.game_discovery import get_game_counts_summary
@@ -533,7 +533,7 @@ class TournamentDaemon:
                     logger.debug("Recording module not available, games will not be saved")
 
             # Dec 30, 2025: Get game count for graduated thresholds
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
             try:
                 game_counts = get_game_counts_summary()
                 game_count = game_counts.get(config_key, 0)
@@ -842,7 +842,7 @@ class TournamentDaemon:
         try:
             from app.distributed.data_events import DataEventType, emit_data_event
 
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
             await emit_data_event(
                 DataEventType.HARNESS_EVALUATION_COMPLETED,
                 payload={

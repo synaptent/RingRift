@@ -45,6 +45,7 @@ from app.config.thresholds import (
     STRONG_VS_HEURISTIC_THRESHOLD,
     WEAK_VS_RANDOM_THRESHOLD,
 )
+from app.coordination.event_utils import make_config_key
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.coordination.event_router import DataEventType
 from app.coordination.handler_base import BaseEventHandler, EventHandlerConfig
@@ -299,7 +300,7 @@ class GauntletFeedbackController(BaseEventHandler):
 
         # Need config_key and meaningful sample
         if not config_key:
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
         if games_played < 5:
             logger.debug(f"[{self.name}] Skipping evaluation with only {games_played} games")
             return

@@ -31,7 +31,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from app.coordination.event_utils import parse_config_key
+from app.coordination.event_utils import make_config_key, parse_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -298,7 +298,7 @@ class ArchitectureFeedbackController(HandlerBase):
             self._state.comparisons_processed += 1
 
             # Emit weight update immediately after comparison
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
             await self._emit_architecture_weights_updated(config_key)
 
         except (ImportError, ValueError, KeyError) as e:

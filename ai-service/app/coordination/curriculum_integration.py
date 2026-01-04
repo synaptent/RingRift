@@ -31,7 +31,7 @@ from typing import Any
 
 from app.coordination.curriculum_router import CurriculumSignalBridge
 from app.coordination.event_handler_utils import extract_config_key
-from app.coordination.event_utils import parse_config_key
+from app.coordination.event_utils import make_config_key, parse_config_key
 from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -431,7 +431,7 @@ class MomentumToCurriculumBridge:
             if not board_type or not num_players:
                 return
 
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
 
             logger.info(
                 f"[MomentumToCurriculumBridge] MODEL_PROMOTED for {config_key}: "

@@ -36,6 +36,7 @@ from typing import Any
 
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.protocols import CoordinatorStatus
+from app.coordination.event_utils import make_config_key
 
 logger = logging.getLogger(__name__)
 
@@ -699,7 +700,7 @@ class ClusterWatchdogDaemon(HandlerBase):
             # nohup may return non-zero but still succeed
             logger.info(f"[ClusterWatchdog] Spawn result for {node.node_id}: rc={result.returncode}")
             # December 2025: Emit NODE_ACTIVATED event for cluster coordination
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
             asyncio.create_task(
                 emit_node_activated(
                     node_id=node.node_id,
@@ -713,7 +714,7 @@ class ClusterWatchdogDaemon(HandlerBase):
             # Timeout with nohup often means success (command is running)
             logger.info(f"[ClusterWatchdog] Spawn timeout for {node.node_id} (likely succeeded)")
             # December 2025: Emit NODE_ACTIVATED event for cluster coordination
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
             asyncio.create_task(
                 emit_node_activated(
                     node_id=node.node_id,

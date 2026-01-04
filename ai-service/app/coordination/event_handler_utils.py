@@ -19,6 +19,8 @@ import logging
 from pathlib import Path
 from typing import Any, TypeAlias
 
+from app.coordination.event_utils import make_config_key as _make_config_key
+
 logger = logging.getLogger(__name__)
 
 # Type aliases
@@ -244,8 +246,11 @@ def build_config_key(board_type: str, num_players: int) -> str:
     Example:
         >>> build_config_key("hex8", 2)
         'hex8_2p'
+
+    Note:
+        Delegates to make_config_key() for consistency (January 2026).
     """
-    return f"{board_type}_{num_players}p"
+    return _make_config_key(board_type, num_players)
 
 
 def extract_training_completed_data(payload: Payload) -> dict[str, Any]:

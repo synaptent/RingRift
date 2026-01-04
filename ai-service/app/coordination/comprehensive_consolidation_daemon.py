@@ -364,7 +364,7 @@ class ComprehensiveConsolidationDaemon(HandlerBase):
             ConsolidationStats or None if no work done
         """
         async with self._consolidation_semaphore:
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
             stats = ComprehensiveConsolidationStats(config_key=config_key, start_time=time.time())
 
             try:
