@@ -1598,18 +1598,45 @@ class FeedbackLoopController(HandlerBase):
         """Gradually reduce exploration boost when training is improving.
 
         December 2025: Now includes fallback to update FeedbackState.
+        Sprint 12 Session 8 (Jan 2026): Adaptive decay based on Elo velocity.
+        - Fast improvement (>2 Elo/hour): 2% decay (preserve good exploration)
+        - Normal improvement (0.5-2 Elo/hour): 10% decay (default)
+        - Stalled (<0.5 Elo/hour): 0% decay, may boost exploration
         """
         # Get current boost from local state
         state = self._get_or_create_state(config_key)
         current_boost = state.current_exploration_boost
 
         if current_boost > 1.0:
-            # Reduce towards 1.0 using decay factor
-            new_boost = max(1.0, current_boost * EXPLORATION_BOOST_DECAY)
+            # Sprint 12: Adaptive decay based on Elo velocity
+            velocity = state.elo_velocity
+
+            if velocity > 2.0:
+                # Fast improvement: slow decay to preserve what's working
+                decay_factor = 0.98  # 2% decay
+                decay_reason = "fast_improvement"
+            elif velocity >= 0.5:
+                # Normal improvement: standard decay
+                decay_factor = EXPLORATION_BOOST_DECAY  # 10% decay
+                decay_reason = "normal_improvement"
+            elif velocity >= 0.0:
+                # Stalled: no decay, hold exploration constant
+                decay_factor = 1.0  # 0% decay
+                decay_reason = "stalled"
+            else:
+                # Regression: boost exploration instead
+                decay_factor = 1.05  # 5% increase
+                decay_reason = "regression"
+
+            # Apply decay (or boost in regression case)
+            new_boost = current_boost * decay_factor
+            # Clamp between 1.0 and EXPLORATION_BOOST_MAX (2.0)
+            new_boost = max(1.0, min(EXPLORATION_BOOST_MAX, new_boost))
             state.current_exploration_boost = new_boost
+
             logger.debug(
-                f"[FeedbackLoopController] Reduced exploration boost to {new_boost:.2f}x "
-                f"for {config_key} (training improving)"
+                f"[FeedbackLoopController] Adaptive decay: {current_boost:.2f}→{new_boost:.2f}x "
+                f"for {config_key} (velocity={velocity:.2f}, reason={decay_reason})"
             )
 
             # Try to wire to active temperature schedulers

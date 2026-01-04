@@ -1,15 +1,15 @@
 # Event Subscription Matrix
 
-**Last Updated**: December 30, 2025
+**Last Updated**: January 3, 2026
 
-**Integration Status**: VERIFIED COMPLETE (Dec 30, 2025)
+**Integration Status**: VERIFIED COMPLETE (Jan 3, 2026)
 
 All critical events have been verified to have proper emitters and subscribers. Events that
 were previously thought to be "orphaned" (TASK_SPAWNED, TASK_HEARTBEAT, QUALITY_DEGRADED,
 PROGRESS_STALL_DETECTED) have been verified to have 2-5 active subscribers each.
 
 This document provides a matrix of critical events in the RingRift coordination layer,
-their emitters, and subscribers. `DataEventType` defines 237 events; this file focuses on
+their emitters, and subscribers. `DataEventType` defines 251 events; this file focuses on
 high-impact wiring. For the full list, see `../EVENT_REFERENCE_AUTO.md` and `../EVENT_CATALOG.md`.
 
 ## Quick Reference

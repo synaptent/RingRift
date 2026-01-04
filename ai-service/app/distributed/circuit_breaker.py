@@ -141,6 +141,47 @@ ESCALATION_TIERS = [
 ]
 MAX_ESCALATION_TIER = len(ESCALATION_TIERS) - 1
 
+# Sprint 12: Event emission for escalation tier changes
+_event_router = None
+
+
+def _get_event_router():
+    """Lazy-load event router to avoid circular imports."""
+    global _event_router
+    if _event_router is None:
+        try:
+            from app.coordination.event_router import get_event_router
+            _event_router = get_event_router()
+        except ImportError:
+            pass
+    return _event_router
+
+
+def _emit_escalation_event(target: str, old_tier: int, new_tier: int, consecutive_opens: int, operation_type: str) -> None:
+    """Emit ESCALATION_TIER_CHANGED event for monitoring."""
+    router = _get_event_router()
+    if router is None:
+        return
+    try:
+        from app.distributed.data_events import DataEventType
+        tier_config = ESCALATION_TIERS[new_tier] if new_tier < len(ESCALATION_TIERS) else ESCALATION_TIERS[-1]
+        router.emit(
+            DataEventType.ESCALATION_TIER_CHANGED.value,
+            {
+                "target": target,
+                "operation_type": operation_type,
+                "old_tier": old_tier,
+                "new_tier": new_tier,
+                "consecutive_opens": consecutive_opens,
+                "wait_seconds": tier_config["wait"],
+                "probe_interval": tier_config["probe_interval"],
+                "timestamp": time.time(),
+            },
+        )
+    except (ImportError, RuntimeError, ValueError, TypeError, AttributeError):
+        # Graceful fallback if event system unavailable
+        pass
+
 # ============================================
 # Prometheus Metrics (optional)
 # ============================================
@@ -448,17 +489,26 @@ class CircuitBreaker:
             return 0.0
         return config["probe_interval"] - time_since_probe
 
-    def _escalate(self, circuit: _CircuitData) -> None:
+    def _escalate(self, circuit: _CircuitData, target: str = "") -> None:
         """Move circuit to escalation mode (Phase 15.1.8).
 
         Called when consecutive_opens exceeds max_consecutive_opens.
         Instead of being "permanently open", the circuit enters escalation
         where it will still attempt recovery with longer intervals.
         """
+        old_tier = circuit.escalation_tier
         new_tier = self._get_escalation_tier(circuit)
-        if new_tier != circuit.escalation_tier:
+        if new_tier != old_tier:
             circuit.escalation_tier = new_tier
             circuit.escalation_entered_at = time.time()
+            # Sprint 12: Emit event for monitoring
+            _emit_escalation_event(
+                target=target,
+                old_tier=old_tier,
+                new_tier=new_tier,
+                consecutive_opens=circuit.consecutive_opens,
+                operation_type=self.operation_type,
+            )
 
     def _notify_state_change(self, target: str, old_state: CircuitState, new_state: CircuitState) -> None:
         """Notify callback of a state change."""
@@ -629,7 +679,7 @@ class CircuitBreaker:
                 circuit.success_count = 0
                 circuit.consecutive_opens += 1  # Increase backoff for next recovery
                 # Phase 15.1.8: Check for escalation
-                self._escalate(circuit)
+                self._escalate(circuit, target)
                 opened_circuit = True
             elif circuit.state == CircuitState.CLOSED:
                 # Check if we should open the circuit
@@ -638,7 +688,7 @@ class CircuitBreaker:
                     circuit.opened_at = time.time()
                     circuit.consecutive_opens += 1  # Track consecutive opens
                     # Phase 15.1.8: Check for escalation
-                    self._escalate(circuit)
+                    self._escalate(circuit, target)
                     opened_circuit = True
 
             new_state = circuit.state

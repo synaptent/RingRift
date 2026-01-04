@@ -353,6 +353,7 @@ class DataEventType(Enum):
     CIRCUIT_BREAKER_CLOSED = "circuit_breaker_closed"  # Node circuit breaker closed (recovered)
     CIRCUIT_BREAKER_HALF_OPEN = "circuit_breaker_half_open"  # Circuit testing recovery
     CIRCUIT_BREAKER_THRESHOLD = "circuit_breaker_threshold"  # Too many open circuits (>20% of nodes)
+    ESCALATION_TIER_CHANGED = "escalation_tier_changed"  # Circuit breaker escalation tier changed (Sprint 12)
 
     # Lock/Synchronization events (December 2025)
     LOCK_TIMEOUT = "lock_timeout"
