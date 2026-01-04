@@ -913,3 +913,191 @@ class TestMainLoopErrorHandling:
         await handler.start()
         await handler.stop()
         assert handler.is_running is False
+
+
+class TestFireAndForgetTaskHelpers:
+    """Tests for fire-and-forget task helper methods (January 2026)."""
+
+    @pytest.mark.asyncio
+    async def test_safe_create_task_creates_task(self):
+        """_safe_create_task should create and return a task."""
+        handler = ConcreteHandler()
+        handler._running = True  # Simulate started state
+
+        completed = False
+
+        async def test_coro():
+            nonlocal completed
+            completed = True
+
+        task = handler._safe_create_task(test_coro(), context="test")
+        assert task is not None
+
+        # Wait for task to complete
+        await asyncio.sleep(0.01)
+        assert completed is True
+
+    @pytest.mark.asyncio
+    async def test_safe_create_task_handles_errors(self):
+        """_safe_create_task should log errors without crashing."""
+        handler = ConcreteHandler()
+        handler._running = True
+
+        async def failing_coro():
+            raise ValueError("Test error")
+
+        task = handler._safe_create_task(failing_coro(), context="test")
+        assert task is not None
+
+        # Wait for task to complete (error should be caught)
+        await asyncio.sleep(0.01)
+
+        # Error should be recorded
+        assert handler._stats.errors_count >= 1
+        assert "Test error" in handler._stats.last_error
+
+    @pytest.mark.asyncio
+    async def test_safe_create_task_with_name(self):
+        """_safe_create_task should accept optional task name."""
+        handler = ConcreteHandler()
+        handler._running = True
+
+        async def test_coro():
+            await asyncio.sleep(0)
+
+        task = handler._safe_create_task(
+            test_coro(),
+            context="test",
+            name="my_named_task"
+        )
+        assert task is not None
+        assert task.get_name() == "my_named_task"
+        await task
+
+    def test_safe_create_task_returns_none_on_runtime_error(self):
+        """_safe_create_task should return None if event loop is closed."""
+        handler = ConcreteHandler()
+
+        async def test_coro():
+            pass
+
+        # Simulate closed event loop scenario (mocking)
+        with patch("asyncio.create_task", side_effect=RuntimeError("No loop")):
+            result = handler._safe_create_task(test_coro(), context="test")
+            assert result is None
+
+    def test_handle_task_error_logs_exception(self):
+        """_handle_task_error should record exception in stats."""
+        handler = ConcreteHandler()
+        initial_errors = handler._stats.errors_count
+
+        # Create a mock task with an exception
+        mock_task = MagicMock()
+        mock_task.exception.return_value = ValueError("Test exception")
+
+        handler._handle_task_error(mock_task, context="test_context")
+
+        assert handler._stats.errors_count == initial_errors + 1
+        assert "Test exception" in handler._stats.last_error
+        assert "test_context" in handler._stats.last_error
+
+    def test_handle_task_error_ignores_cancelled(self):
+        """_handle_task_error should ignore CancelledError."""
+        handler = ConcreteHandler()
+        initial_errors = handler._stats.errors_count
+
+        mock_task = MagicMock()
+        mock_task.exception.side_effect = asyncio.CancelledError()
+
+        handler._handle_task_error(mock_task, context="test")
+
+        # Should not record as error
+        assert handler._stats.errors_count == initial_errors
+
+    def test_handle_task_error_ignores_invalid_state(self):
+        """_handle_task_error should ignore InvalidStateError."""
+        handler = ConcreteHandler()
+        initial_errors = handler._stats.errors_count
+
+        mock_task = MagicMock()
+        mock_task.exception.side_effect = asyncio.InvalidStateError()
+
+        handler._handle_task_error(mock_task, context="test")
+
+        # Should not record as error
+        assert handler._stats.errors_count == initial_errors
+
+    def test_try_emit_event_returns_false_if_no_emitter(self):
+        """_try_emit_event should return False if emitter is None."""
+        handler = ConcreteHandler()
+
+        result = handler._try_emit_event(
+            "MY_EVENT",
+            {"key": "value"},
+            None,
+            context="test"
+        )
+        assert result is False
+
+    def test_try_emit_event_calls_sync_emitter(self):
+        """_try_emit_event should call synchronous emitter function."""
+        handler = ConcreteHandler()
+        mock_emitter = MagicMock(return_value=None)
+
+        result = handler._try_emit_event(
+            "MY_EVENT",
+            {"key": "value"},
+            mock_emitter,
+            context="test"
+        )
+
+        assert result is True
+        mock_emitter.assert_called_once_with(key="value")
+
+    @pytest.mark.asyncio
+    async def test_try_emit_event_handles_async_emitter(self):
+        """_try_emit_event should handle async emitter with _safe_create_task."""
+        handler = ConcreteHandler()
+        handler._running = True
+
+        async_emitter = AsyncMock(return_value=None)
+
+        result = handler._try_emit_event(
+            "MY_EVENT",
+            {"key": "value"},
+            async_emitter,
+            context="test"
+        )
+
+        assert result is True
+        # Let the background task complete
+        await asyncio.sleep(0.01)
+        async_emitter.assert_called_once_with(key="value")
+
+    def test_try_emit_event_handles_runtime_error(self):
+        """_try_emit_event should handle RuntimeError gracefully."""
+        handler = ConcreteHandler()
+        mock_emitter = MagicMock(side_effect=RuntimeError("Loop closed"))
+
+        result = handler._try_emit_event(
+            "MY_EVENT",
+            {"key": "value"},
+            mock_emitter,
+            context="test"
+        )
+
+        assert result is False
+
+    def test_try_emit_event_handles_type_error(self):
+        """_try_emit_event should handle TypeError from bad payload."""
+        handler = ConcreteHandler()
+        mock_emitter = MagicMock(side_effect=TypeError("Bad argument"))
+
+        result = handler._try_emit_event(
+            "MY_EVENT",
+            {"key": "value"},
+            mock_emitter,
+            context="test"
+        )
+
+        assert result is False

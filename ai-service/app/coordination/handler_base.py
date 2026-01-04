@@ -8,6 +8,7 @@ Provides a unified base class for handlers/daemons with common patterns:
 - Event deduplication (hash-based)
 - Error tracking with bounded log
 - Lifecycle management (start/stop/shutdown)
+- Fire-and-forget task helpers (January 2026)
 
 This class consolidates patterns found in 15+ daemon files to reduce duplication.
 
@@ -30,6 +31,12 @@ Usage:
             # Use safe event emission:
             await self._safe_emit_event_async("MY_EVENT", {"key": "value"})
 
+            # Fire-and-forget async operations:
+            self._safe_create_task(
+                self._background_operation(),
+                context="background_op"
+            )
+
         async def _on_training_completed(self, event: dict) -> None:
             # Handle event with deduplication
             if self._is_duplicate_event(event):
@@ -43,6 +50,7 @@ Usage:
 
 December 2025 - Phase 2 handler consolidation.
 December 30, 2025 - Added SafeEventEmitterMixin for unified event emission.
+January 3, 2026 - Added fire-and-forget task helpers (_safe_create_task, _try_emit_event).
 """
 
 from __future__ import annotations
@@ -944,6 +952,150 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
     def get_recent_errors(self, limit: int = 10) -> list[dict[str, Any]]:
         """Get recent errors from log."""
         return self._error_log[-limit:]
+
+    # =========================================================================
+    # Fire-and-Forget Task Helpers (January 2026)
+    # =========================================================================
+
+    def _handle_task_error(self, task: asyncio.Task[Any], context: str = "") -> None:
+        """Handle errors from fire-and-forget tasks.
+
+        Attach this as a done callback to async tasks that should not crash
+        the handler if they fail. Errors are logged and recorded in stats.
+
+        January 2026: Consolidated from 10+ handlers that had identical patterns.
+
+        Args:
+            task: The completed asyncio.Task
+            context: Optional context string for error message (e.g., "emit_event")
+
+        Usage:
+            task = asyncio.create_task(some_coroutine())
+            task.add_done_callback(lambda t: self._handle_task_error(t, "my_op"))
+        """
+        try:
+            exc = task.exception()
+            if exc is not None:
+                ctx = f" in {context}" if context else ""
+                error_msg = f"Task error{ctx}: {exc}"
+                self._record_error(error_msg, exc)
+                logger.error(f"[{self._name}] {error_msg}")
+        except asyncio.CancelledError:
+            # Task was cancelled, not an error
+            pass
+        except asyncio.InvalidStateError:
+            # Task not done yet (shouldn't happen in done callback)
+            pass
+
+    def _safe_create_task(
+        self,
+        coro: Any,
+        context: str = "",
+        *,
+        name: str | None = None,
+    ) -> asyncio.Task[Any] | None:
+        """Create an asyncio task with error handling callback.
+
+        Use this for fire-and-forget operations that should not block the
+        caller. The task runs in the background; errors are logged but don't
+        crash the handler.
+
+        January 2026: Consolidated from 10+ handlers with identical patterns.
+
+        Args:
+            coro: Coroutine to run as a task
+            context: Optional context string for error messages
+            name: Optional task name for debugging
+
+        Returns:
+            The created Task, or None if task creation failed
+
+        Usage:
+            # Fire-and-forget event emission
+            self._safe_create_task(
+                self._emit_my_event(payload),
+                context="emit_my_event"
+            )
+
+            # With task name for debugging
+            self._safe_create_task(
+                self._process_async(),
+                context="process",
+                name="my_handler_process"
+            )
+
+        Error Handling:
+            - RuntimeError: Caught if event loop is closed
+            - Other errors: Caught by done callback, logged and recorded
+        """
+        try:
+            task = asyncio.create_task(coro, name=name)
+            task.add_done_callback(lambda t: self._handle_task_error(t, context))
+            return task
+        except RuntimeError as e:
+            # Event loop is closed or not running
+            ctx = f" for {context}" if context else ""
+            logger.debug(f"[{self._name}] Could not create task{ctx}: {e}")
+            return None
+
+    def _try_emit_event(
+        self,
+        event_name: str,
+        payload: dict[str, Any],
+        emitter_fn: Callable[..., Any] | None,
+        context: str = "",
+    ) -> bool:
+        """Try to emit an event with graceful fallback if emitter unavailable.
+
+        Use this when calling optional event emitter functions that may not
+        be available (e.g., due to import errors or feature flags).
+
+        January 2026: Consolidated pattern for handlers with optional dependencies.
+
+        Args:
+            event_name: Event type name for logging
+            payload: Event payload dictionary
+            emitter_fn: Event emitter function (may be None)
+            context: Optional context for error messages
+
+        Returns:
+            True if event was emitted successfully, False otherwise
+
+        Usage:
+            # With optional emitter
+            try:
+                from app.coordination.event_router import emit_exploration_boost
+                HAS_EXPLORATION_EVENTS = True
+            except ImportError:
+                emit_exploration_boost = None
+                HAS_EXPLORATION_EVENTS = False
+
+            # Later in handler:
+            if HAS_EXPLORATION_EVENTS:
+                self._try_emit_event(
+                    "EXPLORATION_BOOST",
+                    {"config_key": config_key, "boost": 1.5},
+                    emit_exploration_boost,
+                    context="exploration_boost"
+                )
+        """
+        if emitter_fn is None:
+            logger.debug(f"[{self._name}] Emitter not available for {event_name}")
+            return False
+
+        try:
+            result = emitter_fn(**payload)
+            if asyncio.iscoroutine(result):
+                self._safe_create_task(result, context=context or event_name)
+            return True
+        except (RuntimeError, asyncio.CancelledError) as e:
+            ctx = f" ({context})" if context else ""
+            logger.debug(f"[{self._name}] Failed to emit {event_name}{ctx}: {e}")
+            return False
+        except (AttributeError, TypeError) as e:
+            ctx = f" ({context})" if context else ""
+            logger.warning(f"[{self._name}] Error emitting {event_name}{ctx}: {e}")
+            return False
 
 
 # =============================================================================
