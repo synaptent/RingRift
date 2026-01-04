@@ -49,6 +49,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     pass
 
+# Sprint 15.4: Import HealthCheckResult for standardized health check returns
+from app.coordination.contracts import HealthCheckResult, CoordinatorStatus
+
 __all__ = [
     "ContainerTailscaleConfig",
     "ContainerNetworkStatus",
@@ -536,11 +539,13 @@ async def get_container_network_status() -> ContainerNetworkStatus:
     return status
 
 
-def health_check() -> dict:
+def health_check() -> HealthCheckResult:
     """Synchronous health check for daemon integration.
 
     Returns:
-        Health check result dict compatible with DaemonManager.
+        HealthCheckResult compatible with DaemonManager.
+
+    Sprint 15.4: Updated to return HealthCheckResult instead of dict.
     """
     # Use cached status if available
     if _status_cache is not None:
@@ -549,37 +554,37 @@ def health_check() -> dict:
         # Quick sync check
         container_type = detect_container_environment()
         if container_type is None:
-            return {
-                "healthy": True,
-                "status": "healthy",
-                "message": "Not a container, native networking",
-                "details": {"is_container": False},
-            }
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message="Not a container, native networking",
+                details={"is_container": False},
+            )
 
         # For containers, we need async check - return unknown
-        return {
-            "healthy": None,
-            "status": "unknown",
-            "message": "Container detected, async status check required",
-            "details": {"is_container": True, "container_type": container_type},
-        }
+        return HealthCheckResult(
+            healthy=True,  # Assume healthy until proven otherwise
+            status=CoordinatorStatus.INITIALIZING,
+            message="Container detected, async status check required",
+            details={"is_container": True, "container_type": container_type},
+        )
 
     if not status.is_container:
-        return {
-            "healthy": True,
-            "status": "healthy",
-            "message": "Not a container, native networking",
-            "details": {"is_container": False},
-        }
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message="Not a container, native networking",
+            details={"is_container": False},
+        )
 
     # Check if connected (with or without SOCKS5)
     if status.tailscale_connected and status.tailscale_ip:
         mode = "kernel" if not status.socks5_available else "userspace"
-        return {
-            "healthy": True,
-            "status": "healthy",
-            "message": f"Container networking ready ({mode} mode, IP: {status.tailscale_ip})",
-            "details": {
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Container networking ready ({mode} mode, IP: {status.tailscale_ip})",
+            details={
                 "is_container": True,
                 "container_type": status.container_type,
                 "tailscale_ip": status.tailscale_ip,
@@ -587,26 +592,26 @@ def health_check() -> dict:
                 "socks5_available": status.socks5_available,
                 "socks5_port": status.socks5_port if status.socks5_available else None,
             },
-        }
+        )
 
     if status.is_ready:
-        return {
-            "healthy": True,
-            "status": "healthy",
-            "message": f"Container networking ready (IP: {status.tailscale_ip})",
-            "details": {
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"Container networking ready (IP: {status.tailscale_ip})",
+            details={
                 "is_container": True,
                 "container_type": status.container_type,
                 "tailscale_ip": status.tailscale_ip,
                 "socks5_port": status.socks5_port,
             },
-        }
+        )
 
-    return {
-        "healthy": False,
-        "status": "unhealthy",
-        "message": status.error or "Container networking not ready",
-        "details": {
+    return HealthCheckResult(
+        healthy=False,
+        status=CoordinatorStatus.PAUSED,
+        message=status.error or "Container networking not ready",
+        details={
             "is_container": True,
             "container_type": status.container_type,
             "tailscale_installed": status.tailscale_installed,
@@ -615,4 +620,4 @@ def health_check() -> dict:
             "socks5_available": status.socks5_available,
             "error": status.error,
         },
-    }
+    )

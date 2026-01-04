@@ -38,6 +38,23 @@ except ImportError:
         """Fallback when circuit_breaker not available."""
         return default
 
+# Sprint 15.1.1 (Jan 3, 2026): Per-transport circuit breakers for HTTP calls
+try:
+    from scripts.p2p.network import (
+        check_peer_transport_circuit,
+        record_peer_transport_success,
+        record_peer_transport_failure,
+    )
+    HAS_TRANSPORT_CB = True
+except ImportError:
+    HAS_TRANSPORT_CB = False
+    def check_peer_transport_circuit(host: str, transport: str = "http") -> bool:
+        return True  # Fallback: allow all
+    def record_peer_transport_success(host: str, transport: str = "http") -> None:
+        pass
+    def record_peer_transport_failure(host: str, transport: str = "http", error: Exception | None = None) -> None:
+        pass
+
 # Dec 31, 2025: Import batch size calculator for GPU utilization optimization
 try:
     from app.ai.gpu_parallel_games import get_optimal_batch_size
@@ -553,12 +570,20 @@ class JobManager(EventSubscriptionMixin):
             if not peer_ip:
                 return {"success": False, "error": f"No IP for node {node_id}"}
 
+            # Sprint 15.1.1: Check per-transport circuit breaker before attempting
+            if not check_peer_transport_circuit(peer_ip, "http"):
+                logger.debug(f"Skipping preemptive spawn to {node_id}: HTTP circuit breaker is OPEN")
+                return {"success": False, "error": "circuit_open", "node_id": node_id}
+
             url = f"http://{peer_ip}:{peer_port}/selfplay/start"
             timeout = ClientTimeout(total=30)
 
             async with ClientSession(timeout=timeout) as session:
                 async with session.post(url, json=config) as resp:
                     if resp.status == 200:
+                        # Sprint 15.1.1: Record success for per-transport CB
+                        record_peer_transport_success(peer_ip, "http")
+
                         # Register the spawn for verification tracking
                         config_key = f"{board_type}_{num_players}p"
                         self._register_spawn(job_id, node_id, config_key)
@@ -579,10 +604,15 @@ class JobManager(EventSubscriptionMixin):
 
                         return {"success": True}
                     else:
+                        # Sprint 15.1.1: Record failure for per-transport CB
+                        record_peer_transport_failure(peer_ip, "http")
                         body = await resp.text()
                         return {"success": False, "error": f"HTTP {resp.status}: {body[:100]}"}
 
         except Exception as e:
+            # Sprint 15.1.1: Record failure on exception (extract IP if available)
+            if "peer_ip" in dir() and peer_ip:
+                record_peer_transport_failure(peer_ip, "http")
             return {"success": False, "error": str(e)}
 
     # =========================================================================
@@ -2029,6 +2059,19 @@ class JobManager(EventSubscriptionMixin):
         if not worker_ip:
             return {"success": False, "error": "no_ip", "worker_id": worker_id}
 
+        # Sprint 15.1.1 (Jan 3, 2026): Check per-transport circuit breaker before attempting
+        # This enables failover and prevents hammering unreachable workers
+        if not check_peer_transport_circuit(worker_ip, "http"):
+            logger.debug(
+                f"Skipping dispatch to {worker_id}: HTTP circuit breaker is OPEN"
+            )
+            return {
+                "success": False,
+                "error": "circuit_open",
+                "worker_id": worker_id,
+                "attempts": 0,
+            }
+
         url = f"http://{worker_ip}:{worker_port}/run-selfplay"
 
         for attempt in range(max_retries):
@@ -2036,6 +2079,8 @@ class JobManager(EventSubscriptionMixin):
                 async with session.post(url, json=payload, timeout=timeout) as resp:
                     if resp.status == 200:
                         result = await resp.json()
+                        # Sprint 15.1.1: Record success to per-transport circuit breaker
+                        record_peer_transport_success(worker_ip, "http")
                         return {
                             "success": result.get("success", True),
                             "games": payload.get("num_games", 0),
@@ -2054,7 +2099,8 @@ class JobManager(EventSubscriptionMixin):
                             await asyncio.sleep(wait_time)
                         continue
                     else:
-                        # Non-retryable HTTP error
+                        # Non-retryable HTTP error - record failure
+                        record_peer_transport_failure(worker_ip, "http")
                         return {
                             "success": False,
                             "error": f"http_{resp.status}",
@@ -2080,7 +2126,8 @@ class JobManager(EventSubscriptionMixin):
                     self.stats.dispatch_retries += 1
                     await asyncio.sleep(wait_time)
 
-        # All retries exhausted
+        # All retries exhausted - record failure to trip circuit breaker
+        record_peer_transport_failure(worker_ip, "http")
         return {
             "success": False,
             "error": "max_retries_exceeded",
@@ -2993,9 +3040,22 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
         Returns:
             List of match results from worker
         """
+        # Sprint 15.1.1: Extract host from URL for per-transport CB
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        host = parsed.hostname or ""
+
+        # Sprint 15.1.1: Check per-transport circuit breaker before attempting
+        if host and not check_peer_transport_circuit(host, "http"):
+            logger.debug(f"Skipping tournament request to {worker_id}: HTTP circuit breaker is OPEN")
+            return []
+
         try:
             async with session.post(url, json=payload, timeout=timeout) as resp:
                 if resp.status == 200:
+                    # Sprint 15.1.1: Record success for per-transport CB
+                    if host:
+                        record_peer_transport_success(host, "http")
                     result = await resp.json()
                     match_results = result.get("results", [])
                     logger.debug(
@@ -3003,13 +3063,22 @@ print(f"Saved model to {{config.get('output_model', '/tmp/model.pt')}}")
                     )
                     return match_results
                 else:
+                    # Sprint 15.1.1: Record failure for per-transport CB
+                    if host:
+                        record_peer_transport_failure(host, "http")
                     logger.warning(f"Worker {worker_id} returned status {resp.status}")
                     return []
         except asyncio.TimeoutError:
+            # Sprint 15.1.1: Record failure for per-transport CB
+            if host:
+                record_peer_transport_failure(host, "http")
             logger.warning(f"Worker {worker_id} timed out")
             return []
         except (OSError, ConnectionError) as e:
             # Dec 2025: Narrowed from broad Exception - network/connection errors
+            # Sprint 15.1.1: Record failure for per-transport CB
+            if host:
+                record_peer_transport_failure(host, "http")
             logger.warning(f"Worker {worker_id} error: {e}")
             return []
 

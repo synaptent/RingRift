@@ -18,6 +18,12 @@ Prometheus Metrics (January 2026):
 - ringrift_partition_healing_failures_total: Failed healing passes
 - ringrift_partition_healing_escalation_level: Current escalation level (0-5)
 
+Convergence Metrics (Sprint 15.1.5, January 3, 2026):
+- ringrift_partition_convergence_duration_seconds: Time to achieve convergence
+- ringrift_partition_convergence_attempts_total: Total convergence check attempts
+- ringrift_partition_convergence_failures_total: Convergence failures (timeout/disagreement)
+- ringrift_partition_convergence_leader_disagreements_total: Leader disagreements during check
+
 Usage:
     # Run as a background daemon
     python scripts/p2p/partition_healer.py
@@ -126,6 +132,11 @@ PROM_NODES_RECONNECTED = None
 PROM_HEALING_SUCCESS = None
 PROM_HEALING_FAILURES = None
 PROM_ESCALATION_LEVEL = None
+# Jan 3, 2026 Sprint 15.1.5: Convergence-specific metrics
+PROM_CONVERGENCE_DURATION = None
+PROM_CONVERGENCE_ATTEMPTS = None
+PROM_CONVERGENCE_FAILURES = None
+PROM_CONVERGENCE_LEADER_DISAGREEMENTS = None
 
 if HAS_PROMETHEUS:
     PROM_HEALING_DURATION = _get_or_create_histogram(
@@ -162,6 +173,28 @@ if HAS_PROMETHEUS:
     PROM_ESCALATION_LEVEL = _get_or_create_gauge(
         'ringrift_partition_healing_escalation_level',
         'Current escalation level for partition healing (0-5)',
+        []
+    )
+    # Jan 3, 2026 Sprint 15.1.5: Convergence-specific metrics
+    PROM_CONVERGENCE_DURATION = _get_or_create_histogram(
+        'ringrift_partition_convergence_duration_seconds',
+        'Time to achieve convergence after partition healing',
+        [],
+        buckets=(1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0)
+    )
+    PROM_CONVERGENCE_ATTEMPTS = _get_or_create_counter(
+        'ringrift_partition_convergence_attempts_total',
+        'Total convergence check attempts',
+        []
+    )
+    PROM_CONVERGENCE_FAILURES = _get_or_create_counter(
+        'ringrift_partition_convergence_failures_total',
+        'Convergence check failures (timeout or disagreement)',
+        []
+    )
+    PROM_CONVERGENCE_LEADER_DISAGREEMENTS = _get_or_create_counter(
+        'ringrift_partition_convergence_leader_disagreements_total',
+        'Times nodes disagreed on cluster leader during convergence',
         []
     )
 
@@ -483,8 +516,125 @@ class PartitionHealer:
                         f"{p1.partition_id} and {p2.partition_id}"
                     )
 
+                    # Sprint 16.1 (Jan 3, 2026): Validate gossip propagation after injection
+                    # Collect target nodes and injected peers for validation
+                    target_nodes = [
+                        (node_id, addr) for node_id, addr in p1_bridges
+                    ] + [
+                        (node_id, addr) for node_id, addr in p2_bridges
+                    ]
+                    injected_peers = [p2_node for p2_node, _ in p2_bridges] + [
+                        p1_node for p1_node, _ in p1_bridges
+                    ]
+
+                    propagated, visibility = await self._validate_injection_propagated(
+                        target_nodes, injected_peers
+                    )
+
+                    if not propagated:
+                        logger.warning(
+                            f"Injection between {p1.partition_id} and {p2.partition_id} "
+                            f"may not have propagated fully (visibility={visibility*100:.1f}%)"
+                        )
+                        # Continue with other partition pairs, don't fail early
+
         result.duration_ms = (time.time() - start_time) * 1000
         return result
+
+    async def _validate_injection_propagated(
+        self,
+        target_nodes: list[tuple[str, str]],  # [(node_id, address), ...]
+        injected_peers: list[str],  # peer_ids that were injected
+    ) -> tuple[bool, float]:
+        """
+        Validate that injected peers are visible on target nodes.
+
+        Sprint 16.1 (Jan 3, 2026): Quick gossip propagation check after T0 injection.
+        Instead of waiting for full cluster convergence, this validates that the
+        specific injected peers are now visible on the target nodes.
+
+        Args:
+            target_nodes: List of (node_id, address) tuples for nodes that received injections
+            injected_peers: List of peer_ids that were injected
+
+        Returns:
+            Tuple of (success, visibility_ratio) where visibility_ratio is the
+            fraction of (target, peer) pairs that are visible.
+        """
+        if not target_nodes or not injected_peers:
+            return True, 1.0  # Nothing to validate
+
+        # Wait one gossip round for propagation
+        gossip_interval = PartitionHealingDefaults.CONVERGENCE_CHECK_INTERVAL
+        logger.debug(
+            f"[InjectionValidation] Waiting {gossip_interval}s for gossip propagation..."
+        )
+        await asyncio.sleep(gossip_interval)
+
+        # Check visibility on each target
+        visible_count = 0
+        total_checks = 0
+        timeout = PartitionHealingDefaults.INJECTION_PROPAGATION_TIMEOUT
+
+        async def check_peer_visibility(
+            node_id: str, addr: str, peer_ids: list[str]
+        ) -> int:
+            """Check how many injected peers are visible on a target node."""
+            try:
+                view = await self.get_peer_view(addr)
+                if view and "peers" in view:
+                    visible_peers = set(view["peers"].keys())
+                    visible_peers.add(view.get("node_id", ""))  # Include self
+                    return sum(1 for p in peer_ids if p in visible_peers)
+            except Exception as e:
+                logger.debug(f"[InjectionValidation] Error checking {node_id}: {e}")
+            return 0
+
+        # Run visibility checks with timeout
+        start_time = time.time()
+        check_tasks = []
+        for node_id, addr in target_nodes:
+            check_tasks.append(check_peer_visibility(node_id, addr, injected_peers))
+
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(*check_tasks, return_exceptions=True),
+                timeout=timeout,
+            )
+
+            for i, result in enumerate(results):
+                node_id = target_nodes[i][0]
+                expected = len(injected_peers)
+                total_checks += expected
+
+                if isinstance(result, Exception):
+                    logger.debug(
+                        f"[InjectionValidation] {node_id}: check failed ({result})"
+                    )
+                else:
+                    visible_count += result
+                    if result < expected:
+                        logger.debug(
+                            f"[InjectionValidation] {node_id}: {result}/{expected} "
+                            f"injected peers visible"
+                        )
+
+        except asyncio.TimeoutError:
+            elapsed = time.time() - start_time
+            logger.warning(
+                f"[InjectionValidation] Timed out after {elapsed:.1f}s checking visibility"
+            )
+
+        visibility_ratio = visible_count / total_checks if total_checks > 0 else 0
+        success = visibility_ratio >= PartitionHealingDefaults.INJECTION_VISIBILITY_THRESHOLD
+
+        logger.info(
+            f"[InjectionValidation] Result: {visible_count}/{total_checks} visible "
+            f"({visibility_ratio*100:.1f}%), threshold={PartitionHealingDefaults.INJECTION_VISIBILITY_THRESHOLD*100:.0f}%, "
+            f"success={success}"
+        )
+
+        return success, visibility_ratio
 
     async def _validate_convergence(
         self,
@@ -496,6 +646,9 @@ class PartitionHealer:
 
         Sprint 4 (Jan 2, 2026): Verify that all nodes agree on peer membership
         after healing, instead of assuming success.
+
+        Sprint 15.1.5 (Jan 3, 2026): Added leader consensus verification and
+        convergence metrics for better observability.
 
         Args:
             known_peers: Known peers from union discovery
@@ -509,6 +662,8 @@ class PartitionHealer:
         agreement_threshold = PartitionHealingDefaults.CONVERGENCE_AGREEMENT_THRESHOLD
 
         start_time = time.time()
+        check_count = 0
+        leader_disagreement_count = 0
         reachable_nodes = [
             (node_id, peer.best_address)
             for node_id, peer in known_peers.items()
@@ -516,6 +671,8 @@ class PartitionHealer:
         ]
 
         if not reachable_nodes:
+            if PROM_CONVERGENCE_FAILURES:
+                PROM_CONVERGENCE_FAILURES.inc()
             return False, "No reachable nodes for convergence check"
 
         logger.info(
@@ -523,27 +680,41 @@ class PartitionHealer:
             f"(timeout={timeout}s, threshold={agreement_threshold*100:.0f}%)"
         )
 
-        while (time.time() - start_time) < timeout:
-            # Collect peer views from all reachable nodes
-            peer_views: dict[str, set[str]] = {}
+        avg_agreement = 0.0  # Track for timeout message
 
-            async def get_view(node_id: str, addr: str) -> tuple[str, set[str] | None]:
+        while (time.time() - start_time) < timeout:
+            check_count += 1
+            if PROM_CONVERGENCE_ATTEMPTS:
+                PROM_CONVERGENCE_ATTEMPTS.inc()
+
+            # Sprint 15.1.5: Collect both peer views AND leader info from all nodes
+            peer_views: dict[str, set[str]] = {}
+            leader_views: dict[str, str | None] = {}
+
+            async def get_view_with_leader(
+                node_id: str, addr: str
+            ) -> tuple[str, set[str] | None, str | None]:
+                """Get peer view and leader_id from node's /status endpoint."""
                 view = await self.get_peer_view(addr)
                 if view:
                     peers = view.get("peers", {})
                     seen = set(peers.keys())
                     seen.add(view.get("node_id", node_id))
-                    return node_id, seen
-                return node_id, None
+                    # Sprint 15.1.5: Extract leader_id for consensus check
+                    leader_id = view.get("leader_id") or view.get("effective_leader_id")
+                    return node_id, seen, leader_id
+                return node_id, None, None
 
-            tasks = [get_view(node_id, addr) for node_id, addr in reachable_nodes]
+            tasks = [get_view_with_leader(node_id, addr) for node_id, addr in reachable_nodes]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             for result in results:
-                if isinstance(result, tuple):
-                    node_id, seen = result
+                if isinstance(result, tuple) and len(result) == 3:
+                    node_id, seen, leader_id = result
                     if seen is not None:
                         peer_views[node_id] = seen
+                    if leader_id is not None:
+                        leader_views[node_id] = leader_id
 
             if len(peer_views) < 2:
                 # Not enough responses for comparison
@@ -570,24 +741,69 @@ class PartitionHealer:
             ]
             avg_agreement = sum(agreement_scores) / len(agreement_scores) if agreement_scores else 0
 
+            # Sprint 15.1.5: Check leader consensus
+            unique_leaders = set(leader_views.values())
+            unique_leaders.discard(None)  # Remove None values
+            leader_consensus = len(unique_leaders) <= 1
+
+            if not leader_consensus and len(unique_leaders) > 1:
+                leader_disagreement_count += 1
+                if PROM_CONVERGENCE_LEADER_DISAGREEMENTS:
+                    PROM_CONVERGENCE_LEADER_DISAGREEMENTS.inc()
+                logger.debug(
+                    f"[ConvergenceCheck] Leader disagreement: {len(unique_leaders)} "
+                    f"different leaders reported: {unique_leaders}"
+                )
+
             logger.debug(
-                f"[ConvergenceCheck] Progress: {avg_agreement*100:.1f}% agreement "
+                f"[ConvergenceCheck] Progress: {avg_agreement*100:.1f}% peer agreement, "
+                f"leader_consensus={leader_consensus} "
                 f"({total_responding} nodes responding, {len(all_seen_peers)} peers seen)"
             )
 
-            if avg_agreement >= agreement_threshold:
+            # Sprint 15.1.5: Require BOTH peer agreement AND leader consensus
+            if avg_agreement >= agreement_threshold and leader_consensus:
                 elapsed = time.time() - start_time
+                # Record convergence duration metric
+                if PROM_CONVERGENCE_DURATION:
+                    PROM_CONVERGENCE_DURATION.observe(elapsed)
+
+                leader_info = ""
+                if unique_leaders:
+                    leader_info = f", leader={list(unique_leaders)[0]}"
+
                 msg = (
-                    f"Convergence achieved: {avg_agreement*100:.1f}% agreement "
-                    f"in {elapsed:.1f}s ({total_responding} nodes, {len(all_seen_peers)} peers)"
+                    f"Convergence achieved: {avg_agreement*100:.1f}% peer agreement"
+                    f"{leader_info} in {elapsed:.1f}s "
+                    f"({total_responding} nodes, {len(all_seen_peers)} peers)"
                 )
                 logger.info(f"[ConvergenceCheck] {msg}")
                 return True, msg
 
             await asyncio.sleep(check_interval)
 
+        # Timeout reached
         elapsed = time.time() - start_time
-        msg = f"Convergence timeout after {elapsed:.1f}s (last agreement: {avg_agreement*100:.1f}%)"
+        if PROM_CONVERGENCE_FAILURES:
+            PROM_CONVERGENCE_FAILURES.inc()
+        if PROM_CONVERGENCE_DURATION:
+            PROM_CONVERGENCE_DURATION.observe(elapsed)
+
+        # Build detailed failure message
+        unique_leaders = set(leader_views.values())
+        unique_leaders.discard(None)
+        leader_consensus = len(unique_leaders) <= 1
+
+        failure_reasons = []
+        if avg_agreement < agreement_threshold:
+            failure_reasons.append(f"peer agreement {avg_agreement*100:.1f}% < {agreement_threshold*100:.0f}%")
+        if not leader_consensus:
+            failure_reasons.append(f"leader disagreement ({len(unique_leaders)} leaders)")
+
+        msg = (
+            f"Convergence timeout after {elapsed:.1f}s: {', '.join(failure_reasons) or 'unknown'}. "
+            f"Leader disagreements during check: {leader_disagreement_count}"
+        )
         logger.warning(f"[ConvergenceCheck] {msg}")
         return False, msg
 
@@ -903,6 +1119,43 @@ class PartitionHealer:
             "escalation_level": self._escalation_level,
             "escalation_threshold": PartitionHealingDefaults.ESCALATION_THRESHOLD,
             "max_escalation_level": PartitionHealingDefaults.ESCALATION_MAX_LEVEL,
+        }
+
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for DaemonManager integration.
+
+        Sprint 15 (Jan 3, 2026): Added for unified health monitoring.
+        """
+        # Determine health status based on escalation level
+        max_escalation = PartitionHealingDefaults.ESCALATION_MAX_LEVEL
+        is_critical = self._escalation_level >= max_escalation
+        is_degraded = self._escalation_level > 0
+
+        if is_critical:
+            status = "critical"
+            healthy = False
+        elif is_degraded:
+            status = "degraded"
+            healthy = True  # Still functional, just elevated failure rate
+        else:
+            status = "healthy"
+            healthy = True
+
+        return {
+            "healthy": healthy,
+            "status": status,
+            "details": {
+                "auto_enabled": PartitionHealingDefaults.AUTO_ENABLED,
+                "escalation_level": self._escalation_level,
+                "max_escalation_level": max_escalation,
+                "consecutive_failures": self._consecutive_failures,
+                "last_healing_time": self._last_healing_time,
+                "ready_for_trigger": (
+                    time.time() - self._last_healing_time >= PartitionHealingDefaults.MIN_INTERVAL
+                    if self._last_healing_time > 0
+                    else True
+                ),
+            },
         }
 
     async def run_daemon(self, interval: float = 60.0) -> None:

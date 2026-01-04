@@ -453,9 +453,12 @@ class UnifiedDataSyncOrchestrator(HandlerBase):
             "last_update": self._metrics.last_update,
         }
 
-    def health_check(self) -> dict[str, Any]:
-        """Return health check result."""
-        from app.coordination.health_facade import HealthCheckResult
+    def health_check(self) -> "HealthCheckResult":
+        """Return health check result.
+
+        Sprint 15.4: Fixed return type annotation and status enum usage.
+        """
+        from app.coordination.contracts import HealthCheckResult, CoordinatorStatus
 
         # Check backup health
         s3_healthy = self._metrics.s3_backups_failed < 5
@@ -464,7 +467,7 @@ class UnifiedDataSyncOrchestrator(HandlerBase):
 
         return HealthCheckResult(
             healthy=overall_healthy,
-            status="healthy" if overall_healthy else "degraded",
+            status=CoordinatorStatus.RUNNING if overall_healthy else CoordinatorStatus.PAUSED,
             details={
                 "s3_healthy": s3_healthy,
                 "owc_healthy": owc_healthy,

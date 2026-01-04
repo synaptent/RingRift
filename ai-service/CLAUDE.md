@@ -10,7 +10,7 @@ AI assistant context for the Python AI training service. Complements `AGENTS.md`
 | -------------------- | --------- | ---------------------------------------------------------- |
 | **P2P Network**      | GREEN     | A- (91/100), 32+ health mechanisms, 7 recovery daemons     |
 | **Training Loop**    | GREEN     | A (100/100), all feedback loops wired, 7/7 pipeline stages |
-| **Code Quality**     | GREEN     | 99% consolidated, 303 coordination modules, 1042 tests     |
+| **Code Quality**     | GREEN     | 99% consolidated, 306 coordination modules, 1044 tests     |
 | **Leader Election**  | WORKING   | Bully algorithm with voter quorum, split-brain detection   |
 | **Work Queue**       | HEALTHY   | 1000+ items maintained, QueuePopulatorLoop working         |
 | **Model Evaluation** | AUTOMATED | OWC import + unevaluated scan + stale re-eval pipeline     |
@@ -24,32 +24,58 @@ Long-term consolidation sprint focused on technical debt reduction and documenta
 | 1     | Archive deprecated modules    | ✅ COMPLETE    | 2,205 LOC archived            |
 | 2     | Retry logic consolidation     | ✅ COMPLETE    | 26 files using RetryConfig    |
 | 3     | Event handler standardization | ✅ COMPLETE    | 64 files using HandlerBase    |
-| 4     | HandlerBase migration         | ✅ 98%         | 59/64 daemon files migrated   |
+| 4     | HandlerBase migration         | ✅ 84%         | 54/64 daemon files migrated   |
 | 5     | Singleton standardization     | ✅ MIXED       | 15 files using SingletonMixin |
-| 6     | Documentation updates         | ✅ IN PROGRESS | Updating metrics              |
+| 6     | Documentation updates         | ✅ IN PROGRESS | Sprint 16.1 assessment added  |
+
+**Session 16.1 Comprehensive Assessment (Jan 3, 2026):**
+
+Three parallel exploration agents completed infrastructure assessment:
+
+| Component     | Grade | Score  | Key Findings                                             |
+| ------------- | ----- | ------ | -------------------------------------------------------- |
+| P2P Network   | A-    | 91/100 | 32+ health mechanisms, 272 async ops, 7 recovery daemons |
+| Training Loop | A-    | 94/100 | 6/6 stages, 5/5 feedback loops, quality gates verified   |
+| Consolidation | -     | 87%    | 6,700-8,200 LOC savings potential in 25-29 hours         |
+
+**P2P Detailed Breakdown:**
+
+- Health Monitoring: 95/100 (19/20 mechanisms)
+- Circuit Breakers: 90/100 (9/10 coverage, 10 types with 4-tier escalation)
+- Recovery Mechanisms: 94/100 (7 active recovery daemons)
+- Async Safety: 65/100 (176/272 blocking ops wrapped)
+- Event Wiring: 98/100 (8/8 critical flows complete)
+
+**Training Loop Verified:**
+
+- All 6 pipeline stages: SELFPLAY → SYNC → NPZ_EXPORT → TRAINING → EVALUATION → PROMOTION
+- 5/5 feedback loops with emitters AND subscribers
+- Quality gates with confidence weighting (<50: 50%, 50-500: 75%, 500+: 100%)
+- 48-hour autonomous operation verified
 
 **Current Metrics (Jan 3, 2026):**
 
-| Metric               | Count | Notes                           |
-| -------------------- | ----- | ------------------------------- |
-| Daemon Types         | 133   | DaemonType enum members         |
-| Event Types          | 265   | DataEventType enum members      |
-| Coordination Modules | 303   | In app/coordination/            |
-| Test Files           | 1,042 | Comprehensive coverage          |
-| HandlerBase Adoption | 59    | Files using HandlerBase pattern |
-| Retry Infrastructure | 26    | Files using RetryConfig         |
+| Metric                | Count | Notes                                   |
+| --------------------- | ----- | --------------------------------------- |
+| Daemon Types          | 109   | DaemonType enum members                 |
+| Event Types           | 270   | DataEventType enum members              |
+| Coordination Modules  | 306   | In app/coordination/                    |
+| Test Files            | 1,044 | Comprehensive coverage                  |
+| Health Checks (coord) | 162   | Modules with health_check() methods     |
+| Health Checks (P2P)   | 31    | P2P modules with health_check() methods |
+| Retry Infrastructure  | 26    | Files using RetryConfig                 |
 
 **Sprint 15 Assessment (Jan 3, 2026):**
 
-| Assessment Area      | Grade | Score   | Verified Status                                                |
-| -------------------- | ----- | ------- | -------------------------------------------------------------- |
-| P2P Network          | A-    | 91/100  | 32+ health mechanisms, 7 recovery daemons, 28+ alive peers     |
-| Training Loop        | A     | 100/100 | All feedback loops wired, 7/7 pipeline stages complete         |
-| HandlerBase Adoption | -     | 98%     | 59/64 daemon files using HandlerBase                           |
-| Test Coverage        | 99%+  | -       | 1,042 test files for 303 coordination modules                  |
-| Consolidation        | -     | 99%     | Deprecated modules archived, retry/event patterns consolidated |
-| Daemon Types         | -     | 133     | DaemonType enum verified                                       |
-| Event Types          | -     | 265     | DataEventType enum verified                                    |
+| Assessment Area       | Grade | Score   | Verified Status                                                |
+| --------------------- | ----- | ------- | -------------------------------------------------------------- |
+| P2P Network           | A-    | 91/100  | 32+ health mechanisms, 7 recovery daemons, 28+ alive peers     |
+| Training Loop         | A     | 100/100 | All feedback loops wired, 7/7 pipeline stages complete         |
+| Health Check Coverage | -     | 53%     | 162/306 coordination, 31 P2P modules with health_check()       |
+| Test Coverage         | 99%+  | -       | 1,044 test files for 306 coordination modules                  |
+| Consolidation         | -     | 99%     | Deprecated modules archived, retry/event patterns consolidated |
+| Daemon Types          | -     | 109     | DaemonType enum verified                                       |
+| Event Types           | -     | 270     | DataEventType enum verified                                    |
 
 **Automated Model Evaluation Pipeline (Session 13.5):**
 
@@ -62,12 +88,35 @@ Long-term consolidation sprint focused on technical debt reduction and documenta
 
 **Remaining Consolidation Opportunities (Priority Order):**
 
-| Priority | Opportunity                         | LOC Savings | Effort |
-| -------- | ----------------------------------- | ----------- | ------ |
-| P0       | Event handler consolidation         | 1,200-1,800 | 20-24h |
-| P0       | Circuit breaker unification (8→2-3) | 800-1,200   | 16-20h |
-| P1       | Sync manager patterns               | 700-1,000   | 18-22h |
-| P0       | Complete HandlerBase for 4 daemons  | 600-900     | 14-18h |
+| Priority | Opportunity                          | LOC Savings | Effort | Status               |
+| -------- | ------------------------------------ | ----------- | ------ | -------------------- |
+| P0       | HandlerBase for 10 remaining daemons | 6,200-7,500 | 14-18h | 10 remaining         |
+| P0       | Wrap 96 blocking sqlite3 ops         | Stability   | 6-8h   | Critical for async   |
+| P1       | Circuit breaker cleanup (minor)      | 150         | 1-2h   | Already consolidated |
+| P1       | Event handler (2% remaining)         | 200-300     | 2-3h   | 98% complete         |
+| P1       | Retry strategy unification           | 150-250     | 4-6h   | 85% complete         |
+
+**10 Daemons Remaining for HandlerBase Migration:**
+
+1. auto_sync_daemon.py (~1,100 LOC)
+2. coordinator_health_monitor_daemon.py (~800 LOC)
+3. data_cleanup_daemon.py (~650 LOC)
+4. idle_resource_daemon.py (~1,200 LOC)
+5. s3_backup_daemon.py (~750 LOC)
+6. training_data_sync_daemon.py (~900 LOC)
+7. unified_data_plane_daemon.py (~850 LOC)
+8. unified_idle_shutdown_daemon.py (~600 LOC)
+9. unified_node_health_daemon.py (~500 LOC)
+10. work_queue_monitor_daemon.py (~600 LOC)
+
+**Sprint 15.1 P2P Stability Improvements (Jan 3, 2026):**
+
+| Fix                            | Description                                           | Files Modified                                                                              |
+| ------------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Per-transport circuit breakers | HTTP dispatch calls now use per-transport CBs         | scripts/p2p/managers/job_manager.py                                                         |
+| Partition healing convergence  | Leader consensus verification before declaring healed | scripts/p2p/partition_healer.py                                                             |
+| Voter health persistence       | VOTER_FLAPPING event for stability monitoring         | app/distributed/data_events.py                                                              |
+| Health check standardization   | 3 files updated to return HealthCheckResult           | container_tailscale_setup.py, unified_data_sync_orchestrator.py, resilience_orchestrator.py |
 
 **Sprint 15 Fixes Deployed (Jan 3, 2026):**
 
@@ -97,11 +146,11 @@ IMPORTANT: Exploration agents reported gaps that were **already implemented**:
 | Loss Anomaly Severity-Based Decay   | ✅ DONE (Session 8) | `feedback_loop_controller.py`                   |
 | Cross-Config Quality Propagation    | ✅ DONE (Sprint 12) | `curriculum_integration.py:1171-1284`           |
 | Health Check Async Safety           | ✅ LARGELY DONE     | 176 asyncio.to_thread usages across 53 files    |
-| P2P Health Checks                   | ✅ 19 FILES         | `scripts/p2p/` has 19 modules with health_check |
+| P2P Health Checks                   | ✅ 31 FILES         | `scripts/p2p/` has 31 modules with health_check |
 
 **Infrastructure Maturity**: The infrastructure is PRODUCTION-READY with:
 
-- 263 event types defined, 5/5 feedback loops wired
+- 270 event types defined, 5/5 feedback loops wired
 - Cross-config curriculum propagation with weighted hierarchy (80%/60%/40% weights)
 - CIRCUIT_RESET subscriber active (Session 10)
 - No critical gaps remain - future work is incremental consolidation
@@ -400,14 +449,14 @@ python scripts/update_all_nodes.py --restart-p2p
 - `get_config_version()` - Get ConfigVersion for gossip state sync
 - Avoids repeated YAML parsing across modules
 
-### Coordination Infrastructure (298 modules, 235K LOC)
+### Coordination Infrastructure (306 modules, 235K LOC)
 
 | Module                                 | Purpose                                           |
 | -------------------------------------- | ------------------------------------------------- |
-| `daemon_manager.py`                    | Lifecycle for 105 daemon types (~2,000 LOC)       |
+| `daemon_manager.py`                    | Lifecycle for 109 daemon types (~2,000 LOC)       |
 | `daemon_registry.py`                   | Declarative daemon specs (DaemonSpec dataclass)   |
 | `daemon_runners.py`                    | 124 async runner functions                        |
-| `event_router.py`                      | Unified event bus (256 event types, SHA256 dedup) |
+| `event_router.py`                      | Unified event bus (270 event types, SHA256 dedup) |
 | `selfplay_scheduler.py`                | Priority-based selfplay allocation (~3,800 LOC)   |
 | `budget_calculator.py`                 | Gumbel budget tiers, target games calculation     |
 | `progress_watchdog_daemon.py`          | Stall detection for 48h autonomous operation      |
@@ -801,7 +850,7 @@ weights = tracker.get_compute_weights(board_type="hex8", num_players=2)
 
 ## Daemon System
 
-105 daemon types (99 active, 6 deprecated). Three-layer architecture:
+109 daemon types (103 active, 6 deprecated). Three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative `DAEMON_REGISTRY: Dict[DaemonType, DaemonSpec]`
 2. **`daemon_manager.py`** - Lifecycle coordinator (start/stop, health, auto-restart)
@@ -863,10 +912,10 @@ Automatic retry for transient failures (GPU OOM, timeouts):
 
 **Integration Status**: 99.5% COMPLETE (Jan 3, 2026)
 
-256 event types defined in DataEventType enum. All critical event flows are fully wired.
+270 event types defined in DataEventType enum. All critical event flows are fully wired.
 5/5 feedback loops verified functional. Only minor informational gaps remain.
 
-256 event types across 3 layers:
+270 event types across 3 layers:
 
 1. **In-memory EventBus** - Local daemon communication
 2. **Stage events** - Pipeline stage completion

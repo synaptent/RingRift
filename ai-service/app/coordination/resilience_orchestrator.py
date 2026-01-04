@@ -458,6 +458,43 @@ class ResilienceOrchestrator:
             },
         }
 
+    def health_check(self) -> "HealthCheckResult":
+        """Return health status for DaemonManager integration.
+
+        Sprint 15 (Jan 3, 2026): Added for unified health monitoring.
+        Sprint 15.4: Updated to return HealthCheckResult instead of dict.
+        """
+        from app.coordination.contracts import HealthCheckResult, CoordinatorStatus
+
+        success_rate = self._stats.success_rate
+        circuit_opens_recent = self._stats.circuit_opens
+
+        # Determine health status based on success rate
+        if success_rate < 0.5 or circuit_opens_recent > 10:
+            coordinator_status = CoordinatorStatus.PAUSED
+            healthy = False
+        elif success_rate < 0.8 or circuit_opens_recent > 5:
+            coordinator_status = CoordinatorStatus.RUNNING  # degraded but running
+            healthy = True
+        else:
+            coordinator_status = CoordinatorStatus.RUNNING
+            healthy = True
+
+        return HealthCheckResult(
+            healthy=healthy,
+            status=coordinator_status,
+            details={
+                "total_operations": self._stats.total_operations,
+                "success_rate": round(success_rate, 3),
+                "failed_operations": self._stats.failed_operations,
+                "total_retries": self._stats.total_retries,
+                "circuit_opens": circuit_opens_recent,
+                "timeouts": self._stats.timeouts,
+                "last_operation_time": self._stats.last_operation_time,
+                "tracked_operations": len(self._operation_stats),
+            },
+        )
+
 
 # =============================================================================
 # Singleton Access

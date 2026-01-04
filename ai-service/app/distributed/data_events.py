@@ -245,6 +245,14 @@ class DataEventType(Enum):
     MODEL_IMPORTED = "model_imported"  # Model imported from OWC drive
     OWC_MODELS_DISCOVERED = "owc_models_discovered"  # OWC scan discovered models (observability)
 
+    # Backlog evaluation events (Sprint 15 - Jan 3, 2026)
+    OWC_MODEL_DISCOVERED = "owc_model_discovered"  # Single model found on OWC drive
+    OWC_MODEL_BACKLOG_QUEUED = "owc_model_backlog_queued"  # Model queued for evaluation
+    OWC_MODEL_EVALUATION_STARTED = "owc_model_evaluation_started"  # Backlog evaluation began
+    OWC_MODEL_EVALUATION_COMPLETED = "owc_model_evaluation_completed"  # Backlog evaluation finished
+    OWC_MODEL_EVALUATION_FAILED = "owc_model_evaluation_failed"  # Backlog evaluation failed
+    BACKLOG_DISCOVERY_COMPLETED = "backlog_discovery_completed"  # Discovery cycle complete
+
     # P2P/Model sync events
     P2P_MODEL_SYNCED = "p2p_model_synced"
     MODEL_SYNC_REQUESTED = "model_sync_requested"
@@ -274,6 +282,7 @@ class DataEventType(Enum):
     VOTER_ONLINE = "voter_online"  # Individual voter recovered
     VOTER_DEMOTED = "voter_demoted"  # Jan 2026: Voter demoted due to health issues (audit trail)
     VOTER_PROMOTED = "voter_promoted"  # Jan 2026: Voter re-promoted after recovery (audit trail)
+    VOTER_FLAPPING = "voter_flapping"  # Jan 2026 Sprint 15: Voter is unstable (frequent online/offline)
     QUORUM_LOST = "quorum_lost"  # Quorum threshold crossed (was OK, now lost)
     QUORUM_RESTORED = "quorum_restored"  # Quorum threshold crossed (was lost, now OK)
     QUORUM_AT_RISK = "quorum_at_risk"  # Quorum marginal (e.g., exactly at threshold)
