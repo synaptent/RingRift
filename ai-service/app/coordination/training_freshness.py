@@ -58,6 +58,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config.thresholds import SQLITE_CONNECT_TIMEOUT
+from app.coordination.event_utils import make_config_key
 
 logger = logging.getLogger(__name__)
 
@@ -359,7 +360,7 @@ class TrainingFreshnessChecker:
                 if sources:
                     logger.debug(
                         f"DataCatalog found {len(sources)} NPZ files for "
-                        f"{board_type}_{num_players}p"
+                        f"{make_config_key(board_type, num_players)}"
                     )
                     return sources
             except (OSError, AttributeError) as e:
@@ -580,7 +581,7 @@ class TrainingFreshnessChecker:
                 }
                 for s in npz_files
             ],
-            "config_key": f"{board_type}_{num_players}p",
+            "config_key": make_config_key(board_type, num_players),
             "threshold_hours": self.config.max_age_hours,
             "min_games_required": self.config.min_games_required,
             "using_content_age": self.config.validate_content_age,
@@ -612,7 +613,7 @@ class TrainingFreshnessChecker:
         Returns:
             True if sync was triggered successfully
         """
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
 
         # Try the new unified sync entry point first (December 2025)
         try:
@@ -728,7 +729,7 @@ class TrainingFreshnessChecker:
         Returns:
             FreshnessResult with final status
         """
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
         logger.info(f"Checking training data freshness for {config_key}")
 
         # Check current freshness

@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from app.coordination.event_utils import make_config_key
 from app.coordination.pipeline_mixin_base import PipelineMixinBase
 
 if TYPE_CHECKING:
@@ -99,7 +100,7 @@ class PipelineTriggerMixin(PipelineMixinBase):
             logger.warning("[DataPipelineOrchestrator] Cannot auto-trigger export: missing board config")
             return
 
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
 
         # Dec 29, 2025: Wire to SelfplayScheduler to set target and check games needed
         try:
@@ -384,7 +385,7 @@ class PipelineTriggerMixin(PipelineMixinBase):
                 await router.publish(
                     event_type=DataEventType.SELFPLAY_TARGET_UPDATED,
                     payload={
-                        "config": f"{board_type}_{num_players}p",
+                        "config": make_config_key(board_type, num_players),
                         "board_type": board_type,
                         "num_players": num_players,
                         "extra_games": 2000,  # Request more data
@@ -459,11 +460,11 @@ class PipelineTriggerMixin(PipelineMixinBase):
             board_type = getattr(result, "board_type", None)
             num_players = getattr(result, "num_players", None)
             if board_type and num_players:
-                config_key = f"{board_type}_{num_players}p"
+                config_key = make_config_key(board_type, num_players)
             elif metadata:
                 config_key = metadata.get("config_key")
             if not config_key and self._current_board_type and self._current_num_players:
-                config_key = f"{self._current_board_type}_{self._current_num_players}p"
+                config_key = make_config_key(self._current_board_type, self._current_num_players)
 
             facade = get_sync_facade()
             logger.info(
@@ -503,9 +504,9 @@ class PipelineTriggerMixin(PipelineMixinBase):
             board_type = getattr(result, "board_type", None)
             num_players = getattr(result, "num_players", None)
             if board_type and num_players:
-                config_key = f"{board_type}_{num_players}p"
+                config_key = make_config_key(board_type, num_players)
             elif self._current_board_type and self._current_num_players:
-                config_key = f"{self._current_board_type}_{self._current_num_players}p"
+                config_key = make_config_key(self._current_board_type, self._current_num_players)
             else:
                 config_key = metadata.get("config_key")
 

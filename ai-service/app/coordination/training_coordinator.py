@@ -65,7 +65,7 @@ from typing import Any
 # January 2026: Use core_utils consolidation point
 from app.coordination.core_utils import DistributedLock
 from app.coordination.event_handler_utils import extract_config_from_path, extract_config_key
-from app.coordination.event_utils import parse_config_key
+from app.coordination.event_utils import make_config_key, parse_config_key
 from app.utils.paths import DATA_DIR
 
 # Use centralized event emitters (December 2025)
@@ -1452,7 +1452,7 @@ class TrainingCoordinator:
         Returns:
             True if no active training for this config and slots available
         """
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
 
         # Check cluster health first (December 2025 - feedback loop)
         if not self._cluster_healthy:
@@ -1522,7 +1522,7 @@ class TrainingCoordinator:
             job_id if registered successfully, None if slot not available
         """
         # First try to acquire distributed lock with retry
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
         lock = DistributedLock(f"training:{config_key}")
 
         # Retry with increasing timeouts: 30s, 60s, 90s
@@ -1820,11 +1820,11 @@ class TrainingCoordinator:
                     "board_type": board_type,
                     "num_players": num_players,
                     "node_name": self._node_name,
-                    "config": f"{board_type}_{num_players}p",
+                    "config": make_config_key(board_type, num_players),
                     "timestamp": time.time(),
                 },
             )
-            logger.debug(f"Emitted TRAINING_LOCK_ACQUIRED for {board_type}_{num_players}p")
+            logger.debug(f"Emitted TRAINING_LOCK_ACQUIRED for {make_config_key(board_type, num_players)}")
 
     def _emit_slot_unavailable(
         self,
@@ -1848,7 +1848,7 @@ class TrainingCoordinator:
             {
                 "board_type": board_type,
                 "num_players": num_players,
-                "config": f"{board_type}_{num_players}p",
+                "config": make_config_key(board_type, num_players),
                 "reason": reason,
                 "requester_node": self._node_name,
                 "timestamp": time.time(),

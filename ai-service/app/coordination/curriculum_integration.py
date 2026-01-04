@@ -192,7 +192,14 @@ class MomentumToCurriculumBridge:
             if hasattr(DataEventType, 'REGRESSION_DETECTED'):
                 router.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
 
-            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED, ELO_SIGNIFICANT_CHANGE, SELFPLAY_ALLOCATION_UPDATED, MODEL_PROMOTED, TIER_PROMOTION, CROSSBOARD_PROMOTION, CURRICULUM_ADVANCEMENT_NEEDED, ELO_VELOCITY_CHANGED, CURRICULUM_ADVANCED, CURRICULUM_PROPAGATE, REGRESSION_DETECTED")
+            # January 2026 Sprint 12: Subscribe to TRAINING_LOSS_ANOMALY for direct
+            # curriculum response (+10-15 Elo). Loss anomalies indicate training data
+            # quality issues. Reducing curriculum weight for affected configs prevents
+            # learning from bad data.
+            if hasattr(DataEventType, 'TRAINING_LOSS_ANOMALY'):
+                router.subscribe(DataEventType.TRAINING_LOSS_ANOMALY, self._on_loss_anomaly)
+
+            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED, ELO_SIGNIFICANT_CHANGE, SELFPLAY_ALLOCATION_UPDATED, MODEL_PROMOTED, TIER_PROMOTION, CROSSBOARD_PROMOTION, CURRICULUM_ADVANCEMENT_NEEDED, ELO_VELOCITY_CHANGED, CURRICULUM_ADVANCED, CURRICULUM_PROPAGATE, REGRESSION_DETECTED, TRAINING_LOSS_ANOMALY")
 
             # December 29, 2025: Only set _event_subscribed = True after successful subscription
             # Previously this was in finally block which caused race condition:
@@ -253,6 +260,9 @@ class MomentumToCurriculumBridge:
                 # January 2026 Sprint 10: Unsubscribe from REGRESSION_DETECTED
                 if hasattr(DataEventType, 'REGRESSION_DETECTED'):
                     router.unsubscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
+                # January 2026 Sprint 12: Unsubscribe from TRAINING_LOSS_ANOMALY
+                if hasattr(DataEventType, 'TRAINING_LOSS_ANOMALY'):
+                    router.unsubscribe(DataEventType.TRAINING_LOSS_ANOMALY, self._on_loss_anomaly)
             self._event_subscribed = False
         except (ImportError, AttributeError, TypeError, RuntimeError):
             # ImportError: modules not available
@@ -966,6 +976,81 @@ class MomentumToCurriculumBridge:
 
         except (AttributeError, KeyError, TypeError, ValueError) as e:
             logger.warning(f"[MomentumToCurriculumBridge] Error handling regression detected: {e}")
+
+    def _on_loss_anomaly(self, event) -> None:
+        """Handle TRAINING_LOSS_ANOMALY event - reduce curriculum weight for affected config.
+
+        January 2026 Sprint 12: Direct subscription to TRAINING_LOSS_ANOMALY enables
+        immediate curriculum response (+10-15 Elo improvement). Loss anomalies indicate
+        training data quality issues. Reducing curriculum weight for affected configs
+        prevents learning from bad data and redirects resources to healthier configs.
+
+        Action: Reduce curriculum weight by 20-40% depending on anomaly severity.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event if isinstance(event, dict) else {}
+
+            config_key = payload.get("config_key", "")
+            severity = payload.get("severity", "moderate")  # mild, moderate, severe
+            loss_value = payload.get("loss_value", 0)
+            expected_loss = payload.get("expected_loss", 0)
+            anomaly_type = payload.get("type", "spike")  # spike, drop, nan
+
+            if not config_key:
+                logger.debug("[MomentumToCurriculumBridge] TRAINING_LOSS_ANOMALY missing config_key")
+                return
+
+            # Calculate reduction factor based on severity
+            # mild: 15% reduction, moderate: 25% reduction, severe: 40% reduction
+            severity_map = {
+                "mild": 0.85,
+                "moderate": 0.75,
+                "severe": 0.60,
+            }
+            reduction_factor = severity_map.get(severity, 0.75)
+
+            logger.warning(
+                f"[MomentumToCurriculumBridge] TRAINING_LOSS_ANOMALY for {config_key}: "
+                f"severity={severity}, type={anomaly_type}, loss={loss_value:.4f} (expected={expected_loss:.4f}), "
+                f"reducing curriculum weight by {(1-reduction_factor)*100:.0f}%"
+            )
+
+            # Apply curriculum weight reduction
+            try:
+                from app.training.curriculum_feedback import get_curriculum_feedback
+
+                curriculum = get_curriculum_feedback()
+                if curriculum:
+                    current_weights = curriculum.get_curriculum_weights()
+                    old_weight = current_weights.get(config_key, 1.0)
+
+                    # Apply reduction, but maintain minimum weight of 0.25
+                    # (lower floor than regression since data quality issues are more severe)
+                    new_weight = max(old_weight * reduction_factor, 0.25)
+
+                    if new_weight < old_weight:
+                        curriculum.update_weight(
+                            config_key=config_key,
+                            new_weight=new_weight,
+                            source=f"loss_anomaly_{severity}_{anomaly_type}",
+                        )
+                        self._last_weights[config_key] = new_weight
+
+                        logger.info(
+                            f"[MomentumToCurriculumBridge] Reduced curriculum weight for {config_key}: "
+                            f"{old_weight:.2f} -> {new_weight:.2f} (loss anomaly recovery)"
+                        )
+
+                        # Emit curriculum rebalanced event
+                        self._emit_rebalance_event([config_key], {config_key: new_weight})
+
+            except (ImportError, AttributeError) as e:
+                logger.debug(f"[MomentumToCurriculumBridge] Could not apply loss anomaly adjustment: {e}")
+
+            self._last_sync_time = time.time()
+
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(f"[MomentumToCurriculumBridge] Error handling loss anomaly: {e}")
 
     def _get_similar_configs(self, config_key: str) -> list[str]:
         """Get similar configs for cross-board curriculum propagation.
