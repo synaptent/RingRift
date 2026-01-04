@@ -64,12 +64,26 @@ class GossipHealthTracker:
     Tracks gossip failures per peer and emits NODE_SUSPECT when a peer
     has too many consecutive gossip failures.
 
+    Jan 3, 2026: Added exponential backoff for failed peers.
+    When a peer fails gossip, we wait progressively longer before retrying:
+    - 1st failure: 1s backoff
+    - 2nd failure: 2s backoff
+    - 3rd failure: 4s backoff
+    - 4th failure: 8s backoff
+    - 5th+ failure: 16s backoff (max)
+
     Features:
     - Per-peer failure counting
     - Automatic reset on success
     - Threshold-based suspect detection
     - Last success timestamp tracking for staleness
+    - Exponential backoff for failed peers (Jan 3, 2026)
     """
+
+    # Jan 3, 2026: Backoff configuration
+    BACKOFF_BASE_SECONDS: float = 1.0
+    BACKOFF_MULTIPLIER: float = 2.0
+    BACKOFF_MAX_SECONDS: float = 16.0
 
     def __init__(self, failure_threshold: int = GOSSIP_FAILURE_SUSPECT_THRESHOLD):
         """Initialize gossip health tracker.
@@ -79,6 +93,7 @@ class GossipHealthTracker:
         """
         self._failure_counts: dict[str, int] = {}
         self._last_success: dict[str, float] = {}
+        self._last_failure: dict[str, float] = {}  # Jan 3, 2026: Track last failure time
         self._failure_threshold = failure_threshold
         self._suspect_emitted: set[str] = set()  # Track which peers have been marked suspect
 
@@ -94,6 +109,7 @@ class GossipHealthTracker:
             - failure_count: Current consecutive failure count
         """
         self._failure_counts[peer_id] = self._failure_counts.get(peer_id, 0) + 1
+        self._last_failure[peer_id] = time.time()  # Jan 3, 2026: Track failure time
         count = self._failure_counts[peer_id]
 
         # Check if we should emit suspect (only once per failure streak)
@@ -106,6 +122,50 @@ class GossipHealthTracker:
             self._suspect_emitted.add(peer_id)
 
         return should_emit, count
+
+    def get_backoff_seconds(self, peer_id: str) -> float:
+        """Calculate exponential backoff delay for a peer.
+
+        Jan 3, 2026: Returns the number of seconds to wait before retrying
+        gossip to this peer based on consecutive failure count.
+
+        Args:
+            peer_id: The peer to calculate backoff for
+
+        Returns:
+            Backoff delay in seconds (0 if no failures)
+        """
+        failure_count = self._failure_counts.get(peer_id, 0)
+        if failure_count == 0:
+            return 0.0
+
+        # Exponential backoff: base * multiplier^(failures-1), capped at max
+        backoff = self.BACKOFF_BASE_SECONDS * (
+            self.BACKOFF_MULTIPLIER ** (failure_count - 1)
+        )
+        return min(backoff, self.BACKOFF_MAX_SECONDS)
+
+    def should_skip_peer(self, peer_id: str) -> bool:
+        """Check if a peer should be skipped due to backoff.
+
+        Jan 3, 2026: Returns True if the peer is in backoff period.
+
+        Args:
+            peer_id: The peer to check
+
+        Returns:
+            True if peer should be skipped, False if OK to gossip
+        """
+        last_failure = self._last_failure.get(peer_id)
+        if last_failure is None:
+            return False  # No failures, OK to gossip
+
+        backoff = self.get_backoff_seconds(peer_id)
+        if backoff == 0:
+            return False  # No backoff needed
+
+        elapsed = time.time() - last_failure
+        return elapsed < backoff
 
     def record_gossip_success(self, peer_id: str) -> bool:
         """Record a successful gossip exchange with a peer.
@@ -1422,6 +1482,10 @@ class GossipProtocolMixin(P2PMixinBase):
                     except (AttributeError, RuntimeError, TypeError):
                         pass
 
+    # Jan 3, 2026: Per-URL timeout for gossip requests
+    # Prevents single slow URL from blocking entire gossip round
+    GOSSIP_PER_URL_TIMEOUT: float = 5.0
+
     async def _try_gossip_urls(
         self,
         session: Any,
@@ -1434,31 +1498,68 @@ class GossipProtocolMixin(P2PMixinBase):
         Dec 28, 2025 (Phase 6): Now returns bool indicating success/failure
         for integration with GossipHealthTracker.
 
+        Jan 3, 2026: Added per-URL timeout protection to prevent slow URLs
+        from blocking the entire gossip round. Each URL attempt is wrapped
+        with asyncio.wait_for() using GOSSIP_PER_URL_TIMEOUT.
+
         Returns:
             True if gossip succeeded on any URL, False if all URLs failed.
         """
         for url in self._urls_for_peer(peer, "/gossip"):
             try:
-                headers = self._auth_headers()
-                headers["Content-Encoding"] = "gzip"
-                headers["Content-Type"] = "application/json"
+                # Jan 3, 2026: Wrap each URL attempt with timeout
+                success = await asyncio.wait_for(
+                    self._try_single_gossip_url(
+                        session, peer, url, compressed_bytes, start_time
+                    ),
+                    timeout=self.GOSSIP_PER_URL_TIMEOUT,
+                )
+                if success:
+                    return True
 
-                async with session.post(url, data=compressed_bytes, headers=headers) as resp:
-                    if resp.status == 200:
-                        # Process response (peer shares their state back)
-                        response_data = await self._read_gossip_response(resp)
-                        self._process_gossip_response(response_data)
-
-                        # Record metrics (methods now in this class)
-                        latency_ms = (time.time() - start_time) * 1000
-                        self._record_gossip_metrics("sent", peer.node_id)
-                        self._record_gossip_metrics("latency", peer.node_id, latency_ms)
-                        return True  # Success!
-
-            except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError, AttributeError):
+            except asyncio.TimeoutError:
+                # Per-URL timeout - try next URL
+                self._log_debug(
+                    f"[Gossip] Timeout ({self.GOSSIP_PER_URL_TIMEOUT}s) for {peer.node_id} at {url}"
+                )
+                continue
+            except (aiohttp.ClientError, json.JSONDecodeError, AttributeError):
                 continue
 
         return False  # All URLs failed
+
+    async def _try_single_gossip_url(
+        self,
+        session: Any,
+        peer: Any,
+        url: str,
+        compressed_bytes: bytes,
+        start_time: float,
+    ) -> bool:
+        """Try gossip to a single URL.
+
+        Jan 3, 2026: Extracted from _try_gossip_urls for per-URL timeout wrapping.
+
+        Returns:
+            True if gossip succeeded, False otherwise.
+        """
+        headers = self._auth_headers()
+        headers["Content-Encoding"] = "gzip"
+        headers["Content-Type"] = "application/json"
+
+        async with session.post(url, data=compressed_bytes, headers=headers) as resp:
+            if resp.status == 200:
+                # Process response (peer shares their state back)
+                response_data = await self._read_gossip_response(resp)
+                self._process_gossip_response(response_data)
+
+                # Record metrics (methods now in this class)
+                latency_ms = (time.time() - start_time) * 1000
+                self._record_gossip_metrics("sent", peer.node_id)
+                self._record_gossip_metrics("latency", peer.node_id, latency_ms)
+                return True
+
+        return False
 
     async def _read_gossip_response(self, resp: Any) -> dict:
         """Read and decompress gossip response.
