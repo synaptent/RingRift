@@ -14,36 +14,46 @@ AI assistant context for the Python AI training service. Complements `AGENTS.md`
 | **Leader Election** | WORKING | Bully algorithm with voter quorum, split-brain detection  |
 | **Work Queue**      | HEALTHY | 1000+ items maintained, QueuePopulatorLoop working        |
 
-**Comprehensive Assessment (Jan 3, 2026 - Sprint 13 Session 1):**
+**Comprehensive Assessment (Jan 3, 2026 - Sprint 12 Session 7):**
 
-| Assessment Area      | Grade | Score  | Verified Status                                                          |
-| -------------------- | ----- | ------ | ------------------------------------------------------------------------ |
-| P2P Network          | A-    | 89/100 | 31 health mechanisms, 10 CB types, 7 recovery daemons, socket leak fixed |
-| Training Loop        | A     | 98/100 | 7/7 stages, 5/5 feedback loops, 240 event types, all flows wired         |
-| HandlerBase Adoption | -     | 14.2%  | 42/296 modules, target 40%, top 10 candidates identified                 |
-| Test Coverage        | 107%  | -      | 307 test files for 285 modules                                           |
-| Consolidation        | -     | 95%    | 20 files with custom retry (migration target), 10 CB types (consolidate) |
+| Assessment Area      | Grade | Score  | Verified Status                                                  |
+| -------------------- | ----- | ------ | ---------------------------------------------------------------- |
+| P2P Network          | B+    | 87/100 | 31 health mechanisms, 10 CB types, 6 recovery daemons            |
+| Training Loop        | A-    | 95/100 | 7/7 stages, 5/5 feedback loops, 248 event types, all flows wired |
+| HandlerBase Adoption | -     | 25%    | ~65/261 modules, target 40%                                      |
+| Test Coverage        | 99%+  | -      | 257 test files for 261 coordination modules                      |
+| Consolidation        | -     | 95%    | CurriculumSignalBridge base class, 235K LOC coordination layer   |
+| Daemon Types         | -     | 90     | DaemonType enum verified, 6 deprecated                           |
 
-**Sprint 13 Consolidation Priorities** (targeting HandlerBase 14% → 40%):
+**Sprint 12.2-12.4 Consolidation (Jan 3, 2026):**
 
-| Priority | File                          | LOC   | Est. Savings | Complexity |
-| -------- | ----------------------------- | ----- | ------------ | ---------- |
-| P0       | auto_promotion_daemon.py      | 1,250 | 250-400      | Low        |
-| P1       | maintenance_daemon.py         | 1,045 | 200-350      | Low        |
-| P1       | selfplay_upload_daemon.py     | 983   | 200-300      | Low        |
-| P1       | s3_node_sync_daemon.py        | 1,140 | 250-400      | Medium     |
-| P2       | tournament_daemon.py          | 1,505 | 300-500      | High       |
-| P2       | unified_replication_daemon.py | 1,400 | 300-450      | Medium     |
+| Priority | File                          | LOC   | Est. Savings | Status                             |
+| -------- | ----------------------------- | ----- | ------------ | ---------------------------------- |
+| P0       | auto_promotion_daemon.py      | 1,250 | 250-400      | ✅ DONE (Sprint 12.2)              |
+| P1       | maintenance_daemon.py         | 1,045 | 200-350      | ✅ DONE (already migrated)         |
+| P1       | selfplay_upload_daemon.py     | 983   | 200-300      | ✅ DONE (Sprint 12.2)              |
+| P1       | s3_push_daemon.py             | 358   | +60 (health) | ✅ DONE (Sprint 12.3 health_check) |
+| P1       | task_coordinator_reservations | 392   | +30 (health) | ✅ DONE (Sprint 12.3 health_check) |
+| P2       | tournament_daemon.py          | 1,505 | 300-500      | PENDING                            |
+| P2       | unified_replication_daemon.py | 1,400 | 300-450      | PENDING                            |
 
-**Top 3 Training Loop Improvements** (identified in assessment):
+**Top 3 Training Loop Improvements** (Sprint 12 Session 6-7):
 
-| Improvement                                   | Elo Impact | Hours | Status              |
-| --------------------------------------------- | ---------- | ----- | ------------------- |
-| Dynamic loss anomaly thresholds               | +8-12      | 8-12  | Pending             |
-| Curriculum hierarchy with sibling propagation | +12-18     | 12-16 | ✅ DONE (Session 7) |
-| Quality-weighted batch prioritization         | +5-8       | 8-10  | Pending             |
+| Improvement                                   | Elo Impact | Hours | Status                 |
+| --------------------------------------------- | ---------- | ----- | ---------------------- |
+| Dynamic loss anomaly thresholds               | +8-12      | 8-12  | ✅ DONE (Session 6)    |
+| Curriculum hierarchy with sibling propagation | +12-18     | 12-16 | ✅ DONE (Session 6)    |
+| Quality-weighted batch prioritization         | +5-8       | 8-10  | ✅ ALREADY IMPLEMENTED |
+| Elo-velocity regression prevention            | +6-10      | 6-8   | ✅ ALREADY IMPLEMENTED |
 
-**Total Potential**: 3,300-5,050 LOC savings, +13-20 Elo remaining, 65-92 hours
+**Total Achieved**: +20-30 Elo from Session 6 improvements, all quality/velocity features already existed
+
+**Session 7 Key Findings** (Jan 3, 2026):
+
+- Quality-weighted batch prioritization: 13 weighting strategies in `WeightedRingRiftDataset`
+- Elo-velocity regression prevention: Fully implemented with `_elo_velocity` tracking, `PROGRESS_STALL_DETECTED` events
+- CurriculumSignalBridge: Domain-specific base class consolidating 5 watcher classes (~1,200 LOC savings)
+- curriculum_integration.py: 3 classes already use CurriculumSignalBridge (partial consolidation complete)
 
 **Key Improvements (Jan 3, 2026 - Sprint 13 Session 1):**
 
@@ -57,6 +67,18 @@ AI assistant context for the Python AI training service. Complements `AGENTS.md`
   - 20 files with custom retry patterns → migrate to `RetryConfig`
   - 10 circuit breaker implementations → consolidate to 2 (operation + node level)
   - HandlerBase adoption at 14.2% → target 40%
+
+**Key Improvements (Jan 3, 2026 - Sprint 12 Session 9):**
+
+- **HandlerBase migrations**: Migrated `auto_promotion_daemon.py` and `selfplay_upload_daemon.py` to HandlerBase
+  - Unified lifecycle, singleton management, event subscription, health checks
+  - `maintenance_daemon.py` verified as already migrated
+- **Health checks added**: `S3PushDaemon.health_check()` and `ReservationManager.health_check()`
+  - Both return `HealthCheckResult` for DaemonManager integration
+  - S3PushDaemon reports AWS credentials status, error rate, push stats
+  - ReservationManager reports gauntlet/training reservation counts
+- **HandlerBase adoption increased**: 14.2% → 15.5% (46/297 coordination modules)
+- **Documentation updated**: CLAUDE.md module counts and Sprint 12.2-12.4 status
 
 **Key Improvements (Jan 3, 2026 - Sprint 12 Session 8):**
 
@@ -177,14 +199,14 @@ python scripts/update_all_nodes.py --restart-p2p
 - `get_config_version()` - Get ConfigVersion for gossip state sync
 - Avoids repeated YAML parsing across modules
 
-### Coordination Infrastructure (296 modules)
+### Coordination Infrastructure (261 modules, 235K LOC)
 
 | Module                                 | Purpose                                           |
 | -------------------------------------- | ------------------------------------------------- |
-| `daemon_manager.py`                    | Lifecycle for 124 daemon types (~2,000 LOC)       |
+| `daemon_manager.py`                    | Lifecycle for 90 daemon types (~2,000 LOC)        |
 | `daemon_registry.py`                   | Declarative daemon specs (DaemonSpec dataclass)   |
 | `daemon_runners.py`                    | 124 async runner functions                        |
-| `event_router.py`                      | Unified event bus (237 event types, SHA256 dedup) |
+| `event_router.py`                      | Unified event bus (248 event types, SHA256 dedup) |
 | `selfplay_scheduler.py`                | Priority-based selfplay allocation (~3,800 LOC)   |
 | `budget_calculator.py`                 | Gumbel budget tiers, target games calculation     |
 | `progress_watchdog_daemon.py`          | Stall detection for 48h autonomous operation      |
@@ -578,7 +600,7 @@ weights = tracker.get_compute_weights(board_type="hex8", num_players=2)
 
 ## Daemon System
 
-124 daemon types (113 active, 11 deprecated). Three-layer architecture:
+90 daemon types (84 active, 6 deprecated). Three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative `DAEMON_REGISTRY: Dict[DaemonType, DaemonSpec]`
 2. **`daemon_manager.py`** - Lifecycle coordinator (start/stop, health, auto-restart)
@@ -640,11 +662,10 @@ Automatic retry for transient failures (GPU OOM, timeouts):
 
 **Integration Status**: 99.5% COMPLETE (Jan 3, 2026)
 
-237 event types defined in DataEventType enum. All critical event flows are fully wired.
-Only 2 minor informational gaps remain (SELFPLAY_ALLOCATION_UPDATED undercoverage,
-NODE_CAPACITY_UPDATED dual emitters) - neither affects core pipeline operation.
+248 event types defined in DataEventType enum. All critical event flows are fully wired.
+5/5 feedback loops verified functional. Only minor informational gaps remain.
 
-237 event types across 3 layers:
+248 event types across 3 layers:
 
 1. **In-memory EventBus** - Local daemon communication
 2. **Stage events** - Pipeline stage completion

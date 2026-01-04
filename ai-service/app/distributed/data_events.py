@@ -308,6 +308,9 @@ class DataEventType(Enum):
     HEALTH_ALERT = "health_alert"  # General health warning
     RESOURCE_CONSTRAINT = "resource_constraint"  # CPU/GPU/Memory/Disk pressure
     MEMORY_PRESSURE = "memory_pressure"  # Dec 29, 2025: GPU VRAM or process RSS critical - pause spawning
+    SOCKET_LEAK_DETECTED = "socket_leak_detected"  # Jan 2026: Socket/FD leak detected
+    SOCKET_LEAK_RECOVERED = "socket_leak_recovered"  # Jan 2026: Socket/FD leak recovered
+    P2P_CONNECTION_RESET_REQUESTED = "p2p_connection_reset_requested"  # Jan 2026: Request P2P reset
     NODE_OVERLOADED = "node_overloaded"  # Node resource overload (job redistribution)
     RECOVERY_INITIATED = "recovery_initiated"  # Auto-recovery started
     RECOVERY_COMPLETED = "recovery_completed"  # Auto-recovery finished

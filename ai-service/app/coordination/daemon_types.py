@@ -335,6 +335,7 @@ class DaemonType(Enum):
     P2P_RECOVERY = "p2p_recovery"
     VOTER_HEALTH_MONITOR = "voter_health_monitor"  # Dec 30, 2025: Continuous voter probing
     MEMORY_MONITOR = "memory_monitor"
+    SOCKET_LEAK_RECOVERY = "socket_leak_recovery"  # Jan 2026: Socket/FD leak detection and recovery
     STALE_FALLBACK = "stale_fallback"
 
     # =========================================================================
@@ -636,6 +637,7 @@ CRITICAL_DAEMONS: set[DaemonType] = {
     DaemonType.IDLE_RESOURCE,  # Ensures GPUs stay utilized
     DaemonType.FEEDBACK_LOOP,  # Coordinates training feedback signals
     DaemonType.MEMORY_MONITOR,  # Prevents OOM crashes (Dec 30, 2025)
+    DaemonType.SOCKET_LEAK_RECOVERY,  # Prevents socket/FD leaks (Jan 2026)
 }
 
 
@@ -753,6 +755,7 @@ DAEMON_CATEGORY_MAP: dict[DaemonType, DaemonCategory] = {
     DaemonType.P2P_RECOVERY: DaemonCategory.AUTONOMOUS,
     DaemonType.VOTER_HEALTH_MONITOR: DaemonCategory.AUTONOMOUS,
     DaemonType.MEMORY_MONITOR: DaemonCategory.AUTONOMOUS,
+    DaemonType.SOCKET_LEAK_RECOVERY: DaemonCategory.AUTONOMOUS,
     DaemonType.STALE_FALLBACK: DaemonCategory.AUTONOMOUS,
     DaemonType.PARITY_VALIDATION: DaemonCategory.AUTONOMOUS,
     DaemonType.ELO_PROGRESS: DaemonCategory.AUTONOMOUS,  # Dec 31, 2025: Tracks Elo improvement
@@ -821,6 +824,7 @@ DAEMON_STARTUP_ORDER: list[DaemonType] = [
     DaemonType.CLUSTER_WATCHDOG,       # 14. Cluster watchdog (depends on CLUSTER_MONITOR)
     DaemonType.NODE_RECOVERY,          # 15. Node recovery (depends on NODE_HEALTH_MONITOR)
     DaemonType.MEMORY_MONITOR,         # 16. Memory/VRAM monitor (prevents OOM crashes)
+    DaemonType.SOCKET_LEAK_RECOVERY,   # 17. Socket/FD leak recovery (Jan 2026)
 
     # =========================================================================
     # Quality and training enhancement (positions 16-19) - Dec 27, 2025
@@ -1046,6 +1050,7 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
     DaemonType.P2P_RECOVERY: {DaemonType.EVENT_ROUTER},
     DaemonType.VOTER_HEALTH_MONITOR: {DaemonType.EVENT_ROUTER},  # Dec 30, 2025: Continuous voter probing
     DaemonType.MEMORY_MONITOR: {DaemonType.EVENT_ROUTER},  # Emits MEMORY_PRESSURE events
+    DaemonType.SOCKET_LEAK_RECOVERY: {DaemonType.EVENT_ROUTER},  # Emits SOCKET_LEAK events
     DaemonType.STALE_FALLBACK: {DaemonType.EVENT_ROUTER, DaemonType.AUTO_SYNC},  # Fallback when sync fails
     DaemonType.ELO_PROGRESS: {DaemonType.EVENT_ROUTER},  # Dec 31, 2025: Tracks Elo improvement
 }

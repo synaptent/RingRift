@@ -2733,6 +2733,35 @@ async def create_memory_monitor() -> None:
         raise
 
 
+async def create_socket_leak_recovery() -> None:
+    """Create and run SocketLeakRecovery daemon.
+
+    January 2026: Part of 48-hour autonomous operation enablement.
+    Monitors socket connections and file descriptors to detect and recover
+    from resource leaks before they cause system instability.
+
+    Key features:
+    - Monitors TIME_WAIT, CLOSE_WAIT socket buildup
+    - Monitors file descriptor exhaustion
+    - Triggers connection pool cleanup when critical
+    - Part of resource recovery infrastructure with MEMORY_MONITOR
+
+    Subscribes to: RESOURCE_CONSTRAINT
+    Emits: SOCKET_LEAK_DETECTED, SOCKET_LEAK_RECOVERED, P2P_CONNECTION_RESET_REQUESTED
+    """
+    try:
+        from app.coordination.socket_leak_recovery_daemon import (
+            get_socket_leak_recovery_daemon,
+        )
+
+        daemon = get_socket_leak_recovery_daemon()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"SocketLeakRecoveryDaemon not available: {e}")
+        raise
+
+
 async def create_stale_fallback() -> None:
     """Create and run StaleFallback controller.
 
@@ -3001,6 +3030,7 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.P2P_RECOVERY.name: create_p2p_recovery,
         DaemonType.VOTER_HEALTH_MONITOR.name: create_voter_health_monitor,
         DaemonType.MEMORY_MONITOR.name: create_memory_monitor,
+        DaemonType.SOCKET_LEAK_RECOVERY.name: create_socket_leak_recovery,
         DaemonType.STALE_FALLBACK.name: create_stale_fallback,
         # Tailscale health monitoring (December 29, 2025)
         DaemonType.TAILSCALE_HEALTH.name: create_tailscale_health,
