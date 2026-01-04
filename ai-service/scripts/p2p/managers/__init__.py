@@ -10,6 +10,7 @@ Managers:
 - JobManager: Job spawning and lifecycle management (December 2025)
 - TrainingCoordinator: Training dispatch and promotion (December 2025)
 - SelfplayScheduler: Selfplay config selection and diversity (December 2025)
+- WorkDiscoveryManager: Multi-channel work discovery (January 2026)
 
 Factory:
 - ManagerFactory: Dependency injection for all managers (January 2026)
@@ -29,8 +30,20 @@ from .selfplay_scheduler import DiversityMetrics, SelfplayScheduler
 from .state_manager import StateManager
 from .sync_planner import SyncPlanner, SyncPlannerConfig, SyncStats
 from .training_coordinator import TrainingCoordinator
+from .work_discovery_manager import (
+    DiscoveryChannel,
+    DiscoveryResult,
+    WorkDiscoveryConfig,
+    WorkDiscoveryManager,
+    WorkDiscoveryStats,
+    get_work_discovery_manager,
+    reset_work_discovery_manager,
+    set_work_discovery_manager,
+)
 
 __all__ = [
+    "DiscoveryChannel",
+    "DiscoveryResult",
     "DiversityMetrics",
     "JobManager",
     "ManagerConfig",
@@ -42,7 +55,13 @@ __all__ = [
     "SyncPlannerConfig",
     "SyncStats",
     "TrainingCoordinator",
+    "WorkDiscoveryConfig",
+    "WorkDiscoveryManager",
+    "WorkDiscoveryStats",
     "get_manager_factory",
+    "get_work_discovery_manager",
     "init_manager_factory",
     "reset_manager_factory",
+    "reset_work_discovery_manager",
+    "set_work_discovery_manager",
 ]
