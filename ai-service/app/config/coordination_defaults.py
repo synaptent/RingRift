@@ -584,6 +584,56 @@ class HealthDefaults:
 
 
 # =============================================================================
+# Memory Pressure Defaults (January 2026)
+# =============================================================================
+
+@dataclass(frozen=True)
+class MemoryPressureDefaults:
+    """Default values for proactive memory pressure management.
+
+    Used by: app/coordination/memory_pressure_controller.py
+
+    The 4-tier graduated response prevents memory exhaustion by taking
+    increasingly aggressive action as memory usage rises. This was added
+    after a cluster failure where RAM reached 100% without triggering
+    adequate response (Session 16 cluster resilience plan).
+
+    Tier Progression:
+        CAUTION (60%): Log warning, emit event for monitoring
+        WARNING (70%): Pause new selfplay jobs, reduce batch sizes
+        CRITICAL (80%): Kill non-essential daemons, trigger GC
+        EMERGENCY (90%): Notify standby coordinator, graceful shutdown
+    """
+
+    # Tier thresholds (RAM percentage)
+    TIER_CAUTION: int = _env_int("RINGRIFT_MEMORY_TIER_CAUTION", 60)
+    TIER_WARNING: int = _env_int("RINGRIFT_MEMORY_TIER_WARNING", 70)
+    TIER_CRITICAL: int = _env_int("RINGRIFT_MEMORY_TIER_CRITICAL", 80)
+    TIER_EMERGENCY: int = _env_int("RINGRIFT_MEMORY_TIER_EMERGENCY", 90)
+
+    # Monitoring interval (seconds)
+    CHECK_INTERVAL: int = _env_int("RINGRIFT_MEMORY_CHECK_INTERVAL", 10)
+
+    # Hysteresis - must drop this many % below threshold to recover
+    # Prevents oscillation between tiers
+    HYSTERESIS: int = _env_int("RINGRIFT_MEMORY_HYSTERESIS", 5)
+
+    # Cooldown after taking action (seconds)
+    ACTION_COOLDOWN: int = _env_int("RINGRIFT_MEMORY_ACTION_COOLDOWN", 60)
+
+    # How long to wait for GC effect before escalating (seconds)
+    GC_WAIT_TIME: int = _env_int("RINGRIFT_MEMORY_GC_WAIT", 30)
+
+    # Batch size reduction factor at WARNING tier
+    BATCH_SIZE_REDUCTION: float = 0.5  # Reduce to 50% of normal
+
+    # Number of consecutive samples above threshold before acting
+    CONSECUTIVE_SAMPLES_REQUIRED: int = _env_int(
+        "RINGRIFT_MEMORY_CONSECUTIVE_SAMPLES", 3
+    )
+
+
+# =============================================================================
 # Utilization Target Defaults (December 2025)
 # =============================================================================
 

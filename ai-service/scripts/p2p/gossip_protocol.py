@@ -1645,7 +1645,83 @@ class GossipProtocolMixin(P2PMixinBase):
         if cb_state:
             local_state["circuit_breakers"] = cb_state
 
+        # Session 16 (Jan 2026): Include coordinator resilience state for failover
+        # Enables standby coordinators to monitor primary health via gossip
+        coordinator_state = self._get_coordinator_gossip_state()
+        if coordinator_state:
+            local_state["coordinator"] = coordinator_state
+
+        # Jan 4, 2026: Include leader claim for relay propagation to NAT-blocked nodes
+        # This enables nodes that can't directly reach the leader to learn about
+        # leadership changes through gossip state propagation
+        if hasattr(self, "_get_leader_claim_for_gossip"):
+            leader_claim = self._get_leader_claim_for_gossip()
+            if leader_claim:
+                local_state["cluster_leader"] = leader_claim
+
         return local_state
+
+    def _get_coordinator_gossip_state(self) -> dict[str, Any] | None:
+        """Get coordinator resilience state for gossip.
+
+        Session 16 (Jan 2026): Part of cluster resilience architecture.
+        This state enables standby coordinators to monitor primary health
+        without direct HTTP health checks.
+
+        Returns:
+            Coordinator state dict or None if not available.
+        """
+        import time
+
+        try:
+            # Get standby coordinator state
+            try:
+                from app.coordination.standby_coordinator import get_standby_coordinator
+
+                standby = get_standby_coordinator()
+                state = standby.get_state()
+
+                coordinator_state = {
+                    "role": state.role.value,
+                    "is_primary": standby.is_primary,
+                    "last_heartbeat": time.time(),
+                    "uptime_seconds": state.uptime_seconds,
+                    "takeover_count": state.takeover_count,
+                }
+
+                # Add primary health if in standby mode
+                if state.primary_health:
+                    coordinator_state["primary_health"] = {
+                        "host": state.primary_health.host,
+                        "is_healthy": state.primary_health.is_healthy,
+                        "time_since_seen": state.primary_health.time_since_seen,
+                    }
+            except ImportError:
+                coordinator_state = {}
+
+            # Get memory pressure state
+            try:
+                from app.coordination.memory_pressure_controller import (
+                    get_memory_pressure_controller,
+                )
+
+                mem_ctrl = get_memory_pressure_controller()
+                mem_state = mem_ctrl.get_state()
+                coordinator_state["memory_tier"] = mem_state.current_tier.value
+                coordinator_state["memory_percent"] = mem_state.memory_percent
+            except ImportError:
+                pass
+
+            # Get active jobs count from job manager if available
+            if hasattr(self, "job_manager") and self.job_manager:
+                active_jobs = len(getattr(self.job_manager, "active_jobs", {}))
+                coordinator_state["active_jobs"] = active_jobs
+
+            return coordinator_state if coordinator_state else None
+
+        except Exception as e:
+            self._log_debug(f"Coordinator state not available for gossip: {e}")
+            return None
 
     async def _send_gossip_to_peer(
         self,
@@ -2126,9 +2202,22 @@ class GossipProtocolMixin(P2PMixinBase):
             if lock is not None:
                 lock.release()
 
+        # Jan 4, 2026: Process cluster_leader entry from RelayLeaderPropagator
+        # This enables NAT-blocked nodes to learn about leadership through gossip
+        cluster_leader = sender_state.get("cluster_leader")
+        if cluster_leader and hasattr(self, "_process_gossip_leader_claim"):
+            self._process_gossip_leader_claim(cluster_leader)
+
         # Update leader info if sender claims to know a leader
         # Jan 2026: Use ULSM epoch validation to reject stale claims
-        if sender_state.get("leader_id") and not self.leader_id:
+        # Jan 4, 2026: Also update if our current leader's lease has expired
+        now = time.time()
+        current_lease_expired = (
+            self.leader_id and
+            getattr(self, "leader_lease_expires", 0) < now
+        )
+
+        if sender_state.get("leader_id") and (not self.leader_id or current_lease_expired):
             claimed_leader = sender_state.get("leader_id")
             claimed_epoch = sender_state.get("leadership_epoch", 0)
             lease_expires = sender_state.get("leader_lease_expires", 0)
@@ -2137,15 +2226,18 @@ class GossipProtocolMixin(P2PMixinBase):
             if hasattr(self, "_leadership_sm") and self._leadership_sm:
                 if self._leadership_sm.validate_leader_claim(claimed_leader, claimed_epoch, lease_expires):
                     self.leader_id = claimed_leader
-                    self.last_leader_seen = time.time()
-                    logger.debug(f"Gossip: Accepted leader claim {claimed_leader} epoch={claimed_epoch}")
+                    self.last_leader_seen = now
+                    if current_lease_expired:
+                        logger.info(f"Gossip: Updated expired leader to {claimed_leader} epoch={claimed_epoch}")
+                    else:
+                        logger.debug(f"Gossip: Accepted leader claim {claimed_leader} epoch={claimed_epoch}")
                 else:
                     logger.debug(f"Gossip: Rejected leader claim {claimed_leader} epoch={claimed_epoch}")
             else:
                 # Fallback: simple lease expiry check (pre-ULSM behavior)
-                if lease_expires > time.time():
+                if lease_expires > now:
                     self.leader_id = claimed_leader
-                    self.last_leader_seen = time.time()
+                    self.last_leader_seen = now
 
     def _process_known_states(self, known_states: dict[str, dict]) -> None:
         """Process known states from gossip propagation."""
@@ -2163,6 +2255,17 @@ class GossipProtocolMixin(P2PMixinBase):
         finally:
             if lock is not None:
                 lock.release()
+
+        # Jan 4, 2026: Process cluster_leader entries from forwarded states
+        # This enables NAT-blocked nodes to learn about leadership through
+        # multi-hop gossip propagation
+        if hasattr(self, "_process_gossip_leader_claim"):
+            for node_id, state in known_states.items():
+                if node_id == self.node_id:
+                    continue
+                cluster_leader = state.get("cluster_leader")
+                if cluster_leader:
+                    self._process_gossip_leader_claim(cluster_leader)
 
     def _process_peer_manifests(self, peer_manifests: dict) -> None:
         """Process peer manifest info for P2P sync."""

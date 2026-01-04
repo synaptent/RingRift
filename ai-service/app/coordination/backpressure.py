@@ -76,19 +76,23 @@ class BackpressureSignal:
     def overall_pressure(self) -> float:
         """Compute overall pressure as weighted average.
 
-        Weights:
-        - Queue: 30% (directly affects training data availability)
-        - Training: 25% (GPU utilization)
-        - Disk: 20% (storage constraints)
+        Weights (Jan 2026 - increased memory weight for OOM prevention):
+        - Queue: 25% (directly affects training data availability)
+        - Memory: 25% (system RAM - critical for OOM prevention)
+        - Training: 20% (GPU utilization)
+        - Disk: 15% (storage constraints)
         - Sync: 15% (data availability across cluster)
-        - Memory: 10% (GPU VRAM)
+
+        Note: Memory weight was increased from 10% to 25% after a cluster
+        failure caused by memory exhaustion reaching 100% without triggering
+        adequate backpressure response. See Session 16 cluster resilience plan.
         """
         return (
-            0.30 * self.queue_pressure +
-            0.25 * self.training_pressure +
-            0.20 * self.disk_pressure +
-            0.15 * self.sync_pressure +
-            0.10 * self.memory_pressure
+            0.25 * self.queue_pressure +
+            0.25 * self.memory_pressure +
+            0.20 * self.training_pressure +
+            0.15 * self.disk_pressure +
+            0.15 * self.sync_pressure
         )
 
     @property

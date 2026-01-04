@@ -51,6 +51,7 @@ from scripts.lib.process import (
     is_process_running,
     kill_process,
 )
+from scripts.lib.heartbeat import get_watchdog_heartbeat, HeartbeatWriter
 
 logging.basicConfig(
     level=logging.INFO,
@@ -171,6 +172,9 @@ class MasterLoopWatchdog:
         self.state = WatchdogState()
         self._running = False
         self._lock: SingletonLock | None = None
+        # Heartbeat for sentinel monitoring - writes to /tmp/ringrift_watchdog.heartbeat
+        self._heartbeat: HeartbeatWriter = get_watchdog_heartbeat()
+        self._loop_iteration = 0
 
     def _get_heartbeat_info(self) -> tuple[float | None, int | None, str | None]:
         """Get heartbeat info from SQLite database.
@@ -464,6 +468,26 @@ class MasterLoopWatchdog:
 
         try:
             while self._running:
+                self._loop_iteration += 1
+
+                # Write heartbeat for sentinel process to monitor
+                # If this heartbeat goes stale, sentinel will restart watchdog
+                try:
+                    health = self.check_health()
+                    self._heartbeat.pulse(
+                        iteration=self._loop_iteration,
+                        status="healthy" if health.healthy else f"unhealthy:{health.status}",
+                        extra={
+                            "master_loop_pid": health.pid,
+                            "master_loop_heartbeat_age": health.heartbeat_age,
+                            "restarts_this_hour": self.state.restarts_this_hour,
+                        },
+                    )
+                except Exception as e:
+                    logger.error(f"[Watchdog] Error writing heartbeat: {e}")
+                    # Still try to pulse even on error
+                    self._heartbeat.touch()
+
                 try:
                     self.run_once()
                 except Exception as e:
@@ -485,6 +509,9 @@ class MasterLoopWatchdog:
         health = self.check_health()
         return {
             "watchdog_running": self._running,
+            "watchdog_iteration": self._loop_iteration,
+            "watchdog_heartbeat_path": str(self._heartbeat.path),
+            "watchdog_heartbeat_age": self._heartbeat.last_pulse_age,
             "master_loop_healthy": health.healthy,
             "master_loop_pid": health.pid,
             "master_loop_status": health.status,

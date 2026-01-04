@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ringrift.sentinel</string>
+
+    <key>Comment</key>
+    <string>RingRift Sentinel - OS-level process supervisor. Monitors watchdog heartbeat and restarts it if stale. Part of hierarchical supervision: launchd -> sentinel -> watchdog -> master_loop</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/ringrift_sentinel</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>RINGRIFT_SENTINEL_HEARTBEAT_PATH</key>
+        <string>/tmp/ringrift_watchdog.heartbeat</string>
+        <key>RINGRIFT_SENTINEL_CHECK_INTERVAL</key>
+        <string>30</string>
+        <key>RINGRIFT_SENTINEL_STALE_THRESHOLD</key>
+        <string>120</string>
+        <key>RINGRIFT_SENTINEL_STARTUP_GRACE</key>
+        <string>60</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>Nice</key>
+    <integer>-5</integer>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>LowPriorityIO</key>
+    <true/>
+
+    <key>AbandonProcessGroup</key>
+    <false/>
+</dict>
+</plist>

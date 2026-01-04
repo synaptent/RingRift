@@ -90,6 +90,7 @@ class DataEventType(Enum):
     DATA_SYNC_STARTED = "sync_started"
     DATA_SYNC_COMPLETED = "sync_completed"
     DATA_SYNC_FAILED = "sync_failed"
+    QUEUED_EVENTS_SYNCED = "queued_events_synced"  # Jan 4, 2026: Fallback queue events synced to coordinator
     GAME_SYNCED = "game_synced"  # Individual game(s) synced to targets
 
     # Data freshness events
@@ -120,6 +121,7 @@ class DataEventType(Enum):
     TRAINING_COMPLETED = "training_completed"
     TRAINING_FAILED = "training_failed"
     TRAINING_LOCK_ACQUIRED = "training_lock_acquired"  # Dec 30, 2025: Training lock acquired for config
+    TRAINING_LOCK_TIMEOUT = "training_lock_timeout"  # Jan 4, 2026: Training lock auto-released due to TTL expiry
     TRAINING_SLOT_UNAVAILABLE = "training_slot_unavailable"  # Dec 30, 2025: Training slot not available
     TRAINING_TIMEOUT_REACHED = "training_timeout_reached"  # Jan 3, 2026: Training exceeded time limit
     TRAINING_DATA_RECOVERED = "training_data_recovered"  # Jan 3, 2026 Sprint 13.3: NPZ re-exported after corruption
@@ -455,6 +457,10 @@ class DataEventType(Enum):
     COORDINATOR_HEALTHY = "coordinator_healthy"  # Coordinator healthy signal
     COORDINATOR_UNHEALTHY = "coordinator_unhealthy"  # Coordinator unhealthy signal
     COORDINATOR_HEALTH_DEGRADED = "coordinator_health_degraded"  # Coordinator not fully healthy
+    # Session 16 (Jan 2026): Coordinator failover for cluster resilience
+    COORDINATOR_FAILOVER = "coordinator_failover"  # Standby taking over as primary
+    COORDINATOR_HANDOFF = "coordinator_handoff"  # Primary handing off to recovered primary
+    COORDINATOR_EMERGENCY_SHUTDOWN = "coordinator_emergency_shutdown"  # Emergency shutdown (memory/OOM)
     COORDINATOR_SHUTDOWN = "coordinator_shutdown"  # Graceful coordinator shutdown
     COORDINATOR_INIT_FAILED = "coordinator_init_failed"  # Coordinator failed to initialize
     HANDLER_TIMEOUT = "handler_timeout"  # Event handler timed out
