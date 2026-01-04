@@ -56,6 +56,9 @@ from app.coordination.recovery_orchestrator import RecoveryOrchestrator
 from app.coordination.utilization_optimizer import UtilizationOptimizer
 from app.coordination.p2p_auto_deployer import P2PAutoDeployer, P2PDeploymentConfig
 
+# January 2026: HandlerBase migration for unified lifecycle
+from app.coordination.handler_base import HandlerBase, HealthCheckResult
+
 logger = logging.getLogger(__name__)
 
 # Health event emission (uses safe fallbacks internally)
@@ -103,8 +106,10 @@ class DaemonConfig:
     p2p_port: int = field(default_factory=_get_default_p2p_port)
 
 
-class UnifiedNodeHealthDaemon:
+class UnifiedNodeHealthDaemon(HandlerBase):
     """Main daemon for cluster health maintenance.
+
+    January 2026: Migrated to HandlerBase for unified lifecycle management.
 
     Orchestrates:
     1. Health checks across all providers
@@ -120,7 +125,14 @@ class UnifiedNodeHealthDaemon:
         Args:
             config: Daemon configuration
         """
-        self.config = config or DaemonConfig()
+        self._daemon_config = config or DaemonConfig()
+
+        # January 2026: Initialize HandlerBase with health check interval as cycle
+        super().__init__(
+            name="UnifiedNodeHealthDaemon",
+            config=self._daemon_config,
+            cycle_interval=10.0,  # Base loop interval (checks sub-intervals internally)
+        )
 
         # Provider managers
         self.lambda_mgr = LambdaManager()
@@ -131,12 +143,12 @@ class UnifiedNodeHealthDaemon:
 
         # Orchestrators
         self.health_orchestrator = HealthCheckOrchestrator(
-            check_interval=self.config.health_check_interval,
-            p2p_port=self.config.p2p_port,
+            check_interval=self._daemon_config.health_check_interval,
+            p2p_port=self._daemon_config.p2p_port,
         )
         self.recovery_orchestrator = RecoveryOrchestrator(
             health_orchestrator=self.health_orchestrator,
-            alerts_config_path=self.config.alerts_config_path,
+            alerts_config_path=self._daemon_config.alerts_config_path,
         )
         self.utilization_optimizer = UtilizationOptimizer(
             health_orchestrator=self.health_orchestrator,
@@ -144,18 +156,17 @@ class UnifiedNodeHealthDaemon:
 
         # P2P auto-deployer
         p2p_config = P2PDeploymentConfig(
-            check_interval_seconds=self.config.p2p_deploy_interval,
-            p2p_port=self.config.p2p_port,
-            min_coverage_percent=self.config.min_p2p_coverage_percent,
-            hosts_config_path=self.config.hosts_config_path,
+            check_interval_seconds=self._daemon_config.p2p_deploy_interval,
+            p2p_port=self._daemon_config.p2p_port,
+            min_coverage_percent=self._daemon_config.min_p2p_coverage_percent,
+            hosts_config_path=self._daemon_config.hosts_config_path,
         )
         self.p2p_auto_deployer = P2PAutoDeployer(
             config=p2p_config,
             health_orchestrator=self.health_orchestrator,
         )
 
-        # State
-        self._running = False
+        # State (sub-task timing)
         self._last_health_check = 0.0
         self._last_recovery_check = 0.0
         self._last_optimization = 0.0
@@ -166,78 +177,78 @@ class UnifiedNodeHealthDaemon:
         self._tasks: list[asyncio.Task] = []
 
         # Stats
-        self._start_time: float = 0.0
         self._health_checks_run = 0
         self._recoveries_attempted = 0
         self._optimizations_run = 0
         self._p2p_deploys_run = 0
 
-    async def run(self) -> None:
-        """Run the daemon main loop."""
-        self._running = True
-        self._start_time = time.time()
+    @property
+    def config(self) -> DaemonConfig:
+        """Get daemon configuration (backward compatibility property)."""
+        return self._daemon_config
 
+    async def run(self) -> None:
+        """Run the daemon main loop.
+
+        January 2026: Backward-compatible wrapper around HandlerBase.start().
+        For new code, prefer using start() directly.
+        """
+        await self.start()
+
+    async def _on_start(self) -> None:
+        """Called when daemon starts (HandlerBase lifecycle hook)."""
         logger.info("=" * 60)
         logger.info("UNIFIED NODE HEALTH DAEMON")
         logger.info("=" * 60)
-        logger.info(f"Health check interval: {self.config.health_check_interval}s")
-        logger.info(f"Recovery check interval: {self.config.recovery_check_interval}s")
-        logger.info(f"Optimization interval: {self.config.optimization_interval}s")
-        logger.info(f"Config sync interval: {self.config.config_sync_interval}s")
-        logger.info(f"P2P deploy interval: {self.config.p2p_deploy_interval}s")
-        logger.info(f"Recovery enabled: {self.config.enable_recovery}")
-        logger.info(f"Optimization enabled: {self.config.enable_optimization}")
-        logger.info(f"P2P auto-deploy enabled: {self.config.enable_p2p_auto_deploy}")
+        logger.info(f"Health check interval: {self._daemon_config.health_check_interval}s")
+        logger.info(f"Recovery check interval: {self._daemon_config.recovery_check_interval}s")
+        logger.info(f"Optimization interval: {self._daemon_config.optimization_interval}s")
+        logger.info(f"Config sync interval: {self._daemon_config.config_sync_interval}s")
+        logger.info(f"P2P deploy interval: {self._daemon_config.p2p_deploy_interval}s")
+        logger.info(f"Recovery enabled: {self._daemon_config.enable_recovery}")
+        logger.info(f"Optimization enabled: {self._daemon_config.enable_optimization}")
+        logger.info(f"P2P auto-deploy enabled: {self._daemon_config.enable_p2p_auto_deploy}")
         logger.info("=" * 60)
 
         # Initial health check
         await self._run_health_check()
 
-        # Main loop
-        while self._running:
-            try:
-                await self._daemon_cycle()
-            except Exception as e:
-                logger.error(f"[Daemon] Cycle error: {e}")
+    async def _run_cycle(self) -> None:
+        """Run one daemon cycle (HandlerBase lifecycle hook).
 
-            await asyncio.sleep(10)  # Base loop interval
-
-        logger.info("[Daemon] Shutting down...")
-        await self._cleanup()
-
-    async def _daemon_cycle(self) -> None:
-        """Run one daemon cycle."""
+        January 2026: Renamed from _daemon_cycle for HandlerBase migration.
+        """
         now = time.time()
 
         # Health checks
-        if now - self._last_health_check >= self.config.health_check_interval:
+        if now - self._last_health_check >= self._daemon_config.health_check_interval:
             await self._run_health_check()
 
         # Recovery
         if (
-            self.config.enable_recovery
-            and now - self._last_recovery_check >= self.config.recovery_check_interval
+            self._daemon_config.enable_recovery
+            and now - self._last_recovery_check >= self._daemon_config.recovery_check_interval
         ):
             await self._run_recovery_check()
 
         # Optimization
         if (
-            self.config.enable_optimization
-            and now - self._last_optimization >= self.config.optimization_interval
+            self._daemon_config.enable_optimization
+            and now - self._last_optimization >= self._daemon_config.optimization_interval
         ):
             await self._run_optimization()
 
         # Config sync
         if (
-            self.config.enable_config_sync
-            and now - self._last_config_sync >= self.config.config_sync_interval
+            self._daemon_config.enable_config_sync
+            and now - self._last_config_sync >= self._daemon_config.config_sync_interval
         ):
             await self._run_config_sync()
 
         # P2P auto-deployment
         if (
-            self.config.enable_p2p_auto_deploy
-            and now - self._last_p2p_deploy >= self.config.p2p_deploy_interval
+            self._daemon_config.enable_p2p_auto_deploy
+            and now - self._last_p2p_deploy >= self._daemon_config.p2p_deploy_interval
         ):
             await self._run_p2p_deploy()
 
@@ -445,27 +456,27 @@ class UnifiedNodeHealthDaemon:
             except Exception as e:
                 logger.error(f"[Daemon] Slack alert failed: {e}")
 
+    async def _on_stop(self) -> None:
+        """Called when daemon stops (HandlerBase lifecycle hook)."""
+        logger.info("[Daemon] Shutting down...")
+        await self._cleanup()
+
     async def _cleanup(self) -> None:
         """Cleanup on shutdown."""
         await self.health_orchestrator.stop()
         await self.lambda_mgr.close()
 
-    def stop(self) -> None:
-        """Stop the daemon."""
-        self._running = False
-
-    def health_check(self) -> "HealthCheckResult":
-        """Check daemon health (December 2025: CoordinatorProtocol compliance).
+    def health_check(self) -> HealthCheckResult:
+        """Check daemon health (January 2026: Updated for HandlerBase migration).
 
         Returns:
             HealthCheckResult with status and details
         """
-        from app.coordination.protocols import HealthCheckResult, CoordinatorStatus
-
+        # January 2026: Use HandlerBase's _running attribute
         if not self._running:
             return HealthCheckResult(
                 healthy=False,
-                status=CoordinatorStatus.STOPPED,
+                status="stopped",
                 message="UnifiedNodeHealthDaemon not running",
             )
 

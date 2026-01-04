@@ -125,8 +125,9 @@ class SyncPullMixin(SyncMixinBase):
 
         # Update stats
         # Dec 28, 2025: Fixed sync_cycles -> syncs_completed (correct field name)
-        self._stats.syncs_completed += 1
-        self._stats.games_synced += total_pulled
+        # January 2026: Use _sync_stats (SyncStats) not _stats (HandlerStats) for HandlerBase migration
+        self._sync_stats.syncs_completed += 1
+        self._sync_stats.games_synced += total_pulled
 
         # Emit sync completion event
         if total_pulled > 0:

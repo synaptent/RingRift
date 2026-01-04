@@ -45,7 +45,7 @@ import random
 import time
 from collections.abc import Awaitable, Callable, Generator
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from typing import Any, TypeVar, Union
 
 # ParamSpec requires Python 3.10+, use typing_extensions for 3.9 compatibility
 try:
@@ -73,7 +73,8 @@ __all__ = [
 
 T = TypeVar("T")
 P = ParamSpec("P")
-ExceptionTypes = type[Exception] | tuple[type[Exception], ...]
+# Python 3.9 compatible type alias (can't use | syntax)
+ExceptionTypes = Union[type, tuple]
 
 
 # Common retry configurations

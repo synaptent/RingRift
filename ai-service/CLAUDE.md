@@ -28,15 +28,122 @@ Long-term consolidation sprint focused on technical debt reduction and documenta
 | 5     | Singleton standardization     | ✅ MIXED       | 15 files using SingletonMixin |
 | 6     | Documentation updates         | ✅ IN PROGRESS | Sprint 16.1 assessment added  |
 
-**Session 16.1 Comprehensive Assessment (Jan 3, 2026):**
+## Hashgraph Consensus Library (NEW - Sprint 16.2, Jan 3, 2026)
 
-Three parallel exploration agents completed infrastructure assessment:
+Byzantine Fault Tolerant (BFT) consensus mechanisms for distributed training coordination.
 
-| Component     | Grade | Score  | Key Findings                                             |
-| ------------- | ----- | ------ | -------------------------------------------------------- |
-| P2P Network   | A-    | 91/100 | 32+ health mechanisms, 272 async ops, 7 recovery daemons |
-| Training Loop | A-    | 94/100 | 6/6 stages, 5/5 feedback loops, quality gates verified   |
-| Consolidation | -     | 87%    | 6,700-8,200 LOC savings potential in 25-29 hours         |
+**Library Location**: `app/coordination/hashgraph/`
+
+### Components
+
+| Module                    | Purpose                                           | Tests      |
+| ------------------------- | ------------------------------------------------- | ---------- |
+| `event.py`                | HashgraphEvent with parent hashes, canonical JSON | 64         |
+| `dag.py`                  | DAG management, ancestry tracking                 | (included) |
+| `consensus.py`            | Virtual voting algorithm, strongly-seeing         | (included) |
+| `famous_witnesses.py`     | Witness selection, fame determination             | (included) |
+| `evaluation_consensus.py` | BFT model evaluation consensus                    | 27         |
+| `gossip_ancestry.py`      | Gossip message ancestry, fork detection           | 26         |
+| `promotion_consensus.py`  | BFT model promotion voting                        | 32         |
+
+**Total: 149 tests passing**
+
+### Key Concepts
+
+- **Gossip-About-Gossip**: Each event includes parent hashes creating a DAG
+- **Virtual Voting**: Nodes compute votes from ancestry without vote messages
+- **Famous Witnesses**: Events seen by 2/3+ of later witnesses achieve consensus
+- **Equivocation Detection**: Automatic fork detection when nodes create conflicting events
+
+### Usage: Evaluation Consensus
+
+```python
+from app.coordination.hashgraph import (
+    get_evaluation_consensus_manager,
+    EvaluationConsensusConfig,
+)
+
+# Initialize
+consensus = get_evaluation_consensus_manager(
+    config=EvaluationConsensusConfig(min_evaluators=3)
+)
+
+# Submit evaluation from this node
+await consensus.submit_evaluation_result(
+    model_hash="abc123",
+    evaluator_node="node-1",
+    win_rate=0.85,
+    games_played=100,
+)
+
+# Wait for Byzantine-tolerant consensus
+result = await consensus.get_consensus_evaluation(
+    model_hash="abc123",
+    min_evaluators=3,
+    timeout=300.0,
+)
+if result.has_consensus:
+    print(f"Consensus win rate: {result.win_rate:.1%}")
+```
+
+### Usage: Promotion Consensus
+
+```python
+from app.coordination.hashgraph import (
+    get_promotion_consensus_manager,
+    EvaluationEvidence,
+)
+
+# Propose promotion with evidence
+proposal = await consensus.propose_promotion(
+    model_hash="abc123",
+    config_key="hex8_2p",
+    evidence=EvaluationEvidence(win_rate=0.85, elo=1450, games_played=100),
+)
+
+# Vote on proposal
+await consensus.vote_on_proposal(proposal.proposal_id, approve=True)
+
+# Get consensus result with certificate
+result = await consensus.get_promotion_consensus(proposal.proposal_id)
+if result.approved:
+    print(f"Certificate: {result.certificate.certificate_hash[:16]}")
+```
+
+### Integration Points (Planned)
+
+| System              | Integration                       | Event                        |
+| ------------------- | --------------------------------- | ---------------------------- |
+| EvaluationDaemon    | Submit results to consensus       | EVALUATION_SUBMITTED         |
+| AutoPromotionDaemon | Propose/vote on promotions        | PROMOTION_CONSENSUS_APPROVED |
+| GossipProtocolMixin | Track ancestry for fork detection | GOSSIP_ANCESTRY_INVALID      |
+| P2PRecoveryDaemon   | Isolate equivocating peers        | PEER_EQUIVOCATION_DETECTED   |
+
+### BFT Properties
+
+- **Safety**: No two honest nodes reach different conclusions
+- **Liveness**: All honest nodes eventually reach consensus
+- **Tolerance**: Survives up to 1/3 Byzantine (malicious/faulty) nodes
+- **Efficiency**: O(log N) message complexity via gossip
+
+**Session 16.2 Comprehensive Assessment (Jan 3, 2026):**
+
+Four parallel exploration agents completed infrastructure assessment:
+
+| Component             | Grade | Score   | Key Findings                                             |
+| --------------------- | ----- | ------- | -------------------------------------------------------- |
+| P2P Network           | A-    | 91/100  | 32+ health mechanisms, 272 async ops, 7 recovery daemons |
+| Training Loop         | A     | 95/100  | 7/7 stages, 5/5 feedback loops, quality gates verified   |
+| Consolidation         | A     | 99%     | 248.5K LOC coordination, minimal tech debt remaining     |
+| Hashgraph Integration | -     | Planned | 4 integration points identified, 149 tests ready         |
+
+**Consolidation Assessment Key Findings:**
+
+- **99% consolidated** - Only 2,200-3,500 LOC potential savings remain
+- **10 daemons** not yet on HandlerBase (P0 priority, 14-18 hours)
+- **8 async SQLite** issues to fix (P0 priority, 6-8 hours)
+- **5 daemons** missing health_check() methods (P1 priority, 2-3 hours)
+- **Deprecated modules** scheduled for Q2 2026 removal (3,200 LOC)
 
 **P2P Detailed Breakdown:**
 
