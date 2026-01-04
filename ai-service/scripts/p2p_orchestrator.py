@@ -2001,6 +2001,10 @@ class P2POrchestrator(
         # Wave 7 Phase 1.1: Use retry mechanism for reliable subscription
         self.training_coordinator.subscribe_to_events_with_retry()
 
+        # January 4, 2026: Phase 5 - WorkDiscoveryManager for multi-channel work discovery
+        # This enables workers to find work even during leader elections or partitions
+        self._initialize_work_discovery_manager()
+
         # December 2025: Wire feedback loops for self-improvement
         # This connects curriculum adjustments to Elo changes, evaluation results, etc.
         self._wire_feedback_loops()
@@ -2565,6 +2569,17 @@ class P2POrchestrator(
                             logger.debug(f"[WorkerPull] Autonomous queue pop failed: {e}")
                     return None
 
+                # Jan 4, 2026: Phase 5 - Add WorkDiscoveryManager for multi-channel work discovery
+                def _get_work_discovery_manager_for_pull():
+                    """Get WorkDiscoveryManager singleton if available."""
+                    try:
+                        from scripts.p2p.managers.work_discovery_manager import (
+                            get_work_discovery_manager,
+                        )
+                        return get_work_discovery_manager()
+                    except ImportError:
+                        return None
+
                 worker_pull = WorkerPullLoop(
                     is_leader=lambda: self.role == NodeRole.LEADER,
                     get_leader_id=lambda: self.leader_id,
@@ -2573,9 +2588,10 @@ class P2POrchestrator(
                     execute_work=self._execute_claimed_work,
                     report_work_result=self._report_work_result,
                     pop_autonomous_work=_pop_autonomous_work_for_pull,
+                    get_work_discovery_manager=_get_work_discovery_manager_for_pull,
                 )
                 manager.register(worker_pull)
-                logger.info("[LoopManager] WorkerPullLoop registered (with autonomous fallback)")
+                logger.info("[LoopManager] WorkerPullLoop registered (with work discovery manager)")
             except (ImportError, TypeError) as e:
                 logger.error(f"[LoopManager] WorkerPullLoop registration FAILED: {e}")
                 logger.error("[LoopManager] This node will NOT claim work from leader!")
@@ -3468,6 +3484,129 @@ class P2POrchestrator(
         except Exception as e:  # noqa: BLE001
             logger.warning(f"SyncRouter: failed to wire events: {e}")
         return False
+
+    def _initialize_work_discovery_manager(self) -> bool:
+        """Initialize WorkDiscoveryManager for multi-channel work discovery.
+
+        January 4, 2026: Phase 5 of P2P Cluster Resilience.
+        Enables workers to find work through multiple channels:
+        1. Leader work queue (fastest)
+        2. Peer discovery (query other peers)
+        3. Autonomous queue (from AutonomousQueueLoop)
+        4. Direct selfplay (last resort)
+
+        Returns True if initialization succeeded, False otherwise.
+        """
+        try:
+            from scripts.p2p.managers.work_discovery_manager import (
+                WorkDiscoveryManager,
+                WorkDiscoveryConfig,
+                set_work_discovery_manager,
+            )
+
+            # Create manager with callbacks to this orchestrator
+            manager = WorkDiscoveryManager(
+                # Channel 1: Leader
+                get_leader_id=lambda: self.leader_id,
+                claim_from_leader=self._claim_work_from_leader,
+                # Channel 2: Peer discovery
+                get_alive_peers=lambda: [
+                    p.node_id for p in self.peers.values() if p.is_alive()
+                ],
+                query_peer_work=self._query_peer_for_work,
+                # Channel 3: Autonomous queue
+                pop_autonomous_work=self._pop_autonomous_queue_work,
+                # Channel 4: Direct selfplay
+                create_direct_selfplay_work=self._create_direct_selfplay_work,
+                # Config from environment
+                config=WorkDiscoveryConfig.from_env(),
+            )
+
+            # Set as singleton for WorkerPullLoop access
+            set_work_discovery_manager(manager)
+            logger.info("WorkDiscoveryManager: initialized with 4 discovery channels")
+            return True
+
+        except ImportError as e:
+            logger.debug(f"WorkDiscoveryManager: not available: {e}")
+            return False
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"WorkDiscoveryManager: initialization failed: {e}")
+            return False
+
+    async def _query_peer_for_work(
+        self, peer_id: str, capabilities: list[str]
+    ) -> dict[str, Any] | None:
+        """Query a peer for available work (used by WorkDiscoveryManager).
+
+        January 4, 2026: Phase 5 - Peer discovery channel.
+        """
+        try:
+            peer = self.peers.get(peer_id)
+            if not peer or not peer.is_alive():
+                return None
+
+            # Query peer's work queue via HTTP
+            urls = self._urls_for_peer(peer_id, "/work_queue/claim")
+            for url in urls:
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            url,
+                            json={"capabilities": capabilities},
+                            headers=self._auth_headers(),
+                            timeout=aiohttp.ClientTimeout(total=5.0),
+                        ) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                if data.get("work_item"):
+                                    return data["work_item"]
+                except Exception:
+                    continue
+            return None
+        except Exception:
+            return None
+
+    async def _pop_autonomous_queue_work(self) -> dict[str, Any] | None:
+        """Pop work from autonomous queue (used by WorkDiscoveryManager).
+
+        January 4, 2026: Phase 5 - Autonomous queue channel.
+        """
+        try:
+            loop = getattr(self, "_autonomous_queue_loop", None)
+            if loop and hasattr(loop, "pop_local_work"):
+                return await loop.pop_local_work()
+            return None
+        except Exception:
+            return None
+
+    def _create_direct_selfplay_work(
+        self, capabilities: list[str]
+    ) -> dict[str, Any] | None:
+        """Create direct selfplay work item (used by WorkDiscoveryManager).
+
+        January 4, 2026: Phase 5 - Direct selfplay channel (last resort).
+        Only used when all other channels fail.
+        """
+        if "selfplay" not in capabilities:
+            return None
+
+        try:
+            # Get next config from selfplay scheduler
+            config_key = self.selfplay_scheduler.get_next_config()
+            if not config_key:
+                return None
+
+            return {
+                "work_id": f"direct-{self.node_id}-{int(time.time())}",
+                "work_type": "selfplay",
+                "config_key": config_key,
+                "source": "direct_discovery",
+                "games": 10,  # Small batch for direct selfplay
+                "priority": 50,  # Lower priority than leader-assigned work
+            }
+        except Exception:
+            return None
 
     def _wire_feedback_loops(self) -> bool:
         """Wire curriculum feedback loops for self-improvement.

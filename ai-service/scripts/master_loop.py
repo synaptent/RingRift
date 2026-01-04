@@ -1193,6 +1193,9 @@ class MasterLoopController:
             DaemonType.MEMORY_MONITOR,
             # December 31, 2025: Stale model fallback for uninterrupted selfplay
             DaemonType.STALE_FALLBACK,
+            # January 4, 2026: Fast failure detection (Phase 4 P2P Resilience)
+            # Tiered detection: 5 min warning, 10 min alert+boost, 30 min recovery
+            DaemonType.FAST_FAILURE_DETECTOR,
             # January 3, 2026: Unified backup to OWC and S3
             # Backs up all selfplay games to both destinations for disaster recovery
             DaemonType.UNIFIED_BACKUP,

@@ -719,6 +719,10 @@ class WorkerPullConfig:
     # When enabled, workers will try autonomous queue when leader is unavailable
     enable_autonomous_fallback: bool = True
 
+    # Jan 4, 2026: WorkDiscoveryManager integration (Phase 5 P2P Resilience)
+    # When enabled, uses multi-channel work discovery instead of simple leader check
+    enable_work_discovery_manager: bool = True
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
         if self.pull_interval_seconds <= 0:
@@ -764,6 +768,7 @@ class WorkerPullLoop(BaseLoop):
         report_work_result: Callable[[dict[str, Any], bool], Coroutine[Any, Any, None]],
         get_allowed_work_types: Callable[[], list[str]] | None = None,
         pop_autonomous_work: Callable[[], Coroutine[Any, Any, dict[str, Any] | None]] | None = None,
+        get_work_discovery_manager: Callable[[], Any] | None = None,  # Phase 5: Multi-channel discovery
         config: WorkerPullConfig | None = None,
     ):
         """Initialize worker pull loop.
@@ -777,6 +782,7 @@ class WorkerPullLoop(BaseLoop):
             report_work_result: Async callback to report work completion/failure
             get_allowed_work_types: Optional callback returning allowed work types
             pop_autonomous_work: Optional async callback to get work from autonomous queue (Phase 2)
+            get_work_discovery_manager: Optional callback to get WorkDiscoveryManager instance (Phase 5)
             config: Loop configuration
         """
         self.config = config or WorkerPullConfig()
@@ -792,6 +798,7 @@ class WorkerPullLoop(BaseLoop):
         self._report_result = report_work_result
         self._get_allowed_work_types = get_allowed_work_types
         self._pop_autonomous_work = pop_autonomous_work
+        self._get_work_discovery_manager = get_work_discovery_manager  # Phase 5
 
         # Statistics
         self._work_claimed = 0
@@ -800,6 +807,14 @@ class WorkerPullLoop(BaseLoop):
         self._skipped_leader = 0
         self._skipped_busy = 0
         self._autonomous_work_claimed = 0  # Jan 4, 2026: Track autonomous queue usage
+        # Jan 4, 2026: Phase 5 - Track work discovery channel usage
+        self._work_discovery_stats: dict[str, int] = {
+            "leader": 0,
+            "peer": 0,
+            "autonomous": 0,
+            "direct": 0,
+        }
+        self._last_discovery_channel: str = "unknown"
 
     async def _on_start(self) -> None:
         """Initial delay for cluster stabilization."""
@@ -814,12 +829,24 @@ class WorkerPullLoop(BaseLoop):
             self._skipped_leader += 1
             return
 
-        # Check if leader is available
+        # Jan 4, 2026: Phase 5 - Try WorkDiscoveryManager first if enabled
+        # This provides multi-channel work discovery (leader → peer → autonomous → direct)
+        discovery_manager = None
+        use_work_discovery = False
+        if self.config.enable_work_discovery_manager and self._get_work_discovery_manager:
+            try:
+                discovery_manager = self._get_work_discovery_manager()
+                if discovery_manager:
+                    use_work_discovery = True
+            except Exception:
+                pass  # Fall back to legacy behavior
+
+        # Check if leader is available (for legacy path)
         leader_id = self._get_leader_id()
         use_autonomous_fallback = False
 
-        if not leader_id:
-            # Jan 4, 2026: No leader - try autonomous queue fallback
+        if not use_work_discovery and not leader_id:
+            # Legacy: No leader and no discovery manager - try autonomous queue fallback
             if self.config.enable_autonomous_fallback and self._pop_autonomous_work:
                 use_autonomous_fallback = True
                 logger.debug("[WorkerPull] No leader, trying autonomous queue fallback")
@@ -887,29 +914,49 @@ class WorkerPullLoop(BaseLoop):
         work_item: dict[str, Any] | None = None
         work_source = "leader"
 
-        if use_autonomous_fallback:
-            # Jan 4, 2026: Use autonomous queue when leader unavailable
+        # Jan 4, 2026: Phase 5 - Use WorkDiscoveryManager for multi-channel discovery
+        if use_work_discovery and discovery_manager:
             try:
-                work_item = await self._pop_autonomous_work()
-                if work_item:
-                    work_source = "autonomous"
-                    self._autonomous_work_claimed += 1
+                result = await discovery_manager.discover_work(capabilities)
+                if result.work_item:
+                    work_item = result.work_item
+                    work_source = result.channel.value  # "leader", "peer", "autonomous", "direct"
+                    self._work_discovery_stats[work_source] = (
+                        self._work_discovery_stats.get(work_source, 0) + 1
+                    )
+                    self._last_discovery_channel = work_source
+                    self._work_claimed += 1
+                    if work_source == "autonomous":
+                        self._autonomous_work_claimed += 1
             except Exception as e:
-                logger.debug(f"[WorkerPull] Autonomous queue error: {e}")
-        else:
-            # Normal path: claim from leader
-            work_item = await self._claim_work(capabilities)
-            if work_item:
-                self._work_claimed += 1
-            elif self.config.enable_autonomous_fallback and self._pop_autonomous_work:
-                # Jan 4, 2026: Leader available but no work - try autonomous fallback
+                logger.debug(f"[WorkerPull] WorkDiscoveryManager error: {e}")
+                # Fall through to legacy behavior
+
+        # Legacy fallback if discovery manager didn't find work
+        if not work_item:
+            if use_autonomous_fallback:
+                # Jan 4, 2026: Use autonomous queue when leader unavailable
                 try:
                     work_item = await self._pop_autonomous_work()
                     if work_item:
                         work_source = "autonomous"
                         self._autonomous_work_claimed += 1
                 except Exception as e:
-                    logger.debug(f"[WorkerPull] Autonomous fallback error: {e}")
+                    logger.debug(f"[WorkerPull] Autonomous queue error: {e}")
+            elif not use_work_discovery:
+                # Normal path: claim from leader (skip if already tried via discovery)
+                work_item = await self._claim_work(capabilities)
+                if work_item:
+                    self._work_claimed += 1
+                elif self.config.enable_autonomous_fallback and self._pop_autonomous_work:
+                    # Jan 4, 2026: Leader available but no work - try autonomous fallback
+                    try:
+                        work_item = await self._pop_autonomous_work()
+                        if work_item:
+                            work_source = "autonomous"
+                            self._autonomous_work_claimed += 1
+                    except Exception as e:
+                        logger.debug(f"[WorkerPull] Autonomous fallback error: {e}")
 
         if work_item:
             work_id = work_item.get("work_id", "unknown")
@@ -942,6 +989,9 @@ class WorkerPullLoop(BaseLoop):
             "skipped_leader": self._skipped_leader,
             "skipped_busy": self._skipped_busy,
             "autonomous_work_claimed": self._autonomous_work_claimed,  # Jan 4, 2026
+            # Jan 4, 2026: Phase 5 - Work discovery channel stats
+            "work_discovery_stats": self._work_discovery_stats.copy(),
+            "last_discovery_channel": self._last_discovery_channel,
             **self.stats.to_dict(),
         }
 
