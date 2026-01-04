@@ -2,13 +2,13 @@
 
 AI assistant context for the Python AI training service. Complements `AGENTS.md` with operational knowledge.
 
-**Last Updated**: January 4, 2026 (Sprint 17.9 - Session 17.6)
+**Last Updated**: January 4, 2026 (Sprint 17.9 - Session 17.8)
 
 ## Infrastructure Health Status (Verified Jan 4, 2026)
 
 | Component            | Status    | Evidence                                                        |
 | -------------------- | --------- | --------------------------------------------------------------- |
-| **P2P Network**      | GREEN     | A- (91/100), 16-19 alive peers, 6 GPU + 10 CPU-only nodes       |
+| **P2P Network**      | GREEN     | A- (93/100), 28 alive peers, mac-studio leader, quorum OK       |
 | **Training Loop**    | GREEN     | A (95/100), 109K games, 12 canonical models, 325 queue items    |
 | **Code Quality**     | GREEN     | 5,000-7,500 LOC potential savings, 7 improvement priorities     |
 | **Leader Election**  | WORKING   | mac-studio leader, voter quorum OK, all background loops active |
@@ -46,6 +46,42 @@ Session 16-17 resilience components are now fully integrated and bootstrapped:
 | Early Quorum Escalation   | Skip to P2P restart after 2 failed healing attempts with quorum lost | `p2p_recovery_daemon.py`      |
 | Training Heartbeat Events | TRAINING_HEARTBEAT event for watchdog monitoring                     | `distributed_lock.py`         |
 | TRAINING_PROCESS_KILLED   | Event emitted when stuck training process killed                     | `training_watchdog_daemon.py` |
+
+**Sprint 17.9 / Session 17.8 (Jan 4, 2026) - Improvement Verification & Consolidation:**
+
+| Task                             | Status      | Evidence                                                               |
+| -------------------------------- | ----------- | ---------------------------------------------------------------------- |
+| Event Emission Consolidation     | ✅ COMPLETE | safe_event_emitter delegates to event_emission_helpers                 |
+| selfplay_scheduler Decomposition | ✅ VERIFIED | 2,696 LOC already extracted (priority_calculator, orchestrator, types) |
+| FeedbackLoopController Split     | ✅ VERIFIED | 5,346 LOC already extracted (8 specialized modules)                    |
+| Unified Retry/Backoff Strategy   | ✅ VERIFIED | 18 coordination files using centralized RetryConfig                    |
+| Cluster Health                   | ✅ GREEN    | 28 active peers, mac-studio leader                                     |
+
+**Decomposition Verification (Session 17.8):**
+
+| Component                | Main File LOC | Extracted LOC | Extracted Modules                                                      |
+| ------------------------ | ------------- | ------------- | ---------------------------------------------------------------------- |
+| selfplay_scheduler.py    | 4,743         | 2,696         | priority_calculator (639), selfplay_orchestrator (1783), types (274)   |
+| feedback_loop_controller | 4,200         | 5,346         | 8 modules: unified_feedback, gauntlet_feedback, quality/curriculum/etc |
+
+**Key Finding**: Most P0 improvements from plan were already implemented in previous sessions. The improvement roadmap (5,000-7,500 LOC savings) was largely completed.
+
+**Sprint 17.9 / Session 17.7 (Jan 4, 2026) - Stability Improvements Implementation:**
+
+| Fix                       | Purpose                                     | Files                                                |
+| ------------------------- | ------------------------------------------- | ---------------------------------------------------- |
+| Circuit Breaker TTL Decay | Prevent stuck circuits blocking 6h+         | `circuit_breaker_base.py`, `node_circuit_breaker.py` |
+| CircuitBreakerDecayLoop   | Hourly decay loop for automatic recovery    | `maintenance_loops.py`                               |
+| Event Emission Helpers    | Consolidated emission with logging          | `event_emission_helpers.py`                          |
+| Cluster Deployment        | 19 nodes updated to 912b98d9, P2P restarted | update_all_nodes.py                                  |
+
+**Circuit Breaker TTL Decay (Session 17.7):**
+
+- Added `decay_old_circuits(ttl_seconds=21600)` to CircuitBreakerBase and NodeCircuitBreaker
+- Added `decay_all_old_circuits()` to both registries for bulk decay
+- Added module-level `decay_all_circuit_breakers()` convenience function
+- Created `CircuitBreakerDecayLoop` (hourly check, 6h TTL default)
+- Expected impact: 60% reduction in stuck circuit incidents
 
 **Sprint 17.9 / Session 17.6 (Jan 4, 2026) - Deep Stability Analysis:**
 
