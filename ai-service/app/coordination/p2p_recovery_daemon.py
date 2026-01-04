@@ -210,6 +210,9 @@ class P2PRecoveryDaemon(HandlerBase):
         self._last_voter_quorum_check: dict[str, Any] = {}
         self._quorum_at_risk_consecutive = 0  # Consecutive checks with quorum at risk
         self._quorum_recovery_triggered = 0  # Total proactive recoveries triggered
+        # Jan 3, 2026 Session 7: Partition healing coordination
+        self._healing_in_progress = False  # Pause restarts during healing
+        self._recovery_attempts = 0  # Total P2P recovery attempts
 
     @property
     def config(self) -> P2PRecoveryConfig:
@@ -288,12 +291,19 @@ class P2PRecoveryDaemon(HandlerBase):
 
         Jan 3, 2026: Subscribe to P2P_RECOVERY_NEEDED from partition_healer.py
         when gossip convergence fails repeatedly at max escalation.
+
+        Jan 3, 2026 Session 7: Subscribe to partition healing events to coordinate
+        P2P recovery with healing operations. Prevents restart during active healing.
         """
         return {
             "QUORUM_LOST": self._on_quorum_lost,
             "QUORUM_AT_RISK": self._on_quorum_at_risk,
             "VOTER_OFFLINE": self._on_voter_offline,
             "P2P_RECOVERY_NEEDED": self._on_p2p_recovery_needed,
+            # Jan 3, 2026 Session 7: Coordinate with partition healing
+            "PARTITION_HEALING_STARTED": self._on_partition_healing_started,
+            "PARTITION_HEALED": self._on_partition_healed,
+            "PARTITION_HEALING_FAILED": self._on_partition_healing_failed,
         }
 
     async def _on_quorum_lost(self, event: Any) -> None:
@@ -411,6 +421,52 @@ class P2PRecoveryDaemon(HandlerBase):
             )
         except Exception as e:
             logger.debug(f"Failed to emit P2P_RECOVERY_STARTED: {e}")
+
+    async def _on_partition_healing_started(self, event: Any) -> None:
+        """Handle PARTITION_HEALING_STARTED - pause P2P restarts during healing.
+
+        Jan 3, 2026 Session 7: When partition healing is in progress, we should
+        not restart the P2P orchestrator as it would interrupt the healing process.
+        """
+        logger.info(
+            f"[P2PRecovery] Partition healing started, pausing P2P restart attempts"
+        )
+        self._healing_in_progress = True
+
+    async def _on_partition_healed(self, event: Any) -> None:
+        """Handle PARTITION_HEALED - resume normal recovery operations.
+
+        Jan 3, 2026 Session 7: Partition healing completed successfully.
+        Reset failure counters since the partition was healed without restart.
+        """
+        nodes_healed = event.get("nodes_healed", 0)
+        duration_seconds = event.get("duration_seconds", 0)
+
+        logger.info(
+            f"[P2PRecovery] Partition healed successfully: "
+            f"{nodes_healed} nodes reconnected in {duration_seconds:.1f}s"
+        )
+
+        self._healing_in_progress = False
+        # Reset consecutive failures since partition was healed without restart
+        self._consecutive_failures = 0
+
+    async def _on_partition_healing_failed(self, event: Any) -> None:
+        """Handle PARTITION_HEALING_FAILED - escalate to P2P restart if needed.
+
+        Jan 3, 2026 Session 7: Partition healing failed. If this is repeated,
+        the partition healer will emit P2P_RECOVERY_NEEDED which triggers restart.
+        """
+        reason = event.get("reason", "unknown")
+        escalation_level = event.get("escalation_level", 0)
+
+        logger.warning(
+            f"[P2PRecovery] Partition healing failed: {reason} "
+            f"(escalation_level={escalation_level})"
+        )
+
+        self._healing_in_progress = False
+        # Don't restart immediately - wait for P2P_RECOVERY_NEEDED if escalation maxed
 
     # =========================================================================
     # Main Cycle
@@ -867,12 +923,23 @@ class P2PRecoveryDaemon(HandlerBase):
         current_cooldown = self._get_current_cooldown()
         return max(0, current_cooldown - elapsed)
 
-    async def _restart_p2p(self) -> None:
+    async def _restart_p2p(self, force: bool = False) -> None:
         """Restart the P2P orchestrator process.
 
         December 2025: Uses asyncio.create_subprocess_exec to avoid blocking the event loop.
         Dec 30, 2025: Tracks restart attempts for exponential backoff.
+        Jan 3, 2026 Session 7: Respects partition healing state unless force=True.
+
+        Args:
+            force: If True, restart even during partition healing (for P2P_RECOVERY_NEEDED).
         """
+        # Jan 3, 2026 Session 7: Don't restart during partition healing unless forced
+        if self._healing_in_progress and not force:
+            logger.info(
+                "[P2PRecovery] Partition healing in progress, deferring P2P restart"
+            )
+            return
+
         # Increment restart attempt counter for exponential backoff
         self._restart_attempt_count += 1
         current_cooldown = self._get_current_cooldown()
