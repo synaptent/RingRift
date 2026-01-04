@@ -113,6 +113,7 @@ from app.coordination.health_check_orchestrator import (
     NodeHealthState,
     NodeHealthDetails,
 )
+from app.coordination.singleton_mixin import SingletonMixin
 
 if TYPE_CHECKING:
     from typing import Any
@@ -423,7 +424,7 @@ class ClusterHealthStatus:
         )
 
 
-class ClusterHealthDashboard:
+class ClusterHealthDashboard(SingletonMixin):
     """Unified cluster health aggregation (December 2025).
 
     This class provides a single source of truth for cluster health by
@@ -434,8 +435,10 @@ class ClusterHealthDashboard:
     3. Daemon health (DaemonManager)
     4. Sync health (SyncCoordinator)
 
+    January 2026: Migrated to use SingletonMixin for consistency.
+
     Usage:
-        dashboard = ClusterHealthDashboard()
+        dashboard = ClusterHealthDashboard.get_instance()
         status = dashboard.get_cluster_health()
 
         if dashboard.should_allow_new_jobs():
@@ -460,25 +463,11 @@ class ClusterHealthDashboard:
     WEIGHT_DAEMON = 0.20
     WEIGHT_SYNC = 0.15
 
-    _instance: ClusterHealthDashboard | None = None
-
     def __init__(self) -> None:
         """Initialize the dashboard."""
         self._last_status: ClusterHealthStatus | None = None
         self._last_check: float = 0.0
         self._cache_ttl: float = 5.0  # Cache for 5 seconds
-
-    @classmethod
-    def get_instance(cls) -> "ClusterHealthDashboard":
-        """Get or create the singleton instance."""
-        if cls._instance is None:
-            cls._instance = cls()
-        return cls._instance
-
-    @classmethod
-    def reset_instance(cls) -> None:
-        """Reset the singleton (for testing)."""
-        cls._instance = None
 
     def get_cluster_health(self, force_refresh: bool = False) -> ClusterHealthStatus:
         """Get comprehensive cluster health status.
