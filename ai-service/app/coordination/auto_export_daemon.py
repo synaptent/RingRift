@@ -36,7 +36,7 @@ from typing import Any, Callable
 
 from app.core.async_context import safe_create_task
 from app.coordination.event_handler_utils import extract_config_key
-from app.coordination.event_utils import parse_config_key
+from app.coordination.event_utils import make_config_key, parse_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 
 # Sprint 4 (Jan 2, 2026): Export validation defaults
@@ -356,7 +356,7 @@ class AutoExportDaemon(HandlerBase):
                 logger.debug("[AutoExportDaemon] Missing config info in selfplay result")
                 return
 
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
 
             # Phase 3: Mark config as pending sync - export will wait for DATA_SYNC_COMPLETED
             # January 3, 2026: Only apply sync-gating if gate_export_on_sync is enabled.
@@ -410,7 +410,7 @@ class AutoExportDaemon(HandlerBase):
             num_players = payload.get("num_players")
 
             if board_type and num_players:
-                config_key = f"{board_type}_{num_players}p"
+                config_key = make_config_key(board_type, num_players)
                 await self._record_games(config_key, board_type, num_players, new_games)
 
         except Exception as e:  # noqa: BLE001
@@ -553,7 +553,7 @@ class AutoExportDaemon(HandlerBase):
             databases_scanned = 0
             games_found = 0
             for board_type, num_players, game_count, db_count in scan_results:
-                config_key = f"{board_type}_{num_players}p"
+                config_key = make_config_key(board_type, num_players)
                 await self._record_games(config_key, board_type, num_players, game_count)
                 games_found += game_count
                 databases_scanned += db_count

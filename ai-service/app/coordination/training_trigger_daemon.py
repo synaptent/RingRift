@@ -986,7 +986,7 @@ class TrainingTriggerDaemon(HandlerBase):
             if not config_key:
                 # Try to build from board_type and num_players
                 if board_type and num_players:
-                    config_key = f"{board_type}_{num_players}p"
+                    config_key = make_config_key(board_type, num_players)
                 else:
                     logger.debug("[TrainingTriggerDaemon] Missing config info in NPZ export result")
                     return
@@ -1029,7 +1029,7 @@ class TrainingTriggerDaemon(HandlerBase):
             if not config_key:
                 # Try to build from board_type and num_players
                 if board_type and num_players:
-                    config_key = f"{board_type}_{num_players}p"
+                    config_key = make_config_key(board_type, num_players)
                 else:
                     logger.debug(
                         "[TrainingTriggerDaemon] Missing config info in NPZ combination result"
@@ -2658,7 +2658,7 @@ class TrainingTriggerDaemon(HandlerBase):
             if board_type is None or num_players is None:
                 continue
 
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
             results.append((config_key, board_type, num_players, npz_path))
 
         return results
@@ -2680,7 +2680,7 @@ class TrainingTriggerDaemon(HandlerBase):
         """
         # Jan 2, 2026: In local-only mode, just check if local NPZ exists
         if self._local_only_mode:
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
             local_npz = Path(f"data/training/{config_key}.npz")
             if local_npz.exists():
                 logger.debug(
@@ -2710,7 +2710,7 @@ class TrainingTriggerDaemon(HandlerBase):
 
             if result.is_fresh:
                 # Update local state with fresh data info
-                config_key = f"{board_type}_{num_players}p"
+                config_key = make_config_key(board_type, num_players)
                 if config_key in self._training_states:
                     self._training_states[config_key].last_npz_update = time.time()
                     if result.games_available:
@@ -3594,7 +3594,7 @@ class TrainingTriggerDaemon(HandlerBase):
                     if board_type is None or num_players is None:
                         continue
 
-                    config_key = f"{board_type}_{num_players}p"
+                    config_key = make_config_key(board_type, num_players)
 
                     # January 3, 2026: Skip if already in cache with same or newer mtime
                     # This avoids redundant disk I/O when events already informed us

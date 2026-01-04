@@ -717,7 +717,7 @@ async def trigger_npz_combination(
         StageCompletionResult with combination results
     """
     start_time = time.time()
-    config_key = f"{board_type}_{num_players}p"
+    config_key = make_config_key(board_type, num_players)
 
     try:
         from app.training.npz_combiner import (
@@ -845,7 +845,7 @@ async def trigger_training(
     root = _get_ai_service_root()
     start_time = time.time()
     last_error = None
-    config_key = f"{board_type}_{num_players}p"
+    config_key = make_config_key(board_type, num_players)
 
     # Phase 4.3 Dec 29, 2025: Check circuit breaker before starting
     if not check_circuit(config_key):
@@ -1125,7 +1125,7 @@ async def trigger_evaluation(
     start_time = time.time()
     baselines = baselines or ["random", "heuristic"]
     last_error = None
-    config_key = f"{board_type}_{num_players}p"
+    config_key = make_config_key(board_type, num_players)
 
     # Phase 4.3 Dec 29, 2025: Check circuit breaker before starting
     if not check_circuit(config_key):

@@ -457,7 +457,7 @@ class UnifiedQueuePopulator:
 
             for row in rows:
                 board_type, num_players, best_elo, model_id, games = row
-                key = f"{board_type}_{num_players}p"
+                key = make_config_key(board_type, num_players)
                 if key in self._targets:
                     target = self._targets[key]
                     target.current_best_elo = best_elo
@@ -515,7 +515,7 @@ class UnifiedQueuePopulator:
         model_id: str | None = None,
     ) -> None:
         """Update the current best Elo for a configuration."""
-        key = f"{board_type}_{num_players}p"
+        key = make_config_key(board_type, num_players)
         if key in self._targets:
             target = self._targets[key]
             if elo > target.current_best_elo:
@@ -537,7 +537,7 @@ class UnifiedQueuePopulator:
         self, board_type: str, num_players: int, count: int = 1
     ) -> None:
         """Increment games played for a configuration."""
-        key = f"{board_type}_{num_players}p"
+        key = make_config_key(board_type, num_players)
         if key in self._targets:
             target = self._targets[key]
             target.games_played += count
@@ -546,13 +546,13 @@ class UnifiedQueuePopulator:
 
     def increment_training(self, board_type: str, num_players: int) -> None:
         """Increment training runs for a configuration."""
-        key = f"{board_type}_{num_players}p"
+        key = make_config_key(board_type, num_players)
         if key in self._targets:
             self._targets[key].training_runs += 1
 
     def mark_export_complete(self, board_type: str, num_players: int, samples: int = 0) -> None:
         """Mark export as complete for a configuration."""
-        key = f"{board_type}_{num_players}p"
+        key = make_config_key(board_type, num_players)
         if key in self._targets:
             target = self._targets[key]
             target.games_since_last_export = 0
@@ -765,7 +765,7 @@ class UnifiedQueuePopulator:
 
         work_id = f"selfplay_{board_type}_{num_players}p_{int(time.time() * 1000)}"
 
-        key = f"{board_type}_{num_players}p"
+        key = make_config_key(board_type, num_players)
         target = self._targets.get(key)
         best_model = target.best_model_id if target else None
         model_elo = target.current_best_elo if target else 1500.0
@@ -840,7 +840,7 @@ class UnifiedQueuePopulator:
             Tuple of (is_ready, sample_count). is_ready is True if sufficient
             training data exists.
         """
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
 
         try:
             from app.distributed.data_catalog import DataCatalog
@@ -1456,7 +1456,7 @@ class UnifiedQueuePopulatorDaemon:
                 board_type = payload.get("board_type")
                 num_players = payload.get("num_players")
                 games = payload.get("games_generated", 0)
-                config_key = f"{board_type}_{num_players}p"
+                config_key = make_config_key(board_type, num_players) if board_type and num_players else ""
                 if config_key in self._populator._targets:
                     target = self._populator._targets[config_key]
                     if target.pending_selfplay_count > 0:
@@ -1510,7 +1510,7 @@ class UnifiedQueuePopulatorDaemon:
                 board_type = payload.get("board_type")
                 num_players = payload.get("num_players")
                 reason = payload.get("reason", "unknown")
-                config_key = f"{board_type}_{num_players}p" if board_type and num_players else ""
+                config_key = make_config_key(board_type, num_players) if board_type and num_players else ""
 
                 if config_key and config_key in self._populator._targets:
                     target = self._populator._targets[config_key]
@@ -1533,7 +1533,7 @@ class UnifiedQueuePopulatorDaemon:
                 board_type = payload.get("board_type")
                 num_players = payload.get("num_players")
                 node_id = payload.get("node_id", "unknown")
-                config_key = f"{board_type}_{num_players}p" if board_type and num_players else ""
+                config_key = make_config_key(board_type, num_players) if board_type and num_players else ""
 
                 if config_key and config_key in self._populator._targets:
                     target = self._populator._targets[config_key]
@@ -1569,7 +1569,7 @@ class UnifiedQueuePopulatorDaemon:
                 if work_type == "selfplay":
                     board_type = payload.get("board_type")
                     num_players = payload.get("num_players")
-                    config_key = f"{board_type}_{num_players}p" if board_type and num_players else ""
+                    config_key = make_config_key(board_type, num_players) if board_type and num_players else ""
 
                     if config_key and config_key in self._populator._targets:
                         target = self._populator._targets[config_key]
@@ -1600,7 +1600,7 @@ class UnifiedQueuePopulatorDaemon:
                 board_type = payload.get("board_type")
                 num_players = payload.get("num_players")
                 reason = payload.get("reason", "unknown")
-                config_key = f"{board_type}_{num_players}p" if board_type and num_players else ""
+                config_key = make_config_key(board_type, num_players) if board_type and num_players else ""
 
                 if config_key and config_key in self._populator._targets:
                     target = self._populator._targets[config_key]

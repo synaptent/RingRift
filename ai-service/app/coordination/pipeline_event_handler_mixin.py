@@ -25,7 +25,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 from app.coordination.event_handler_utils import extract_config_key
-from app.coordination.event_utils import parse_config_key
+from app.coordination.event_utils import make_config_key, parse_config_key
 from app.coordination.pipeline_mixin_base import PipelineMixinBase
 
 if TYPE_CHECKING:
@@ -318,7 +318,7 @@ class PipelineEventHandlerMixin(PipelineMixinBase):
         payload = getattr(event, "payload", {}) or {}
         board_type = payload.get("board_type")
         num_players = payload.get("num_players")
-        config_key = extract_config_key(payload) or f"{board_type}_{num_players}p"
+        config_key = extract_config_key(payload) or make_config_key(board_type, num_players)
 
         logger.info(
             f"[DataPipelineOrchestrator] Consolidation started for {config_key}"
@@ -338,7 +338,7 @@ class PipelineEventHandlerMixin(PipelineMixinBase):
         payload = getattr(event, "payload", {}) or {}
         board_type = payload.get("board_type")
         num_players = payload.get("num_players")
-        config_key = extract_config_key(payload) or f"{board_type}_{num_players}p"
+        config_key = extract_config_key(payload) or make_config_key(board_type, num_players)
         games_consolidated = payload.get("games_consolidated", 0)
         canonical_db = payload.get("canonical_db")
 

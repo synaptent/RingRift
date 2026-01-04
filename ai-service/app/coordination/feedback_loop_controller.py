@@ -42,7 +42,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.coordination.event_handler_utils import extract_config_key
-from app.coordination.event_utils import parse_config_key
+from app.coordination.event_utils import make_config_key, parse_config_key
 from app.coordination.handler_base import HandlerBase
 from app.coordination.protocols import HealthCheckResult
 
@@ -2333,7 +2333,7 @@ class FeedbackLoopController(HandlerBase):
             # Build config key if we have board type and num players
             config_key = ""
             if board_type and num_players:
-                config_key = f"{board_type}_{num_players}p"
+                config_key = make_config_key(board_type, num_players)
 
             logger.info(
                 f"[FeedbackLoopController] Work completed: "
@@ -2370,7 +2370,7 @@ class FeedbackLoopController(HandlerBase):
 
             config_key = ""
             if board_type and num_players:
-                config_key = f"{board_type}_{num_players}p"
+                config_key = make_config_key(board_type, num_players)
 
             logger.warning(
                 f"[FeedbackLoopController] Work failed: "
@@ -2409,7 +2409,7 @@ class FeedbackLoopController(HandlerBase):
 
             config_key = ""
             if board_type and num_players:
-                config_key = f"{board_type}_{num_players}p"
+                config_key = make_config_key(board_type, num_players)
 
             logger.warning(
                 f"[FeedbackLoopController] Work timed out: "
