@@ -335,6 +335,13 @@ class GossipProtocolMixin(P2PMixinBase):
     )
     GOSSIP_MESSAGE_SIZE_WARNING_BYTES = GOSSIP_MAX_MESSAGE_SIZE_BYTES // 2
 
+    # Jan 3, 2026 Sprint 12: TTL for preemptive circuit breaker failures
+    # Preemptive failures applied from gossip decay after this time.
+    # This prevents stale gossip from affecting circuits indefinitely.
+    PREEMPTIVE_CB_TTL_SECONDS = float(
+        os.environ.get("RINGRIFT_PREEMPTIVE_CB_TTL", "60.0")
+    )
+
     def _init_gossip_protocol(self) -> None:
         """Initialize gossip protocol state and metrics.
 
@@ -387,6 +394,12 @@ class GossipProtocolMixin(P2PMixinBase):
         if not hasattr(self, "_gossip_state_sync_lock"):
             import threading
             self._gossip_state_sync_lock = threading.RLock()
+
+        # Jan 3, 2026 Sprint 12: Track when preemptive CB failures were applied
+        # Key: "op_type:target", Value: timestamp when preemptive failure applied
+        # Used for TTL decay - don't re-apply if already applied within TTL
+        if not hasattr(self, "_preemptive_cb_applied"):
+            self._preemptive_cb_applied: dict[str, float] = {}
 
         # Dec 29, 2025: Restore persisted gossip state on startup
         # This allows faster cluster state recovery after P2P restarts
@@ -1999,10 +2012,19 @@ class GossipProtocolMixin(P2PMixinBase):
                         # Already tracking failure for this target
                         continue
 
+                    # Jan 3, 2026 Sprint 12: TTL decay for preemptive failures
+                    # Don't re-apply preemptive failures if already applied within TTL
+                    cb_key = f"{op_type}:{target}"
+                    last_applied = self._preemptive_cb_applied.get(cb_key, 0.0)
+                    if now - last_applied < PREEMPTIVE_CB_TTL_SECONDS:
+                        # Already applied recently, skip to avoid stacking failures
+                        continue
+
                     # Record a preemptive failure to bias our local circuit
                     # This doesn't immediately open the circuit, just increments failure count
                     # If local attempts also fail, we'll reach threshold faster
                     breaker.record_failure(target, preemptive=True)
+                    self._preemptive_cb_applied[cb_key] = now
                     processed_count += 1
 
             if processed_count > 0:

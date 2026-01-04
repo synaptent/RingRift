@@ -37,6 +37,7 @@ from typing import Any
 
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.contracts import CoordinatorStatus
+from app.coordination.event_utils import make_config_key
 from app.utils.game_discovery import GameDiscovery, DatabaseInfo, ALL_BOARD_TYPES, ALL_PLAYER_COUNTS
 from app.config.thresholds import SQLITE_TIMEOUT
 

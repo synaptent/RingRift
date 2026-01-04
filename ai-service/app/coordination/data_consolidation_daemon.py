@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
-from app.coordination.event_utils import parse_config_key
+from app.coordination.event_utils import make_config_key, parse_config_key
 from app.coordination.health_check_helper import HealthCheckHelper
 from app.coordination.contracts import CoordinatorStatus
 from app.config.thresholds import SQLITE_TIMEOUT, SQLITE_CONNECT_TIMEOUT
@@ -314,7 +314,7 @@ class DataConsolidationDaemon(HandlerBase):
             num_players = payload.get("num_players", 0)
 
             if not config_key and board_type and num_players:
-                config_key = f"{board_type}_{num_players}p"
+                config_key = make_config_key(board_type, num_players)
 
             if config_key:
                 self._pending_configs.add(config_key)
@@ -417,7 +417,7 @@ class DataConsolidationDaemon(HandlerBase):
         Returns:
             ConsolidationStats with results
         """
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
         stats = ConsolidationStats(config_key=config_key, start_time=time.time())
 
         try:
@@ -1064,7 +1064,7 @@ class DataConsolidationDaemon(HandlerBase):
         results = {}
 
         for board_type, num_players in ALL_CONFIGS:
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
             stats = await self._consolidate_config(board_type, num_players)
             results[config_key] = stats
 

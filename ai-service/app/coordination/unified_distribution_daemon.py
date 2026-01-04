@@ -51,6 +51,7 @@ from app.coordination.protocols import (
     register_coordinator,
     unregister_coordinator,
 )
+from app.coordination.event_utils import make_config_key
 
 # Delivery ledger for persistent tracking (Dec 2025 Phase 3)
 try:

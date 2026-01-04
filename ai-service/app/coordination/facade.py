@@ -41,6 +41,7 @@ from app.coordination.types import TaskStatus
 
 # December 2025: Use centralized timeout constants
 from app.config.coordination_defaults import JobTimeoutDefaults
+from app.coordination.event_utils import make_config_key
 
 logger = logging.getLogger(__name__)
 
@@ -284,21 +285,21 @@ class CoordinationFacade:
             return None
 
         try:
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
             return coordinator.start_training(config_key, **kwargs)
         except ValueError as e:
             # Invalid config or parameters
-            logger.warning(f"Invalid training config {board_type}_{num_players}p: {e}")
+            logger.warning(f"Invalid training config {make_config_key(board_type, num_players)}: {e}")
             return None
         except FileNotFoundError as e:
             # Missing training data or model
-            logger.error(f"Missing training resources for {board_type}_{num_players}p: {e}")
+            logger.error(f"Missing training resources for {make_config_key(board_type, num_players)}: {e}")
             return None
         except (SystemExit, KeyboardInterrupt):
             # Signal exceptions must propagate (Dec 2025)
             raise
         except Exception as e:
-            logger.error(f"Failed to start training for {board_type}_{num_players}p: {e}", exc_info=True)
+            logger.error(f"Failed to start training for {make_config_key(board_type, num_players)}: {e}", exc_info=True)
             return None
 
     def get_training_status(self, board_type: str, num_players: int) -> TrainingStatus:
@@ -316,7 +317,7 @@ class CoordinationFacade:
             return TrainingStatus.NOT_STARTED
 
         try:
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
             status = coordinator.get_status(config_key)
             if status and status.get("running"):
                 return TrainingStatus.RUNNING
@@ -342,19 +343,19 @@ class CoordinationFacade:
             return False
 
         try:
-            config_key = f"{board_type}_{num_players}p"
+            config_key = make_config_key(board_type, num_players)
             coordinator.stop_training(config_key)
             return True
         except KeyError:
             # No training running for this config - not an error
-            logger.debug(f"No active training to stop for {board_type}_{num_players}p")
+            logger.debug(f"No active training to stop for {make_config_key(board_type, num_players)}")
             return True  # Still success - nothing to stop
         except (ProcessLookupError, OSError) as e:
             # Process already terminated
-            logger.debug(f"Training process already stopped for {board_type}_{num_players}p: {e}")
+            logger.debug(f"Training process already stopped for {make_config_key(board_type, num_players)}: {e}")
             return True
         except Exception as e:
-            logger.error(f"Failed to stop training for {board_type}_{num_players}p: {e}", exc_info=True)
+            logger.error(f"Failed to stop training for {make_config_key(board_type, num_players)}: {e}", exc_info=True)
             return False
 
     # =========================================================================

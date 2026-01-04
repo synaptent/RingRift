@@ -48,6 +48,7 @@ from app.coordination.daemon_stats import EvaluationDaemonStats
 # December 2025: Event types and contracts
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.coordination.event_router import DataEventType, safe_emit_event
+from app.coordination.event_utils import make_config_key
 
 # December 2025: Distribution defaults and utilities
 from app.config.coordination_defaults import DistributionDefaults
@@ -594,7 +595,7 @@ class EvaluationDaemon(BaseEventHandler):
             return
 
         start_time = time.time()
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
         run_id = str(uuid.uuid4())
         logger.info(f"[EvaluationDaemon] Starting evaluation: {model_path}")
 
@@ -735,7 +736,7 @@ class EvaluationDaemon(BaseEventHandler):
         ]
 
         # Dec 30, 2025: Get game count for graduated thresholds
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
         try:
             game_counts = get_game_counts_summary()
             game_count = game_counts.get(config_key, 0)
@@ -954,7 +955,7 @@ class EvaluationDaemon(BaseEventHandler):
 
             await emit_evaluation_failed(
                 model_path=model_path,
-                config_key=f"{board_type}_{num_players}p",
+                config_key=make_config_key(board_type, num_players),
                 reason=reason,
             )
             logger.info(f"[EvaluationDaemon] Emitted EVALUATION_FAILED: {model_path}")

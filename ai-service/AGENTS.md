@@ -363,7 +363,7 @@ python -c "from app.coordination import *"
 
 ## 11. Daemon Development Patterns
 
-The coordination layer has 89 daemon types (78 active, 11 deprecated). When creating new daemons, follow these patterns.
+The coordination layer has 90 daemon types (84 active, 6 deprecated). When creating new daemons, follow these patterns.
 
 ### 11.1 Daemon Lifecycle
 
@@ -874,3 +874,126 @@ curl -s http://localhost:8790/status | jq '.feedback_loop'
 | Evaluation stuck         | `evaluation_daemon` queue     | Check backpressure, GPU availability |
 | Curriculum not adjusting | `curriculum_integration` logs | Verify event subscriptions wired     |
 | Model not promoted       | Gauntlet win rates            | Check evaluation thresholds          |
+
+---
+
+## 15. P2P Coordination Events (January 2026)
+
+The P2P layer emits events that the coordination layer subscribes to. This enables automated recovery from network partitions, leader failures, and quorum loss.
+
+### 15.1 Key P2P Events
+
+| Event                        | Emitter                       | Subscribers                | Purpose                                |
+| ---------------------------- | ----------------------------- | -------------------------- | -------------------------------------- |
+| `PARTITION_HEALED`           | `partition_healer.py:514`     | `DataPipelineOrchestrator` | Trigger priority sync after healing    |
+| `P2P_RECOVERY_NEEDED`        | `partition_healer.py:684`     | `P2PRecoveryDaemon`        | Restart orchestrator at max escalation |
+| `NETWORK_ISOLATION_DETECTED` | `p2p_recovery_daemon.py:1133` | P2P orchestrator           | Trigger partition healing              |
+| `LEADER_ELECTED`             | `p2p_orchestrator.py`         | `LeadershipCoordinator`    | Track leader changes                   |
+| `QUORUM_LOST`                | `leader_election.py`          | `P2PRecoveryDaemon`        | Initiate quorum recovery               |
+| `HOST_OFFLINE`               | `p2p_orchestrator.py`         | `UnifiedHealthManager`     | Update cluster health                  |
+| `CIRCUIT_BREAKER_OPENED`     | `node_circuit_breaker.py`     | `P2PRecoveryDaemon`        | Track failing nodes                    |
+
+### 15.2 Partition Healing Flow
+
+When network partitions occur:
+
+```
+1. NETWORK_ISOLATION_DETECTED → partition_healer.trigger_healing_pass()
+2. partition_healer attempts gossip-based healing
+3. Success: PARTITION_HEALED → DataPipelineOrchestrator triggers priority sync
+4. Failure (max escalation): P2P_RECOVERY_NEEDED → P2PRecoveryDaemon restarts orchestrator
+```
+
+### 15.3 Circuit Breaker Gossip Replication
+
+Open circuit breaker states are replicated via gossip protocol:
+
+```python
+# State collection (gossip_protocol.py)
+def _get_circuit_breaker_gossip_state() -> dict:
+    """Collect OPEN/HALF_OPEN circuits for gossip."""
+    return {
+        target: {
+            "state": cb.state,
+            "failure_count": cb.failure_count,
+            "age_seconds": time.time() - cb.opened_at,
+        }
+        for target, cb in registry.items()
+        if cb.state in ("OPEN", "HALF_OPEN")
+    }
+
+# State processing (gossip_protocol.py)
+def _process_circuit_breaker_states(peer_states: dict) -> None:
+    """Apply peer CB states as preemptive failures."""
+    for target, state in peer_states.items():
+        if state["age_seconds"] < 300:  # Fresh circuits only
+            registry.record_failure(target, preemptive=True)
+```
+
+**Benefits:**
+
+- Cluster-wide failure awareness within ~15 seconds
+- Reduced connection attempts to known-failing targets
+- Faster recovery from network issues
+
+### 15.4 Adding New P2P Event Handlers
+
+When adding handlers for P2P events:
+
+1. **Import DataEventType correctly:**
+
+```python
+from app.distributed.data_events import DataEventType
+# NOT from app.coordination.data_events
+```
+
+2. **Subscribe in the appropriate coordinator:**
+
+```python
+# In data_pipeline_orchestrator.py subscribe_to_data_events()
+router.subscribe(
+    DataEventType.PARTITION_HEALED.value,
+    self._on_partition_healed,
+)
+```
+
+3. **Handle gracefully with fallbacks:**
+
+```python
+def _on_partition_healed(self, event) -> None:
+    try:
+        payload = event.payload if hasattr(event, "payload") else event
+        # Handle event...
+    except ImportError:
+        logger.debug("Event emission not available")
+    except (AttributeError, KeyError, TypeError) as e:
+        self._record_error(f"_on_partition_healed: {e}")
+```
+
+### 15.5 P2P Health Monitoring
+
+The P2P layer has 31 health monitoring mechanisms across multiple layers:
+
+| Layer       | Mechanisms | Examples                           |
+| ----------- | ---------- | ---------------------------------- |
+| Application | 6          | DaemonManager health checks        |
+| P2P         | 8          | Peer liveness, quorum health       |
+| Gossip      | 5          | Anti-entropy, state sync           |
+| Transport   | 4          | Multi-transport failover           |
+| Leader      | 4          | Lease epoch, split-brain detection |
+| Voter       | 4          | Quorum monitoring, auto-demotion   |
+
+**Health check command:**
+
+```bash
+curl -s http://localhost:8770/status | jq '.health'
+```
+
+### 15.6 P2P Event Troubleshooting
+
+| Issue                                 | Check                    | Solution                                |
+| ------------------------------------- | ------------------------ | --------------------------------------- |
+| Partition not healing                 | `/status` endpoint       | Check connectivity, gossip state        |
+| No PARTITION_HEALED events            | Logs in partition_healer | Verify injections succeeding            |
+| P2P_RECOVERY_NEEDED firing repeatedly | Escalation state         | Reset escalation, check root cause      |
+| Circuit breakers not propagating      | Gossip CB state          | Verify gossip interval, state freshness |
