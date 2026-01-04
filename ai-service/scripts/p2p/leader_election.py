@@ -10,6 +10,7 @@ Usage:
 Phase 2.2 extraction - Dec 26, 2025
 Refactored to use P2PMixinBase - Dec 27, 2025
 P5.4: Added Raft leader integration - Dec 30, 2025
+Phase 9.2: Added Prometheus quorum metrics - Jan 3, 2026
 
 Leader Election Modes (controlled by CONSENSUS_MODE):
 - "bully": Traditional bully algorithm with voter quorum (default)
@@ -21,6 +22,12 @@ becomes the P2P leader. This provides:
 - Single source of truth for leadership
 - Reduced election churn (Raft handles leader changes)
 - Strong consistency with work queue operations
+
+Prometheus Metrics (Jan 3, 2026):
+- ringrift_quorum_health_level: Current quorum health (0=LOST, 1=MINIMUM, 2=DEGRADED, 3=HEALTHY)
+- ringrift_quorum_alive_voters: Number of alive voters
+- ringrift_quorum_total_voters: Total configured voters
+- ringrift_quorum_margin: Margin above required quorum (alive - required)
 """
 
 from __future__ import annotations
@@ -58,6 +65,78 @@ if TYPE_CHECKING:
     from scripts.p2p.types import NodeRole
 
 logger = logging.getLogger(__name__)
+
+# Prometheus metrics (optional dependency)
+try:
+    from prometheus_client import REGISTRY, Gauge
+
+    HAS_PROMETHEUS = True
+except ImportError:
+    HAS_PROMETHEUS = False
+    REGISTRY = None
+    Gauge = None  # type: ignore
+
+
+def _get_or_create_gauge(
+    name: str,
+    documentation: str,
+    labelnames: list[str],
+) -> Any:
+    """Get an existing Prometheus gauge or create a new one.
+
+    Handles re-registration gracefully (e.g., during hot reload).
+    """
+    if not HAS_PROMETHEUS:
+        return None
+    try:
+        # Try to get existing metric
+        return REGISTRY._names_to_collectors.get(name)
+    except (AttributeError, KeyError):
+        pass
+    try:
+        return Gauge(name, documentation, labelnames)
+    except ValueError:
+        # Already registered - get from registry
+        for collector in REGISTRY._names_to_collectors.values():
+            if hasattr(collector, "_name") and collector._name == name:
+                return collector
+        return None
+
+
+# Quorum health level gauge (0=LOST, 1=MINIMUM, 2=DEGRADED, 3=HEALTHY)
+PROM_QUORUM_HEALTH_LEVEL = _get_or_create_gauge(
+    "ringrift_quorum_health_level",
+    "Current quorum health level (0=LOST, 1=MINIMUM, 2=DEGRADED, 3=HEALTHY)",
+    ["node_id"],
+)
+
+# Quorum voter counts
+PROM_ALIVE_VOTERS = _get_or_create_gauge(
+    "ringrift_quorum_alive_voters",
+    "Number of alive voters in the cluster",
+    ["node_id"],
+)
+
+PROM_TOTAL_VOTERS = _get_or_create_gauge(
+    "ringrift_quorum_total_voters",
+    "Total number of configured voters in the cluster",
+    ["node_id"],
+)
+
+PROM_QUORUM_MARGIN = _get_or_create_gauge(
+    "ringrift_quorum_margin",
+    "Margin above quorum requirement (alive - required)",
+    ["node_id"],
+)
+
+# Map QuorumHealthLevel to numeric values for Prometheus
+_HEALTH_LEVEL_VALUES = {
+    "lost": 0,
+    "minimum": 1,
+    "degraded": 2,
+    "healthy": 3,
+}
+
 
 # Load constants with fallbacks using base class helper
 _CONSTANTS = P2PMixinBase._load_config_constants({
@@ -310,6 +389,9 @@ class LeaderElectionMixin(P2PMixinBase):
         else:  # alive >= quorum + 2
             level = QuorumHealthLevel.HEALTHY
 
+        # Always update Prometheus metrics (counts can change without level change)
+        self._update_quorum_metrics(level, alive, total, quorum)
+
         # Emit event if health level changed
         old_level = getattr(self, "_last_quorum_health_level", None)
         if old_level is not None and level != old_level:
@@ -317,6 +399,47 @@ class LeaderElectionMixin(P2PMixinBase):
 
         self._last_quorum_health_level = level
         return level
+
+    def _update_quorum_metrics(
+        self,
+        level: QuorumHealthLevel,
+        alive: int,
+        total: int,
+        quorum: int,
+    ) -> None:
+        """Update Prometheus metrics for quorum health.
+
+        Jan 3, 2026: Added for Phase 9.2 - Quorum health observability.
+
+        Args:
+            level: Current quorum health level
+            alive: Number of alive voters
+            total: Total number of voters
+            quorum: Required quorum count
+        """
+        if not HAS_PROMETHEUS:
+            return
+
+        node_id = getattr(self, "node_id", "unknown")
+        labels = {"node_id": node_id}
+
+        try:
+            if PROM_QUORUM_HEALTH_LEVEL is not None:
+                level_value = _HEALTH_LEVEL_VALUES.get(level.value, 0)
+                PROM_QUORUM_HEALTH_LEVEL.labels(**labels).set(level_value)
+
+            if PROM_ALIVE_VOTERS is not None:
+                PROM_ALIVE_VOTERS.labels(**labels).set(alive)
+
+            if PROM_TOTAL_VOTERS is not None:
+                PROM_TOTAL_VOTERS.labels(**labels).set(total)
+
+            if PROM_QUORUM_MARGIN is not None:
+                margin = alive - quorum
+                PROM_QUORUM_MARGIN.labels(**labels).set(margin)
+        except Exception as e:
+            # Don't let metrics failures affect quorum logic
+            logger.debug(f"Failed to update quorum metrics: {e}")
 
     def _on_quorum_health_changed(
         self,
@@ -330,6 +453,9 @@ class LeaderElectionMixin(P2PMixinBase):
 
         Jan 3, 2026: Proactive alerting for quorum degradation.
         """
+        # Update Prometheus metrics
+        self._update_quorum_metrics(new_level, alive, total, quorum)
+
         # Log appropriately based on severity
         if new_level == QuorumHealthLevel.LOST:
             logger.error(

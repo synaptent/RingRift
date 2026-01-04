@@ -9,6 +9,15 @@ Philosophy:
 - Heal don't restart: Inject peers into partitions, don't restart processes
 - Convergence: Eventually all nodes should see all other nodes
 
+Prometheus Metrics (January 2026):
+- ringrift_partition_healing_duration_seconds: Time spent healing partitions
+- ringrift_partitions_detected_total: Number of network partitions detected
+- ringrift_partitions_healed_total: Number of partitions successfully healed
+- ringrift_nodes_reconnected_total: Number of nodes reconnected during healing
+- ringrift_partition_healing_success_total: Successful healing passes
+- ringrift_partition_healing_failures_total: Failed healing passes
+- ringrift_partition_healing_escalation_level: Current escalation level (0-5)
+
 Usage:
     # Run as a background daemon
     python scripts/p2p/partition_healer.py
@@ -55,6 +64,97 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# Prometheus Metrics (January 2026)
+# =============================================================================
+
+try:
+    from prometheus_client import REGISTRY, Counter, Gauge, Histogram
+    HAS_PROMETHEUS = True
+except ImportError:
+    HAS_PROMETHEUS = False
+    REGISTRY = None
+
+
+def _get_or_create_histogram(name: str, description: str, labels: list, buckets: tuple | None = None):
+    """Get existing histogram or create new one, handling re-registration."""
+    if not HAS_PROMETHEUS:
+        return None
+    try:
+        if buckets:
+            return Histogram(name, description, labels, buckets=buckets)
+        return Histogram(name, description, labels)
+    except ValueError:
+        return REGISTRY._names_to_collectors.get(name)
+
+
+def _get_or_create_counter(name: str, description: str, labels: list):
+    """Get existing counter or create new one, handling re-registration."""
+    if not HAS_PROMETHEUS:
+        return None
+    try:
+        return Counter(name, description, labels)
+    except ValueError:
+        return REGISTRY._names_to_collectors.get(name)
+
+
+def _get_or_create_gauge(name: str, description: str, labels: list):
+    """Get existing gauge or create new one, handling re-registration."""
+    if not HAS_PROMETHEUS:
+        return None
+    try:
+        return Gauge(name, description, labels)
+    except ValueError:
+        return REGISTRY._names_to_collectors.get(name)
+
+
+# Define metrics
+PROM_HEALING_DURATION = None
+PROM_PARTITIONS_DETECTED = None
+PROM_PARTITIONS_HEALED = None
+PROM_NODES_RECONNECTED = None
+PROM_HEALING_SUCCESS = None
+PROM_HEALING_FAILURES = None
+PROM_ESCALATION_LEVEL = None
+
+if HAS_PROMETHEUS:
+    PROM_HEALING_DURATION = _get_or_create_histogram(
+        'ringrift_partition_healing_duration_seconds',
+        'Time spent healing partitions',
+        [],
+        buckets=(0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0)
+    )
+    PROM_PARTITIONS_DETECTED = _get_or_create_counter(
+        'ringrift_partitions_detected_total',
+        'Number of network partitions detected',
+        []
+    )
+    PROM_PARTITIONS_HEALED = _get_or_create_counter(
+        'ringrift_partitions_healed_total',
+        'Number of partitions successfully healed',
+        []
+    )
+    PROM_NODES_RECONNECTED = _get_or_create_counter(
+        'ringrift_nodes_reconnected_total',
+        'Number of nodes reconnected during healing',
+        []
+    )
+    PROM_HEALING_SUCCESS = _get_or_create_counter(
+        'ringrift_partition_healing_success_total',
+        'Successful partition healing passes',
+        []
+    )
+    PROM_HEALING_FAILURES = _get_or_create_counter(
+        'ringrift_partition_healing_failures_total',
+        'Failed partition healing passes',
+        []
+    )
+    PROM_ESCALATION_LEVEL = _get_or_create_gauge(
+        'ringrift_partition_healing_escalation_level',
+        'Current escalation level for partition healing (0-5)',
+        []
+    )
+
 # Singleton instance for access from P2P orchestrator
 _partition_healer_instance: PartitionHealer | None = None
 _partition_healer_lock = threading.Lock()
@@ -84,6 +184,35 @@ class HealingResult:
     nodes_reconnected: int
     errors: list[str] = field(default_factory=list)
     duration_ms: float = 0.0
+
+    def record_metrics(self) -> None:
+        """Record Prometheus metrics for this healing result.
+
+        January 2026: Added for P2P observability.
+        """
+        # Duration in seconds
+        if PROM_HEALING_DURATION:
+            PROM_HEALING_DURATION.observe(self.duration_ms / 1000.0)
+
+        # Partitions detected
+        if PROM_PARTITIONS_DETECTED and self.partitions_found > 0:
+            PROM_PARTITIONS_DETECTED.inc(self.partitions_found)
+
+        # Partitions healed
+        if PROM_PARTITIONS_HEALED and self.partitions_healed > 0:
+            PROM_PARTITIONS_HEALED.inc(self.partitions_healed)
+
+        # Nodes reconnected
+        if PROM_NODES_RECONNECTED and self.nodes_reconnected > 0:
+            PROM_NODES_RECONNECTED.inc(self.nodes_reconnected)
+
+        # Success/failure counters
+        if self.success:
+            if PROM_HEALING_SUCCESS:
+                PROM_HEALING_SUCCESS.inc()
+        else:
+            if PROM_HEALING_FAILURES:
+                PROM_HEALING_FAILURES.inc()
 
 
 class PartitionHealer:
@@ -578,6 +707,9 @@ class PartitionHealer:
                 self.run_healing_pass(),
                 timeout=PartitionHealingDefaults.TOTAL_TIMEOUT,
             )
+            # January 2026: Record Prometheus metrics
+            result.record_metrics()
+            self._update_escalation_metric()
             return result
         except asyncio.TimeoutError:
             error_msg = (
@@ -585,23 +717,35 @@ class PartitionHealer:
             )
             logger.error(error_msg)
             self._emit_healing_failed_event(error_msg)
-            return HealingResult(
+            result = HealingResult(
                 success=False,
                 partitions_found=0,
                 partitions_healed=0,
                 nodes_reconnected=0,
                 errors=[error_msg],
             )
+            result.record_metrics()
+            return result
         except Exception as e:
             logger.error(f"Healing pass failed: {e}")
             self._emit_healing_failed_event(str(e))
-            return HealingResult(
+            result = HealingResult(
                 success=False,
                 partitions_found=0,
                 partitions_healed=0,
                 nodes_reconnected=0,
                 errors=[str(e)],
             )
+            result.record_metrics()
+            return result
+
+    def _update_escalation_metric(self) -> None:
+        """Update the escalation level Prometheus gauge.
+
+        January 2026: Added for P2P observability.
+        """
+        if PROM_ESCALATION_LEVEL:
+            PROM_ESCALATION_LEVEL.set(self._escalation_level)
 
     def _emit_healing_start_event(self) -> None:
         """Emit PARTITION_HEALING_STARTED event."""
