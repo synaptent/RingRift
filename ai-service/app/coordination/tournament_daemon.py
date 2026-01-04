@@ -110,7 +110,8 @@ class TournamentDaemonConfig:
     calibration_games: int = 10  # Games per calibration matchup
 
     # Cross-NN version tournaments - compare model versions (Dec 2025)
-    enable_cross_nn_tournaments: bool = True
+    # NOTE: Disabled Jan 2026 - UnifiedNeuralNetFactory not implemented
+    enable_cross_nn_tournaments: bool = False
     cross_nn_interval_seconds: float = 3600.0 * 4  # Every 4 hours
     cross_nn_games_per_pairing: int = 20
 
@@ -854,17 +855,11 @@ class TournamentDaemon(HandlerBase):
 
             models = find_canonical_models()
 
-            for model_info in models:
-                model_path = model_info.get("path")
-                board_type = model_info.get("board_type")
-                num_players = model_info.get("num_players")
-
-                if not all([model_path, board_type, num_players]):
-                    continue
-
+            # find_canonical_models() returns {(board_type, num_players): Path}
+            for (board_type, num_players), model_path in models.items():
                 # Queue evaluation
                 self._evaluation_queue.put_nowait({
-                    "model_path": model_path,
+                    "model_path": str(model_path),
                     "board_type": board_type,
                     "num_players": num_players,
                     "trigger": "periodic_ladder",
