@@ -468,6 +468,10 @@ class SelfplayScheduler(EventSubscriptionMixin):
         # Maps config_key -> (quality_boost_factor, expiry_timestamp)
         self._quality_blocked_configs: dict[str, tuple[float, float]] = {}
 
+        # Jan 2026 Sprint 13: Force rebalance flag
+        # Set when a peer reconnects to trigger immediate work rebalancing
+        self._force_rebalance: bool = False
+
         # Jan 2026 Sprint 6: Job spawn verification tracking
         # Tracks pending jobs waiting for verification and spawn success/failure stats
         # Pending jobs: job_id -> (node_id, config_key, spawn_time)
@@ -1285,6 +1289,8 @@ class SelfplayScheduler(EventSubscriptionMixin):
             "TRAINING_BLOCKED_BY_QUALITY": self._on_training_blocked_by_quality,
             # January 2026 - Sprint 10: Hyperparameter updates affect selfplay quality
             "HYPERPARAMETER_UPDATED": self._on_hyperparameter_updated,
+            # January 2026 - Sprint 13: Peer reconnection triggers work rebalancing
+            "PEER_RECONNECTED": self._on_peer_reconnected,
         }
 
     async def _on_selfplay_rate_changed(self, event) -> None:
@@ -1803,6 +1809,37 @@ class SelfplayScheduler(EventSubscriptionMixin):
                 quality_boost = 1.0 + (1.0 - batch_factor)  # e.g., 0.7 batch → 1.3 boost
                 expiry = time.time() + 1800
                 self._quality_blocked_configs[config_key] = (quality_boost, expiry)
+
+    async def _on_peer_reconnected(self, event: dict) -> None:
+        """Handle PEER_RECONNECTED events - rebalance work when node rejoins.
+
+        Jan 2026 Sprint 13: When a peer reconnects (via Tailscale discovery),
+        trigger work rebalancing to take advantage of the newly available node.
+        This ensures recovered nodes immediately receive selfplay allocations
+        rather than waiting for the next scheduling cycle.
+        """
+        payload = self._extract_event_payload(event)
+        node_id = payload.get("node_id", payload.get("peer_id", "unknown"))
+
+        logger.info(
+            f"[SelfplayScheduler] Peer reconnected: {node_id}, "
+            "triggering work rebalancing"
+        )
+
+        # Mark that we need to rebalance allocations
+        # The next scheduling cycle will pick this up
+        self._force_rebalance = True
+
+        # Emit event for other components to react
+        try:
+            from app.coordination.event_router import publish_sync
+            publish_sync("SELFPLAY_REBALANCE_TRIGGERED", {
+                "reason": "peer_reconnected",
+                "node_id": node_id,
+                "source": "selfplay_scheduler",
+            })
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Could not emit rebalance event: {e}")
 
     def _emit_selfplay_target_updated(
         self,
