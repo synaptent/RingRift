@@ -214,6 +214,9 @@ class P2PRecoveryDaemon(HandlerBase):
         self._last_online_voters: set[str] = set()
         # Jan 3, 2026 Session 7: Partition healing coordination
         self._healing_in_progress = False  # Pause restarts during healing
+        self._healing_started_time: float | None = None  # When healing started (Session 9)
+        self._healing_timeout_seconds = 300.0  # 5 minute timeout (Session 9)
+        self._consecutive_healing_failures = 0  # Track failures for escalation (Session 9)
         self._recovery_attempts = 0  # Total P2P recovery attempts
 
     @property
@@ -472,11 +475,14 @@ class P2PRecoveryDaemon(HandlerBase):
 
         Jan 3, 2026 Session 7: When partition healing is in progress, we should
         not restart the P2P orchestrator as it would interrupt the healing process.
+
+        Jan 3, 2026 Session 9: Track start time for timeout-based flag expiration.
         """
         logger.info(
             f"[P2PRecovery] Partition healing started, pausing P2P restart attempts"
         )
         self._healing_in_progress = True
+        self._healing_started_time = time.time()
 
     async def _on_partition_healed(self, event: Any) -> None:
         """Handle PARTITION_HEALED - resume normal recovery operations.
@@ -493,25 +499,66 @@ class P2PRecoveryDaemon(HandlerBase):
         )
 
         self._healing_in_progress = False
+        self._healing_started_time = None  # Session 9: Clear healing timeout
         # Reset consecutive failures since partition was healed without restart
         self._consecutive_failures = 0
+        self._consecutive_healing_failures = 0  # Session 9: Reset healing failure counter
 
     async def _on_partition_healing_failed(self, event: Any) -> None:
         """Handle PARTITION_HEALING_FAILED - escalate to P2P restart if needed.
 
         Jan 3, 2026 Session 7: Partition healing failed. If this is repeated,
         the partition healer will emit P2P_RECOVERY_NEEDED which triggers restart.
+
+        Jan 3, 2026 Session 9: Track consecutive healing failures. After 3+
+        consecutive failures, trigger P2P restart directly instead of waiting
+        for the partition healer's escalation.
         """
         reason = event.get("reason", "unknown")
         escalation_level = event.get("escalation_level", 0)
 
+        self._healing_in_progress = False
+        self._healing_started_time = None  # Session 9: Clear healing timeout
+        self._consecutive_healing_failures += 1  # Session 9: Track consecutive failures
+
         logger.warning(
             f"[P2PRecovery] Partition healing failed: {reason} "
-            f"(escalation_level={escalation_level})"
+            f"(escalation_level={escalation_level}, "
+            f"consecutive_failures={self._consecutive_healing_failures})"
         )
 
-        self._healing_in_progress = False
-        # Don't restart immediately - wait for P2P_RECOVERY_NEEDED if escalation maxed
+        # Session 9: If 3+ consecutive healing failures, trigger P2P restart directly
+        if self._consecutive_healing_failures >= 3:
+            logger.error(
+                f"[P2PRecovery] {self._consecutive_healing_failures} consecutive healing "
+                f"failures - triggering P2P restart"
+            )
+            await self._restart_p2p(force=True)
+
+    def _is_healing_in_progress(self) -> bool:
+        """Check if partition healing is in progress (with timeout protection).
+
+        Jan 3, 2026 Session 9: Returns True only if healing is active AND
+        hasn't exceeded the timeout. If healing started but exceeded the
+        timeout, clear the flag and return False to allow recovery operations.
+        """
+        if not self._healing_in_progress:
+            return False
+
+        # Check if healing has exceeded timeout
+        if self._healing_started_time is not None:
+            elapsed = time.time() - self._healing_started_time
+            if elapsed > self._healing_timeout_seconds:
+                logger.warning(
+                    f"[P2PRecovery] Healing timeout exceeded ({elapsed:.1f}s > "
+                    f"{self._healing_timeout_seconds}s) - clearing stuck flag"
+                )
+                self._healing_in_progress = False
+                self._healing_started_time = None
+                self._consecutive_healing_failures += 1  # Count as a failure
+                return False
+
+        return True
 
     # =========================================================================
     # Main Cycle
@@ -982,7 +1029,8 @@ class P2PRecoveryDaemon(HandlerBase):
             force: If True, restart even during partition healing (for P2P_RECOVERY_NEEDED).
         """
         # Jan 3, 2026 Session 7: Don't restart during partition healing unless forced
-        if self._healing_in_progress and not force:
+        # Jan 3, 2026 Session 9: Use helper that includes timeout protection
+        if self._is_healing_in_progress() and not force:
             logger.info(
                 "[P2PRecovery] Partition healing in progress, deferring P2P restart"
             )
