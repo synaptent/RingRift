@@ -80,28 +80,34 @@ This orchestrates:
 - **FeedbackLoopController**: Training feedback signals and curriculum adjustments
 - **DataPipelineOrchestrator**: Export → training → evaluation → promotion
 
-**Sprint 17.8 Status (Jan 4, 2026 - Session 17.3):**
+**Sprint 17.4 Status (Jan 4, 2026):**
 
-- P2P Network: A- (91/100) - 23 alive peers, 233+ health checks, 11 recovery daemons, <2.5 min MTTR
-- Training Loop: A (95/100) - All 6 pipeline stages, 5 feedback loops, 292 event types
-- Code Quality: 95-98% consolidated, 75/90 HandlerBase adoption (83%)
-- Multi-Arch Training: FIXED - Bug fix enables v2/v3/v4/v5/v5-heavy-large training
-- 48h Autonomous: VERIFIED - All 4 autonomous daemons functional, cluster deployed
-- LeaderProbeLoop: NEW - Fast leader recovery (10s probes, 60s failover)
+- P2P Network: A- (91/100) - 257+ health checks, 11 recovery daemons, <2.5 min MTTR
+- Training Loop: A (95/100) - All 7 pipeline stages, 5/5 feedback loops, 292 event types
+- Code Quality: 95-98% consolidated, 3,800-5,800 LOC potential savings, 72-96h effort
+- 48h Autonomous: VERIFIED - LeaderProbeLoop (10s probes, 60s failover), all daemons functional
 
-**Session 17.3 Key Additions (Jan 4, 2026):**
+**Session 17.4 Deep Assessment (Jan 4, 2026):**
 
-- **LeaderProbeLoop**: Active leader health probing, triggers election after 6 failures (60s)
-- **Retry Queue Helpers**: 3 new HandlerBase methods for consolidating queue patterns
-- **Cluster Deployment**: Lambda GH200-1/2 updated with P2P restart
-- **Comprehensive Assessment**: P2P (91/100), Training (95/100), Consolidation (95-98%)
+| Component     | Grade       | Key Metrics                                                              |
+| ------------- | ----------- | ------------------------------------------------------------------------ |
+| P2P Network   | A- (91/100) | 24 P2P + 233 coordination health checks, 9 CB types, 70s leader recovery |
+| Training Loop | A (95/100)  | 7 stages, 5 feedback loops, 100% critical event coverage                 |
+| Consolidation | 95-98%      | 330 modules, 75 HandlerBase classes, 15 daemons pending migration        |
 
-**Remaining Improvements** (medium priority):
+**Key Infrastructure Improvements:**
 
-- P0: selfplay_scheduler.py decomposition (4,743 LOC → 1,200-1,500 LOC savings)
-- P0: Event emission consolidation (450-650 LOC savings)
-- P1: feedback_loop_controller.py decomposition (800-1,000 LOC savings)
-- P1: training_trigger_daemon.py decomposition (700-900 LOC savings)
+- **LeaderProbeLoop**: 10s probes → 60s failover (down from 60-180s gossip timeout)
+- **Quorum Health Levels**: HEALTHY/DEGRADED/MINIMUM/LOST for graceful degradation
+- **Pull Training Endpoint**: `/work/claim_training` for GPU worker job claiming
+- **AutonomousQueueLoop**: Proper BaseLoop inheritance for lifecycle management
+
+**Remaining Improvements** (prioritized):
+
+- P0: selfplay_scheduler.py decomposition (4,743 LOC → 5 modules, +50-70 Elo clarity)
+- P0: HandlerBase migration (15 daemons, 1,191-1,691 LOC savings, 67-121 LOC/hr ROI)
+- P1: feedback_loop_controller.py decomposition (4,200 LOC → 4 modules)
+- P2: Circuit breaker TTL decay (prevents permanent node exclusion)
 
 ## Board Configurations
 
@@ -168,12 +174,12 @@ python scripts/check_ts_python_replay_parity.py --db data/games/my_games.db
 
 RingRift uses a P2P mesh network for distributed training across ~41 configured nodes.
 
-**Infrastructure Status (Verified Jan 4, 2026):**
+**Infrastructure Status (Verified Jan 4, 2026 - Session 17.4):**
 
-- P2P Network: GREEN - 37 alive peers (74%), leader: nebius-h100-1
-- Training Loop: GREEN - 488 games, all 12 canonical models trained
-- Work Queue: HEALTHY - 6 items in queue, all nodes updated to latest code
-- Active configs: hex8_2p (207), square8_2p (114), hex8_3p (72)
+- P2P Network: GREEN - 22 nodes with P2P running (mac-studio as coordinator/leader)
+- Training Loop: GREEN - All 12 canonical models trained, 7-stage pipeline operational
+- Work Queue: HEALTHY - Hybrid push/pull model, /work/claim_training endpoint active
+- Recovery: 11 recovery daemons, <2.5 min MTTR, LeaderProbeLoop providing 70s failover
 
 ### Active Cluster (Jan 2026)
 
@@ -261,20 +267,24 @@ The cluster runs 48+ hours unattended with comprehensive resilience:
 | `P2P_RECOVERY`      | Restarts unhealthy P2P orchestrator          |
 | `STALE_FALLBACK`    | Uses older models when sync fails            |
 | `MEMORY_MONITOR`    | Prevents OOM via proactive GPU VRAM tracking |
+| `LeaderProbeLoop`   | Fast leader failure detection (70s recovery) |
 
-**Key Improvements (Jan 3, 2026):**
+**Key Improvements (Jan 4, 2026 - Session 17.4):**
 
-- Leader self-recognition fix ensures work queue stability (1000+ items)
-- 5 independent feedback loops fully wired for training optimization
-- Frozen leader detection with automatic alerting
-- 31 health check mechanisms across P2P network
+- **LeaderProbeLoop**: 10s probes, 6 consecutive failures = 60s → forced election
+- **Degraded-Mode Training**: QuorumHealthLevel allows training in MINIMUM/DEGRADED states
+- **Pull-Based Training Jobs**: `/work/claim_training` endpoint for GPU worker resilience
+- **AutonomousQueueLoop**: Proper BaseLoop inheritance with lifecycle management
+- 257+ health check mechanisms (24 P2P + 233 coordination layer)
+- 5 feedback loops: Quality→Training, Elo→Selfplay, Regression→Curriculum, Loss→Exploration, Promotion→Curriculum
 
 **Resilience Features:**
 
-- Adaptive circuit breaker cascade prevention
+- Adaptive circuit breaker cascade prevention (9 CB types with 4-tier escalation)
 - Graceful degradation with stale training data after sync failures
 - Multi-transport failover (Tailscale → SSH → Base64 → HTTP)
 - Automatic parity gate bypass on cluster nodes without Node.js
+- Partition healing with gossip state injection and convergence validation
 
 ## Known Issues
 

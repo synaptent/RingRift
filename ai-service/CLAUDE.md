@@ -2,19 +2,19 @@
 
 AI assistant context for the Python AI training service. Complements `AGENTS.md` with operational knowledge.
 
-**Last Updated**: January 4, 2026 (Sprint 17.8 - Session 17.3)
+**Last Updated**: January 4, 2026 (Sprint 17.9 - Session 17.5)
 
 ## Infrastructure Health Status (Verified Jan 4, 2026)
 
 | Component            | Status    | Evidence                                                        |
 | -------------------- | --------- | --------------------------------------------------------------- |
-| **P2P Network**      | GREEN     | A- (91/100), 23 alive peers, 233+ health checks, 11 recovery    |
+| **P2P Network**      | GREEN     | A- (91/100), 19 alive peers, 233+ health checks, 11 recovery    |
 | **Training Loop**    | GREEN     | A (95/100), 5/5 feedback loops, 6/6 pipeline stages, 292 events |
-| **Code Quality**     | GREEN     | 95-98% consolidated, 3,800-5,800 LOC remaining opportunities    |
+| **Code Quality**     | GREEN     | 95-98% consolidated, 5,000-7,500 LOC potential savings          |
 | **Leader Election**  | WORKING   | Bully algorithm + LeaderProbeLoop (10s probes, 60s failover)    |
-| **Work Queue**       | HEALTHY   | 11 recovery daemons, <2.5min MTTR                               |
+| **Work Queue**       | HEALTHY   | Quorum OK, 11 recovery daemons, <2.5min MTTR                    |
 | **Model Evaluation** | AUTOMATED | OWC import + unevaluated scan + stale re-eval pipeline          |
-| **SQLite Async**     | FIXED     | 249 asyncio.to_thread usages, 95%+ async safe                   |
+| **SQLite Async**     | 92%       | 249 asyncio.to_thread usages, 49 remaining blocking ops         |
 | **Multi-Arch Train** | FIXED     | Bug fixed: architecture now passed to work queue + execution    |
 
 ## Sprint 17: Cluster Resilience Integration (Jan 4, 2026)
@@ -46,6 +46,63 @@ Session 16-17 resilience components are now fully integrated and bootstrapped:
 | Early Quorum Escalation   | Skip to P2P restart after 2 failed healing attempts with quorum lost | `p2p_recovery_daemon.py`      |
 | Training Heartbeat Events | TRAINING_HEARTBEAT event for watchdog monitoring                     | `distributed_lock.py`         |
 | TRAINING_PROCESS_KILLED   | Event emitted when stuck training process killed                     | `training_watchdog_daemon.py` |
+
+**Sprint 17.9 / Session 17.5 (Jan 4, 2026) - Comprehensive Cluster Assessment:**
+
+| Fix                    | Purpose                                                | Files                            |
+| ---------------------- | ------------------------------------------------------ | -------------------------------- |
+| Cluster Update         | 18 nodes updated to a63f280a, P2P restarted            | git pull + p2p_orchestrator      |
+| P2P Assessment         | 233+ health checks, 261 asyncio.to_thread, 11 recovery | 3 parallel exploration agents    |
+| Training Assessment    | 292 event types, 6/6 stages, 5/5 loops complete        | Multi-arch training verified     |
+| Consolidation Analysis | 5,000-7,500 LOC potential savings identified           | P0: selfplay_scheduler decompose |
+
+**Sprint 17.9 / Session 17.4 (Jan 4, 2026) - Deep Assessment & Improvement Plan:**
+
+| Fix                      | Purpose                                                  | Files                          |
+| ------------------------ | -------------------------------------------------------- | ------------------------------ |
+| Cluster Update           | Lambda GH200-1/2 updated and P2P restarted               | git pull + p2p_orchestrator    |
+| Deep P2P Assessment      | 226 health checks verified, 49 async gaps identified     | 3 parallel exploration agents  |
+| Deep Training Assessment | 281 event types, 5 actionable gaps identified            | See Session 17.4 results below |
+| Consolidation Roadmap    | 5 high-ROI opportunities: 3,150-4,150 LOC, 56-74h effort | See roadmap below              |
+
+**Session 17.4 Assessment Results (Jan 4, 2026):**
+
+| Assessment Area | Grade | Score  | Key Findings                                                    |
+| --------------- | ----- | ------ | --------------------------------------------------------------- |
+| P2P Network     | A-    | 91/100 | 226 health checks, 11 recovery daemons, 49 async gaps remaining |
+| Training Loop   | A     | 95/100 | 6/6 stages, 5/5 loops, 281 events, +11-28 Elo potential         |
+| Consolidation   | A     | 95-98% | 3,150-4,150 LOC potential savings, 56-74h total effort          |
+
+**P2P Improvement Priorities (Session 17.4):**
+
+| Priority | Improvement              | Hours | Score Impact | Status  |
+| -------- | ------------------------ | ----- | ------------ | ------- |
+| P0       | CB TTL Decay (stuck CBs) | 3-4   | +1 (→92)     | Pending |
+| P0       | Health Check Async Audit | 4-5   | +2 (→93)     | Pending |
+| P1       | Wrap 49 Blocking Ops     | 6-8   | +3 (→94)     | Pending |
+| P2       | Pre-Update Gossip Checks | 2-3   | +0.5         | Pending |
+
+**Training Improvement Priorities (Session 17.4):**
+
+| Priority | Improvement                | Elo Impact | Hours | Status  |
+| -------- | -------------------------- | ---------- | ----- | ------- |
+| P0       | Architecture Elo Tracking  | +5-10      | 12-16 | Pending |
+| P0       | NPZ→Training Latency       | +2-5       | 4-6   | Pending |
+| P1       | Cross-Config Curriculum    | +3-8       | 8-10  | Pending |
+| P2       | Quality→Selfplay Immediate | +1-3       | 2-4   | Pending |
+
+**Consolidation Roadmap (Session 17.5 - High ROI):**
+
+| Priority | Opportunity                  | Files | LOC Saved   | Hours | ROI (LOC/hr) |
+| -------- | ---------------------------- | ----- | ----------- | ----- | ------------ |
+| **P0**   | selfplay_scheduler decompose | 1     | 1,200-1,500 | 16-20 | 62-75        |
+| **P0**   | Event emission patterns      | 12-16 | 450-650     | 12-16 | 30-43        |
+| **P1**   | feedback_loop_controller     | 1     | 800-1,000   | 10-12 | 66-83        |
+| **P1**   | training_trigger_daemon      | 1     | 700-900     | 10-12 | 58-75        |
+| **P1**   | Retry/backoff unification    | 8-12  | 600-900     | 10-14 | 50-60        |
+| **P1**   | daemon_runners refactoring   | 1     | 600-900     | 10-14 | 50-60        |
+| **P2**   | Mixin consolidation          | 7     | 750-1,100   | 16-22 | 35-43        |
+|          | **TOTAL**                    | 30+   | 5,000-7,500 | 72-94 | 54-75 avg    |
 
 **Sprint 17.8 / Session 17.3 (Jan 4, 2026) - Comprehensive Assessment & Deployment:**
 
