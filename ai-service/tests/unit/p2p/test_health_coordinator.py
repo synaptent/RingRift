@@ -276,12 +276,25 @@ class TestHealthCoordinator:
         assert summary.total_peers == 0
 
     def test_collect_gossip_health_with_tracker(self, coordinator):
-        """Test gossip health collection with mock tracker."""
+        """Test gossip health collection with mock tracker.
+
+        Jan 3, 2026 Sprint 13: Updated to mock the new get_health_summary() API.
+        """
+        from scripts.p2p.gossip_protocol import GossipHealthSummary as TrackerHealthSummary
+
+        # Create mock tracker with new public API
         mock_tracker = MagicMock()
-        mock_tracker._failure_counts = {"peer1": 0, "peer2": 2, "peer3": 5}
-        mock_tracker._last_success = {"peer1": time.time(), "peer2": time.time()}
-        mock_tracker._suspect_emitted = {"peer3"}
-        mock_tracker._failure_threshold = 3
+
+        # Mock the new get_health_summary() API (Sprint 13)
+        mock_summary = TrackerHealthSummary(
+            failure_counts={"peer1": 0, "peer2": 2, "peer3": 5},
+            last_success={"peer1": time.time(), "peer2": time.time()},
+            suspected_peers=["peer3"],
+            stale_peers=[],
+            total_tracked_peers=3,
+            failure_threshold=3,
+        )
+        mock_tracker.get_health_summary.return_value = mock_summary
         mock_tracker.should_skip_peer = lambda p: p == "peer3"
         mock_tracker.get_backoff_seconds = lambda p: 16.0 if p == "peer3" else 0.0
 

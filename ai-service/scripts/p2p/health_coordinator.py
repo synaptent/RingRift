@@ -508,25 +508,37 @@ class HealthCoordinator:
         return state
 
     def _collect_gossip_health(self) -> GossipHealthSummary:
-        """Collect health summary from gossip tracker."""
+        """Collect health summary from gossip tracker.
+
+        Jan 3, 2026 Sprint 13: Now uses public get_health_summary() API
+        instead of accessing private attributes for thread safety.
+        """
         summary = GossipHealthSummary()
 
         if self._gossip_tracker is None:
             return summary
 
         try:
-            # Get failure counts from tracker
-            failure_counts = getattr(self._gossip_tracker, "_failure_counts", {})
-            last_success = getattr(self._gossip_tracker, "_last_success", {})
-            suspect_emitted = getattr(self._gossip_tracker, "_suspect_emitted", set())
-            threshold = getattr(self._gossip_tracker, "_failure_threshold", 3)
+            # Get thread-safe health summary from tracker (Sprint 13 API)
+            if hasattr(self._gossip_tracker, "get_health_summary"):
+                tracker_summary = self._gossip_tracker.get_health_summary()
+                failure_counts = tracker_summary.failure_counts
+                suspected_peers_set = set(tracker_summary.suspected_peers)
+                threshold = tracker_summary.failure_threshold
+                all_peers = set(failure_counts.keys()) | set(tracker_summary.last_success.keys())
+            else:
+                # Fallback for older tracker versions (deprecated path)
+                failure_counts = getattr(self._gossip_tracker, "_failure_counts", {})
+                last_success = getattr(self._gossip_tracker, "_last_success", {})
+                suspected_peers_set = getattr(self._gossip_tracker, "_suspect_emitted", set())
+                threshold = getattr(self._gossip_tracker, "_failure_threshold", 3)
+                all_peers = set(failure_counts.keys()) | set(last_success.keys())
 
-            all_peers = set(failure_counts.keys()) | set(last_success.keys())
             summary.total_peers = len(all_peers)
 
             for peer_id in all_peers:
                 failures = failure_counts.get(peer_id, 0)
-                if failures >= threshold or peer_id in suspect_emitted:
+                if failures >= threshold or peer_id in suspected_peers_set:
                     summary.suspected_peers += 1
                 elif failures == 0:
                     summary.healthy_peers += 1
@@ -546,7 +558,7 @@ class HealthCoordinator:
 
             # Track unreachable (suspected peers that are in max backoff)
             summary.unreachable_peers = len(
-                [p for p in summary.peers_in_backoff if p in suspect_emitted]
+                [p for p in summary.peers_in_backoff if p in suspected_peers_set]
             )
 
         except Exception as e:
