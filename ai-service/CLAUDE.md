@@ -2,18 +2,53 @@
 
 AI assistant context for the Python AI training service. Complements `AGENTS.md` with operational knowledge.
 
-**Last Updated**: January 4, 2026 (Sprint 16.3)
+**Last Updated**: January 4, 2026 (Sprint 17.0)
 
-## Infrastructure Health Status (Verified Jan 3, 2026)
+## Infrastructure Health Status (Verified Jan 4, 2026)
 
-| Component            | Status    | Evidence                                                   |
-| -------------------- | --------- | ---------------------------------------------------------- |
-| **P2P Network**      | GREEN     | A- (91/100), 32+ health mechanisms, 7 recovery daemons     |
-| **Training Loop**    | GREEN     | A (100/100), all feedback loops wired, 7/7 pipeline stages |
-| **Code Quality**     | GREEN     | 99% consolidated, 306 coordination modules, 1044 tests     |
-| **Leader Election**  | WORKING   | Bully algorithm with voter quorum, split-brain detection   |
-| **Work Queue**       | HEALTHY   | 1000+ items maintained, QueuePopulatorLoop working         |
-| **Model Evaluation** | AUTOMATED | OWC import + unevaluated scan + stale re-eval pipeline     |
+| Component            | Status    | Evidence                                                  |
+| -------------------- | --------- | --------------------------------------------------------- |
+| **P2P Network**      | GREEN     | A- (91/100), 32+ health mechanisms, 7 recovery daemons    |
+| **Training Loop**    | GREEN     | A (95/100), 5/5 feedback loops wired, 6/6 pipeline stages |
+| **Code Quality**     | GREEN     | 99% consolidated, 319 coordination modules, 1044 tests    |
+| **Leader Election**  | WORKING   | Bully algorithm with voter quorum, split-brain detection  |
+| **Work Queue**       | HEALTHY   | 34 alive peers, nebius-backbone-1 as leader               |
+| **Model Evaluation** | AUTOMATED | OWC import + unevaluated scan + stale re-eval pipeline    |
+
+## Sprint 17: Cluster Resilience Integration (Jan 4, 2026)
+
+Session 16-17 resilience components are now fully integrated and bootstrapped:
+
+**4-Layer Resilience Architecture:**
+
+| Layer | Component                     | Status          | Purpose                                          |
+| ----- | ----------------------------- | --------------- | ------------------------------------------------ |
+| 1     | Sentinel + Watchdog           | ✅ ACTIVE       | OS-level process supervision                     |
+| 2     | MemoryPressureController      | ✅ BOOTSTRAPPED | Proactive memory management (60/70/80/90% tiers) |
+| 3     | StandbyCoordinator            | ✅ BOOTSTRAPPED | Primary/standby coordinator failover             |
+| 4     | ClusterResilienceOrchestrator | ✅ BOOTSTRAPPED | Unified health aggregation (30/30/25/15 weights) |
+
+**Sprint 17 Additions:**
+
+| Daemon                          | Purpose                                          | Status    |
+| ------------------------------- | ------------------------------------------------ | --------- |
+| FastFailureDetector             | Tiered failure detection (5/10/30 min)           | ✅ ACTIVE |
+| TrainingWatchdogDaemon          | Stuck training process monitoring                | ✅ ACTIVE |
+| UnderutilizationRecoveryHandler | Work injection on cluster underutilization       | ✅ ACTIVE |
+| WorkDiscoveryManager            | Multi-channel work discovery (leader/peer/local) | ✅ ACTIVE |
+
+**Verification Commands:**
+
+```bash
+# Check cluster status
+curl -s http://localhost:8770/status | jq '{leader_id, alive_peers, node_id}'
+
+# Check resilience score
+curl -s http://localhost:8790/status | jq '.resilience_score'
+
+# Check memory pressure tier
+curl -s http://localhost:8790/status | jq '.memory_pressure_tier'
+```
 
 ## Sprint 16 Consolidation (Jan 3, 2026)
 
