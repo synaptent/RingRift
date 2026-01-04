@@ -14,11 +14,11 @@ AI assistant context for the Python AI training service. Complements `AGENTS.md`
 | **Leader Election** | WORKING | Bully algorithm with voter quorum, split-brain detection  |
 | **Work Queue**      | HEALTHY | 1000+ items maintained, QueuePopulatorLoop working        |
 
-**Key Improvements (Jan 3, 2026 - Sprint 12):**
+**Key Improvements (Jan 3, 2026 - Sprint 11):**
 
 - Gossip state race condition fixed (`_gossip_state_sync_lock`)
 - Leader lease epoch split-brain detection (`_epoch_leader_claims`)
-- Quorum health monitoring (`QuorumHealthLevel` enum)
+- Quorum health monitoring (`QuorumHealthLevel` enum + Prometheus metrics)
 - Circuit breaker gossip replication (cluster-wide failure awareness ~15s)
 - Loop ordering via Kahn's algorithm (LoopManager)
 - 4-tier circuit breaker auto-recovery (Phase 15.1.8)
@@ -29,11 +29,14 @@ AI assistant context for the Python AI training service. Complements `AGENTS.md`
 - Quality-score confidence decay (stale quality scores decay toward 0.5 floor over 1h half-life)
 - Regression amplitude scaling (proportional response based on Elo drop magnitude)
 - Narrowed P2P exception handlers (4 handlers in gossip_protocol.py)
+- **Fire-and-forget task helpers** added to `HandlerBase` (`_safe_create_task`, `_try_emit_event`)
+- **P2P Prometheus metrics** for partition healing and quorum health (11 new metrics)
+- **Config key migration** to canonical `make_config_key()` utility (25 files)
 
 **Consolidated Base Classes:**
 | Class | LOC | Purpose |
 |-------|-----|---------|
-| `HandlerBase` | 550 | Unifies 40+ daemons, 45 tests |
+| `HandlerBase` | 600 | Unifies 45+ daemons, 92 tests (includes fire-and-forget helpers) |
 | `DatabaseSyncManager` | 669 | Base for sync managers, 930 LOC saved |
 | `P2PMixinBase` | 995 | Unifies 6 P2P mixins |
 | `SingletonMixin` | 503 | Canonical singleton pattern |
@@ -647,10 +650,34 @@ from app.coordination.handler_base import HandlerBase
 class MyDaemon(HandlerBase):
     def __init__(self):
         super().__init__(name="my_daemon", cycle_interval=60.0)
-    async def _run_cycle(self) -> None: pass
+
+    async def _run_cycle(self) -> None:
+        # Main work loop - called every cycle_interval seconds
+        pass
+
     def _get_event_subscriptions(self) -> dict:
         return {"MY_EVENT": self._on_my_event}
+
+    async def _on_my_event(self, event: dict) -> None:
+        # Fire-and-forget background task (won't block event handler)
+        self._safe_create_task(
+            self._long_running_operation(event),
+            context="my_event_handler"
+        )
+        # Try to emit event with graceful fallback
+        self._try_emit_event(
+            "MY_RESULT",
+            {"result": "success"},
+            emitter_fn=self._get_event_emitter("MY_RESULT"),
+            context="result_emission"
+        )
 ```
+
+**Key HandlerBase methods** (Jan 3, 2026):
+
+- `_safe_create_task(coro, context)` - Create asyncio task with error callback
+- `_try_emit_event(name, payload, emitter_fn, context)` - Emit event with graceful fallback
+- `_record_error(msg, exc)` - Record error for health reporting
 
 ### Health Checks
 
@@ -988,6 +1015,52 @@ this event had no subscriber, leaving 5-30 minute manual intervention gaps.
 3. Emits `P2P_RECOVERY_STARTED` event for external monitoring
 
 **Location**: `app/coordination/p2p_recovery_daemon.py:_get_event_subscriptions()`
+
+## P2P Observability Metrics (Jan 3, 2026)
+
+New Prometheus metrics for P2P subsystem observability:
+
+### Partition Healing Metrics (`scripts/p2p/partition_healer.py`)
+
+| Metric                                        | Type      | Description                      |
+| --------------------------------------------- | --------- | -------------------------------- |
+| `ringrift_partition_healing_duration_seconds` | Histogram | Time spent healing partitions    |
+| `ringrift_partitions_detected_total`          | Counter   | Number of partitions detected    |
+| `ringrift_partitions_healed_total`            | Counter   | Number of partitions healed      |
+| `ringrift_nodes_reconnected_total`            | Counter   | Nodes reconnected during healing |
+| `ringrift_healing_success_total`              | Counter   | Successful healing passes        |
+| `ringrift_healing_failures_total`             | Counter   | Failed healing passes            |
+| `ringrift_escalation_level`                   | Gauge     | Current escalation tier (0-5)    |
+
+### Quorum Health Metrics (`scripts/p2p/leader_election.py`)
+
+| Metric                         | Type  | Description                                             |
+| ------------------------------ | ----- | ------------------------------------------------------- |
+| `ringrift_quorum_health_level` | Gauge | Health level (0=LOST, 1=MINIMUM, 2=DEGRADED, 3=HEALTHY) |
+| `ringrift_quorum_alive_voters` | Gauge | Number of alive voters                                  |
+| `ringrift_quorum_total_voters` | Gauge | Total configured voters                                 |
+| `ringrift_quorum_margin`       | Gauge | Margin above required quorum (alive - required)         |
+
+Both modules gracefully handle missing `prometheus_client` dependency.
+
+**Alerting example** (Prometheus rules):
+
+```yaml
+- alert: QuorumDegraded
+  expr: ringrift_quorum_health_level < 3
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: 'Quorum health degraded to {{ $value }}'
+
+- alert: PartitionDetected
+  expr: increase(ringrift_partitions_detected_total[5m]) > 0
+  labels:
+    severity: warning
+  annotations:
+    summary: 'Network partition detected'
+```
 
 ## See Also
 
