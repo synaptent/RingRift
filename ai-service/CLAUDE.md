@@ -14,14 +14,15 @@ AI assistant context for the Python AI training service. Complements `AGENTS.md`
 | **Leader Election** | WORKING | Bully algorithm with voter quorum, split-brain detection  |
 | **Work Queue**      | HEALTHY | 1000+ items maintained, QueuePopulatorLoop working        |
 
-**Comprehensive Assessment (Jan 3, 2026 - Sprint 12 Session 7):**
+**Comprehensive Assessment (Jan 3, 2026 - Sprint 13 Session 1):**
 
-| Assessment Area      | Grade | Score  | Verified Status                                                        |
-| -------------------- | ----- | ------ | ---------------------------------------------------------------------- |
-| P2P Network          | B+    | 87/100 | 31 health mechanisms, 5 CB types, partition healing coordination added |
-| Training Loop        | A-    | 92/100 | 7/7 stages, 5/5 feedback loops, 303 event types, curriculum hierarchy  |
-| HandlerBase Adoption | -     | 14.2%  | 42/296 modules, target 40%, top 10 candidates identified               |
-| Test Coverage        | 107%  | -      | 307 test files for 285 modules                                         |
+| Assessment Area      | Grade | Score  | Verified Status                                                          |
+| -------------------- | ----- | ------ | ------------------------------------------------------------------------ |
+| P2P Network          | A-    | 89/100 | 31 health mechanisms, 10 CB types, 7 recovery daemons, socket leak fixed |
+| Training Loop        | A     | 98/100 | 7/7 stages, 5/5 feedback loops, 240 event types, all flows wired         |
+| HandlerBase Adoption | -     | 14.2%  | 42/296 modules, target 40%, top 10 candidates identified                 |
+| Test Coverage        | 107%  | -      | 307 test files for 285 modules                                           |
+| Consolidation        | -     | 95%    | 20 files with custom retry (migration target), 10 CB types (consolidate) |
 
 **Sprint 13 Consolidation Priorities** (targeting HandlerBase 14% → 40%):
 
@@ -43,6 +44,26 @@ AI assistant context for the Python AI training service. Complements `AGENTS.md`
 | Quality-weighted batch prioritization         | +5-8       | 8-10  | Pending             |
 
 **Total Potential**: 3,300-5,050 LOC savings, +13-20 Elo remaining, 65-92 hours
+
+**Key Improvements (Jan 3, 2026 - Sprint 13 Session 1):**
+
+- **SocketLeakRecoveryDaemon** (`socket_leak_recovery_daemon.py`): Monitors TIME_WAIT/CLOSE_WAIT buildup and fd exhaustion
+  - Triggers connection pool cleanup when critical thresholds reached
+  - Emits `SOCKET_LEAK_DETECTED`, `SOCKET_LEAK_RECOVERED`, `P2P_CONNECTION_RESET_REQUESTED` events
+  - Part of 48-hour autonomous operation (with MEMORY_MONITOR)
+- **Comprehensive P2P assessment**: 31 health mechanisms, 10 circuit breaker types, 6 recovery daemons verified
+- **Training loop assessment**: 7/7 pipeline stages, 5/5 feedback loops, 512 event emissions, 1,806 subscriptions
+- **Consolidation opportunities identified**:
+  - 20 files with custom retry patterns → migrate to `RetryConfig`
+  - 10 circuit breaker implementations → consolidate to 2 (operation + node level)
+  - HandlerBase adoption at 14.2% → target 40%
+
+**Key Improvements (Jan 3, 2026 - Sprint 12 Session 8):**
+
+- **CB state check before partition healing** (`partition_healer.py:inject_peer()`) - checks if HTTP transport is circuit-broken before attempting injection
+- **Jitter for healing triggers** (`partition_healer.py:trigger_healing_pass()`) - random 0-50% jitter prevents thundering herd
+- **Fine-grained voter events** (`p2p_recovery_daemon.py:_emit_voter_state_changes()`) - individual VOTER_ONLINE/VOTER_OFFLINE events for observability
+- **Comprehensive exploration**: P2P B+ (87/100), Training A- (92/100), 5,597-7,697 LOC consolidation potential
 
 **Key Improvements (Jan 3, 2026 - Sprint 12 Session 7):**
 
