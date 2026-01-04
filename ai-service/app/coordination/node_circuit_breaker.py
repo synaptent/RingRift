@@ -132,6 +132,9 @@ class _NodeCircuitData:
     # January 2026 Sprint 10: Per-circuit jitter offset (set when circuit opens)
     # This ensures consistent jitter per-circuit until reset
     jitter_offset: float = 0.0
+    # January 2026 Sprint 17.4: Track when circuit first opened for TTL decay
+    # Prevents circuits from staying OPEN indefinitely after transient failures
+    first_opened_at: float | None = None
 
 
 @dataclass
@@ -243,13 +246,35 @@ class NodeCircuitBreaker:
         # Apply jitter: base * (1 + jitter_offset), where offset is in [-jitter_factor, +jitter_factor]
         return base * (1.0 + circuit.jitter_offset)
 
+    # January 2026 Sprint 17.4: Maximum time a circuit can stay OPEN before forced reset
+    # Prevents circuits from staying OPEN indefinitely after transient failures
+    MAX_CIRCUIT_OPEN_DURATION = 4 * 3600  # 4 hours
+
     def _check_recovery(self, circuit: _NodeCircuitData) -> None:
-        """Check if circuit should transition to half-open."""
+        """Check if circuit should transition to half-open or force reset via TTL decay."""
+        now = time.time()
+
+        # January 2026 Sprint 17.4: TTL decay - force reset after MAX_CIRCUIT_OPEN_DURATION
+        # This prevents circuits from staying OPEN indefinitely after transient failures
+        if circuit.state == NodeCircuitState.OPEN and circuit.first_opened_at:
+            total_time_open = now - circuit.first_opened_at
+            if total_time_open > self.MAX_CIRCUIT_OPEN_DURATION:
+                logger.warning(
+                    f"[NodeCircuitBreaker] Circuit TTL expired after {total_time_open:.0f}s, "
+                    f"forcing CLOSED"
+                )
+                circuit.state = NodeCircuitState.CLOSED
+                circuit.failure_count = 0
+                circuit.first_opened_at = None
+                circuit.opened_at = None
+                circuit.half_open_at = None
+                return
+
         if circuit.state == NodeCircuitState.OPEN:
             jittered_timeout = self._compute_jittered_timeout(circuit)
-            if circuit.opened_at and (time.time() - circuit.opened_at) >= jittered_timeout:
+            if circuit.opened_at and (now - circuit.opened_at) >= jittered_timeout:
                 circuit.state = NodeCircuitState.HALF_OPEN
-                circuit.half_open_at = time.time()
+                circuit.half_open_at = now
 
     def _notify_state_change(
         self, node_id: str, old_state: NodeCircuitState, new_state: NodeCircuitState
@@ -384,6 +409,8 @@ class NodeCircuitBreaker:
                     circuit.failure_count = 0
                     circuit.opened_at = None
                     circuit.half_open_at = None
+                    # January 2026 Sprint 17.4: Clear TTL tracking when circuit closes
+                    circuit.first_opened_at = None
                     logger.info(f"[NodeCircuitBreaker] Circuit CLOSED for {node_id}")
             elif circuit.state == NodeCircuitState.CLOSED:
                 circuit.failure_count = 0
@@ -410,6 +437,10 @@ class NodeCircuitBreaker:
                 circuit.success_count = 0
                 # January 2026 Sprint 10: Set jitter offset to prevent thundering herd
                 circuit.jitter_offset = self.config.jitter_factor * (2 * random.random() - 1)
+                # January 2026 Sprint 17.4: Track first open time for TTL decay
+                # Don't reset first_opened_at if already set (circuit was already open before half-open)
+                if circuit.first_opened_at is None:
+                    circuit.first_opened_at = circuit.opened_at
                 logger.warning(
                     f"[NodeCircuitBreaker] Circuit OPEN for {node_id} (half-open test failed)"
                 )
@@ -419,6 +450,8 @@ class NodeCircuitBreaker:
                     circuit.opened_at = time.time()
                     # January 2026 Sprint 10: Set jitter offset to prevent thundering herd
                     circuit.jitter_offset = self.config.jitter_factor * (2 * random.random() - 1)
+                    # January 2026 Sprint 17.4: Track first open time for TTL decay
+                    circuit.first_opened_at = circuit.opened_at
                     logger.warning(
                         f"[NodeCircuitBreaker] Circuit OPEN for {node_id} "
                         f"({circuit.failure_count} failures)"
@@ -532,6 +565,41 @@ class NodeCircuitBreaker:
             circuit.half_open_at = None
             self._notify_state_change(node_id, old_state, NodeCircuitState.CLOSED)
 
+    def decay_old_circuits(self, ttl_seconds: float = 21600.0) -> dict[str, list[str]]:
+        """Automatically reset node circuits that have been open for too long.
+
+        Prevents stuck circuits from blocking nodes indefinitely.
+
+        Args:
+            ttl_seconds: Max time to keep circuit OPEN (default: 21600 = 6 hours)
+
+        Returns:
+            Dict with "decayed" list of reset node IDs and "checked" count
+        """
+        now = time.time()
+        decayed: list[str] = []
+        checked = 0
+
+        with self._lock:
+            for node_id, circuit in self._circuits.items():
+                checked += 1
+                if circuit.state == NodeCircuitState.OPEN and circuit.opened_at:
+                    elapsed = now - circuit.opened_at
+                    if elapsed > ttl_seconds:
+                        old_state = circuit.state
+                        circuit.state = NodeCircuitState.CLOSED
+                        circuit.failure_count = 0
+                        circuit.opened_at = None
+                        circuit.half_open_at = None
+                        decayed.append(node_id)
+                        self._notify_state_change(node_id, old_state, NodeCircuitState.CLOSED)
+                        logger.info(
+                            f"[NodeCircuitBreaker] TTL decay reset circuit for node {node_id} "
+                            f"(was open for {elapsed:.0f}s)"
+                        )
+
+        return {"decayed": decayed, "checked": checked}
+
 
 # =============================================================================
 # Registry and Singleton Access
@@ -587,6 +655,40 @@ class NodeCircuitBreakerRegistry:
                 op_type: breaker.get_summary()
                 for op_type, breaker in self._breakers.items()
             }
+
+    def decay_all_old_circuits(self, ttl_seconds: float = 21600.0) -> dict[str, Any]:
+        """Decay old circuits across all operation types.
+
+        Call this periodically (e.g., every hour) to prevent stuck circuits.
+
+        Args:
+            ttl_seconds: Max time to keep circuit OPEN (default: 6 hours)
+
+        Returns:
+            Dict with results per operation type
+        """
+        results: dict[str, Any] = {}
+        total_decayed = 0
+        total_checked = 0
+
+        with self._lock:
+            for op_type, breaker in self._breakers.items():
+                result = breaker.decay_old_circuits(ttl_seconds)
+                results[op_type] = result
+                total_decayed += len(result.get("decayed", []))
+                total_checked += result.get("checked", 0)
+
+        if total_decayed > 0:
+            logger.info(
+                f"[NodeCircuitBreakerRegistry] TTL decay: "
+                f"reset {total_decayed}/{total_checked} circuits across {len(results)} breakers"
+            )
+
+        return {
+            "by_operation": results,
+            "total_decayed": total_decayed,
+            "total_checked": total_checked,
+        }
 
 
 # Module-level singleton access

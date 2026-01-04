@@ -164,7 +164,121 @@ class GitUpdateLoop(BaseLoop):
         }
 
 
+# =============================================================================
+# Circuit Breaker Decay Loop (Sprint 17.6)
+# =============================================================================
+
+
+@dataclass
+class CircuitBreakerDecayConfig:
+    """Configuration for circuit breaker TTL decay loop.
+
+    January 2026 Sprint 17.6: Prevents circuits from staying OPEN indefinitely.
+    """
+
+    check_interval_seconds: float = 3600.0  # Check every hour
+    ttl_seconds: float = 21600.0  # Reset circuits open > 6 hours
+    enabled: bool = True
+
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.check_interval_seconds <= 0:
+            raise ValueError("check_interval_seconds must be > 0")
+        if self.ttl_seconds <= 0:
+            raise ValueError("ttl_seconds must be > 0")
+
+
+class CircuitBreakerDecayLoop(BaseLoop):
+    """Background loop to periodically decay old circuit breakers.
+
+    This prevents circuits from being stuck OPEN indefinitely after transient
+    failures. Circuits that have been OPEN longer than ttl_seconds are
+    automatically reset to CLOSED.
+
+    January 2026 Sprint 17.6: Added as part of stability improvements.
+
+    Benefits:
+    - Prevents 6h+ stuck circuits blocking health checks
+    - Reduces manual interventions from stuck states
+    - Enables graceful recovery after network partitions
+    """
+
+    def __init__(
+        self,
+        config: CircuitBreakerDecayConfig | None = None,
+    ):
+        """Initialize circuit breaker decay loop.
+
+        Args:
+            config: Optional configuration (uses defaults if not provided)
+        """
+        self.config = config or CircuitBreakerDecayConfig()
+        super().__init__(
+            name="circuit_breaker_decay",
+            interval=self.config.check_interval_seconds,
+        )
+        self._decay_count = 0
+        self._last_decay_result: dict[str, Any] = {}
+
+    async def _run_once(self) -> None:
+        """Run one decay cycle."""
+        if not self.config.enabled:
+            return
+
+        try:
+            # Import here to avoid circular imports
+            from app.coordination.circuit_breaker_base import (
+                decay_all_circuit_breakers,
+            )
+            from app.coordination.node_circuit_breaker import (
+                get_node_circuit_registry,
+            )
+
+            # Decay operation and transport circuits
+            result = decay_all_circuit_breakers(self.config.ttl_seconds)
+
+            # Also decay node circuits
+            try:
+                node_registry = get_node_circuit_registry()
+                node_result = node_registry.decay_all_old_circuits(self.config.ttl_seconds)
+                result["node_circuits"] = node_result
+            except Exception as e:
+                logger.debug(f"[CircuitBreakerDecay] Node registry not available: {e}")
+
+            self._last_decay_result = result
+
+            # Count total decayed
+            total_decayed = (
+                result.get("operation_registry", {}).get("total_decayed", 0)
+                + len(result.get("transport_breakers", {}).get("decayed", []))
+                + result.get("node_circuits", {}).get("total_decayed", 0)
+            )
+
+            if total_decayed > 0:
+                self._decay_count += total_decayed
+                logger.info(
+                    f"[CircuitBreakerDecay] Decayed {total_decayed} old circuits "
+                    f"(total lifetime: {self._decay_count})"
+                )
+
+        except Exception as e:
+            logger.warning(f"[CircuitBreakerDecay] Error in decay cycle: {e}")
+
+    def get_decay_stats(self) -> dict[str, Any]:
+        """Get decay statistics."""
+        return {
+            "enabled": self.config.enabled,
+            "ttl_seconds": self.config.ttl_seconds,
+            "check_interval_seconds": self.config.check_interval_seconds,
+            "total_decayed_lifetime": self._decay_count,
+            "last_result": self._last_decay_result,
+            **self.stats.to_dict(),
+        }
+
+
 __all__ = [
     "GitUpdateConfig",
     "GitUpdateLoop",
+    "CircuitBreakerDecayConfig",
+    "CircuitBreakerDecayLoop",
 ]

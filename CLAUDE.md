@@ -174,32 +174,31 @@ python scripts/check_ts_python_replay_parity.py --db data/games/my_games.db
 
 RingRift uses a P2P mesh network for distributed training across ~41 configured nodes.
 
-**Infrastructure Status (Verified Jan 4, 2026 - Session 17.4):**
+**Infrastructure Status (Verified Jan 4, 2026 - Session 17.10):**
 
-- P2P Network: GREEN - 22 nodes with P2P running (mac-studio as coordinator/leader)
+- P2P Network: GREEN - All 11 Lambda GH200 nodes online via Tailscale
 - Training Loop: GREEN - All 12 canonical models trained, 7-stage pipeline operational
 - Work Queue: HEALTHY - Hybrid push/pull model, /work/claim_training endpoint active
 - Recovery: 11 recovery daemons, <2.5 min MTTR, LeaderProbeLoop providing 70s failover
 
-### Active Cluster (Jan 2026)
+### Active Cluster (Verified Jan 4, 2026 via Lambda API + Tailscale)
 
-| Provider     | Nodes | GPUs                                        | Status |
-| ------------ | ----- | ------------------------------------------- | ------ |
-| Lambda GH200 | 11    | GH200 96GB × 11 (mixed roles)               | Active |
-| Vast.ai      | 14    | RTX 5090/5080, 4090, 3090, A40, 3060/4060Ti | Active |
-| RunPod       | 6     | H100, A100 (5x), L40S                       | Active |
-| Nebius       | 3     | H100 80GB (2x), L40S backbone               | Active |
-| Vultr        | 2     | A100 20GB vGPU                              | Active |
-| Hetzner      | 3     | CPU only (P2P voters)                       | Active |
-| Local        | 2     | Mac Studio M3 (coordinator)                 | Active |
+| Provider     | Nodes | GPUs                                        | Status  |
+| ------------ | ----- | ------------------------------------------- | ------- |
+| Lambda GH200 | 11    | GH200 96GB × 11 (all online via Tailscale)  | Active  |
+| Vast.ai      | 14    | RTX 5090/5080, 4090, 3090, A40, 3060/4060Ti | Mixed   |
+| RunPod       | 6     | H100, A100 (4x), L40S                       | Partial |
+| Nebius       | 3     | H100 80GB (2x), L40S backbone               | Active  |
+| Vultr        | 2     | A100 20GB vGPU                              | Active  |
+| Hetzner      | 3     | CPU only (P2P voters)                       | Active  |
+| Local        | 2     | Mac Studio M3 (coordinator)                 | Active  |
 
-**Total**: ~41 nodes, ~1.5TB GPU memory
+**Total**: ~41 configured nodes, ~1.5TB GPU memory
 
-**Note**: Lambda Labs account restored Dec 28, 2025. GH200 nodes have mixed roles per `distributed_hosts.yaml`:
+**Lambda GH200 Roles** (per `distributed_hosts.yaml`):
 
-- GH200-1 through GH200-5: Selfplay-only (`role: gpu_selfplay`)
-- GH200-training, GH200-7: Training-only (`role: gpu_training_primary`)
-- GH200-8 through GH200-11: Both selfplay and training enabled
+- GH200-1, GH200-2: Selfplay-only (`role: gpu_selfplay`)
+- GH200-3 through GH200-11, GH200-training: Selfplay + Training (`role: gpu_training_primary`)
 
 ### Cluster Management
 

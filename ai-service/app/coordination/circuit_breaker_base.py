@@ -630,6 +630,50 @@ class CircuitBreakerBase(ABC):
             self._notify_state_change(target, old_state, CircuitState.CLOSED)
             logger.info(f"[CircuitBreakerBase] Force reset circuit for {target}")
 
+    def decay_old_circuits(self, ttl_seconds: float = 21600.0) -> dict[str, list[str]]:
+        """Automatically reset circuits that have been open for too long.
+
+        This prevents circuits from being stuck open indefinitely after transient
+        failures. After ttl_seconds, circuits are automatically reset to CLOSED,
+        allowing operations to resume even if failures previously exceeded threshold.
+
+        Args:
+            ttl_seconds: Max time to keep circuit OPEN (default: 21600 = 6 hours)
+
+        Returns:
+            Dict with "decayed" list of reset circuit IDs and "checked" count
+        """
+        now = time.time()
+        decayed: list[str] = []
+        checked = 0
+
+        with self._lock:
+            for target, circuit in self._circuits.items():
+                checked += 1
+                if circuit.state == CircuitState.OPEN and circuit.opened_at:
+                    elapsed = now - circuit.opened_at
+                    if elapsed > ttl_seconds:
+                        old_state = circuit.state
+                        circuit.state = CircuitState.CLOSED
+                        circuit.failure_count = 0
+                        circuit.consecutive_opens = 0
+                        circuit.opened_at = None
+                        circuit.half_open_at = None
+                        circuit.jitter_offset = 0.0
+                        decayed.append(target)
+                        self._notify_state_change(target, old_state, CircuitState.CLOSED)
+                        logger.info(
+                            f"[CircuitBreakerBase] TTL decay reset circuit for {target} "
+                            f"(was open for {elapsed:.0f}s, threshold: {ttl_seconds:.0f}s)"
+                        )
+
+        if decayed:
+            logger.info(
+                f"[CircuitBreakerBase] TTL decay: reset {len(decayed)}/{checked} circuits"
+            )
+
+        return {"decayed": decayed, "checked": checked}
+
     # =========================================================================
     # Health check support
     # =========================================================================
@@ -1306,6 +1350,40 @@ class OperationCircuitBreakerRegistry:
                 if breaker.get_open_circuits()
             }
 
+    def decay_all_old_circuits(self, ttl_seconds: float = 21600.0) -> dict[str, Any]:
+        """Decay old circuits across all operation types.
+
+        Call this periodically (e.g., every hour) to prevent stuck circuits.
+
+        Args:
+            ttl_seconds: Max time to keep circuit OPEN (default: 6 hours)
+
+        Returns:
+            Dict with results per operation type
+        """
+        results: dict[str, Any] = {}
+        total_decayed = 0
+        total_checked = 0
+
+        with self._breaker_lock:
+            for op_type, breaker in self._breakers.items():
+                result = breaker.decay_old_circuits(ttl_seconds)
+                results[op_type] = result
+                total_decayed += len(result.get("decayed", []))
+                total_checked += result.get("checked", 0)
+
+        if total_decayed > 0:
+            logger.info(
+                f"[OperationCircuitBreakerRegistry] TTL decay: "
+                f"reset {total_decayed}/{total_checked} circuits across {len(results)} breakers"
+            )
+
+        return {
+            "by_operation": results,
+            "total_decayed": total_decayed,
+            "total_checked": total_checked,
+        }
+
     def health_check(self) -> "HealthCheckResult":
         """Health check for monitoring integration."""
         from app.coordination.protocols import HealthCheckResult
@@ -1385,3 +1463,58 @@ def get_transport_circuit_breaker(host: str, transport: str) -> OperationCircuit
             config.operation_type = f"{transport}:{host}"
             _transport_breakers[key] = OperationCircuitBreaker(config=config)
         return _transport_breakers[key]
+
+
+def decay_all_circuit_breakers(ttl_seconds: float = 21600.0) -> dict[str, Any]:
+    """Decay old circuits across all circuit breaker registries.
+
+    Call this periodically (e.g., every hour) from master_loop or health checks
+    to prevent circuits from being stuck open indefinitely.
+
+    This covers:
+    - OperationCircuitBreakerRegistry (for transport operations)
+    - Transport-level circuit breakers (per host:transport)
+
+    Args:
+        ttl_seconds: Max time to keep circuit OPEN (default: 6 hours)
+
+    Returns:
+        Dict with decay results from all registries
+    """
+    results: dict[str, Any] = {}
+
+    # Decay operation registry circuits
+    try:
+        registry = get_operation_circuit_registry()
+        results["operation_registry"] = registry.decay_all_old_circuits(ttl_seconds)
+    except Exception as e:
+        logger.warning(f"[decay_all_circuit_breakers] Operation registry error: {e}")
+        results["operation_registry"] = {"error": str(e)}
+
+    # Decay transport-level circuits
+    transport_decayed = []
+    transport_checked = 0
+    now = time.time()
+
+    with _transport_lock:
+        for key, breaker in _transport_breakers.items():
+            result = breaker.decay_old_circuits(ttl_seconds)
+            transport_checked += result.get("checked", 0)
+            transport_decayed.extend(result.get("decayed", []))
+
+    results["transport_breakers"] = {
+        "decayed": transport_decayed,
+        "checked": transport_checked,
+    }
+
+    total_decayed = (
+        len(results.get("operation_registry", {}).get("decayed", []))
+        + len(transport_decayed)
+    )
+
+    if total_decayed > 0:
+        logger.info(
+            f"[decay_all_circuit_breakers] Total TTL decay: {total_decayed} circuits reset"
+        )
+
+    return results

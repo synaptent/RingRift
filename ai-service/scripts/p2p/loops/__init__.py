@@ -89,6 +89,8 @@ from .job_loops import (
     WorkQueueMaintenanceLoop,
 )
 from .maintenance_loops import (
+    CircuitBreakerDecayConfig,
+    CircuitBreakerDecayLoop,
     GitUpdateConfig,
     GitUpdateLoop,
 )
