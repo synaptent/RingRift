@@ -37,7 +37,7 @@ AI assistant context for the Python AI training service. Complements `AGENTS.md`
 | P2       | tournament_daemon.py          | 1,505 | 300-500      | PENDING                            |
 | P2       | unified_replication_daemon.py | 1,400 | 300-450      | PENDING                            |
 
-**Top 3 Training Loop Improvements** (Sprint 12 Session 6-7):
+**Top Training Loop Improvements** (Sprint 12 Sessions 6-8):
 
 | Improvement                                   | Elo Impact | Hours | Status                 |
 | --------------------------------------------- | ---------- | ----- | ---------------------- |
@@ -45,8 +45,10 @@ AI assistant context for the Python AI training service. Complements `AGENTS.md`
 | Curriculum hierarchy with sibling propagation | +12-18     | 12-16 | ✅ DONE (Session 6)    |
 | Quality-weighted batch prioritization         | +5-8       | 8-10  | ✅ ALREADY IMPLEMENTED |
 | Elo-velocity regression prevention            | +6-10      | 6-8   | ✅ ALREADY IMPLEMENTED |
+| Adaptive exploration boost decay              | +5-10      | 2     | ✅ DONE (Session 8)    |
+| Quality score confidence weighting            | +8-15      | 2     | ✅ DONE (Session 8)    |
 
-**Total Achieved**: +20-30 Elo from Session 6 improvements, all quality/velocity features already existed
+**Total Achieved**: +33-55 Elo from Sessions 6-8 improvements
 
 **Session 7 Key Findings** (Jan 3, 2026):
 
@@ -96,6 +98,21 @@ AI assistant context for the Python AI training service. Complements `AGENTS.md`
   - ReservationManager reports gauntlet/training reservation counts
 - **HandlerBase adoption increased**: 14.2% → 15.5% (46/297 coordination modules)
 - **Documentation updated**: CLAUDE.md module counts and Sprint 12.2-12.4 status
+
+**Key Improvements (Jan 3, 2026 - Sprint 12 Session 8 Continued):**
+
+- **ESCALATION_TIER_CHANGED event** (`data_events.py`, `circuit_breaker.py`): CB tier changes now emit events for monitoring
+- **Adaptive exploration boost decay** (`feedback_loop_controller.py:_reduce_exploration_after_improvement()`):
+  - Fast improvement (>2 Elo/hr): 2% decay (preserve exploration)
+  - Normal improvement (0.5-2 Elo/hr): 10% decay
+  - Stalled (<0.5 Elo/hr): 0% decay
+  - Regression: 5% increase (counter regression)
+- **Quality score confidence weighting** (`training_trigger_daemon.py:_compute_quality_confidence()`):
+  - <50 games: 50% credibility → biased toward neutral 0.5
+  - 50-500 games: 75% credibility
+  - 500+ games: 100% credibility (full trust)
+  - Formula: `adjusted = (confidence * quality) + ((1-confidence) * 0.5)`
+- **Expected Elo impact**: +13-25 Elo from Session 8 improvements
 
 **Key Improvements (Jan 3, 2026 - Sprint 12 Session 8):**
 
