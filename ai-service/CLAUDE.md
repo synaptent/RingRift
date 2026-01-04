@@ -12,7 +12,7 @@ AI assistant context for the Python AI training service. Complements `AGENTS.md`
 | **Training Loop**    | GREEN     | A+ (96/100), 5/5 feedback loops wired, 6/6 pipeline stages       |
 | **Code Quality**     | GREEN     | 99% consolidated, 327 coordination modules, 63+ HandlerBase      |
 | **Leader Election**  | WORKING   | Bully algorithm with voter quorum, split-brain detection         |
-| **Work Queue**       | HEALTHY   | 25 alive peers, quorum confirmed, nebius-h100-1 as leader        |
+| **Work Queue**       | HEALTHY   | 28 alive peers, quorum OK, nebius-backbone-1 as leader           |
 | **Model Evaluation** | AUTOMATED | OWC import + unevaluated scan + stale re-eval pipeline           |
 | **SQLite Async**     | FIXED     | Critical P2P paths wrapped in asyncio.to_thread()                |
 
