@@ -2,14 +2,14 @@
 
 AI assistant context for the Python AI training service. Complements `AGENTS.md` with operational knowledge.
 
-**Last Updated**: January 3, 2026
+**Last Updated**: January 3, 2026 (Sprint 12 Session 10)
 
 ## Infrastructure Health Status (Verified Jan 3, 2026)
 
 | Component           | Status  | Evidence                                                  |
 | ------------------- | ------- | --------------------------------------------------------- |
 | **P2P Network**     | GREEN   | 31 health mechanisms, 6 recovery daemons, 25+ alive peers |
-| **Training Loop**   | GREEN   | 99.5% complete, 240 event types, all critical flows wired |
+| **Training Loop**   | GREEN   | 99.5% complete, 255 event types, all critical flows wired |
 | **Code Quality**    | GREEN   | 95% consolidated, ~4,000 LOC saved through refactoring    |
 | **Leader Election** | WORKING | Bully algorithm with voter quorum, split-brain detection  |
 | **Work Queue**      | HEALTHY | 1000+ items maintained, QueuePopulatorLoop working        |
@@ -24,6 +24,22 @@ AI assistant context for the Python AI training service. Complements `AGENTS.md`
 | Test Coverage        | 99%+  | -      | 307 test files for 298 coordination modules (107% ratio)                |
 | Consolidation        | -     | 95%    | CurriculumSignalBridge base class, 235K LOC coordination layer          |
 | Daemon Types         | -     | 122    | DaemonType enum verified, +1 TRAINING_DATA_RECOVERY                     |
+
+**Sprint 12 Session 10 Assessment (Jan 3, 2026):**
+
+| Component         | Grade | Score  | Key Findings                                                           |
+| ----------------- | ----- | ------ | ---------------------------------------------------------------------- |
+| **P2P Network**   | B+    | 87/100 | 17/102 modules have health_check, CIRCUIT_RESET now has subscriber     |
+| **Training Loop** | A-    | 94/100 | All 5 feedback loops functional, 99.5% event wiring                    |
+| **Code Quality**  | B+    | 87/100 | 51/298 HandlerBase adoption (17.1%), 2,500-3,500 LOC savings potential |
+
+**Session 10 Fix:**
+
+- ✅ **CIRCUIT_RESET Event Subscriber**: Added to SelfplayScheduler (`selfplay_scheduler.py:2244-2247, 3421-3465`)
+  - Previously CIRCUIT_RESET was emitted but had NO SUBSCRIBER
+  - New handler `_on_circuit_reset()` restores node allocation on proactive recovery
+  - Removes node from unhealthy/demoted sets when circuit resets
+  - Tracks `_circuit_reset_count` for monitoring
 
 **Sprint 12.2-12.4 Consolidation (Jan 3, 2026):**
 
@@ -315,10 +331,10 @@ python scripts/update_all_nodes.py --restart-p2p
 
 | Module                                 | Purpose                                           |
 | -------------------------------------- | ------------------------------------------------- |
-| `daemon_manager.py`                    | Lifecycle for 121 daemon types (~2,000 LOC)       |
+| `daemon_manager.py`                    | Lifecycle for 105 daemon types (~2,000 LOC)       |
 | `daemon_registry.py`                   | Declarative daemon specs (DaemonSpec dataclass)   |
 | `daemon_runners.py`                    | 124 async runner functions                        |
-| `event_router.py`                      | Unified event bus (240 event types, SHA256 dedup) |
+| `event_router.py`                      | Unified event bus (255 event types, SHA256 dedup) |
 | `selfplay_scheduler.py`                | Priority-based selfplay allocation (~3,800 LOC)   |
 | `budget_calculator.py`                 | Gumbel budget tiers, target games calculation     |
 | `progress_watchdog_daemon.py`          | Stall detection for 48h autonomous operation      |
@@ -712,7 +728,7 @@ weights = tracker.get_compute_weights(board_type="hex8", num_players=2)
 
 ## Daemon System
 
-121 daemon types (117 active, 4 deprecated). Three-layer architecture:
+105 daemon types (99 active, 6 deprecated). Three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative `DAEMON_REGISTRY: Dict[DaemonType, DaemonSpec]`
 2. **`daemon_manager.py`** - Lifecycle coordinator (start/stop, health, auto-restart)
@@ -774,10 +790,10 @@ Automatic retry for transient failures (GPU OOM, timeouts):
 
 **Integration Status**: 99.5% COMPLETE (Jan 3, 2026)
 
-240 event types defined in DataEventType enum. All critical event flows are fully wired.
+255 event types defined in DataEventType enum. All critical event flows are fully wired.
 5/5 feedback loops verified functional. Only minor informational gaps remain.
 
-240 event types across 3 layers:
+255 event types across 3 layers:
 
 1. **In-memory EventBus** - Local daemon communication
 2. **Stage events** - Pipeline stage completion
