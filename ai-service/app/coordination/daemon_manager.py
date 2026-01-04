@@ -2504,17 +2504,56 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         """Background health check loop.
 
         Sprint 5 (Jan 2, 2026): Added deadlock detection check.
+        Sprint 17.9 (Jan 4, 2026): Added hourly circuit breaker TTL decay.
         """
+        health_check_count = 0
+        # Decay old circuits every ~60 health checks (~1 hour at 60s intervals)
+        CB_DECAY_INTERVAL = 60
+
         while self._running and not self._shutdown_event.is_set():
             try:
                 # Sprint 5: Check for potential deadlocks before health checks
                 await self._check_for_deadlocks()
                 await self._check_health()
+
+                # Sprint 17.9: Hourly circuit breaker TTL decay
+                health_check_count += 1
+                if health_check_count >= CB_DECAY_INTERVAL:
+                    health_check_count = 0
+                    await self._decay_old_circuit_breakers()
+
                 await asyncio.sleep(self.config.health_check_interval)
             except asyncio.CancelledError:
                 break
             except (RuntimeError, OSError) as e:
                 logger.error(f"Health check error: {e}")
+
+    async def _decay_old_circuit_breakers(self) -> None:
+        """Decay old circuit breakers to prevent permanent node exclusion.
+
+        Sprint 17.9 (Jan 4, 2026): Wraps decay_all_circuit_breakers() for hourly
+        execution from the health loop. Uses asyncio.to_thread() to avoid
+        blocking the event loop during SQLite operations.
+
+        Circuit breakers opened >6 hours ago are reset to CLOSED state,
+        allowing previously-failed nodes to be retried.
+        """
+        try:
+            from app.coordination.circuit_breaker_base import decay_all_circuit_breakers
+
+            # Run in thread pool to avoid blocking
+            results = await asyncio.to_thread(decay_all_circuit_breakers)
+
+            # Log summary if any circuits were reset
+            total_decayed = results.get("total_decayed", 0)
+            if total_decayed > 0:
+                logger.info(
+                    f"[DaemonManager] Circuit breaker TTL decay: {total_decayed} circuits reset"
+                )
+        except ImportError:
+            logger.debug("[DaemonManager] circuit_breaker_base not available for decay")
+        except (RuntimeError, OSError, AttributeError) as e:
+            logger.debug(f"[DaemonManager] Circuit breaker decay failed: {e}")
 
     async def _check_single_daemon_health(
         self,

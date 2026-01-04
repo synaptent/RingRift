@@ -1000,7 +1000,6 @@ class TrainingTriggerDaemon(HandlerBase):
             Training intensity: "hot_path", "accelerated", "normal", "reduced", or "paused"
         """
         return intensity_from_quality(quality_score, config_key)
-        return "paused"
 
     async def _on_training_threshold_reached(self, event: Any) -> None:
         """Handle training threshold reached events from master_loop."""
@@ -2535,9 +2534,7 @@ class TrainingTriggerDaemon(HandlerBase):
                 # January 3, 2026: Relax quality gate for data-starved or stalled configs
                 # This prevents configs with limited data from being permanently blocked
                 # while maintaining quality floor to prevent garbage data training
-                MINIMUM_QUALITY_FLOOR = 0.40  # Absolute minimum (prevents garbage)
-                DATA_STARVED_THRESHOLD = 5000  # Configs with <5K games are bootstrapping
-                TRAINING_STALL_HOURS = 24.0  # Emergency override after 24h stall
+                # Jan 4, 2026 - Sprint 17.9: Constants now imported from training_quality_gates.py
 
                 allow_degraded = False
                 degraded_reason = ""
