@@ -311,7 +311,7 @@ class ComprehensiveConsolidationDaemon(HandlerBase):
             # Process each config in parallel
             tasks = []
             for board_type, num_players in ALL_CONFIGS:
-                config_key = f"{board_type}_{num_players}p"
+                config_key = make_config_key(board_type, num_players)
                 tasks.append(self._consolidate_config_comprehensive(board_type, num_players))
 
             # Run with concurrency limit
@@ -320,7 +320,7 @@ class ComprehensiveConsolidationDaemon(HandlerBase):
             # Collect results
             for i, result in enumerate(results):
                 board_type, num_players = ALL_CONFIGS[i]
-                config_key = f"{board_type}_{num_players}p"
+                config_key = make_config_key(board_type, num_players)
 
                 if isinstance(result, Exception):
                     logger.warning(f"[ComprehensiveConsolidation] Error for {config_key}: {result}")

@@ -293,7 +293,7 @@ class ContinuousTrainingLoop:
                 # Get next config to train
                 config = self.config.configs[config_index]
                 board_type, num_players = config
-                config_key = f"{board_type}_{num_players}p"
+                config_key = make_config_key(board_type, num_players)
 
                 iteration += 1
                 self.stats.total_iterations = iteration
@@ -356,7 +356,7 @@ class ContinuousTrainingLoop:
 
         Returns True if iteration completed successfully.
         """
-        config_key = f"{board_type}_{num_players}p"
+        config_key = make_config_key(board_type, num_players)
 
         try:
             # Step 1: Run selfplay
