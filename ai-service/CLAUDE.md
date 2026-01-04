@@ -2,19 +2,19 @@
 
 AI assistant context for the Python AI training service. Complements `AGENTS.md` with operational knowledge.
 
-**Last Updated**: January 4, 2026 (Sprint 17.9 - Session 17.9)
+**Last Updated**: January 4, 2026 (Sprint 17.9 - Session 17.10)
 
 ## Infrastructure Health Status (Verified Jan 4, 2026)
 
 | Component            | Status    | Evidence                                                        |
 | -------------------- | --------- | --------------------------------------------------------------- |
-| **P2P Network**      | GREEN     | A- (93/100), 28 alive peers, mac-studio leader, quorum OK       |
-| **Training Loop**    | GREEN     | A (95/100), 109K games, 12 canonical models, 325 queue items    |
-| **Code Quality**     | GREEN     | 5,000-7,500 LOC potential savings, 7 improvement priorities     |
+| **P2P Network**      | GREEN     | A- (91/100), 13+ alive peers, mac-studio leader, quorum OK      |
+| **Training Loop**    | GREEN     | A (95/100), 109K games, 12 canonical models, all stages wired   |
+| **Code Quality**     | GREEN     | 5,000-7,500 LOC potential savings, CB decay integrated          |
 | **Leader Election**  | WORKING   | mac-studio leader, voter quorum OK, all background loops active |
-| **Work Queue**       | HEALTHY   | 325 items, 8 selfplay jobs, all 12 configs covered              |
+| **Work Queue**       | HEALTHY   | Queue repopulating after restart, selfplay scheduler active     |
 | **Game Data**        | EXCELLENT | 109,744 total games (hexagonal_4p: 30K, square19_2p: 27K)       |
-| **SQLite Async**     | 92%       | 261 asyncio.to_thread usages, 49 remaining blocking ops         |
+| **CB TTL Decay**     | ACTIVE    | Hourly decay in DaemonManager health loop (6h TTL)              |
 | **Multi-Arch Train** | ACTIVE    | v2 models trained Jan 4, all configs generating data            |
 
 ## Sprint 17: Cluster Resilience Integration (Jan 4, 2026)
@@ -46,6 +46,23 @@ Session 16-17 resilience components are now fully integrated and bootstrapped:
 | Early Quorum Escalation   | Skip to P2P restart after 2 failed healing attempts with quorum lost | `p2p_recovery_daemon.py`      |
 | Training Heartbeat Events | TRAINING_HEARTBEAT event for watchdog monitoring                     | `distributed_lock.py`         |
 | TRAINING_PROCESS_KILLED   | Event emitted when stuck training process killed                     | `training_watchdog_daemon.py` |
+
+**Sprint 17.9 / Session 17.10 (Jan 4, 2026) - Circuit Breaker Health Loop Integration:**
+
+| Task                         | Status      | Evidence                                                          |
+| ---------------------------- | ----------- | ----------------------------------------------------------------- |
+| DaemonManager CB Decay       | ✅ COMPLETE | `_decay_old_circuit_breakers()` runs every ~60 health checks (1h) |
+| Cluster Deployment           | ✅ COMPLETE | 21 nodes updated to 1e41f7d18, P2P restarted                      |
+| Training Quality Gates Tests | ✅ ADDED    | 448 LOC new test suite for quality gates                          |
+| Cluster Health               | ✅ GREEN    | 13 alive peers, mac-studio leader                                 |
+
+**DaemonManager CB Integration (Session 17.10):**
+
+- Added `_decay_old_circuit_breakers()` async method in `daemon_manager.py:2531-2556`
+- Called every ~60 health checks (~1 hour at 60s intervals) from `_health_loop()`
+- Uses `asyncio.to_thread()` to avoid blocking event loop during decay
+- Wraps existing `decay_all_circuit_breakers()` from circuit_breaker_base.py
+- Provides redundant decay path alongside CircuitBreakerDecayLoop
 
 **Sprint 17.9 / Session 17.8 (Jan 4, 2026) - Improvement Verification & Consolidation:**
 
