@@ -397,6 +397,7 @@ class SelfplayRunner(ABC):
                 self.config.board_type,
                 self.config.num_players,
                 prefer_nnue=self.config.prefer_nnue,
+                model_version=self.config.model_version,  # Jan 5, 2026: Architecture selection
             )
             if model_path:
                 logger.info(f"  Model: {model_path}")

@@ -11269,6 +11269,7 @@ class P2POrchestrator(
             num_games = data.get("num_games", 500)
             engine_mode = data.get("engine_mode", "gumbel-mcts")  # GPU-accelerated MCTS
             engine_extra_args = data.get("engine_extra_args")  # December 2025: for budget override
+            model_version = data.get("model_version", "v5")  # Jan 5, 2026: Architecture selection
             data.get("auto_scaled", False)
 
             job_id = f"selfplay-{self.node_id}-{int(time.time())}"
@@ -11282,6 +11283,7 @@ class P2POrchestrator(
                 num_games=num_games,
                 engine_mode=engine_mode,
                 engine_extra_args=engine_extra_args,
+                model_version=model_version,  # Jan 5, 2026: Architecture selection feedback loop
             ))
 
             logger.info(f"Started GPU selfplay job {job_id}: {board_type}/{num_players}p, {num_games} games")
@@ -18602,6 +18604,7 @@ print(json.dumps(result))
                 num_games = config.get("num_games", 500)
                 engine_mode = config.get("engine_mode", "mixed")
                 engine_extra_args = config.get("engine_extra_args")  # December 2025: for budget override
+                selfplay_model_version = config.get("model_version", "v5")  # Jan 5, 2026: Architecture selection
 
                 # Delegate to JobManager (Phase 2B refactoring, Dec 2025)
                 asyncio.create_task(self.job_manager.run_gpu_selfplay_job(
@@ -18611,6 +18614,7 @@ print(json.dumps(result))
                     num_games=num_games,
                     engine_mode=engine_mode,
                     engine_extra_args=engine_extra_args,
+                    model_version=selfplay_model_version,  # Jan 5, 2026: Architecture selection
                 ))
 
                 # Track diversity metrics for monitoring (Phase 2B, Dec 2025)

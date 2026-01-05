@@ -527,10 +527,12 @@ class JobManager(EventSubscriptionMixin):
         num_players: int,
         num_games: int,
         preemptive: bool = False,
+        model_version: str | None = None,
     ) -> dict[str, Any]:
         """Dispatch a selfplay job to a specific node.
 
         January 2026 Sprint 6: Used by PredictiveScalingLoop for preemptive job spawning.
+        Session 17.22: Added model_version for architecture selection feedback loop.
 
         Args:
             node_id: The target node identifier
@@ -539,6 +541,8 @@ class JobManager(EventSubscriptionMixin):
             num_players: Number of players (2, 3, or 4)
             num_games: Number of games to generate
             preemptive: Whether this is a preemptive spawn (for tracking)
+            model_version: Architecture version (e.g., "v5", "v2", "v5-heavy").
+                          If None, uses default "v5".
 
         Returns:
             Dict with 'success' bool and optional 'error' message
@@ -552,6 +556,11 @@ class JobManager(EventSubscriptionMixin):
                 return {"success": False, "error": f"Node {node_id} not found in peers"}
 
             # Construct the selfplay request
+            # Session 17.22: Include model_version for architecture selection feedback loop
+            effective_version = model_version or "v5"
+            model_path = self._get_model_path_for_version(
+                board_type, num_players, effective_version
+            )
             config = {
                 "board_type": board_type,
                 "num_players": num_players,
@@ -560,6 +569,8 @@ class JobManager(EventSubscriptionMixin):
                 "preemptive": preemptive,
                 "job_id": job_id,
                 "reason": f"preemptive_spawn_{board_type}_{num_players}p",
+                "model_version": effective_version,
+                "model_path": model_path,
             }
 
             # Use HTTP to dispatch to the node's selfplay endpoint
@@ -589,6 +600,7 @@ class JobManager(EventSubscriptionMixin):
                         self._register_spawn(job_id, node_id, config_key)
 
                         # Track the job
+                        # Session 17.22: Include model_version for architecture feedback loop
                         with self.jobs_lock:
                             if "selfplay" not in self.active_jobs:
                                 self.active_jobs["selfplay"] = {}
@@ -600,6 +612,7 @@ class JobManager(EventSubscriptionMixin):
                                 "status": "running",
                                 "started_at": time.time(),
                                 "preemptive": preemptive,
+                                "model_version": effective_version,
                             }
 
                         return {"success": True}
@@ -654,6 +667,45 @@ class JobManager(EventSubscriptionMixin):
             Full path to the data file/directory.
         """
         return os.path.join(self._get_ai_service_path(), "data", *subpath)
+
+    def _get_model_path_for_version(
+        self,
+        board_type: str,
+        num_players: int,
+        model_version: str = "v5",
+    ) -> str:
+        """Get the model path for a specific architecture version.
+
+        Session 17.22: Added for architecture selection feedback loop.
+        This allows selfplay to use different architecture versions based
+        on their Elo performance (tracked by ArchitectureTracker).
+
+        Args:
+            board_type: Board type (hex8, square8, etc.)
+            num_players: Number of players (2, 3, or 4)
+            model_version: Architecture version (e.g., "v5", "v2", "v5-heavy")
+
+        Returns:
+            Path to the canonical model file for the given configuration.
+            Falls back to default (no version suffix) if version-specific
+            model doesn't exist.
+        """
+        models_dir = os.path.join(self._get_ai_service_path(), "models")
+
+        # Try version-specific model first: canonical_hex8_2p_v2.pth
+        if model_version and model_version != "v5":
+            versioned_name = f"canonical_{board_type}_{num_players}p_{model_version}.pth"
+            versioned_path = os.path.join(models_dir, versioned_name)
+            if os.path.exists(versioned_path):
+                logger.debug(
+                    f"Using versioned model for {board_type}_{num_players}p: {versioned_name}"
+                )
+                return versioned_path
+
+        # Fall back to default: canonical_hex8_2p.pth
+        default_name = f"canonical_{board_type}_{num_players}p.pth"
+        default_path = os.path.join(models_dir, default_name)
+        return default_path
 
     def _should_use_gpu_tree(self) -> bool:
         """Check if GPU tree mode should be enabled for this node.
@@ -1681,6 +1733,7 @@ class JobManager(EventSubscriptionMixin):
         num_games: int,
         engine_mode: str,
         engine_extra_args: dict[str, Any] | None = None,
+        model_version: str = "v5",
     ) -> None:
         """Run selfplay job with appropriate script based on engine mode.
 
@@ -1773,6 +1826,7 @@ class JobManager(EventSubscriptionMixin):
                 "--db", str(output_dir / "games.db"),  # uses --db not --record-db
                 "--seed", str(int(time.time() * 1000) % 2**31),
                 "--simulation-budget", str(simulation_budget),
+                "--model-version", model_version,  # Jan 5, 2026: Architecture selection feedback loop
             ]
             # Jan 1, 2026: Use per-node config to decide GPU tree mode
             # GPU tree gives 170x speedup but hangs on some nodes (vGPU, large boards)

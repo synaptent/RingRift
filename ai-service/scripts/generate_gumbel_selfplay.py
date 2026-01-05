@@ -172,6 +172,9 @@ class GumbelSelfplayConfig:
     allow_fresh_weights: bool = False  # Allow random weights if no checkpoint
     # GPU tree provides 10-20x speedup for MCTS search
     use_gpu_tree: bool = True  # RR-GPU-TREE-001: defensive validation added
+    # Architecture version for model selection (v2, v4, v5, v5-heavy, etc.)
+    # Jan 5, 2026: Added for architecture selection feedback loop
+    model_version: str = "v5"
 
     def get_temperature_for_move(self, move_number: int) -> float:
         """Get temperature for a specific move number.
@@ -892,6 +895,12 @@ def main():
         help="Neural network model ID to use",
     )
     parser.add_argument(
+        "--model-version",
+        type=str,
+        default="v5",
+        help="Architecture version (v2, v4, v5, v5-heavy, etc.) for model selection",
+    )
+    parser.add_argument(
         "--no-gpu",
         action="store_true",
         help="Disable GPU acceleration",
@@ -920,6 +929,24 @@ def main():
 
     args = parser.parse_args()
 
+    # Jan 5, 2026: Resolve model path using get_model_for_config() for architecture selection
+    # If no explicit model_id provided, use version-specific model from selector
+    nn_model_path = args.model_id
+    if not nn_model_path and args.model_version:
+        try:
+            from app.training.selfplay_model_selector import get_model_for_config
+            resolved_path = get_model_for_config(
+                args.board,
+                args.num_players,
+                prefer_nnue=False,
+                model_version=args.model_version,
+            )
+            if resolved_path:
+                nn_model_path = str(resolved_path)
+                logger.info(f"Using model version {args.model_version}: {nn_model_path}")
+        except ImportError:
+            logger.debug("selfplay_model_selector not available, using default model resolution")
+
     config = GumbelSelfplayConfig(
         board_type=args.board,
         num_players=args.num_players,
@@ -932,10 +959,11 @@ def main():
         validate_parity=args.validate_parity,
         seed=args.seed,
         verbose=args.verbose,
-        nn_model_id=args.model_id,
+        nn_model_id=nn_model_path,
         use_gpu=not args.no_gpu,
         allow_fresh_weights=args.allow_fresh_weights,
         use_gpu_tree=args.use_gpu_tree and not args.no_gpu_tree,  # 170x faster
+        model_version=args.model_version,
     )
 
     if args.all_configs:

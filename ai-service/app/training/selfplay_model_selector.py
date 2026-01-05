@@ -621,15 +621,22 @@ def get_model_for_config(
     board_type: str,
     num_players: int = 2,
     prefer_nnue: bool = False,
+    model_version: str = "v5",
 ) -> Path | None:
     """Convenience function to get model path for a config.
 
     Caches selector instances for efficiency.
 
+    Jan 5, 2026 (Session 17.25): Added model_version parameter to support
+    architecture selection feedback loop. When model_version is not "v5",
+    looks for version-specific canonical models first (e.g., canonical_hex8_2p_v4.pth).
+
     Args:
         board_type: Board type (square8, hex8, etc.)
         num_players: Number of players (2, 3, or 4)
         prefer_nnue: If True, prefer NNUE models
+        model_version: Architecture version (v2, v4, v5, v5_heavy, etc.)
+            Default "v5" uses the default canonical model.
 
     Returns:
         Path to model or None.
@@ -637,6 +644,33 @@ def get_model_for_config(
     # Initialize event subscription on first use (for hot-reload)
     _init_event_subscription()
 
+    # Jan 5, 2026: Try version-specific model first if not default v5
+    if model_version and model_version != "v5":
+        # Normalize version name for file path (v5-heavy -> v5_heavy)
+        version_normalized = model_version.replace("-", "_")
+        versioned_name = f"canonical_{board_type.lower()}_{num_players}p_{version_normalized}.pth"
+        versioned_path = _MODELS_DIR / versioned_name
+
+        if versioned_path.exists():
+            logger.info(
+                f"[SelfplayModelSelector] Using architecture {model_version}: {versioned_name}"
+            )
+            return versioned_path
+        else:
+            # Also check NFS path for cluster deployments
+            nfs_versioned = _NFS_MODELS_DIR / versioned_name
+            if nfs_versioned.exists():
+                logger.info(
+                    f"[SelfplayModelSelector] Using NFS architecture {model_version}: {versioned_name}"
+                )
+                return nfs_versioned
+            else:
+                logger.debug(
+                    f"[SelfplayModelSelector] No model for {model_version} at {versioned_path}, "
+                    "falling back to default canonical"
+                )
+
+    # Default behavior: use selector for canonical/latest model
     cache_key = f"{board_type.lower()}_{num_players}p_{prefer_nnue}"
 
     if cache_key not in _selectors:
