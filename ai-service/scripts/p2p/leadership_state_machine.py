@@ -230,7 +230,8 @@ class LeadershipStateMachine:
         # Maps epoch -> (leader_id, timestamp) to detect conflicting claims
         self._epoch_leader_claims: dict[int, tuple[str, float]] = {}
         # Grace period: how long to consider claims at same epoch as conflict
-        self._claim_grace_period = 30.0  # 30 seconds
+        # Jan 5, 2026: Reduced from 30s to 15s for faster stale leader detection
+        self._claim_grace_period = 15.0  # 15 seconds
 
         # Unified quorum tracking
         self.quorum_health = QuorumHealth()

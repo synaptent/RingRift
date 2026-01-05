@@ -2620,18 +2620,27 @@ class GossipProtocolMixin(P2PMixinBase):
         except ImportError:
             NodeRole = None
 
-        # Set leadership state
-        self.leader_id = self.node_id
-        self.last_leader_seen = time.time()
-        if NodeRole is not None:
-            self.role = NodeRole.LEADER
+        # Jan 5, 2026: Atomic update of leader_id, role, and lease info
+        # Prevents gossip desync where leader_id and role get updated separately
+        lock = getattr(self, "_gossip_state_sync_lock", None)
+        if lock is not None:
+            lock.acquire()
+        try:
+            # Set leadership state atomically
+            self.leader_id = self.node_id
+            self.last_leader_seen = time.time()
+            if NodeRole is not None:
+                self.role = NodeRole.LEADER
 
-        # Set lease info
-        from scripts.p2p.constants import LEADER_LEASE_DURATION
-        import uuid
-        lease_id = f"{self.node_id}_{int(time.time())}_gossip_accepted_{uuid.uuid4().hex[:8]}"
-        self.leader_lease_id = lease_id
-        self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
+            # Set lease info
+            from scripts.p2p.constants import LEADER_LEASE_DURATION
+            import uuid
+            lease_id = f"{self.node_id}_{int(time.time())}_gossip_accepted_{uuid.uuid4().hex[:8]}"
+            self.leader_lease_id = lease_id
+            self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
+        finally:
+            if lock is not None:
+                lock.release()
 
         # Update leadership state machine if available
         if hasattr(self, "_leadership_sm") and self._leadership_sm:

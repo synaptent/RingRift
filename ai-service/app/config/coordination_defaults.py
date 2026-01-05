@@ -2476,15 +2476,18 @@ class SelfplayPriorityWeightDefaults:
     DATA_STARVATION_ULTRA_MULTIPLIER: float = _env_float(
         # Dec 31, 2025: Increased from 25x to 100x for 48h autonomous operation
         # Jan 2026: Increased to 200x to ensure critically starved configs get priority
-        "RINGRIFT_DATA_STARVATION_ULTRA_MULTIPLIER", 200.0
+        # Jan 5, 2026: Increased to 500x to address 3-player config starvation
+        "RINGRIFT_DATA_STARVATION_ULTRA_MULTIPLIER", 500.0
     )
     DATA_STARVATION_EMERGENCY_MULTIPLIER: float = _env_float(
         # Jan 2026: Increased from 10x to 50x to address allocation imbalance
-        "RINGRIFT_DATA_STARVATION_EMERGENCY_MULTIPLIER", 50.0
+        # Jan 5, 2026: Increased to 100x to address 3-player config starvation
+        "RINGRIFT_DATA_STARVATION_EMERGENCY_MULTIPLIER", 100.0
     )
     DATA_STARVATION_CRITICAL_MULTIPLIER: float = _env_float(
         # Jan 2026: Increased from 5x to 20x to address allocation imbalance
-        "RINGRIFT_DATA_STARVATION_CRITICAL_MULTIPLIER", 20.0
+        # Jan 5, 2026: Increased to 30x to address 3-player config starvation
+        "RINGRIFT_DATA_STARVATION_CRITICAL_MULTIPLIER", 30.0
     )
 
     # Data poverty tier - configs below this threshold get moderate priority boost
