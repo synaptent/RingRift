@@ -50,7 +50,9 @@ DEFAULT_DECAY_FLOOR = 0.5  # Never decay below this quality level
 # Quality gate relaxation thresholds
 MINIMUM_QUALITY_FLOOR = 0.40  # Absolute minimum (prevents garbage data training)
 DATA_STARVED_THRESHOLD = 5000  # Configs with <5K games are bootstrapping
-TRAINING_STALL_HOURS = 24.0  # Emergency override after 24h stall
+# Jan 5, 2026 (Session 17.33): Reduced from 24h to 6h for faster stale config recovery
+# Stale configs should train sooner rather than wait full day
+TRAINING_STALL_HOURS = 6.0  # Emergency override after 6h stall
 
 
 @dataclass

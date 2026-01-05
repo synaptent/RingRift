@@ -2795,7 +2795,8 @@ class PeerDefaults:
     HEARTBEAT_INTERVAL: float = _env_float("RINGRIFT_PEER_HEARTBEAT_INTERVAL", 15.0)
 
     # Peer timeout (seconds) - consider peer dead after no heartbeat
-    PEER_TIMEOUT: float = _env_float("RINGRIFT_PEER_TIMEOUT", 60.0)
+    # Jan 5, 2026 (Session 17.33): Reduced from 60s to 45s for 25% faster dead node detection
+    PEER_TIMEOUT: float = _env_float("RINGRIFT_PEER_TIMEOUT", 45.0)
 
     # Gossip interval (seconds) - how often to exchange state
     GOSSIP_INTERVAL: float = _env_float("RINGRIFT_PEER_GOSSIP_INTERVAL", 15.0)
