@@ -35,6 +35,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, TypeVar
 
+from app.coordination.event_emission_helpers import safe_emit_event_async
+
 logger = logging.getLogger(__name__)
 
 # Type for async handlers
@@ -131,19 +133,17 @@ async def _emit_failure_event(
     error: str,
     coordinator: str,
 ) -> None:
-    """Emit HANDLER_FAILED event."""
-    try:
-        from app.coordination.event_emitters import emit_handler_failed
-
-        await emit_handler_failed(
-            handler_name=handler_name,
-            event_type=event_type,
-            error=error,
-            coordinator=coordinator,
-        )
-    except Exception as e:
-        # Phase 12: Elevated to warning - event emission failures indicate monitoring problems
-        logger.warning(f"Failed to emit handler_failed event: {e}")
+    """Emit HANDLER_FAILED event (January 2026 - migrated to event_router)."""
+    await safe_emit_event_async(
+        "HANDLER_FAILED",
+        {
+            "handler_name": handler_name,
+            "event_type": event_type,
+            "error": error,
+            "coordinator": coordinator,
+        },
+        context="handler_resilience",
+    )
 
 
 async def _emit_timeout_event(
@@ -152,19 +152,17 @@ async def _emit_timeout_event(
     timeout_seconds: float,
     coordinator: str,
 ) -> None:
-    """Emit HANDLER_TIMEOUT event."""
-    try:
-        from app.coordination.event_emitters import emit_handler_timeout
-
-        await emit_handler_timeout(
-            handler_name=handler_name,
-            event_type=event_type,
-            timeout_seconds=timeout_seconds,
-            coordinator=coordinator,
-        )
-    except Exception as e:
-        # Phase 12: Elevated to warning - event emission failures indicate monitoring problems
-        logger.warning(f"Failed to emit handler_timeout event: {e}")
+    """Emit HANDLER_TIMEOUT event (January 2026 - migrated to event_router)."""
+    await safe_emit_event_async(
+        "HANDLER_TIMEOUT",
+        {
+            "handler_name": handler_name,
+            "event_type": event_type,
+            "timeout_seconds": timeout_seconds,
+            "coordinator": coordinator,
+        },
+        context="handler_resilience",
+    )
 
 
 async def _emit_health_degraded(
@@ -172,19 +170,17 @@ async def _emit_health_degraded(
     handler_name: str,
     consecutive_failures: int,
 ) -> None:
-    """Emit COORDINATOR_HEALTH_DEGRADED when failure threshold reached."""
-    try:
-        from app.coordination.event_emitters import emit_coordinator_health_degraded
-
-        await emit_coordinator_health_degraded(
-            coordinator_name=coordinator,
-            reason=f"Handler {handler_name} has {consecutive_failures} consecutive failures",
-            health_score=0.5,
-            issues=[f"{handler_name}: {consecutive_failures} consecutive failures"],
-        )
-    except Exception as e:
-        # Phase 12: Elevated to warning - event emission failures indicate monitoring problems
-        logger.warning(f"Failed to emit health_degraded event: {e}")
+    """Emit COORDINATOR_HEALTH_DEGRADED when failure threshold reached (January 2026 - migrated to event_router)."""
+    await safe_emit_event_async(
+        "COORDINATOR_HEALTH_DEGRADED",
+        {
+            "coordinator_name": coordinator,
+            "reason": f"Handler {handler_name} has {consecutive_failures} consecutive failures",
+            "health_score": 0.5,
+            "issues": [f"{handler_name}: {consecutive_failures} consecutive failures"],
+        },
+        context="handler_resilience",
+    )
 
 
 def resilient_handler(

@@ -5508,21 +5508,25 @@ def train_model(
                                             window_size=10,
                                         ))
                                         # Dec 29, 2025: Emit PLATEAU_DETECTED with type analysis
-                                        from app.coordination.event_emitters import emit_plateau_detected
-                                        asyncio.ensure_future(emit_plateau_detected(
-                                            metric_name="validation_loss",
-                                            current_value=last_10_avg,
-                                            best_value=prev_10_avg,
-                                            epochs_since_improvement=10,
-                                            plateau_type=plateau_type,  # "overfitting" or "data_limitation"
-                                            # Additional metadata for handlers
-                                            config_key=config_key,
-                                            epoch=epoch + 1,
-                                            recommendation=recommendation,
-                                            exploration_boost=exploration_boost,
-                                            train_val_gap=train_val_gap,
-                                            source="train.py",
-                                        ))
+                                        # January 2026 - migrated to event_router
+                                        from app.coordination.event_emission_helpers import safe_emit_event
+                                        safe_emit_event(
+                                            "PLATEAU_DETECTED",
+                                            {
+                                                "metric_name": "validation_loss",
+                                                "current_value": last_10_avg,
+                                                "best_value": prev_10_avg,
+                                                "epochs_since_improvement": 10,
+                                                "plateau_type": plateau_type,  # "overfitting" or "data_limitation"
+                                                "config_key": config_key,
+                                                "epoch": epoch + 1,
+                                                "recommendation": recommendation,
+                                                "exploration_boost": exploration_boost,
+                                                "train_val_gap": train_val_gap,
+                                                "source": "train.py",
+                                            },
+                                            context="train.py",
+                                        )
                                     except RuntimeError:
                                         pass
 
@@ -5971,8 +5975,9 @@ def train_model(
 
                 # Emit curriculum update event (December 2025)
                 # Triggers curriculum reweighting when policy accuracy crosses threshold
+                # January 2026 - migrated to event_router
                 try:
-                    from app.coordination.event_emitters import emit_curriculum_updated
+                    from app.coordination.event_emission_helpers import safe_emit_event
 
                     config_key = f"{config.board_type.value}_{num_players}p"
                     policy_accuracy_threshold = 0.75
@@ -5984,25 +5989,17 @@ def train_model(
                     if trigger_reweight:
                         # Increase curriculum weight for well-performing configs
                         new_weight = 1.0 + (avg_policy_accuracy - 0.5) * 0.5  # 0.75 acc → 1.125 weight
-                        import asyncio
-                        try:
-                            loop = asyncio.get_running_loop()
-                            loop.create_task(emit_curriculum_updated(
-                                config_key=config_key,
-                                new_weight=new_weight,
-                                trigger="training_complete",
-                                policy_accuracy=avg_policy_accuracy,
-                                value_loss=avg_val_loss,
-                            ))
-                        except RuntimeError:
-                            # No event loop running, use sync wrapper
-                            asyncio.run(emit_curriculum_updated(
-                                config_key=config_key,
-                                new_weight=new_weight,
-                                trigger="training_complete",
-                                policy_accuracy=avg_policy_accuracy,
-                                value_loss=avg_val_loss,
-                            ))
+                        safe_emit_event(
+                            "CURRICULUM_UPDATED",
+                            {
+                                "config_key": config_key,
+                                "new_weight": new_weight,
+                                "trigger": "training_complete",
+                                "policy_accuracy": avg_policy_accuracy,
+                                "value_loss": avg_val_loss,
+                            },
+                            context="train.py",
+                        )
                         logger.info(
                             f"[Curriculum] Triggered reweight for {config_key}: "
                             f"policy_acc={avg_policy_accuracy:.1%} → weight={new_weight:.3f}"

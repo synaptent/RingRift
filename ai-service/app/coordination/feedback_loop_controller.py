@@ -41,6 +41,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from app.coordination.event_emission_helpers import safe_emit_event
 from app.coordination.event_handler_utils import extract_config_key
 from app.coordination.event_utils import make_config_key, parse_config_key
 from app.coordination.feedback.cluster_health_mixin import FeedbackClusterHealthMixin
@@ -2821,21 +2822,17 @@ class FeedbackLoopController(FeedbackClusterHealthMixin, HandlerBase):
             logger.debug(f"Failed to update curriculum weight: {e}")
 
     def _signal_training_ready(self, config_key: str, quality_score: float) -> None:
-        """Signal that training data is ready."""
-        try:
-            from app.coordination.event_emitters import emit_data_quality_assessed
-
-            _safe_create_task(
-                emit_data_quality_assessed(
-                    config=config_key,
-                    quality_score=quality_score,
-                    samples_available=0,  # Unknown here
-                    ready_for_training=True,
-                ),
-                f"emit_data_quality_assessed({config_key})",
-            )
-        except ImportError:
-            pass
+        """Signal that training data is ready (January 2026 - migrated to event_router)."""
+        safe_emit_event(
+            "DATA_QUALITY_ASSESSED",
+            {
+                "config": config_key,
+                "quality_score": quality_score,
+                "samples_available": 0,  # Unknown here
+                "ready_for_training": True,
+            },
+            context="feedback_loop_controller",
+        )
 
     def _emit_quality_degraded(
         self,
@@ -3465,21 +3462,17 @@ class FeedbackLoopController(FeedbackClusterHealthMixin, HandlerBase):
                 f"intensity={old_intensity}→{state.training_intensity}"
             )
 
-            # Emit training intensity change to inform training triggers
-            try:
-                from app.coordination.event_emitters import emit_training_intensity_changed
-
-                _safe_create_task(
-                    emit_training_intensity_changed(
-                        config_key=config_key,
-                        old_intensity=old_intensity,
-                        new_intensity=state.training_intensity,
-                        reason="post_rollback_recovery",
-                    ),
-                    "training_intensity_post_rollback"
-                )
-            except ImportError:
-                pass
+            # Emit training intensity change to inform training triggers (January 2026 - migrated to event_router)
+            safe_emit_event(
+                "TRAINING_INTENSITY_CHANGED",
+                {
+                    "config_key": config_key,
+                    "old_intensity": old_intensity,
+                    "new_intensity": state.training_intensity,
+                    "reason": "post_rollback_recovery",
+                },
+                context="feedback_loop_controller",
+            )
 
     def _on_training_timeout_reached(self, event: Any) -> None:
         """Handle TRAINING_TIMEOUT_REACHED - training job exceeded timeout threshold.
