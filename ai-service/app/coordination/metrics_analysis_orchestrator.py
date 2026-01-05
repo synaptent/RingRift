@@ -396,90 +396,63 @@ class MetricsAnalysisOrchestrator:
             return False
 
     def _emit_plateau_detected(self, metric_name: str, tracker: MetricTracker) -> None:
-        """Emit PLATEAU_DETECTED event (December 2025).
+        """Emit PLATEAU_DETECTED event.
 
-        Uses centralized event_emitters for consistent event emission.
+        January 2026: Migrated to safe_emit_event for consistent event handling.
         """
-        try:
-            import asyncio
+        from app.coordination.event_emission_helpers import safe_emit_event
 
-            from app.coordination.event_emitters import emit_plateau_detected
+        current_value = tracker.get_values()[-1] if tracker.get_values() else 0.0
+        best_value = tracker._best_value or 0.0
+        epochs_since = tracker._epochs_since_improvement
+        plateau_type = "loss" if "loss" in metric_name else "elo" if "elo" in metric_name else "metric"
 
-            current_value = tracker.get_values()[-1] if tracker.get_values() else 0.0
-            best_value = tracker._best_value or 0.0
-            epochs_since = tracker._epochs_since_improvement
-            plateau_type = "loss" if "loss" in metric_name else "elo" if "elo" in metric_name else "metric"
-
-            try:
-                asyncio.get_running_loop()
-                asyncio.create_task(emit_plateau_detected(
-                    metric_name=metric_name,
-                    current_value=current_value,
-                    best_value=best_value,
-                    epochs_since_improvement=epochs_since,
-                    plateau_type=plateau_type,
-                ))
-            except RuntimeError:
-                asyncio.run(emit_plateau_detected(
-                    metric_name=metric_name,
-                    current_value=current_value,
-                    best_value=best_value,
-                    epochs_since_improvement=epochs_since,
-                    plateau_type=plateau_type,
-                ))
-
-            logger.debug(f"[MetricsAnalysisOrchestrator] Emitted PLATEAU_DETECTED for {metric_name}")
-        except ImportError:
-            pass
-        except Exception as e:
-            logger.debug(f"[MetricsAnalysisOrchestrator] Failed to emit plateau event: {e}")
+        safe_emit_event(
+            "PLATEAU_DETECTED",
+            {
+                "metric_name": metric_name,
+                "current_value": current_value,
+                "best_value": best_value,
+                "epochs_since_improvement": epochs_since,
+                "plateau_type": plateau_type,
+            },
+            context="metrics_analysis_orchestrator",
+        )
+        logger.debug(f"[MetricsAnalysisOrchestrator] Emitted PLATEAU_DETECTED for {metric_name}")
 
     def _emit_regression_detected(self, metric_name: str, severity: float) -> None:
-        """Emit REGRESSION_DETECTED event (December 2025).
+        """Emit REGRESSION_DETECTED event.
 
-        Uses centralized event_emitters for consistent event emission.
+        January 2026: Migrated to safe_emit_event for consistent event handling.
         """
-        try:
-            import asyncio
+        from app.coordination.event_emission_helpers import safe_emit_event
 
-            from app.coordination.event_emitters import emit_regression_detected
+        # Determine severity level
+        if severity > 0.20:
+            severity_level = "critical"
+        elif severity > 0.10:
+            severity_level = "severe"
+        elif severity > 0.05:
+            severity_level = "moderate"
+        else:
+            severity_level = "minor"
 
-            # Determine severity level
-            if severity > 0.20:
-                severity_level = "critical"
-            elif severity > 0.10:
-                severity_level = "severe"
-            elif severity > 0.05:
-                severity_level = "moderate"
-            else:
-                severity_level = "minor"
+        # Get tracker for current/previous values
+        tracker = self._trackers.get(metric_name)
+        current_value = tracker.get_values()[-1] if tracker and tracker.get_values() else 0.0
+        previous_value = tracker._best_value if tracker else 0.0
 
-            # Get tracker for current/previous values
-            tracker = self._trackers.get(metric_name)
-            current_value = tracker.get_values()[-1] if tracker and tracker.get_values() else 0.0
-            previous_value = tracker._best_value if tracker else 0.0
-
-            try:
-                asyncio.get_running_loop()
-                asyncio.create_task(emit_regression_detected(
-                    metric_name=metric_name,
-                    current_value=current_value,
-                    previous_value=previous_value,
-                    severity=severity_level,
-                ))
-            except RuntimeError:
-                asyncio.run(emit_regression_detected(
-                    metric_name=metric_name,
-                    current_value=current_value,
-                    previous_value=previous_value,
-                    severity=severity_level,
-                ))
-
-            logger.debug(f"[MetricsAnalysisOrchestrator] Emitted REGRESSION_DETECTED for {metric_name}")
-        except ImportError:
-            pass
-        except Exception as e:
-            logger.debug(f"[MetricsAnalysisOrchestrator] Failed to emit regression event: {e}")
+        safe_emit_event(
+            "REGRESSION_DETECTED",
+            {
+                "metric_name": metric_name,
+                "current_value": current_value,
+                "previous_value": previous_value,
+                "severity": severity_level,
+            },
+            context="metrics_analysis_orchestrator",
+        )
+        logger.debug(f"[MetricsAnalysisOrchestrator] Emitted REGRESSION_DETECTED for {metric_name}")
 
     def _get_or_create_tracker(self, name: str) -> MetricTracker:
         """Get or create a tracker for a metric."""

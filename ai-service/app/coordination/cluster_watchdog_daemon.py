@@ -40,13 +40,8 @@ from app.coordination.event_utils import make_config_key
 
 logger = logging.getLogger(__name__)
 
-# Health event emission (uses safe fallbacks internally)
-from app.coordination.event_emitters import (
-    emit_health_check_failed,
-    emit_health_check_passed,
-    emit_node_activated,
-    emit_node_unhealthy,
-)
+# January 2026: Migrated to safe_emit_event for consistent event handling
+from app.coordination.event_emission_helpers import safe_emit_event, safe_emit_event_async
 
 # Import centralized defaults (December 2025)
 try:
@@ -342,12 +337,15 @@ class ClusterWatchdogDaemon(HandlerBase):
                             f"Persistent failure on {node.node_id}: {node.error}"
                         )
                         # Emit NODE_UNHEALTHY event
-                        await emit_node_unhealthy(
-                            node_id=node.node_id,
-                            reason=f"Persistent failures: {node.error}",
-                            gpu_utilization=node.gpu_utilization,
-                            consecutive_failures=node.consecutive_failures,
-                            source="cluster_watchdog_daemon",
+                        await safe_emit_event_async(
+                            "NODE_UNHEALTHY",
+                            {
+                                "node_id": node.node_id,
+                                "reason": f"Persistent failures: {node.error}",
+                                "gpu_utilization": node.gpu_utilization,
+                                "consecutive_failures": node.consecutive_failures,
+                            },
+                            context="cluster_watchdog_daemon",
                         )
 
             stats.cycle_end = time.time()
@@ -632,10 +630,13 @@ class ClusterWatchdogDaemon(HandlerBase):
             node.error = ""
 
             # Emit health check passed event
-            await emit_health_check_passed(
-                node_id=node.node_id,
-                check_type="ssh_gpu",
-                source="cluster_watchdog_daemon",
+            await safe_emit_event_async(
+                "HEALTH_CHECK_PASSED",
+                {
+                    "node_id": node.node_id,
+                    "check_type": "ssh_gpu",
+                },
+                context="cluster_watchdog_daemon",
             )
 
         except subprocess.TimeoutExpired:
@@ -649,12 +650,15 @@ class ClusterWatchdogDaemon(HandlerBase):
 
     async def _emit_health_failure(self, node: WatchdogNodeStatus, reason: str) -> None:
         """Emit health check failure event."""
-        await emit_health_check_failed(
-            node_id=node.node_id,
-            reason=reason,
-            check_type="ssh_gpu",
-            error=node.error,
-            source="cluster_watchdog_daemon",
+        await safe_emit_event_async(
+            "HEALTH_CHECK_FAILED",
+            {
+                "node_id": node.node_id,
+                "reason": reason,
+                "check_type": "ssh_gpu",
+                "error": node.error,
+            },
+            context="cluster_watchdog_daemon",
         )
 
     async def _activate_node(self, node: WatchdogNodeStatus) -> bool:
@@ -699,28 +703,32 @@ class ClusterWatchdogDaemon(HandlerBase):
 
             # nohup may return non-zero but still succeed
             logger.info(f"[ClusterWatchdog] Spawn result for {node.node_id}: rc={result.returncode}")
-            # December 2025: Emit NODE_ACTIVATED event for cluster coordination
+            # January 2026: Migrated to safe_emit_event
             config_key = make_config_key(board_type, num_players)
-            asyncio.create_task(
-                emit_node_activated(
-                    node_id=node.node_id,
-                    activation_type="selfplay",
-                    config_key=config_key,
-                )
+            safe_emit_event(
+                "NODE_ACTIVATED",
+                {
+                    "node_id": node.node_id,
+                    "activation_type": "selfplay",
+                    "config_key": config_key,
+                },
+                context="cluster_watchdog_daemon",
             )
             return True
 
         except subprocess.TimeoutExpired:
             # Timeout with nohup often means success (command is running)
             logger.info(f"[ClusterWatchdog] Spawn timeout for {node.node_id} (likely succeeded)")
-            # December 2025: Emit NODE_ACTIVATED event for cluster coordination
+            # January 2026: Migrated to safe_emit_event
             config_key = make_config_key(board_type, num_players)
-            asyncio.create_task(
-                emit_node_activated(
-                    node_id=node.node_id,
-                    activation_type="selfplay",
-                    config_key=config_key,
-                )
+            safe_emit_event(
+                "NODE_ACTIVATED",
+                {
+                    "node_id": node.node_id,
+                    "activation_type": "selfplay",
+                    "config_key": config_key,
+                },
+                context="cluster_watchdog_daemon",
             )
             return True
         except Exception as e:

@@ -61,12 +61,8 @@ from app.coordination.handler_base import HandlerBase, HealthCheckResult
 
 logger = logging.getLogger(__name__)
 
-# Health event emission (uses safe fallbacks internally)
-from app.coordination.event_emitters import (
-    emit_p2p_cluster_healthy,
-    emit_p2p_cluster_unhealthy,
-    emit_node_unhealthy,
-)
+# January 2026: Migrated to safe_emit_event_async for consistent event handling
+from app.coordination.event_emission_helpers import safe_emit_event_async
 
 
 def _get_default_p2p_port() -> int:
@@ -426,27 +422,31 @@ class UnifiedNodeHealthDaemon(HandlerBase):
         summary: ClusterHealthSummary,
     ) -> None:
         """Emit cluster health events for event-driven coordination."""
-        try:
-            if healthy_percent >= self.config.min_healthy_percent:
-                await emit_p2p_cluster_healthy(
-                    healthy_nodes=healthy_nodes,
-                    node_count=active_nodes,
-                    source="unified_node_health_daemon",
-                )
-            else:
-                alerts = []
-                if summary.offline > 0:
-                    alerts.append(f"{summary.offline} nodes offline")
-                if summary.unhealthy > 0:
-                    alerts.append(f"{summary.unhealthy} nodes unhealthy")
-                await emit_p2p_cluster_unhealthy(
-                    healthy_nodes=healthy_nodes,
-                    node_count=active_nodes,
-                    alerts=alerts,
-                    source="unified_node_health_daemon",
-                )
-        except Exception as e:
-            logger.debug(f"[Daemon] Failed to emit cluster health events: {e}")
+        # January 2026: Migrated to safe_emit_event_async
+        if healthy_percent >= self.config.min_healthy_percent:
+            await safe_emit_event_async(
+                "P2P_CLUSTER_HEALTHY",
+                {
+                    "healthy_nodes": healthy_nodes,
+                    "node_count": active_nodes,
+                },
+                context="unified_node_health_daemon",
+            )
+        else:
+            alerts = []
+            if summary.offline > 0:
+                alerts.append(f"{summary.offline} nodes offline")
+            if summary.unhealthy > 0:
+                alerts.append(f"{summary.unhealthy} nodes unhealthy")
+            await safe_emit_event_async(
+                "P2P_CLUSTER_UNHEALTHY",
+                {
+                    "healthy_nodes": healthy_nodes,
+                    "node_count": active_nodes,
+                    "alerts": alerts,
+                },
+                context="unified_node_health_daemon",
+            )
 
     async def _send_alert(self, message: str) -> None:
         """Send alert via configured channels."""

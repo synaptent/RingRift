@@ -522,9 +522,9 @@ class CacheCoordinationOrchestrator:
         affected_nodes: list[str],
         affected_models: list[str] | None = None,
     ) -> None:
-        """Emit CACHE_INVALIDATED event (December 2025).
+        """Emit CACHE_INVALIDATED event.
 
-        Uses centralized event_emitters for consistent event emission.
+        January 2026: Migrated to safe_emit_event for consistent event handling.
 
         Args:
             invalidation_type: "model" or "node"
@@ -533,38 +533,23 @@ class CacheCoordinationOrchestrator:
             affected_nodes: List of affected node IDs
             affected_models: List of affected model IDs (for node invalidation)
         """
-        try:
-            import asyncio
+        from app.coordination.event_emission_helpers import safe_emit_event
 
-            from app.coordination.event_emitters import emit_cache_invalidated
-
-            try:
-                asyncio.get_running_loop()
-                asyncio.create_task(emit_cache_invalidated(
-                    invalidation_type=invalidation_type,
-                    target_id=target_id,
-                    count=count,
-                    affected_nodes=affected_nodes,
-                    affected_models=affected_models,
-                ))
-            except RuntimeError:
-                asyncio.run(emit_cache_invalidated(
-                    invalidation_type=invalidation_type,
-                    target_id=target_id,
-                    count=count,
-                    affected_nodes=affected_nodes,
-                    affected_models=affected_models,
-                ))
-
-            logger.debug(
-                f"[CacheCoordinationOrchestrator] Emitted CACHE_INVALIDATED: "
-                f"{invalidation_type}={target_id}, count={count}"
-            )
-
-        except ImportError:
-            pass
-        except Exception as e:
-            logger.debug(f"[CacheCoordinationOrchestrator] Failed to emit event: {e}")
+        safe_emit_event(
+            "CACHE_INVALIDATED",
+            {
+                "invalidation_type": invalidation_type,
+                "target_id": target_id,
+                "count": count,
+                "affected_nodes": affected_nodes,
+                "affected_models": affected_models,
+            },
+            context="cache_coordination_orchestrator",
+        )
+        logger.debug(
+            f"[CacheCoordinationOrchestrator] Emitted CACHE_INVALIDATED: "
+            f"{invalidation_type}={target_id}, count={count}"
+        )
 
     def on_invalidation(self, callback: Callable[[str, str], None]) -> None:
         """Register callback for cache invalidation.

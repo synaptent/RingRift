@@ -471,47 +471,31 @@ class OptimizationCoordinator:
                 logger.error(f"[OptimizationCoordinator] Optimization callback error: {e}")
 
     def _emit_optimization_triggered(self, run: OptimizationRun) -> None:
-        """Emit CMAES_TRIGGERED or NAS_TRIGGERED event (December 2025).
+        """Emit CMAES_TRIGGERED or NAS_TRIGGERED event.
 
-        Uses centralized event_emitters for consistent event emission.
+        January 2026: Migrated to safe_emit_event for consistent event handling.
         """
-        try:
-            import asyncio
+        from app.coordination.event_emission_helpers import safe_emit_event
 
-            from app.coordination.event_emitters import emit_optimization_triggered
+        if run.optimization_type not in (OptimizationType.CMAES, OptimizationType.NAS):
+            return
 
-            if run.optimization_type not in (OptimizationType.CMAES, OptimizationType.NAS):
-                return
+        optimization_type = run.optimization_type.value
 
-            optimization_type = run.optimization_type.value
-
-            try:
-                asyncio.get_running_loop()
-                asyncio.create_task(emit_optimization_triggered(
-                    optimization_type=optimization_type,
-                    run_id=run.run_id,
-                    reason=run.trigger_reason,
-                    parameters_searched=len(run.parameters_searched),
-                    search_space=run.search_space,
-                    generations=run.generations,
-                    population_size=run.population_size,
-                ))
-            except RuntimeError:
-                asyncio.run(emit_optimization_triggered(
-                    optimization_type=optimization_type,
-                    run_id=run.run_id,
-                    reason=run.trigger_reason,
-                    parameters_searched=len(run.parameters_searched),
-                    search_space=run.search_space,
-                    generations=run.generations,
-                    population_size=run.population_size,
-                ))
-
-            logger.debug("[OptimizationCoordinator] Emitted optimization triggered event")
-        except ImportError:
-            pass
-        except Exception as e:
-            logger.debug(f"[OptimizationCoordinator] Failed to emit event: {e}")
+        safe_emit_event(
+            "OPTIMIZATION_TRIGGERED",
+            {
+                "optimization_type": optimization_type,
+                "run_id": run.run_id,
+                "reason": run.trigger_reason,
+                "parameters_searched": len(run.parameters_searched),
+                "search_space": run.search_space,
+                "generations": run.generations,
+                "population_size": run.population_size,
+            },
+            context="optimization_coordinator",
+        )
+        logger.debug("[OptimizationCoordinator] Emitted optimization triggered event")
 
     def is_optimization_running(self) -> bool:
         """Check if an optimization is currently running."""
