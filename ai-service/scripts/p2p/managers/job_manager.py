@@ -55,6 +55,16 @@ except ImportError:
     def record_peer_transport_failure(host: str, transport: str = "http", error: Exception | None = None) -> None:
         pass
 
+# Sprint 17.9 (Jan 2026): SSH fallback for job dispatch when HTTP circuit is open
+try:
+    from app.core.ssh import run_ssh_command_async
+    HAS_SSH_FALLBACK = True
+except ImportError:
+    HAS_SSH_FALLBACK = False
+    async def run_ssh_command_async(host: str, command: str, timeout: float = 30.0) -> Any:
+        """Fallback when SSH module not available."""
+        return None
+
 # Dec 31, 2025: Import batch size calculator for GPU utilization optimization
 try:
     from app.ai.gpu_parallel_games import get_optimal_batch_size
@@ -2239,15 +2249,36 @@ class JobManager(EventSubscriptionMixin):
 
         # Sprint 15.1.1 (Jan 3, 2026): Check per-transport circuit breaker before attempting
         # This enables failover and prevents hammering unreachable workers
-        if not check_peer_transport_circuit(worker_ip, "http"):
+        # Sprint 17.9 (Jan 2026): Try SSH fallback when HTTP circuit is open
+        http_circuit_open = not check_peer_transport_circuit(worker_ip, "http")
+
+        if http_circuit_open:
             logger.debug(
-                f"Skipping dispatch to {worker_id}: HTTP circuit breaker is OPEN"
+                f"HTTP circuit breaker is OPEN for {worker_id}, trying SSH fallback"
             )
+
+            # Try SSH fallback if available and SSH circuit is not open
+            if HAS_SSH_FALLBACK and check_peer_transport_circuit(worker_ip, "ssh"):
+                ssh_result = await self._dispatch_via_ssh_fallback(
+                    worker_id=worker_id,
+                    worker_ip=worker_ip,
+                    payload=payload,
+                )
+                if ssh_result.get("success"):
+                    return ssh_result
+
+                # SSH also failed - log and return circuit_open
+                logger.debug(
+                    f"SSH fallback also failed for {worker_id}: {ssh_result.get('error')}"
+                )
+
             return {
                 "success": False,
                 "error": "circuit_open",
                 "worker_id": worker_id,
                 "attempts": 0,
+                "http_circuit_open": True,
+                "ssh_attempted": HAS_SSH_FALLBACK,
             }
 
         url = f"http://{worker_ip}:{worker_port}/run-selfplay"
@@ -2312,6 +2343,102 @@ class JobManager(EventSubscriptionMixin):
             "worker_id": worker_id,
             "attempts": max_retries,
         }
+
+    async def _dispatch_via_ssh_fallback(
+        self,
+        worker_id: str,
+        worker_ip: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Dispatch selfplay job via SSH when HTTP circuit is open.
+
+        Sprint 17.9 (Jan 2026): SSH fallback for transport failover.
+        When HTTP circuit breaker is open for a node, try SSH as fallback
+        before giving up entirely.
+
+        Args:
+            worker_id: Worker node identifier
+            worker_ip: Worker IP address
+            payload: Selfplay job payload (board_type, num_players, num_games, etc.)
+
+        Returns:
+            Dict with success status, games dispatched, worker_id, and error info
+        """
+        if not HAS_SSH_FALLBACK:
+            return {
+                "success": False,
+                "error": "ssh_module_unavailable",
+                "worker_id": worker_id,
+            }
+
+        try:
+            # Build SSH command to run selfplay on remote node
+            board_type = payload.get("board_type", "hex8")
+            num_players = payload.get("num_players", 2)
+            num_games = payload.get("num_games", 10)
+            model_path = payload.get("model_path", "")
+
+            # Construct remote selfplay command
+            cmd_parts = [
+                "cd ~/ringrift/ai-service &&",
+                "PYTHONPATH=.",
+                "python scripts/selfplay.py",
+                f"--board {board_type}",
+                f"--num-players {num_players}",
+                f"--num-games {num_games}",
+                "--engine gumbel",
+            ]
+
+            if model_path:
+                cmd_parts.append(f"--model-path {model_path}")
+
+            ssh_command = " ".join(cmd_parts)
+
+            # Execute via SSH with timeout
+            result = await run_ssh_command_async(
+                host=worker_ip,
+                command=ssh_command,
+                timeout=300.0,  # 5 minute timeout for selfplay
+            )
+
+            if result is not None:
+                # SSH succeeded - record success and reset circuit
+                record_peer_transport_success(worker_ip, "ssh")
+                logger.info(
+                    f"SSH fallback succeeded for {worker_id}: {num_games} games dispatched"
+                )
+                return {
+                    "success": True,
+                    "games": num_games,
+                    "worker_id": worker_id,
+                    "via_ssh": True,
+                }
+            else:
+                # SSH returned None (failure)
+                record_peer_transport_failure(worker_ip, "ssh")
+                return {
+                    "success": False,
+                    "error": "ssh_command_failed",
+                    "worker_id": worker_id,
+                }
+
+        except asyncio.TimeoutError:
+            record_peer_transport_failure(worker_ip, "ssh")
+            logger.warning(f"SSH fallback to {worker_id} timed out")
+            return {
+                "success": False,
+                "error": "ssh_timeout",
+                "worker_id": worker_id,
+            }
+
+        except Exception as e:
+            record_peer_transport_failure(worker_ip, "ssh")
+            logger.warning(f"SSH fallback to {worker_id} failed: {e}")
+            return {
+                "success": False,
+                "error": f"ssh_exception: {type(e).__name__}",
+                "worker_id": worker_id,
+            }
 
     async def _escalate_failed_dispatch(
         self,

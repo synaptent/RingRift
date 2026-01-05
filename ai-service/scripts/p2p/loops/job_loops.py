@@ -49,18 +49,19 @@ def _get_emit_event():
 logger = logging.getLogger(__name__)
 
 
-# Job-type specific stale thresholds (P1 - Sprint 6, Jan 2026)
-# GPU jobs fail fast, CPU jobs can wait longer
+# Job-type specific stale thresholds (Sprint 17.9, Jan 2026)
+# Increased timeouts to prevent killing legitimate long-running jobs
+# GPU jobs can take 20-40 min for large batches, training even longer
 DEFAULT_STALE_THRESHOLDS: dict[str, float] = {
-    "gpu_gumbel": 600.0,      # 10 min - expensive GPU, fail fast
-    "gpu_policy": 600.0,      # 10 min - GPU inference
-    "gpu_selfplay": 600.0,    # 10 min - general GPU selfplay
-    "training": 1800.0,       # 30 min - training can take longer to init
-    "evaluation": 900.0,      # 15 min - evaluation is time-bounded
-    "cpu_heuristic": 1800.0,  # 30 min - CPU is cheap, can wait
-    "cpu_gumbel": 1200.0,     # 20 min - CPU MCTS
-    "selfplay": 900.0,        # 15 min - generic selfplay
-    "default": 1800.0,        # 30 min fallback (reduced from 1 hour)
+    "gpu_gumbel": 2400.0,     # 40 min (was 10 min) - large batches take time
+    "gpu_policy": 1200.0,     # 20 min (was 10 min) - inference can stall
+    "gpu_selfplay": 1800.0,   # 30 min (was 10 min) - general GPU selfplay
+    "training": 3600.0,       # 60 min (was 30 min) - training with data loading
+    "evaluation": 1200.0,     # 20 min (was 15 min) - gauntlet evaluation
+    "cpu_heuristic": 1800.0,  # 30 min - unchanged
+    "cpu_gumbel": 1200.0,     # 20 min - unchanged
+    "selfplay": 1200.0,       # 20 min (was 15 min) - generic selfplay
+    "default": 2400.0,        # 40 min fallback (was 30 min)
 }
 
 

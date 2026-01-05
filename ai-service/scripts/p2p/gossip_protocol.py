@@ -576,6 +576,62 @@ class GossipProtocolMixin(P2PMixinBase):
         # This allows faster cluster state recovery after P2P restarts
         self._restore_gossip_state_on_startup()
 
+    def _is_private_non_routable_ip(self, ip: str) -> bool:
+        """Check if an IP address is a private/non-routable address.
+
+        Sprint 17.9 (Jan 2026): IP validation for gossip-learned peers.
+        Nodes advertising private IPs (10.x, 172.16-31.x, 192.168.x) cause
+        connectivity failures when other nodes in the mesh can't reach them.
+
+        Tailscale IPs (100.x.x.x) are ALLOWED because they're routable across
+        the Tailscale mesh network.
+
+        Args:
+            ip: IP address string to validate
+
+        Returns:
+            True if the IP is private/non-routable and should be rejected,
+            False if the IP is routable (public or Tailscale)
+        """
+        if not ip:
+            return True
+
+        try:
+            import ipaddress
+            addr = ipaddress.ip_address(ip)
+
+            # IPv6 loopback and link-local are non-routable
+            if addr.is_loopback:
+                return True
+
+            # For IPv4, check private ranges EXCEPT Tailscale (100.x.x.x)
+            if isinstance(addr, ipaddress.IPv4Address):
+                # Tailscale uses 100.64.0.0/10 (CGNAT range) - these ARE routable
+                # Check if it's a Tailscale IP (100.64.0.0 - 100.127.255.255)
+                if ip.startswith("100."):
+                    # Tailscale IPs are 100.64-127.x.x (100.64.0.0/10)
+                    second_octet = int(ip.split(".")[1])
+                    if 64 <= second_octet <= 127:
+                        return False  # Tailscale - routable
+
+                # Standard private ranges (RFC 1918)
+                if addr.is_private:
+                    return True  # 10.x, 172.16-31.x, 192.168.x - not routable
+
+            # IPv6 link-local and site-local are non-routable
+            if isinstance(addr, ipaddress.IPv6Address):
+                if addr.is_link_local or addr.is_site_local:
+                    return True
+
+                # Tailscale IPv6 (fd7a:115c:a1e0::/48) is routable
+                # Don't filter these out
+
+            return False  # Routable
+
+        except (ValueError, AttributeError):
+            # Invalid IP format - treat as non-routable
+            return True
+
     async def _cleanup_gossip_state(self) -> None:
         """Dec 28, 2025: Clean up stale gossip state to prevent memory growth.
 
@@ -2469,6 +2525,9 @@ class GossipProtocolMixin(P2PMixinBase):
         """Phase 28: Process peer endpoints learned via gossip.
 
         Enables discovery of peers we can't reach directly through intermediaries.
+
+        Sprint 17.9 (Jan 2026): Added IP validation to reject private/non-routable IPs
+        that would cause connection failures across the mesh network.
         """
         for endpoint in peer_endpoints:
             node_id = endpoint.get("node_id")
@@ -2476,8 +2535,27 @@ class GossipProtocolMixin(P2PMixinBase):
                 continue
 
             # Store in gossip-learned endpoints for later connection attempts
+            # Prefer tailscale_ip (always routable in mesh) over host
             host = endpoint.get("tailscale_ip") or endpoint.get("host")
             port = endpoint.get("port", DEFAULT_PORT)
+
+            # Sprint 17.9 (Jan 2026): Validate IP is routable before storing
+            if self._is_private_non_routable_ip(host):
+                # Try fallback to tailscale_ip if host is private
+                tailscale_ip = endpoint.get("tailscale_ip")
+                if tailscale_ip and not self._is_private_non_routable_ip(tailscale_ip):
+                    host = tailscale_ip
+                    self._log_debug(
+                        f"Using tailscale_ip {tailscale_ip} for {node_id} "
+                        f"(primary host {endpoint.get('host')} is private)"
+                    )
+                else:
+                    # Both are private/invalid - skip this endpoint
+                    self._log_debug(
+                        f"Skipping gossip-learned peer {node_id}: "
+                        f"private/non-routable IP {host}"
+                    )
+                    continue
 
             if host and port:
                 self._gossip_learned_endpoints[node_id] = {

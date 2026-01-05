@@ -956,6 +956,20 @@ class SelfplayScheduler(EventSubscriptionMixin):
     CRITICAL_THRESHOLD = 1000  # Configs below this get highest priority
     MINIMUM_ENFORCE_INTERVAL = 30.0  # Seconds between enforcement checks
 
+    # Bootstrap priority thresholds (Sprint 17.9 - Jan 2026)
+    # Very aggressive priority boosts for configs with almost no games
+    # These override normal priority calculation for critically underserved configs
+    BOOTSTRAP_THRESHOLDS = {
+        "critical": 50,    # < 50 games = +25 priority boost
+        "low": 200,        # < 200 games = +15 priority boost
+        "medium": 500,     # < 500 games = +10 priority boost
+    }
+    BOOTSTRAP_BOOSTS = {
+        "critical": 25,    # Massive boost to ensure minimum data collection
+        "low": 15,         # Strong boost for low-data configs
+        "medium": 10,      # Moderate boost for medium-data configs
+    }
+
     def _get_enforced_minimum_allocation(self) -> str | None:
         """Check if we should force allocation to an underserved config.
 
@@ -1065,6 +1079,55 @@ class SelfplayScheduler(EventSubscriptionMixin):
         if not hasattr(self, "_config_game_counts"):
             self._config_game_counts = {}
         self._config_game_counts[config_key] = game_count
+
+    def _get_bootstrap_priority_boost(self, config_key: str) -> int:
+        """Get priority boost for configs with critically low game counts.
+
+        Sprint 17.9 (Jan 2026): Implements bootstrap priority for underserved configs.
+        This provides very aggressive priority boosts for configs that need immediate
+        data collection to enable initial training.
+
+        Args:
+            config_key: Config identifier (e.g., "hex8_2p")
+
+        Returns:
+            Priority boost value:
+            - 25: Critical (<50 games) - needs immediate bootstrap
+            - 15: Low (<200 games) - needs strong priority
+            - 10: Medium (<500 games) - needs moderate priority
+            - 0: Normal (>=500 games) - no bootstrap boost needed
+        """
+        try:
+            game_counts = self._get_game_counts_per_config()
+            game_count = game_counts.get(config_key, 0)
+
+            if game_count < self.BOOTSTRAP_THRESHOLDS["critical"]:
+                boost = self.BOOTSTRAP_BOOSTS["critical"]
+                logger.debug(
+                    f"[BootstrapPriority] {config_key}: {game_count} games "
+                    f"(< {self.BOOTSTRAP_THRESHOLDS['critical']}) -> +{boost} critical boost"
+                )
+                return boost
+            elif game_count < self.BOOTSTRAP_THRESHOLDS["low"]:
+                boost = self.BOOTSTRAP_BOOSTS["low"]
+                logger.debug(
+                    f"[BootstrapPriority] {config_key}: {game_count} games "
+                    f"(< {self.BOOTSTRAP_THRESHOLDS['low']}) -> +{boost} low boost"
+                )
+                return boost
+            elif game_count < self.BOOTSTRAP_THRESHOLDS["medium"]:
+                boost = self.BOOTSTRAP_BOOSTS["medium"]
+                logger.debug(
+                    f"[BootstrapPriority] {config_key}: {game_count} games "
+                    f"(< {self.BOOTSTRAP_THRESHOLDS['medium']}) -> +{boost} medium boost"
+                )
+                return boost
+            else:
+                return 0
+
+        except Exception as e:
+            logger.debug(f"[BootstrapPriority] Failed to compute boost for {config_key}: {e}")
+            return 0
 
     def update_p2p_game_counts(self, counts: dict[str, int]) -> None:
         """Update game counts from P2P manifest data.
@@ -2605,6 +2668,10 @@ class SelfplayScheduler(EventSubscriptionMixin):
             starvation_boost = int((starvation_multiplier - 1.0) * 5)
             starvation_boost = max(-3, min(5, starvation_boost))  # Clamp to -3..+5
 
+            # Sprint 17.9 (Jan 2026): Apply bootstrap boost for critically underserved configs
+            # This provides very aggressive priority for configs that need initial data collection
+            bootstrap_boost = self._get_bootstrap_priority_boost(config_key)
+
             # Dec 2025 Phase 4D: Apply plateau penalty
             # Configs in plateau state (no Elo improvement) get 50% priority reduction
             # to redirect resources to configs making progress
@@ -2615,6 +2682,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
                 + board_priority_boost
                 + rate_boost
                 + starvation_boost
+                + bootstrap_boost
             )
 
             if self._is_config_plateaued(config_key):
