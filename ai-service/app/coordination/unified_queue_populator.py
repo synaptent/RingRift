@@ -962,7 +962,7 @@ class UnifiedQueuePopulator:
         )
 
     def _is_training_ready(
-        self, board_type: str, num_players: int, min_samples: int = 5000
+        self, board_type: str, num_players: int, min_samples: int | None = None
     ) -> tuple[bool, int]:
         """Check if training data is available for a config.
 
@@ -970,15 +970,24 @@ class UnifiedQueuePopulator:
         training data exists. This was causing training jobs to complete
         instantly with loss=0.0000 because nodes had nothing to train on.
 
+        Jan 5, 2026: Fixed to use config.min_games_for_training (100) instead
+        of hardcoded 5000. The 50x gap was preventing training from triggering
+        for new configs.
+
         Args:
             board_type: Board type (e.g., "hex8")
             num_players: Number of players (2, 3, or 4)
-            min_samples: Minimum samples required for training (default 5000)
+            min_samples: Minimum samples required for training. If None, uses
+                         config.min_games_for_training (default 100).
 
         Returns:
             Tuple of (is_ready, sample_count). is_ready is True if sufficient
             training data exists.
         """
+        # Use config value instead of hardcoded 5000
+        if min_samples is None:
+            min_samples = self.config.min_games_for_training
+
         config_key = make_config_key(board_type, num_players)
 
         try:

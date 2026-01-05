@@ -5643,25 +5643,41 @@ class P2POrchestrator(
         by friendly name (e.g., 'hetzner-cpu1') but peers dict uses IP:port keys
         from SWIM (e.g., '135.181.39.239:7947').
 
+        Jan 5, 2026: Fixed to try node_id matching first and check peer info 'host'
+        field. The SWIM protocol (port 7947) is disabled - P2P runs on port 8770.
+        Peers now register as node_id (friendly name) or IP:8770 format.
+
         Args:
             voter_id: The voter's friendly node_id (e.g., 'hetzner-cpu1')
 
         Returns:
-            Tuple of (peer_key, peer_info) where peer_key is the IP:port key in
+            Tuple of (peer_key, peer_info) where peer_key is the key in
             self.peers, or (None, None) if not found.
         """
-        # Get voter's known IPs from config
+        # Strategy 1: Direct node_id match (most reliable when peers use friendly names)
+        if voter_id in self.peers:
+            return voter_id, self.peers[voter_id]
+
+        # Strategy 2: Get voter's known IPs from config
         voter_ip_map = self._build_voter_ip_mapping()
         voter_ips = voter_ip_map.get(voter_id, set())
 
         if not voter_ips:
             return None, None
 
-        # Search peers dict for any key that starts with one of the voter's IPs
+        # Strategy 3: Check peer info 'host' field for IP match
         for peer_key, peer_info in self.peers.items():
-            # peer_key format: "IP:port" (e.g., "135.181.39.239:7947")
+            if isinstance(peer_info, dict):
+                peer_host = peer_info.get("host", "")
+                if peer_host in voter_ips:
+                    return peer_key, peer_info
+            elif hasattr(peer_info, "host") and peer_info.host in voter_ips:
+                return peer_key, peer_info
+
+        # Strategy 4: Extract IP from peer_key (IP:PORT format, typically IP:8770)
+        for peer_key, peer_info in self.peers.items():
             if ":" in peer_key:
-                peer_ip = peer_key.split(":")[0]
+                peer_ip = peer_key.rsplit(":", 1)[0]
                 if peer_ip in voter_ips:
                     return peer_key, peer_info
 
@@ -5673,6 +5689,9 @@ class P2POrchestrator(
         Jan 2, 2026: Added because SWIM discovers peers as IP:port format
         (e.g., "135.181.39.239:7947") but voter_node_ids are proper names
         (e.g., "hetzner-cpu1"). This method checks both.
+
+        Jan 5, 2026: Fixed to check peer info 'host' field. SWIM (port 7947) is
+        disabled - P2P runs on port 8770. Peers register as node_id or IP:8770.
 
         Returns:
             Number of alive voters (including self if we are a voter)
@@ -5713,20 +5732,52 @@ class P2POrchestrator(
                 counted_voters.add(voter_id)
                 continue
 
-            # Check 3: IP:port match - look for any peer whose IP matches this voter
+            # Check 3: Peer info 'host' field match
             voter_ips = voter_ip_map.get(voter_id, set())
             for peer_id, peer in self.peers.items():
                 if voter_id in counted_voters:
                     break
-                # Extract IP from peer_id (format: "IP:port")
-                if ":" in peer_id:
-                    peer_ip = peer_id.split(":")[0]
-                    if peer_ip in voter_ips and peer.is_alive():
+                # Check peer info 'host' field
+                if isinstance(peer, dict):
+                    peer_host = peer.get("host", "")
+                    if peer_host in voter_ips and self._is_peer_alive(peer):
+                        alive_count += 1
+                        counted_voters.add(voter_id)
+                        break
+                elif hasattr(peer, "host") and peer.host in voter_ips:
+                    if peer.is_alive():
                         alive_count += 1
                         counted_voters.add(voter_id)
                         break
 
+            if voter_id in counted_voters:
+                continue
+
+            # Check 4: IP:port extraction from peer_id (format: "IP:8770")
+            for peer_id, peer in self.peers.items():
+                if voter_id in counted_voters:
+                    break
+                if ":" in peer_id:
+                    peer_ip = peer_id.rsplit(":", 1)[0]
+                    if peer_ip in voter_ips:
+                        is_alive = (
+                            peer.is_alive()
+                            if hasattr(peer, "is_alive")
+                            else self._is_peer_alive(peer)
+                        )
+                        if is_alive:
+                            alive_count += 1
+                            counted_voters.add(voter_id)
+                            break
+
         return alive_count
+
+    def _is_peer_alive(self, peer_info: dict) -> bool:
+        """Check if a peer (as dict) is alive based on its status field."""
+        if isinstance(peer_info, dict):
+            status = peer_info.get("status", "unknown")
+            return status in ("alive", "healthy", "connected")
+        return False
 
     def _check_voter_health(self) -> dict[str, any]:
         """Check health status of all configured voters and emit alerts.

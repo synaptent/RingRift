@@ -770,6 +770,55 @@ class GossipProtocolMixin(P2PMixinBase):
             if async_lock is not None and async_acquired:
                 async_lock.release()
 
+    def clear_stale_leader_from_gossip(self, stale_leader_id: str, current_epoch: int) -> int:
+        """Jan 5, 2026: Clear stale leader references from gossip state after demotion.
+
+        When a leader demotes itself (e.g., due to quorum loss), other nodes may
+        still have the old leader_id in their gossip peer states. This method
+        clears those stale references to help convergence to a new leader.
+
+        Args:
+            stale_leader_id: The leader ID that was demoted
+            current_epoch: The current election epoch (stale if peer epoch < this)
+
+        Returns:
+            Number of gossip states cleared
+        """
+        cleared_count = 0
+
+        # Acquire sync lock if available
+        sync_lock = getattr(self, "_gossip_state_sync_lock", None)
+        sync_acquired = False
+        if sync_lock is not None:
+            sync_acquired = sync_lock.acquire(blocking=True, timeout=5.0)
+            if not sync_acquired:
+                self._log_warning("Failed to acquire gossip lock for leader clearing")
+                return 0
+
+        try:
+            for peer_id, state in list(self._gossip_peer_states.items()):
+                if isinstance(state, dict):
+                    peer_leader = state.get("leader_id")
+                    peer_epoch = state.get("election_epoch", 0)
+
+                    # Clear if pointing to stale leader with old epoch
+                    if peer_leader == stale_leader_id and peer_epoch < current_epoch:
+                        state["leader_id"] = None
+                        state["election_epoch"] = current_epoch
+                        state["timestamp"] = time.time()
+                        cleared_count += 1
+
+            if cleared_count > 0:
+                self._log_info(
+                    f"Cleared {cleared_count} stale leader references for "
+                    f"{stale_leader_id} (epoch {current_epoch})"
+                )
+        finally:
+            if sync_lock is not None and sync_acquired:
+                sync_lock.release()
+
+        return cleared_count
+
     # =========================================================================
     # Per-Peer Message Locks (Jan 3, 2026 Sprint 13.3)
     # Ensures messages from the same peer are handled serially

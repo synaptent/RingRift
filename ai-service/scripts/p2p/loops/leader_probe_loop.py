@@ -250,6 +250,17 @@ class LeaderProbeLoop(BaseLoop):
                     })
                     return
 
+            # Jan 5, 2026: Clear stale leader references from gossip before election
+            # This helps prevent split-brain where old leader info persists
+            gossip_mixin = getattr(self._orchestrator, "_gossip_mixin", None)
+            if gossip_mixin and hasattr(gossip_mixin, "clear_stale_leader_from_gossip"):
+                current_epoch = getattr(self._orchestrator, "_election_epoch", 1) + 1
+                cleared = gossip_mixin.clear_stale_leader_from_gossip(
+                    unreachable_leader, current_epoch
+                )
+                if cleared > 0:
+                    logger.info(f"[LeaderProbe] Cleared {cleared} stale leader gossip refs")
+
             start_election = getattr(self._orchestrator, "_start_election", None)
             if start_election:
                 await start_election(reason="leader_unreachable_probe")

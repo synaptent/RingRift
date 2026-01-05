@@ -519,16 +519,20 @@ class P2PMixinBase:
                 continue
 
             # Use SWIM-based check if available
+            # Jan 5, 2026: Fixed to fall through to HTTP check when SWIM returns False
+            # Previously, SWIM returning False would `continue` without HTTP fallback,
+            # causing voters to show as unreachable when port 7947 is blocked by firewall.
             if use_hybrid:
                 try:
                     if hybrid_check(nid):
                         alive += 1
                         counted_nodes.add(nid)
-                    continue
+                        continue  # Only continue if SWIM says peer is alive
+                    # SWIM says peer is NOT alive - fall through to HTTP check
+                    self._log_debug(f"SWIM reports {nid} not alive, checking via HTTP heartbeat")
                 except Exception as e:
                     # Dec 30, 2025: Log SWIM check failures for observability
                     self._log_debug(f"SWIM check failed for {nid}, falling back to HTTP: {type(e).__name__}")
-                    pass
 
             # Check 1: Direct node_id match in peers
             peer = peers.get(nid)
