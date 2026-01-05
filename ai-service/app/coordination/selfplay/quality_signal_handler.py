@@ -320,21 +320,18 @@ class SelfplayQualitySignalMixin:
                     f"exploration {old_boost:.2f} → {priority.exploration_boost:.2f}"
                 )
 
-                # Emit curriculum rebalanced event via centralized emitter (Dec 2025)
-                try:
-                    from app.coordination.event_emitters import emit_curriculum_updated
-                    from app.core.async_context import fire_and_forget
+                # Emit curriculum rebalanced event (Jan 2026: migrated to safe_emit_event)
+                from app.coordination.event_emission_helpers import safe_emit_event
 
-                    async def emit():
-                        await emit_curriculum_updated(
-                            config_key=config_key,
-                            new_weight=priority.curriculum_weight,
-                            trigger=f"opponent_mastered:{opponent_level}",
-                        )
-
-                    fire_and_forget(emit())
-                except Exception as emit_err:
-                    logger.debug(f"[SelfplayScheduler] Failed to emit curriculum rebalanced: {emit_err}")
+                safe_emit_event(
+                    "CURRICULUM_UPDATED",
+                    {
+                        "config_key": config_key,
+                        "new_weight": priority.curriculum_weight,
+                        "trigger": f"opponent_mastered:{opponent_level}",
+                    },
+                    context="quality_signal_handler.opponent_mastered",
+                )
             else:
                 logger.debug(
                     f"[SelfplayScheduler] Received opponent mastered for unknown config: {config_key}"
@@ -504,54 +501,32 @@ class SelfplayQualitySignalMixin:
         """Emit QUALITY_PENALTY_APPLIED event for each throttled config.
 
         Closes the feedback loop: LOW_QUALITY_DATA_WARNING → penalty applied → curriculum adjustment.
+
+        January 2026: Migrated to safe_emit_event for consistent event handling.
         """
-        try:
-            from app.core.async_context import fire_and_forget
-            from app.coordination.event_emitters import emit_quality_penalty_applied
+        from app.coordination.event_emission_helpers import safe_emit_event
 
-            # Collect penalized configs first to avoid creating unawaited coroutines on error
-            penalized_configs: list[tuple[str, float, float]] = []
-            for config_key, priority in self._config_priorities.items():
-                if priority.quality_penalty < 0:  # Only emit for penalized configs
-                    penalized_configs.append(
-                        (config_key, -priority.quality_penalty, priority.exploration_boost)
-                    )
+        emitted_count = 0
+        for config_key, priority in self._config_priorities.items():
+            if priority.quality_penalty < 0:  # Only emit for penalized configs
+                if safe_emit_event(
+                    "QUALITY_PENALTY_APPLIED",
+                    {
+                        "config_key": config_key,
+                        "penalty": -priority.quality_penalty,
+                        "reason": "low_quality_selfplay_data",
+                        "current_weight": priority.exploration_boost,
+                        "source": "selfplay_scheduler",
+                        "quality_score": quality_score,
+                        "throttle_factor": throttle_factor,
+                    },
+                    context="quality_signal_handler.emit_quality_penalties",
+                ):
+                    emitted_count += 1
 
-            # Emit all penalties in a single batched coroutine
-            async def emit_all_penalties():
-                """Emit quality penalty events for all penalized configs."""
-                for key, penalty, weight in penalized_configs:
-                    try:
-                        await emit_quality_penalty_applied(
-                            config_key=key,
-                            penalty=penalty,
-                            reason="low_quality_selfplay_data",
-                            current_weight=weight,
-                            source="selfplay_scheduler",
-                            quality_score=quality_score,
-                            throttle_factor=throttle_factor,
-                        )
-                    except Exception as e:
-                        logger.debug(f"[SelfplayScheduler] Failed to emit penalty for {key}: {e}")
-
-            if penalized_configs:
-                coro = emit_all_penalties()
-                try:
-                    fire_and_forget(coro)
-                except Exception as e:
-                    # Close the coroutine to avoid "never awaited" warning
-                    coro.close()
-                    logger.debug(f"[SelfplayScheduler] Failed to schedule penalty emission: {e}")
-                    return
-
-            logger.debug(
-                f"[SelfplayScheduler] Emitted QUALITY_PENALTY_APPLIED for {throttled_count} configs"
-            )
-
-        except ImportError:
-            logger.debug("[SelfplayScheduler] Event emitters not available for penalty emission")
-        except Exception as e:
-            logger.debug(f"[SelfplayScheduler] Failed to emit quality penalty: {e}")
+        logger.debug(
+            f"[SelfplayScheduler] Emitted QUALITY_PENALTY_APPLIED for {emitted_count} configs"
+        )
 
     # Required method from parent class (type hint only for mixin)
     def invalidate_quality_cache(self, config: str | None = None) -> int:

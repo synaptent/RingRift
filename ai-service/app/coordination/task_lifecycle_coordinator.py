@@ -515,35 +515,21 @@ class TaskLifecycleCoordinator:
         This enables other coordinators (e.g., SelfplayCoordinator) to react
         to orphaned tasks for cleanup and resource reallocation.
         """
-        try:
-            import asyncio
+        # January 2026: Migrated to safe_emit_event for consistent event handling.
+        from app.coordination.event_emission_helpers import safe_emit_event
 
-            from app.coordination.event_emitters import emit_task_orphaned
-
-            try:
-                asyncio.get_running_loop()
-                asyncio.create_task(emit_task_orphaned(
-                    task_id=task.task_id,
-                    task_type=task.task_type,
-                    node_id=task.node_id,
-                    last_heartbeat=task.last_heartbeat,
-                    reason=f"no heartbeat for {task.time_since_heartbeat:.0f}s",
-                ))
-            except RuntimeError:
-                # No event loop running
-                asyncio.run(emit_task_orphaned(
-                    task_id=task.task_id,
-                    task_type=task.task_type,
-                    node_id=task.node_id,
-                    last_heartbeat=task.last_heartbeat,
-                    reason=f"no heartbeat for {task.time_since_heartbeat:.0f}s",
-                ))
-
+        if safe_emit_event(
+            "TASK_ORPHANED",
+            {
+                "task_id": task.task_id,
+                "task_type": task.task_type,
+                "node_id": task.node_id,
+                "last_heartbeat": task.last_heartbeat.isoformat() if task.last_heartbeat else None,
+                "reason": f"no heartbeat for {task.time_since_heartbeat:.0f}s",
+            },
+            context="task_lifecycle_coordinator",
+        ):
             logger.debug(f"[TaskLifecycleCoordinator] Emitted TASK_ORPHANED for {task.task_id}")
-        except ImportError:
-            pass
-        except Exception as e:
-            logger.debug(f"[TaskLifecycleCoordinator] Failed to emit orphan event: {e}")
 
     def register_task(
         self,

@@ -368,26 +368,25 @@ class NodeRecoveryDaemon(HandlerBase):
             f"{self._recovery_stats.recovery_failures} failures"
         )
 
-        try:
-            # Emit shutdown event
-            from app.coordination.event_emitters import emit_coordinator_shutdown
+        # Emit shutdown event (Jan 2026: migrated to safe_emit_event_async)
+        from app.coordination.event_emission_helpers import safe_emit_event_async
 
-            await emit_coordinator_shutdown(
-                coordinator_name=self.name,
-                reason="graceful",
-                remaining_tasks=0,
-                state_snapshot={
+        await safe_emit_event_async(
+            "COORDINATOR_SHUTDOWN",
+            {
+                "coordinator_name": self.name,
+                "reason": "graceful",
+                "remaining_tasks": 0,
+                "state_snapshot": {
                     "total_checks": self._recovery_stats.total_checks,
                     "nodes_recovered": self._recovery_stats.nodes_recovered,
                     "recovery_failures": self._recovery_stats.recovery_failures,
                     "tracked_nodes": len(self._node_states),
                 },
-            )
-            logger.info(f"[{self.name}] Graceful shutdown complete")
-        except ImportError:
-            logger.debug(f"[{self.name}] Event emitters not available for shutdown")
-        except Exception as e:
-            logger.warning(f"[{self.name}] Error during shutdown: {e}")
+            },
+            context="node_recovery_daemon",
+        )
+        logger.info(f"[{self.name}] Graceful shutdown complete")
 
         # Call parent stop
         await super().stop()

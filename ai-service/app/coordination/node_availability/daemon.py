@@ -412,22 +412,21 @@ class NodeAvailabilityDaemon(HandlerBase):
             old_status: Previous status
             new_status: New status
         """
-        try:
-            from app.coordination.event_emitters import emit_generic_event
-            from app.distributed.data_events import DataEventType
+        # January 2026: Migrated to safe_emit_event_async for consistent event handling.
+        from app.coordination.event_emission_helpers import safe_emit_event_async
+        from datetime import datetime
 
-            await emit_generic_event(
-                DataEventType.CLUSTER_STATUS_CHANGED,
-                {
-                    "node": node_name,
-                    "old_status": old_status,
-                    "new_status": new_status,
-                    "source": "node_availability_daemon",
-                    "timestamp": datetime.now().isoformat(),
-                },
-            )
-        except Exception as e:
-            logger.debug(f"Failed to emit state change event: {e}")
+        await safe_emit_event_async(
+            "CLUSTER_STATUS_CHANGED",
+            {
+                "node": node_name,
+                "old_status": old_status,
+                "new_status": new_status,
+                "source": "node_availability_daemon",
+                "timestamp": datetime.now().isoformat(),
+            },
+            context="node_availability_daemon",
+        )
 
     def health_check(self) -> HealthCheckResult:
         """Check daemon health.

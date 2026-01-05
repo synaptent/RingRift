@@ -722,22 +722,21 @@ def emit_training_ready(
 
     Returns:
         True if event was emitted
+
+    January 2026: Migrated to safe_emit_event for consistent event handling.
     """
-    try:
-        from app.coordination.event_emitters import emit_data_quality_assessed
+    from app.coordination.event_emission_helpers import safe_emit_event
 
-        # Create task for async emission
-        coro = emit_data_quality_assessed(
-            config=config_key,
-            quality_score=quality_score,
-            samples_available=samples_available,
-            ready_for_training=True,
-        )
-        _safe_create_task(coro, f"emit_training_ready({config_key})")
-        return True
-
-    except ImportError:
-        return False
+    return safe_emit_event(
+        "DATA_QUALITY_ASSESSED",
+        {
+            "config": config_key,
+            "quality_score": quality_score,
+            "samples_available": samples_available,
+            "ready_for_training": True,
+        },
+        context="signal_emitter.emit_training_ready",
+    )
 
 
 # ============================================================================

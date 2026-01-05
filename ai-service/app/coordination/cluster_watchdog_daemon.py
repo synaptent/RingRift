@@ -252,26 +252,26 @@ class ClusterWatchdogDaemon(HandlerBase):
         """Graceful shutdown handler.
 
         December 2025: Added for clean daemon shutdown with event emission.
+        January 2026: Migrated to safe_emit_event_async for consistent event handling.
         """
-        try:
-            # Emit shutdown event
-            from app.coordination.event_emitters import emit_coordinator_shutdown
+        # Emit shutdown event
+        from app.coordination.event_emission_helpers import safe_emit_event_async
 
-            await emit_coordinator_shutdown(
-                coordinator_name=self.name,
-                reason="graceful",
-                remaining_tasks=0,
-                state_snapshot={
+        await safe_emit_event_async(
+            "COORDINATOR_SHUTDOWN",
+            {
+                "coordinator_name": self.name,
+                "reason": "graceful",
+                "remaining_tasks": 0,
+                "state_snapshot": {
                     "uptime_seconds": self.uptime_seconds,
                     "cycles_completed": getattr(self, "_cycles_completed", 0),
                     "cluster_healthy": self._cluster_healthy,
                 },
-            )
-            logger.info(f"[{self.name}] Graceful shutdown complete")
-        except ImportError:
-            logger.debug(f"[{self.name}] Event emitters not available for shutdown")
-        except Exception as e:
-            logger.warning(f"[{self.name}] Error during shutdown: {e}")
+            },
+            context="cluster_watchdog_daemon",
+        )
+        logger.info(f"[{self.name}] Graceful shutdown complete")
 
     async def _run_cycle(self) -> None:
         """Run a single watchdog cycle."""
