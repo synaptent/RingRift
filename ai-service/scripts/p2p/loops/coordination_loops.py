@@ -247,6 +247,9 @@ class HealthAggregationLoop(BaseLoop):
 
     Collects CPU, memory, GPU, and disk metrics from all nodes and
     maintains a unified health view of the cluster.
+
+    January 5, 2026 (Session 17.26): Added on_recover_unhealthy callback to
+    automatically recover nodes from unhealthy state after transient failures.
     """
 
     def __init__(
@@ -254,6 +257,7 @@ class HealthAggregationLoop(BaseLoop):
         get_node_ids: Callable[[], list[str]],
         fetch_node_health: Callable[[str], Coroutine[Any, Any, dict[str, Any]]],
         on_health_updated: Callable[[dict[str, dict[str, Any]]], None] | None = None,
+        on_recover_unhealthy: Callable[[], list[str]] | None = None,
         config: HealthAggregationConfig | None = None,
     ):
         """Initialize health aggregation loop.
@@ -262,6 +266,11 @@ class HealthAggregationLoop(BaseLoop):
             get_node_ids: Callback returning list of node IDs to check
             fetch_node_health: Async callback to fetch health from a node
             on_health_updated: Optional callback when health data is updated
+            on_recover_unhealthy: Optional callback to attempt recovery of unhealthy nodes.
+                Should return list of recovered node IDs. Called after each health
+                aggregation cycle. January 5, 2026 (Session 17.26): Added to fix
+                permanently excluded nodes issue - nodes marked unhealthy were never
+                automatically recovered.
             config: Aggregation configuration
         """
         self.config = config or HealthAggregationConfig()
@@ -272,8 +281,14 @@ class HealthAggregationLoop(BaseLoop):
         self._get_node_ids = get_node_ids
         self._fetch_node_health = fetch_node_health
         self._on_health_updated = on_health_updated
+        self._on_recover_unhealthy = on_recover_unhealthy
         self._node_health: dict[str, dict[str, Any]] = {}
         self._last_health_time: dict[str, float] = {}
+        self._recovery_stats = {
+            "total_recovered": 0,
+            "last_recovery_time": 0.0,
+            "last_recovered_nodes": [],
+        }
 
     async def _run_once(self) -> None:
         """Collect health metrics from all nodes."""
@@ -327,6 +342,22 @@ class HealthAggregationLoop(BaseLoop):
             except Exception as e:
                 logger.warning(f"[HealthAggregation] Callback failed: {e}")
 
+        # January 5, 2026 (Session 17.26): Attempt to recover unhealthy nodes
+        # This fixes the critical issue where nodes were permanently excluded
+        # from work distribution after transient failures.
+        if self._on_recover_unhealthy:
+            try:
+                recovered = self._on_recover_unhealthy()
+                if recovered:
+                    self._recovery_stats["total_recovered"] += len(recovered)
+                    self._recovery_stats["last_recovery_time"] = time.time()
+                    self._recovery_stats["last_recovered_nodes"] = recovered
+                    logger.info(
+                        f"[HealthAggregation] Auto-recovered {len(recovered)} nodes: {recovered}"
+                    )
+            except Exception as e:
+                logger.warning(f"[HealthAggregation] Recovery callback failed: {e}")
+
     def get_cluster_health(self) -> dict[str, dict[str, Any]]:
         """Get current cluster health data."""
         return dict(self._node_health)
@@ -349,6 +380,8 @@ class HealthAggregationLoop(BaseLoop):
             "nodes_tracked": len(self._node_health),
             "healthy_nodes": healthy_count,
             "unhealthy_nodes": len(self._node_health) - healthy_count,
+            "total_recovered": self._recovery_stats["total_recovered"],
+            "last_recovery_time": self._recovery_stats["last_recovery_time"],
             **self.stats.to_dict(),
         }
 
@@ -385,6 +418,8 @@ class HealthAggregationLoop(BaseLoop):
                 "healthy_nodes": healthy_nodes,
                 "unhealthy_nodes": unhealthy_nodes,
                 "run_count": self.stats.run_count,
+                "total_recovered": self._recovery_stats["total_recovered"],
+                "last_recovery_time": self._recovery_stats["last_recovery_time"],
             },
         }
 

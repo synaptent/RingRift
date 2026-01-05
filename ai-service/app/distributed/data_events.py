@@ -162,6 +162,7 @@ class DataEventType(Enum):
     CURRICULUM_ADVANCED = "curriculum_advanced"  # Move to harder curriculum tier
     CURRICULUM_ADVANCEMENT_NEEDED = "curriculum_advancement_needed"  # Dec 29, 2025: Signal to advance curriculum (from stagnant Elo)
     CURRICULUM_PROPAGATE = "curriculum_propagate"  # Jan 2026: Propagate curriculum advancement to similar configs
+    CURRICULUM_ROLLBACK = "curriculum_rollback"  # Session 17.25: Signal to restore prior curriculum weights after regression
     CURRICULUM_ROLLBACK_COMPLETED = "curriculum_rollback_completed"  # Sprint 16.1: Confirm curriculum weight rollback after regression
     WEIGHT_UPDATED = "weight_updated"
     ELO_SIGNIFICANT_CHANGE = "elo_significant_change"  # Triggers curriculum rebalance

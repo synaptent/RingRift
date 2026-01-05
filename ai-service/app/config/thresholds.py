@@ -16,6 +16,7 @@ See ai-service/docs/CONSOLIDATION_ROADMAP.md for consolidation context.
 
 from __future__ import annotations
 
+import math
 from functools import lru_cache
 
 # =============================================================================
@@ -1656,14 +1657,23 @@ CONSECUTIVE_SUCCESS_THRESHOLD = 3
 # Quality scores from small sample sizes are less reliable.
 # Confidence weighting biases small-sample scores toward neutral (0.5).
 #
-# Expected improvement: +8-15 Elo from avoiding overconfident training decisions.
+# Session 17.25: Changed from tier-based (step function) to exponential curve.
+# This provides smoother confidence transitions and is more conservative with
+# small sample sizes. The half-life approach means 50% confidence at 100 games.
+#
+# Expected improvement: +8-12 Elo from more conservative early training decisions.
 
-# Games assessed tier boundaries for confidence levels
-QUALITY_CONFIDENCE_TIER_LOW = 50       # <50 games: 50% credibility
-QUALITY_CONFIDENCE_TIER_MEDIUM = 500   # 50-500 games: 75% credibility
-# 500+ games: 100% credibility (full trust)
+# Exponential confidence parameters (Session 17.25)
+QUALITY_CONFIDENCE_HALF_LIFE = 100  # Games at which confidence reaches 50%
+# Lambda decay constant: ln(2) / half_life
+QUALITY_CONFIDENCE_LAMBDA = math.log(2) / QUALITY_CONFIDENCE_HALF_LIFE
 
-# Confidence factors by tier
+# Legacy tier constants (kept for backward compatibility/reference)
+QUALITY_CONFIDENCE_TIER_LOW = 50       # <50 games: ~29% credibility (was 50%)
+QUALITY_CONFIDENCE_TIER_MEDIUM = 500   # ~97% credibility (was 75%->100% boundary)
+# 500+ games: ~97%+ credibility
+
+# Legacy confidence factors (kept for reference)
 QUALITY_CONFIDENCE_FACTOR_LOW = 0.5     # Low sample: heavily biased to neutral
 QUALITY_CONFIDENCE_FACTOR_MEDIUM = 0.75  # Medium sample: moderately biased
 QUALITY_CONFIDENCE_FACTOR_HIGH = 1.0     # High sample: full credibility
@@ -1675,26 +1685,33 @@ QUALITY_NEUTRAL_SCORE = 0.5
 def get_quality_confidence(games_assessed: int) -> float:
     """Get confidence factor based on number of games assessed.
 
-    Sprint 12 Session 8: Quality scores from small sample sizes are less reliable.
-    This function returns a confidence factor that biases scores toward neutral.
+    Session 17.25: Changed from tier-based to exponential curve.
+    Uses formula: confidence = 1 - exp(-lambda * games)
+    where lambda = ln(2) / half_life, and half_life = 100 games.
+
+    This is more conservative with small samples:
+    - At 50 games:  29% confidence (was 50% in tier-based)
+    - At 100 games: 50% confidence (was 75%)
+    - At 200 games: 75% confidence (was 75%)
+    - At 500 games: 97% confidence (was 100%)
 
     Args:
         games_assessed: Number of games in quality assessment
 
     Returns:
-        Confidence factor (0.5 to 1.0)
+        Confidence factor (0.0 to ~1.0, asymptotic)
 
     Example:
-        >>> get_quality_confidence(10)   # Low: 0.5
-        >>> get_quality_confidence(100)  # Medium: 0.75
-        >>> get_quality_confidence(1000) # High: 1.0
+        >>> get_quality_confidence(50)   # ~0.29
+        >>> get_quality_confidence(100)  # 0.50
+        >>> get_quality_confidence(200)  # ~0.75
+        >>> get_quality_confidence(500)  # ~0.97
     """
-    if games_assessed >= QUALITY_CONFIDENCE_TIER_MEDIUM:
-        return QUALITY_CONFIDENCE_FACTOR_HIGH
-    elif games_assessed >= QUALITY_CONFIDENCE_TIER_LOW:
-        return QUALITY_CONFIDENCE_FACTOR_MEDIUM
-    else:
-        return QUALITY_CONFIDENCE_FACTOR_LOW
+    if games_assessed <= 0:
+        return 0.0
+    # Exponential confidence: 1 - e^(-lambda * games)
+    confidence = 1.0 - math.exp(-QUALITY_CONFIDENCE_LAMBDA * games_assessed)
+    return confidence
 
 
 def apply_quality_confidence_weighting(

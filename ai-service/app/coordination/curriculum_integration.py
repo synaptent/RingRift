@@ -81,6 +81,8 @@ class MomentumToCurriculumBridge:
         self._last_allocation_share: dict[str, float] = {}
         # December 2025: Fix AttributeError in health_check() - initialize missing attrs
         self._last_sync_time: float = 0.0
+        # Session 17.25: Track weights BEFORE boost for rollback capability
+        self._pre_boost_weights: dict[str, float] = {}
 
     def start(self) -> None:
         """Start the momentum-to-curriculum bridge.
@@ -206,7 +208,13 @@ class MomentumToCurriculumBridge:
             if hasattr(DataEventType, 'QUORUM_RECOVERY_STARTED'):
                 router.subscribe(DataEventType.QUORUM_RECOVERY_STARTED, self._on_quorum_recovery)
 
-            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED, ELO_SIGNIFICANT_CHANGE, SELFPLAY_ALLOCATION_UPDATED, MODEL_PROMOTED, TIER_PROMOTION, CROSSBOARD_PROMOTION, CURRICULUM_ADVANCEMENT_NEEDED, ELO_VELOCITY_CHANGED, CURRICULUM_ADVANCED, CURRICULUM_PROPAGATE, REGRESSION_DETECTED, TRAINING_LOSS_ANOMALY, QUORUM_RECOVERY_STARTED")
+            # Session 17.25: Subscribe to CURRICULUM_ROLLBACK to restore prior weights
+            # after regression is detected. This undoes curriculum boosts that led to
+            # regressions, allowing the model to recover.
+            if hasattr(DataEventType, 'CURRICULUM_ROLLBACK'):
+                router.subscribe(DataEventType.CURRICULUM_ROLLBACK, self._on_curriculum_rollback)
+
+            logger.info("[MomentumToCurriculumBridge] Subscribed to EVALUATION_COMPLETED, SELFPLAY_RATE_CHANGED, ELO_SIGNIFICANT_CHANGE, SELFPLAY_ALLOCATION_UPDATED, MODEL_PROMOTED, TIER_PROMOTION, CROSSBOARD_PROMOTION, CURRICULUM_ADVANCEMENT_NEEDED, ELO_VELOCITY_CHANGED, CURRICULUM_ADVANCED, CURRICULUM_PROPAGATE, REGRESSION_DETECTED, TRAINING_LOSS_ANOMALY, QUORUM_RECOVERY_STARTED, CURRICULUM_ROLLBACK")
 
             # December 29, 2025: Only set _event_subscribed = True after successful subscription
             # Previously this was in finally block which caused race condition:
@@ -273,6 +281,9 @@ class MomentumToCurriculumBridge:
                 # January 2026 Sprint 12: Unsubscribe from QUORUM_RECOVERY_STARTED
                 if hasattr(DataEventType, 'QUORUM_RECOVERY_STARTED'):
                     router.unsubscribe(DataEventType.QUORUM_RECOVERY_STARTED, self._on_quorum_recovery)
+                # Session 17.25: Unsubscribe from CURRICULUM_ROLLBACK
+                if hasattr(DataEventType, 'CURRICULUM_ROLLBACK'):
+                    router.unsubscribe(DataEventType.CURRICULUM_ROLLBACK, self._on_curriculum_rollback)
             self._event_subscribed = False
         except (ImportError, AttributeError, TypeError, RuntimeError):
             # ImportError: modules not available
@@ -604,6 +615,12 @@ class MomentumToCurriculumBridge:
                     # Boost by 30% to prioritize this config
                     new_weight = min(old_weight * 1.3, 2.0)  # Cap at 2.0x
 
+                    if new_weight > old_weight:
+                        # Session 17.25: Save pre-boost weight for rollback capability
+                        # Only save if not already tracked (keep original pre-boost weight)
+                        if config_key not in self._pre_boost_weights:
+                            self._pre_boost_weights[config_key] = old_weight
+
                     curriculum.update_weight(
                         config_key=config_key,
                         new_weight=new_weight,
@@ -709,6 +726,11 @@ class MomentumToCurriculumBridge:
                     new_weight = min(old_weight * boost_multiplier, 2.5)
 
                     if new_weight > old_weight:
+                        # Session 17.25: Save pre-boost weight for rollback capability
+                        # Only save if not already tracked (keep original pre-boost weight)
+                        if config_key not in self._pre_boost_weights:
+                            self._pre_boost_weights[config_key] = old_weight
+
                         curriculum.update_weight(
                             config_key=config_key,
                             new_weight=new_weight,
@@ -962,6 +984,95 @@ class MomentumToCurriculumBridge:
 
         except (AttributeError, KeyError, TypeError, ValueError) as e:
             logger.warning(f"[MomentumToCurriculumBridge] Error handling regression detected: {e}")
+
+    def _on_curriculum_rollback(self, event) -> None:
+        """Handle CURRICULUM_ROLLBACK event - restore weights to pre-boost values.
+
+        Session 17.25: When regression is detected after a curriculum boost,
+        this handler restores the weights to what they were BEFORE the boost,
+        undoing the boost that may have contributed to the regression.
+
+        This is different from _on_regression_detected which applies an
+        emergency weight reduction. CURRICULUM_ROLLBACK specifically undoes
+        prior weight increases.
+        """
+        try:
+            payload = event.payload if hasattr(event, 'payload') else event if isinstance(event, dict) else {}
+
+            config_key = payload.get("config_key", "")
+            trigger = payload.get("trigger", "unknown")
+            elo_drop = payload.get("elo_drop", 0)
+
+            if not config_key:
+                logger.debug("[MomentumToCurriculumBridge] CURRICULUM_ROLLBACK missing config_key")
+                return
+
+            # Check if we have a pre-boost weight to restore
+            if config_key not in self._pre_boost_weights:
+                logger.debug(
+                    f"[MomentumToCurriculumBridge] No pre-boost weight for {config_key}, "
+                    "skipping rollback"
+                )
+                return
+
+            pre_boost_weight = self._pre_boost_weights[config_key]
+
+            logger.warning(
+                f"[MomentumToCurriculumBridge] CURRICULUM_ROLLBACK for {config_key}: "
+                f"restoring to pre-boost weight {pre_boost_weight:.2f} "
+                f"(trigger={trigger}, elo_drop={elo_drop})"
+            )
+
+            # Restore pre-boost weight
+            try:
+                from app.training.curriculum_feedback import get_curriculum_feedback
+
+                curriculum = get_curriculum_feedback()
+                if curriculum:
+                    current_weights = curriculum.get_curriculum_weights()
+                    current_weight = current_weights.get(config_key, 1.0)
+
+                    # Only restore if pre-boost weight is lower (undoing a boost)
+                    if pre_boost_weight < current_weight:
+                        curriculum.update_weight(
+                            config_key=config_key,
+                            new_weight=pre_boost_weight,
+                            source=f"curriculum_rollback_elo_drop_{elo_drop}",
+                        )
+                        self._last_weights[config_key] = pre_boost_weight
+
+                        logger.info(
+                            f"[MomentumToCurriculumBridge] Restored curriculum weight for {config_key}: "
+                            f"{current_weight:.2f} -> {pre_boost_weight:.2f} (rollback)"
+                        )
+
+                        # Clear the pre-boost weight since we've rolled back
+                        del self._pre_boost_weights[config_key]
+
+                        # Emit curriculum rebalanced event
+                        self._emit_rebalance_event([config_key], {config_key: pre_boost_weight})
+
+                        # Emit rollback completed for observability
+                        self._emit_rollback_completed(
+                            config_key=config_key,
+                            old_weight=current_weight,
+                            new_weight=pre_boost_weight,
+                            elo_delta=-elo_drop if elo_drop else 0,
+                            trigger_reason="curriculum_rollback",
+                        )
+                    else:
+                        logger.debug(
+                            f"[MomentumToCurriculumBridge] Pre-boost weight {pre_boost_weight:.2f} >= "
+                            f"current {current_weight:.2f} for {config_key}, no rollback needed"
+                        )
+
+            except (ImportError, AttributeError) as e:
+                logger.debug(f"[MomentumToCurriculumBridge] Could not apply rollback: {e}")
+
+            self._last_sync_time = time.time()
+
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            logger.warning(f"[MomentumToCurriculumBridge] Error handling curriculum rollback: {e}")
 
     def _on_loss_anomaly(self, event) -> None:
         """Handle TRAINING_LOSS_ANOMALY event - reduce curriculum weight for affected config.

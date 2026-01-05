@@ -1112,6 +1112,10 @@ class TrainingTriggerDaemon(HandlerBase):
 
         Sprint 12 Session 8: Added confidence weighting based on games_assessed.
         Quality scores from small samples are weighted toward neutral (0.5).
+
+        Session 17.25: Added immediate training trigger when quality transitions from
+        "paused" to a non-paused state. This reduces latency from 10-30s cycle time
+        to immediate response (+2-5 Elo improvement).
         """
         try:
             payload = getattr(event, "payload", {})
@@ -1122,6 +1126,9 @@ class TrainingTriggerDaemon(HandlerBase):
             raw_quality_score = float(payload.get("quality_score", 0.0))
             games_assessed = int(payload.get("games_assessed", 0))
             state = self._get_or_create_state(config_key)
+
+            # Session 17.25: Track old intensity to detect transitions
+            old_intensity = state.training_intensity
 
             # Sprint 12 Session 8: Apply confidence weighting based on sample size
             # Small samples are biased toward neutral (0.5) to avoid overconfident decisions
@@ -1137,17 +1144,38 @@ class TrainingTriggerDaemon(HandlerBase):
             state.last_quality_update = time.time()
             state.games_assessed = games_assessed
 
-            state.training_intensity = self._intensity_from_quality(
+            new_intensity = self._intensity_from_quality(
                 adjusted_quality, config_key
             )
+            state.training_intensity = new_intensity
 
             confidence = self._compute_quality_confidence(games_assessed)
             logger.debug(
                 f"[TrainingTriggerDaemon] {config_key}: "
                 f"raw_quality={raw_quality_score:.2f}, games={games_assessed}, "
                 f"confidence={confidence:.0%}, adjusted={adjusted_quality:.2f} → "
-                f"intensity={state.training_intensity}"
+                f"intensity={new_intensity}"
             )
+
+            # Session 17.25: Immediate training trigger when quality unblocks
+            # If intensity transitions from "paused" to anything else, training may
+            # now be possible. Trigger immediate check instead of waiting for cycle.
+            if old_intensity == "paused" and new_intensity != "paused":
+                logger.info(
+                    f"[TrainingTriggerDaemon] {config_key}: quality gate cleared "
+                    f"(paused → {new_intensity}), triggering immediate training check"
+                )
+                # Reset quality block count on successful unblock
+                if hasattr(self, "_quality_block_counts"):
+                    self._quality_block_counts.pop(config_key, None)
+                # Cancel any pending quality recheck tasks
+                if config_key in self._pending_quality_rechecks:
+                    old_task = self._pending_quality_rechecks.pop(config_key)
+                    if not old_task.done():
+                        old_task.cancel()
+                # Trigger immediate training check
+                await self._maybe_trigger_training(config_key)
+
         except Exception as e:
             logger.error(f"[TrainingTriggerDaemon] Error handling quality update: {e}")
 

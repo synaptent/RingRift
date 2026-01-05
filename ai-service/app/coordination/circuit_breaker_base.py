@@ -1019,6 +1019,11 @@ class OperationCircuitBreaker(CircuitBreakerBase):
             old_state = circuit.state
             circuit.failure_count += 1
 
+            # Session 17.25: Reset consecutive successful probes on any failure
+            # This ensures only truly consecutive successes trigger tier decay
+            if isinstance(circuit, OperationCircuitData):
+                circuit.consecutive_successful_probes = 0
+
             if not preemptive:
                 circuit.last_failure_time = time.time()
 

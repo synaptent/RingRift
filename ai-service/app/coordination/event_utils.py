@@ -11,6 +11,8 @@ app.coordination.config_key module. Local definitions kept for backward compatib
 but should be considered deprecated.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Any
 
