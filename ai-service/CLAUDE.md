@@ -2,21 +2,21 @@
 
 AI assistant context for the Python AI training service. Complements `AGENTS.md` with operational knowledge.
 
-**Last Updated**: January 5, 2026 (Sprint 17.9 - Session 17.17)
+**Last Updated**: January 5, 2026 (Sprint 17.9 - Session 17.18)
 
 ## Infrastructure Health Status (Verified Jan 5, 2026)
 
 | Component            | Status    | Evidence                                                            |
 | -------------------- | --------- | ------------------------------------------------------------------- |
-| **P2P Network**      | GREEN     | A- (94/100), hetzner-cpu3 leader, 11 alive peers, quorum OK         |
+| **P2P Network**      | GREEN     | A- (94/100), vultr-a100-20gb leader, 8 alive peers, quorum OK       |
 | **Training Loop**    | GREEN     | A (95/100), 117K+ games, 5/5 feedback loops, 6/6 pipeline stages    |
 | **Code Quality**     | GREEN     | 341 modules, 984 tests, 99.5% coverage, all handlers on HandlerBase |
-| **Leader Election**  | WORKING   | hetzner-cpu3 leader, 10 voters alive, quorum OK                     |
+| **Leader Election**  | WORKING   | vultr-a100-20gb leader, voters alive, quorum OK                     |
 | **Work Queue**       | HEALTHY   | Queue active, selfplay scheduler repopulating                       |
 | **Game Data**        | EXCELLENT | 117K+ games across all configs (hex8: 21K, square8: 25K, etc.)      |
 | **CB TTL Decay**     | ACTIVE    | 4h TTL in node_circuit_breaker.py:249-271                           |
 | **Multi-Arch Train** | ACTIVE    | v2 models trained, all 12 canonical configs generating data         |
-| **Loop Health**      | COMPLETE  | 6 P2P loops with health_check() for DaemonManager integration       |
+| **Loop Health**      | COMPLETE  | 8 P2P loops with health_check() for DaemonManager integration       |
 
 ## Sprint 17: Cluster Resilience Integration (Jan 4, 2026)
 
@@ -47,6 +47,41 @@ Session 16-17 resilience components are now fully integrated and bootstrapped:
 | Early Quorum Escalation   | Skip to P2P restart after 2 failed healing attempts with quorum lost | `p2p_recovery_daemon.py`      |
 | Training Heartbeat Events | TRAINING_HEARTBEAT event for watchdog monitoring                     | `distributed_lock.py`         |
 | TRAINING_PROCESS_KILLED   | Event emitted when stuck training process killed                     | `training_watchdog_daemon.py` |
+
+**Sprint 17.9 / Session 17.18 (Jan 5, 2026) - Async SQLite Safety & P2P Loop Health:**
+
+| Task                                  | Status      | Evidence                                                     |
+| ------------------------------------- | ----------- | ------------------------------------------------------------ |
+| Async SQLite in quality_analysis.py   | ✅ COMPLETE | assess_selfplay_quality_async() wraps blocking SQLite        |
+| Async SQLite in feedback_loop_ctrl    | ✅ COMPLETE | \_assess_selfplay_quality_async() for event handlers         |
+| health_check() for PeerRecoveryLoop   | ✅ COMPLETE | peer_recovery_loop.py with recovery stats and SSH validation |
+| health_check() for QueuePopulatorLoop | ✅ COMPLETE | queue_populator_loop.py with queue depth and config coverage |
+| Cluster Update                        | ✅ COMPLETE | 24 nodes updated to 96a23e88, 21 P2P restarted               |
+| P2P Network                           | ✅ HEALTHY  | vultr-a100-20gb leader, 8 alive peers, quorum OK             |
+
+**Async SQLite Wrappers (Event Handler Safety):**
+
+- `quality_analysis.py`: Added `assess_selfplay_quality_async()` - wraps blocking SQLite in `asyncio.to_thread()`
+- `feedback_loop_controller.py`: Converted `_on_selfplay_complete` and `_on_cpu_pipeline_job_completed` to async
+- Added `_assess_selfplay_quality_async()` method for use in async event handlers
+- Prevents event loop blocking when handlers process SQLite-based quality assessments
+
+**P2P Loops with health_check() (Total: 8 loops now):**
+
+| Loop                     | File                         | Key Metrics                                   |
+| ------------------------ | ---------------------------- | --------------------------------------------- |
+| LeaderProbeLoop          | leader_probe_loop.py:279-354 | Consecutive failures, election trigger state  |
+| EloSyncLoop              | elo_sync_loop.py:223-297     | Initialization, retry state, match counts     |
+| RemoteP2PRecoveryLoop    | remote_p2p_recovery_loop.py  | Recovery success rate, SSH validation         |
+| JobReaperLoop            | job_loops.py:247-302         | Jobs reaped (stale/stuck/abandoned)           |
+| WorkerPullLoop           | job_loops.py:1055-1125       | Work claim/completion rates, leader status    |
+| WorkQueueMaintenanceLoop | job_loops.py:1299-1373       | Stall detection (critical for 48h autonomous) |
+| PeerRecoveryLoop         | peer_recovery_loop.py        | Recovery stats, success rate, SSH validation  |
+| QueuePopulatorLoop       | queue_populator_loop.py      | Queue depth, config coverage, leader status   |
+
+**Commit**: `96a23e88e` - feat(coordination): add async SQLite wrappers and P2P loop health checks
+
+---
 
 **Sprint 17.9 / Session 17.14 (Jan 5, 2026) - RemoteP2PRecoveryLoop Health & Exception Narrowing:**
 
