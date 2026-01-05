@@ -512,6 +512,12 @@ class GossipProtocolMixin(P2PMixinBase):
     GOSSIP_STABILITY_THRESHOLD = int(
         os.environ.get("RINGRIFT_GOSSIP_STABILITY_THRESHOLD", "5")
     )
+    # Jan 5, 2026 (Phase 10.2): Jitter factor for gossip interval to prevent thundering herd
+    # 0-50% jitter means interval is multiplied by random(1.0, 1.5)
+    # This staggers gossip times across nodes that start simultaneously
+    GOSSIP_INTERVAL_JITTER = float(
+        os.environ.get("RINGRIFT_GOSSIP_INTERVAL_JITTER", "0.5")
+    )
 
     def _init_gossip_protocol(self) -> None:
         """Initialize gossip protocol state and metrics.
@@ -1647,8 +1653,10 @@ class GossipProtocolMixin(P2PMixinBase):
         # - Partition: 5s for fast recovery
         # - Recovery: 10s during stabilization
         # - Stable: 30s for normal operation
+        # Phase 10.2 (Jan 5, 2026): Added 0-50% jitter to prevent thundering herd
+        # when multiple nodes gossip simultaneously after startup or recovery.
         last_gossip = getattr(self, "_last_gossip_time", 0)
-        current_interval = self.get_adaptive_gossip_interval()
+        current_interval = self._get_gossip_interval_with_jitter()
         if now - last_gossip < current_interval:
             return
         self._last_gossip_time = now
@@ -3426,6 +3434,23 @@ class GossipProtocolMixin(P2PMixinBase):
         """
         return getattr(self, "_gossip_adaptive_interval", self.GOSSIP_INTERVAL_SECONDS)
 
+    def _get_gossip_interval_with_jitter(self) -> float:
+        """Get the adaptive gossip interval with random jitter applied.
+
+        Jan 5, 2026 (Phase 10.2): Added jitter to prevent thundering herd when
+        multiple nodes gossip at the same time. The jitter is 0-50% of the
+        base interval, meaning the effective interval is 1.0x to 1.5x the base.
+
+        Returns:
+            Gossip interval in seconds with jitter applied.
+        """
+        import random
+
+        base_interval = self.get_adaptive_gossip_interval()
+        # Apply 0-JITTER factor (multiplicative, adds delay only)
+        jitter_multiplier = random.uniform(1.0, 1.0 + self.GOSSIP_INTERVAL_JITTER)
+        return base_interval * jitter_multiplier
+
     def get_adaptive_gossip_status(self) -> dict[str, Any]:
         """Get detailed adaptive gossip interval status for monitoring.
 
@@ -3443,6 +3468,7 @@ class GossipProtocolMixin(P2PMixinBase):
             "interval_partition": self.GOSSIP_INTERVAL_PARTITION,
             "interval_recovery": self.GOSSIP_INTERVAL_RECOVERY,
             "interval_stable": self.GOSSIP_INTERVAL_STABLE,
+            "jitter_factor": self.GOSSIP_INTERVAL_JITTER,  # Phase 10.2: For monitoring
         }
 
     # =========================================================================

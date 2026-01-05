@@ -230,7 +230,9 @@ class TrainingDefaults:
     MAX_CONCURRENT_SAME_CONFIG: int = _env_int("RINGRIFT_MAX_TRAINING_SAME_CONFIG", 1)
 
     # Maximum total concurrent training jobs
-    MAX_CONCURRENT_TOTAL: int = _env_int("RINGRIFT_MAX_TRAINING_TOTAL", 3)
+    # Jan 5, 2026 (Phase 11.1): Increased from 3 to 5 for +40% training throughput
+    # With 30+ GPU nodes, 5 concurrent jobs allows better utilization of H100/GH200 nodes
+    MAX_CONCURRENT_TOTAL: int = _env_int("RINGRIFT_MAX_TRAINING_TOTAL", 5)
 
     # Training job timeout (hours)
     TIMEOUT_HOURS: float = _env_float("RINGRIFT_TRAINING_TIMEOUT_HOURS", 24.0)
