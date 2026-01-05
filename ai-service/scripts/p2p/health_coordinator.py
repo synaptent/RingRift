@@ -252,6 +252,9 @@ class ClusterHealthState:
     # Open circuit node IDs (convenience accessor)
     open_circuits: list[str] = field(default_factory=list)
 
+    # Unhealthy peer IDs (suspected, unreachable, or circuit-broken)
+    unhealthy_peers: list[str] = field(default_factory=list)
+
     # Timestamp
     timestamp: float = field(default_factory=time.time)
 
@@ -285,6 +288,7 @@ class ClusterHealthState:
                 "leader_id": self.leader_id,
                 "alive_peers": self.alive_peers,
                 "total_peers": self.total_peers,
+                "unhealthy_peers": self.unhealthy_peers,
             },
             "timestamp": self.timestamp,
         }
@@ -510,6 +514,12 @@ class HealthCoordinator:
         # Collect circuit breaker health
         state.circuit_health = self._collect_circuit_health()
         state.open_circuits = state.circuit_health.open_circuits.copy()
+
+        # Build unhealthy peers list (circuit-broken + peers in backoff)
+        unhealthy = set(state.open_circuits)
+        if state.gossip_health.peers_in_backoff:
+            unhealthy.update(state.gossip_health.peers_in_backoff)
+        state.unhealthy_peers = list(unhealthy)
 
         # Calculate overall score and level
         state.overall_score = self._calculate_overall_score(state)
