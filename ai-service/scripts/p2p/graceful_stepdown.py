@@ -501,6 +501,26 @@ class GracefulStepDown:
 
     def _trigger_election(self) -> None:
         """Trigger new leader election."""
+        # Jan 5, 2026: Check quorum before starting election
+        # If quorum is LOST, election cannot succeed - skip to avoid election storms
+        check_quorum = getattr(self._orchestrator, "_check_quorum_health", None)
+        if check_quorum:
+            try:
+                from scripts.p2p.leader_election import QuorumHealthLevel
+                quorum_health = check_quorum()
+                if quorum_health == QuorumHealthLevel.LOST:
+                    logger.warning(
+                        "[GracefulStepDown] Quorum LOST - cannot hold election. "
+                        "Wait for voters to recover."
+                    )
+                    self._safe_emit_event("ELECTION_BLOCKED_QUORUM_LOST", {
+                        "reason": "graceful_stepdown",
+                        "quorum_health": quorum_health.value,
+                    })
+                    return
+            except ImportError:
+                pass  # QuorumHealthLevel not available, proceed without check
+
         if hasattr(self._orchestrator, "_start_election"):
             try:
                 self._orchestrator._start_election()

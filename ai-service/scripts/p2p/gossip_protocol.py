@@ -2364,10 +2364,36 @@ class GossipProtocolMixin(P2PMixinBase):
             # Jan 2026: Narrowed exception types for better debugging
             self._log_debug(f"[ConfigSync] Sync from {source_node} failed: {e}")
 
+    def _is_swim_peer_id(self, peer_id: str) -> bool:
+        """Check if peer_id is a SWIM protocol entry (IP:7947 format).
+
+        SWIM entries use port 7947 and should not be in HTTP gossip peer list.
+        These leak from the SWIM layer and cause gossip pollution.
+
+        Jan 5, 2026 Sprint 17.31: Added to filter SWIM entries from HTTP gossip.
+
+        Args:
+            peer_id: Node identifier to check.
+
+        Returns:
+            True if this is a SWIM-format peer ID (should be rejected).
+        """
+        if not peer_id or ":" not in peer_id:
+            return False
+        parts = peer_id.split(":")
+        if len(parts) == 2 and parts[1] == "7947":
+            logger.debug(f"[Gossip] Rejecting SWIM peer: {peer_id}")
+            return True
+        return False
+
     def _process_sender_state(self, sender_state: dict) -> None:
         """Process the sender's state from a gossip response."""
         sender_id = sender_state.get("node_id")
         if not sender_id or sender_id == self.node_id:
+            return
+
+        # Jan 5, 2026: Filter SWIM protocol entries (IP:7947) from HTTP gossip
+        if self._is_swim_peer_id(sender_id):
             return
 
         # Jan 3, 2026: Use sync lock to prevent race with cleanup
@@ -2430,6 +2456,9 @@ class GossipProtocolMixin(P2PMixinBase):
             for node_id, state in known_states.items():
                 if node_id == self.node_id:
                     continue
+                # Jan 5, 2026: Filter SWIM protocol entries (IP:7947) from HTTP gossip
+                if self._is_swim_peer_id(node_id):
+                    continue
                 existing = self._gossip_peer_states.get(node_id, {})
                 if state.get("version", 0) > existing.get("version", 0):
                     self._gossip_peer_states[node_id] = state
@@ -2443,6 +2472,9 @@ class GossipProtocolMixin(P2PMixinBase):
         if hasattr(self, "_process_gossip_leader_claim"):
             for node_id, state in known_states.items():
                 if node_id == self.node_id:
+                    continue
+                # Jan 5, 2026: Filter SWIM protocol entries
+                if self._is_swim_peer_id(node_id):
                     continue
                 cluster_leader = state.get("cluster_leader")
                 if cluster_leader:

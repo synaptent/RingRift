@@ -233,6 +233,23 @@ class LeaderProbeLoop(BaseLoop):
 
         # Trigger election
         try:
+            # Jan 5, 2026: Check quorum before starting election
+            # If quorum is LOST, election cannot succeed - skip to avoid election storms
+            check_quorum = getattr(self._orchestrator, "_check_quorum_health", None)
+            if check_quorum:
+                from scripts.p2p.leader_election import QuorumHealthLevel
+                quorum_health = check_quorum()
+                if quorum_health == QuorumHealthLevel.LOST:
+                    logger.warning(
+                        "[LeaderProbe] Quorum LOST - cannot hold election. "
+                        "Wait for voters to recover."
+                    )
+                    self._emit_event("ELECTION_BLOCKED_QUORUM_LOST", {
+                        "unreachable_leader": unreachable_leader,
+                        "quorum_health": quorum_health.value,
+                    })
+                    return
+
             start_election = getattr(self._orchestrator, "_start_election", None)
             if start_election:
                 await start_election(reason="leader_unreachable_probe")

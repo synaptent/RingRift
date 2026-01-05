@@ -206,6 +206,10 @@ class NodeConfig:
     http_scheme: str = "http"
     base_path: str = "ai-service"
     p2p_port: int = P2P_DEFAULT_PORT  # Explicit P2P port for file download endpoints
+    # January 5, 2026: NAT-aware transport selection (Session 17.29)
+    # NAT-blocked nodes can't accept direct connections - skip tailscale/ssh transports
+    nat_blocked: bool = False
+    force_relay_mode: bool = False  # If True, always use relay/HTTP transports
 
     @property
     def http_base_url(self) -> str:
@@ -217,6 +221,66 @@ class NodeConfig:
     def ssh_target(self) -> str:
         """Get the SSH target string."""
         return self.tailscale_ip or self.hostname
+
+    @classmethod
+    def from_hostname(cls, hostname: str) -> "NodeConfig":
+        """Create NodeConfig from hostname, loading NAT status from config.
+
+        January 5, 2026: Helper to create NodeConfig with NAT-blocked status
+        automatically populated from distributed_hosts.yaml.
+        """
+        nat_blocked = False
+        force_relay = False
+        tailscale_ip = None
+        ssh_port = 22
+        base_path = "ai-service"
+
+        try:
+            import yaml
+            config_path = Path(__file__).parent.parent.parent / "config" / "distributed_hosts.yaml"
+            if config_path.exists():
+                with open(config_path) as f:
+                    config = yaml.safe_load(f)
+                nodes = config.get("p2p_nodes", {})
+                if hostname in nodes:
+                    node_info = nodes[hostname]
+                    nat_blocked = node_info.get("nat_blocked", False)
+                    force_relay = node_info.get("force_relay_mode", False)
+                    tailscale_ip = node_info.get("tailscale_ip")
+                    ssh_port = node_info.get("ssh_port", 22)
+                    base_path = node_info.get("ringrift_path", "ai-service")
+        except (ImportError, OSError, ValueError) as e:
+            logger.debug(f"Failed to load node config for {hostname}: {e}")
+
+        return cls(
+            hostname=hostname,
+            tailscale_ip=tailscale_ip,
+            ssh_port=ssh_port,
+            base_path=base_path,
+            nat_blocked=nat_blocked,
+            force_relay_mode=force_relay,
+        )
+
+
+def is_node_nat_blocked(hostname: str) -> bool:
+    """Check if a node is NAT-blocked from distributed_hosts.yaml.
+
+    January 5, 2026: Standalone helper for quick NAT status check.
+    """
+    try:
+        import yaml
+        config_path = Path(__file__).parent.parent.parent / "config" / "distributed_hosts.yaml"
+        if not config_path.exists():
+            return False
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+        nodes = config.get("p2p_nodes", {})
+        if hostname in nodes:
+            node_info = nodes[hostname]
+            return node_info.get("nat_blocked", False) or node_info.get("force_relay_mode", False)
+        return False
+    except (ImportError, OSError, ValueError):
+        return False
 
 
 # TransportResult is now imported from transport_base.py (December 28, 2025)
@@ -382,6 +446,18 @@ class ClusterTransport:
             ("base64", self._transfer_via_base64),
             ("http", self._transfer_via_http),
         ]
+
+        # January 5, 2026: NAT-aware transport selection (Session 17.29)
+        # NAT-blocked nodes can't accept direct connections - skip direct transports
+        # and go straight to base64/HTTP (relay-based)
+        if node.nat_blocked or node.force_relay_mode:
+            logger.debug(
+                f"Node {node.hostname} is NAT-blocked, skipping direct transports"
+            )
+            transports = [
+                ("base64", self._transfer_via_base64),
+                ("http", self._transfer_via_http),
+            ]
 
         skipped_transports = []
         for transport_name, transport_fn in transports:
