@@ -605,8 +605,17 @@ class RemoteP2PRecoveryLoop(BaseLoop):
             with open(config_path) as f:
                 config = yaml.safe_load(f)
             return config.get("hosts", {})
-        except Exception as e:
-            logger.warning(f"[RemoteP2PRecovery] Failed to load config: {e}")
+        except FileNotFoundError:
+            logger.warning("[RemoteP2PRecovery] Config file not found")
+            return {}
+        except PermissionError as e:
+            logger.warning(f"[RemoteP2PRecovery] Permission denied reading config: {e}")
+            return {}
+        except (OSError, IOError) as e:
+            logger.warning(f"[RemoteP2PRecovery] Failed to read config file: {e}")
+            return {}
+        except ImportError:
+            logger.warning("[RemoteP2PRecovery] yaml module not available")
             return {}
 
     async def _recover_node(
@@ -748,7 +757,9 @@ PYTHONPATH=. nohup python3 scripts/p2p_orchestrator.py --node-id {node_id} --por
         finally:
             try:
                 client.close()
-            except Exception:
+            except (OSError, AttributeError):
+                # OSError: Socket already closed or network error
+                # AttributeError: Client never fully initialized
                 pass
 
     def get_recovery_stats(self) -> dict[str, Any]:
@@ -785,3 +796,76 @@ PYTHONPATH=. nohup python3 scripts/p2p_orchestrator.py --node-id {node_id} --por
         self._restart_count.clear()
         self._first_stable_time.clear()
         logger.info("[RemoteP2PRecovery] Statistics and backoff state reset")
+
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for daemon manager integration.
+
+        January 2026: Added for HandlerBase compatibility and unified
+        health monitoring across all P2P loops.
+
+        Returns:
+            Health check result with status, message, and details.
+        """
+        # Calculate health based on success/failure rates
+        total_attempts = (
+            self._stats.nodes_recovered
+            + self._stats.nodes_failed
+            + self._stats.nodes_skipped_unreachable
+        )
+
+        if total_attempts == 0:
+            # No attempts yet - healthy by default
+            return {
+                "healthy": True,
+                "status": "idle",
+                "message": "No recovery attempts yet",
+                "details": {
+                    "enabled": self.config.enabled,
+                    "is_leader": self._is_leader(),
+                    "ssh_key_missing": self._stats.ssh_key_missing,
+                    "cycles_run": self._stats.cycles_run,
+                },
+            }
+
+        # Calculate success rate
+        success_rate = self._stats.nodes_verified / max(self._stats.nodes_recovered, 1)
+        failure_rate = self._stats.nodes_failed / max(total_attempts, 1)
+
+        # Healthy if <50% failure rate and SSH key present
+        healthy = failure_rate < 0.5 and not self._stats.ssh_key_missing
+
+        # Determine status
+        if self._stats.ssh_key_missing:
+            status = "degraded"
+            message = "SSH key missing or invalid"
+        elif failure_rate >= 0.5:
+            status = "degraded"
+            message = f"High failure rate: {failure_rate:.0%}"
+        elif not self._is_leader():
+            status = "standby"
+            message = "Not leader - recovery disabled"
+        else:
+            status = "healthy"
+            message = f"Recovered {self._stats.nodes_recovered} nodes, {self._stats.nodes_verified} verified"
+
+        return {
+            "healthy": healthy,
+            "status": status,
+            "message": message,
+            "details": {
+                "enabled": self.config.enabled,
+                "is_leader": self._is_leader(),
+                "nodes_recovered": self._stats.nodes_recovered,
+                "nodes_verified": self._stats.nodes_verified,
+                "nodes_failed": self._stats.nodes_failed,
+                "nodes_skipped_unreachable": self._stats.nodes_skipped_unreachable,
+                "nodes_skipped_cooldown": self._stats.nodes_skipped_cooldown,
+                "nodes_skipped_backoff": self._stats.nodes_skipped_backoff,
+                "backoff_resets": self._stats.backoff_resets,
+                "cycles_run": self._stats.cycles_run,
+                "success_rate": success_rate,
+                "failure_rate": failure_rate,
+                "ssh_key_missing": self._stats.ssh_key_missing,
+                "nodes_in_backoff": len(self._restart_count),
+            },
+        }

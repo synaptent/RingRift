@@ -75,8 +75,10 @@ class NPZCombinationConfig:
 
     # Throttling
     # January 3, 2026: Reduced from 60s to 30s for faster training iteration cycles.
-    # Pipeline analysis showed 60s added unnecessary latency between export and training.
-    min_interval_seconds: float = 30.0  # Minimum seconds between combinations per config
+    # January 4, 2026 (Session 17.11): Reduced from 30s to 5s for +5-8 Elo improvement.
+    # Analysis showed 30s added unnecessary latency between export and training.
+    # 5s still prevents thundering herd while enabling faster feedback loops.
+    min_interval_seconds: float = 5.0  # Minimum seconds between combinations per config
 
     def to_combiner_config(self) -> NPZCombinerConfig:
         """Convert to NPZCombinerConfig."""
@@ -243,7 +245,14 @@ class NPZCombinationDaemon(SingletonMixin, HandlerBase):
             )
             # January 2026 Sprint 10: Verify quality_score array after combination
             # Expected improvement: +2-5 Elo from catching corrupt NPZ files early
-            self._verify_npz_quality(output_path, config_key, result)
+            # Session 17.11: Run as fire-and-forget to reduce latency (+2-4 Elo)
+            # Previously blocked event emission; now emit immediately, verify async
+            self._safe_create_task(
+                asyncio.to_thread(
+                    self._verify_npz_quality, output_path, config_key, result
+                ),
+                context=f"npz_quality_verify_{config_key}",
+            )
         else:
             logger.warning(f"Combination failed for {config_key}: {result.error}")
 
