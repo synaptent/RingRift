@@ -273,6 +273,33 @@ class RemoteP2PRecoveryLoop(BaseLoop):
         if not self._validate_ssh_key():
             self._stats.ssh_key_missing = True
 
+    def _safe_emit_p2p_event(self, event_type: str, payload: dict[str, Any]) -> None:
+        """Emit P2P event with fallback to safe_emit_event.
+
+        Jan 5, 2026: Unified event emission pattern. Uses callback if provided,
+        falls back to safe_emit_event from event_emission_helpers.
+        """
+        # Try callback first (backward compatibility)
+        if self._emit_event:
+            try:
+                self._emit_event(event_type, payload)
+                return
+            except Exception as e:
+                logger.debug(f"[RemoteP2PRecovery] Callback emit failed: {e}")
+
+        # Fallback to safe_emit_event
+        try:
+            from app.coordination.event_emission_helpers import safe_emit_event
+
+            safe_emit_event(
+                event_type,
+                payload,
+                context="RemoteP2PRecovery",
+                source="remote_p2p_recovery_loop",
+            )
+        except ImportError:
+            pass  # Event modules not available
+
     def _validate_ssh_key(self) -> bool:
         """Check SSH key exists and has correct permissions.
 
@@ -723,9 +750,9 @@ PYTHONPATH=. nohup python3 scripts/p2p_orchestrator.py --node-id {node_id} --por
             if pid:
                 logger.info(f"[RemoteP2PRecovery] Started P2P on {node_id} (PID: {pid})")
 
-                # Emit event
-                if self._emit_event and self.config.emit_events:
-                    self._emit_event(
+                # Emit event - Jan 5, 2026: Use safe_emit_event for consistent handling
+                if self.config.emit_events:
+                    self._safe_emit_p2p_event(
                         "REMOTE_P2P_STARTED",
                         {
                             "node_id": node_id,

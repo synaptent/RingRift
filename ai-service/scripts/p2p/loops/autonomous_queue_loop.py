@@ -507,40 +507,56 @@ class AutonomousQueuePopulationLoop(BaseLoop):
             return 0
 
     def _emit_activation_event(self, reason: str) -> None:
-        """Emit event when autonomous mode activates."""
-        try:
-            from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+        """Emit event when autonomous mode activates.
 
-            emit_event(DataEventType.AUTONOMOUS_QUEUE_ACTIVATED, {
-                "node_id": getattr(self._orchestrator, "node_id", "unknown"),
-                "reason": reason,
-                "no_leader_duration": self._state.get_no_leader_duration(),
-                "starvation_duration": self._state.get_starvation_duration(),
-                "timestamp": time.time(),
-            })
+        Jan 5, 2026: Migrated to safe_emit_event for consistent error handling.
+        """
+        try:
+            from app.coordination.event_emission_helpers import safe_emit_event
+            from app.distributed.data_events import DataEventType
+
+            success = safe_emit_event(
+                DataEventType.AUTONOMOUS_QUEUE_ACTIVATED,
+                {
+                    "node_id": getattr(self._orchestrator, "node_id", "unknown"),
+                    "reason": reason,
+                    "no_leader_duration": self._state.get_no_leader_duration(),
+                    "starvation_duration": self._state.get_starvation_duration(),
+                    "timestamp": time.time(),
+                },
+                context="AutonomousQueue",
+                log_after=f"Autonomous queue activated: {reason}",
+            )
+            if not success:
+                logger.debug(f"[AutonomousQueue] Event emission returned False for activation")
         except ImportError:
-            pass
-        except Exception as e:
-            logger.debug(f"[AutonomousQueue] Failed to emit activation event: {e}")
+            pass  # Event modules not available
 
     def _emit_deactivation_event(self, reason: str) -> None:
-        """Emit event when autonomous mode deactivates."""
-        try:
-            from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+        """Emit event when autonomous mode deactivates.
 
-            emit_event(DataEventType.AUTONOMOUS_QUEUE_DEACTIVATED, {
-                "node_id": getattr(self._orchestrator, "node_id", "unknown"),
-                "reason": reason,
-                "items_populated": self._state.items_populated,
-                "activation_duration": time.time() - (self._state.activation_time or time.time()),
-                "timestamp": time.time(),
-            })
+        Jan 5, 2026: Migrated to safe_emit_event for consistent error handling.
+        """
+        try:
+            from app.coordination.event_emission_helpers import safe_emit_event
+            from app.distributed.data_events import DataEventType
+
+            success = safe_emit_event(
+                DataEventType.AUTONOMOUS_QUEUE_DEACTIVATED,
+                {
+                    "node_id": getattr(self._orchestrator, "node_id", "unknown"),
+                    "reason": reason,
+                    "items_populated": self._state.items_populated,
+                    "activation_duration": time.time() - (self._state.activation_time or time.time()),
+                    "timestamp": time.time(),
+                },
+                context="AutonomousQueue",
+                log_after=f"Autonomous queue deactivated: {reason}",
+            )
+            if not success:
+                logger.debug(f"[AutonomousQueue] Event emission returned False for deactivation")
         except ImportError:
-            pass
-        except Exception as e:
-            logger.debug(f"[AutonomousQueue] Failed to emit deactivation event: {e}")
+            pass  # Event modules not available
 
     def get_status(self) -> dict[str, Any]:
         """Get current status of autonomous queue system."""
