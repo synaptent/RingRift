@@ -586,23 +586,27 @@ class SyncOrchestrator:
         """
         try:
             # Lazy import to avoid circular import chain:
-            # event_router → data_events → distributed/__init__ → sync_orchestrator → event_emitters
-            from app.coordination.event_emitters import emit_sync_complete
+            # event_router → data_events → distributed/__init__ → sync_orchestrator → event_emission_helpers
+            from app.coordination.event_emission_helpers import safe_emit_event_async
 
-            emitted = await emit_sync_complete(
-                sync_type="full",
-                items_synced=result.total_items_synced,
-                success=result.success,
-                duration_seconds=result.duration_seconds,
-                iteration=self.state.total_syncs,
-                components=[r.component for r in result.component_results],
-                errors=result.errors,
+            emitted = await safe_emit_event_async(
+                "SYNC_COMPLETE",
+                {
+                    "sync_type": "full",
+                    "items_synced": result.total_items_synced,
+                    "success": result.success,
+                    "duration_seconds": result.duration_seconds,
+                    "iteration": self.state.total_syncs,
+                    "components": [r.component for r in result.component_results],
+                    "errors": result.errors,
+                },
+                context="sync_orchestrator",
             )
             if emitted:
                 logger.debug("[SyncOrchestrator] Emitted SYNC_COMPLETE event")
         except ImportError:
-            # event_emitters not available (rare)
-            logger.debug("[SyncOrchestrator] event_emitters not available, skipping event")
+            # event_emission_helpers not available (rare)
+            logger.debug("[SyncOrchestrator] event_emission_helpers not available, skipping event")
         except Exception as e:
             logger.warning(f"[SyncOrchestrator] Failed to emit sync event: {e}")
 

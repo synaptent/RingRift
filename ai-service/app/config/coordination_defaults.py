@@ -616,7 +616,8 @@ class MemoryPressureDefaults:
 
     # Hysteresis - must drop this many % below threshold to recover
     # Prevents oscillation between tiers
-    HYSTERESIS: int = _env_int("RINGRIFT_MEMORY_HYSTERESIS", 5)
+    # Jan 2026: Reduced from 5% to 3% for faster tier recovery while still preventing oscillation
+    HYSTERESIS: int = _env_int("RINGRIFT_MEMORY_HYSTERESIS", 3)
 
     # Cooldown after taking action (seconds)
     ACTION_COOLDOWN: int = _env_int("RINGRIFT_MEMORY_ACTION_COOLDOWN", 60)

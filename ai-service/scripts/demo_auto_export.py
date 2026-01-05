@@ -17,7 +17,7 @@ from app.coordination.auto_export_daemon import (
     AutoExportConfig,
     get_auto_export_daemon,
 )
-from app.coordination.event_emitters import emit_selfplay_complete
+from app.coordination.event_emission_helpers import safe_emit_event_async
 
 # Setup logging
 logging.basicConfig(
@@ -42,15 +42,19 @@ async def simulate_selfplay_events():
     for board_type, num_players, games in configs:
         logger.info(f"\nEmitting SELFPLAY_COMPLETE: {board_type}_{num_players}p with {games} games")
 
-        await emit_selfplay_complete(
-            task_id=f"demo_{board_type}_{num_players}p",
-            board_type=board_type,
-            num_players=num_players,
-            games_generated=games,
-            success=True,
-            node_id="demo_node",
-            duration_seconds=30.0,
-            selfplay_type="standard",
+        await safe_emit_event_async(
+            "SELFPLAY_COMPLETE",
+            {
+                "task_id": f"demo_{board_type}_{num_players}p",
+                "board_type": board_type,
+                "num_players": num_players,
+                "games_generated": games,
+                "success": True,
+                "node_id": "demo_node",
+                "duration_seconds": 30.0,
+                "selfplay_type": "standard",
+            },
+            context="demo_auto_export",
         )
 
         # Wait to observe the daemon's response
@@ -117,14 +121,18 @@ async def demo_custom_config():
     try:
         # Emit event that should trigger immediately
         logger.info("\nEmitting SELFPLAY_COMPLETE with 75 games (> 50 threshold)")
-        await emit_selfplay_complete(
-            task_id="demo_hex8_4p",
-            board_type="hex8",
-            num_players=4,
-            games_generated=75,
-            success=True,
-            node_id="demo_node",
-            duration_seconds=40.0,
+        await safe_emit_event_async(
+            "SELFPLAY_COMPLETE",
+            {
+                "task_id": "demo_hex8_4p",
+                "board_type": "hex8",
+                "num_players": 4,
+                "games_generated": 75,
+                "success": True,
+                "node_id": "demo_node",
+                "duration_seconds": 40.0,
+            },
+            context="demo_auto_export",
         )
 
         # Monitor for response
@@ -147,12 +155,16 @@ async def demo_status_monitoring():
     try:
         # Emit some events
         for i in range(3):
-            await emit_selfplay_complete(
-                task_id=f"demo_batch_{i}",
-                board_type="square19",
-                num_players=2,
-                games_generated=40,
-                success=True,
+            await safe_emit_event_async(
+                "SELFPLAY_COMPLETE",
+                {
+                    "task_id": f"demo_batch_{i}",
+                    "board_type": "square19",
+                    "num_players": 2,
+                    "games_generated": 40,
+                    "success": True,
+                },
+                context="demo_auto_export",
             )
             await asyncio.sleep(1)
 

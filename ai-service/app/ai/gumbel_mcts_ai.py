@@ -98,6 +98,8 @@ from .gumbel_common import (
     GUMBEL_DEFAULT_K,
     GUMBEL_DEFAULT_C_VISIT,
     GUMBEL_DEFAULT_C_PUCT,
+    get_adaptive_c_visit,
+    get_adaptive_c_puct,
 )
 
 # Note: GumbelAction, GumbelNode, LeafEvalRequest are now defined in gumbel_common.py
@@ -1400,8 +1402,17 @@ class GumbelMCTSAI(BaseAI):
                 action.total_value += value_sum
 
             # Sort by completed Q-value and keep top half
+            # Session 17.24: Use adaptive c_visit for phase/board-aware exploration
             max_visits = max(a.visit_count for a in remaining)
-            remaining.sort(key=lambda a: a.completed_q(max_visits), reverse=True)
+            board_type_str = getattr(game_state.board_type, "value", None) if hasattr(game_state, "board_type") else None
+            move_num = len(game_state.move_history) if hasattr(game_state, "move_history") else 0
+            num_legal = len(game_state.valid_moves) if hasattr(game_state, "valid_moves") else 0
+            adaptive_c = get_adaptive_c_visit(
+                board_type=board_type_str,
+                num_legal_moves=num_legal,
+                move_number=move_num,
+            )
+            remaining.sort(key=lambda a: a.completed_q(max_visits, c_visit=adaptive_c), reverse=True)
             remaining = remaining[: max(1, len(remaining) // 2)]
 
         return remaining[0]
@@ -1501,8 +1512,17 @@ class GumbelMCTSAI(BaseAI):
                 action.total_value += sum(values)
 
             # Phase 4: Sort by completed Q-value and keep top half
+            # Session 17.24: Use adaptive c_visit for phase/board-aware exploration
             max_visits = max(a.visit_count for a in remaining)
-            remaining.sort(key=lambda a: a.completed_q(max_visits), reverse=True)
+            board_type_str = getattr(game_state.board_type, "value", None) if hasattr(game_state, "board_type") else None
+            move_num = len(game_state.move_history) if hasattr(game_state, "move_history") else 0
+            num_legal = len(game_state.valid_moves) if hasattr(game_state, "valid_moves") else 0
+            adaptive_c = get_adaptive_c_visit(
+                board_type=board_type_str,
+                num_legal_moves=num_legal,
+                move_number=move_num,
+            )
+            remaining.sort(key=lambda a: a.completed_q(max_visits, c_visit=adaptive_c), reverse=True)
             remaining = remaining[: max(1, len(remaining) // 2)]
 
         return remaining[0]

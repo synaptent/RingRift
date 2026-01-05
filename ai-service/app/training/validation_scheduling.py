@@ -518,26 +518,23 @@ class EnhancedEarlyStopping:
             return
 
         try:
-            from app.coordination.event_emitters import emit_plateau_detected
-            from app.utils.async_utils import fire_and_forget
+            from app.coordination.event_emission_helpers import safe_emit_event
 
-            # Fire and forget the async event emission
-            fire_and_forget(
-                emit_plateau_detected(
-                    metric_name=f"{self.config_name}_{plateau_type}",
-                    current_value=current_value,
-                    best_value=best_value,
-                    epochs_since_improvement=epochs_since_improvement,
-                    plateau_type=plateau_type,
-                    config_key=self.config_name,
-                    patience=self.patience if plateau_type == "loss" else self.elo_patience,
-                    threshold_pct=self.plateau_warning_threshold,
-                ),
-                name=f"plateau_{plateau_type}_{self.config_name}",
-            )
-            logger.info(
-                f"[EnhancedEarlyStopping] Emitted PLATEAU_DETECTED for {plateau_type} "
-                f"(epochs={epochs_since_improvement}, config={self.config_name})"
+            safe_emit_event(
+                "PLATEAU_DETECTED",
+                {
+                    "metric_name": f"{self.config_name}_{plateau_type}",
+                    "current_value": current_value,
+                    "best_value": best_value,
+                    "epochs_since_improvement": epochs_since_improvement,
+                    "plateau_type": plateau_type,
+                    "config_key": self.config_name,
+                    "patience": self.patience if plateau_type == "loss" else self.elo_patience,
+                    "threshold_pct": self.plateau_warning_threshold,
+                },
+                log_after=f"[EnhancedEarlyStopping] Emitted PLATEAU_DETECTED for {plateau_type} "
+                f"(epochs={epochs_since_improvement}, config={self.config_name})",
+                context="early_stopping",
             )
         except Exception as e:
             logger.debug(f"[EnhancedEarlyStopping] Event emission failed: {e}")

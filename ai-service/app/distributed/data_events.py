@@ -325,6 +325,10 @@ class DataEventType(Enum):
     DAEMON_STATUS_CHANGED = "daemon_status_changed"  # Watchdog alerts (stuck, crashed, restarted)
     DAEMON_PERMANENTLY_FAILED = "daemon_permanently_failed"  # Dec 2025: Exceeded hourly restart limit
     DAEMON_CRASH_LOOP_DETECTED = "daemon_crash_loop_detected"  # Dec 2025: Early warning before permanent failure
+    # Jan 2026 Sprint 17.9: Unified failure classification events
+    DAEMON_FAILURE_CLASSIFIED = "daemon_failure_classified"  # Failure category determined (transient/degraded/persistent/critical)
+    DAEMON_FAILURE_ESCALATED = "daemon_failure_escalated"  # Failure category increased in severity
+    DAEMON_FAILURE_RECOVERED = "daemon_failure_recovered"  # Daemon recovered from failure state
     HOST_ONLINE = "host_online"
     HOST_OFFLINE = "host_offline"
     ERROR = "error"

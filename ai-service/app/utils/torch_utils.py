@@ -296,15 +296,16 @@ def safe_load_checkpoint(
     if not is_valid:
         # Emit event for monitoring (best-effort)
         try:
-            import asyncio
-            from app.coordination.event_emitters import emit_model_corrupted
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                asyncio.create_task(emit_model_corrupted(
-                    model_id=path.stem,
-                    model_path=str(path),
-                    corruption_type=f"invalid_format:{format_type}",
-                ))
+            from app.coordination.event_emission_helpers import safe_emit_event
+            safe_emit_event(
+                "MODEL_CORRUPTED",
+                {
+                    "model_id": path.stem,
+                    "model_path": str(path),
+                    "corruption_type": f"invalid_format:{format_type}",
+                },
+                context="safe_load_checkpoint",
+            )
         except (ImportError, RuntimeError, AttributeError, OSError):
             pass  # Best-effort event emission
 
@@ -318,15 +319,16 @@ def safe_load_checkpoint(
         if not valid:
             # Dec 2025: Emit model corrupted event for downstream systems
             try:
-                import asyncio
-                from app.coordination.event_emitters import emit_model_corrupted
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    asyncio.create_task(emit_model_corrupted(
-                        model_id=path.stem,
-                        model_path=str(path),
-                        corruption_type="checksum_mismatch",
-                    ))
+                from app.coordination.event_emission_helpers import safe_emit_event
+                safe_emit_event(
+                    "MODEL_CORRUPTED",
+                    {
+                        "model_id": path.stem,
+                        "model_path": str(path),
+                        "corruption_type": "checksum_mismatch",
+                    },
+                    context="safe_load_checkpoint",
+                )
             except (ImportError, RuntimeError, AttributeError, OSError):
                 pass  # Best-effort event emission - don't block checkpoint loading
             raise ModelCorruptionError(

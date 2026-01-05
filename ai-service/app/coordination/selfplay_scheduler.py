@@ -145,6 +145,13 @@ from app.coordination.scheduler_metrics import SchedulerMetricsCollector
 # Import interfaces for type hints (no circular dependency)
 from app.coordination.interfaces import IBackpressureMonitor
 
+# January 2026 Sprint 17.9: AllocationEngine extracted for testability
+from app.coordination.selfplay.allocation_engine import (
+    AllocationContext,
+    AllocationEngine,
+    AllocationResult,
+)
+
 # Note: backpressure concrete import moved to lazy loading in allocate_selfplay_batch()
 # to break circular dependency cycle (Dec 2025). The IBackpressureMonitor protocol
 # from interfaces allows type hints without importing the concrete class.
@@ -1496,8 +1503,10 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
             Dict mapping config_key to {node_id: num_games}
 
         December 28, 2025: Changed default from 6 to 12 to include all board/player configs.
+        January 2026 Sprint 17.9: Delegates allocation logic to AllocationEngine for testability.
         """
         # Check backpressure before allocating (Dec 2025)
+        bp_signal = None
         try:
             # Use injected monitor if available, otherwise lazy import
             # (Dec 2025: IBackpressureMonitor protocol enables dependency injection)
@@ -1511,17 +1520,6 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
                     f"[SelfplayScheduler] Backpressure pause: pressure={bp_signal.overall_pressure:.2f}"
                 )
                 return {}
-
-            # Scale games by spawn rate multiplier
-            spawn_multiplier = bp_signal.spawn_rate_multiplier
-            if spawn_multiplier < 1.0:
-                scaled_games = int(games_per_config * spawn_multiplier)
-                scaled_games = max(MIN_GAMES_PER_ALLOCATION, scaled_games)
-                logger.info(
-                    f"[SelfplayScheduler] Backpressure scaling: {games_per_config} -> {scaled_games} "
-                    f"(multiplier={spawn_multiplier:.2f}, pressure={bp_signal.overall_pressure:.2f})"
-                )
-                games_per_config = scaled_games
         except Exception as e:
             # Don't let backpressure failures block allocation
             logger.warning(f"[SelfplayScheduler] Backpressure check failed (continuing): {e}")
@@ -1532,61 +1530,58 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
         # Get available nodes
         await self._update_node_capabilities()
 
-        allocation: dict[str, dict[str, int]] = {}
-
-        # Dec 29, 2025: Track configs skipped due to zero/negative priority for logging
-        skipped_configs = []
-
-        for config_key, priority_score in priorities:
-            if priority_score <= 0:
-                skipped_configs.append((config_key, priority_score))
-                continue
-
-            # Allocate based on priority weight
-            config_games = int(games_per_config * (0.5 + priority_score))
-            config_games = max(MIN_GAMES_PER_ALLOCATION, config_games)
-
-            # Distribute across nodes
-            node_allocation = self._allocate_to_nodes(config_key, config_games)
-            if node_allocation:
-                allocation[config_key] = node_allocation
-
-                # Update priority tracking
-                priority = self._config_priorities[config_key]
-                priority.games_allocated = sum(node_allocation.values())
-                priority.nodes_allocated = list(node_allocation.keys())
-
-        # Dec 29, 2025 - Phase 5: Enforce starvation floor allocations
-        # Configs with <100 games MUST get allocation even if priority was low
-        allocation = self._enforce_starvation_floor(allocation, games_per_config)
-
-        # Dec 29, 2025 - Phase 4: Enforce 4p allocation minimums
-        # If 4p configs are under-allocated, steal from 2p configs
-        allocation = self._enforce_4p_allocation_minimums(allocation, games_per_config)
-
-        total_allocated = sum(
-            sum(node_games.values()) for node_games in allocation.values()
-        )
-        self._record_allocation(total_allocated)
-
-        logger.info(
-            f"[SelfplayScheduler] Allocated {len(allocation)} configs: "
-            f"{', '.join(f'{k}={sum(v.values())}' for k, v in allocation.items())}"
+        # January 2026 Sprint 17.9: Build allocation context from current cluster state
+        context = AllocationContext(
+            unhealthy_nodes=getattr(self, "_unhealthy_nodes", set()),
+            cluster_health_factor=getattr(self, "_cluster_health_factor", 1.0),
+            backpressure_signal=bp_signal,
+            demoted_nodes=getattr(self, "_demoted_nodes", set()),
+            enforce_4p_minimums=True,
         )
 
-        # Dec 29, 2025: Log skipped configs for transparency
-        if skipped_configs:
-            logger.warning(
-                f"[SelfplayScheduler] {len(skipped_configs)} configs skipped (priority <= 0): "
-                f"{', '.join(f'{k}({s:.3f})' for k, s in skipped_configs)}"
-            )
+        # January 2026 Sprint 17.9: Create AllocationEngine with current state snapshots
+        # Engine receives copies of mutable state to ensure deterministic allocation
+        engine = AllocationEngine(
+            config_priorities=self._config_priorities,
+            node_capabilities=self._node_capabilities,
+            metrics_collector=self._metrics_collector,
+            emit_event_fn=self._safe_emit_allocation_event,
+        )
 
-        # Dec 2025: Emit SELFPLAY_ALLOCATION_UPDATED for downstream consumers
-        # (IdleResourceDaemon, feedback loops, etc.)
-        if total_allocated > 0:
-            self._emit_allocation_updated(allocation, total_allocated, trigger="allocate_batch")
+        # Delegate allocation logic to engine
+        # Engine handles: priority-based allocation, starvation floor, 4p minimums, metrics
+        result = engine.allocate_selfplay_batch(
+            priorities=priorities,
+            games_per_config=games_per_config,
+            context=context,
+        )
 
-        return allocation
+        # Update scheduler state from result (priority tracking updated by engine)
+        # Note: ConfigPriority.games_allocated and nodes_allocated are updated
+        # inside engine.allocate_selfplay_batch() via the shared _config_priorities dict
+
+        return result.allocations
+
+    def _safe_emit_allocation_event(self, event_name: str, payload: dict[str, Any]) -> None:
+        """Safely emit an allocation event via the scheduler's event system.
+
+        This is passed to AllocationEngine to enable event emission without
+        the engine needing direct access to the event router.
+
+        January 2026 Sprint 17.9: Created for AllocationEngine integration.
+        """
+        try:
+            from app.coordination.event_router import emit_event
+            from app.distributed.data_events import DataEventType
+
+            # Map string event name to DataEventType
+            event_type = getattr(DataEventType, event_name, None)
+            if event_type is not None:
+                emit_event(event_type, payload)
+            else:
+                logger.warning(f"[SelfplayScheduler] Unknown event type: {event_name}")
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Event emission failed (non-critical): {e}")
 
     def _enforce_starvation_floor(
         self,

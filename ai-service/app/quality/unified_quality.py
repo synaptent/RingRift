@@ -53,11 +53,11 @@ try:
     import asyncio
     from collections import deque
 
-    from app.coordination.event_emitters import emit_game_quality_score
+    from app.coordination.event_emission_helpers import safe_emit_event_async
     HAS_QUALITY_EVENTS = True
 except ImportError:
     HAS_QUALITY_EVENTS = False
-    emit_game_quality_score = None
+    safe_emit_event_async = None
     deque = None  # type: ignore
 
 # Event emission for quality distribution changes (Phase 5, December 2025)
@@ -412,17 +412,21 @@ class UnifiedQualityScorer:
         quality.sync_priority = self.compute_sync_priority(quality)
 
         # Emit quality event for coordination (async, non-blocking)
-        if HAS_QUALITY_EVENTS and emit_game_quality_score is not None and game_id:
+        if HAS_QUALITY_EVENTS and safe_emit_event_async is not None and game_id:
             try:
                 asyncio.get_running_loop()
-                asyncio.ensure_future(emit_game_quality_score(
-                    game_id=game_id,
-                    quality_score=quality.quality_score,
-                    quality_category=quality.category.value,
-                    training_weight=quality.training_weight,
-                    game_length=game_length,
-                    is_decisive=is_decisive,
-                    source="unified_quality",
+                asyncio.ensure_future(safe_emit_event_async(
+                    "GAME_QUALITY_SCORE",
+                    {
+                        "game_id": game_id,
+                        "quality_score": quality.quality_score,
+                        "quality_category": quality.category.value,
+                        "training_weight": quality.training_weight,
+                        "game_length": game_length,
+                        "is_decisive": is_decisive,
+                        "source": "unified_quality",
+                    },
+                    context="unified_quality",
                 ))
             except RuntimeError:
                 pass  # No running loop - skip event emission

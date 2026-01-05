@@ -334,47 +334,23 @@ class TrainingTaskTracker:
 
         # Emit event to coordinator
         try:
-            import asyncio
-
-            from app.coordination.event_emitters import emit_task_completed, emit_task_failed
+            from app.coordination.event_emission_helpers import safe_emit_event
 
             if success:
-                try:
-                    loop = asyncio.get_running_loop()
-                    task = loop.create_task(emit_task_completed(
-                        task_id=task_id,
-                        result=result or {},
-                    ))
-                    task.add_done_callback(
-                        lambda t: logger.debug(f"Task complete event error: {t.exception()}")
-                        if t.exception() else None
-                    )
-                except RuntimeError:
-                    asyncio.run(emit_task_completed(
-                        task_id=task_id,
-                        result=result or {},
-                    ))
+                safe_emit_event(
+                    "TASK_COMPLETED",
+                    {"task_id": task_id, "result": result or {}},
+                    context="task_lifecycle",
+                )
             else:
                 error = result.get("error", "Unknown error") if result else "Unknown error"
-                try:
-                    loop = asyncio.get_running_loop()
-                    task = loop.create_task(emit_task_failed(
-                        task_id=task_id,
-                        error=error,
-                    ))
-                    task.add_done_callback(
-                        lambda t: logger.debug(f"Task failed event error: {t.exception()}")
-                        if t.exception() else None
-                    )
-                except RuntimeError:
-                    asyncio.run(emit_task_failed(
-                        task_id=task_id,
-                        error=error,
-                    ))
+                safe_emit_event(
+                    "TASK_FAILED",
+                    {"task_id": task_id, "error": error},
+                    context="task_lifecycle",
+                )
         except ImportError:
             pass
-        except Exception as e:
-            logger.debug(f"[TrainingTaskTracker] Failed to emit completion event: {e}")
 
         logger.info(f"[TrainingTaskTracker] Task completed: {task_id} (success={success})")
 

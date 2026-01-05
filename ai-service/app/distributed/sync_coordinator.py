@@ -1712,10 +1712,14 @@ class SyncCoordinator:
                 )
                 # Emit event for monitoring (best effort)
                 try:
-                    from app.coordination.event_emitters import emit_sync_failure_critical
-                    await emit_sync_failure_critical(
-                        consecutive_failures=self._consecutive_failures,
-                        last_success=self._last_successful_sync,
+                    from app.coordination.event_emission_helpers import safe_emit_event_async
+                    await safe_emit_event_async(
+                        "SYNC_FAILURE_CRITICAL",
+                        {
+                            "consecutive_failures": self._consecutive_failures,
+                            "last_success": self._last_successful_sync,
+                        },
+                        context="sync_coordinator",
                     )
                 except (ImportError, OSError, ConnectionError, asyncio.TimeoutError, TypeError, ValueError):
                     # Best effort event emission: import errors, network errors, type/value issues

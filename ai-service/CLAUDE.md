@@ -230,6 +230,25 @@ Session 16-17 resilience components are now fully integrated and bootstrapped:
 
 **System is PRODUCTION-READY** - No high-priority implementation work remains.
 
+**Session 17.23 Implementation Verification (FINAL):**
+
+The plan identified two "DO" tasks from exploration agents. Both were verified as **already implemented**:
+
+| Planned Task                                      | Status          | Evidence                                                                                                                                   |
+| ------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Fix blocking SQLite in training_trigger_daemon.py | ✅ ALREADY DONE | `asyncio.to_thread(_load_state)` at line 383, `asyncio.to_thread(_save_state)` at 5 locations                                              |
+| Quality Signal Immediate Application              | ✅ ALREADY DONE | QUALITY_SCORE_UPDATED exists at `data_events.py:219`, emitted from 4+ files, subscribed in 5+ files including `selfplay_scheduler.py:1374` |
+
+**Key Finding**: Exploration agents provided stale assessments. Before implementing "fixes," always verify current state:
+
+```bash
+# Check if async wrapping exists
+grep -n "asyncio.to_thread" app/coordination/training_trigger_daemon.py
+
+# Check if event exists and is wired
+grep -rn "QUALITY_SCORE_UPDATED" app/
+```
+
 ---
 
 **Sprint 17.9 / Session 17.20 (Jan 5, 2026) - VoterHeartbeatLoop & TailscaleKeepaliveLoop Health:**

@@ -504,6 +504,70 @@ class TrainingTriggerDaemon(HandlerBase):
 
         return params
 
+    def _select_architecture_for_training(
+        self,
+        board_type: str,
+        num_players: int,
+    ) -> str:
+        """Select architecture version for training based on Elo performance.
+
+        Session 17.22: Closes the architecture selection feedback loop.
+        Uses ArchitectureTracker's compute_allocation_weights() to select
+        architectures biased toward better Elo performance.
+
+        Args:
+            board_type: Board type (hex8, square8, etc.)
+            num_players: Number of players (2, 3, or 4)
+
+        Returns:
+            Architecture version string (e.g., "v5", "v2", "v5-heavy").
+            Falls back to "v5" if tracker unavailable or no weights exist.
+        """
+        import random
+
+        default_arch = "v5"
+
+        try:
+            from app.training.architecture_tracker import get_allocation_weights
+        except ImportError:
+            logger.debug(
+                "[TrainingTriggerDaemon] ArchitectureTracker not available, "
+                f"using default: {default_arch}"
+            )
+            return default_arch
+
+        try:
+            weights = get_allocation_weights(
+                board_type=board_type,
+                num_players=num_players,
+                temperature=0.5,  # Balance exploration vs exploitation
+            )
+
+            if not weights:
+                logger.debug(
+                    f"[TrainingTriggerDaemon] No architecture weights for "
+                    f"{board_type}_{num_players}p, using default: {default_arch}"
+                )
+                return default_arch
+
+            # Weighted random selection based on Elo performance
+            architectures = list(weights.keys())
+            arch_weights = list(weights.values())
+            selected_arch = random.choices(architectures, weights=arch_weights, k=1)[0]
+
+            logger.info(
+                f"[TrainingTriggerDaemon] Architecture selection for "
+                f"{board_type}_{num_players}p: {selected_arch} (weights: {weights})"
+            )
+            return selected_arch
+
+        except (KeyError, ValueError, TypeError) as e:
+            logger.debug(
+                f"[TrainingTriggerDaemon] Error selecting architecture for "
+                f"{board_type}_{num_players}p: {e}, using default: {default_arch}"
+            )
+            return default_arch
+
     def _apply_velocity_amplification(
         self,
         base_params: tuple[int, int, float],
@@ -2984,13 +3048,19 @@ class TrainingTriggerDaemon(HandlerBase):
             )
 
             # Apply architecture-specific overrides if provided
-            arch_name = "v5"
+            # Session 17.22: Use tracker-informed selection when arch is not explicitly specified
             if arch is not None:
                 arch_name = arch.name
                 if arch.epochs is not None:
                     epochs = arch.epochs
                 if arch.batch_size is not None:
                     batch_size = arch.batch_size
+            else:
+                # No explicit arch - use ArchitectureTracker for performance-based selection
+                arch_name = self._select_architecture_for_training(
+                    board_type=state.board_type,
+                    num_players=state.num_players,
+                )
 
             # Compute priority based on config characteristics
             priority = 50

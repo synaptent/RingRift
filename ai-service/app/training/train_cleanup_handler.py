@@ -447,7 +447,7 @@ class TrainCleanupHandler:
             config_key: Configuration key
         """
         try:
-            from app.coordination.event_emitters import emit_curriculum_updated
+            from app.coordination.event_emission_helpers import safe_emit_event
 
             policy_accuracy_threshold = 0.75
 
@@ -457,32 +457,20 @@ class TrainCleanupHandler:
             # Increase curriculum weight for well-performing configs
             new_weight = 1.0 + (result.final_policy_accuracy - 0.5) * 0.5
 
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(emit_curriculum_updated(
-                    config_key=config_key,
-                    new_weight=new_weight,
-                    trigger="training_complete",
-                    policy_accuracy=result.final_policy_accuracy,
-                    value_loss=result.final_val_loss,
-                ))
-            except RuntimeError:
-                asyncio.run(emit_curriculum_updated(
-                    config_key=config_key,
-                    new_weight=new_weight,
-                    trigger="training_complete",
-                    policy_accuracy=result.final_policy_accuracy,
-                    value_loss=result.final_val_loss,
-                ))
-
-            logger.info(
-                f"[Curriculum] Triggered reweight for {config_key}: "
-                f"policy_acc={result.final_policy_accuracy:.1%} → weight={new_weight:.3f}"
+            safe_emit_event(
+                "CURRICULUM_UPDATED",
+                {
+                    "config_key": config_key,
+                    "new_weight": new_weight,
+                    "trigger": "training_complete",
+                    "policy_accuracy": result.final_policy_accuracy,
+                    "value_loss": result.final_val_loss,
+                },
+                log_after=f"Triggered reweight for {config_key}: policy_acc={result.final_policy_accuracy:.1%} → weight={new_weight:.3f}",
+                context="curriculum",
             )
         except ImportError:
             pass
-        except (RuntimeError, ConnectionError, TimeoutError, AttributeError) as e:
-            logger.debug(f"Failed to emit curriculum update: {e}")
 
     def _shutdown_async_checkpointer(self, context: "TrainContext") -> None:
         """Shutdown async checkpointer and wait for pending saves.

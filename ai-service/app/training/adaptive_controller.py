@@ -28,12 +28,9 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # Event system integration (optional - graceful fallback if not available)
-# December 2025: Migrated to use centralized event_emitters.py
+# January 2026: Migrated to safe_emit_event_async for consistent event handling
 try:
-    from app.coordination.event_emitters import (
-        emit_hyperparameter_updated,
-        emit_plateau_detected,
-    )
+    from app.coordination.event_emission_helpers import safe_emit_event_async
     from app.coordination.event_router import (
         DataEventType,
         get_event_bus,
@@ -144,12 +141,16 @@ class AdaptiveController:
         plateau_count = self.get_plateau_count()
         if plateau_count >= self.plateau_threshold:
             stats = self.get_statistics()
-            await emit_plateau_detected(
-                config=self.config_name,
-                iterations_without_improvement=plateau_count,
-                avg_win_rate=stats.get("avg_win_rate", 0.0),
-                recommended_action="Consider hyperparameter search or curriculum adjustment",
-                source="adaptive_controller",
+            await safe_emit_event_async(
+                "PLATEAU_DETECTED",
+                {
+                    "config": self.config_name,
+                    "iterations_without_improvement": plateau_count,
+                    "avg_win_rate": stats.get("avg_win_rate", 0.0),
+                    "recommended_action": "Consider hyperparameter search or curriculum adjustment",
+                    "source": "adaptive_controller",
+                },
+                context="adaptive_controller",
             )
             self._plateau_emitted = True
             logger.info(
@@ -182,13 +183,17 @@ class AdaptiveController:
         if old_games == 0 and old_eval == 0:
             return False
 
-        await emit_hyperparameter_updated(
-            config=self.config_name,
-            parameter="adaptive_game_counts",
-            old_value={"games": old_games, "eval_games": old_eval},
-            new_value={"games": new_games, "eval_games": new_eval},
-            reason=f"Trend-based adjustment (trend_factor={self._compute_trend_factor():.2f})",
-            source="adaptive_controller",
+        await safe_emit_event_async(
+            "HYPERPARAMETER_UPDATED",
+            {
+                "config": self.config_name,
+                "parameter": "adaptive_game_counts",
+                "old_value": {"games": old_games, "eval_games": old_eval},
+                "new_value": {"games": new_games, "eval_games": new_eval},
+                "reason": f"Trend-based adjustment (trend_factor={self._compute_trend_factor():.2f})",
+                "source": "adaptive_controller",
+            },
+            context="adaptive_controller",
         )
         logger.debug(
             f"Game counts updated for {self.config_name}: "
@@ -718,12 +723,16 @@ async def on_plateau_detected(
 
     # Emit plateau detected event
     if HAS_EVENT_SYSTEM:
-        await emit_plateau_detected(
-            config=config_key,
-            iterations_without_improvement=plateau_details.get("window_size", 0),
-            avg_win_rate=0.0,  # Not available from Elo history
-            recommended_action="Curriculum advanced + exploration boosted + extra selfplay",
-            source="elo_plateau_detection",
+        await safe_emit_event_async(
+            "PLATEAU_DETECTED",
+            {
+                "config": config_key,
+                "iterations_without_improvement": plateau_details.get("window_size", 0),
+                "avg_win_rate": 0.0,  # Not available from Elo history
+                "recommended_action": "Curriculum advanced + exploration boosted + extra selfplay",
+                "source": "elo_plateau_detection",
+            },
+            context="elo_plateau_detection",
         )
 
 

@@ -96,13 +96,11 @@ except ImportError:
 
 # Import event emission for feedback loop (December 2025)
 try:
-    from app.coordination.event_emitters import emit_promotion_complete_sync
+    from app.coordination.event_emission_helpers import safe_emit_event
     HAS_EVENT_EMITTERS = True
 except ImportError:
     HAS_EVENT_EMITTERS = False
-
-    def emit_promotion_complete_sync(*args, **kwargs):
-        return False
+    safe_emit_event = None  # type: ignore
 
 # Import EloService for hash-based model identity tracking (January 2026)
 try:
@@ -764,18 +762,23 @@ def promote_after_gauntlet(
 
     # Emit PROMOTION_COMPLETE event for feedback loop (December 2025)
     # This notifies the curriculum system and triggers model distribution
-    emitted = emit_promotion_complete_sync(
-        model_id=str(model_path.name),
-        board_type=board_type,
-        num_players=num_players,
-        promotion_type="gauntlet",
-        elo_improvement=elo - 1500.0 if elo else None,  # Delta from baseline
-        model_path=str(canonical_path),
-        win_rate_vs_random=gauntlet_results.get("win_rate_vs_random"),
-        win_rate_vs_heuristic=gauntlet_results.get("win_rate_vs_heuristic"),
-    )
-    if emitted:
-        print("  ✓ Emitted PROMOTION_COMPLETE event")
+    if HAS_EVENT_EMITTERS and safe_emit_event is not None:
+        emitted = safe_emit_event(
+            "PROMOTION_COMPLETE",
+            {
+                "model_id": str(model_path.name),
+                "board_type": board_type,
+                "num_players": num_players,
+                "promotion_type": "gauntlet",
+                "elo_improvement": elo - 1500.0 if elo else None,  # Delta from baseline
+                "model_path": str(canonical_path),
+                "win_rate_vs_random": gauntlet_results.get("win_rate_vs_random"),
+                "win_rate_vs_heuristic": gauntlet_results.get("win_rate_vs_heuristic"),
+            },
+            context="auto_promote",
+        )
+        if emitted:
+            print("  ✓ Emitted PROMOTION_COMPLETE event")
 
     return True
 

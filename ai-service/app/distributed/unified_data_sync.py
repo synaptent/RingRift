@@ -167,10 +167,11 @@ except ImportError:
     IngestionWAL = None
 
 try:
-    from app.coordination.event_emitters import emit_new_games
+    from app.coordination.event_emission_helpers import safe_emit_event_async
     HAS_EVENT_BUS = True
 except ImportError:
     HAS_EVENT_BUS = False
+    safe_emit_event_async = None  # type: ignore
 
 # Import coordination helpers (consolidated imports)
 from app.coordination.helpers import (
@@ -1701,7 +1702,16 @@ class UnifiedDataSyncService:
 
             # Emit events
             if HAS_EVENT_BUS and games_synced > 0:
-                await emit_new_games(host.name, games_synced, state.total_games_synced, "unified_data_sync")
+                await safe_emit_event_async(
+                    "NEW_GAMES",
+                    {
+                        "node_id": host.name,
+                        "new_games": games_synced,
+                        "total_games": state.total_games_synced,
+                        "source": "unified_data_sync",
+                    },
+                    context="unified_data_sync",
+                )
 
             if HAS_CROSS_PROCESS_EVENTS and games_synced > 0:
                 publish_cross_process_event(

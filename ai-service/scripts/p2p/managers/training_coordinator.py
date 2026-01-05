@@ -41,10 +41,7 @@ except ImportError:
 
 # Dec 2025: Import event emission helpers for training lifecycle events
 try:
-    from app.coordination.event_emitters import (
-        emit_training_started_sync,
-        emit_training_completed_sync,
-    )
+    from app.coordination.event_emission_helpers import safe_emit_event
     _HAS_EVENT_EMITTERS = True
 except ImportError:
     _HAS_EVENT_EMITTERS = False
@@ -693,16 +690,16 @@ class TrainingCoordinator(EventSubscriptionMixin):
 
                                 # Dec 2025: Emit TRAINING_STARTED event for pipeline coordination
                                 if _HAS_EVENT_EMITTERS:
-                                    try:
-                                        emit_training_started_sync(
-                                            config_key=config_key,
-                                            node_name=worker_node.node_id,
-                                            job_id=job_id,
-                                            job_type=job_type,
-                                        )
-                                        logger.debug(f"Emitted TRAINING_STARTED for {config_key}")
-                                    except Exception as e:
-                                        logger.warning(f"Failed to emit TRAINING_STARTED: {e}")
+                                    safe_emit_event(
+                                        "TRAINING_STARTED",
+                                        {
+                                            "config_key": config_key,
+                                            "node_name": worker_node.node_id,
+                                            "job_id": job_id,
+                                            "job_type": job_type,
+                                        },
+                                        context="training_coordinator",
+                                    )
 
                                 # Reserve the GPU node for training (December 2025)
                                 # This prevents selfplay jobs from being scheduled on this node
@@ -908,16 +905,16 @@ class TrainingCoordinator(EventSubscriptionMixin):
             # Dec 2025: Emit TRAINING_COMPLETED event for pipeline coordination
             config_key = f"{job.board_type}_{job.num_players}p"
             if _HAS_EVENT_EMITTERS:
-                try:
-                    emit_training_completed_sync(
-                        config_key=config_key,
-                        model_id=Path(job.output_model_path).stem if job.output_model_path else "unknown",
-                        job_id=job.job_id,
-                        val_loss=getattr(job, "val_loss", 0.0),
-                    )
-                    logger.debug(f"Emitted TRAINING_COMPLETED for {config_key}")
-                except Exception as e:
-                    logger.warning(f"Failed to emit TRAINING_COMPLETED: {e}")
+                safe_emit_event(
+                    "TRAINING_COMPLETED",
+                    {
+                        "config_key": config_key,
+                        "model_id": Path(job.output_model_path).stem if job.output_model_path else "unknown",
+                        "job_id": job.job_id,
+                        "val_loss": getattr(job, "val_loss", 0.0),
+                    },
+                    context="training_coordinator",
+                )
 
             # Dec 2025: Fetch model from training node BEFORE evaluation
             # This is critical - models are produced on remote training nodes (nebius-h100-*,

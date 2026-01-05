@@ -63,12 +63,17 @@ except ImportError:
     PROMOTION_PENALTY_FACTOR_MULTIPLE = 0.5
     PROMOTION_PENALTY_FACTOR_SINGLE = 0.7
 
-# Session 17.22: Architecture-specific Elo tracking
-# Import record_evaluation for tracking per-(config, architecture) performance
+# Session 17.22: Architecture selection feedback loop
+# Import architecture tracker functions for per-(config, architecture) performance tracking
+# and intelligent architecture selection based on Elo performance
 try:
-    from app.training.architecture_tracker import record_evaluation as _record_architecture_eval
+    from app.training.architecture_tracker import (
+        record_evaluation as _record_architecture_eval,
+        get_allocation_weights as _get_architecture_weights,
+    )
 except ImportError:
     _record_architecture_eval = None  # type: ignore
+    _get_architecture_weights = None  # type: ignore
 
 # Memory-aware job allocation constants (P1 - Sprint 6, Jan 2026)
 # Job-type specific memory requirements in GB
@@ -369,6 +374,68 @@ class SelfplayScheduler(EventSubscriptionMixin):
         Kept for backward compatibility.
         """
         return cls._select_board_engine(has_gpu, board_type or "square19")
+
+    def _select_architecture_for_config(
+        self,
+        board_type: str,
+        num_players: int,
+    ) -> str:
+        """Select architecture version based on Elo performance weights.
+
+        Session 17.22: This closes the architecture selection feedback loop.
+        The ArchitectureTracker records per-(config, architecture) Elo ratings,
+        and compute_allocation_weights() returns softmax weights biased toward
+        better-performing architectures.
+
+        Args:
+            board_type: Board type (e.g., "hex8", "square8")
+            num_players: Number of players (2, 3, or 4)
+
+        Returns:
+            Architecture version string (e.g., "v5", "v2", "v5-heavy")
+        """
+        # Default architecture if tracker unavailable or no weights
+        default_arch = "v5"
+
+        if _get_architecture_weights is None:
+            return default_arch
+
+        try:
+            # Get Elo-based allocation weights from ArchitectureTracker
+            weights = _get_architecture_weights(
+                board_type=board_type,
+                num_players=num_players,
+                temperature=0.5,  # Moderate exploration vs exploitation
+            )
+
+            if not weights:
+                # Cold start: no evaluation data yet
+                logger.debug(
+                    f"No architecture weights for {board_type}_{num_players}p, "
+                    f"using default: {default_arch}"
+                )
+                return default_arch
+
+            # Weighted random selection based on Elo performance
+            architectures = list(weights.keys())
+            arch_weights = list(weights.values())
+
+            # Use random.choices for weighted selection
+            selected_arch = random.choices(architectures, weights=arch_weights, k=1)[0]
+
+            logger.info(
+                f"Architecture selection for {board_type}_{num_players}p: "
+                f"{selected_arch} (weights: {weights})"
+            )
+
+            return selected_arch
+
+        except (KeyError, ValueError, TypeError) as e:
+            logger.debug(
+                f"Error selecting architecture for {board_type}_{num_players}p: {e}, "
+                f"using default: {default_arch}"
+            )
+            return default_arch
 
     def __init__(
         self,
@@ -2464,6 +2531,15 @@ class SelfplayScheduler(EventSubscriptionMixin):
                         f"{board_category.capitalize()} board engine mix: {board_type}_{num_players}p '{engine_mode}' -> "
                         f"'{actual_engine}' (gpu={has_gpu}, extra_args={extra_args})"
                     )
+
+        # Session 17.22: Add architecture selection based on Elo performance
+        # This closes the feedback loop: better-performing architectures get more selfplay
+        if selected:
+            selected_arch = self._select_architecture_for_config(
+                board_type=selected.get("board_type", ""),
+                num_players=selected.get("num_players", 2),
+            )
+            selected["model_version"] = selected_arch
 
         return selected
 

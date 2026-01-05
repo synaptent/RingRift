@@ -67,6 +67,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from aiohttp import web
+    from app.coordination.daemon_health_types import AnalysisResult
 
 from app.config.coordination_defaults import (
     CircuitBreakerDefaults,
@@ -2049,6 +2050,49 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             # Non-critical - log and continue
             logger.debug(f"Failed to emit DAEMON_STOPPED: {e}")
 
+    async def _emit_daemon_failure_event(
+        self, daemon_type: DaemonType, analysis: "AnalysisResult"
+    ) -> None:
+        """Emit DAEMON_FAILURE_CLASSIFIED event for failure pattern tracking.
+
+        Jan 5, 2026 (Sprint 17.9): Emits events when DaemonHealthAnalyzer
+        detects significant failure patterns (escalation, recovery, critical).
+
+        Args:
+            daemon_type: Type of daemon that failed
+            analysis: Analysis result from DaemonHealthAnalyzer
+        """
+        try:
+            from app.coordination.event_router import emit_event
+            from app.distributed.data_events import DataEventType
+
+            import socket
+            event_type = DataEventType.DAEMON_FAILURE_CLASSIFIED
+
+            await emit_event(
+                event_type,
+                {
+                    "daemon_name": daemon_type.value,
+                    "category": analysis.category.value,
+                    "recommended_action": analysis.recommended_action,
+                    "consecutive_failures": analysis.details.get("consecutive_failures", 0),
+                    "failure_rate": analysis.details.get("failure_rate", 0.0),
+                    "needs_intervention": analysis.needs_intervention,
+                    "hostname": socket.gethostname(),
+                    "source": "DaemonManager",
+                },
+            )
+            logger.debug(
+                f"Emitted DAEMON_FAILURE_CLASSIFIED for {daemon_type.value}: "
+                f"{analysis.category.value}"
+            )
+        except ImportError as e:
+            # Non-critical - log and continue
+            logger.debug(f"Failed to emit DAEMON_FAILURE_CLASSIFIED: {e}")
+        except (RuntimeError, OSError, AttributeError) as e:
+            # Non-critical - log and continue
+            logger.debug(f"Error emitting DAEMON_FAILURE_CLASSIFIED: {e}")
+
     async def restart_failed_daemon(
         self,
         daemon_type: DaemonType,
@@ -2764,7 +2808,16 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
 
         # Phase 3: Process health check results (under lock with timeout)
         # December 30, 2025: Added timeout to prevent indefinite blocking
+        # Jan 5, 2026 (Sprint 17.9): Integrated DaemonHealthAnalyzer for failure classification
         if health_results:
+            # Lazy import to avoid circular dependencies
+            try:
+                from app.coordination.daemon_health_analyzer import get_daemon_health_analyzer
+                from app.coordination.daemon_health_types import FailureCategory
+                analyzer = get_daemon_health_analyzer()
+            except ImportError:
+                analyzer = None
+
             async with self._with_lock_timeout("health_check_phase3", timeout=5.0) as acquired:
                 if not acquired:
                     # Lock timeout - skip processing, will retry next cycle
@@ -2779,9 +2832,21 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                             continue
 
                         is_healthy = health_result.get('healthy', True)
+
+                        # Classify the health result using DaemonHealthAnalyzer
+                        if analyzer is not None:
+                            analysis = analyzer.analyze(daemon_type.value, health_result)
+                            health_result["failure_category"] = analysis.category.value
+                            health_result["recommended_action"] = analysis.recommended_action
+
+                            # Emit event if analyzer recommends it
+                            if analysis.should_emit_event:
+                                await self._emit_daemon_failure_event(daemon_type, analysis)
+
                         if not is_healthy:
                             message = health_result.get('message', 'unhealthy')
-                            logger.warning(f"{daemon_type.value} health check failed: {message}")
+                            category = health_result.get('failure_category', 'unknown')
+                            logger.warning(f"{daemon_type.value} health check failed ({category}): {message}")
                             info.last_error = f"Health check failed: {message}"
                             if self.config.auto_restart_failed and info.restart_count < info.max_restarts:
                                 daemons_to_restart.append(daemon_type)

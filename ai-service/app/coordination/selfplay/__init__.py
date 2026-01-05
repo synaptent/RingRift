@@ -53,6 +53,13 @@ from app.coordination.selfplay.event_handlers import (
     is_event_handled,
 )
 
+# Sprint 17.9: Allocation engine extraction
+from app.coordination.selfplay.allocation_engine import (
+    AllocationContext,
+    AllocationEngine,
+    AllocationResult,
+)
+
 # Lazy import for SelfplayScheduler to avoid circular imports
 # When quality_signal_handler.py imports from this package, the scheduler
 # hasn't been fully loaded yet
@@ -104,4 +111,8 @@ __all__ = [
     "EVENT_HANDLERS",
     "get_event_category",
     "is_event_handled",
+    # Allocation engine (Sprint 17.9)
+    "AllocationContext",
+    "AllocationEngine",
+    "AllocationResult",
 ]
