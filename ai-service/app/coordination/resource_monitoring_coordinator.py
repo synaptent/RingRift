@@ -507,53 +507,34 @@ class ResourceMonitoringCoordinator:
         logger.info(f"[ResourceMonitoringCoordinator] Backpressure released: {node_id}")
 
     def _emit_backpressure_event(self, node_id: str, activated: bool, level: BackpressureLevel, reason: str) -> None:
-        """Emit BACKPRESSURE_ACTIVATED or BACKPRESSURE_RELEASED event (December 2025).
+        """Emit BACKPRESSURE_ACTIVATED or BACKPRESSURE_RELEASED event.
 
-        Uses centralized event_emitters for consistent event emission.
+        January 2026: Migrated to safe_emit_event for consistent event handling.
         """
         try:
-            import asyncio
+            from app.coordination.event_emission_helpers import safe_emit_event
 
             if activated:
-                from app.coordination.event_emitters import emit_backpressure_activated
-
-                try:
-                    asyncio.get_running_loop()
-                    fire_and_forget(
-                        emit_backpressure_activated(
-                            node_id=node_id,
-                            level=level.value,
-                            reason=reason,
-                            resource_type="",
-                            utilization=0.0,
-                        ),
-                        name=f"emit_backpressure_activated_{node_id}",
-                    )
-                except RuntimeError:
-                    asyncio.run(emit_backpressure_activated(
-                        node_id=node_id,
-                        level=level.value,
-                        reason=reason,
-                        resource_type="",
-                        utilization=0.0,
-                    ))
+                safe_emit_event(
+                    "BACKPRESSURE_ACTIVATED",
+                    {
+                        "node_id": node_id,
+                        "level": level.value,
+                        "reason": reason,
+                        "resource_type": "",
+                        "utilization": 0.0,
+                    },
+                    context="resource_monitoring_coordinator",
+                )
             else:
-                from app.coordination.event_emitters import emit_backpressure_released
-
-                try:
-                    asyncio.get_running_loop()
-                    fire_and_forget(
-                        emit_backpressure_released(
-                            node_id=node_id,
-                            previous_level=level.value,
-                        ),
-                        name=f"emit_backpressure_released_{node_id}",
-                    )
-                except RuntimeError:
-                    asyncio.run(emit_backpressure_released(
-                        node_id=node_id,
-                        previous_level=level.value,
-                    ))
+                safe_emit_event(
+                    "BACKPRESSURE_RELEASED",
+                    {
+                        "node_id": node_id,
+                        "previous_level": level.value,
+                    },
+                    context="resource_monitoring_coordinator",
+                )
 
             logger.debug(f"[ResourceMonitoringCoordinator] Emitted backpressure event for {node_id}")
         except ImportError:

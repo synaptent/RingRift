@@ -130,47 +130,35 @@ def _emit_coordinator_health_event(status: "BootstrapCoordinatorStatus") -> None
         except RuntimeError:
             in_async = False
 
+        # January 2026: Migrated to safe_emit_event for consistent event handling
+        from app.coordination.event_emission_helpers import safe_emit_event
+
         if status.initialized:
             # Emit healthy event
-            from app.coordination.event_emitters import emit_coordinator_healthy
-
-            async def _emit_healthy():
-                await emit_coordinator_healthy(
-                    coordinator_name=status.name,
-                    health_score=1.0 if status.subscribed else 0.8,
-                    uptime_seconds=0.0,
-                    subscribed=status.subscribed,
-                    source="coordination_bootstrap",
-                )
-
-            if in_async:
-                fire_and_forget(_emit_healthy(), name=f"emit_healthy_{status.name}")
-            else:
-                # Try to create a task anyway - may work in some contexts
-                try:
-                    fire_and_forget(_emit_healthy(), name=f"emit_healthy_{status.name}")
-                except RuntimeError:
-                    logger.debug(f"[Bootstrap] Could not emit healthy event for {status.name} (no event loop)")
+            safe_emit_event(
+                "COORDINATOR_HEALTHY",
+                {
+                    "coordinator_name": status.name,
+                    "health_score": 1.0 if status.subscribed else 0.8,
+                    "uptime_seconds": 0.0,
+                    "subscribed": status.subscribed,
+                    "source": "coordination_bootstrap",
+                },
+                context="coordination_bootstrap",
+            )
         else:
             # Emit unhealthy event
-            from app.coordination.event_emitters import emit_coordinator_unhealthy
-
-            async def _emit_unhealthy():
-                await emit_coordinator_unhealthy(
-                    coordinator_name=status.name,
-                    reason="initialization_failed",
-                    error=status.error or "Unknown error",
-                    health_score=0.0,
-                    source="coordination_bootstrap",
-                )
-
-            if in_async:
-                fire_and_forget(_emit_unhealthy(), name=f"emit_unhealthy_{status.name}")
-            else:
-                try:
-                    fire_and_forget(_emit_unhealthy(), name=f"emit_unhealthy_{status.name}")
-                except RuntimeError:
-                    logger.debug(f"[Bootstrap] Could not emit unhealthy event for {status.name} (no event loop)")
+            safe_emit_event(
+                "COORDINATOR_UNHEALTHY",
+                {
+                    "coordinator_name": status.name,
+                    "reason": "initialization_failed",
+                    "error": status.error or "Unknown error",
+                    "health_score": 0.0,
+                    "source": "coordination_bootstrap",
+                },
+                context="coordination_bootstrap",
+            )
 
     except ImportError as e:
         # Event emitters not available - log at debug level

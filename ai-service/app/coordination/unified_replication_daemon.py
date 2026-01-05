@@ -1078,29 +1078,36 @@ class UnifiedReplicationDaemon(HandlerBase):
         if not self.config.emit_events:
             return
 
+        # January 2026: Migrated to safe_emit_event_async for consistent event handling
         try:
-            if success:
-                from app.coordination.event_emitters import emit_repair_completed
+            from app.coordination.event_emission_helpers import safe_emit_event_async
 
-                await emit_repair_completed(
-                    game_id=job.game_id,
-                    source_nodes=job.source_nodes,
-                    target_nodes=job.target_nodes,
-                    duration_seconds=duration,
-                    new_replica_count=job.target_copies,
-                    priority=job.priority.name,
+            if success:
+                await safe_emit_event_async(
+                    "REPAIR_COMPLETED",
+                    {
+                        "game_id": job.game_id,
+                        "source_nodes": job.source_nodes,
+                        "target_nodes": job.target_nodes,
+                        "duration_seconds": duration,
+                        "new_replica_count": job.target_copies,
+                        "priority": job.priority.name,
+                    },
+                    context="unified_replication_daemon",
                 )
             else:
-                from app.coordination.event_emitters import emit_repair_failed
-
-                await emit_repair_failed(
-                    game_id=job.game_id,
-                    source_nodes=job.source_nodes,
-                    target_nodes=job.target_nodes,
-                    error=job.error or "Unknown error",
-                    duration_seconds=duration,
-                    current_replica_count=job.current_copies,
-                    priority=job.priority.name,
+                await safe_emit_event_async(
+                    "REPAIR_FAILED",
+                    {
+                        "game_id": job.game_id,
+                        "source_nodes": job.source_nodes,
+                        "target_nodes": job.target_nodes,
+                        "error": job.error or "Unknown error",
+                        "duration_seconds": duration,
+                        "current_replica_count": job.current_copies,
+                        "priority": job.priority.name,
+                    },
+                    context="unified_replication_daemon",
                 )
         except ImportError:
             logger.debug("[UnifiedReplicationDaemon] Event emitters not available")

@@ -35,8 +35,8 @@ from typing import Any
 # Use centralized executor pool (December 2025)
 from app.coordination.async_bridge_manager import get_bridge_manager
 
-# Use centralized event emitters (December 2025)
-from app.coordination.event_emitters import emit_training_complete
+# January 2026: Migrated to safe_emit_event_async for consistent event handling
+from app.coordination.event_emission_helpers import safe_emit_event_async
 from app.coordination.event_utils import parse_config_key
 from app.coordination.training_coordinator import (
     TrainingCoordinator,
@@ -233,16 +233,20 @@ class AsyncTrainingBridge:
         )
 
         if success and self._emit_events:
-            # Use centralized event emitter (December 2025)
-            await emit_training_complete(
-                job_id=job_id,
-                board_type=board_type,
-                num_players=num_players,
-                success=(status == "completed"),
-                final_loss=final_val_loss,
-                final_elo=final_elo,
-                model_path=model_path,
-                status=status,
+            # January 2026: Migrated to safe_emit_event_async
+            await safe_emit_event_async(
+                "TRAINING_COMPLETE",
+                {
+                    "job_id": job_id,
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "success": status == "completed",
+                    "final_loss": final_val_loss,
+                    "final_elo": final_elo,
+                    "model_path": model_path,
+                    "status": status,
+                },
+                context="async_training_bridge",
             )
             logger.info(f"Emitted TRAINING_COMPLETE for {job_id}")
 

@@ -41,11 +41,8 @@ from app.coordination.daemon_stats import JobDaemonStats
 
 logger = logging.getLogger(__name__)
 
-# Health event emission (uses safe fallbacks internally)
-from app.coordination.event_emitters import (
-    emit_node_unhealthy,
-    emit_node_recovered,
-)
+# January 2026: Migrated to safe_emit_event_async for consistent event handling
+from app.coordination.event_emission_helpers import safe_emit_event_async
 
 
 class NodeRecoveryAction(Enum):
@@ -1243,20 +1240,26 @@ class NodeRecoveryDaemon(HandlerBase):
             try:
                 if success and action in (RecoveryAction.RESTART, RecoveryAction.PREEMPTIVE_RESTART):
                     # Node was successfully recovered
-                    await emit_node_recovered(
-                        node_id=node.node_id,
-                        node_ip=node.host,
-                        recovery_time_seconds=0.0,  # Could track this if needed
-                        source="node_recovery_daemon",
+                    await safe_emit_event_async(
+                        "NODE_RECOVERED",
+                        {
+                            "node_id": node.node_id,
+                            "node_ip": node.host,
+                            "recovery_time_seconds": 0.0,  # Could track this if needed
+                        },
+                        context="node_recovery_daemon",
                     )
                 elif not success or node.status in ("terminated", "failed", "unreachable"):
                     # Node is unhealthy
-                    await emit_node_unhealthy(
-                        node_id=node.node_id,
-                        reason=f"Status: {node.status}, Action: {action.value}",
-                        node_ip=node.host,
-                        consecutive_failures=node.consecutive_failures,
-                        source="node_recovery_daemon",
+                    await safe_emit_event_async(
+                        "NODE_UNHEALTHY",
+                        {
+                            "node_id": node.node_id,
+                            "reason": f"Status: {node.status}, Action: {action.value}",
+                            "node_ip": node.host,
+                            "consecutive_failures": node.consecutive_failures,
+                        },
+                        context="node_recovery_daemon",
                     )
             except Exception as e:
                 logger.debug(f"Could not emit health event: {e}")
