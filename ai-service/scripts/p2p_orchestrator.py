@@ -26490,6 +26490,15 @@ print(json.dumps({{
         self.leader_lease_expires = float(lease_expires or (now + LEADER_LEASE_DURATION))
         self.last_lease_renewal = now
 
+        # Jan 5, 2026: Renew self-leadership in state machine during lease renewal
+        # Prevents the leader self-acknowledgment bug where leader_id is only set
+        # during state transitions, causing the cluster to appear leaderless
+        if hasattr(self, "_leadership_sm") and self._leadership_sm:
+            try:
+                self._leadership_sm.renew_self_leadership()
+            except Exception as e:
+                logger.debug(f"[LeaseRenewal] Failed to renew self-leadership: {e}")
+
         # Broadcast lease renewal to all peers
         with self.peers_lock:
             peers = list(self.peers.values())

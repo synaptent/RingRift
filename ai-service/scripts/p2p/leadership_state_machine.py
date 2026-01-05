@@ -377,6 +377,35 @@ class LeadershipStateMachine:
 
         return True
 
+    def renew_self_leadership(self) -> bool:
+        """Explicitly renew leader's self-awareness during lease renewal.
+
+        Jan 5, 2026: Added to fix leader self-acknowledgment bug.
+        Previously, leader_id was only set during state transitions. If a leader
+        renewed its lease without going through a state transition, it could lose
+        self-acknowledgment (leader_id becomes None), causing the cluster to appear
+        leaderless despite an elected leader running.
+
+        This method should be called during lease renewal to ensure the leader
+        continues to recognize itself as the leader.
+
+        Returns:
+            True if self-leadership was renewed, False if not in leader state
+        """
+        if self._state not in (LeaderState.LEADER, LeaderState.PROVISIONAL_LEADER):
+            logger.debug(
+                f"renew_self_leadership() ignored: not in leader state "
+                f"(current={self._state.value})"
+            )
+            return False
+
+        # Explicitly reaffirm self as leader
+        self._leader_id = self.node_id
+        logger.debug(
+            f"Leader {self.node_id} renewed self-acknowledgment at epoch {self._epoch}"
+        )
+        return True
+
     def validate_leader_claim(
         self,
         claimed_leader: str,

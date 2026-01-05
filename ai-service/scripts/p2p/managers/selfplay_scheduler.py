@@ -3152,9 +3152,10 @@ class SelfplayScheduler(EventSubscriptionMixin):
 
         target_selfplay = max_selfplay
 
-        # Utilization-aware adjustments (target 60-80%)
+        # Utilization-aware adjustments (target 60-90%)
+        # Jan 5, 2026: Raised CPU threshold 80%→90% for +10-15% cluster utilization
         gpu_overloaded = gpu_percent > 85 or gpu_mem_percent > 85
-        cpu_overloaded = cpu_percent > 80
+        cpu_overloaded = cpu_percent > 90
         gpu_has_headroom = gpu_percent < 60 and gpu_mem_percent < 75
         cpu_has_headroom = cpu_percent < 60
 
