@@ -77,8 +77,9 @@ class NPZCombinationConfig:
     # January 3, 2026: Reduced from 60s to 30s for faster training iteration cycles.
     # January 4, 2026 (Session 17.11): Reduced from 30s to 5s for +5-8 Elo improvement.
     # Analysis showed 30s added unnecessary latency between export and training.
-    # 5s still prevents thundering herd while enabling faster feedback loops.
-    min_interval_seconds: float = 5.0  # Minimum seconds between combinations per config
+    # January 5, 2026 (Session 17.24): Reduced from 5s to 3s for +1-2 Elo improvement.
+    # 3s still prevents thundering herd while enabling faster feedback loops.
+    min_interval_seconds: float = 3.0  # Minimum seconds between combinations per config
 
     def to_combiner_config(self) -> NPZCombinerConfig:
         """Convert to NPZCombinerConfig."""

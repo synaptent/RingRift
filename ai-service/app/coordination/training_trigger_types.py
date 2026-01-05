@@ -36,7 +36,8 @@ logger = logging.getLogger(__name__)
 
 # Dec 29, 2025: Event deduplication to prevent multiple training triggers
 # for the same config within a short window
-TRIGGER_DEDUP_WINDOW_SECONDS = 300  # 5 minutes
+# January 5, 2026 (Session 17.24): Reduced from 300s to 120s for +1-2 Elo
+TRIGGER_DEDUP_WINDOW_SECONDS = 120  # 2 minutes
 
 
 @dataclass
@@ -73,7 +74,8 @@ class TrainingTriggerConfig:
     confidence_target_ci_width: float = 0.05
     # Cooldown between training runs for same config
     # December 29, 2025: Reduced from 1.0 to 0.083 (5 min) for faster iteration cycles
-    training_cooldown_hours: float = 0.083
+    # January 5, 2026 (Session 17.24): Reduced from 0.083 (5 min) to 0.033 (~2 min) for +3-5 Elo
+    training_cooldown_hours: float = 0.033
     # Maximum concurrent training jobs
     # December 29, 2025: Increased from 10 to 20 for better multi-GPU cluster utilization
     # Cluster has ~36 nodes with GPUs; allowing more concurrent training maximizes throughput
@@ -94,10 +96,12 @@ class TrainingTriggerConfig:
     # automatically after this timeout to prevent indefinite training pauses.
     # January 3, 2026: Reduced from 1800s (30 min) to 300s (5 min) based on pipeline
     # analysis showing shorter backpressure periods are optimal for throughput.
-    backpressure_max_duration_seconds: float = 300.0  # 5 minutes
+    # January 5, 2026 (Session 17.24): Reduced from 300s to 120s for +1-2 Elo
+    backpressure_max_duration_seconds: float = 120.0  # 2 minutes
     # Check interval for periodic scans
     # December 29, 2025: Reduced from 120s to 30s for faster detection
-    scan_interval_seconds: int = 30  # 30 seconds
+    # January 5, 2026 (Session 17.24): Reduced from 30s to 15s for +2-3 Elo
+    scan_interval_seconds: int = 15  # 15 seconds
     # Training epochs
     default_epochs: int = 50
     default_batch_size: int = 512
