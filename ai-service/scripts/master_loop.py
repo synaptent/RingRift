@@ -1167,6 +1167,14 @@ class MasterLoopController:
             DaemonType.NPZ_COMBINATION,
             DaemonType.TRAINING_TRIGGER,  # Dec 27 2025: Added as critical daemon
             DaemonType.EVALUATION,
+            # January 4, 2026 (Session 17.21): Model evaluation automation daemons
+            # These enable fully automated evaluation of ALL model architectures (v2, v4, v5, etc.)
+            # UNEVALUATED_MODEL_SCANNER: Scans for models without Elo ratings
+            # STALE_EVALUATION: Re-evaluates models with ratings >30 days old
+            # OWC_MODEL_IMPORT: Imports models from OWC external drive on mac-studio
+            DaemonType.UNEVALUATED_MODEL_SCANNER,
+            DaemonType.STALE_EVALUATION,
+            DaemonType.OWC_MODEL_IMPORT,
             DaemonType.AUTO_PROMOTION,
             DaemonType.TOURNAMENT_DAEMON,
             DaemonType.CURRICULUM_INTEGRATION,
