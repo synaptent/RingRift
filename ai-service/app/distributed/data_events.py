@@ -228,6 +228,8 @@ class DataEventType(Enum):
     QUALITY_FEEDBACK_ADJUSTED = "quality_feedback_adjusted"  # Quality feedback updated for config
     SCHEDULER_REGISTERED = "scheduler_registered"  # Temperature scheduler registered for config
     QUALITY_PENALTY_APPLIED = "quality_penalty_applied"  # Penalty applied → reduce selfplay rate
+    # Jan 5, 2026 - Session 17.29: Quality-triggered auto-dispatch
+    QUALITY_SELFPLAY_DISPATCHED = "quality_selfplay_dispatched"  # High-quality selfplay auto-dispatched
     # P1.4 Dec 2025: Added orphaned event types to enable type-safe subscriptions
     EXPLORATION_BOOST = "exploration_boost"  # Request to boost exploration temperature
     EXPLORATION_ADJUSTED = "exploration_adjusted"  # Exploration strategy changed (from FeedbackSignals)

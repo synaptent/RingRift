@@ -45,6 +45,16 @@ from .base import BaseLoop
 
 logger = logging.getLogger(__name__)
 
+# Jan 5, 2026 (Session 17.29): Circuit breaker integration for SSH recovery
+# Prevents wasted effort on permanently dead nodes
+try:
+    from app.coordination.node_circuit_breaker import get_node_circuit_breaker
+
+    HAS_CIRCUIT_BREAKER = True
+except ImportError:
+    get_node_circuit_breaker = None  # type: ignore
+    HAS_CIRCUIT_BREAKER = False
+
 
 # =============================================================================
 # Configuration
@@ -138,6 +148,7 @@ class RemoteP2PRecoveryStats:
     total_runs: int = 0
     nodes_skipped_cooldown: int = 0
     nodes_skipped_backoff: int = 0  # Jan 2026: Nodes skipped due to exponential backoff
+    nodes_skipped_circuit_broken: int = 0  # Jan 5, 2026: Nodes skipped due to circuit breaker OPEN
     ssh_key_missing: bool = False  # SSH key validation failed
     consecutive_errors: int = 0  # Required by LoopManager.get_status()
     successful_runs: int = 0  # Required by LoopManager.get_status()
@@ -197,6 +208,7 @@ class RemoteP2PRecoveryStats:
             "failed_runs": self.failed_runs,  # Computed property
             "nodes_skipped_cooldown": self.nodes_skipped_cooldown,
             "nodes_skipped_backoff": self.nodes_skipped_backoff,
+            "nodes_skipped_circuit_broken": self.nodes_skipped_circuit_broken,
             "backoff_resets": self.backoff_resets,
             "ssh_key_missing": self.ssh_key_missing,
         }
@@ -476,6 +488,15 @@ class RemoteP2PRecoveryLoop(BaseLoop):
         if paramiko is None:
             return
 
+        # Jan 5, 2026 (Session 17.29): Get circuit breaker for SSH recovery
+        # This prevents wasted SSH attempts on nodes that consistently fail
+        ssh_circuit_breaker = None
+        if HAS_CIRCUIT_BREAKER and get_node_circuit_breaker is not None:
+            try:
+                ssh_circuit_breaker = get_node_circuit_breaker("ssh_recovery")
+            except Exception as e:
+                logger.debug(f"[RemoteP2PRecovery] Could not get circuit breaker: {e}")
+
         now = time.time()
         # Jan 1, 2026: Removed self._stats.cycles_run += 1 as base class handles
         # total_runs incrementing in run_forever() at lines 256 and 281
@@ -529,6 +550,16 @@ class RemoteP2PRecoveryLoop(BaseLoop):
                 else:
                     self._stats.nodes_skipped_cooldown += 1
                 continue
+
+            # Jan 5, 2026 (Session 17.29): Skip if circuit breaker is open for this node
+            # This prevents wasted SSH attempts on permanently dead/terminated nodes
+            if ssh_circuit_breaker is not None:
+                if not ssh_circuit_breaker.can_check(node_id):
+                    self._stats.nodes_skipped_circuit_broken += 1
+                    logger.debug(
+                        f"[RemoteP2PRecovery] Skipping {node_id}: circuit breaker OPEN"
+                    )
+                    continue
 
             nodes_to_recover.append((node_id, node_info))
 
@@ -606,6 +637,9 @@ class RemoteP2PRecoveryLoop(BaseLoop):
                         f"restart count now {self._restart_count[node_id]} "
                         f"(next cooldown: {self._get_effective_cooldown(node_id):.0f}s)"
                     )
+                    # Jan 5, 2026 (Session 17.29): Record failure to circuit breaker
+                    if ssh_circuit_breaker is not None:
+                        ssh_circuit_breaker.record_failure(node_id, verified)
                     # Session 17.25: Emit failure event for feedback loop integration
                     if self.config.emit_events:
                         self._safe_emit_p2p_event(

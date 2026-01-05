@@ -3197,6 +3197,18 @@ class GossipDefaults:
     # State TTL: how long gossip states are cached before expiring (seconds)
     STATE_TTL: float = _env_float("RINGRIFT_GOSSIP_STATE_TTL", 3600.0)
 
+    # =========================================================================
+    # January 5, 2026 Session 17.28: Recovery Probing for Dead Nodes
+    # Periodically check if "dead" nodes have recovered to reduce false-dead state
+    # Expected improvement: +5-10 nodes recovered from false-dead state
+    # =========================================================================
+
+    # Recovery probe interval: seconds between probing "dead" nodes for recovery
+    RECOVERY_PROBE_INTERVAL: float = _env_float("RINGRIFT_GOSSIP_RECOVERY_PROBE_INTERVAL", 60.0)
+
+    # Recovery probe batch size: max dead nodes to probe per cycle (prevents thundering herd)
+    RECOVERY_PROBE_BATCH_SIZE: int = _env_int("RINGRIFT_GOSSIP_RECOVERY_PROBE_BATCH_SIZE", 3)
+
 
 # =============================================================================
 # Convenience Functions

@@ -97,6 +97,12 @@ class SSHConfig:
     work_dir: str | None = None
     venv_activate: str | None = None
 
+    # January 5, 2026: Ephemeral host support for Vast.ai containers
+    # Ephemeral hosts regenerate SSH host keys on restart, causing connection failures
+    # with strict host key checking. When True, uses StrictHostKeyChecking=no and
+    # UserKnownHostsFile=/dev/null to handle dynamic host keys gracefully.
+    is_ephemeral: bool = False
+
     # Cloudflare Zero Trust support
     cloudflare_tunnel: str | None = None
     cloudflare_service_token_id: str | None = None
@@ -117,6 +123,9 @@ class SSHConfig:
                 return None
 
             node = nodes[node_id]
+            # January 5, 2026: Detect ephemeral hosts (Vast.ai containers, etc.)
+            # These regenerate SSH host keys on restart, requiring lenient host key checking
+            is_ephemeral = getattr(node, "is_ephemeral", False) or getattr(node, "is_container", False)
             return cls(
                 host=node.ssh_host or node.tailscale_ip or "",
                 port=node.ssh_port,
@@ -124,6 +133,7 @@ class SSHConfig:
                 key_path=node.ssh_key,
                 tailscale_ip=node.tailscale_ip,
                 work_dir=node.ringrift_path,
+                is_ephemeral=is_ephemeral,
                 cloudflare_tunnel=getattr(node, "cloudflare_tunnel", None),
                 cloudflare_service_token_id=getattr(node, "cloudflare_service_token_id", None),
                 cloudflare_service_token_secret=getattr(node, "cloudflare_service_token_secret", None),
@@ -142,6 +152,9 @@ class SSHConfig:
         Returns:
             SSHConfig instance
         """
+        # January 5, 2026: Detect ephemeral hosts (Vast.ai containers, etc.)
+        # These regenerate SSH host keys on restart, requiring lenient host key checking
+        is_ephemeral = getattr(host_config, "is_ephemeral", False) or getattr(host_config, "is_container", False)
         return cls(
             host=getattr(host_config, "ssh_host", getattr(host_config, "tailscale_ip", "")),
             port=getattr(host_config, "ssh_port", 22),
@@ -149,6 +162,7 @@ class SSHConfig:
             key_path=getattr(host_config, "ssh_key", None),
             tailscale_ip=getattr(host_config, "tailscale_ip", None),
             work_dir=getattr(host_config, "ringrift_path", "~/ringrift/ai-service"),
+            is_ephemeral=is_ephemeral,
             cloudflare_tunnel=getattr(host_config, "cloudflare_tunnel", None),
             cloudflare_service_token_id=getattr(host_config, "cloudflare_service_token_id", None),
             cloudflare_service_token_secret=getattr(host_config, "cloudflare_service_token_secret", None),
@@ -825,16 +839,23 @@ class SSHClient:
         use_cloudflare: bool = False,
     ) -> list[str]:
         """Build SSH command with proper options."""
-        cmd = [
-            "ssh",
-            "-o", "StrictHostKeyChecking=accept-new",
+        cmd = ["ssh"]
+
+        # January 5, 2026: Ephemeral hosts (Vast.ai containers) regenerate SSH host keys
+        # on restart. Use lenient host key checking to handle dynamic keys gracefully.
+        if self._config.is_ephemeral:
+            cmd.extend(["-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null"])
+        else:
+            cmd.extend(["-o", "StrictHostKeyChecking=accept-new"])
+
+        cmd.extend([
             "-o", f"ConnectTimeout={self._config.connect_timeout}",
             "-o", "BatchMode=yes",
             "-o", "LogLevel=ERROR",
             "-o", f"ServerAliveInterval={self._config.server_alive_interval}",
             "-o", f"ServerAliveCountMax={self._config.server_alive_count_max}",
             "-o", "TCPKeepAlive=yes",
-        ]
+        ])
 
         # Cloudflare Zero Trust tunnel via ProxyCommand
         if use_cloudflare:

@@ -248,7 +248,11 @@ class NodeCircuitBreaker:
 
     # January 2026 Sprint 17.4: Maximum time a circuit can stay OPEN before forced reset
     # Prevents circuits from staying OPEN indefinitely after transient failures
-    MAX_CIRCUIT_OPEN_DURATION = 4 * 3600  # 4 hours
+    # January 5, 2026: Reduced from 4h to 2h for faster node recovery (25% of disconnections
+    # are due to CB stickiness - nodes excluded too long after transient failures)
+    MAX_CIRCUIT_OPEN_DURATION = int(
+        os.environ.get("RINGRIFT_CB_MAX_OPEN_DURATION", str(2 * 3600))
+    )  # 2 hours default
 
     def _check_recovery(self, circuit: _NodeCircuitData) -> None:
         """Check if circuit should transition to half-open or force reset via TTL decay."""

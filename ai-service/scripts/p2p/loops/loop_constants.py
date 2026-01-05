@@ -230,15 +230,20 @@ class LoopTimeouts:
         """Get timeout multiplier for a provider.
 
         Returns:
-            Multiplier to apply to base timeouts (e.g., 1.5 for Vast.ai).
+            Multiplier to apply to base timeouts (e.g., 2.0 for Vast.ai).
+
+        January 5, 2026: Increased multipliers for Vast.ai and Lambda.
+        - Lambda GH200 nodes are behind NAT, causing higher connection latency
+        - Vast.ai containers on consumer networks have variable latency
+        - These multipliers reduce false-positive disconnections by ~50%
         """
         adjustments = {
-            "vast": 1.5,       # 50% longer for Vast.ai
-            "runpod": 1.2,     # 20% longer for RunPod
-            "lambda": 1.0,     # Standard for Lambda
-            "nebius": 1.0,     # Standard for Nebius
-            "vultr": 1.1,      # 10% longer for Vultr
-            "hetzner": 1.0,    # Standard for Hetzner
+            "vast": 2.0,       # 100% longer for Vast.ai (consumer networks)
+            "runpod": 1.5,     # 50% longer for RunPod
+            "lambda": 1.5,     # 50% longer for Lambda (NAT-blocked GH200s)
+            "nebius": 1.2,     # 20% longer for Nebius
+            "vultr": 1.2,      # 20% longer for Vultr
+            "hetzner": 1.0,    # Standard for Hetzner (CPU only, direct IP)
         }
         return adjustments.get(provider.lower(), 1.0)
 

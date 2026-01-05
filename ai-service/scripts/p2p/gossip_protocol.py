@@ -972,6 +972,126 @@ class GossipProtocolMixin(P2PMixinBase):
 
         return refreshed
 
+    # =========================================================================
+    # Recovery Probing for Dead/Suspected Nodes (Jan 5, 2026 Session 17.28)
+    # Periodically probe suspected/dead peers to detect recovery
+    # Expected improvement: +5-10 nodes recovered from false-dead state
+    # =========================================================================
+
+    async def _probe_suspected_peers_for_recovery(self) -> int:
+        """Probe suspected/dead peers to detect if they have recovered.
+
+        January 5, 2026 Session 17.28: Added for P2P network health improvement.
+
+        When peers are marked as suspected (high gossip failure count) or dead
+        (not alive based on heartbeat timeout), they may recover and become
+        reachable again. This method periodically probes these peers to detect
+        recovery and restore them to healthy status.
+
+        Benefits:
+        - Reduces false-dead state caused by transient network issues
+        - Faster recovery of nodes after network partition heals
+        - Expected improvement: +5-10 nodes recovered from false-dead state
+
+        Uses constants from GossipDefaults:
+        - RECOVERY_PROBE_INTERVAL: Seconds between probe cycles (default: 60s)
+        - RECOVERY_PROBE_BATCH_SIZE: Max peers to probe per cycle (default: 3)
+
+        Returns:
+            Number of peers that were recovered
+        """
+        try:
+            from app.config.coordination_defaults import GossipDefaults
+        except ImportError:
+            return 0  # Defaults not available
+
+        now = time.time()
+
+        # Rate limit: run every RECOVERY_PROBE_INTERVAL seconds
+        last_probe = getattr(self, "_last_recovery_probe", 0)
+        if now - last_probe < GossipDefaults.RECOVERY_PROBE_INTERVAL:
+            return 0
+        self._last_recovery_probe = now
+
+        # Get peers to probe: suspected peers + dead (non-alive, non-retired) peers
+        peers_to_probe: list["NodeInfo"] = []
+
+        # 1. Get suspected peers from health tracker
+        tracker = getattr(self, "_gossip_health_tracker", None)
+        suspected_peer_ids: set[str] = set()
+        if tracker:
+            suspected_peer_ids = tracker.get_suspected_peers()
+
+        # 2. Get dead (non-alive, non-retired) peers
+        with self.peers_lock:
+            for peer in list(self.peers.values()):
+                # Skip retired peers - they're intentionally offline
+                if getattr(peer, "retired", False):
+                    continue
+
+                # Include if suspected or not alive
+                if peer.node_id in suspected_peer_ids or not peer.is_alive():
+                    peers_to_probe.append(peer)
+
+        if not peers_to_probe:
+            return 0
+
+        # Limit probes per cycle to prevent thundering herd
+        peers_to_probe = peers_to_probe[:GossipDefaults.RECOVERY_PROBE_BATCH_SIZE]
+
+        if self.verbose:
+            self._log_debug(
+                f"[RecoveryProbe] Probing {len(peers_to_probe)} suspected/dead peers: "
+                f"{[p.node_id for p in peers_to_probe]}"
+            )
+
+        recovered = 0
+        for peer in peers_to_probe:
+            try:
+                # Probe the peer using the same method as endpoint validation
+                working_ip = await self._probe_best_endpoint(peer)
+                if working_ip:
+                    # Peer is reachable! Record success to clear suspected status
+                    if tracker:
+                        was_suspected = tracker.record_gossip_success(peer.node_id)
+                        if was_suspected:
+                            self._log_info(
+                                f"[RecoveryProbe] Peer {peer.node_id} recovered from suspected state"
+                            )
+
+                    # Update peer's host if it changed
+                    with self.peers_lock:
+                        if peer.node_id in self.peers:
+                            old_host = self.peers[peer.node_id].host
+                            if working_ip != old_host:
+                                self.peers[peer.node_id].host = working_ip
+                                self._log_info(
+                                    f"[RecoveryProbe] Updated {peer.node_id} host: "
+                                    f"{old_host} -> {working_ip}"
+                                )
+                            # Mark as recently seen (updates last_seen timestamp)
+                            self.peers[peer.node_id].mark_endpoint_validated()
+
+                    recovered += 1
+
+            except (asyncio.TimeoutError, OSError, aiohttp.ClientError) as e:
+                # Expected for dead peers - continue to next
+                if self.verbose:
+                    self._log_debug(
+                        f"[RecoveryProbe] {peer.node_id} still unreachable: {type(e).__name__}"
+                    )
+            except (ValueError, AttributeError, KeyError) as e:
+                # Jan 5, 2026: Narrowed exception types for better debugging
+                self._log_warning(
+                    f"[RecoveryProbe] Unexpected error probing {peer.node_id}: "
+                    f"{type(e).__name__}: {e}"
+                )
+
+        if recovered > 0:
+            self._log_info(f"[RecoveryProbe] Recovered {recovered} peers from dead/suspected state")
+
+        return recovered
+
     async def _probe_best_endpoint(self, peer: "NodeInfo") -> str | None:
         """Probe multiple IPs for a peer and return the first working one.
 
@@ -1446,6 +1566,11 @@ class GossipProtocolMixin(P2PMixinBase):
         # Dec 30, 2025: Validate stale endpoints to prevent partition isolation
         # Probes alternate IPs when peers haven't responded for endpoint_ttl_seconds
         await self._validate_stale_endpoints()
+
+        # Jan 5, 2026 Session 17.28: Probe suspected/dead peers for recovery
+        # Periodically check if "dead" nodes have recovered to reduce false-dead state
+        # Expected improvement: +5-10 nodes recovered from false-dead state
+        await self._probe_suspected_peers_for_recovery()
 
         now = time.time()
 
