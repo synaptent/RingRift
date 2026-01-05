@@ -2,20 +2,20 @@
 
 AI assistant context for the Python AI training service. Complements `AGENTS.md` with operational knowledge.
 
-**Last Updated**: January 4, 2026 (Sprint 17.9 - Session 17.11)
+**Last Updated**: January 4, 2026 (Sprint 17.9 - Session 17.12)
 
 ## Infrastructure Health Status (Verified Jan 4, 2026)
 
-| Component            | Status    | Evidence                                                             |
-| -------------------- | --------- | -------------------------------------------------------------------- |
-| **P2P Network**      | GREEN     | A- (91/100), 23 nodes updated, 22 P2P restarted, CB decay active     |
-| **Training Loop**    | GREEN     | A (95/100), 5/5 feedback loops, 6/6 pipeline stages, 686+ tests      |
-| **Code Quality**     | GREEN     | 188/208 modules with health_check(), 9 CB types, 13 recovery daemons |
-| **Leader Election**  | WORKING   | Cluster recovering after restart, all nodes updated to 444f32a8      |
-| **Work Queue**       | HEALTHY   | Queue repopulating, selfplay scheduler active                        |
-| **Game Data**        | EXCELLENT | 109K+ games across all configs                                       |
-| **CB TTL Decay**     | ACTIVE    | Hourly decay in DaemonManager health loop (6h TTL)                   |
-| **Multi-Arch Train** | ACTIVE    | v2 models trained, all 12 canonical configs generating data          |
+| Component            | Status    | Evidence                                                            |
+| -------------------- | --------- | ------------------------------------------------------------------- |
+| **P2P Network**      | GREEN     | A- (91/100), mac-studio leader, 7 alive peers, quorum OK            |
+| **Training Loop**    | GREEN     | A (95/100), 116K+ games, 5/5 feedback loops, 6/6 pipeline stages    |
+| **Code Quality**     | GREEN     | Singleton patterns consolidated, CB health check optimization added |
+| **Leader Election**  | WORKING   | mac-studio leader, voter quorum OK                                  |
+| **Work Queue**       | HEALTHY   | Queue repopulating, selfplay scheduler active                       |
+| **Game Data**        | EXCELLENT | 116K+ games across all configs (hex8: 21K, square8: 24K, etc.)      |
+| **CB TTL Decay**     | ACTIVE    | Hourly decay in DaemonManager health loop (6h TTL)                  |
+| **Multi-Arch Train** | ACTIVE    | v2 models trained, all 12 canonical configs generating data         |
 
 ## Sprint 17: Cluster Resilience Integration (Jan 4, 2026)
 
@@ -46,6 +46,31 @@ Session 16-17 resilience components are now fully integrated and bootstrapped:
 | Early Quorum Escalation   | Skip to P2P restart after 2 failed healing attempts with quorum lost | `p2p_recovery_daemon.py`      |
 | Training Heartbeat Events | TRAINING_HEARTBEAT event for watchdog monitoring                     | `distributed_lock.py`         |
 | TRAINING_PROCESS_KILLED   | Event emitted when stuck training process killed                     | `training_watchdog_daemon.py` |
+
+**Sprint 17.9 / Session 17.12 (Jan 4, 2026) - Singleton Consolidation & CB Optimization:**
+
+| Task                            | Status      | Evidence                                               |
+| ------------------------------- | ----------- | ------------------------------------------------------ |
+| Singleton Pattern Consolidation | ✅ COMPLETE | 6 classes migrated to SingletonMixin (~80 LOC saved)   |
+| CB Health Check Optimization    | ✅ COMPLETE | is_node_circuit_broken() added to skip broken nodes    |
+| P2P Assessment                  | ✅ COMPLETE | A- (91/100), mac-studio leader, 7 alive peers          |
+| Training Assessment             | ✅ COMPLETE | A (95/100), 116K+ games, all feedback loops functional |
+
+**Singleton Migrations (Session 17.12):**
+
+- `ExplorationFeedbackHandler` → SingletonMixin
+- `NodeAvailabilityCache` → SingletonMixin
+- `NPZCombinationDaemon` → SingletonMixin
+- `TrainingDataRecoveryDaemon` → SingletonMixin
+- `ExternalDriveSyncDaemon` → SingletonMixin
+- `CascadeBreakerManager` → SingletonMixin
+
+**CB Health Check Optimization:**
+
+- Added `is_node_circuit_broken(node_id)` to HealthCoordinator
+- Added `get_cached_node_health(node_id)` for fast cached health
+- Connection pool now skips health checks on circuit-broken peers
+- Reduces wasted timeout windows on known-unavailable nodes
 
 **Sprint 17.9 / Session 17.11 (Jan 4, 2026) - Comprehensive Health Assessment & Cluster Update:**
 
