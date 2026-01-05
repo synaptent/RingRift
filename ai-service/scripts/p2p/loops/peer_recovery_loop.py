@@ -36,6 +36,7 @@ Events:
     NODE_PROBE_FAILED: Emitted when a probe fails (for metrics)
     CIRCUIT_RESET: Emitted on proactive circuit breaker recovery
 """
+from __future__ import annotations
 
 __all__ = [
     "PeerRecoveryLoop",
@@ -45,8 +46,6 @@ __all__ = [
     "PROVIDER_PROBE_TIMEOUTS",
     "get_provider_probe_timeout",
 ]
-
-from __future__ import annotations
 
 import asyncio
 import logging
@@ -152,9 +151,12 @@ class PeerRecoveryConfig:
     # Base interval between recovery cycles (seconds)
     # Dec 2025: Changed default from 3600 (1 hour) to 120 (2 minutes)
     # Jan 2026: Reduced from 120s to 45s for faster CB recovery (MTTR 210s → 90s)
+    # January 5, 2026 (Phase 7.10): Reduced from 45s to 15s for faster initial retries.
+    # Combined with 1.5x backoff multiplier: 15→22→34→51→76→114s (3.5 min to 114s vs 10+ min)
+    # Dead nodes are now retried in 3-4 min instead of 10+ min total backoff time.
     recovery_interval_seconds: float = field(
         default_factory=lambda: float(
-            os.environ.get("RINGRIFT_P2P_PEER_RECOVERY_INTERVAL", "45")
+            os.environ.get("RINGRIFT_P2P_PEER_RECOVERY_INTERVAL", "15")
         )
     )
 
@@ -175,9 +177,11 @@ class PeerRecoveryConfig:
 
     # Backoff multiplier for repeated failures
     # Dec 2025: Reduced from 2.0 to 1.5, then to 1.2 for even gentler backoff.
-    # With 1.2x: 120s → 144s → 173s → 207s → 249s → 299s → 358s → 430s → 516s → 600s (cap)
-    # Reaches cap in ~9 iterations vs 4 with 1.5x, enabling faster peer recovery.
-    backoff_multiplier: float = 1.2
+    # January 5, 2026 (Phase 7.10): Increased back to 1.5 combined with shorter base interval.
+    # With 1.5x and 15s base: 15→22→34→51→76→114→171→256→384→576→600s (cap)
+    # Reaches cap faster but starts retrying sooner after failures.
+    # Dead nodes retried in 3-4 min vs 10+ min with old 1.2x multiplier.
+    backoff_multiplier: float = 1.5
 
     # Number of failures before applying backoff
     # Jan 2026: Changed back to 3 (was reduced to 1, caused peer thrashing)
