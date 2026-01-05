@@ -142,7 +142,10 @@ class AutoExportDaemon(HandlerBase):
         super().__init__(
             name="auto_export",
             config=self._daemon_config,
-            cycle_interval=300.0,  # 5 minutes scan interval
+            # Jan 5, 2026 (Task 8.6): Reduced from 300s (5 min) to 30s
+            # Faster scanning improves data flow latency to training pipeline.
+            # Rate limiting still enforced via min_games_threshold (50 games).
+            cycle_interval=30.0,  # 30 seconds scan interval
         )
         self._export_states: dict[str, ConfigExportState] = {}
         self._export_semaphore = asyncio.Semaphore(self._daemon_config.max_concurrent_exports)

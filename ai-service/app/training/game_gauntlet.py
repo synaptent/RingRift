@@ -1519,7 +1519,7 @@ def _evaluate_single_opponent(
             except ImportError:
                 pass  # EloService not available
             except (OSError, RuntimeError, ValueError) as elo_err:
-                logger.debug(f"[gauntlet] Failed to record Elo: {elo_err}")
+                logger.error(f"[gauntlet] Failed to record Elo: {elo_err}")
 
             if verbose:
                 outcome = "WIN" if game_result.candidate_won else "LOSS"
@@ -2194,7 +2194,7 @@ async def run_baseline_calibration(
                         tournament_id=f"baseline_calibration_{board_value}_{num_players}p",
                     )
                 except (RuntimeError, ValueError, OSError) as e:
-                    logger.debug(f"[calibration] Failed to record Elo: {e}")
+                    logger.error(f"[calibration] Failed to record Elo: {e}")
 
         # Store results for this matchup
         total = wins_a + wins_b + draws

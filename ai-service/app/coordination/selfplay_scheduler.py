@@ -2824,6 +2824,24 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
     # Idle Node Work Injection (Jan 5, 2026 - Sprint 17.30)
     # =========================================================================
 
+    def _is_cpu_only_node(self, node_id: str) -> bool:
+        """Check if a node is CPU-only (no GPU).
+
+        Jan 5, 2026: CPU-only nodes (like Hetzner) can contribute
+        heuristic-only selfplay data. This helper identifies them
+        for appropriate work assignment.
+
+        Args:
+            node_id: Node identifier to check
+
+        Returns:
+            True if node has no GPU, False otherwise
+        """
+        cap = self._node_capabilities.get(node_id)
+        if not cap:
+            return False
+        return cap.gpu_memory_gb == 0
+
     def _update_node_idle_tracking(self) -> None:
         """Update idle tracking state for all nodes.
 
@@ -2831,13 +2849,13 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
         first became idle (current_jobs == 0).
 
         Jan 5, 2026: Part of idle node work injection feature.
+        Jan 5, 2026 (Task 8.4): Now includes CPU-only nodes for heuristic selfplay.
         """
         now = time.time()
 
         for node_id, cap in self._node_capabilities.items():
-            if cap.gpu_memory_gb == 0:
-                # Skip CPU-only nodes
-                continue
+            # Jan 5, 2026: Include CPU-only nodes now that they can run heuristic selfplay
+            # Previously skipped CPU-only nodes, but they can contribute training data
 
             if cap.current_jobs == 0:
                 # Node is idle - start tracking if not already
@@ -2955,14 +2973,23 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
 
         # Inject work for idle nodes
         injected_count = 0
+        cpu_node_count = 0
         games_per_node = 50  # Emergency allocation per node
+        # Jan 5, 2026 (Task 8.4): Lower batch for CPU-only nodes (heuristic is slower)
+        games_per_cpu_node = 25
 
         allocation: dict[str, dict[str, int]] = {target_config: {}}
 
         for node_id in idle_nodes:
+            # Jan 5, 2026 (Task 8.4): CPU nodes get fewer games (heuristic is slower)
+            is_cpu = self._is_cpu_only_node(node_id)
+            node_games = games_per_cpu_node if is_cpu else games_per_node
+
             # Allocate emergency games to this node
-            allocation[target_config][node_id] = games_per_node
+            allocation[target_config][node_id] = node_games
             injected_count += 1
+            if is_cpu:
+                cpu_node_count += 1
 
             # Clear idle tracking since we're injecting work
             if node_id in self._node_idle_since:
@@ -2973,11 +3000,16 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
         # Log the injection
         priority = self._config_priorities.get(target_config)
         game_count = priority.game_count if priority else 0
+        total_games = sum(allocation[target_config].values())
+
+        # Jan 5, 2026 (Task 8.4): Log CPU vs GPU node breakdown
+        gpu_node_count = injected_count - cpu_node_count
+        node_breakdown = f"{gpu_node_count} GPU, {cpu_node_count} CPU" if cpu_node_count > 0 else f"{gpu_node_count} GPU"
 
         logger.info(
             f"[SelfplayScheduler] Idle work injection: "
-            f"{len(idle_nodes)} idle nodes → {target_config} ({game_count} games, "
-            f"+{injected_count * games_per_node} games allocated)"
+            f"{len(idle_nodes)} idle nodes ({node_breakdown}) → {target_config} ({game_count} games, "
+            f"+{total_games} games allocated)"
         )
 
         # Emit event for observability
@@ -2989,8 +3021,11 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
                 {
                     "idle_nodes": idle_nodes,
                     "target_config": target_config,
-                    "games_injected": injected_count * games_per_node,
+                    "games_injected": total_games,
                     "timestamp": now,
+                    # Jan 5, 2026 (Task 8.4): Include CPU vs GPU breakdown
+                    "gpu_nodes": gpu_node_count,
+                    "cpu_nodes": cpu_node_count,
                 },
             )
         except (ImportError, AttributeError):
@@ -3001,7 +3036,10 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
             "injected": injected_count,
             "target_config": target_config,
             "games_per_node": games_per_node,
-            "total_games": injected_count * games_per_node,
+            "games_per_cpu_node": games_per_cpu_node,
+            "total_games": total_games,
+            "gpu_nodes": gpu_node_count,
+            "cpu_nodes": cpu_node_count,
         }
 
     # =========================================================================

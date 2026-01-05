@@ -473,8 +473,10 @@ class GossipProtocolMixin(P2PMixinBase):
 
     # Dec 30, 2025: Configurable gossip parameters via environment variables
     # These can be tuned per cluster without code changes
-    GOSSIP_FANOUT_LEADER = int(os.environ.get("RINGRIFT_GOSSIP_FANOUT_LEADER", "8"))
-    GOSSIP_FANOUT_FOLLOWER = int(os.environ.get("RINGRIFT_GOSSIP_FANOUT_FOLLOWER", "5"))
+    # Jan 5, 2026: Increased fanout for 30+ node clusters to improve visibility
+    # Leader: 8→10, Follower: 5→7. With 41 nodes, ensures full propagation in ~2 rounds.
+    GOSSIP_FANOUT_LEADER = int(os.environ.get("RINGRIFT_GOSSIP_FANOUT_LEADER", "10"))
+    GOSSIP_FANOUT_FOLLOWER = int(os.environ.get("RINGRIFT_GOSSIP_FANOUT_FOLLOWER", "7"))
     GOSSIP_INTERVAL_SECONDS = float(os.environ.get("RINGRIFT_GOSSIP_INTERVAL", "30"))
     ANTI_ENTROPY_INTERVAL_SECONDS = float(
         os.environ.get("RINGRIFT_ANTI_ENTROPY_INTERVAL", "120")
@@ -2675,6 +2677,11 @@ class GossipProtocolMixin(P2PMixinBase):
         # Increment cluster epoch to ensure gossip picks up the change
         if hasattr(self, "_increment_cluster_epoch"):
             self._increment_cluster_epoch()
+
+        # Jan 5, 2026: Register self in peers dict when accepting leadership from gossip
+        # This ensures the leader is visible in peers iteration for quorum checks
+        if hasattr(self, "_register_self_in_peers"):
+            self._register_self_in_peers()
 
         # Save state
         if hasattr(self, "_save_state"):

@@ -7296,6 +7296,52 @@ class P2POrchestrator(
             capabilities.append("large_boards")
         return capabilities
 
+    def _register_self_in_peers(self) -> None:
+        """Register this node in the peers dict.
+
+        Jan 5, 2026: Ensures the leader (and any node) is visible in self.peers
+        for components that iterate over peers directly. This fixes an issue
+        where the leader was not in its own peers dict after becoming leader.
+
+        This is idempotent - calling multiple times is safe.
+        """
+        self._update_self_info()  # Ensure self_info is current
+
+        with self.peers_lock:
+            was_present = self.node_id in self.peers
+            self.peers[self.node_id] = self.self_info
+            if not was_present:
+                logger.info(f"[SelfReg] Registered self in peers: {self.node_id}")
+
+        # Emit HOST_ONLINE if this is first registration (consistency with peer discovery)
+        if not was_present:
+            try:
+                asyncio.create_task(self._emit_host_online_for_self())
+            except RuntimeError:
+                # No event loop running, use sync path if available
+                pass
+
+    async def _emit_host_online_for_self(self) -> None:
+        """Emit HOST_ONLINE event for self-registration."""
+        try:
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import emit_event
+
+            emit_event(DataEventType.HOST_ONLINE.value, {
+                "node_id": self.node_id,
+                "host": self.self_info.host,
+                "port": self.self_info.port,
+                "has_gpu": self.self_info.has_gpu,
+                "gpu_name": self.self_info.gpu_name,
+                "capabilities": list(self.self_info.capabilities) if self.self_info.capabilities else [],
+                "source": "leader_self_registration",
+            })
+            logger.debug(f"[SelfReg] Emitted HOST_ONLINE for self: {self.node_id}")
+        except ImportError:
+            pass  # Event system not available
+        except Exception as e:
+            logger.debug(f"[SelfReg] Failed to emit HOST_ONLINE: {e}")
+
     # _is_tailscale_host provided by NetworkUtilsMixin
 
     def _local_has_tailscale(self) -> bool:
@@ -23096,6 +23142,18 @@ print(json.dumps({{
         """Start leader election using Bully algorithm."""
         # Jan 3, 2026 Sprint 13.3: Track election start time for latency metrics
         self._start_election_timing()
+
+        # Jan 5, 2026: Global election cooldown to prevent rapid election storms
+        # This complements the per-loop backoff in _maybe_trigger_election()
+        ELECTION_GLOBAL_COOLDOWN = 30.0  # seconds
+        now = time.time()
+        last_election = getattr(self, "_last_election_completed", 0.0)
+        if now - last_election < ELECTION_GLOBAL_COOLDOWN:
+            logger.debug(
+                f"[Election] Skipping: global cooldown ({now - last_election:.1f}s < {ELECTION_GLOBAL_COOLDOWN}s)"
+            )
+            return
+
         self._update_self_info()
 
         # NAT-blocked nodes cannot act as a leader because peers can't reach them.
@@ -23245,6 +23303,8 @@ print(json.dumps({{
             self.leader_lease_expires = 0.0
             self.last_lease_renewal = 0.0
             self._release_voter_grant_if_self()
+            # Jan 5, 2026: Mark election completed (even on failure) for cooldown tracking
+            self._last_election_completed = time.time()
             self._save_state()
             return
 
@@ -23252,6 +23312,10 @@ print(json.dumps({{
         # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
         self._set_leader(self.node_id, reason="become_leader", save_state=False)
         self.last_leader_seen = time.time()  # Track when we last had a functioning leader
+
+        # Jan 5, 2026: Register self in peers dict when becoming leader
+        # This ensures the leader is visible in peers iteration and quorum checks
+        self._register_self_in_peers()
 
         # Jan 3, 2026 Sprint 13.3: Record election latency for "won" outcome
         self._record_election_latency("won")
@@ -23301,6 +23365,9 @@ print(json.dumps({{
                         }, headers=self._auth_headers())
                     except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, IndexError, AttributeError):
                         pass  # Network errors expected during leader announcements
+
+        # Jan 5, 2026: Mark election completed for cooldown tracking
+        self._last_election_completed = time.time()
 
         self._save_state()
 
@@ -23524,6 +23591,9 @@ print(json.dumps({{
         # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
         self._set_leader(self.node_id, reason=f"promote_provisional_{reason}", save_state=False)
         self.last_leader_seen = now
+
+        # Jan 5, 2026: Register self in peers dict when promoted to leader
+        self._register_self_in_peers()
 
         # Create a new lease ID to mark full leadership
         lease_id = f"FALLBACK_{self.node_id}_{int(now)}_{uuid.uuid4().hex[:8]}"

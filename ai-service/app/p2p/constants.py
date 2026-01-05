@@ -317,7 +317,8 @@ def get_gossip_fanout(peer_count: int) -> int:
         Recommended gossip fanout:
         - 3 for small clusters (<10 peers)
         - 5 for medium clusters (10-29 peers)
-        - 7 for large clusters (30+ peers)
+        - 8 for large clusters (30-49 peers)
+        - 10 for very large clusters (50+ peers)
 
     December 30, 2025: Added to fix peer visibility discrepancy where
     mac-studio saw only 11 peers while Nebius nodes saw 21-26.
@@ -331,8 +332,10 @@ def get_gossip_fanout(peer_count: int) -> int:
         return 3  # Small cluster - low fanout sufficient
     elif peer_count < 30:
         return 5  # Medium cluster - balanced fanout
+    elif peer_count < 50:
+        return 8  # Large cluster - high fanout for coverage
     else:
-        return 7  # Large cluster - high fanout for coverage
+        return 10  # Very large cluster - maximum fanout
 
 
 # Gossip interval - seconds between gossip rounds
@@ -341,8 +344,10 @@ GOSSIP_INTERVAL = int(os.environ.get("RINGRIFT_P2P_GOSSIP_INTERVAL", "15") or 15
 # Gossip jitter - randomization factor to prevent thundering herd (±10%)
 GOSSIP_JITTER = float(os.environ.get("RINGRIFT_P2P_GOSSIP_JITTER", "0.2") or 0.2)
 # Upper bound on peer endpoints included in gossip payloads to limit message size.
+# Jan 5, 2026: Increased from 25 to 45 for 41-node cluster to ensure all peers
+# are shared in gossip messages. With 25 limit, only ~60% of peers were visible.
 GOSSIP_MAX_PEER_ENDPOINTS = int(
-    os.environ.get("RINGRIFT_P2P_GOSSIP_MAX_PEER_ENDPOINTS", "25") or 25
+    os.environ.get("RINGRIFT_P2P_GOSSIP_MAX_PEER_ENDPOINTS", "45") or 45
 )
 
 # Peer lifecycle

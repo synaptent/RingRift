@@ -44,11 +44,15 @@ logger = logging.getLogger(__name__)
 
 
 # Default configuration constants
-DEFAULT_NO_LEADER_THRESHOLD_SECONDS = 300.0  # 5 minutes without leader
+# Jan 5, 2026: Reduced thresholds for faster fallback during leader transitions
+# Previously: 5 min no-leader, 2 min starvation, 60s stable leader
+# Now: 60s no-leader, 30s starvation, 10s stable leader
+# This enables faster recovery during leader elections (typically 5-30 seconds)
+DEFAULT_NO_LEADER_THRESHOLD_SECONDS = 60.0  # 1 minute without leader (was 5 min)
 DEFAULT_QUEUE_STARVATION_THRESHOLD = 10  # Queue depth below which is "starved"
-DEFAULT_QUEUE_STARVATION_DURATION_SECONDS = 120.0  # 2 minutes of starvation
+DEFAULT_QUEUE_STARVATION_DURATION_SECONDS = 30.0  # 30 seconds of starvation (was 2 min)
 DEFAULT_HEALTHY_QUEUE_DEPTH = 50  # Queue depth above which is "healthy"
-DEFAULT_LEADER_STABLE_DURATION_SECONDS = 60.0  # Leader must be stable for 60s to deactivate
+DEFAULT_LEADER_STABLE_DURATION_SECONDS = 10.0  # Leader stable for 10s to deactivate (was 60s)
 DEFAULT_LOCAL_QUEUE_TARGET = 20  # Target local queue size when activated
 DEFAULT_CHECK_INTERVAL_SECONDS = 30.0  # How often to check conditions
 DEFAULT_POPULATION_BATCH_SIZE = 5  # How many items to add per cycle

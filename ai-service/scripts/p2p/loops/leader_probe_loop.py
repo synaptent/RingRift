@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import deque
 from typing import TYPE_CHECKING, Any
 
 from .base import BaseLoop
@@ -91,6 +92,11 @@ class LeaderProbeLoop(BaseLoop):
         self._probe_backup_candidates = probe_backup_candidates
         self._backup_candidate_status: dict[str, bool] = {}  # node_id -> is_reachable
 
+        # Jan 5, 2026: Latency trending for early warning
+        # Track last 10 probe latencies to detect degradation before complete failure
+        self._latency_history: deque[float] = deque(maxlen=10)
+        self._latency_warning_emitted = False  # Avoid spamming warnings
+
     async def _run_once(self) -> None:
         """Single probe iteration - check if leader is reachable.
 
@@ -107,11 +113,20 @@ class LeaderProbeLoop(BaseLoop):
             # No leader known - don't probe, let election process handle it
             return
 
+        # Jan 5, 2026: Track probe latency for early warning
+        start_time = time.time()
+
         # Probe the leader
         leader_reachable = await self._probe_leader(leader_id)
 
+        # Record latency for trending analysis
+        latency = time.time() - start_time
+        self._latency_history.append(latency)
+
         if leader_reachable:
             self._on_probe_success()
+            # Check for latency degradation even on success
+            self._check_latency_trend()
         else:
             await self._on_probe_failure(leader_id)
 
@@ -230,6 +245,65 @@ class LeaderProbeLoop(BaseLoop):
         self._last_success_time = time.time()
         self._election_triggered_recently = False
 
+    def _check_latency_trend(self) -> None:
+        """Check if probe latency is trending upward - early warning for leader degradation.
+
+        Jan 5, 2026: Detects latency trends before complete failure.
+        If recent probes are 2x slower than older probes, emit a warning event.
+        This gives operators early warning that the leader may be struggling.
+        """
+        # Need at least 6 samples (3 old + 3 recent) for meaningful comparison
+        if len(self._latency_history) < 6:
+            return
+
+        # Split into older and recent halves
+        history = list(self._latency_history)
+        mid_point = len(history) // 2
+        older_samples = history[:mid_point]
+        recent_samples = history[mid_point:]
+
+        older_avg = sum(older_samples) / len(older_samples)
+        recent_avg = sum(recent_samples) / len(recent_samples)
+
+        # Avoid division by zero and filter out noise
+        if older_avg < 0.01:  # < 10ms is healthy, ignore
+            if self._latency_warning_emitted:
+                self._latency_warning_emitted = False
+                self._emit_event("LEADER_LATENCY_RECOVERED", {
+                    "older_avg_ms": older_avg * 1000,
+                    "recent_avg_ms": recent_avg * 1000,
+                })
+            return
+
+        # Check if latency has doubled
+        if recent_avg > older_avg * 2:
+            if not self._latency_warning_emitted:
+                logger.warning(
+                    f"[LeaderProbe] Leader latency trending up: "
+                    f"{older_avg*1000:.0f}ms → {recent_avg*1000:.0f}ms "
+                    f"({recent_avg/older_avg:.1f}x increase)"
+                )
+                self._emit_event("LEADER_LATENCY_WARNING", {
+                    "older_avg_ms": older_avg * 1000,
+                    "recent_avg_ms": recent_avg * 1000,
+                    "ratio": recent_avg / older_avg,
+                    "samples": len(history),
+                    "leader_id": self._get_leader_id(),
+                })
+                self._latency_warning_emitted = True
+        else:
+            # Latency recovered
+            if self._latency_warning_emitted:
+                logger.info(
+                    f"[LeaderProbe] Leader latency recovered: "
+                    f"{recent_avg*1000:.0f}ms (was trending up)"
+                )
+                self._emit_event("LEADER_LATENCY_RECOVERED", {
+                    "older_avg_ms": older_avg * 1000,
+                    "recent_avg_ms": recent_avg * 1000,
+                })
+                self._latency_warning_emitted = False
+
     async def _on_probe_failure(self, leader_id: str) -> None:
         """Handle probe failure - increment counter and maybe trigger election.
 
@@ -340,6 +414,17 @@ class LeaderProbeLoop(BaseLoop):
 
     def get_status(self) -> dict[str, Any]:
         """Get loop status for health checks."""
+        # Calculate latency stats
+        latency_stats = {}
+        if self._latency_history:
+            latencies = list(self._latency_history)
+            latency_stats = {
+                "avg_latency_ms": sum(latencies) / len(latencies) * 1000,
+                "recent_latency_ms": latencies[-1] * 1000 if latencies else 0,
+                "latency_samples": len(latencies),
+                "latency_warning_active": self._latency_warning_emitted,
+            }
+
         return {
             "name": self.name,
             "running": self.running,
@@ -349,6 +434,7 @@ class LeaderProbeLoop(BaseLoop):
             "last_success_time": self._last_success_time,
             "seconds_since_success": time.time() - self._last_success_time,
             "election_triggered_recently": self._election_triggered_recently,
+            **latency_stats,
         }
 
     def health_check(self) -> Any:
