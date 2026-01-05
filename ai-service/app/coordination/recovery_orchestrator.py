@@ -49,13 +49,14 @@ from app.providers import (
     TailscaleManager,
     VastManager,
 )
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+from app.coordination.handler_base import HandlerBase
 from app.coordination.health_check_orchestrator import (
     HealthCheckOrchestrator,
     NodeHealthDetails,
     NodeHealthState,
     get_health_orchestrator,
 )
-from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 from app.utils.retry import RetryConfig
 
 logger = logging.getLogger(__name__)
@@ -159,7 +160,7 @@ class NodeRecoveryState:
         return True
 
 
-class RecoveryOrchestrator:
+class RecoveryOrchestrator(HandlerBase):
     """Orchestrates automated recovery of failing nodes.
 
     Implements an escalation ladder with cooldowns and circuit breakers
@@ -189,6 +190,9 @@ class RecoveryOrchestrator:
         RecoveryAction.ALERT_HUMAN,
     ]
 
+    # Cycle interval: 5 minutes between recovery cycles
+    RECOVERY_CYCLE_INTERVAL = 300.0
+
     def __init__(
         self,
         health_orchestrator: HealthCheckOrchestrator | None = None,
@@ -202,6 +206,11 @@ class RecoveryOrchestrator:
             slack_webhook_url: Slack webhook for alerts
             alerts_config_path: Path to alerts config file
         """
+        super().__init__(
+            name="recovery_orchestrator",
+            config=None,
+            cycle_interval=self.RECOVERY_CYCLE_INTERVAL,
+        )
         self.health_orchestrator = health_orchestrator or get_health_orchestrator()
 
         # Provider managers
@@ -722,39 +731,24 @@ echo "Key deployed"
         logger.error(f"[RecoveryOrchestrator] SSH key deploy failed on {node_id}: {stderr}")
         return False
 
-    async def start(self) -> None:
-        """Start the recovery daemon loop.
+    async def _run_cycle(self) -> None:
+        """One recovery cycle - attempt recovery on all unhealthy nodes.
 
-        December 31, 2025: Added to make RecoveryOrchestrator compatible with
-        daemon_runners.py which expects a start() method.
-
-        Runs recovery cycles every 5 minutes until stopped.
+        Called by HandlerBase every RECOVERY_CYCLE_INTERVAL seconds.
         """
-        self._running = True
-        logger.info("[RecoveryOrchestrator] Starting daemon loop")
+        results = await self.recover_all_unhealthy()
+        if results:
+            logger.info(
+                f"[RecoveryOrchestrator] Recovered {len(results)} nodes this cycle"
+            )
 
-        try:
-            while self._running:
-                try:
-                    results = await self.recover_all_unhealthy()
-                    if results:
-                        logger.info(
-                            f"[RecoveryOrchestrator] Recovered {len(results)} nodes this cycle"
-                        )
-                except Exception as e:
-                    logger.error(f"[RecoveryOrchestrator] Recovery cycle error: {e}")
+    async def _on_start(self) -> None:
+        """Called when the orchestrator starts."""
+        logger.info("[RecoveryOrchestrator] Starting daemon")
 
-                # Wait 5 minutes between cycles
-                await asyncio.sleep(300)
-
-        except asyncio.CancelledError:
-            logger.info("[RecoveryOrchestrator] Daemon loop cancelled")
-            self._running = False
-
-    async def stop(self) -> None:
-        """Stop the recovery daemon loop."""
-        logger.info("[RecoveryOrchestrator] Stopping daemon loop")
-        self._running = False
+    async def _on_stop(self) -> None:
+        """Called when the orchestrator stops."""
+        logger.info("[RecoveryOrchestrator] Stopping daemon")
 
     def health_check(self) -> HealthCheckResult:
         """Perform health check for daemon manager integration.
@@ -762,6 +756,14 @@ echo "Key deployed"
         Returns:
             HealthCheckResult with current status
         """
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="RecoveryOrchestrator not running",
+                details={},
+            )
+
         stats = self.get_recovery_stats()
         circuit_open_count = stats.get("nodes_with_circuit_open", 0)
 
@@ -782,18 +784,19 @@ echo "Key deployed"
         )
 
 
-# Global instance
-_recovery_orchestrator: RecoveryOrchestrator | None = None
+# =============================================================================
+# Module-level accessors
+# =============================================================================
 
 
 def get_recovery_orchestrator() -> RecoveryOrchestrator:
     """Get or create the global recovery orchestrator."""
-    global _recovery_orchestrator
+    return RecoveryOrchestrator.get_instance()
 
-    if _recovery_orchestrator is None:
-        _recovery_orchestrator = RecoveryOrchestrator()
 
-    return _recovery_orchestrator
+def reset_recovery_orchestrator() -> None:
+    """Reset the singleton (for testing)."""
+    RecoveryOrchestrator.reset_instance()
 
 
 async def attempt_recovery(node_id: str) -> RecoveryResult:

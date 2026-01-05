@@ -159,6 +159,42 @@ class ModelSyncLoop(BaseLoop):
             **self.stats.to_dict(),
         }
 
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for DaemonManager integration.
+
+        Returns:
+            HealthCheckResult-compatible dict with status, message, and details.
+        """
+        sync_stats = self.get_sync_stats()
+        total_syncs = sync_stats.get("models_synced", 0)
+        failures = sync_stats.get("sync_failures", 0)
+
+        # Calculate success rate
+        total_ops = total_syncs + failures
+        success_rate = total_syncs / max(1, total_ops)
+
+        if not self.is_running():
+            status = "ERROR"
+            message = "Model sync loop not running"
+        elif failures > 10 and success_rate < 0.5:
+            status = "DEGRADED"
+            message = f"High failure rate: {success_rate:.0%}"
+        else:
+            status = "HEALTHY"
+            message = f"Synced {total_syncs} models, {success_rate:.0%} success rate"
+
+        return {
+            "status": status,
+            "message": message,
+            "details": {
+                "is_running": self.is_running(),
+                "models_synced": total_syncs,
+                "sync_failures": failures,
+                "success_rate": success_rate,
+                "run_count": self.stats.run_count,
+            },
+        }
+
 
 @dataclass
 class DataAggregationConfig:
@@ -266,6 +302,42 @@ class DataAggregationLoop(BaseLoop):
         return {
             **self._aggregation_stats,
             **self.stats.to_dict(),
+        }
+
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for DaemonManager integration.
+
+        Returns:
+            HealthCheckResult-compatible dict with status, message, and details.
+        """
+        agg_stats = self.get_aggregation_stats()
+        total_games = agg_stats.get("total_games_aggregated", 0)
+        failures = agg_stats.get("aggregation_failures", 0)
+
+        # Calculate success rate
+        total_ops = (total_games > 0) + failures  # 1 if any games, plus failures
+        success_rate = 1.0 if failures == 0 else (1.0 if total_games > 0 else 0.0)
+
+        if not self.is_running():
+            status = "ERROR"
+            message = "Data aggregation loop not running"
+        elif failures > 5:
+            status = "DEGRADED"
+            message = f"High failure rate: {failures} failures"
+        else:
+            status = "HEALTHY"
+            message = f"Aggregated {total_games} games"
+
+        return {
+            "status": status,
+            "message": message,
+            "details": {
+                "is_running": self.is_running(),
+                "total_games_aggregated": total_games,
+                "aggregation_failures": failures,
+                "bytes_transferred": agg_stats.get("total_bytes_transferred", 0),
+                "run_count": self.stats.run_count,
+            },
         }
 
 
@@ -610,6 +682,44 @@ class DataManagementLoop(BaseLoop):
         }
         return status
 
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for DaemonManager integration.
+
+        Returns:
+            HealthCheckResult-compatible dict with status, message, and details.
+        """
+        cleanups = self._data_stats.get("disk_cleanups", 0)
+        db_converts = self._data_stats.get("db_conversions", 0)
+        npz_converts = self._data_stats.get("npz_conversions", 0)
+        export_triggers = self._data_stats.get("export_triggers", 0)
+        training_triggers = self._data_stats.get("training_triggers", 0)
+
+        if not self.is_running():
+            status = "ERROR"
+            message = "Data management loop not running"
+        else:
+            status = "HEALTHY"
+            message = (
+                f"Cleanups: {cleanups}, DB conversions: {db_converts}, "
+                f"NPZ conversions: {npz_converts}"
+            )
+
+        return {
+            "status": status,
+            "message": message,
+            "details": {
+                "is_running": self.is_running(),
+                "is_leader": self._is_leader(),
+                "disk_cleanups": cleanups,
+                "db_conversions": db_converts,
+                "npz_conversions": npz_converts,
+                "export_triggers": export_triggers,
+                "training_triggers": training_triggers,
+                "active_exports": len(self._active_exports),
+                "run_count": self.stats.run_count,
+            },
+        }
+
 
 # =============================================================================
 # Model Fetch Loop (December 2025)
@@ -769,6 +879,47 @@ class ModelFetchLoop(BaseLoop):
             "pending_retries": len(self._job_retries),
         }
         return status
+
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for DaemonManager integration.
+
+        Returns:
+            HealthCheckResult-compatible dict with status, message, and details.
+        """
+        models_fetched = self._fetch_stats.get("models_fetched", 0)
+        failures = self._fetch_stats.get("fetch_failures", 0)
+        pending_retries = len(self._job_retries)
+
+        # Calculate success rate
+        total_ops = models_fetched + failures
+        success_rate = models_fetched / max(1, total_ops)
+
+        if not self.is_running():
+            status = "ERROR"
+            message = "Model fetch loop not running"
+        elif failures > 10 and success_rate < 0.5:
+            status = "DEGRADED"
+            message = f"High failure rate: {success_rate:.0%}"
+        elif pending_retries > 5:
+            status = "DEGRADED"
+            message = f"{pending_retries} models pending retry"
+        else:
+            status = "HEALTHY"
+            message = f"Fetched {models_fetched} models, {success_rate:.0%} success rate"
+
+        return {
+            "status": status,
+            "message": message,
+            "details": {
+                "is_running": self.is_running(),
+                "is_leader": self._is_leader(),
+                "models_fetched": models_fetched,
+                "fetch_failures": failures,
+                "pending_retries": pending_retries,
+                "success_rate": success_rate,
+                "run_count": self.stats.run_count,
+            },
+        }
 
 
 __all__ = [

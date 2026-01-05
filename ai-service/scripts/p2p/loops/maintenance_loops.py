@@ -163,6 +163,41 @@ class GitUpdateLoop(BaseLoop):
             **self.stats.to_dict(),
         }
 
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for DaemonManager integration.
+
+        Returns:
+            HealthCheckResult-compatible dict with status, message, and details.
+        """
+        stats = self.get_update_stats()
+
+        if not self.is_running():
+            status = "ERROR"
+            message = "Git update loop not running"
+        elif not self.config.enabled:
+            status = "HEALTHY"
+            message = "Auto-update disabled"
+        elif self._update_failures > 3:
+            status = "DEGRADED"
+            message = f"Multiple update failures: {self._update_failures}"
+        else:
+            status = "HEALTHY"
+            message = f"Applied {self._updates_applied} updates"
+
+        return {
+            "status": status,
+            "message": message,
+            "details": {
+                "is_running": self.is_running(),
+                "enabled": self.config.enabled,
+                "checks_count": self._checks_count,
+                "updates_found": self._updates_found,
+                "updates_applied": self._updates_applied,
+                "update_failures": self._update_failures,
+                "run_count": self.stats.run_count,
+            },
+        }
+
 
 # =============================================================================
 # Circuit Breaker Decay Loop (Sprint 17.6)
@@ -273,6 +308,34 @@ class CircuitBreakerDecayLoop(BaseLoop):
             "total_decayed_lifetime": self._decay_count,
             "last_result": self._last_decay_result,
             **self.stats.to_dict(),
+        }
+
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for DaemonManager integration.
+
+        Returns:
+            HealthCheckResult-compatible dict with status, message, and details.
+        """
+        if not self.is_running():
+            status = "ERROR"
+            message = "Circuit breaker decay loop not running"
+        elif not self.config.enabled:
+            status = "HEALTHY"
+            message = "CB decay disabled"
+        else:
+            status = "HEALTHY"
+            message = f"Decayed {self._decay_count} circuits lifetime"
+
+        return {
+            "status": status,
+            "message": message,
+            "details": {
+                "is_running": self.is_running(),
+                "enabled": self.config.enabled,
+                "ttl_seconds": self.config.ttl_seconds,
+                "total_decayed_lifetime": self._decay_count,
+                "run_count": self.stats.run_count,
+            },
         }
 
 

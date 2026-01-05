@@ -332,17 +332,9 @@ class StandbyCoordinator(HandlerBase):
 
     async def _on_stop(self) -> None:
         """Stop the standby coordinator."""
-        self._running = False
-
-        if self._monitor_task:
-            self._monitor_task.cancel()
-            try:
-                await self._monitor_task
-            except asyncio.CancelledError:
-                pass
-
         if self._http_client:
             await self._http_client.close()
+            self._http_client = None
 
         logger.info(
             "StandbyCoordinator stopped",
@@ -354,59 +346,50 @@ class StandbyCoordinator(HandlerBase):
         )
 
     # =========================================================================
-    # Primary Monitoring
+    # Primary Monitoring (via HandlerBase cycle)
     # =========================================================================
 
-    async def _monitor_primary_loop(self) -> None:
-        """Main loop for monitoring primary coordinator health."""
-        logger.info("Starting primary health monitoring")
-        consecutive_failures = 0
+    async def _run_cycle(self) -> None:
+        """One cycle of primary health monitoring.
 
-        while self._running and self._role == CoordinatorRole.STANDBY:
-            try:
-                check_start = time.time()
-                is_healthy = await self._check_primary_health()
-                check_duration = time.time() - check_start
+        This is called by HandlerBase every cycle_interval seconds.
+        Only performs monitoring when in STANDBY role.
+        """
+        # Only monitor when in STANDBY role
+        if self._role != CoordinatorRole.STANDBY:
+            return
 
-                if is_healthy:
-                    consecutive_failures = 0
-                    self._primary_health = PrimaryHealthState(
-                        host=self._primary_host or "",
-                        is_healthy=True,
-                        last_seen=time.time(),
-                        consecutive_failures=0,
-                        last_check_time=time.time(),
-                        last_check_duration=check_duration,
-                    )
-                else:
-                    consecutive_failures += 1
-                    self._primary_health = PrimaryHealthState(
-                        host=self._primary_host or "",
-                        is_healthy=False,
-                        last_seen=self._primary_health.last_seen
-                        if self._primary_health
-                        else 0,
-                        consecutive_failures=consecutive_failures,
-                        last_check_time=time.time(),
-                        last_check_duration=check_duration,
-                        error_message="Health check failed",
-                    )
+        check_start = time.time()
+        is_healthy = await self._check_primary_health()
+        check_duration = time.time() - check_start
 
-                    # Check if primary is dead
-                    if await self._should_take_over():
-                        await self._take_over(FailoverReason.PRIMARY_TIMEOUT)
+        if is_healthy:
+            self._consecutive_failures = 0
+            self._primary_health = PrimaryHealthState(
+                host=self._primary_host or "",
+                is_healthy=True,
+                last_seen=time.time(),
+                consecutive_failures=0,
+                last_check_time=time.time(),
+                last_check_duration=check_duration,
+            )
+        else:
+            self._consecutive_failures += 1
+            self._primary_health = PrimaryHealthState(
+                host=self._primary_host or "",
+                is_healthy=False,
+                last_seen=self._primary_health.last_seen
+                if self._primary_health
+                else 0,
+                consecutive_failures=self._consecutive_failures,
+                last_check_time=time.time(),
+                last_check_duration=check_duration,
+                error_message="Health check failed",
+            )
 
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(
-                    "Error in primary monitoring loop",
-                    exc_info=True,
-                    extra={"error": str(e)},
-                )
-                consecutive_failures += 1
-
-            await asyncio.sleep(self._standby_config.primary_check_interval)
+            # Check if primary is dead
+            if await self._should_take_over():
+                await self._take_over(FailoverReason.PRIMARY_TIMEOUT)
 
     async def _check_primary_health(self) -> bool:
         """Check if primary coordinator is healthy.
@@ -600,16 +583,9 @@ class StandbyCoordinator(HandlerBase):
 
         self._role = CoordinatorRole.STANDBY
         self._primary_host = new_primary
+        self._consecutive_failures = 0  # Reset failure count for new primary
 
-        # Restart monitoring
-        if self._monitor_task and not self._monitor_task.done():
-            self._monitor_task.cancel()
-
-        self._monitor_task = asyncio.create_task(
-            self._monitor_primary_loop(),
-            name="standby_monitor_primary",
-        )
-
+        # Monitoring resumes automatically via HandlerBase's _run_cycle()
         logger.info("Handoff complete, now running as STANDBY")
         return True
 
@@ -677,20 +653,26 @@ class StandbyCoordinator(HandlerBase):
     # Health Check
     # =========================================================================
 
-    def health_check(self) -> Any:
+    def health_check(self) -> HealthCheckResult:
         """Return health check result.
 
         Returns:
             HealthCheckResult with current standby state.
         """
-        from app.coordination.health_check_result import HealthCheckResult
-
         state = self.get_state()
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="StandbyCoordinator not running",
+                details={"role": self._role.value},
+            )
 
         if self._role == CoordinatorRole.PRIMARY:
             return HealthCheckResult(
                 healthy=True,
-                status="primary",
+                status=CoordinatorStatus.RUNNING,
                 message="Running as primary coordinator",
                 details={
                     "role": "primary",
@@ -702,9 +684,11 @@ class StandbyCoordinator(HandlerBase):
             primary_healthy = (
                 self._primary_health.is_healthy if self._primary_health else False
             )
+            # Standby is healthy if primary is being monitored
+            status = CoordinatorStatus.RUNNING if primary_healthy else CoordinatorStatus.DEGRADED
             return HealthCheckResult(
-                healthy=primary_healthy,
-                status="standby",
+                healthy=True,  # Standby itself is healthy even if primary is not
+                status=status,
                 message="Monitoring primary coordinator",
                 details={
                     "role": "standby",
@@ -715,21 +699,22 @@ class StandbyCoordinator(HandlerBase):
                         if self._primary_health
                         else None
                     ),
+                    "consecutive_failures": self._consecutive_failures,
                 },
             )
         else:
+            # TRANSITIONING or UNKNOWN
             return HealthCheckResult(
                 healthy=False,
-                status=self._role.value,
+                status=CoordinatorStatus.STARTING,
                 message=f"In transitional state: {self._role.value}",
+                details={"role": self._role.value},
             )
 
 
 # =============================================================================
 # Module-level accessors
 # =============================================================================
-
-_standby_instance: Optional[StandbyCoordinator] = None
 
 
 def get_standby_coordinator(config: Optional[StandbyConfig] = None) -> StandbyCoordinator:
@@ -741,13 +726,9 @@ def get_standby_coordinator(config: Optional[StandbyConfig] = None) -> StandbyCo
     Returns:
         The StandbyCoordinator singleton.
     """
-    global _standby_instance
-    if _standby_instance is None:
-        _standby_instance = StandbyCoordinator(config)
-    return _standby_instance
+    return StandbyCoordinator.get_instance(config)
 
 
 def reset_standby_coordinator() -> None:
     """Reset the singleton (for testing)."""
-    global _standby_instance
-    _standby_instance = None
+    StandbyCoordinator.reset_instance()

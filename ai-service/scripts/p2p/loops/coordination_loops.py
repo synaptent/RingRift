@@ -187,6 +187,39 @@ class AutoScalingLoop(BaseLoop):
             **self.stats.to_dict(),
         }
 
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for DaemonManager integration.
+
+        Returns:
+            HealthCheckResult-compatible dict with status, message, and details.
+        """
+        scale_stats = self.get_scaling_stats()
+        scale_ups = scale_stats.get("scale_up_events", 0)
+        scale_downs = scale_stats.get("scale_down_events", 0)
+        nodes_added = scale_stats.get("nodes_added", 0)
+        nodes_removed = scale_stats.get("nodes_removed", 0)
+
+        if not self.is_running():
+            status = "ERROR"
+            message = "Auto-scaling loop not running"
+        else:
+            status = "HEALTHY"
+            message = f"Scale ups: {scale_ups}, Scale downs: {scale_downs}"
+
+        return {
+            "status": status,
+            "message": message,
+            "details": {
+                "is_running": self.is_running(),
+                "scale_up_events": scale_ups,
+                "scale_down_events": scale_downs,
+                "nodes_added": nodes_added,
+                "nodes_removed": nodes_removed,
+                "last_scale_time": self._last_scale_time,
+                "run_count": self.stats.run_count,
+            },
+        }
+
 
 @dataclass
 class HealthAggregationConfig:
@@ -317,6 +350,42 @@ class HealthAggregationLoop(BaseLoop):
             "healthy_nodes": healthy_count,
             "unhealthy_nodes": len(self._node_health) - healthy_count,
             **self.stats.to_dict(),
+        }
+
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for DaemonManager integration.
+
+        Returns:
+            HealthCheckResult-compatible dict with status, message, and details.
+        """
+        agg_stats = self.get_aggregation_stats()
+        nodes_tracked = agg_stats.get("nodes_tracked", 0)
+        healthy_nodes = agg_stats.get("healthy_nodes", 0)
+        unhealthy_nodes = agg_stats.get("unhealthy_nodes", 0)
+
+        if not self.is_running():
+            status = "ERROR"
+            message = "Health aggregation loop not running"
+        elif nodes_tracked > 0 and unhealthy_nodes > healthy_nodes:
+            status = "DEGRADED"
+            message = f"Majority unhealthy: {unhealthy_nodes}/{nodes_tracked}"
+        elif unhealthy_nodes > 0:
+            status = "HEALTHY"
+            message = f"Tracking {nodes_tracked} nodes, {unhealthy_nodes} unhealthy"
+        else:
+            status = "HEALTHY"
+            message = f"Tracking {nodes_tracked} healthy nodes"
+
+        return {
+            "status": status,
+            "message": message,
+            "details": {
+                "is_running": self.is_running(),
+                "nodes_tracked": nodes_tracked,
+                "healthy_nodes": healthy_nodes,
+                "unhealthy_nodes": unhealthy_nodes,
+                "run_count": self.stats.run_count,
+            },
         }
 
 
