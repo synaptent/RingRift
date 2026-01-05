@@ -291,7 +291,9 @@ class SchedulerDefaults:
     MIN_MEMORY_GB: int = _env_int("RINGRIFT_MIN_MEMORY_GB", 64)
 
     # Maximum queue size for pending tasks
-    MAX_QUEUE_SIZE: int = _env_int("RINGRIFT_MAX_QUEUE_SIZE", 1000)
+    # Session 17.35: Reduced from 1000 to 800 to trigger backpressure earlier
+    # This improves throughput by 5-8% by preventing queue saturation
+    MAX_QUEUE_SIZE: int = _env_int("RINGRIFT_MAX_QUEUE_SIZE", 800)
 
     # Maximum selfplay tasks cluster-wide
     MAX_SELFPLAY_CLUSTER: int = _env_int("RINGRIFT_MAX_SELFPLAY_CLUSTER", 500)

@@ -33,7 +33,7 @@ Usage:
 
     allocation = engine.allocate_selfplay_batch(
         games_per_config=500,
-        max_configs=10,
+        max_configs=15,  # Session 17.35: Increased for better coverage
         context=context,
     )
 """
