@@ -328,10 +328,12 @@ class TransportCascade:
         self._min_tier = int(os.environ.get("RINGRIFT_TRANSPORT_MIN_TIER", "1"))
         self._max_tier = int(os.environ.get("RINGRIFT_TRANSPORT_MAX_TIER", "5"))
         # Jan 2026: Reduced from 10s to 5s per transport for faster failover (50% reduction)
-        self._timeout_per_transport = float(os.environ.get("RINGRIFT_TRANSPORT_TIMEOUT", "5"))
+        # Jan 5, 2026 (Phase 3): Increased to 8s to reduce false positives on slow providers
+        self._timeout_per_transport = float(os.environ.get("RINGRIFT_TRANSPORT_TIMEOUT", "8"))
         # Total timeout for the entire cascade (prevents 360s+ hangs with 6 tiers)
         # Jan 2026: Reduced from 30s to 15s for faster overall failover
-        self._total_timeout = float(os.environ.get("RINGRIFT_TRANSPORT_TOTAL_TIMEOUT", "15"))
+        # Jan 5, 2026 (Phase 3): Increased to 25s to allow more transport attempts
+        self._total_timeout = float(os.environ.get("RINGRIFT_TRANSPORT_TOTAL_TIMEOUT", "25"))
 
         # Jan 2026: Adaptive timeout learning (Phase 2.3)
         self._adaptive_timeouts_enabled = (
@@ -600,6 +602,10 @@ class TransportCascade:
             self._health[target][transport_name] = TransportHealth()
         return self._health[target][transport_name]
 
+    # Jan 5, 2026: Stagger delay between starting each tier in staggered probe mode
+    # This reduces failover time from 50s (sequential) to ~15s (staggered)
+    STAGGER_DELAY = float(os.environ.get("RINGRIFT_CASCADE_STAGGER_DELAY", "5.0"))
+
     async def send_with_cascade(
         self,
         target: str,
@@ -610,6 +616,7 @@ class TransportCascade:
         timeout_per_transport: float | None = None,
         total_timeout: float | None = None,
         parallel_probe: bool = False,
+        staggered_probe: bool = False,
     ) -> TransportResult:
         """
         Try all transports in tier order until one succeeds.
@@ -622,6 +629,9 @@ class TransportCascade:
             timeout_per_transport: Timeout per transport attempt
             total_timeout: Maximum total time for entire cascade (default: 30s)
             parallel_probe: If True, try all transports in each tier simultaneously
+            staggered_probe: If True, start lower tiers with a delay while higher
+                tiers are still probing. Reduces failover time from 50s to ~15s.
+                (Jan 5, 2026: New mode for faster failover)
 
         Returns:
             TransportResult with success/failure details
@@ -670,7 +680,13 @@ class TransportCascade:
         # Sort by health (success rate, then latency)
         sorted_transports = self._sort_by_health(eligible, target)
 
-        if parallel_probe:
+        # Jan 5, 2026: Staggered probe takes priority over parallel probe
+        if staggered_probe:
+            return await self._cascade_staggered(
+                target, payload, sorted_transports, effective_timeout,
+                cascade_start_time, effective_total_timeout,
+            )
+        elif parallel_probe:
             return await self._cascade_parallel(
                 target, payload, sorted_transports, effective_timeout,
                 cascade_start_time, effective_total_timeout,
@@ -843,6 +859,164 @@ class TransportCascade:
             transport_name="cascade_exhausted",
             latency_ms=0,
             error=f"All transports failed: {'; '.join(errors)}",
+        )
+
+    async def _cascade_staggered(
+        self,
+        target: str,
+        payload: bytes,
+        transports: list[BaseTransport],
+        timeout: float,
+        cascade_start_time: float,
+        total_timeout: float,
+    ) -> TransportResult:
+        """Try transports with staggered tier starts for faster failover.
+
+        Jan 5, 2026: New probing mode that starts each tier with a delay
+        while previous tiers are still trying. This reduces failover time
+        from 50s (sequential) to ~15s by overlapping tier attempts.
+
+        How it works:
+        - Tier 1 starts immediately at T+0s
+        - Tier 2 starts at T+5s (while Tier 1 may still be probing)
+        - Tier 3 starts at T+10s (while earlier tiers may still be probing)
+        - First successful response cancels all pending tasks
+
+        This is particularly effective for NAT-blocked nodes where Tier 1-2
+        (direct/Tailscale) typically timeout after 10s, but we can start
+        Tier 4 (relay) probing at T+15s to reduce total failover time.
+        """
+        # Group transports by tier
+        by_tier: dict[TransportTier, list[BaseTransport]] = {}
+        for t in transports:
+            by_tier.setdefault(t.tier, []).append(t)
+
+        if not by_tier:
+            return TransportResult(
+                success=False,
+                transport_name="no_transports",
+                latency_ms=0,
+                error="No transports available for staggered probe",
+            )
+
+        # Jan 2026: Use adaptive timeout if enabled
+        effective_timeout = timeout
+        if self._adaptive_timeouts_enabled:
+            adaptive_timeout = self._adaptive_timeout_tracker.get_timeout(target)
+            effective_timeout = max(timeout, adaptive_timeout)
+
+        sorted_tiers = sorted(by_tier.keys(), key=lambda t: t.value)
+        errors: list[str] = []
+        all_tasks: list[asyncio.Task] = []
+        tier_start_tasks: list[asyncio.Task] = []
+
+        # Create a result event to signal first success
+        result_event = asyncio.Event()
+        successful_result: list[TransportResult] = []  # Use list for mutability in nested function
+
+        async def probe_tier(tier: TransportTier, delay: float) -> None:
+            """Probe all transports in a tier after the specified delay."""
+            nonlocal errors
+
+            if delay > 0:
+                try:
+                    await asyncio.sleep(delay)
+                except asyncio.CancelledError:
+                    return
+
+            # Check if we already have a successful result
+            if result_event.is_set():
+                return
+
+            # Check total timeout
+            elapsed = time.time() - cascade_start_time
+            remaining = total_timeout - elapsed
+            if remaining <= 0:
+                return
+
+            tier_transports = by_tier[tier]
+            clamped_timeout = min(effective_timeout, remaining)
+
+            # Create tasks for all transports in this tier
+            tasks = []
+            for transport in tier_transports:
+                task = asyncio.create_task(
+                    self._try_transport(target, payload, transport, clamped_timeout)
+                )
+                tasks.append(task)
+                all_tasks.append(task)
+
+            # Wait for any result from this tier
+            pending = set(tasks)
+            while pending and not result_event.is_set():
+                try:
+                    done, pending = await asyncio.wait(
+                        pending,
+                        return_when=asyncio.FIRST_COMPLETED,
+                        timeout=0.1,  # Check result_event periodically
+                    )
+                except asyncio.CancelledError:
+                    for p in pending:
+                        p.cancel()
+                    return
+
+                for task in done:
+                    try:
+                        result = task.result()
+                        if result.success:
+                            successful_result.append(result)
+                            result_event.set()
+                            return
+                        else:
+                            errors.append(f"{result.transport_name}: {result.error}")
+                    except asyncio.CancelledError:
+                        pass
+                    except Exception as e:
+                        errors.append(f"tier_{tier.name}: {type(e).__name__}: {e}")
+
+        # Start each tier with staggered delay
+        for tier_idx, tier in enumerate(sorted_tiers):
+            delay = tier_idx * self.STAGGER_DELAY
+            task = asyncio.create_task(probe_tier(tier, delay))
+            tier_start_tasks.append(task)
+
+        # Wait for first success or total timeout
+        try:
+            await asyncio.wait_for(
+                result_event.wait(),
+                timeout=total_timeout - (time.time() - cascade_start_time),
+            )
+        except asyncio.TimeoutError:
+            pass  # Continue to cleanup and return failure
+
+        # Cancel all remaining tasks
+        for task in all_tasks:
+            if not task.done():
+                task.cancel()
+        for task in tier_start_tasks:
+            if not task.done():
+                task.cancel()
+
+        # Wait for cancellation to complete (brief)
+        await asyncio.gather(*tier_start_tasks, *all_tasks, return_exceptions=True)
+
+        # Return successful result or failure
+        if successful_result:
+            logger.debug(
+                f"[TransportCascade] Staggered probe succeeded via "
+                f"{successful_result[0].transport_name} in "
+                f"{(time.time() - cascade_start_time) * 1000:.0f}ms"
+            )
+            return successful_result[0]
+
+        elapsed = (time.time() - cascade_start_time) * 1000
+        return TransportResult(
+            success=False,
+            transport_name="staggered_cascade_exhausted",
+            latency_ms=elapsed,
+            error=f"All staggered probes failed ({len(sorted_tiers)} tiers, "
+                  f"{len(transports)} transports): {'; '.join(errors[:5])}"
+                  f"{'...' if len(errors) > 5 else ''}",
         )
 
     async def _try_transport(

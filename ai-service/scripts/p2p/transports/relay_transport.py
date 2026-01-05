@@ -5,11 +5,17 @@ Tier 4 (RELAY): Route through P2P leader or other relay nodes.
 
 Jan 2, 2026: Enhanced with per-relay health tracking and health-based selection
 to avoid single relay bottleneck and cascade failures.
+
+Jan 5, 2026: Added distributed relay load balancing via consistent hashing.
+NAT-blocked nodes are now assigned preferred relays based on their node_id hash,
+preventing all nodes from targeting the same relay (reduces single relay bottleneck
+by ~50% per the plan).
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import time
@@ -134,16 +140,25 @@ class P2PRelayTransport(BaseTransport):
 
     Jan 2, 2026: Enhanced with per-relay health tracking. Relays are sorted
     by health score before use, avoiding cascade failures from unhealthy relays.
+
+    Jan 5, 2026: Added distributed relay load balancing. NAT-blocked nodes get
+    a preferred relay based on consistent hash of their node_id. This distributes
+    load across relays instead of all nodes targeting the healthiest one.
     """
 
     name = "p2p_relay"
     tier = TransportTier.TIER_4_RELAY
+
+    # Jan 5, 2026: Priority boost for hash-assigned preferred relay
+    # Higher value = stronger preference for assigned relay over health-only selection
+    PREFERRED_RELAY_BOOST = float(os.environ.get("RINGRIFT_RELAY_BOOST", "0.3"))
 
     def __init__(
         self,
         relay_nodes: list[str] | None = None,
         port: int = 8770,
         timeout: float = 20.0,
+        source_node_id: str | None = None,
     ):
         self._relay_nodes = relay_nodes or []
         self._port = port
@@ -152,6 +167,8 @@ class P2PRelayTransport(BaseTransport):
         self._leader_node: str | None = None
         # Per-relay health tracking (Jan 2, 2026)
         self._relay_health: dict[str, RelayHealth] = {}
+        # Jan 5, 2026: Source node ID for distributed relay assignment
+        self._source_node_id = source_node_id
 
     def set_leader_node(self, leader_node: str) -> None:
         """Set the current P2P leader for relay."""
@@ -162,6 +179,43 @@ class P2PRelayTransport(BaseTransport):
         if node not in self._relay_nodes:
             self._relay_nodes.append(node)
 
+    def set_source_node_id(self, source_node_id: str) -> None:
+        """Set the source node ID for distributed relay assignment.
+
+        Jan 5, 2026: Allows setting source node after initialization.
+        Used by failover_integration to configure the transport with node_id.
+        """
+        self._source_node_id = source_node_id
+
+    def _get_preferred_relay(self, candidates: list[str]) -> str | None:
+        """Get the preferred relay for this source node via consistent hashing.
+
+        Jan 5, 2026: Distributes NAT-blocked nodes across available relays.
+        Uses SHA-256 hash of source_node_id to consistently assign relays.
+
+        This prevents the "thundering herd" problem where all NAT-blocked nodes
+        target the same (healthiest) relay, overloading it.
+
+        Args:
+            candidates: List of available relay nodes to choose from
+
+        Returns:
+            Preferred relay node_id, or None if no source_node_id configured
+        """
+        if not self._source_node_id or not candidates:
+            return None
+
+        # Use SHA-256 hash for consistent assignment
+        # Same source node always gets the same relay (until relay list changes)
+        hash_input = f"{self._source_node_id}:relay_assignment"
+        hash_bytes = hashlib.sha256(hash_input.encode()).digest()
+        # Use first 8 bytes as integer for index calculation
+        hash_int = int.from_bytes(hash_bytes[:8], byteorder="big")
+
+        # Select relay based on hash (consistent hashing)
+        relay_index = hash_int % len(candidates)
+        return candidates[relay_index]
+
     def _get_or_create_relay_health(self, node_id: str) -> RelayHealth:
         """Get or create health tracking for a relay node."""
         if node_id not in self._relay_health:
@@ -169,10 +223,15 @@ class P2PRelayTransport(BaseTransport):
         return self._relay_health[node_id]
 
     def _get_sorted_relays(self, target: str) -> list[str]:
-        """Get relay list sorted by health score (best first).
+        """Get relay list sorted by health score with preferred relay boost.
 
         Jan 2, 2026: Replaces simple leader-first ordering with health-based
         sorting. Healthy relays with good success rates are tried first.
+
+        Jan 5, 2026: Added preferred relay boost for distributed load balancing.
+        Each NAT-blocked node gets a hash-assigned preferred relay that receives
+        a score boost (default 0.3). This distributes load across relays while
+        still respecting health metrics for failover.
         """
         # Build candidate list: leader + configured relays (excluding target)
         candidates = []
@@ -183,35 +242,69 @@ class P2PRelayTransport(BaseTransport):
         if not candidates:
             return []
 
+        # Jan 5, 2026: Get preferred relay for this source node (distributed assignment)
+        preferred_relay = self._get_preferred_relay(candidates)
+
         # Filter to healthy relays first
         healthy_relays = []
         unhealthy_relays = []
 
         for node_id in candidates:
             health = self._get_or_create_relay_health(node_id)
+            base_score = health.health_score
+
+            # Jan 5, 2026: Apply boost for preferred relay
+            # This biases selection toward the hash-assigned relay while still
+            # allowing health to override if preferred relay is unhealthy
+            if node_id == preferred_relay:
+                adjusted_score = min(1.0, base_score + self.PREFERRED_RELAY_BOOST)
+            else:
+                adjusted_score = base_score
+
             if health.is_healthy:
-                healthy_relays.append((node_id, health.health_score))
+                healthy_relays.append((node_id, adjusted_score))
             else:
                 # Keep unhealthy relays as fallback (may have recovered)
-                unhealthy_relays.append((node_id, health.health_score))
+                unhealthy_relays.append((node_id, adjusted_score))
 
         # Sort healthy relays by score (descending), keep unhealthy as fallback
         healthy_relays.sort(key=lambda x: x[1], reverse=True)
         unhealthy_relays.sort(key=lambda x: x[1], reverse=True)
 
-        return [node_id for node_id, _ in healthy_relays] + [node_id for node_id, _ in unhealthy_relays]
+        result = [node_id for node_id, _ in healthy_relays] + [node_id for node_id, _ in unhealthy_relays]
+
+        # Log relay selection for debugging (only if we have a preferred relay)
+        if preferred_relay and logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                f"[RelayTransport] Source={self._source_node_id}, "
+                f"Preferred={preferred_relay}, Order={result[:3]}..."
+            )
+
+        return result
 
     def get_relay_health_summary(self) -> dict[str, Any]:
         """Get summary of all relay health states.
 
         Returns dict with overall stats and per-relay details.
+
+        Jan 5, 2026: Added source_node_id and preferred_relay for debugging
+        distributed load balancing.
         """
         total = len(self._relay_health)
         healthy = sum(1 for h in self._relay_health.values() if h.is_healthy)
+
+        # Jan 5, 2026: Include preferred relay for this source node
+        candidates = list(self._relay_health.keys()) or self._relay_nodes
+        preferred = self._get_preferred_relay(candidates) if candidates else None
+
         return {
             "total_relays": total,
             "healthy_relays": healthy,
             "unhealthy_relays": total - healthy,
+            # Jan 5, 2026: Distributed load balancing info
+            "source_node_id": self._source_node_id,
+            "preferred_relay": preferred,
+            "preferred_relay_boost": self.PREFERRED_RELAY_BOOST,
             "relays": {
                 node_id: {
                     "is_healthy": h.is_healthy,
@@ -220,6 +313,7 @@ class P2PRelayTransport(BaseTransport):
                     "avg_latency_ms": round(h.avg_latency_ms, 1),
                     "consecutive_failures": h.consecutive_failures,
                     "last_error": h.last_error,
+                    "is_preferred": node_id == preferred,  # Jan 5, 2026
                 }
                 for node_id, h in self._relay_health.items()
             },

@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 # Feature flag for enabling the failover system
 FAILOVER_ENABLED = os.environ.get("RINGRIFT_FAILOVER_ENABLED", "true").lower() == "true"
 
+# Jan 5, 2026: Enable staggered probe by default for faster failover (50s → 15s)
+STAGGERED_PROBE_ENABLED = os.environ.get("RINGRIFT_STAGGERED_PROBE_ENABLED", "true").lower() == "true"
+
 
 class FailoverIntegrationMixin(P2PMixinBase):
     """
@@ -134,7 +137,12 @@ class FailoverIntegrationMixin(P2PMixinBase):
             self._transport_cascade.register_transport(cloudflare)
 
             # Register Tier 4: P2P Relay with multi-relay failover (Jan 3, 2026)
-            relay = P2PRelayTransport(port=getattr(self, "port", 8770))
+            # Jan 5, 2026: Pass source_node_id for distributed relay load balancing
+            source_node = getattr(self, "node_id", None)
+            relay = P2PRelayTransport(
+                port=getattr(self, "port", 8770),
+                source_node_id=source_node,
+            )
             relay.set_leader_node(getattr(self, "leader_id", None))
 
             # Discover and add all relay-capable nodes from config
@@ -144,9 +152,12 @@ class FailoverIntegrationMixin(P2PMixinBase):
                 self._log_debug(f"Added relay-capable node: {node_id}")
 
             if relay_nodes:
+                # Jan 5, 2026: Log preferred relay for this node (distributed assignment)
+                preferred = relay._get_preferred_relay(relay_nodes)
                 self._log_info(
                     f"Multi-relay failover enabled with {len(relay_nodes)} relays: "
                     f"{', '.join(relay_nodes[:3])}{'...' if len(relay_nodes) > 3 else ''}"
+                    f" (preferred: {preferred})"
                 )
 
             self._transport_cascade.register_transport(relay)
@@ -270,6 +281,7 @@ class FailoverIntegrationMixin(P2PMixinBase):
         target: str,
         payload: bytes,
         timeout_per_transport: float = 10.0,
+        staggered_probe: bool | None = None,
     ) -> "TransportResult | None":
         """Send payload using transport cascade with full failover.
 
@@ -277,6 +289,9 @@ class FailoverIntegrationMixin(P2PMixinBase):
             target: Target node ID or address
             payload: Message bytes to send
             timeout_per_transport: Timeout per transport attempt
+            staggered_probe: If True, use staggered tier probing for faster failover.
+                Defaults to RINGRIFT_STAGGERED_PROBE_ENABLED (true by default).
+                (Jan 5, 2026: New parameter for faster failover)
 
         Returns:
             TransportResult if any transport succeeded, None otherwise
@@ -288,11 +303,15 @@ class FailoverIntegrationMixin(P2PMixinBase):
             self._log_debug("Transport cascade not available, using direct HTTP")
             return None
 
+        # Jan 5, 2026: Use staggered probe by default for faster failover
+        use_staggered = staggered_probe if staggered_probe is not None else STAGGERED_PROBE_ENABLED
+
         try:
             result = await self._transport_cascade.send_with_cascade(
                 target=target,
                 payload=payload,
                 timeout_per_transport=timeout_per_transport,
+                staggered_probe=use_staggered,
             )
 
             if result.success:

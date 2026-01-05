@@ -85,6 +85,9 @@ __all__ = [
     "reset_transport_breakers_for_host",
     "get_all_transport_breaker_states",
     "TRANSPORT_CONFIGS",
+    # Jan 5, 2026: Transport-specific TTL decay
+    "decay_transport_circuit_breakers",
+    "DEFAULT_TRANSPORT_DECAY_TTL",
 ]
 
 T = TypeVar("T")
@@ -1082,16 +1085,22 @@ def get_training_breaker() -> CircuitBreaker:
 _transport_breakers: dict[str, CircuitBreaker] = {}
 _transport_breakers_lock = RLock()
 
-# Transport-specific configurations (recovery timeouts, failure thresholds)
+# Transport-specific configurations (recovery timeouts, failure thresholds, decay TTLs)
+# Jan 5, 2026: Added decay_ttl for transport-specific TTL decay
+# Transports with faster recovery get shorter TTLs to avoid prolonged blocking
 TRANSPORT_CONFIGS = {
-    "http": {"failure_threshold": 5, "recovery_timeout": 30.0},
-    "ssh": {"failure_threshold": 3, "recovery_timeout": 60.0},
-    "rsync": {"failure_threshold": 2, "recovery_timeout": 90.0},
-    "p2p": {"failure_threshold": 3, "recovery_timeout": 45.0},
-    "aria2": {"failure_threshold": 2, "recovery_timeout": 120.0},
-    "tailscale": {"failure_threshold": 3, "recovery_timeout": 60.0},
-    "base64": {"failure_threshold": 2, "recovery_timeout": 30.0},
+    "http": {"failure_threshold": 5, "recovery_timeout": 30.0, "decay_ttl": 7200.0},      # 2 hours
+    "ssh": {"failure_threshold": 3, "recovery_timeout": 60.0, "decay_ttl": 3600.0},       # 1 hour
+    "rsync": {"failure_threshold": 2, "recovery_timeout": 90.0, "decay_ttl": 3600.0},     # 1 hour
+    "p2p": {"failure_threshold": 3, "recovery_timeout": 45.0, "decay_ttl": 1800.0},       # 30 min
+    "aria2": {"failure_threshold": 2, "recovery_timeout": 120.0, "decay_ttl": 3600.0},    # 1 hour
+    "tailscale": {"failure_threshold": 3, "recovery_timeout": 60.0, "decay_ttl": 1800.0}, # 30 min (usually recovers fast)
+    "base64": {"failure_threshold": 2, "recovery_timeout": 30.0, "decay_ttl": 1800.0},    # 30 min
+    "relay": {"failure_threshold": 2, "recovery_timeout": 30.0, "decay_ttl": 900.0},      # 15 min (high churn)
 }
+
+# Default TTL for unknown transport types
+DEFAULT_TRANSPORT_DECAY_TTL = 3600.0  # 1 hour
 
 
 def get_transport_breaker(host: str, transport: str = "default") -> CircuitBreaker:
@@ -1247,6 +1256,75 @@ def get_all_transport_breaker_states() -> dict[str, dict[str, CircuitStatus]]:
                 result[host] = {}
             result[host][transport] = breaker.get_status(host)
     return result
+
+
+def decay_transport_circuit_breakers(
+    transport_ttls: dict[str, float] | None = None
+) -> dict[str, Any]:
+    """Decay old transport circuit breakers with transport-specific TTLs.
+
+    Jan 5, 2026: Added to provide faster recovery for transports that
+    typically recover quickly (e.g., relay has 15 min TTL, ssh has 1 hour TTL).
+
+    Args:
+        transport_ttls: Optional override for per-transport TTL values.
+            If not provided, uses TRANSPORT_CONFIGS decay_ttl values.
+
+    Returns:
+        Dict with "decayed" list of reset breaker keys, "checked" count,
+        and per-transport breakdown.
+    """
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    now = time.time()
+    decayed: list[str] = []
+    checked = 0
+    by_transport: dict[str, list[str]] = {}
+
+    # Use provided TTLs or fall back to TRANSPORT_CONFIGS
+    ttls = transport_ttls or {
+        t: cfg.get("decay_ttl", DEFAULT_TRANSPORT_DECAY_TTL)
+        for t, cfg in TRANSPORT_CONFIGS.items()
+    }
+
+    with _transport_breakers_lock:
+        for key, breaker in _transport_breakers.items():
+            checked += 1
+            try:
+                host, transport = key.split(":", 1)
+            except ValueError:
+                continue  # Invalid key format
+
+            # Get TTL for this transport type
+            ttl = ttls.get(transport, DEFAULT_TRANSPORT_DECAY_TTL)
+
+            # Check if circuit is open and past its TTL
+            status = breaker.get_status(host)
+            if status and status.state == CircuitState.OPEN and status.opened_at:
+                elapsed = now - status.opened_at
+                if elapsed > ttl:
+                    breaker.reset(host)
+                    decayed.append(key)
+                    by_transport.setdefault(transport, []).append(host)
+                    logger.info(
+                        f"[TransportCircuitBreaker] TTL decay reset {transport}:{host} "
+                        f"(was open for {elapsed:.0f}s, TTL={ttl:.0f}s)"
+                    )
+
+    if decayed:
+        logger.info(
+            f"[TransportCircuitBreaker] TTL decay: reset {len(decayed)}/{checked} circuits "
+            f"across transports: {list(by_transport.keys())}"
+        )
+
+    return {
+        "decayed": decayed,
+        "checked": checked,
+        "by_transport": by_transport,
+        "ttls_used": ttls,
+    }
 
 
 def format_circuit_status(status: CircuitStatus) -> str:

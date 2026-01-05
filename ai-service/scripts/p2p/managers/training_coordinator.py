@@ -1673,5 +1673,7 @@ class TrainingCoordinator(EventSubscriptionMixin):
                 "models_fetch_failed": self._models_fetch_failed_count,
                 "last_fetch_time": self._last_fetch_time,
                 "last_fetch_error": self._last_fetch_error or None,
+                # Job lookup cache stats (January 2026)
+                "job_lookup_cache": self._job_lookup_cache.get_stats(),
             },
         )

@@ -209,10 +209,11 @@ class CircuitBreakerDecayConfig:
     """Configuration for circuit breaker TTL decay loop.
 
     January 2026 Sprint 17.6: Prevents circuits from staying OPEN indefinitely.
+    January 5, 2026 (Phase 3): Reduced TTL from 6h to 1h for faster node recovery.
     """
 
-    check_interval_seconds: float = 3600.0  # Check every hour
-    ttl_seconds: float = 21600.0  # Reset circuits open > 6 hours
+    check_interval_seconds: float = 1800.0  # Check every 30 minutes (was 1 hour)
+    ttl_seconds: float = 3600.0  # Reset circuits open > 1 hour (was 6 hours)
     enabled: bool = True
 
     def __post_init__(self) -> None:
@@ -231,9 +232,10 @@ class CircuitBreakerDecayLoop(BaseLoop):
     automatically reset to CLOSED.
 
     January 2026 Sprint 17.6: Added as part of stability improvements.
+    January 5, 2026 (Phase 3): TTL reduced from 6h to 1h for faster recovery.
 
     Benefits:
-    - Prevents 6h+ stuck circuits blocking health checks
+    - Prevents 1h+ stuck circuits blocking health checks (was 6h)
     - Reduces manual interventions from stuck states
     - Enables graceful recovery after network partitions
     """
@@ -269,7 +271,7 @@ class CircuitBreakerDecayLoop(BaseLoop):
                 get_node_circuit_registry,
             )
 
-            # Decay operation and transport circuits
+            # Decay operation and transport circuits (uniform TTL)
             result = decay_all_circuit_breakers(self.config.ttl_seconds)
 
             # Also decay node circuits
@@ -280,13 +282,29 @@ class CircuitBreakerDecayLoop(BaseLoop):
             except Exception as e:
                 logger.debug(f"[CircuitBreakerDecay] Node registry not available: {e}")
 
+            # Jan 5, 2026: Also decay with transport-specific TTLs
+            # This provides faster recovery for transports that typically
+            # recover quickly (relay: 15min, tailscale: 30min, ssh: 1hr)
+            try:
+                from app.distributed.circuit_breaker import (
+                    decay_transport_circuit_breakers,
+                )
+
+                transport_result = decay_transport_circuit_breakers()
+                result["transport_specific_decay"] = transport_result
+            except Exception as e:
+                logger.debug(
+                    f"[CircuitBreakerDecay] Transport-specific decay not available: {e}"
+                )
+
             self._last_decay_result = result
 
-            # Count total decayed
+            # Count total decayed (including transport-specific decay)
             total_decayed = (
                 result.get("operation_registry", {}).get("total_decayed", 0)
                 + len(result.get("transport_breakers", {}).get("decayed", []))
                 + result.get("node_circuits", {}).get("total_decayed", 0)
+                + len(result.get("transport_specific_decay", {}).get("decayed", []))
             )
 
             if total_decayed > 0:

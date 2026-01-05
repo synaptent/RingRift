@@ -47,6 +47,7 @@ from app.coordination.event_handler_utils import (
     extract_board_type,
     extract_num_players,
 )
+from app.coordination.event_emission_helpers import safe_emit_event
 
 if TYPE_CHECKING:
     from app.coordination.selfplay_scheduler import SelfplayScheduler
@@ -176,8 +177,11 @@ class QueuePopulatorConfig:
     # the pipeline from halting entirely.
     # Dec 31, 2025: Increased from 2 to 10 to better utilize cluster capacity
     # during backpressure events. With 40+ nodes, 10 items/cycle keeps pipeline moving.
+    # January 2026 - Phase 3 Task 5: Dynamic trickle mode scales with cluster size.
     trickle_mode_enabled: bool = True
     trickle_min_items: int = 10  # Minimum items to add even under max backpressure
+    trickle_dynamic_scaling: bool = True  # Scale trickle count based on active nodes
+    trickle_max_items: int = 100  # Maximum items even for very large clusters
 
 
 # =============================================================================
@@ -374,6 +378,14 @@ class UnifiedQueuePopulator:
 
         # Event subscriptions
         self._event_subscriptions: list[Callable] = []
+
+        # Backpressure event tracking (January 2026)
+        # Tracks last backpressure level for hysteresis-based event emission
+        self._last_backpressure_level: BackpressureLevel = BackpressureLevel.NONE
+
+        # Queue exhaustion event tracking (January 2026 - Phase 3 Task 4)
+        # Tracks if queue was previously exhausted for hysteresis-based event emission
+        self._was_queue_exhausted: bool = False
 
     def _scale_queue_depth_to_cluster(self) -> None:
         """Scale min_queue_depth based on cluster size."""
@@ -683,6 +695,123 @@ class UnifiedQueuePopulator:
 
         return BackpressureLevel.NONE, 1.0
 
+    def _maybe_emit_backpressure_event(
+        self, current_level: BackpressureLevel, status: dict[str, Any]
+    ) -> None:
+        """Emit events on backpressure state changes with hysteresis.
+
+        Only emits events when crossing the MEDIUM threshold to prevent event
+        spam during level oscillation. Uses hysteresis: emit BACKPRESSURE when
+        transitioning from low→high, emit BACKPRESSURE_RELEASED when high→low.
+
+        Args:
+            current_level: The current backpressure level from _check_backpressure()
+            status: Queue status dict with depth, utilization, etc.
+        """
+        # Define HIGH_LEVELS for hysteresis (MEDIUM and above trigger events)
+        HIGH_LEVELS = (
+            BackpressureLevel.MEDIUM,
+            BackpressureLevel.HARD,
+            BackpressureLevel.HIGH,
+            BackpressureLevel.CRITICAL,
+            BackpressureLevel.STOP,
+        )
+
+        was_activated = self._last_backpressure_level in HIGH_LEVELS
+        is_activated = current_level in HIGH_LEVELS
+
+        # Only emit on transitions
+        if is_activated and not was_activated:
+            # Low → High: emit backpressure activated
+            from app.distributed.data_events import DataEventType
+
+            safe_emit_event(
+                event_type=DataEventType.WORK_QUEUE_BACKPRESSURE,
+                payload={
+                    "level": current_level.value,
+                    "reduction_factor": current_level.reduction_factor(),
+                    "queue_depth": status.get("queue_depth", 0),
+                    "utilization": status.get("utilization", 0.0),
+                    "threshold_crossed": "medium",
+                    "previous_level": self._last_backpressure_level.value,
+                },
+                log_before=True,
+                log_level=logging.WARNING,
+                context="queue_populator_backpressure",
+            )
+            logger.warning(
+                f"[QueuePopulator] Backpressure ACTIVATED: {self._last_backpressure_level.value} → {current_level.value}"
+            )
+        elif not is_activated and was_activated:
+            # High → Low: emit backpressure released
+            from app.distributed.data_events import DataEventType
+
+            safe_emit_event(
+                event_type=DataEventType.WORK_QUEUE_BACKPRESSURE_RELEASED,
+                payload={
+                    "level": current_level.value,
+                    "previous_level": self._last_backpressure_level.value,
+                    "queue_depth": status.get("queue_depth", 0),
+                    "utilization": status.get("utilization", 0.0),
+                },
+                log_before=True,
+                log_level=logging.INFO,
+                context="queue_populator_backpressure_released",
+            )
+            logger.info(
+                f"[QueuePopulator] Backpressure RELEASED: {self._last_backpressure_level.value} → {current_level.value}"
+            )
+
+        # Update state for next check
+        self._last_backpressure_level = current_level
+
+    def _maybe_emit_queue_exhausted_event(self) -> None:
+        """Emit WORK_QUEUE_EXHAUSTED event when queue becomes empty.
+
+        January 2026 - Phase 3 Task 4: Wire underutilization handler to event bus.
+        This event triggers UnderutilizationRecoveryHandler to inject high-priority
+        work items for underserved configurations.
+
+        Uses hysteresis to prevent event spam:
+        - Emits WORK_QUEUE_EXHAUSTED when queue transitions from non-empty to empty
+        - Does not emit if queue was already empty (no repeated emissions)
+        """
+        current_depth = self.get_current_queue_depth()
+        is_exhausted = current_depth == 0
+
+        # Only emit on transitions from non-empty to empty
+        if is_exhausted and not self._was_queue_exhausted:
+            from app.distributed.data_events import DataEventType
+
+            safe_emit_event(
+                event_type=DataEventType.WORK_QUEUE_EXHAUSTED,
+                payload={
+                    "queue_depth": 0,
+                    "min_queue_depth": self.config.min_queue_depth,
+                    "target_queue_depth": self.config.target_queue_depth,
+                    "cluster_health_factor": self._cluster_health_factor,
+                    "dead_nodes_count": len(self._dead_nodes),
+                    "timestamp": time.time(),
+                },
+                log_before=True,
+                log_level=logging.WARNING,
+                context="queue_populator_exhausted",
+            )
+            logger.warning(
+                f"[QueuePopulator] WORK_QUEUE_EXHAUSTED emitted - "
+                f"queue is empty (min_depth={self.config.min_queue_depth})"
+            )
+
+        elif not is_exhausted and self._was_queue_exhausted:
+            # Queue recovered from empty state - log for visibility
+            logger.info(
+                f"[QueuePopulator] Queue recovered from exhaustion - "
+                f"depth now {current_depth}"
+            )
+
+        # Update state for next check
+        self._was_queue_exhausted = is_exhausted
+
     def _get_scheduler_priorities(self) -> dict[str, float]:
         """Get priority scores from the SelfplayScheduler."""
         if self._selfplay_scheduler is None:
@@ -801,14 +930,24 @@ class UnifiedQueuePopulator:
                 # Fallback to heuristic if no valid modes
                 engine_mode = "heuristic-only"
 
+        # Jan 5, 2026 (Phase 3): Make requires_gpu conditional to utilize CPU nodes
+        # - heuristic-only selfplay doesn't need GPU
+        # - small boards (hex8, square8) can run on CPU with heuristic mode
+        # This allows Hetzner CPU nodes to contribute to P2P quorum + evaluation
+        requires_gpu = True
+        if engine_mode == "heuristic-only":
+            requires_gpu = False
+        elif engine_mode in ("nnue-guided", "policy-only") and board_type in ("hex8", "square8"):
+            # NNUE and policy-only are CPU-friendly for small boards
+            requires_gpu = False
+
         config = {
             "board_type": board_type,
             "num_players": num_players,
             "games": self.config.selfplay_games_per_item,
             "source": "queue_populator",
             "engine_mode": engine_mode,
-            # Dec 30, 2025: Prevent coordinator/CPU nodes from claiming selfplay
-            "requires_gpu": True,
+            "requires_gpu": requires_gpu,
         }
 
         if best_model and model_elo >= 1600:
@@ -974,12 +1113,25 @@ class UnifiedQueuePopulator:
             exploration_added = self._populate_exploration_work()
             if exploration_added > 0:
                 logger.info(f"All Elo targets met - added {exploration_added} exploration items")
+                self._maybe_emit_queue_exhausted_event()
                 return exploration_added
             logger.info("All Elo targets met, no population needed")
+            self._maybe_emit_queue_exhausted_event()
             return 0
 
         # Check backpressure
         bp_level, reduction_factor = self._check_backpressure()
+
+        # Emit backpressure events on state changes (Jan 2026)
+        try:
+            from app.coordination.queue_monitor import get_queue_monitor
+
+            monitor = get_queue_monitor()
+            status = monitor.get_overall_status() if monitor else {}
+        except ImportError:
+            status = {}
+        self._maybe_emit_backpressure_event(bp_level, status)
+
         if bp_level.should_stop():
             # Phase 15.1.2: Trickle mode - never completely stop population
             # This prevents the pipeline from starving when backpressure is high
@@ -988,11 +1140,14 @@ class UnifiedQueuePopulator:
                     f"[QueuePopulator] Backpressure {bp_level.value} - TRICKLE MODE: "
                     f"adding {self.config.trickle_min_items} items to prevent starvation"
                 )
-                return self._populate_trickle_items()
+                trickle_result = self._populate_trickle_items()
+                self._maybe_emit_queue_exhausted_event()
+                return trickle_result
             else:
                 logger.info(
                     f"[QueuePopulator] Backpressure {bp_level.value} - skipping population"
                 )
+                self._maybe_emit_queue_exhausted_event()
                 return 0
 
         items_needed = self.calculate_items_needed()
@@ -1158,6 +1313,10 @@ class UnifiedQueuePopulator:
             f"tournament={tournament_count}, sweeps={sweep_added}, exploration={exploration_added})"
         )
 
+        # January 2026 - Phase 3 Task 4: Check if queue is exhausted after population
+        # This triggers UnderutilizationRecoveryHandler if the queue is empty
+        self._maybe_emit_queue_exhausted_event()
+
         return added
 
     def populate_queue(self) -> int:
@@ -1209,6 +1368,59 @@ class UnifiedQueuePopulator:
 
         return added
 
+    def _get_dynamic_trickle_count(self) -> int:
+        """Calculate dynamic trickle item count based on cluster size.
+
+        January 2026 - Phase 3 Task 5: Dynamic trickle mode scales with cluster size.
+        This ensures larger clusters get more work items to keep nodes utilized.
+
+        Scale:
+        - 10 nodes → 10 items (minimum)
+        - 20 nodes → 20 items
+        - 40 nodes → 40 items
+        - 100+ nodes → 100 items (capped at max)
+
+        Returns:
+            Number of trickle items based on active node count
+        """
+        if not self.config.trickle_dynamic_scaling:
+            return self.config.trickle_min_items
+
+        # Get active node count from cluster status
+        active_nodes = self._get_active_node_count()
+
+        # Scale: roughly 1 item per active node, with min/max bounds
+        dynamic_count = max(
+            self.config.trickle_min_items,  # At least min_items
+            min(active_nodes, self.config.trickle_max_items),  # At most max_items
+        )
+
+        return dynamic_count
+
+    def _get_active_node_count(self) -> int:
+        """Get count of active nodes in the cluster.
+
+        Returns:
+            Number of active nodes (at least 1)
+        """
+        try:
+            from app.coordination.cluster_status_monitor import ClusterMonitor
+
+            monitor = ClusterMonitor()
+            status = monitor.get_cluster_status(
+                include_game_counts=False,
+                include_training_status=False,
+                include_disk_usage=False,
+            )
+            return max(1, status.active_nodes)
+        except (ImportError, AttributeError, RuntimeError) as e:
+            logger.debug(f"[QueuePopulator] Could not get active node count: {e}")
+            # Fallback: use dead nodes tracking to estimate
+            # If we have 40 configured nodes and 5 dead, return 35
+            configured_nodes = 40  # Default cluster size
+            dead_count = len(self._dead_nodes)
+            return max(1, configured_nodes - dead_count)
+
     def _populate_trickle_items(self) -> int:
         """Add minimal items under extreme backpressure (Phase 15.1.2).
 
@@ -1216,8 +1428,10 @@ class UnifiedQueuePopulator:
         CRITICAL or STOP levels. We add a small number of selfplay items
         focusing on the highest priority config.
 
+        January 2026 - Phase 3 Task 5: Now uses dynamic count based on cluster size.
+
         Returns:
-            Number of items added (always <= trickle_min_items)
+            Number of items added (dynamic based on cluster size)
         """
         if self._work_queue is None:
             return 0
@@ -1237,7 +1451,9 @@ class UnifiedQueuePopulator:
             unmet.sort(key=lambda t: t.curriculum_weight, reverse=True)
 
         added = 0
-        items_to_add = min(self.config.trickle_min_items, len(unmet))
+        # January 2026 - Phase 3: Use dynamic count based on cluster size
+        trickle_count = self._get_dynamic_trickle_count()
+        items_to_add = min(trickle_count, len(unmet))
 
         # Add selfplay items for highest priority configs only
         for i in range(items_to_add):
@@ -1253,7 +1469,11 @@ class UnifiedQueuePopulator:
                 logger.error(f"[TrickleMode] Failed to add item: {e}")
 
         if added > 0:
-            logger.info(f"[TrickleMode] Added {added} emergency items to prevent starvation")
+            active_nodes = self._get_active_node_count()
+            logger.info(
+                f"[TrickleMode] Added {added} emergency items to prevent starvation "
+                f"(dynamic trickle: {trickle_count} for {active_nodes} active nodes)"
+            )
 
         return added
 

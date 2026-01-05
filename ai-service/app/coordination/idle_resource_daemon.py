@@ -2660,6 +2660,9 @@ class IdleResourceDaemon(HandlerBase):
                             board_type = parsed.board_type if parsed else config_key
                             num_players = parsed.num_players if parsed else 2
 
+                            # Jan 5, 2026 (Phase 3): Use node's actual GPU capability
+                            # CPU nodes (like Hetzner) can run heuristic selfplay
+                            node_has_gpu = getattr(node, "gpu_memory_total_gb", 0) > 0
                             job = ScheduledJob(
                                 job_type="selfplay",
                                 priority=JobPriority.NORMAL,  # Idle-spawned jobs are normal priority
@@ -2671,7 +2674,7 @@ class IdleResourceDaemon(HandlerBase):
                                     "source": "idle_resource_daemon",
                                 },
                                 host_preference=node.node_id,
-                                requires_gpu=True,
+                                requires_gpu=node_has_gpu,
                                 estimated_duration_seconds=games * 10.0,  # ~10s per game estimate
                             )
                             scheduler.schedule(job)

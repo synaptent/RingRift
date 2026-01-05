@@ -97,6 +97,7 @@ class DataEventType(Enum):
     DATA_STALE = "data_stale"  # Training data is stale
     DATA_FRESH = "data_fresh"  # Training data is fresh
     DATA_STARVATION_CRITICAL = "data_starvation_critical"  # Jan 5, 2026: Config has critically low game count (<20), needs priority dispatch
+    IDLE_NODE_WORK_INJECTED = "idle_node_work_injected"  # Jan 5, 2026: Work injected for idle GPU nodes
     SYNC_TRIGGERED = "sync_triggered"  # Sync triggered due to stale data
     SYNC_REQUEST = "sync_request"  # Explicit sync request (router-driven)
 
@@ -372,6 +373,10 @@ class DataEventType(Enum):
     WORK_QUEUE_STALLED = "work_queue_stalled"  # No work dispatched for extended period
     WORK_QUEUE_RECOVERED = "work_queue_recovered"  # Work dispatch resumed after stall
     WORK_QUEUE_EXHAUSTED = "work_queue_exhausted"  # Jan 4, 2026: Work queue completely empty
+
+    # Jan 5, 2026: Work queue backpressure events (Phase 2 - optimization)
+    WORK_QUEUE_BACKPRESSURE = "work_queue_backpressure"  # Queue capacity at high level
+    WORK_QUEUE_BACKPRESSURE_RELEASED = "work_queue_backpressure_released"  # Queue capacity released
 
     # Jan 4, 2026: Autonomous queue fallback (Phase 2 - P2P resilience)
     AUTONOMOUS_QUEUE_ACTIVATED = "autonomous_queue_activated"  # Fallback mode enabled

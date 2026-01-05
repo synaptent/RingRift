@@ -62,8 +62,9 @@ class PeerRecoveryConfig:
 
     # HTTP timeout for health probes (seconds)
     # January 5, 2026: Increased from 10.0 to 15.0 for slow providers (Lambda NAT, Vast.ai)
+    # January 5, 2026 (Phase 3): Further increased to 20.0 to reduce 22% false positive rate
     # Provider-specific multipliers are applied via LoopTimeouts.get_provider_multiplier()
-    probe_timeout_seconds: float = 15.0
+    probe_timeout_seconds: float = 20.0
 
     # Exponential backoff: max interval between probes for a single peer (seconds)
     # After repeated failures, we probe less frequently for that peer

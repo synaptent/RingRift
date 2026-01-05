@@ -630,15 +630,19 @@ class CircuitBreakerBase(ABC):
             self._notify_state_change(target, old_state, CircuitState.CLOSED)
             logger.info(f"[CircuitBreakerBase] Force reset circuit for {target}")
 
-    def decay_old_circuits(self, ttl_seconds: float = 21600.0) -> dict[str, list[str]]:
+    def decay_old_circuits(self, ttl_seconds: float = 3600.0) -> dict[str, list[str]]:
         """Automatically reset circuits that have been open for too long.
 
         This prevents circuits from being stuck open indefinitely after transient
         failures. After ttl_seconds, circuits are automatically reset to CLOSED,
         allowing operations to resume even if failures previously exceeded threshold.
 
+        January 5, 2026 (Phase 3): Reduced default TTL from 6 hours to 1 hour.
+        6h was too long - nodes excluded for hours after transient failures.
+        1h balances recovery speed with avoiding flapping on persistent issues.
+
         Args:
-            ttl_seconds: Max time to keep circuit OPEN (default: 21600 = 6 hours)
+            ttl_seconds: Max time to keep circuit OPEN (default: 3600 = 1 hour)
 
         Returns:
             Dict with "decayed" list of reset circuit IDs and "checked" count
@@ -1378,13 +1382,15 @@ class OperationCircuitBreakerRegistry:
                 if breaker.get_open_circuits()
             }
 
-    def decay_all_old_circuits(self, ttl_seconds: float = 21600.0) -> dict[str, Any]:
+    def decay_all_old_circuits(self, ttl_seconds: float = 3600.0) -> dict[str, Any]:
         """Decay old circuits across all operation types.
 
-        Call this periodically (e.g., every hour) to prevent stuck circuits.
+        Call this periodically (e.g., every 15-30 minutes) to prevent stuck circuits.
+
+        January 5, 2026 (Phase 3): Reduced default TTL from 6 hours to 1 hour.
 
         Args:
-            ttl_seconds: Max time to keep circuit OPEN (default: 6 hours)
+            ttl_seconds: Max time to keep circuit OPEN (default: 1 hour)
 
         Returns:
             Dict with results per operation type
@@ -1493,18 +1499,22 @@ def get_transport_circuit_breaker(host: str, transport: str) -> OperationCircuit
         return _transport_breakers[key]
 
 
-def decay_all_circuit_breakers(ttl_seconds: float = 21600.0) -> dict[str, Any]:
+def decay_all_circuit_breakers(ttl_seconds: float = 3600.0) -> dict[str, Any]:
     """Decay old circuits across all circuit breaker registries.
 
-    Call this periodically (e.g., every hour) from master_loop or health checks
+    Call this periodically (e.g., every 15-30 minutes) from master_loop or health checks
     to prevent circuits from being stuck open indefinitely.
+
+    January 5, 2026 (Phase 3): Reduced default TTL from 6 hours to 1 hour.
+    This enables faster recovery from transient network failures that previously
+    caused nodes to be excluded for 6+ hours.
 
     This covers:
     - OperationCircuitBreakerRegistry (for transport operations)
     - Transport-level circuit breakers (per host:transport)
 
     Args:
-        ttl_seconds: Max time to keep circuit OPEN (default: 6 hours)
+        ttl_seconds: Max time to keep circuit OPEN (default: 1 hour)
 
     Returns:
         Dict with decay results from all registries

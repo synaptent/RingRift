@@ -144,6 +144,9 @@ class SelfplayHealthMonitorMixin:
             "BACKPRESSURE_RELEASED": self._on_backpressure_released,
             "EVALUATION_BACKPRESSURE": self._on_evaluation_backpressure,
             "EVALUATION_BACKPRESSURE_RELEASED": self._on_backpressure_released,
+            # Jan 2026: Work queue specific backpressure events
+            "WORK_QUEUE_BACKPRESSURE": self._on_work_queue_backpressure,
+            "WORK_QUEUE_BACKPRESSURE_RELEASED": self._on_work_queue_backpressure_released,
 
             # Resource events
             "NODE_OVERLOADED": self._on_node_overloaded,
@@ -574,6 +577,91 @@ class SelfplayHealthMonitorMixin:
 
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling backpressure released: {e}")
+
+    def _on_work_queue_backpressure(self, event: Any) -> None:
+        """Handle WORK_QUEUE_BACKPRESSURE - reduce selfplay allocation.
+
+        January 2026: When work queue backpressure crosses MEDIUM threshold,
+        reduce selfplay allocation to prevent queue overflow during export latency.
+
+        Args:
+            event: Event with payload containing level, reduction_factor, queue_depth, utilization
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            level = payload.get("level", "unknown")
+            reduction_factor = payload.get("reduction_factor", 0.25)
+            queue_depth = payload.get("queue_depth", 0)
+            utilization = payload.get("utilization", 0.0)
+
+            # Track work queue backpressure state
+            if not hasattr(self, "_work_queue_backpressure_active"):
+                self._work_queue_backpressure_active = False
+            if not hasattr(self, "_work_queue_reduction_factor"):
+                self._work_queue_reduction_factor = 1.0
+
+            self._work_queue_backpressure_active = True
+            self._work_queue_reduction_factor = reduction_factor
+
+            # Apply reduction to exploration boost
+            if hasattr(self, "_exploration_boost"):
+                old_boost = self._exploration_boost
+                self._exploration_boost = max(0.25, self._exploration_boost * reduction_factor)
+                logger.warning(
+                    f"[SelfplayScheduler] Work queue backpressure: level={level}, "
+                    f"queue_depth={queue_depth}, utilization={utilization:.1%}, "
+                    f"exploration_boost {old_boost:.2f} -> {self._exploration_boost:.2f}"
+                )
+            else:
+                logger.warning(
+                    f"[SelfplayScheduler] Work queue backpressure: level={level}, "
+                    f"queue_depth={queue_depth}, utilization={utilization:.1%}"
+                )
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling work queue backpressure: {e}")
+
+    def _on_work_queue_backpressure_released(self, event: Any) -> None:
+        """Handle WORK_QUEUE_BACKPRESSURE_RELEASED - restore selfplay allocation.
+
+        January 2026: When work queue backpressure drops below MEDIUM threshold,
+        restore normal selfplay allocation.
+
+        Args:
+            event: Event with payload containing level, previous_level, queue_depth, utilization
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            level = payload.get("level", "unknown")
+            previous_level = payload.get("previous_level", "unknown")
+            queue_depth = payload.get("queue_depth", 0)
+
+            # Track state
+            if not hasattr(self, "_work_queue_backpressure_active"):
+                self._work_queue_backpressure_active = False
+
+            was_active = self._work_queue_backpressure_active
+            self._work_queue_backpressure_active = False
+            self._work_queue_reduction_factor = 1.0
+
+            if was_active:
+                # Restore exploration boost gradually
+                if hasattr(self, "_exploration_boost") and self._exploration_boost < 1.0:
+                    old_boost = self._exploration_boost
+                    self._exploration_boost = min(1.0, self._exploration_boost * 1.5)
+                    logger.info(
+                        f"[SelfplayScheduler] Work queue backpressure released: "
+                        f"{previous_level} -> {level}, queue_depth={queue_depth}, "
+                        f"exploration_boost {old_boost:.2f} -> {self._exploration_boost:.2f}"
+                    )
+                else:
+                    logger.info(
+                        f"[SelfplayScheduler] Work queue backpressure released: "
+                        f"{previous_level} -> {level}, queue_depth={queue_depth}"
+                    )
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling work queue backpressure released: {e}")
 
     # =========================================================================
     # Resource Event Handlers

@@ -157,9 +157,11 @@ class LoopTimeouts:
     """
 
     # Health check timeouts
-    HEALTH_CHECK: float = 5.0                # Default health check timeout
-    HEALTH_CHECK_FAST: float = 2.0           # Fast health probes
-    HEALTH_CHECK_SLOW: float = 10.0          # Slow/remote nodes
+    # Jan 5, 2026: Increased base from 5.0 to 8.0 to reduce 22% false positive rate
+    # With provider multipliers: vast=16s, lambda/runpod=12s, nebius/vultr=9.6s
+    HEALTH_CHECK: float = 8.0                # Default health check timeout
+    HEALTH_CHECK_FAST: float = 3.0           # Fast health probes
+    HEALTH_CHECK_SLOW: float = 15.0          # Slow/remote nodes
 
     # SSH/network timeouts
     SSH_CONNECT: float = 30.0                # SSH connection timeout
@@ -174,12 +176,14 @@ class LoopTimeouts:
     # P2P-specific timeouts
     GOSSIP_LOCK: float = 5.0                 # Gossip state lock acquisition
     GOSSIP_RPC: float = 10.0                 # Gossip RPC calls
-    PEER_PROBE: float = 5.0                  # Peer health probe
+    # Jan 5, 2026: Increased from 5.0 to 8.0 for consistency with HEALTH_CHECK
+    PEER_PROBE: float = 8.0                  # Peer health probe
     PEER_PROBE_NAT: float = 120.0            # NAT-blocked peer probe
 
     # Leader election
     ELECTION_REQUEST: float = 3.0            # Election request timeout
-    LEADER_PROBE: float = 5.0                # Leader health probe
+    # Jan 5, 2026: Increased from 5.0 to 8.0 to reduce unnecessary election triggers
+    LEADER_PROBE: float = 8.0                # Leader health probe
     STATE_TRANSFER: float = 10.0             # Leader state transfer
     VOTER_PROMOTION_CB: float = 300.0        # Voter promotion circuit breaker timeout
     DRAIN_TIMEOUT: float = 30.0              # Work drain before stepdown
@@ -237,12 +241,14 @@ class LoopTimeouts:
         - Vast.ai containers on consumer networks have variable latency
         - These multipliers reduce false-positive disconnections by ~50%
         """
+        # Jan 5, 2026: Increased multipliers based on false positive analysis
+        # Combined with HEALTH_CHECK=8.0: vast=20s, runpod=16s, lambda=16s
         adjustments = {
-            "vast": 2.0,       # 100% longer for Vast.ai (consumer networks)
-            "runpod": 1.5,     # 50% longer for RunPod
-            "lambda": 1.5,     # 50% longer for Lambda (NAT-blocked GH200s)
-            "nebius": 1.2,     # 20% longer for Nebius
-            "vultr": 1.2,      # 20% longer for Vultr
+            "vast": 2.5,       # 150% longer for Vast.ai (consumer networks, variable)
+            "runpod": 2.0,     # 100% longer for RunPod
+            "lambda": 2.0,     # 100% longer for Lambda (NAT-blocked GH200s)
+            "nebius": 1.5,     # 50% longer for Nebius
+            "vultr": 1.5,      # 50% longer for Vultr
             "hetzner": 1.0,    # Standard for Hetzner (CPU only, direct IP)
         }
         return adjustments.get(provider.lower(), 1.0)
