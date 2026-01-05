@@ -1869,7 +1869,8 @@ class JobManager(EventSubscriptionMixin):
             engine_extra_args: Extra engine arguments (e.g., {"budget": 64} for gumbel-mcts)
         """
         board_norm = board_type.replace("hexagonal", "hex")
-        output_dir = Path(self.ringrift_path) / "ai-service" / "data" / "selfplay" / "p2p_gpu" / f"{board_norm}_{num_players}p" / job_id
+        # Session 17.35: Use _get_data_path() to avoid doubled ai-service/ path
+        output_dir = Path(self._get_data_path("selfplay", "p2p_gpu", f"{board_norm}_{num_players}p", job_id))
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # December 2025: Check disk space before spawning job to avoid silent failures
