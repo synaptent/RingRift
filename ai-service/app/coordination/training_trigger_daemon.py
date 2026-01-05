@@ -2075,6 +2075,10 @@ class TrainingTriggerDaemon(HandlerBase):
         to allow training with whatever data is available and break the plateau.
         Accelerating configs should be stricter to maintain training quality.
 
+        January 5, 2026 (Session 17.27): Added game count-based freshness for
+        starved configs (< 500 games). These configs use 168h (1 week) threshold
+        to ensure training can proceed with any available data.
+
         Args:
             state: Current training state for the config
 
@@ -2082,6 +2086,26 @@ class TrainingTriggerDaemon(HandlerBase):
             Adaptive max data age in hours
         """
         base_max_age = self.config.max_data_age_hours
+
+        # January 5, 2026: Game count-based freshness for starved configs
+        # Configs with < 500 games get 168h threshold (1 week) to allow training
+        # with any available data. This helps bootstrap new configs.
+        try:
+            from app.utils.game_discovery import count_games_for_config
+            from app.utils.canonical_naming import parse_config_key
+
+            parsed = parse_config_key(state.config_key)
+            if parsed:
+                game_count = count_games_for_config(parsed.board_type, parsed.num_players)
+                if game_count < 500:
+                    # Starved config: use 168h (1 week) threshold
+                    logger.debug(
+                        f"[TrainingTriggerDaemon] {state.config_key}: starved config "
+                        f"({game_count} games < 500), using 168h freshness threshold"
+                    )
+                    return 168.0  # 1 week for starved configs
+        except (ImportError, ValueError, OSError) as e:
+            logger.debug(f"[TrainingTriggerDaemon] Game count check failed: {e}")
 
         # Trend-based multipliers for data freshness
         # Higher multiplier = more lenient (accepts older data)

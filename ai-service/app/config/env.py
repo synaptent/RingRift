@@ -880,8 +880,11 @@ class RingRiftEnv:
 
     @cached_property
     def training_check_interval(self) -> float:
-        """Training readiness check interval in seconds."""
-        return float(os.environ.get("RINGRIFT_TRAINING_CHECK_INTERVAL", "60"))
+        """Training readiness check interval in seconds.
+
+        Jan 2026: Reduced from 60s to 30s for faster signal-to-action latency.
+        """
+        return float(os.environ.get("RINGRIFT_TRAINING_CHECK_INTERVAL", "30"))
 
     @cached_property
     def allocation_check_interval(self) -> float:

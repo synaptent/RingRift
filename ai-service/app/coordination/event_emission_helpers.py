@@ -94,25 +94,25 @@ def safe_emit_event(
 
     try:
         # Lazy imports to avoid circular dependencies
-        from app.coordination.event_router import get_event_bus
-        from app.distributed.data_events import DataEvent
+        # Jan 5, 2026: Use EventRouter instead of EventBus directly.
+        # EventRouter properly handles string event types and converts to DataEventType enum.
+        # Previously used EventBus which caused "'str' object has no attribute 'value'" error
+        # when DataEvent was created with string instead of DataEventType enum.
+        from app.coordination.event_router import get_router
 
-        bus = get_event_bus()
-        if bus is None:
-            logger.debug(f"[{context}] Event bus unavailable for {event_type_str}")
+        router = get_router()
+        if router is None:
+            logger.debug(f"[{context}] Event router unavailable for {event_type_str}")
             return False
 
-        event = DataEvent(
-            event_type=event_type_str,
-            payload=payload or {},
-            source=source,
-        )
-
-        # bus.publish() is async - schedule it properly
+        # router.publish() is async - schedule it properly
         try:
             loop = asyncio.get_running_loop()
             # Schedule as fire-and-forget task
-            task = loop.create_task(bus.publish(event))
+            # EventRouter.publish() handles string→enum conversion internally
+            task = loop.create_task(
+                router.publish(event_type_str, payload or {}, source)
+            )
             # Add error callback to log failures without crashing
             task.add_done_callback(
                 lambda t: (
@@ -138,9 +138,9 @@ def safe_emit_event(
             return False
 
     except (AttributeError, ImportError, TypeError) as e:
-        # AttributeError - event bus missing attribute
+        # AttributeError - router missing attribute
         # ImportError - module unavailable during shutdown
-        # TypeError - wrong DataEvent signature
+        # TypeError - wrong signature
         logger.debug(f"[{context}] Event emission failed for {event_type_str}: {e}")
         return False
 

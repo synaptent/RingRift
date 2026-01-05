@@ -1827,7 +1827,8 @@ class DaemonHealthDefaults:
     These control how daemons are monitored and when they're restarted.
     """
     # Health check interval (seconds) - how often to check daemon health
-    CHECK_INTERVAL: float = _env_float("RINGRIFT_DAEMON_HEALTH_INTERVAL", 60.0)
+    # Jan 2026: Reduced from 60s to 45s for faster signal response
+    CHECK_INTERVAL: float = _env_float("RINGRIFT_DAEMON_HEALTH_INTERVAL", 45.0)
 
     # Critical daemon check interval (seconds) - faster for critical daemons
     CRITICAL_CHECK_INTERVAL: float = _env_float(
@@ -3166,8 +3167,9 @@ class GossipDefaults:
     ANTI_ENTROPY_TIMEOUT: float = _env_float("RINGRIFT_GOSSIP_ANTI_ENTROPY_TIMEOUT", 10.0)
 
     # Consecutive failures before marking peer as suspect
-    # Jan 2026: Reduced from 5 to 4 for faster peer recovery (-30s detection time)
-    FAILURE_THRESHOLD: int = _env_int("RINGRIFT_GOSSIP_FAILURE_THRESHOLD", 4)
+    # Jan 2026: Increased from 4 to 8 for more tolerance with flaky cross-cloud networks
+    # (Lambda↔Vast↔RunPod connections can have transient failures)
+    FAILURE_THRESHOLD: int = _env_int("RINGRIFT_GOSSIP_FAILURE_THRESHOLD", 8)
 
     # Maximum gossip message size in bytes (1MB default)
     MAX_MESSAGE_SIZE_BYTES: int = _env_int("RINGRIFT_GOSSIP_MAX_MESSAGE_SIZE", 1_048_576)
