@@ -323,28 +323,76 @@ class MultiHarnessGauntlet:
         )
 
         # Evaluate under each harness
+        # January 5, 2026: Use parallel evaluation if parallel_evaluations > 1
         harness_results: dict[HarnessType, EloRating] = {}
         total_games = 0
 
-        for harness in harnesses:
-            config = (harness_configs or {}).get(
-                harness, self._default_harness_config(harness)
+        if self.parallel_evaluations > 1 and len(harnesses) > 1:
+            # Parallel evaluation using asyncio.gather with semaphore for concurrency limit
+            logger.info(
+                f"  Running {len(harnesses)} harnesses in parallel "
+                f"(max {self.parallel_evaluations} concurrent)"
             )
+            semaphore = asyncio.Semaphore(self.parallel_evaluations)
 
-            try:
-                rating = await self._evaluate_single_harness(
-                    model_path=model_path,
-                    model_type=model_type,
-                    board_type=board_type,
-                    num_players=num_players,
-                    harness=harness,
-                    config=config,
+            async def evaluate_with_semaphore(
+                harness: HarnessType,
+            ) -> tuple[HarnessType, EloRating | None, str | None]:
+                """Evaluate a single harness with concurrency limiting."""
+                config = (harness_configs or {}).get(
+                    harness, self._default_harness_config(harness)
                 )
-                harness_results[harness] = rating
-                total_games += rating.games_played
-                logger.info(f"  {harness.value}: {rating.display}")
-            except (RuntimeError, ValueError, TimeoutError) as e:
-                logger.warning(f"  {harness.value}: FAILED - {e}")
+                async with semaphore:
+                    try:
+                        rating = await self._evaluate_single_harness(
+                            model_path=model_path,
+                            model_type=model_type,
+                            board_type=board_type,
+                            num_players=num_players,
+                            harness=harness,
+                            config=config,
+                        )
+                        return (harness, rating, None)
+                    except (RuntimeError, ValueError, TimeoutError) as e:
+                        return (harness, None, str(e))
+
+            # Launch all evaluations in parallel
+            tasks = [evaluate_with_semaphore(h) for h in harnesses]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Process results
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.warning(f"  Harness evaluation error: {result}")
+                    continue
+                harness, rating, error = result
+                if rating is not None:
+                    harness_results[harness] = rating
+                    total_games += rating.games_played
+                    logger.info(f"  {harness.value}: {rating.display}")
+                else:
+                    logger.warning(f"  {harness.value}: FAILED - {error}")
+        else:
+            # Sequential evaluation (original behavior)
+            for harness in harnesses:
+                config = (harness_configs or {}).get(
+                    harness, self._default_harness_config(harness)
+                )
+
+                try:
+                    rating = await self._evaluate_single_harness(
+                        model_path=model_path,
+                        model_type=model_type,
+                        board_type=board_type,
+                        num_players=num_players,
+                        harness=harness,
+                        config=config,
+                    )
+                    harness_results[harness] = rating
+                    total_games += rating.games_played
+                    logger.info(f"  {harness.value}: {rating.display}")
+                except (RuntimeError, ValueError, TimeoutError) as e:
+                    logger.warning(f"  {harness.value}: FAILED - {e}")
 
         # Find best harness
         best_harness = None

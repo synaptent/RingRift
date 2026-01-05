@@ -220,6 +220,11 @@ class EvaluationConfig:
     enable_multi_harness: bool = True  # Use MultiHarnessGauntlet for richer evaluation
     multi_harness_max_harnesses: int = 3  # Max harnesses to evaluate (limit for speed)
 
+    # January 5, 2026: Parallel multi-harness evaluation
+    # Run multiple harnesses concurrently to reduce total evaluation time (3x faster)
+    # Set to 1 for sequential (original behavior), 2-3 recommended for GPU memory safety
+    multi_harness_parallel: int = 2  # Number of concurrent harness evaluations
+
     # January 3, 2026 (Sprint 13 Session 4): Stuck evaluation recovery
     stuck_check_interval_seconds: float = 1800.0  # 30 minutes
     startup_scan_enabled: bool = True  # Scan for unevaluated models on startup
@@ -1029,9 +1034,11 @@ class EvaluationDaemon(BaseEventHandler):
             from app.training.composite_participant import make_composite_participant_id
             from pathlib import Path
 
+            # January 5, 2026: Enable parallel harness evaluation for 3x speedup
             gauntlet = MultiHarnessGauntlet(
                 default_games_per_baseline=self.config.games_per_baseline,
                 default_baselines=self.config.baselines,
+                parallel_evaluations=self.config.multi_harness_parallel,
             )
 
             # Run multi-harness evaluation
