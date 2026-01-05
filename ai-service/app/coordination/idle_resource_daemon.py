@@ -135,7 +135,7 @@ class IdleResourceConfig:
     enabled: bool = True
     # Reduced from 300s (5min) to 15s for faster detection (Dec 2025)
     check_interval_seconds: int = 15  # 15 seconds (was 5 minutes, then 1 minute)
-    idle_threshold_percent: float = 10.0  # <10% GPU utilization
+    idle_threshold_percent: float = 5.0  # <5% GPU utilization (was 10%, lowered Jan 2026)
     # Dec 27 2025: Aggressive spawning - 15s idle before spawn (was 2 min)
     idle_duration_seconds: int = 15  # 15 seconds for 25-50x throughput boost
     # Dec 27 2025: 10x increase for ML acceleration (was 4)
@@ -2472,14 +2472,14 @@ class IdleResourceDaemon(HandlerBase):
         # Adjust threshold based on queue depth
         if queue_depth > self.config.high_queue_depth:
             # More aggressive spawning when queue is deep
-            threshold = self.config.idle_threshold_percent * 3  # 30%
-            required_idle_time = self.config.idle_duration_seconds / 3  # 5 minutes
+            threshold = self.config.idle_threshold_percent * 3  # 15% (base 5% * 3)
+            required_idle_time = self.config.idle_duration_seconds / 3  # 5 seconds
         elif queue_depth > self.config.medium_queue_depth:
-            threshold = self.config.idle_threshold_percent * 2  # 20%
-            required_idle_time = self.config.idle_duration_seconds / 2  # 7.5 minutes
+            threshold = self.config.idle_threshold_percent * 2  # 10% (base 5% * 2)
+            required_idle_time = self.config.idle_duration_seconds / 2  # 7.5 seconds
         else:
-            threshold = self.config.idle_threshold_percent  # 10%
-            required_idle_time = self.config.idle_duration_seconds  # 15 minutes
+            threshold = self.config.idle_threshold_percent  # 5% (base threshold)
+            required_idle_time = self.config.idle_duration_seconds  # 15 seconds
 
         # Check conditions
         if node.gpu_utilization > threshold:

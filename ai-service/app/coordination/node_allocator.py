@@ -21,8 +21,10 @@ from typing import TYPE_CHECKING, Any, Callable, Protocol
 # Import thresholds from canonical locations
 from app.config.coordination_defaults import SelfplayAllocationDefaults
 from app.config.thresholds import (
+    DEFAULT_SATURATION_THRESHOLD,
     GPU_MEMORY_WEIGHTS,
     SELFPLAY_GAMES_PER_NODE,
+    get_gpu_saturation_threshold,
     get_gpu_weight,
     is_ephemeral_node,
 )
@@ -332,18 +334,20 @@ class NodeQueueTracker:
 
     def __init__(
         self,
-        saturation_threshold: int = 15,
+        saturation_threshold: int = DEFAULT_SATURATION_THRESHOLD,
         weight_exponent: float = 0.5,
     ):
         """Initialize queue tracker.
 
         Args:
-            saturation_threshold: Jobs above this count = saturated node
+            saturation_threshold: Default jobs above this count = saturated node
+                (overridden by GPU-specific thresholds when GPU type is registered)
             weight_exponent: Exponent for weight decay (0.5 = sqrt)
         """
         self._stats: dict[str, NodeQueueStats] = {}
         self._saturation_threshold = saturation_threshold
         self._weight_exponent = weight_exponent
+        self._gpu_types: dict[str, str] = {}  # node_id -> gpu_type
         self._lock = None  # Lazy-init for thread safety
 
     @classmethod
@@ -364,6 +368,50 @@ class NodeQueueTracker:
             self._stats[node_id] = NodeQueueStats()
         return self._stats[node_id]
 
+    def register_node_gpu_type(self, node_id: str, gpu_type: str) -> None:
+        """Register the GPU type for a node.
+
+        This enables GPU-aware saturation thresholds. Larger GPUs can handle
+        more concurrent pending jobs before being considered saturated.
+
+        Args:
+            node_id: Node identifier
+            gpu_type: GPU type (e.g., "GH200", "H100", "A100", "RTX_4090")
+        """
+        self._gpu_types[node_id] = gpu_type
+        logger.debug(
+            f"Registered GPU type for {node_id}: {gpu_type} "
+            f"(saturation threshold: {self._get_saturation_threshold(node_id)})"
+        )
+
+    def get_node_gpu_type(self, node_id: str) -> str | None:
+        """Get the registered GPU type for a node.
+
+        Args:
+            node_id: Node identifier
+
+        Returns:
+            GPU type string, or None if not registered
+        """
+        return self._gpu_types.get(node_id)
+
+    def _get_saturation_threshold(self, node_id: str) -> int:
+        """Get the saturation threshold for a node (GPU-aware).
+
+        Uses GPU-specific threshold if GPU type is registered, otherwise
+        falls back to the default threshold.
+
+        Args:
+            node_id: Node identifier
+
+        Returns:
+            Saturation threshold for the node
+        """
+        gpu_type = self._gpu_types.get(node_id)
+        if gpu_type:
+            return get_gpu_saturation_threshold(gpu_type)
+        return self._saturation_threshold
+
     def on_job_dispatched(self, node_id: str) -> None:
         """Record a job dispatch to a node.
 
@@ -377,11 +425,13 @@ class NodeQueueTracker:
         stats.dispatched_count += 1
         stats.last_dispatch_time = time.time()
 
-        if stats.pending_jobs > self._saturation_threshold:
+        threshold = self._get_saturation_threshold(node_id)
+        if stats.pending_jobs > threshold:
             stats.saturation_events += 1
+            gpu_type = self._gpu_types.get(node_id, "unknown")
             logger.debug(
-                f"Node {node_id} saturated: {stats.pending_jobs} pending "
-                f"(threshold: {self._saturation_threshold})"
+                f"Node {node_id} ({gpu_type}) saturated: {stats.pending_jobs} pending "
+                f"(threshold: {threshold})"
             )
 
     def on_job_completed(self, node_id: str) -> None:
@@ -426,13 +476,17 @@ class NodeQueueTracker:
     def is_saturated(self, node_id: str) -> bool:
         """Check if a node is saturated (too many pending jobs).
 
+        Uses GPU-aware saturation thresholds when GPU type is registered.
+        Larger GPUs (e.g., GH200, H100) have higher thresholds than smaller
+        GPUs (e.g., RTX_4090) allowing better utilization.
+
         Args:
             node_id: Node to check
 
         Returns:
-            True if node has pending jobs > saturation_threshold
+            True if node has pending jobs > saturation_threshold for its GPU type
         """
-        return self.get_pending_jobs(node_id) > self._saturation_threshold
+        return self.get_pending_jobs(node_id) > self._get_saturation_threshold(node_id)
 
     def get_unsaturated_nodes(self, node_ids: list[str]) -> list[str]:
         """Filter to only unsaturated nodes.
@@ -476,8 +530,9 @@ class NodeQueueTracker:
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for serialization."""
         return {
-            "saturation_threshold": self._saturation_threshold,
+            "default_saturation_threshold": self._saturation_threshold,
             "weight_exponent": self._weight_exponent,
+            "gpu_types": dict(self._gpu_types),
             "nodes": {
                 node_id: {
                     "pending_jobs": stats.pending_jobs,
@@ -486,6 +541,8 @@ class NodeQueueTracker:
                     "saturation_events": stats.saturation_events,
                     "load_weight": self.get_load_weight(node_id),
                     "is_saturated": self.is_saturated(node_id),
+                    "gpu_type": self._gpu_types.get(node_id),
+                    "saturation_threshold": self._get_saturation_threshold(node_id),
                 }
                 for node_id, stats in self._stats.items()
             },
