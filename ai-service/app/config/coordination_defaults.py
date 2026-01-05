@@ -2463,15 +2463,19 @@ class SelfplayPriorityWeightDefaults:
 
     # Data starvation emergency thresholds
     # Dec 29, 2025: Added ULTRA tier for critically starved configs (< 20 games)
+    # Jan 5, 2026 (Session 17.32): Expanded thresholds to catch more underserved configs
+    # - ULTRA: 20 → 500 (hex8_3p/4p, hexagonal_3p/4p, square19_3p/4p have <1000 games)
+    # - EMERGENCY: 100 → 1500
+    # - CRITICAL: 500 → 3000
+    # This ensures configs below 3000 games get significant priority boosts
     DATA_STARVATION_ULTRA_THRESHOLD: int = _env_int(
-        "RINGRIFT_DATA_STARVATION_ULTRA_THRESHOLD", 20
+        "RINGRIFT_DATA_STARVATION_ULTRA_THRESHOLD", 500
     )
     DATA_STARVATION_EMERGENCY_THRESHOLD: int = _env_int(
-        "RINGRIFT_DATA_STARVATION_EMERGENCY_THRESHOLD", 100
+        "RINGRIFT_DATA_STARVATION_EMERGENCY_THRESHOLD", 1500
     )
     DATA_STARVATION_CRITICAL_THRESHOLD: int = _env_int(
-        # Jan 2026: Lowered from 1000 to 500 to catch more underserved configs
-        "RINGRIFT_DATA_STARVATION_CRITICAL_THRESHOLD", 500
+        "RINGRIFT_DATA_STARVATION_CRITICAL_THRESHOLD", 3000
     )
     DATA_STARVATION_ULTRA_MULTIPLIER: float = _env_float(
         # Dec 31, 2025: Increased from 25x to 100x for 48h autonomous operation

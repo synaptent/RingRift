@@ -2469,6 +2469,24 @@ class TrainingTriggerDaemon(HandlerBase):
         if not quality_ok:
             return False, quality_reason
 
+        # 3.6 January 5, 2026 (Session 17.32): Minimum game requirement for 3p/4p configs
+        # 3p and 4p configs have more complex dynamics and need more training data
+        # to produce quality models. Require at least 2000 games before training.
+        if state.num_players >= 3:
+            try:
+                from app.utils.game_discovery import count_games_for_config
+                game_count = count_games_for_config(state.board_type, state.num_players)
+                min_games_3p_4p = 2000  # Minimum games for multiplayer configs
+                if game_count < min_games_3p_4p:
+                    return False, (
+                        f"insufficient games for {state.num_players}p config "
+                        f"({game_count} < {min_games_3p_4p} minimum)"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"[TrainingTriggerDaemon] {config_key}: could not check game count: {e}"
+                )
+
         # 4. Check minimum samples (with confidence-based early trigger)
         # Dec 29, 2025: Try confidence-based early trigger first
         # This allows training to start earlier when statistical confidence is high

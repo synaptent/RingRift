@@ -983,7 +983,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
         "medium": 500,     # < 500 games = +10 priority boost
     }
     BOOTSTRAP_BOOSTS = {
-        "critical": 25,    # Massive boost to ensure minimum data collection
+        "critical": 50,    # Session 17.34: Increased from 25 to 50 for data-starved configs
         "low": 15,         # Strong boost for low-data configs
         "medium": 10,      # Moderate boost for medium-data configs
     }

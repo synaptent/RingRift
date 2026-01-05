@@ -2141,6 +2141,55 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
             # Non-critical - log and continue
             logger.debug(f"[SelfplayScheduler] Idle work injection failed: {e}")
 
+        # January 5, 2026 (Phase 7.6): Periodic cleanup of stale unhealthy nodes
+        # Runs every 10 cycles (~5-10 minutes) to restore nodes whose circuits
+        # have closed but missed the CIRCUIT_RESET event.
+        if self.stats.cycles_completed % 10 == 0:
+            try:
+                await self._cleanup_stale_unhealthy_nodes()
+            except Exception as e:
+                logger.debug(f"[SelfplayScheduler] Unhealthy node cleanup failed: {e}")
+
+    async def _cleanup_stale_unhealthy_nodes(self) -> None:
+        """Remove nodes from _unhealthy_nodes if their circuit breaker is closed.
+
+        January 5, 2026 (Phase 7.6): Periodic safety net for nodes that recovered
+        but missed the CIRCUIT_RESET event. Checks circuit breaker state and
+        restores nodes that are healthy.
+
+        Expected impact: Nodes recover automatically instead of staying excluded.
+        """
+        try:
+            cb_registry = get_node_circuit_registry()
+        except Exception:
+            return  # CB registry not available
+
+        unhealthy = getattr(self, "_unhealthy_nodes", set())
+        if not unhealthy:
+            return
+
+        to_restore: list[str] = []
+        for node_id in list(unhealthy):
+            # If circuit is closed (not open), node is healthy
+            if not cb_registry.is_circuit_open(node_id):
+                to_restore.append(node_id)
+
+        for node_id in to_restore:
+            self._unhealthy_nodes.discard(node_id)
+            # Also clear from demoted sets
+            if hasattr(self, "_demoted_nodes"):
+                self._demoted_nodes.discard(node_id)
+            logger.info(
+                f"[SelfplayScheduler] Auto-restored {node_id} (circuit closed, "
+                f"was in _unhealthy_nodes)"
+            )
+
+        if to_restore:
+            logger.info(
+                f"[SelfplayScheduler] Periodic cleanup restored {len(to_restore)} nodes: "
+                f"{to_restore}"
+            )
+
     def _get_event_subscriptions(self) -> dict[str, Callable]:
         """Return event_type -> handler mapping (HandlerBase pattern).
 
