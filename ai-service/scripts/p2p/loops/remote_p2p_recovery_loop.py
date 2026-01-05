@@ -25,6 +25,10 @@ Usage:
 
 Events:
     REMOTE_P2P_STARTED: Emitted when P2P is started on a remote node
+    REMOTE_P2P_RECOVERY_SUCCESS: Emitted when a node successfully recovered and joined mesh
+    REMOTE_P2P_RECOVERY_FAILED: Emitted when recovery attempt failed (SSH or verification)
+
+Session 17.25 (Jan 5, 2026): Added success/failure events for feedback loop integration.
 """
 
 from __future__ import annotations
@@ -602,12 +606,35 @@ class RemoteP2PRecoveryLoop(BaseLoop):
                         f"restart count now {self._restart_count[node_id]} "
                         f"(next cooldown: {self._get_effective_cooldown(node_id):.0f}s)"
                     )
+                    # Session 17.25: Emit failure event for feedback loop integration
+                    if self.config.emit_events:
+                        self._safe_emit_p2p_event(
+                            "REMOTE_P2P_RECOVERY_FAILED",
+                            {
+                                "node_id": node_id,
+                                "recovery_type": "ssh_restart",
+                                "failure_reason": f"verification_exception: {type(verified).__name__}",
+                                "restart_count": self._restart_count.get(node_id, 0),
+                                "timestamp": time.time(),
+                            },
+                        )
                 elif verified:
                     self._stats.nodes_verified += 1
                     # Successful verification - start tracking stability
                     # (backoff will be reset after stable period)
                     if node_id in self._restart_count:
                         self._first_stable_time[node_id] = now
+                    # Session 17.25: Emit success event for feedback loop integration
+                    if self.config.emit_events:
+                        self._safe_emit_p2p_event(
+                            "REMOTE_P2P_RECOVERY_SUCCESS",
+                            {
+                                "node_id": node_id,
+                                "recovery_type": "ssh_restart",
+                                "duration_seconds": time.time() - self._last_attempt.get(node_id, now),
+                                "timestamp": time.time(),
+                            },
+                        )
                 else:
                     self._stats.nodes_verification_failed += 1
                     # Increment restart count for exponential backoff
@@ -617,6 +644,18 @@ class RemoteP2PRecoveryLoop(BaseLoop):
                         f"restart count now {self._restart_count[node_id]} "
                         f"(next cooldown: {self._get_effective_cooldown(node_id):.0f}s)"
                     )
+                    # Session 17.25: Emit failure event for feedback loop integration
+                    if self.config.emit_events:
+                        self._safe_emit_p2p_event(
+                            "REMOTE_P2P_RECOVERY_FAILED",
+                            {
+                                "node_id": node_id,
+                                "recovery_type": "ssh_restart",
+                                "failure_reason": "verification_failed",
+                                "restart_count": self._restart_count.get(node_id, 0),
+                                "timestamp": time.time(),
+                            },
+                        )
 
         self._stats.last_recovery_time = now
 

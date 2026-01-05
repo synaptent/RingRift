@@ -1414,6 +1414,8 @@ class SelfplayScheduler(EventSubscriptionMixin):
             "QUALITY_SCORE_UPDATED": self._on_quality_score_updated,
             # January 2026 - Session 17.26: Architecture weights cache refresh
             "ARCHITECTURE_WEIGHTS_UPDATED": self._on_architecture_weights_updated,
+            # January 2026 - Session 17.27: Auto-dispatch on critical starvation
+            "DATA_STARVATION_CRITICAL": self._on_data_starvation_critical,
         }
 
     async def _on_selfplay_rate_changed(self, event) -> None:
@@ -2105,6 +2107,102 @@ class SelfplayScheduler(EventSubscriptionMixin):
             })
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Could not emit rebalance event: {e}")
+
+    async def _on_data_starvation_critical(self, event: dict) -> None:
+        """Handle DATA_STARVATION_CRITICAL events - auto-dispatch priority selfplay.
+
+        Jan 5, 2026 - Session 17.27: When ULTRA starvation is detected (<20 games),
+        automatically dispatch priority selfplay jobs to address the starvation.
+        This enables the cluster to automatically respond to critically low game
+        counts without manual intervention.
+
+        Args:
+            event: Event with payload containing config_key, game_count, tier
+        """
+        payload = self._extract_event_payload(event)
+        config_key = payload.get("config_key", "")
+        game_count = payload.get("game_count", 0)
+        tier = payload.get("tier", "")
+
+        if not config_key:
+            return
+
+        # Only auto-dispatch for ULTRA tier (most critical)
+        if tier != "ULTRA":
+            logger.debug(
+                f"[SelfplayScheduler] Starvation alert for {config_key} "
+                f"({tier} tier, {game_count} games) - not ULTRA, skipping auto-dispatch"
+            )
+            return
+
+        # Check cooldown to avoid duplicate dispatches
+        cooldown_key = f"starvation_dispatch_{config_key}"
+        last_dispatch = getattr(self, "_starvation_dispatch_times", {}).get(cooldown_key, 0)
+        if time.time() - last_dispatch < 600:  # 10 minute cooldown
+            logger.debug(
+                f"[SelfplayScheduler] Skipping auto-dispatch for {config_key} "
+                "(dispatched within last 10 minutes)"
+            )
+            return
+
+        # Parse config_key to get board_type and num_players
+        try:
+            from app.coordination.event_utils import parse_config_key
+            parsed = parse_config_key(config_key)
+            board_type = parsed.board_type
+            num_players = parsed.num_players
+        except Exception as e:
+            logger.warning(
+                f"[SelfplayScheduler] Failed to parse config_key {config_key}: {e}"
+            )
+            return
+
+        # Dispatch priority selfplay
+        games_to_dispatch = 200 if game_count < 10 else 100
+        logger.info(
+            f"[SelfplayScheduler] Auto-dispatching {games_to_dispatch} selfplay games "
+            f"for {config_key} (ULTRA starvation, only {game_count} games)"
+        )
+
+        try:
+            # Use P2P dispatch endpoint if available
+            if hasattr(self, "_orchestrator") and self._orchestrator:
+                # Dispatch via orchestrator's dispatch_selfplay method
+                result = await self._orchestrator.dispatch_selfplay(
+                    board_type=board_type,
+                    num_players=num_players,
+                    num_games=games_to_dispatch,
+                    priority="critical",
+                )
+                if result.get("success"):
+                    # Track cooldown
+                    if not hasattr(self, "_starvation_dispatch_times"):
+                        self._starvation_dispatch_times: dict[str, float] = {}
+                    self._starvation_dispatch_times[cooldown_key] = time.time()
+
+                    logger.info(
+                        f"[SelfplayScheduler] Successfully dispatched priority selfplay "
+                        f"for {config_key}: {result.get('work_items_created', 0)} work items"
+                    )
+                else:
+                    logger.warning(
+                        f"[SelfplayScheduler] Failed to dispatch selfplay for {config_key}: "
+                        f"{result.get('error', 'unknown error')}"
+                    )
+            else:
+                # Fallback: just boost priority and let normal scheduling handle it
+                logger.info(
+                    f"[SelfplayScheduler] No orchestrator available, "
+                    f"boosting priority for {config_key} instead"
+                )
+                self._force_rebalance = True
+                # Add temporary priority boost
+                self._rate_multipliers[config_key] = self._rate_multipliers.get(config_key, 1.0) * 2.0
+
+        except Exception as e:
+            logger.warning(
+                f"[SelfplayScheduler] Failed to auto-dispatch selfplay for {config_key}: {e}"
+            )
 
     def _emit_selfplay_target_updated(
         self,

@@ -2548,11 +2548,13 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         """Background health check loop.
 
         Sprint 5 (Jan 2, 2026): Added deadlock detection check.
-        Sprint 17.9 (Jan 4, 2026): Added hourly circuit breaker TTL decay.
+        Sprint 17.9 (Jan 4, 2026): Added circuit breaker TTL decay.
+        Session 17.25 (Jan 5, 2026): Reduced CB decay from hourly to 15-min.
         """
         health_check_count = 0
-        # Decay old circuits every ~60 health checks (~1 hour at 60s intervals)
-        CB_DECAY_INTERVAL = 60
+        # Decay old circuits every ~15 health checks (~15 min at 60s intervals)
+        # Session 17.25: Reduced from 60 (1h) to 15 (15min) for faster recovery
+        CB_DECAY_INTERVAL = 15
 
         while self._running and not self._shutdown_event.is_set():
             try:

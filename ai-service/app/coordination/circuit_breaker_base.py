@@ -725,11 +725,14 @@ class OperationCircuitData(CircuitDataBase):
     """Extended circuit data with escalation tracking.
 
     Adds escalation tier support for multi-level recovery.
+    Session 17.25: Added consecutive_successful_probes for tier decay.
     """
 
     escalation_tier: int = 0
     escalation_entered_at: float | None = None
     last_probe_at: float | None = None
+    # Session 17.25: Track consecutive successes for tier decay
+    consecutive_successful_probes: int = 0
 
 
 @dataclass
@@ -1064,7 +1067,13 @@ class OperationCircuitBreaker(CircuitBreakerBase):
             self._notify_state_change(target, old_state, new_state)
 
     def record_success(self, target: str) -> None:
-        """Record a successful operation with escalation reset."""
+        """Record a successful operation with escalation tier decay.
+
+        Session 17.25: Added gradual tier decay after 3 consecutive successes.
+        Previously tier was only reset to 0 on HALF_OPEN -> CLOSED transition.
+        Now tier decays by 1 after 3 consecutive successful probes, allowing
+        faster recovery from elevated escalation states.
+        """
         old_state = None
         new_state = None
 
@@ -1074,6 +1083,19 @@ class OperationCircuitBreaker(CircuitBreakerBase):
             circuit.success_count += 1
             circuit.last_success_time = time.time()
 
+            # Session 17.25: Track consecutive successful probes for tier decay
+            if isinstance(circuit, OperationCircuitData):
+                circuit.consecutive_successful_probes += 1
+                # Decay tier after 3 consecutive successful probes
+                if circuit.escalation_tier > 0 and circuit.consecutive_successful_probes >= 3:
+                    old_tier = circuit.escalation_tier
+                    circuit.escalation_tier -= 1
+                    circuit.consecutive_successful_probes = 0
+                    logger.info(
+                        f"[OperationCircuitBreaker] Escalation tier decayed "
+                        f"{old_tier} -> {circuit.escalation_tier} for {target} (3 consecutive successes)"
+                    )
+
             if circuit.state == CircuitState.HALF_OPEN:
                 if circuit.success_count >= self.config.success_threshold:
                     circuit.state = CircuitState.CLOSED
@@ -1082,11 +1104,12 @@ class OperationCircuitBreaker(CircuitBreakerBase):
                     circuit.half_open_at = None
                     circuit.consecutive_opens = 0
                     circuit.jitter_offset = 0.0
-                    # Reset escalation state
+                    # Reset escalation state fully when circuit closes
                     if isinstance(circuit, OperationCircuitData):
                         circuit.escalation_tier = 0
                         circuit.escalation_entered_at = None
                         circuit.last_probe_at = None
+                        circuit.consecutive_successful_probes = 0
                     logger.info(f"[OperationCircuitBreaker] Circuit CLOSED for {target}")
             elif circuit.state == CircuitState.CLOSED:
                 circuit.failure_count = 0
