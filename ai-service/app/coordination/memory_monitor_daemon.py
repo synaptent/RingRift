@@ -478,9 +478,10 @@ class MemoryMonitorDaemon(HandlerBase):
             return
 
         try:
-            from app.distributed.data_events import DataEventType, emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
+            from app.distributed.data_events import DataEventType
 
-            emit_event(
+            if safe_emit_event(
                 DataEventType.MEMORY_PRESSURE,
                 {
                     "source": source,
@@ -490,13 +491,12 @@ class MemoryMonitorDaemon(HandlerBase):
                     "gpu_total_gb": status.gpu_total_bytes / (1024**3),
                     "timestamp": now,
                 },
-            )
-            self._last_memory_pressure_event = now
-            logger.info(f"[MemoryMonitor] Emitted MEMORY_PRESSURE ({source})")
+                context="MemoryMonitor",
+            ):
+                self._last_memory_pressure_event = now
+                logger.info(f"[MemoryMonitor] Emitted MEMORY_PRESSURE ({source})")
         except ImportError:
-            logger.debug("[MemoryMonitor] data_events not available")
-        except Exception as e:  # noqa: BLE001
-            logger.error(f"[MemoryMonitor] Failed to emit MEMORY_PRESSURE: {e}")
+            logger.debug("[MemoryMonitor] event_emission_helpers not available")
 
     async def _emit_resource_constraint(self, status: MemoryStatus, source: str) -> None:
         """Emit RESOURCE_CONSTRAINT event with cooldown."""
@@ -505,9 +505,10 @@ class MemoryMonitorDaemon(HandlerBase):
             return
 
         try:
-            from app.distributed.data_events import DataEventType, emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
+            from app.distributed.data_events import DataEventType
 
-            emit_event(
+            if safe_emit_event(
                 DataEventType.RESOURCE_CONSTRAINT,
                 {
                     "source": source,
@@ -517,13 +518,12 @@ class MemoryMonitorDaemon(HandlerBase):
                     "ram_total_gb": status.ram_total_bytes / (1024**3),
                     "timestamp": now,
                 },
-            )
-            self._last_resource_constraint_event = now
-            logger.info(f"[MemoryMonitor] Emitted RESOURCE_CONSTRAINT ({source})")
+                context="MemoryMonitor",
+            ):
+                self._last_resource_constraint_event = now
+                logger.info(f"[MemoryMonitor] Emitted RESOURCE_CONSTRAINT ({source})")
         except ImportError:
-            logger.debug("[MemoryMonitor] data_events not available")
-        except Exception as e:  # noqa: BLE001
-            logger.error(f"[MemoryMonitor] Failed to emit RESOURCE_CONSTRAINT: {e}")
+            logger.debug("[MemoryMonitor] event_emission_helpers not available")
 
     def health_check(self) -> HealthCheckResult:
         """Check monitor health.

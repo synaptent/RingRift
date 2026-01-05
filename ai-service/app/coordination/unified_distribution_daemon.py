@@ -597,14 +597,18 @@ class UnifiedDistributionDaemon(HandlerBase):
                 )
                 # Emit DISTRIBUTION_INCOMPLETE event
                 try:
-                    from app.distributed.data_events import emit_event
+                    from app.coordination.event_emission_helpers import safe_emit_event
 
-                    emit_event("DISTRIBUTION_INCOMPLETE", {
-                        "model_path": model_path,
-                        "required_nodes": min_nodes,
-                        "actual_nodes": count,
-                        "timeout_seconds": timeout,
-                    })
+                    safe_emit_event(
+                        "DISTRIBUTION_INCOMPLETE",
+                        {
+                            "model_path": model_path,
+                            "required_nodes": min_nodes,
+                            "actual_nodes": count,
+                            "timeout_seconds": timeout,
+                        },
+                        context="DistributionVerification",
+                    )
                 except ImportError:
                     pass
 

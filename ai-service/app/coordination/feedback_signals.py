@@ -48,19 +48,15 @@ logger = logging.getLogger(__name__)
 
 # Import event bus for cross-process propagation (P0.1 Dec 2025)
 try:
-    from app.coordination.event_router import (
-        DataEventType,
-        get_event_bus,
-    )
+    from app.coordination.event_router import DataEventType
+    from app.coordination.event_emission_helpers import safe_emit_event
     HAS_EVENT_BUS = True
-    emit_event = None  # Use get_event_bus().publish() instead
 except ImportError as e:
     import logging as _logging
     _logging.getLogger(__name__).debug(f"Event bus not available: {e}")
     HAS_EVENT_BUS = False
     DataEventType = None
-    emit_event = None
-    get_event_bus = None
+    safe_emit_event = None
 
 
 # =============================================================================
@@ -279,26 +275,27 @@ def emit_signal(signal: FeedbackSignal) -> None:
             logger.error(f"[FeedbackSignals] Subscriber error: {e}")
 
     # Bridge to event bus for cross-process propagation (P0.1 Dec 2025)
-    if HAS_EVENT_BUS and emit_event is not None:
+    if HAS_EVENT_BUS and safe_emit_event is not None:
         event_type = _get_event_type_for_signal(signal)
         if event_type is not None:
-            try:
-                # Build payload from signal
-                payload = {
-                    "config_key": signal.config_key,
-                    "value": signal.value,
-                    "reason": signal.reason,
-                    "source": signal.source.name if signal.source else "UNKNOWN",
-                    "signal_type": signal.signal_type.name,
-                    **signal.metadata,
-                }
-                emit_event(event_type, payload)
+            # Build payload from signal
+            payload = {
+                "config_key": signal.config_key,
+                "value": signal.value,
+                "reason": signal.reason,
+                "source": signal.source.name if signal.source else "UNKNOWN",
+                "signal_type": signal.signal_type.name,
+                **signal.metadata,
+            }
+            if safe_emit_event(
+                event_type,
+                payload,
+                context="FeedbackSignals",
+            ):
                 logger.debug(
                     f"[FeedbackSignals] Bridged to event bus: "
                     f"{signal.signal_type.name} -> {event_type.name}"
                 )
-            except Exception as e:
-                logger.warning(f"[FeedbackSignals] Event bus bridge error: {e}")
 
     logger.debug(f"[FeedbackSignals] Emitted: {signal}")
 

@@ -415,42 +415,44 @@ class TrainingDataRecoveryDaemon(SingletonMixin, HandlerBase):
     ) -> None:
         """Emit TRAINING_DATA_RECOVERED event."""
         try:
-            from app.distributed.data_events import DataEventType, emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
+            from app.distributed.data_events import DataEventType
 
-            await emit_event(
-                event_type=DataEventType.TRAINING_DATA_RECOVERED,
-                payload={
+            safe_emit_event(
+                DataEventType.TRAINING_DATA_RECOVERED,
+                {
                     "config_key": config_key,
                     "board_type": board_type,
                     "num_players": num_players,
                     "recovery_time": time.time(),
                     "output_path": f"data/training/{config_key}.npz",
                 },
+                context="DataRecovery",
+                log_after=f"Emitted TRAINING_DATA_RECOVERED for {config_key}",
             )
         except ImportError:
             logger.debug("[DataRecovery] Event emission unavailable")
-        except Exception as e:
-            logger.warning(f"[DataRecovery] Failed to emit success event: {e}")
 
     async def _emit_recovery_failed(self, config_key: str, reason: str) -> None:
         """Emit TRAINING_DATA_RECOVERY_FAILED event."""
         try:
-            from app.distributed.data_events import DataEventType, emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
+            from app.distributed.data_events import DataEventType
 
-            await emit_event(
-                event_type=DataEventType.TRAINING_DATA_RECOVERY_FAILED,
-                payload={
+            safe_emit_event(
+                DataEventType.TRAINING_DATA_RECOVERY_FAILED,
+                {
                     "config_key": config_key,
                     "reason": reason,
                     "attempts": self._recovery_attempts.get(config_key, 0),
                     "max_retries": self.config.max_retries_per_config,
                     "failure_time": time.time(),
                 },
+                context="DataRecovery",
+                log_after=f"Emitted TRAINING_DATA_RECOVERY_FAILED for {config_key}",
             )
         except ImportError:
             logger.debug("[DataRecovery] Event emission unavailable")
-        except Exception as e:
-            logger.warning(f"[DataRecovery] Failed to emit failure event: {e}")
 
 
 # =============================================================================

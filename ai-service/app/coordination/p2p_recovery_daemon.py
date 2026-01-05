@@ -2046,19 +2046,19 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
 
         Jan 3, 2026 (Sprint 15.1): Alerts monitoring systems to unstable voters.
         """
-        # Sprint 17.4: Use safe task creation for error handling
         try:
-            from app.distributed.data_events import DataEventType, emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
+            from app.distributed.data_events import DataEventType
 
-            self._safe_create_task(
-                emit_event(
-                    DataEventType.VOTER_FLAPPING,
-                    voter_id=voter_id,
-                    transitions=transitions,
-                    window_seconds=self.FLAP_WINDOW_SECONDS,
-                    threshold=self.FLAP_THRESHOLD,
-                ),
-                context=f"voter_flapping_event:{voter_id}",
+            safe_emit_event(
+                DataEventType.VOTER_FLAPPING,
+                {
+                    "voter_id": voter_id,
+                    "transitions": transitions,
+                    "window_seconds": self.FLAP_WINDOW_SECONDS,
+                    "threshold": self.FLAP_THRESHOLD,
+                },
+                context="P2PRecovery",
             )
         except ImportError as e:
             logger.debug(f"[P2PRecovery] Failed to emit VOTER_FLAPPING event: {e}")
