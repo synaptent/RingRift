@@ -674,22 +674,19 @@ class ClusterResilienceOrchestrator(CoordinatorBase, SingletonMixin):
             },
         )
 
-        try:
-            from app.coordination.event_router import emit_event
-            from app.distributed.data_events import DataEventType
+        from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(
-                DataEventType.CLUSTER_HEALTH_CHANGED,
-                {
-                    "score": score.overall,
-                    "level": score.level.value,
-                    "degraded_components": score.degraded_components,
-                    "recommended_actions": [a.value for a in score.recommended_actions],
-                    "node_id": env.node_id,
-                },
-            )
-        except ImportError:
-            pass
+        safe_emit_event(
+            "CLUSTER_HEALTH_CHANGED",
+            {
+                "score": score.overall,
+                "level": score.level.value,
+                "degraded_components": score.degraded_components,
+                "recommended_actions": [a.value for a in score.recommended_actions],
+                "node_id": env.node_id,
+            },
+            context="ClusterResilienceOrchestrator",
+        )
 
     # =========================================================================
     # Registration
@@ -834,24 +831,22 @@ class ClusterResilienceOrchestrator(CoordinatorBase, SingletonMixin):
 
     def _emit_escalation_event(self, tier: str, original_event: dict[str, Any]) -> None:
         """Emit a coordinated escalation event for cluster-wide response."""
-        try:
-            from app.coordination.event_router import emit_event
+        from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(
-                "resilience_escalation",
-                {
-                    "tier": tier,
-                    "escalation_count": self._escalation_count,
-                    "autonomous_queue_active": self._autonomous_queue_active,
-                    "utilization_recovery_active": self._utilization_recovery_active,
-                    "fast_failure_tier": self._fast_failure_tier,
-                    "original_event": original_event,
-                    "node_id": env.node_id,
-                    "timestamp": time.time(),
-                },
-            )
-        except ImportError:
-            pass
+        safe_emit_event(
+            "resilience_escalation",
+            {
+                "tier": tier,
+                "escalation_count": self._escalation_count,
+                "autonomous_queue_active": self._autonomous_queue_active,
+                "utilization_recovery_active": self._utilization_recovery_active,
+                "fast_failure_tier": self._fast_failure_tier,
+                "original_event": original_event,
+                "node_id": env.node_id,
+                "timestamp": time.time(),
+            },
+            context="ClusterResilienceOrchestrator",
+        )
 
     def get_resilience_state(self) -> dict[str, Any]:
         """Get current resilience component states."""

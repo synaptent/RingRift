@@ -557,70 +557,61 @@ class BacklogEvaluationDaemon(HandlerBase):
 
     def _emit_discovery_completed(self, total_models: int, queued: int) -> None:
         """Emit BACKLOG_DISCOVERY_COMPLETED event."""
-        try:
-            from app.coordination.event_router import emit_event
-            from app.distributed.data_events import DataEventType
+        from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(
-                DataEventType.BACKLOG_DISCOVERY_COMPLETED,
-                {
-                    "total_models": total_models,
-                    "queued": queued,
-                    "discovery_cycles": self._stats.discovery_cycles,
-                    "evaluations_completed": self._stats.evaluations_completed,
-                    "evaluations_failed": self._stats.evaluations_failed,
-                    "timestamp": time.time(),
-                },
-            )
-        except ImportError:
-            pass
+        safe_emit_event(
+            "BACKLOG_DISCOVERY_COMPLETED",
+            {
+                "total_models": total_models,
+                "queued": queued,
+                "discovery_cycles": self._stats.discovery_cycles,
+                "evaluations_completed": self._stats.evaluations_completed,
+                "evaluations_failed": self._stats.evaluations_failed,
+                "timestamp": time.time(),
+            },
+            context="BacklogEvaluationDaemon",
+        )
 
     def _emit_model_queued(self, model: "DiscoveredModel") -> None:
         """Emit OWC_MODEL_BACKLOG_QUEUED event."""
-        try:
-            from app.coordination.event_router import emit_event
-            from app.distributed.data_events import DataEventType
+        from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(
-                DataEventType.OWC_MODEL_BACKLOG_QUEUED,
-                {
-                    "model_path": model.path,
-                    "model_name": model.file_name,
-                    "config_key": model.config_key,
-                    "board_type": model.board_type,
-                    "num_players": model.num_players,
-                    "source": "owc",
-                    "timestamp": time.time(),
-                },
-            )
-        except ImportError:
-            pass
+        safe_emit_event(
+            "OWC_MODEL_BACKLOG_QUEUED",
+            {
+                "model_path": model.path,
+                "model_name": model.file_name,
+                "config_key": model.config_key,
+                "board_type": model.board_type,
+                "num_players": model.num_players,
+                "source": "owc",
+                "timestamp": time.time(),
+            },
+            context="BacklogEvaluationDaemon",
+        )
 
     def _emit_synthetic_training_completed(self, model: "DiscoveredModel") -> None:
         """Emit synthetic TRAINING_COMPLETED event to trigger evaluation.
 
         This event is picked up by EvaluationDaemon to run gauntlet evaluation.
         """
-        try:
-            from app.coordination.event_router import emit_event
-            from app.distributed.data_events import DataEventType
+        from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(
-                DataEventType.TRAINING_COMPLETED,
-                {
-                    "config_key": model.config_key,
-                    "board_type": model.board_type,
-                    "num_players": model.num_players,
-                    "model_path": model.path,  # OWC path, needs download
-                    "source": "backlog_owc",  # Marker for EvaluationDaemon
-                    "architecture": model.architecture_version or "unknown",
-                    "epochs": 0,  # Not applicable for backlog
-                    "job_id": f"backlog_{model.sha256[:16]}" if model.sha256 else None,
-                    "timestamp": time.time(),
-                },
-            )
-        except ImportError:
-            pass
+        safe_emit_event(
+            "TRAINING_COMPLETED",
+            {
+                "config_key": model.config_key,
+                "board_type": model.board_type,
+                "num_players": model.num_players,
+                "model_path": model.path,  # OWC path, needs download
+                "source": "backlog_owc",  # Marker for EvaluationDaemon
+                "architecture": model.architecture_version or "unknown",
+                "epochs": 0,  # Not applicable for backlog
+                "job_id": f"backlog_{model.sha256[:16]}" if model.sha256 else None,
+                "timestamp": time.time(),
+            },
+            context="BacklogEvaluationDaemon",
+        )
 
     # =========================================================================
     # Health Check

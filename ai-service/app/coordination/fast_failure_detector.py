@@ -443,49 +443,43 @@ class FastFailureDetector(HandlerBase):
         failure_duration: float,
     ) -> None:
         """Emit a failure event."""
-        try:
-            from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+        from app.coordination.event_emission_helpers import safe_emit_event
 
-            # Map event type string to DataEventType
-            event = getattr(DataEventType, event_type, None)
-            if event:
-                emit_event(event, {
-                    "tier": tier.name,
-                    "failure_duration_seconds": failure_duration,
-                    "signals": {
-                        "no_leader": signals.no_leader,
-                        "queue_empty": signals.queue_empty,
-                        "queue_depth": signals.queue_depth,
-                        "low_selfplay_rate": signals.low_selfplay_rate,
-                        "selfplay_rate": signals.selfplay_rate,
-                        "high_idle_percent": signals.high_idle_percent,
-                        "idle_percent": signals.idle_percent,
-                    },
-                    "selfplay_boost": self._current_boost,
-                    "timestamp": time.time(),
-                })
-        except ImportError:
-            pass
-        except Exception as e:
-            logger.debug(f"[FastFailureDetector] Failed to emit {event_type}: {e}")
+        safe_emit_event(
+            event_type,
+            {
+                "tier": tier.name,
+                "failure_duration_seconds": failure_duration,
+                "signals": {
+                    "no_leader": signals.no_leader,
+                    "queue_empty": signals.queue_empty,
+                    "queue_depth": signals.queue_depth,
+                    "low_selfplay_rate": signals.low_selfplay_rate,
+                    "selfplay_rate": signals.selfplay_rate,
+                    "high_idle_percent": signals.high_idle_percent,
+                    "idle_percent": signals.idle_percent,
+                },
+                "selfplay_boost": self._current_boost,
+                "timestamp": time.time(),
+            },
+            context="FastFailureDetector",
+        )
 
     def _emit_recovered_event(self, from_tier: FailureTier) -> None:
         """Emit FAST_FAILURE_RECOVERED event."""
-        try:
-            from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
+        from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(DataEventType.FAST_FAILURE_RECOVERED, {
+        safe_emit_event(
+            "FAST_FAILURE_RECOVERED",
+            {
                 "from_tier": from_tier.name,
                 "total_failure_duration_seconds": time.time() - self._stats.failure_start_time
-                if self._stats.failure_start_time > 0 else 0,
+                if self._stats.failure_start_time > 0
+                else 0,
                 "timestamp": time.time(),
-            })
-        except ImportError:
-            pass
-        except Exception as e:
-            logger.debug(f"[FastFailureDetector] Failed to emit FAST_FAILURE_RECOVERED: {e}")
+            },
+            context="FastFailureDetector",
+        )
 
     def get_current_boost(self) -> float:
         """Get the current selfplay boost multiplier."""
