@@ -368,6 +368,7 @@ class UnifiedQueuePopulator:
         self._init_targets()
         self._load_existing_elo()
         self._load_curriculum_weights()
+        self._load_game_counts()  # Jan 5, 2026: Load actual game counts from canonical DBs
 
         # Work tracking
         self._queued_work_ids: set[str] = set()
@@ -506,6 +507,48 @@ class UnifiedQueuePopulator:
                 if config_key in self._targets:
                     self._targets[config_key].curriculum_weight = weight
             logger.debug("[QueuePopulator] Using default curriculum weights")
+
+    def _load_game_counts(self) -> None:
+        """Load actual game counts from canonical databases.
+
+        Jan 5, 2026 (Session 17.34): Fix for starvation boost not being applied.
+        Previously, games_played was loaded from elo_ratings.games_played which
+        tracks evaluation games, not actual selfplay games. This caused all configs
+        to show 0 games and the starvation multiplier to never be applied.
+
+        Now loads from canonical databases via get_game_counts_summary().
+        """
+        try:
+            from app.utils.game_discovery import get_game_counts_summary
+
+            counts = get_game_counts_summary()
+            total_games = 0
+            for config_key, count in counts.items():
+                if config_key in self._targets:
+                    self._targets[config_key].games_played = count
+                    total_games += count
+
+            logger.info(
+                f"[QueuePopulator] Loaded game counts from canonical DBs: "
+                f"{total_games:,} total across {len(counts)} configs"
+            )
+
+            # Log configs with low game counts for visibility
+            low_game_configs = [
+                (k, v) for k, v in counts.items()
+                if v < 500 and k in self._targets
+            ]
+            if low_game_configs:
+                low_game_configs.sort(key=lambda x: x[1])
+                logger.warning(
+                    f"[QueuePopulator] Low game count configs (starvation candidates): "
+                    f"{', '.join(f'{k}:{v}' for k, v in low_game_configs[:5])}"
+                )
+
+        except ImportError:
+            logger.warning("[QueuePopulator] game_discovery not available, using elo_ratings game counts")
+        except Exception as e:
+            logger.warning(f"[QueuePopulator] Failed to load game counts from canonical DBs: {e}")
 
     def set_work_queue(self, work_queue: "WorkQueue") -> None:
         """Set the work queue reference."""

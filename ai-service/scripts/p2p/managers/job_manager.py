@@ -2805,6 +2805,36 @@ class JobManager(EventSubscriptionMixin):
                     }
                     continue
 
+                # Session 17.39 (Jan 2026): Multi-config capacity check BEFORE dispatch
+                # This prevents OOM on GH200/H100 nodes by respecting VRAM-based limits
+                config_key = f"{board_type}_{num_players}p"
+                if HAS_CONFIG_TRACKER:
+                    try:
+                        config_tracker = get_node_config_tracker()
+                        if config_tracker:
+                            # Get GPU VRAM from worker info (fallback to conservative 24GB)
+                            gpu_vram = int(
+                                getattr(worker, "gpu_vram_gb", 0)
+                                or getattr(worker, "memory_gb", 0)
+                                or 24  # Conservative default
+                            )
+                            if not config_tracker.can_add_config(worker_id, gpu_vram, config_key):
+                                current_configs = config_tracker.get_active_configs(worker_id)
+                                max_configs = config_tracker._get_max_for_vram(gpu_vram)
+                                logger.info(
+                                    f"[ConfigTracker] Skipping worker {worker_id} for {config_key}: "
+                                    f"at max capacity ({len(current_configs)}/{max_configs} configs, "
+                                    f"vram={gpu_vram}GB, running={current_configs})"
+                                )
+                                results[worker_id] = {
+                                    "success": False,
+                                    "error": f"at_max_configs: {len(current_configs)}/{max_configs}",
+                                    "skipped": True,
+                                }
+                                continue
+                    except Exception:
+                        pass  # Non-critical, allow dispatch if tracker fails
+
                 # Phase 15.1.7: Build payload for retry-enabled dispatch
                 payload = {
                     "job_id": f"{job_id}_{worker_id}",

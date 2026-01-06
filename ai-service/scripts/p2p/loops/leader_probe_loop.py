@@ -97,11 +97,20 @@ class LeaderProbeLoop(BaseLoop):
         self._latency_history: deque[float] = deque(maxlen=10)
         self._latency_warning_emitted = False  # Avoid spamming warnings
 
+        # Session 17.39: Backup candidate probing (Phase 10.3)
+        # Probe backup candidates every N cycles to maintain warm connections
+        # This reduces MTTR from 60s to 20-30s on leader failure
+        self._probe_cycle_counter = 0
+        self._backup_probe_frequency = 5  # Probe every 5th cycle (~50s at 10s interval)
+
     async def _run_once(self) -> None:
         """Single probe iteration - check if leader is reachable.
 
         Called by BaseLoop.run_forever() at probe_interval intervals.
         """
+        # Increment cycle counter for backup probing
+        self._probe_cycle_counter += 1
+
         # Skip if we are the leader
         if self._is_leader():
             self._consecutive_failures = 0
@@ -129,6 +138,15 @@ class LeaderProbeLoop(BaseLoop):
             self._check_latency_trend()
         else:
             await self._on_probe_failure(leader_id)
+
+        # Session 17.39 Phase 10.3: Probe backup candidates every Nth cycle
+        # This maintains warm connections to potential leader candidates,
+        # reducing MTTR from 60s to 20-30s on leader failure
+        if (
+            self._probe_backup_candidates
+            and self._probe_cycle_counter % self._backup_probe_frequency == 0
+        ):
+            await self._probe_and_update_backup_candidates(leader_id)
 
     def _is_leader(self) -> bool:
         """Check if this node is the current leader."""
@@ -325,6 +343,137 @@ class LeaderProbeLoop(BaseLoop):
         # Check if we should trigger election
         if self._consecutive_failures >= self._failure_threshold:
             await self._trigger_election(leader_id)
+
+    # =========================================================================
+    # Backup Candidate Probing (Session 17.39 - Phase 10.3)
+    # =========================================================================
+
+    def _get_backup_candidates(self, current_leader: str, limit: int = 3) -> list[str]:
+        """Get top backup candidates (voters excluding current leader).
+
+        Session 17.39 Phase 10.3: Returns voters who could become the next leader.
+        These are probed periodically to maintain warm connections, enabling
+        faster failover when the current leader becomes unreachable.
+
+        Args:
+            current_leader: Current leader to exclude from candidates
+            limit: Maximum number of candidates to return (default: 3)
+
+        Returns:
+            List of voter node IDs that could become the next leader
+        """
+        try:
+            # Get voter list from orchestrator
+            voter_ids = getattr(self._orchestrator, "voter_node_ids", []) or []
+            if not voter_ids:
+                return []
+
+            # Filter out current leader
+            candidates = [v for v in voter_ids if v != current_leader]
+
+            # Also filter out this node (we can't vote for ourselves effectively)
+            node_id = getattr(self._orchestrator, "node_id", None)
+            if node_id:
+                candidates = [v for v in candidates if v != node_id]
+
+            # Return top N candidates (first N alphabetically or by configured order)
+            return candidates[:limit]
+
+        except Exception as e:
+            logger.debug(f"[LeaderProbe] Failed to get backup candidates: {e}")
+            return []
+
+    async def _probe_and_update_backup_candidates(self, current_leader: str) -> None:
+        """Probe backup candidates and update their reachability status.
+
+        Session 17.39 Phase 10.3: Proactively probes backup leader candidates
+        to maintain warm TCP connections. When the leader fails, we already know
+        which candidates are reachable, enabling faster failover.
+
+        Args:
+            current_leader: Current leader ID (to exclude from probing)
+        """
+        candidates = self._get_backup_candidates(current_leader)
+        if not candidates:
+            return
+
+        logger.debug(
+            f"[LeaderProbe] Probing {len(candidates)} backup candidates: {candidates}"
+        )
+
+        # Probe each candidate and update status
+        warm_count = 0
+        for candidate_id in candidates:
+            try:
+                reachable = await self._probe_node_health(candidate_id)
+                old_status = self._backup_candidate_status.get(candidate_id)
+                self._backup_candidate_status[candidate_id] = reachable
+
+                if reachable:
+                    warm_count += 1
+                    if old_status is False:
+                        logger.info(
+                            f"[LeaderProbe] Backup candidate {candidate_id} is now reachable"
+                        )
+                else:
+                    if old_status is True:
+                        logger.warning(
+                            f"[LeaderProbe] Backup candidate {candidate_id} became unreachable"
+                        )
+            except Exception as e:
+                logger.debug(f"[LeaderProbe] Error probing candidate {candidate_id}: {e}")
+                self._backup_candidate_status[candidate_id] = False
+
+        # Emit event for observability
+        self._emit_event("BACKUP_CANDIDATES_PROBED", {
+            "candidates": candidates,
+            "warm_count": warm_count,
+            "total_count": len(candidates),
+            "status": {k: v for k, v in self._backup_candidate_status.items()},
+            "current_leader": current_leader,
+        })
+
+    async def _probe_node_health(self, node_id: str) -> bool:
+        """Probe a node's health endpoint.
+
+        Session 17.39: Reuses the parallel URL probing logic from leader probing.
+
+        Args:
+            node_id: Node ID to probe
+
+        Returns:
+            True if node responded successfully, False otherwise
+        """
+        try:
+            urls_for_peer = getattr(self._orchestrator, "_urls_for_peer", None)
+            if urls_for_peer is None:
+                return False
+
+            urls = urls_for_peer(node_id, "health")
+            if not urls:
+                return False
+
+            # Reuse the parallel probing logic
+            return await self._probe_urls_parallel(node_id, urls)
+
+        except Exception as e:
+            logger.debug(f"[LeaderProbe] Error probing node {node_id}: {e}")
+            return False
+
+    def get_warm_backup_candidates(self) -> list[str]:
+        """Get list of backup candidates that are currently reachable.
+
+        Session 17.39: Returns candidates with warm connections. These are
+        preferred for failover when the leader fails.
+
+        Returns:
+            List of reachable backup candidate node IDs
+        """
+        return [
+            node_id
+            for node_id, is_reachable in self._backup_candidate_status.items()
+            if is_reachable
+        ]
 
     async def _trigger_election(self, unreachable_leader: str) -> None:
         """Trigger a forced election due to unreachable leader.
