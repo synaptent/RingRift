@@ -60,6 +60,7 @@ CORE_ROUTES = [
     Route("GET", "/health", "handle_health"),
     Route("GET", "/cluster/health", "handle_cluster_health"),
     Route("GET", "/peer-health", "handle_peer_health"),  # Jan 3, 2026: Sprint 10+ P2P hardening
+    Route("GET", "/game_counts", "handle_game_counts"),  # Jan 5, 2026: Session 17.41 - P2P game count seeding
     Route("GET", "/", "handle_root"),
 ]
 
