@@ -2152,7 +2152,7 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
         current_time = time.time()
         if current_time - self._last_priority_update > self._priority_update_interval:
             try:
-                await self.update_priorities()
+                await self._update_priorities()
             except Exception as e:
                 self._record_error(f"Priority update failed: {e}", e)
 
