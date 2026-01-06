@@ -2618,6 +2618,49 @@ class P2POrchestrator(
                         except Exception as e:
                             logger.debug(f"[WorkerPull] Failed to set partition state: {e}")
 
+                # Session 17.42: Split-brain detection - probe leader's /status endpoint
+                async def _probe_leader_health_for_pull(leader_id: str) -> dict[str, Any] | None:
+                    """Probe the claimed leader's /status endpoint to validate it's actually leading.
+
+                    This detects split-brain scenarios where:
+                    - This node thinks leader_id is the leader
+                    - But leader_id doesn't claim to be leader (leader_id=null in its /status)
+
+                    Args:
+                        leader_id: The node ID we believe is the leader
+
+                    Returns:
+                        The leader's /status response if reachable, None otherwise
+                    """
+                    # Find peer info for the leader
+                    with self.peers_lock:
+                        peer = self.peers.get(leader_id)
+                        if not peer:
+                            logger.debug(f"[WorkerPull] Leader {leader_id} not in peer list")
+                            return None
+
+                        host = peer.host
+                        port = peer.port
+
+                    if not host or not port:
+                        logger.debug(f"[WorkerPull] Leader {leader_id} has no host/port")
+                        return None
+
+                    try:
+                        import aiohttp
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(
+                                f"http://{host}:{port}/status",
+                                timeout=aiohttp.ClientTimeout(total=5.0),
+                            ) as resp:
+                                if resp.status == 200:
+                                    return await resp.json()
+                                logger.debug(f"[WorkerPull] Leader {leader_id} /status returned {resp.status}")
+                                return None
+                    except Exception as e:
+                        logger.debug(f"[WorkerPull] Leader {leader_id} probe failed: {e}")
+                        return None
+
                 worker_pull = WorkerPullLoop(
                     is_leader=lambda: self.role == NodeRole.LEADER,
                     get_leader_id=lambda: self.leader_id,
@@ -2629,6 +2672,8 @@ class P2POrchestrator(
                     get_work_discovery_manager=_get_work_discovery_manager_for_pull,
                     # Session 17.34: Batch claiming for +30-40% utilization improvement
                     claim_work_batch_from_leader=self._claim_work_batch_from_leader,
+                    # Session 17.42: Split-brain detection - validate leader is actually leading
+                    probe_leader_health=_probe_leader_health_for_pull,
                     # Session 17.41: Partition-aware backpressure
                     set_partition_state=_set_work_queue_partition_state,
                 )
@@ -10725,6 +10770,8 @@ class P2POrchestrator(
             "background_loops": background_loops,
             # December 30, 2025: Cluster observability for debugging idle nodes
             "cluster_observability": self._get_cluster_observability(),
+            # Session 17.41 (Jan 6, 2026): Fallback mechanism status for partition debugging
+            "fallback_status": self._get_fallback_status(),
             # December 30, 2025: Lock acquisition status for debugging
             "_lock_status": {
                 "peers_lock_acquired": peers_snapshot is not None,
@@ -26628,6 +26675,96 @@ print(json.dumps({{
                 result["cluster_job_distribution"] = {"error": "no peers available"}
         except Exception as e:  # noqa: BLE001
             result["cluster_job_distribution"] = {"error": str(e)}
+
+        return result
+
+    def _get_fallback_status(self) -> dict[str, Any]:
+        """Get fallback mechanism status for debugging partition issues.
+
+        Session 17.41 (Jan 6, 2026): Exposes visibility into why fallback mechanisms
+        aren't activating during network partitions. This helps diagnose issues where
+        the work queue has items but workers can't claim jobs because the leader is
+        unreachable and fallbacks haven't kicked in.
+
+        Returns:
+            Dict with:
+            - autonomous_queue: Whether local queue fallback is active
+            - work_discovery: Multi-channel work discovery status
+            - leader_status: Leader contact timing
+            - partition_healer: Partition healing escalation state
+        """
+        result: dict[str, Any] = {}
+        now = time.time()
+
+        # 1. Autonomous queue status
+        try:
+            loop = getattr(self, "_autonomous_queue_loop", None)
+            if loop is not None:
+                loop_status = loop.get_status() if hasattr(loop, "get_status") else {}
+                result["autonomous_queue"] = {
+                    "active": loop_status.get("activated", False),
+                    "enabled": loop_status.get("enabled", False),
+                    "running": loop_status.get("running", False),
+                    "activation_reason": loop_status.get("activation_reason", ""),
+                    "no_leader_duration": loop_status.get("no_leader_duration", 0.0),
+                    "queue_depth": loop_status.get("queue_depth", 0),
+                }
+            else:
+                result["autonomous_queue"] = {"error": "loop_not_initialized"}
+        except Exception as e:  # noqa: BLE001
+            result["autonomous_queue"] = {"error": str(e)}
+
+        # 2. Work discovery manager status
+        try:
+            from scripts.p2p.loops.job_loops import get_work_discovery_manager
+            manager = get_work_discovery_manager()
+            if manager is not None:
+                mgr_status = manager.get_status() if hasattr(manager, "get_status") else {}
+                result["work_discovery"] = {
+                    "enabled": mgr_status.get("enabled", False),
+                    "active_channels": mgr_status.get("active_channels", []),
+                    "last_work_time": mgr_status.get("last_work_time", 0.0),
+                    "claims_via_leader": mgr_status.get("claims_via_leader", 0),
+                    "claims_via_peer": mgr_status.get("claims_via_peer", 0),
+                    "claims_via_local": mgr_status.get("claims_via_local", 0),
+                }
+            else:
+                result["work_discovery"] = {"error": "manager_not_initialized"}
+        except ImportError:
+            result["work_discovery"] = {"error": "import_failed"}
+        except Exception as e:  # noqa: BLE001
+            result["work_discovery"] = {"error": str(e)}
+
+        # 3. Leader contact status
+        try:
+            last_leader_seen = getattr(self, "last_leader_seen", now)
+            leader_unreachable_duration = now - last_leader_seen
+            result["leader_status"] = {
+                "last_leader_seen": last_leader_seen,
+                "leader_unreachable_duration": round(leader_unreachable_duration, 1),
+                "is_leaderless": self.leader_id is None or self.leader_id == "",
+                "current_leader_id": self.leader_id,
+                "is_self_leader": self._is_leader(),
+            }
+        except Exception as e:  # noqa: BLE001
+            result["leader_status"] = {"error": str(e)}
+
+        # 4. Partition healer status (if available)
+        try:
+            from scripts.p2p.partition_healer import get_partition_healer
+            healer = get_partition_healer()
+            healer_status = healer.get_status()
+            result["partition_healer"] = {
+                "escalation_level": healer_status.get("escalation_level", 0),
+                "last_healing_attempt": healer_status.get("last_healing_attempt", 0.0),
+                "healing_in_progress": healer_status.get("healing_in_progress", False),
+                "has_orchestrator": healer_status.get("has_orchestrator", False),
+                "election_ready": healer_status.get("election_ready", True),
+            }
+        except ImportError:
+            result["partition_healer"] = {"error": "import_failed"}
+        except Exception as e:  # noqa: BLE001
+            result["partition_healer"] = {"error": str(e)}
 
         return result
 

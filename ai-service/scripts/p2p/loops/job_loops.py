@@ -1214,6 +1214,9 @@ class WorkerPullLoop(BaseLoop):
                     if work_item:
                         work_source = "autonomous"
                         self._autonomous_work_claimed += 1
+                        # Session 17.41: Track autonomous claims during partition
+                        if self._partition_detected:
+                            self._partition_autonomous_claims += 1
                 except Exception as e:
                     logger.debug(f"[WorkerPull] Autonomous queue error: {e}")
             elif not use_work_discovery:
@@ -1279,6 +1282,9 @@ class WorkerPullLoop(BaseLoop):
                         if work_item:
                             work_source = "autonomous"
                             self._autonomous_work_claimed += 1
+                            # Session 17.41: Track autonomous claims during partition
+                            if self._partition_detected:
+                                self._partition_autonomous_claims += 1
                     except Exception as e:
                         logger.debug(f"[WorkerPull] Autonomous fallback error: {e}")
 
@@ -1303,6 +1309,11 @@ class WorkerPullLoop(BaseLoop):
                 logger.error(f"[WorkerPull] Error executing work {work_id}: {e}")
                 if work_source == "leader" or leader_id:
                     await self._report_result(work_item, False)
+        else:
+            # Session 17.41: Track claim failures during partition
+            # (no work available from leader or autonomous queue)
+            if self._partition_detected:
+                self._partition_claim_failures += 1
 
     def get_pull_stats(self) -> dict[str, Any]:
         """Get worker pull statistics."""
@@ -1325,6 +1336,12 @@ class WorkerPullLoop(BaseLoop):
             "batch_claims_total": self._batch_claims_total,
             "batch_items_claimed": self._batch_items_claimed,
             "batch_avg_items": self._batch_avg_items,
+            # Session 17.41: Partition detection statistics
+            "partition_detected": self._partition_detected,
+            "consecutive_no_leader": self._consecutive_no_leader,
+            "partition_claim_failures": self._partition_claim_failures,
+            "partition_autonomous_claims": self._partition_autonomous_claims,
+            "last_partition_state_change": self._last_partition_state_change,
             **self.stats.to_dict(),
         }
 
@@ -1418,6 +1435,26 @@ class WorkerPullLoop(BaseLoop):
                 },
             )
 
+        # Session 17.41: Degraded if partition detected
+        if self._partition_detected:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"WorkerPullLoop degraded: network partition detected ({self._consecutive_no_leader} cycles without leader)",
+                details={
+                    "work_claimed": self._work_claimed,
+                    "work_completed": self._work_completed,
+                    "work_failed": self._work_failed,
+                    "success_rate": success_rate,
+                    "partition_detected": True,
+                    "consecutive_no_leader": self._consecutive_no_leader,
+                    "partition_claim_failures": self._partition_claim_failures,
+                    "partition_autonomous_claims": self._partition_autonomous_claims,
+                    "last_partition_state_change": self._last_partition_state_change,
+                    **retry_stats,
+                },
+            )
+
         # Healthy
         return HealthCheckResult(
             healthy=True,
@@ -1430,6 +1467,9 @@ class WorkerPullLoop(BaseLoop):
                 "skipped_busy": self._skipped_busy,
                 "autonomous_work_claimed": self._autonomous_work_claimed,
                 "work_discovery_stats": self._work_discovery_stats.copy(),
+                # Session 17.41: Partition stats for healthy state
+                "partition_detected": self._partition_detected,
+                "consecutive_no_leader": self._consecutive_no_leader,
                 **retry_stats,
             },
         )
