@@ -20,12 +20,108 @@ import asyncio
 import logging
 import os
 import random
+import socket
 import time
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Callable, Coroutine
 
+import yaml
+
 logger = logging.getLogger(__name__)
+
+# Module-level cached check for selfplay enabled
+_selfplay_enabled_checked: bool = False
+_selfplay_enabled: bool | None = None
+
+
+def _is_selfplay_enabled_for_node() -> bool:
+    """Check if selfplay is enabled for this node via YAML config.
+
+    This prevents coordinator nodes from spawning direct selfplay
+    when WorkDiscoveryManager tries to generate fallback work.
+
+    Jan 5, 2026: Same logic as AutonomousQueuePopulationLoop._is_selfplay_enabled_for_node()
+    """
+    global _selfplay_enabled_checked, _selfplay_enabled
+
+    if _selfplay_enabled_checked:
+        return _selfplay_enabled if _selfplay_enabled is not None else True
+
+    _selfplay_enabled_checked = True
+
+    try:
+        hostname = socket.gethostname()
+        hostname_lower = hostname.lower().replace("-", "").replace("_", "")
+
+        # Try to find cluster config
+        config_paths = [
+            Path(__file__).parent.parent.parent.parent / "config" / "distributed_hosts.yaml",
+            Path.cwd() / "config" / "distributed_hosts.yaml",
+            Path("/Users/armand/Development/RingRift/ai-service/config/distributed_hosts.yaml"),
+        ]
+
+        cluster_config = None
+        for config_path in config_paths:
+            if config_path.exists():
+                try:
+                    with open(config_path) as f:
+                        cluster_config = yaml.safe_load(f)
+                    break
+                except Exception:
+                    continue
+
+        if not cluster_config:
+            return True
+
+        # YAML uses "hosts" key, not "nodes"
+        hosts = cluster_config.get("hosts", {})
+        if hosts:
+            # Search for matching host config by hostname
+            for config_name, cfg in hosts.items():
+                if not isinstance(cfg, dict):
+                    continue
+                config_name_lower = config_name.lower().replace("-", "").replace("_", "")
+
+                # Direct hostname match
+                if hostname_lower in config_name_lower or config_name_lower in hostname_lower:
+                    _selfplay_enabled = cfg.get("selfplay_enabled", True)
+                    if not _selfplay_enabled:
+                        logger.info(
+                            f"[WorkDiscovery] Node {hostname} matched config {config_name}, "
+                            "selfplay_enabled=false - disabling direct selfplay"
+                        )
+                    return _selfplay_enabled
+
+                # Special case: MacBook hostname maps to mac-studio or local-mac config
+                if "macbook" in hostname_lower and config_name_lower in ("macstudio", "localmac"):
+                    _selfplay_enabled = cfg.get("selfplay_enabled", True)
+                    if not _selfplay_enabled:
+                        logger.info(
+                            f"[WorkDiscovery] MacBook {hostname} matched {config_name} config, "
+                            "selfplay_enabled=false - disabling direct selfplay"
+                        )
+                    return _selfplay_enabled
+
+        # Also check elo_sync.coordinator as an indicator
+        elo_sync = cluster_config.get("elo_sync", {})
+        coordinator_name = elo_sync.get("coordinator", "")
+        if coordinator_name:
+            coord_lower = coordinator_name.lower().replace("-", "").replace("_", "")
+            if coord_lower in hostname_lower or hostname_lower in coord_lower:
+                logger.info(
+                    f"[WorkDiscovery] Node {hostname} matches elo_sync coordinator {coordinator_name}, "
+                    "disabling direct selfplay"
+                )
+                _selfplay_enabled = False
+                return False
+
+        return True
+
+    except Exception as e:
+        logger.debug(f"[WorkDiscovery] Error checking selfplay_enabled config: {e}")
+        return True
 
 
 class DiscoveryChannel(Enum):
@@ -378,6 +474,12 @@ class WorkDiscoveryManager:
         # Must have selfplay capability
         if "selfplay" not in capabilities:
             return False
+
+        # Jan 5, 2026: Check if this node should do selfplay (coordinator check)
+        # This prevents coordinator nodes from spawning selfplay even as fallback
+        if not _is_selfplay_enabled_for_node():
+            return False
+
         # Respect cooldown
         if self._last_direct_selfplay_time == 0:
             return True

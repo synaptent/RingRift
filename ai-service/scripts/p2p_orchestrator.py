@@ -719,6 +719,9 @@ from scripts.p2p.managers import (
     TrainingCoordinator,
 )
 from scripts.p2p.managers.state_manager import PersistedLeaderState
+from scripts.p2p.managers.work_discovery_manager import (
+    _is_selfplay_enabled_for_node,
+)
 from scripts.p2p.metrics_manager import MetricsManager
 from scripts.p2p.resource_detector import ResourceDetector, ResourceDetectorMixin
 from scripts.p2p.event_emission_mixin import EventEmissionMixin
@@ -18879,6 +18882,14 @@ print(json.dumps(result))
                 return True
 
             elif work_type == "selfplay":
+                # Jan 5, 2026: Check if this node should do selfplay
+                # Prevents coordinator (mac-studio) from spawning selfplay despite claiming work
+                if not _is_selfplay_enabled_for_node():
+                    logger.info(
+                        f"Skipping selfplay work {work_id}: selfplay_enabled=false for this node"
+                    )
+                    return True  # Return True to indicate "handled" (just skipped)
+
                 # Start selfplay job
                 board_type = config.get("board_type", "square8")
                 num_players = config.get("num_players", 2)
