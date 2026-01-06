@@ -1668,6 +1668,8 @@ class P2POrchestrator(
 
         # Queue Populator - Maintains 50+ work items until 2000 Elo target met
         self._queue_populator: QueuePopulator | None = None
+        # Jan 5, 2026 (Session 17.41): Reference to QueuePopulatorLoop for handler access
+        self._queue_populator_loop: Any = None
 
         # PFSP (Prioritized Fictitious Self-Play) opponent pool (leader-only)
         # Maintains a pool of historical models weighted by difficulty for diverse training
@@ -2180,6 +2182,10 @@ class P2POrchestrator(
                 notifier=self.notifier,
             )
             manager.register(queue_populator)
+            # Jan 5, 2026 (Session 17.41): Store loop reference so handler can access populator
+            # The loop creates its populator lazily, so we store the loop and access
+            # populator via loop.populator property when needed
+            self._queue_populator_loop = queue_populator
 
             # EloSyncLoop - keeps unified_elo.db consistent across cluster
             if hasattr(self, 'elo_sync_manager') and self.elo_sync_manager is not None:

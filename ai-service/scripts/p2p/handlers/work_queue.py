@@ -202,6 +202,24 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             error_code="WORK_QUEUE_UNAVAILABLE",
         )
 
+    def _get_queue_populator(self) -> "QueuePopulator | None":
+        """Get the queue populator instance.
+
+        Jan 5, 2026 (Session 17.41): Added to check both direct reference and
+        the QueuePopulatorLoop's populator. The loop creates its populator
+        lazily on first run.
+
+        Returns:
+            QueuePopulator instance or None if not initialized
+        """
+        populator = self._queue_populator
+        if populator is None:
+            # Try to get from loop reference if available
+            loop = getattr(self, "_queue_populator_loop", None)
+            if loop is not None:
+                populator = getattr(loop, "populator", None)
+        return populator
+
     def _get_node_info(self, node_id: str) -> dict | None:
         """Get NodeInfo for a node from the peers dict.
 
@@ -740,7 +758,9 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 })
 
             # Update queue populator with Elo data if applicable
-            if success and self._queue_populator is not None:
+            # Jan 5, 2026 (Session 17.41): Use helper to check loop's populator
+            populator = self._get_queue_populator()
+            if success and populator is not None:
                 board_type = config.get("board_type", "")
                 num_players = config.get("num_players", 0)
 
@@ -753,7 +773,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     )
                     model_id = result.get("best_model") or result.get("winner_model")
                     if elo and board_type and num_players:
-                        self._queue_populator.update_target_elo(
+                        populator.update_target_elo(
                             board_type, num_players, elo, model_id
                         )
                         logger.info(
@@ -764,14 +784,14 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     # Selfplay increments games count
                     games = result.get("games_generated", config.get("games", 0))
                     if games and board_type and num_players:
-                        self._queue_populator.increment_games(
+                        populator.increment_games(
                             board_type, num_players, games
                         )
 
                 elif work_type == WorkType.TRAINING:
                     # Training increments training runs
                     if board_type and num_players:
-                        self._queue_populator.increment_training(board_type, num_players)
+                        populator.increment_training(board_type, num_players)
 
             return self.json_response({
                 "status": "completed" if success else "failed",
@@ -858,13 +878,15 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
     async def handle_populator_status(self, request: web.Request) -> web.Response:
         """Get queue populator status for monitoring."""
         try:
-            if self._queue_populator is None:
+            # Jan 5, 2026 (Session 17.41): Use helper to check loop's populator
+            populator = self._get_queue_populator()
+            if populator is None:
                 return self.json_response({
                     "enabled": False,
                     "message": "Queue populator not initialized",
                 })
 
-            status = self._queue_populator.get_status()
+            status = populator.get_status()
             status["is_leader"] = self.is_leader
             return self.json_response(status)
         except Exception as e:
