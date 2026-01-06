@@ -7766,6 +7766,54 @@ class P2POrchestrator(
 
         return game_counts
 
+    async def _fetch_game_counts_from_peers(self) -> dict[str, int]:
+        """Fetch game counts from coordinator or other peers with canonical databases.
+
+        Session 17.41: Cluster nodes don't have canonical databases, so they need to
+        fetch game counts from the coordinator which has them. This enables the
+        starvation multipliers to work correctly on all nodes.
+
+        Returns:
+            Dict mapping config_key -> game_count from peers
+        """
+        # Try coordinator nodes first (they have canonical databases)
+        coordinator_candidates = []
+        with self.peers_lock:
+            for peer_id, peer in self.peers.items():
+                # Coordinator nodes or nodes with role=coordinator
+                role_str = getattr(peer.role, "value", str(peer.role)) if peer.role else ""
+                if "coordinator" in role_str.lower() or "mac-studio" in peer_id.lower():
+                    coordinator_candidates.append(peer)
+
+        # Fallback to any alive peer
+        if not coordinator_candidates:
+            with self.peers_lock:
+                coordinator_candidates = [p for p in self.peers.values() if p.is_alive()]
+
+        for peer in coordinator_candidates[:3]:  # Try up to 3 candidates
+            try:
+                # Get best endpoint for peer
+                key = self._endpoint_key(peer)
+                if not key:
+                    continue
+                scheme, host, port = key
+                url = f"{scheme}://{host}:{port}/game_counts"
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            game_counts = data.get("game_counts", {})
+                            if game_counts:
+                                source_node = data.get("node_id", peer.node_id)
+                                logger.info(f"[P2P] Fetched {len(game_counts)} game counts from {source_node}")
+                                return game_counts
+            except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError) as e:
+                logger.debug(f"[P2P] Failed to fetch game counts from {peer.node_id}: {e}")
+                continue
+
+        return {}
+
     def _find_dbs_to_merge_sync(self, selfplay_dir: Path, main_db_path: Path) -> list[tuple[Path, int]]:
         """Find databases that need merging synchronously.
 
@@ -11803,6 +11851,35 @@ class P2POrchestrator(
             return web.json_response(response)
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e), "healthy": False}, status=500)
+
+    async def handle_game_counts(self, request: web.Request) -> web.Response:
+        """Return game counts from canonical databases for P2P seeding.
+
+        Session 17.41: Enables cluster nodes to fetch game counts from the coordinator,
+        which has the canonical databases. This fixes bootstrap priority for underserved
+        configs on nodes that don't have local canonical DBs.
+
+        Returns:
+            JSON with config_key -> game_count mapping
+        """
+        try:
+            # Get game counts from local canonical databases (sync operation)
+            game_counts = await asyncio.to_thread(self._seed_selfplay_scheduler_game_counts_sync)
+
+            return web.json_response({
+                "game_counts": game_counts,
+                "node_id": self.node_id,
+                "source": "canonical_databases",
+                "count": len(game_counts),
+            })
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[P2P] Failed to get game counts: {e}")
+            return web.json_response({
+                "game_counts": {},
+                "node_id": self.node_id,
+                "source": "error",
+                "error": str(e),
+            })
 
     async def handle_cluster_health(self, request: web.Request) -> web.Response:
         """Aggregate health status from all cluster nodes (leader-only).
@@ -30161,6 +30238,8 @@ print(json.dumps({{
             app.router.add_get('/external_work', self.handle_external_work)
             # Jan 3, 2026: Sprint 10+ P2P hardening - peer health scoring endpoint
             app.router.add_get('/peer-health', self.handle_peer_health)
+            # Jan 5, 2026: Session 17.41 - game counts endpoint for P2P seeding
+            app.router.add_get('/game_counts', self.handle_game_counts)
                 # Work queue routes (centralized work distribution)
             app.router.add_post('/work/add', self.handle_work_add)
             app.router.add_post('/work/add_batch', self.handle_work_add_batch)
@@ -30718,6 +30797,40 @@ print(json.dumps({{
             self._create_safe_task(
                 _delayed_election_retry(),
                 "delayed_election_retry"
+            )
+        )
+
+        # Session 17.41: Deferred game counts fetch from peers
+        # If local seeding returned empty (no canonical DBs), fetch from coordinator
+        async def _deferred_game_counts_fetch():
+            """Fetch game counts from coordinator after peer discovery."""
+            try:
+                await asyncio.sleep(30)  # Wait for peer discovery to complete
+                if not self.running:
+                    return
+
+                # Check if we already have game counts seeded
+                if self.selfplay_scheduler and hasattr(self.selfplay_scheduler, "_p2p_game_counts"):
+                    existing_counts = getattr(self.selfplay_scheduler, "_p2p_game_counts", {})
+                    if existing_counts:
+                        logger.debug(f"[P2P] Already have {len(existing_counts)} game counts, skipping peer fetch")
+                        return
+
+                # Fetch from coordinator/peers
+                game_counts = await self._fetch_game_counts_from_peers()
+                if game_counts and self.selfplay_scheduler:
+                    self.selfplay_scheduler.update_p2p_game_counts(game_counts)
+                    logger.info(f"[P2P] Deferred fetch: seeded SelfplayScheduler with {len(game_counts)} game counts from peers")
+                    for config_key, count in sorted(game_counts.items(), key=lambda x: x[1]):
+                        if count < 500:  # Log underserved configs
+                            logger.info(f"[P2P] Underserved config (from peers): {config_key} = {count} games")
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"[P2P] Deferred game counts fetch failed: {e}")
+
+        tasks.append(
+            self._create_safe_task(
+                _deferred_game_counts_fetch(),
+                "deferred_game_counts_fetch"
             )
         )
 
