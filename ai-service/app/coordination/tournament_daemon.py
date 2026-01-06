@@ -69,7 +69,7 @@ class TournamentDaemonConfig:
     """Configuration for the tournament daemon."""
     # Event subscriptions
     trigger_on_training_completed: bool = True
-    trigger_on_model_promoted: bool = False  # Usually not needed since promotion follows evaluation
+    trigger_on_model_promoted: bool = True  # Triggers cross-NN tournament after promotion (Jan 5, 2026)
 
     # Periodic tournaments
     enable_periodic_ladder: bool = True
@@ -355,17 +355,45 @@ class TournamentDaemon(HandlerBase):
         })
 
     def _on_model_promoted(self, event) -> None:
-        """Handle MODEL_PROMOTED event."""
+        """Handle MODEL_PROMOTED event.
+
+        Jan 5, 2026: Now triggers cross-NN tournament after promotion to compare
+        newly promoted model against previous model versions.
+        """
         self._stats.event_triggers += 1
 
         payload = getattr(event, "payload", {}) or {}
         model_id = payload.get("model_id")
-        config = payload.get("config", "")
+        config_key = payload.get("config_key") or payload.get("config", "")
+        model_path = payload.get("model_path", "")
 
-        logger.info(f"Model promoted: {model_id} ({config})")
+        logger.info(f"Model promoted: {model_id} ({config_key})")
 
-        # Promotion events don't need immediate evaluation since
-        # evaluation already passed to trigger promotion
+        # Check if cross-NN tournaments are enabled after promotion
+        if not self.config.trigger_on_model_promoted:
+            return
+
+        if not self.config.enable_cross_nn_tournaments:
+            logger.debug("Cross-NN tournaments disabled, skipping post-promotion tournament")
+            return
+
+        # Parse config to get board_type and num_players
+        board_type, num_players = self._parse_config(config_key)
+        if not board_type:
+            logger.warning(f"Could not parse config for post-promotion tournament: {config_key}")
+            return
+
+        logger.info(
+            f"Scheduling cross-NN tournament for {config_key} after promotion "
+            f"(model: {model_path or model_id})"
+        )
+
+        # Schedule cross-NN tournament via fire-and-forget task
+        # This runs the tournament comparing the newly promoted model against previous versions
+        self._safe_create_task(
+            self._run_cross_nn_tournament(),
+            context=f"post_promotion_cross_nn_{config_key}",
+        )
 
     def _parse_config(self, config: str) -> tuple[str | None, int | None]:
         """Parse board_type and num_players from config string.

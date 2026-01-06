@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import TYPE_CHECKING, Any, Callable
 
 from .base import BackoffConfig, BaseLoop
@@ -33,6 +34,9 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+# Jan 5, 2026: Push debounce interval (seconds) to prevent spam
+PUSH_DEBOUNCE_INTERVAL = 30.0
 
 # Backward-compat aliases (Sprint 10: use LoopIntervals/LoopLimits instead)
 DEFAULT_SYNC_INTERVAL = LoopIntervals.ELO_SYNC
@@ -86,6 +90,9 @@ class EloSyncLoop(BaseLoop):
         # Phase 15.1.3: Track initialization retry state
         self._init_attempts = 0
         self._reenable_task: asyncio.Task | None = None
+        # Jan 5, 2026: Push-based sync tracking
+        self._last_push_time: float = 0.0
+        self._event_subscription_active = False
 
     async def _on_start(self) -> None:
         """Initialize the EloSyncManager on loop start with retry logic.
@@ -114,6 +121,8 @@ class EloSyncLoop(BaseLoop):
                     f"[{self.name}] Started with interval {self.interval}s "
                     f"(attempt {attempt + 1}/{MAX_INIT_RETRIES})"
                 )
+                # Jan 5, 2026: Subscribe to EVALUATION_COMPLETED for push-based sync
+                self._subscribe_to_evaluation_events()
                 return  # Success - exit retry loop
             except Exception as e:
                 wait_time = min(300.0, (2 ** attempt) * 10.0)  # 10s, 20s, 40s, 80s, 160s, max 300s
@@ -295,3 +304,76 @@ class EloSyncLoop(BaseLoop):
                 "init_attempts": self._init_attempts,
             },
         )
+
+    def _subscribe_to_evaluation_events(self) -> None:
+        """Subscribe to EVALUATION_COMPLETED events for push-based sync.
+
+        Jan 5, 2026: Enables immediate Elo push after evaluation completes,
+        reducing Elo propagation time from 300s (pull interval) to <30s.
+        """
+        if self._event_subscription_active:
+            return
+
+        try:
+            from app.coordination.event_router import get_event_router
+            from app.distributed.data_events import DataEventType
+
+            router = get_event_router()
+            event_type = DataEventType.EVALUATION_COMPLETED.value
+            router.subscribe(event_type, self._on_evaluation_completed)
+            self._event_subscription_active = True
+            logger.info(f"[{self.name}] Subscribed to {event_type} for push-based sync")
+        except ImportError as e:
+            logger.debug(f"[{self.name}] Event subscription not available: {e}")
+        except Exception as e:
+            logger.warning(f"[{self.name}] Failed to subscribe to evaluation events: {e}")
+
+    async def _on_evaluation_completed(self, event: Any) -> None:
+        """Handle EVALUATION_COMPLETED event by triggering immediate Elo push.
+
+        Jan 5, 2026: Push-based Elo sync reduces propagation latency from
+        300s (periodic pull) to <30s (event-driven push).
+
+        Uses 30s debounce to prevent excessive pushes when multiple
+        evaluations complete in quick succession.
+        """
+        # Extract config_key from event
+        payload = getattr(event, "payload", {}) or {}
+        if isinstance(event, dict):
+            payload = event
+        config_key = payload.get("config_key", "")
+
+        if not config_key:
+            return
+
+        # Debounce: don't push more than once per 30s
+        now = time.time()
+        if now - self._last_push_time < PUSH_DEBOUNCE_INTERVAL:
+            logger.debug(
+                f"[{self.name}] Skipping push (debounce), "
+                f"last push was {now - self._last_push_time:.1f}s ago"
+            )
+            return
+
+        # Get manager and trigger push
+        manager = self._get_elo_sync_manager()
+        if manager is None:
+            logger.warning(f"[{self.name}] Cannot push - EloSyncManager not available")
+            return
+
+        # Check if push_to_cluster method exists
+        if not hasattr(manager, "push_to_cluster"):
+            logger.debug(f"[{self.name}] Manager does not support push_to_cluster")
+            return
+
+        logger.info(f"[{self.name}] Pushing Elo updates after evaluation for {config_key}")
+        self._last_push_time = now
+
+        try:
+            # push_to_cluster is async (Dec 2025)
+            results = await manager.push_to_cluster()
+            successful = sum(results.values()) if results else 0
+            total = len(results) if results else 0
+            logger.info(f"[{self.name}] Elo push completed: {successful}/{total} nodes updated")
+        except Exception as e:
+            logger.warning(f"[{self.name}] Elo push failed: {e}")
