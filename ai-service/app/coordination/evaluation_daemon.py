@@ -1014,6 +1014,9 @@ class EvaluationDaemon(BaseEventHandler):
                 "opponent_results": result.opponent_results,
                 "early_stopped_baselines": getattr(result, "early_stopped_baselines", []),
                 "games_saved_by_early_stopping": getattr(result, "games_saved_by_early_stopping", 0),
+                # Jan 5, 2026: Include estimated_elo for promotion decisions
+                "estimated_elo": getattr(result, "estimated_elo", 0.0),
+                "best_elo": getattr(result, "estimated_elo", 0.0),  # Alias for emit_evaluation_completed
             }
         elif isinstance(result, dict):
             return result
