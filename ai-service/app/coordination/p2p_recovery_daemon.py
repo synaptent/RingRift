@@ -1484,9 +1484,11 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
 
         Jan 2026: Coordinates with ClusterHealingLoop to prioritize voter recovery.
         """
+        from app.distributed.data_events import DataEventType
+
         # Emit event that ClusterHealingLoop can subscribe to
         safe_emit_event(
-            "voter_healing_requested",
+            DataEventType.VOTER_HEALING_REQUESTED.value,
             {
                 "offline_voters": list(offline_voters),
                 "priority": "urgent",

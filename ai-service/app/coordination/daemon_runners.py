@@ -2679,7 +2679,7 @@ async def create_npz_combination() -> None:
     try:
         from app.coordination.npz_combination_daemon import get_npz_combination_daemon
 
-        daemon = await get_npz_combination_daemon()
+        daemon = get_npz_combination_daemon()
         await daemon.start()
         await _wait_for_daemon(daemon)
     except ImportError as e:

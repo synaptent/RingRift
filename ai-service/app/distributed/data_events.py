@@ -237,6 +237,9 @@ class DataEventType(Enum):
     QUALITY_PENALTY_APPLIED = "quality_penalty_applied"  # Penalty applied → reduce selfplay rate
     # Jan 5, 2026 - Session 17.29: Quality-triggered auto-dispatch
     QUALITY_SELFPLAY_DISPATCHED = "quality_selfplay_dispatched"  # High-quality selfplay auto-dispatched
+
+    # P2P recovery events
+    VOTER_HEALING_REQUESTED = "voter_healing_requested"  # Jan 2026: Voter healing requested by P2PRecoveryDaemon
     # P1.4 Dec 2025: Added orphaned event types to enable type-safe subscriptions
     EXPLORATION_BOOST = "exploration_boost"  # Request to boost exploration temperature
     EXPLORATION_ADJUSTED = "exploration_adjusted"  # Exploration strategy changed (from FeedbackSignals)
