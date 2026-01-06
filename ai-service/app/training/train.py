@@ -2572,9 +2572,12 @@ def train_model(
         use_gnn = model_version in ('v5-gnn',)
         # Use detected heuristic count from NPZ, or default to fast mode (21)
         v5_num_heuristics = detected_num_heuristics if detected_num_heuristics else NUM_HEURISTIC_FEATURES_FAST
+        # January 2026: Fixed in_channels - must be total channels (14 base × 4 frames = 56)
+        # not just base channels. The model expects fully framed input from the encoder.
+        v5_in_channels = 14 * (config.history_length + 1)  # 14 × 4 = 56
         model = RingRiftCNN_v5_Heavy(
             board_size=board_size,
-            in_channels=14,  # 14 spatial feature channels per frame
+            in_channels=v5_in_channels,  # Total channels: 14 base × (history + 1) frames
             global_features=20,  # Must match _extract_features() which returns 20 globals
             history_length=config.history_length,
             policy_size=policy_size,
