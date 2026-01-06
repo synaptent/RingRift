@@ -851,6 +851,8 @@ class WorkerPullLoop(BaseLoop):
         pop_autonomous_work: Callable[[], Coroutine[Any, Any, dict[str, Any] | None]] | None = None,
         get_work_discovery_manager: Callable[[], Any] | None = None,  # Phase 5: Multi-channel discovery
         claim_work_batch_from_leader: Callable[[list[str], int], Coroutine[Any, Any, list[dict[str, Any]]]] | None = None,  # Session 17.34: Batch claiming
+        probe_leader_health: Callable[[str], Coroutine[Any, Any, dict[str, Any] | None]] | None = None,  # Session 17.42: Split-brain detection
+        set_partition_state: Callable[[bool], None] | None = None,  # Session 17.41: Partition-aware backpressure
         config: WorkerPullConfig | None = None,
     ):
         """Initialize worker pull loop.
@@ -866,6 +868,8 @@ class WorkerPullLoop(BaseLoop):
             pop_autonomous_work: Optional async callback to get work from autonomous queue (Phase 2)
             get_work_discovery_manager: Optional callback to get WorkDiscoveryManager instance (Phase 5)
             claim_work_batch_from_leader: Optional async callback to claim batch of work (Session 17.34)
+            probe_leader_health: Optional async callback to probe leader's /status endpoint (Session 17.42)
+            set_partition_state: Optional callback to notify WorkQueue of partition state (Session 17.41)
             config: Loop configuration
         """
         self.config = config or WorkerPullConfig()
@@ -883,6 +887,13 @@ class WorkerPullLoop(BaseLoop):
         self._pop_autonomous_work = pop_autonomous_work
         self._get_work_discovery_manager = get_work_discovery_manager  # Phase 5
         self._claim_work_batch = claim_work_batch_from_leader  # Session 17.34: Batch claiming
+        self._probe_leader_health_callback = probe_leader_health  # Session 17.42: Split-brain detection
+        self._set_partition_state = set_partition_state  # Session 17.41: Partition-aware backpressure
+
+        # Session 17.42: Split-brain detection statistics
+        self._leader_health_probes: int = 0  # Total leader health probes attempted
+        self._leader_health_failures: int = 0  # Probes that failed or showed no leadership
+        self._split_brain_detections: int = 0  # Times we detected leader denies leadership
 
         # Statistics
         self._work_claimed = 0
@@ -910,6 +921,13 @@ class WorkerPullLoop(BaseLoop):
         self._batch_claims_total: int = 0  # Total batch claim requests made
         self._batch_items_claimed: int = 0  # Total items claimed via batch
         self._batch_avg_items: float = 0.0  # Rolling average items per batch
+
+        # Session 17.41: Partition detection statistics
+        self._consecutive_no_leader: int = 0  # Consecutive cycles without leader
+        self._partition_claim_failures: int = 0  # Claim failures during partition
+        self._partition_autonomous_claims: int = 0  # Autonomous work claimed during partition
+        self._partition_detected: bool = False  # Current partition state
+        self._last_partition_state_change: float = 0.0  # Timestamp of last partition state change
 
     async def _on_start(self) -> None:
         """Initial delay for cluster stabilization."""
@@ -980,6 +998,58 @@ class WorkerPullLoop(BaseLoop):
         )
         return None
 
+    async def _validate_leader_health(self) -> bool:
+        """Validate that the claimed leader is actually functioning as leader.
+
+        Session 17.42: Split-brain detection fix.
+
+        This addresses the split-brain scenario where:
+        - mac-studio has leader_id="nebius-h100-3" (thinks it's the leader)
+        - nebius-h100-3 has leader_id=None (doesn't claim leadership)
+
+        Without this validation, workers can't claim work because their
+        "leader" isn't actually functioning as a leader.
+
+        Returns:
+            True if leader is valid and functioning, False otherwise.
+        """
+        leader_id = self._get_leader_id()
+        if not leader_id:
+            return False
+
+        # If no probe callback, assume leader is valid (backward compatible)
+        if not self._probe_leader_health_callback:
+            return True
+
+        self._leader_health_probes += 1
+        try:
+            response = await self._probe_leader_health_callback(leader_id)
+            if not response:
+                # Leader unreachable
+                self._leader_health_failures += 1
+                logger.warning(
+                    f"[WorkerPull] Leader {leader_id} unreachable during health probe"
+                )
+                return False
+
+            # Check if the node actually claims to be leader
+            is_leader = response.get("is_leader", False)
+            if not is_leader:
+                # Split-brain detected: claimed leader doesn't think it's leader
+                self._split_brain_detections += 1
+                self._leader_health_failures += 1
+                logger.warning(
+                    f"[WorkerPull] Split-brain detected: {leader_id} denies being leader. "
+                    f"Detection count: {self._split_brain_detections}"
+                )
+                return False
+
+            return True
+        except Exception as e:
+            self._leader_health_failures += 1
+            logger.debug(f"[WorkerPull] Leader health probe failed: {e}")
+            return False
+
     async def _run_once(self) -> None:
         """Check if idle and pull work from leader or autonomous queue."""
         # Skip if we are the leader (leader pushes, doesn't pull)
@@ -1002,6 +1072,51 @@ class WorkerPullLoop(BaseLoop):
         # Check if leader is available (for legacy path)
         leader_id = self._get_leader_id()
         use_autonomous_fallback = False
+
+        # Session 17.42: Validate leader health to detect split-brain scenarios
+        # If we have a leader_id but the leader doesn't claim to be leader,
+        # treat it as no leader and fall back to autonomous queue
+        if leader_id and not use_work_discovery:
+            leader_valid = await self._validate_leader_health()
+            if not leader_valid:
+                # Split-brain or unreachable leader - clear leader_id to trigger fallback
+                logger.info(
+                    f"[WorkerPull] Leader {leader_id} failed validation, "
+                    "treating as no leader for autonomous fallback"
+                )
+                leader_id = None  # Triggers fallback logic below
+
+        # Session 17.41: Partition detection - track consecutive cycles without leader
+        if leader_id:
+            # Leader available - check if recovering from partition
+            if self._partition_detected:
+                self._partition_detected = False
+                self._consecutive_no_leader = 0
+                self._last_partition_state_change = time.time()
+                logger.info("[WorkerPull] Partition HEALED - leader recovered")
+                # Notify work queue that partition has cleared
+                if self._set_partition_state:
+                    try:
+                        self._set_partition_state(False)
+                    except Exception as e:
+                        logger.debug(f"[WorkerPull] Failed to clear partition state: {e}")
+            else:
+                self._consecutive_no_leader = 0
+        else:
+            # No leader - track for partition detection
+            self._consecutive_no_leader += 1
+            if self._consecutive_no_leader >= 3 and not self._partition_detected:
+                self._partition_detected = True
+                self._last_partition_state_change = time.time()
+                logger.warning(
+                    f"[WorkerPull] Partition DETECTED - no leader for {self._consecutive_no_leader} consecutive cycles"
+                )
+                # Notify work queue to activate partition-aware backpressure
+                if self._set_partition_state:
+                    try:
+                        self._set_partition_state(True)
+                    except Exception as e:
+                        logger.debug(f"[WorkerPull] Failed to set partition state: {e}")
 
         if not use_work_discovery and not leader_id:
             # Legacy: No leader and no discovery manager - try autonomous queue fallback

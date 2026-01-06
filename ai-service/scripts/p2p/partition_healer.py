@@ -277,6 +277,7 @@ class PartitionHealer:
         config_path: Path | None = None,
         p2p_port: int = 8770,
         timeout: float | None = None,
+        orchestrator: Any = None,
     ):
         self._config_path = config_path or (
             Path(__file__).parent.parent.parent / "config" / "distributed_hosts.yaml"
@@ -294,6 +295,26 @@ class PartitionHealer:
         # Sprint 10 (Jan 3, 2026): Recovery escalation on consecutive convergence failures
         self._consecutive_failures: int = 0
         self._escalation_level: int = 0
+
+        # Session 17.41 (Jan 6, 2026): Orchestrator reference for forced elections
+        self._orchestrator = orchestrator
+        self._last_election_trigger: float = 0.0
+        self._election_cooldown: float = 120.0  # Seconds between forced elections
+
+    def set_orchestrator(self, orchestrator: Any) -> None:
+        """Set the orchestrator reference for forced elections.
+
+        Session 17.41 (Jan 6, 2026): Allows wiring the orchestrator after initialization,
+        useful when PartitionHealer is created before orchestrator is fully configured.
+
+        Args:
+            orchestrator: P2P orchestrator instance with _start_election() method.
+        """
+        self._orchestrator = orchestrator
+        logger.info(
+            f"[PartitionHealer] Orchestrator reference set "
+            f"(has_start_election={hasattr(orchestrator, '_start_election')})"
+        )
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session."""
@@ -1139,6 +1160,105 @@ class PartitionHealer:
         except (ImportError, Exception):
             pass  # Best effort
 
+    async def _check_leader_reachable(self, leader_address: str | None = None) -> bool:
+        """Check if the current leader is reachable via HTTP /health endpoint.
+
+        Session 17.41 (Jan 6, 2026): Added for forced election on partition detection.
+        If the leader cannot respond within timeout, workers can't claim jobs.
+
+        Args:
+            leader_address: Optional leader address. If not provided, discovers from gossip.
+
+        Returns:
+            True if leader responds to /health, False otherwise.
+        """
+        if not leader_address:
+            # Try to discover leader from local gossip state
+            if self._orchestrator:
+                leader_id = getattr(self._orchestrator, "_current_leader_id", None)
+                if leader_id:
+                    peers = getattr(self._orchestrator, "_gossip_peer_states", {})
+                    leader_info = peers.get(leader_id, {})
+                    leader_address = leader_info.get("address")
+
+            if not leader_address:
+                logger.debug("[ForceElection] No leader address available to check")
+                return False
+
+        url = f"http://{leader_address}:{self._p2p_port}/health"
+        try:
+            session = await self._get_session()
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=5.0)) as resp:
+                if resp.status == 200:
+                    logger.debug(f"[ForceElection] Leader at {leader_address} is reachable")
+                    return True
+        except asyncio.TimeoutError:
+            logger.warning(f"[ForceElection] Leader at {leader_address} timed out")
+        except Exception as e:
+            logger.warning(f"[ForceElection] Leader at {leader_address} unreachable: {e}")
+
+        return False
+
+    async def _try_trigger_election(self, reason: str) -> bool:
+        """Attempt to trigger a forced election via the orchestrator.
+
+        Session 17.41 (Jan 6, 2026): When partition healing detects an unreachable
+        leader, trigger an election to establish a new leader quickly.
+
+        Args:
+            reason: Description of why election is being triggered.
+
+        Returns:
+            True if election was triggered, False if cooldown or no orchestrator.
+        """
+        if not self._orchestrator:
+            logger.debug("[ForceElection] No orchestrator reference, cannot trigger election")
+            return False
+
+        # Check cooldown to prevent election storms
+        now = time.time()
+        if now - self._last_election_trigger < self._election_cooldown:
+            remaining = self._election_cooldown - (now - self._last_election_trigger)
+            logger.debug(
+                f"[ForceElection] Election cooldown active, {remaining:.0f}s remaining"
+            )
+            return False
+
+        # Get the start_election method from orchestrator (same pattern as LeaderProbeLoop)
+        start_election = getattr(self._orchestrator, "_start_election", None)
+        if not start_election:
+            logger.warning("[ForceElection] Orchestrator has no _start_election method")
+            return False
+
+        try:
+            logger.warning(
+                f"[ForceElection] Triggering forced election due to partition: {reason}"
+            )
+            await start_election(reason=f"partition_healing:{reason}")
+            self._last_election_trigger = now
+
+            # Emit event for observability
+            try:
+                from app.distributed.data_events import DataEventType
+                from app.coordination.event_router import emit_event
+
+                emit_event(
+                    DataEventType.LEADER_ELECTION_STARTED,
+                    {
+                        "reason": f"partition_healing:{reason}",
+                        "triggered_by": "partition_healer",
+                        "escalation_level": self._escalation_level,
+                        "timestamp": now,
+                    },
+                )
+            except (ImportError, Exception):
+                pass  # Best effort
+
+            return True
+        except Exception as e:
+            logger.error(f"[ForceElection] Failed to trigger election: {e}")
+            return False
+
     async def _escalate_recovery(self, reason: str) -> None:
         """Escalate recovery when convergence repeatedly fails.
 
@@ -1180,6 +1300,24 @@ class PartitionHealer:
             f"after {self._consecutive_failures} consecutive failures. "
             f"Next probe in {wait_time:.0f}s. Reason: {reason}"
         )
+
+        # Session 17.41 (Jan 6, 2026): Check leader reachability and trigger election if needed
+        # At escalation level >= 1, check if leader is unreachable and trigger election
+        if self._escalation_level >= 1 and self._orchestrator:
+            leader_reachable = await self._check_leader_reachable()
+            if not leader_reachable:
+                logger.warning(
+                    f"[RecoveryEscalation] Leader unreachable at escalation level "
+                    f"{self._escalation_level}, attempting forced election"
+                )
+                election_triggered = await self._try_trigger_election(
+                    reason=f"leader_unreachable_escalation_level_{self._escalation_level}"
+                )
+                if election_triggered:
+                    logger.info(
+                        "[RecoveryEscalation] Forced election triggered, "
+                        "may resolve partition by establishing new leader"
+                    )
 
         # At max escalation, emit event for external recovery
         if (
@@ -1226,13 +1364,14 @@ class PartitionHealer:
 
     def get_status(self) -> dict[str, Any]:
         """Get partition healer status for /status endpoint."""
+        now = time.time()
         return {
             "auto_enabled": PartitionHealingDefaults.AUTO_ENABLED,
             "min_interval": PartitionHealingDefaults.MIN_INTERVAL,
             "last_healing_time": self._last_healing_time,
-            "time_since_last": time.time() - self._last_healing_time if self._last_healing_time > 0 else None,
+            "time_since_last": now - self._last_healing_time if self._last_healing_time > 0 else None,
             "ready_for_trigger": (
-                time.time() - self._last_healing_time >= PartitionHealingDefaults.MIN_INTERVAL
+                now - self._last_healing_time >= PartitionHealingDefaults.MIN_INTERVAL
                 if self._last_healing_time > 0
                 else True
             ),
@@ -1241,17 +1380,24 @@ class PartitionHealer:
             "escalation_level": self._escalation_level,
             "escalation_threshold": PartitionHealingDefaults.ESCALATION_THRESHOLD,
             "max_escalation_level": PartitionHealingDefaults.ESCALATION_MAX_LEVEL,
+            # Session 17.41 (Jan 6, 2026): Election trigger state
+            "last_election_trigger": self._last_election_trigger,
+            "election_cooldown": self._election_cooldown,
+            "election_ready": now - self._last_election_trigger >= self._election_cooldown if self._last_election_trigger > 0 else True,
+            "has_orchestrator": self._orchestrator is not None,
         }
 
     def health_check(self) -> dict[str, Any]:
         """Return health status for DaemonManager integration.
 
         Sprint 15 (Jan 3, 2026): Added for unified health monitoring.
+        Session 17.41 (Jan 6, 2026): Added election trigger state.
         """
         # Determine health status based on escalation level
         max_escalation = PartitionHealingDefaults.ESCALATION_MAX_LEVEL
         is_critical = self._escalation_level >= max_escalation
         is_degraded = self._escalation_level > 0
+        now = time.time()
 
         if is_critical:
             status = "critical"
@@ -1273,10 +1419,14 @@ class PartitionHealer:
                 "consecutive_failures": self._consecutive_failures,
                 "last_healing_time": self._last_healing_time,
                 "ready_for_trigger": (
-                    time.time() - self._last_healing_time >= PartitionHealingDefaults.MIN_INTERVAL
+                    now - self._last_healing_time >= PartitionHealingDefaults.MIN_INTERVAL
                     if self._last_healing_time > 0
                     else True
                 ),
+                # Session 17.41 (Jan 6, 2026): Election trigger state
+                "last_election_trigger": self._last_election_trigger,
+                "election_cooldown": self._election_cooldown,
+                "has_orchestrator": self._orchestrator is not None,
             },
         }
 
@@ -1320,6 +1470,19 @@ def reset_partition_healer() -> None:
     global _partition_healer_instance
     with _partition_healer_lock:
         _partition_healer_instance = None
+
+
+def wire_orchestrator_to_partition_healer(orchestrator: Any) -> None:
+    """Wire the P2P orchestrator to the partition healer singleton.
+
+    Session 17.41 (Jan 6, 2026): Enables forced elections when partition healing
+    detects an unreachable leader. Should be called during orchestrator initialization.
+
+    Args:
+        orchestrator: P2P orchestrator instance with _start_election() method.
+    """
+    healer = get_partition_healer()
+    healer.set_orchestrator(orchestrator)
 
 
 async def trigger_partition_healing(
