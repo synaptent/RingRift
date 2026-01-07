@@ -8155,7 +8155,6 @@ class P2POrchestrator(
             "run_self_play_soak.py": MAX_SELFPLAY_RUNTIME,
             "run_gpu_selfplay.py": MAX_SELFPLAY_RUNTIME,
             "run_hybrid_selfplay.py": MAX_SELFPLAY_RUNTIME,
-            "run_diverse_selfplay.py": MAX_SELFPLAY_RUNTIME,
             "train_nnue.py": MAX_TRAINING_RUNTIME,
             "train.py": MAX_TRAINING_RUNTIME,
         }
@@ -29722,24 +29721,24 @@ print(json.dumps({{
                 return job
 
             elif job_type == JobType.GPU_SELFPLAY:
-                # DIVERSE selfplay using run_diverse_selfplay.py for high-quality training data
-                # Uses varied AI matchups (NNUE, NN-MCTS, NN-Minimax, heuristic)
-                # NOTE: Renamed from GPU_SELFPLAY but job type kept for backwards compatibility
+                # GPU selfplay using run_gpu_selfplay.py for high-quality training data
+                # Uses vectorized GPU game simulation with heuristic-guided move selection
 
-                # run_diverse_selfplay expects --board (square8/square19/hexagonal).
+                # Normalize board type for CLI
                 board_arg = {
+                    "hex8": "hex8",
+                    "hex": "hex8",
                     "square8": "square8",
                     "square19": "square19",
                     "hexagonal": "hexagonal",
-                    "hex": "hexagonal",
                 }.get(board_type, "square8")
 
-                # Games per matchup - diverse selfplay generates multiple matchup types
-                games_per_matchup = 100
+                # Number of games per batch
+                num_games = 100
                 if board_arg == "square19":
-                    games_per_matchup = 50  # Square19 games are longer
+                    num_games = 50  # Square19 games are longer
                 elif board_arg == "hexagonal":
-                    games_per_matchup = 100
+                    num_games = 100
 
                 output_dir = Path(
                     self.ringrift_path,
@@ -29755,10 +29754,10 @@ print(json.dumps({{
 
                 cmd = [
                     python_exec,
-                    self._get_script_path("run_diverse_selfplay.py"),
+                    self._get_script_path("run_gpu_selfplay.py"),
                     "--board", board_arg,
-                    "--players", str(num_players),
-                    "--games-per-matchup", str(games_per_matchup),
+                    "--num-players", str(num_players),
+                    "--num-games", str(num_games),
                     "--output-dir", str(output_dir),
                 ]
 
