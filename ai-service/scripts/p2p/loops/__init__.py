@@ -168,6 +168,10 @@ from .http_server_health_loop import (
     HttpServerHealthConfig,
     HttpServerHealthLoop,
 )
+from .gossip_state_cleanup_loop import (
+    GossipStateCleanupConfig,
+    GossipStateCleanupLoop,
+)
 
 __all__ = [
     # Base
@@ -282,4 +286,7 @@ __all__ = [
     # HTTP Server Health (Jan 7, 2026 - Zombie Detection)
     "HttpServerHealthConfig",
     "HttpServerHealthLoop",
+    # Gossip State Cleanup (Jan 7, 2026 - Memory Leak Fix)
+    "GossipStateCleanupConfig",
+    "GossipStateCleanupLoop",
 ]

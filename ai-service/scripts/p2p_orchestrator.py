@@ -2564,6 +2564,22 @@ class P2POrchestrator(
             except (ImportError, TypeError, AttributeError) as e:
                 logger.warning(f"[LoopManager] PeerCleanupLoop: not available: {e}")
 
+            # GossipStateCleanupLoop - January 7, 2026
+            # TTL-based cleanup for unbounded gossip data structures
+            # Prevents memory leaks causing OOM kills (fixes vultr-a100-20gb crash loop)
+            try:
+                from scripts.p2p.loops import GossipStateCleanupLoop, GossipStateCleanupConfig
+
+                gossip_cleanup = GossipStateCleanupLoop(
+                    get_orchestrator=lambda: self,
+                    emit_event=self._safe_emit_p2p_event,
+                    config=GossipStateCleanupConfig(),
+                )
+                manager.register(gossip_cleanup)
+                logger.info("[LoopManager] GossipStateCleanupLoop registered")
+            except (ImportError, TypeError, AttributeError) as e:
+                logger.warning(f"[LoopManager] GossipStateCleanupLoop: not available: {e}")
+
             # WorkerPullLoop - December 27, 2025
             # Workers poll leader for work (pull model instead of push)
             # Extracted from _worker_pull_loop
