@@ -57,6 +57,16 @@ _DEPRECATED_DAEMON_TYPES: dict[str, tuple[str, str]] = {
     "system_health_monitor": ("HEALTH_SERVER", "Q2 2026"),  # Use unified_health_manager
     # December 2025: Lambda GH200 nodes are dedicated training (restored Dec 28). Use UNIFIED_IDLE for ephemeral nodes.
     "lambda_idle": ("UNIFIED_IDLE", "Q2 2026"),
+    # January 2026: Consolidated backup/sync daemons (Session 17.41)
+    # S3 sync consolidation: 3 daemons → S3_SYNC
+    "s3_backup": ("S3_SYNC", "Q2 2026"),
+    "s3_node_sync": ("S3_SYNC", "Q2 2026"),
+    "s3_push": ("S3_SYNC", "Q2 2026"),
+    # OWC sync consolidation: 4 daemons → OWC_SYNC_MANAGER
+    "external_drive_sync": ("OWC_SYNC_MANAGER", "Q2 2026"),
+    "owc_push": ("OWC_SYNC_MANAGER", "Q2 2026"),
+    "dual_backup": ("OWC_SYNC_MANAGER", "Q2 2026"),
+    "unified_backup": ("OWC_SYNC_MANAGER", "Q2 2026"),
 }
 
 
@@ -423,6 +433,14 @@ class DaemonType(Enum):
     S3_PUSH = "s3_push"
 
     # =========================================================================
+    # Consolidated S3 Sync Daemon (January 2026)
+    # =========================================================================
+    # Unified S3 sync daemon replacing S3_BACKUP, S3_PUSH, S3_NODE_SYNC.
+    # Provides bidirectional S3 sync with intelligent scheduling.
+    # =========================================================================
+    S3_SYNC = "s3_sync"
+
+    # =========================================================================
     # Cluster Consolidation Daemon (January 2026)
     # =========================================================================
     # CRITICAL: Bridges distributed selfplay with training pipeline.
@@ -458,6 +476,14 @@ class DaemonType(Enum):
     UNIFIED_DATA_CATALOG = "unified_data_catalog"
     DUAL_BACKUP = "dual_backup"
     NODE_DATA_AGENT = "node_data_agent"
+
+    # =========================================================================
+    # Consolidated OWC Sync Manager (January 2026)
+    # =========================================================================
+    # Unified OWC sync manager replacing EXTERNAL_DRIVE_SYNC, OWC_PUSH,
+    # DUAL_BACKUP, UNIFIED_BACKUP. Provides intelligent OWC drive sync.
+    # =========================================================================
+    OWC_SYNC_MANAGER = "owc_sync_manager"
 
 
 class DaemonState(Enum):
@@ -706,6 +732,8 @@ DAEMON_CATEGORY_MAP: dict[DaemonType, DaemonCategory] = {
     DaemonType.UNIFIED_DATA_CATALOG: DaemonCategory.SYNC,  # Jan 2026: Unified data catalog API
     DaemonType.DUAL_BACKUP: DaemonCategory.SYNC,  # Jan 2026: Dual S3+OWC backup
     DaemonType.NODE_DATA_AGENT: DaemonCategory.DISTRIBUTION,  # Jan 2026: Per-node data agent
+    DaemonType.S3_SYNC: DaemonCategory.SYNC,  # Jan 2026: Consolidated S3 sync (replaces S3_BACKUP, S3_PUSH, S3_NODE_SYNC)
+    DaemonType.OWC_SYNC_MANAGER: DaemonCategory.SYNC,  # Jan 2026: Consolidated OWC sync (replaces EXTERNAL_DRIVE_SYNC, OWC_PUSH, DUAL_BACKUP)
 
     # PIPELINE category - data pipeline (high threshold, exempt from global)
     DaemonType.DATA_PIPELINE: DaemonCategory.PIPELINE,
