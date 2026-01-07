@@ -1475,6 +1475,52 @@ class AutoPromotionDaemon(HandlerBase):
 
         return base_health
 
+    def get_promotion_status(self) -> dict:
+        """Return detailed promotion candidate status for debugging.
+
+        January 7, 2026: Added for 48h autonomous operation visibility.
+        Provides detailed candidate state for monitoring and debugging.
+
+        Returns:
+            Dict with:
+                - candidates: Per-config candidate state
+                - last_promotion_time: When last promotion occurred
+                - thresholds: Current promotion thresholds
+        """
+        from datetime import datetime
+
+        candidate_details = {}
+        for config_key, candidate in self._candidates.items():
+            candidate_details[config_key] = {
+                "model_path": candidate.model_path,
+                "consecutive_passes": candidate.consecutive_passes,
+                "vs_random": candidate.evaluation_results.get("RANDOM", 0.0),
+                "vs_heuristic": candidate.evaluation_results.get("HEURISTIC", 0.0),
+                "training_game_count": candidate.training_game_count,
+                "beats_current_best": candidate.beats_current_best,
+                "evaluation_games": candidate.evaluation_games,
+                "last_evaluation_time": candidate.last_evaluation_time,
+                "last_promotion_time": candidate.last_promotion_time,
+            }
+
+        # Get the most recent promotion time across all candidates
+        last_promotion = None
+        if self._promotion_history:
+            last_promotion = self._promotion_history[-1]
+
+        return {
+            "candidates": candidate_details,
+            "last_promotion": last_promotion,
+            "promotion_history_count": len(self._promotion_history),
+            "thresholds": {
+                "min_win_rate_vs_random": self.config.min_win_rate_vs_random,
+                "min_win_rate_vs_heuristic": self.config.min_win_rate_vs_heuristic,
+                "consecutive_passes_required": self.config.consecutive_passes_required,
+            },
+            "enabled": self.config.enabled,
+            "dry_run": self.config.dry_run,
+        }
+
 
 # =============================================================================
 # Module-Level Singleton Accessors (January 2026: Delegates to HandlerBase)

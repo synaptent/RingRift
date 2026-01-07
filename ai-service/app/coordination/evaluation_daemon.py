@@ -307,6 +307,12 @@ class EvaluationDaemon(BaseEventHandler):
         self._persistent_queue: PersistentEvaluationQueue | None = None
         self._stuck_check_task: asyncio.Task | None = None
 
+        # January 7, 2026: Periodic unevaluated model scan (48h autonomous operation)
+        # Runs every 30 minutes to catch models trained on cluster that weren't
+        # triggered via TRAINING_COMPLETED event (event may not reach coordinator)
+        self._last_model_scan: float | None = None
+        self._model_scan_interval_seconds: float = 1800.0  # 30 minutes
+
     def _get_subscriptions(self) -> Dict[Any, Callable]:
         """Return event subscriptions for BaseEventHandler.
 
@@ -385,12 +391,28 @@ class EvaluationDaemon(BaseEventHandler):
         return self._running
 
     async def _run_cycle(self) -> None:
-        """No-op: EvaluationDaemon is purely event-driven via queue worker.
+        """Run periodic unevaluated model scan for 48h autonomous operation.
+
+        January 7, 2026: Scans for unevaluated models every 30 minutes.
+        This catches models trained on cluster nodes where the TRAINING_COMPLETED
+        event didn't reach the coordinator (network issues, event drops, etc.).
 
         December 29, 2025: Added to satisfy BaseEventHandler abstract requirement.
         The actual work is done by _evaluation_worker() processing the queue.
         """
-        pass
+        import time
+
+        current_time = time.time()
+
+        # Check if it's time for a periodic model scan
+        if self._last_model_scan is None or \
+           (current_time - self._last_model_scan) > self._model_scan_interval_seconds:
+            logger.info(
+                "[EvaluationDaemon] Running periodic unevaluated model scan "
+                f"(interval={self._model_scan_interval_seconds/60:.0f}min)"
+            )
+            await self._startup_scan_for_unevaluated_models()
+            self._last_model_scan = current_time
 
     def get_status(self) -> dict[str, Any]:
         """Get daemon status for DaemonManager health monitoring.

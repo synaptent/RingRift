@@ -1111,6 +1111,26 @@ class TrainingCoordinator(EventSubscriptionMixin):
                     context="training_coordinator",
                 )
 
+                # January 7, 2026: Emit EVALUATION_REQUESTED for 48h autonomous operation
+                # This ensures the EvaluationDaemon picks up the trained model even if
+                # the coordinator restarts or TRAINING_COMPLETED event is lost
+                safe_emit_event(
+                    "EVALUATION_REQUESTED",
+                    {
+                        "model_path": job.output_model_path,
+                        "config_key": config_key,
+                        "board_type": job.board_type,
+                        "num_players": job.num_players,
+                        "source": "p2p_training_completion",
+                        "job_id": job.job_id,
+                    },
+                    context="training_coordinator",
+                )
+                logger.info(
+                    f"[TrainingCoordinator] Emitted EVALUATION_REQUESTED for {config_key} "
+                    f"model={job.output_model_path}"
+                )
+
             # Dec 2025: Fetch model from training node BEFORE evaluation
             # This is critical - models are produced on remote training nodes (nebius-h100-*,
             # lambda-gh200-*, etc.) but gauntlet evaluation requires the model locally.
