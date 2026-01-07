@@ -10,19 +10,19 @@ The P2P orchestrator can enter a zombie state where:
 4. External watchdogs (pgrep) see process as alive, but health endpoint fails
 
 Solution:
-This loop probes localhost:8770/health every 10 seconds. After 6 consecutive failures
-(60 seconds), it attempts recovery. If recovery fails after 2 attempts, it terminates
+This loop probes localhost:8770/health every 10 seconds. After 4 consecutive failures
+(40 seconds), it attempts recovery. If recovery fails after 2 attempts, it terminates
 the process with exit code 3, allowing systemd to restart it.
 
-Detection Timeline:
+Detection Timeline (updated Jan 2026):
     T+0s:    HTTP server crashes
     T+10s:   First probe fails (counter=1)
-    T+60s:   Sixth probe fails (counter=6, threshold reached)
-    T+65s:   Recovery attempt 1 (wait 5s, re-probe)
-    T+70s:   Recovery attempt 2 (wait 5s, re-probe)
-    T+75s:   Force exit with code 3
-    T+90s:   systemd RestartSec=15 restarts process
-    Total MTTR: ~90 seconds (vs 5+ minutes with cron-only)
+    T+40s:   Fourth probe fails (counter=4, threshold reached)
+    T+45s:   Recovery attempt 1 (wait 5s, re-probe)
+    T+50s:   Recovery attempt 2 (wait 5s, re-probe)
+    T+55s:   Force exit with code 3
+    T+70s:   systemd RestartSec=15 restarts process
+    Total MTTR: ~70 seconds (improved from ~90s)
 
 Usage:
     from scripts.p2p.loops import HttpServerHealthLoop, HttpServerHealthConfig
@@ -68,10 +68,10 @@ class HttpServerHealthConfig:
 
     probe_interval_seconds: float = 10.0
     probe_timeout_seconds: float = 5.0
-    failure_threshold: int = 6
+    failure_threshold: int = 4  # Reduced from 6: faster detection (40s vs 60s)
     recovery_attempts: int = 2
     recovery_delay_seconds: float = 5.0
-    startup_grace_period_seconds: float = 60.0
+    startup_grace_period_seconds: float = 30.0  # Reduced from 60s: faster detection
     exit_code_http_server_failed: int = EXIT_CODE_HTTP_SERVER_FAILED
 
 

@@ -22100,6 +22100,45 @@ print(json.dumps({{
         else:
             logger.warning(f"[P2P] Failed to register with any relay nodes - cluster discovery may be delayed")
 
+    async def _send_startup_peer_announcements(self) -> None:
+        """Send immediate announcements to all known peers on startup.
+
+        January 7, 2026: Instead of waiting for the first heartbeat interval,
+        immediately announce to all known peers. This reduces discovery latency
+        from 15-30s down to 2-5s after startup.
+
+        This is called for ALL nodes (not just NAT-blocked) to ensure fast
+        peer discovery after restarts or cluster updates.
+        """
+        # Send to known peers from config
+        success_count = 0
+        total_attempts = 0
+
+        for peer_addr in self.known_peers:
+            try:
+                scheme, host, port = self._parse_peer_address(peer_addr)
+            except (AttributeError, ValueError):
+                continue
+
+            total_attempts += 1
+            try:
+                info = await self._send_heartbeat_to_peer(host, port, scheme=scheme)
+                if info and info.node_id != self.node_id:
+                    async with AsyncLockWrapper(self.peers_lock):
+                        is_first_contact = info.node_id not in self.peers
+                        info.last_heartbeat = time.time()
+                        self.peers[info.node_id] = info
+                    if is_first_contact:
+                        logger.info(f"[P2P] Startup announcement discovered peer: {info.node_id}")
+                    success_count += 1
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"[P2P] Startup announcement to {host}:{port} failed: {e}")
+
+        if success_count > 0:
+            logger.info(f"[P2P] Startup announcements: {success_count}/{total_attempts} peers reachable")
+        elif total_attempts > 0:
+            logger.warning(f"[P2P] Startup announcements: no peers reachable (tried {total_attempts})")
+
     async def _execute_relay_commands(self, commands: list[dict[str, Any]]) -> None:
         """Execute relay commands (polling mode for NAT-blocked nodes)."""
         now = time.time()
@@ -31139,6 +31178,10 @@ print(json.dumps({{
         # This ensures relay nodes discover us before the regular heartbeat loop kicks in
         if self._force_relay_mode:
             await self._send_initial_relay_heartbeats()
+
+        # Jan 7, 2026: Send immediate peer announcements for ALL nodes
+        # This reduces discovery latency from 15-30s to 2-5s after startup
+        await self._send_startup_peer_announcements()
 
         # Start background tasks with exception isolation and restart support
         # CRITICAL FIX (Dec 2025): Each task is wrapped to prevent cascade failures.

@@ -22,10 +22,22 @@ P2P_PORT="${RINGRIFT_P2P_PORT:-8770}"
 LOGFILE="$RINGRIFT_PATH/logs/p2p_keepalive.log"
 
 # Auto-detect node ID from hostname if not set
+# Priority: 1) RINGRIFT_NODE_ID env var
+#           2) /etc/default/ringrift-p2p NODE_ID
+#           3) hostname -s (fallback)
 if [ -n "$RINGRIFT_NODE_ID" ]; then
     NODE_ID="$RINGRIFT_NODE_ID"
+elif [ -f /etc/default/ringrift-p2p ]; then
+    # Try to read from systemd service config
+    source /etc/default/ringrift-p2p 2>/dev/null
+    NODE_ID="${NODE_ID:-$(hostname -s)}"
 else
     NODE_ID="$(hostname -s)"
+fi
+
+# Validate node ID looks correct (warn if it looks like a hostname that doesn't match expected patterns)
+if [[ "$NODE_ID" == ringrift-* ]] && [[ ! "$NODE_ID" =~ ^(lambda-|vast-|runpod-|nebius-|hetzner-|vultr-|mac-) ]]; then
+    echo "[$(date)] WARNING: NODE_ID '$NODE_ID' appears to be hostname-derived. Set RINGRIFT_NODE_ID for proper identification." >> "$LOGFILE"
 fi
 
 # Default peers (coordinator nodes)
