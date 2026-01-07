@@ -28,6 +28,7 @@ import asyncio
 import logging
 import time
 from enum import Enum
+from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING, Any
 
@@ -133,10 +134,17 @@ if PYSYNCOBJ_AVAILABLE:
             self._local_start_time = time.time()
 
             # Raft configuration
+            # Jan 7, 2026: Enable fullDumpFile for Raft state persistence.
+            # Without this, work queue state is lost on restart, causing
+            # inconsistency between Raft in-memory state and SQLite fallback.
+            raft_dump_dir = Path("data")
+            raft_dump_dir.mkdir(parents=True, exist_ok=True)
+            raft_dump_path = str(raft_dump_dir / "raft_work_queue.dump")
+
             conf = _SyncObjConf(
                 autoTick=True,
                 appendEntriesUseBatch=True,
-                fullDumpFile=None,  # In-memory only for now
+                fullDumpFile=raft_dump_path,  # Persist Raft state across restarts
                 logCompactionMinEntries=compaction_min_entries,
                 dynamicMembershipChange=True,  # Allow adding/removing nodes
             )
