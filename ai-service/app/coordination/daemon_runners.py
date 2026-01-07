@@ -1019,7 +1019,7 @@ async def create_training_data_recovery() -> None:
         # Keep running until stopped
         while True:
             await asyncio.sleep(60)
-            if not daemon._is_running:
+            if not daemon._running:
                 break
 
     except ImportError as e:
@@ -2143,7 +2143,7 @@ async def create_job_scheduler() -> None:
 
         # Initialize the singleton - it's a utility class, not a daemon
         scheduler = get_scheduler()
-        logger.info(f"JobScheduler initialized with queue size: {scheduler.pending_count}")
+        logger.info(f"JobScheduler initialized with queue size: {scheduler.get_queue_depth()}")
         # No daemon loop needed - other components use get_scheduler() to access it
     except ImportError as e:
         logger.error(f"JobScheduler not available: {e}")
@@ -2552,7 +2552,7 @@ async def create_p2p_auto_deploy() -> None:
         from app.coordination.p2p_auto_deployer import P2PAutoDeployer
 
         deployer = P2PAutoDeployer()
-        await deployer.start()
+        await deployer.run_daemon()
         await _wait_for_daemon(deployer)
     except ImportError as e:
         logger.error(f"P2PAutoDeployer not available: {e}")
