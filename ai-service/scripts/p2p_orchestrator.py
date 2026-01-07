@@ -27748,16 +27748,52 @@ print(json.dumps({{
 
             jobs_dispatched = 0
             jobs_failed = 0
+
+            # Jan 2026 fix: Detect GPU tier for proper job type selection
+            # High-end GPUs (GH200, H100, H200, A100, 5090, 4090) get GPU_SELFPLAY/GUMBEL_SELFPLAY
+            # Mid-tier GPUs get HYBRID_SELFPLAY (CPU rules + GPU eval)
+            gpu_name_raw = getattr(node, "gpu_name", "") or ""
+            gpu_name = gpu_name_raw.upper()
+            is_high_end_gpu = any(tag in gpu_name for tag in ("H100", "H200", "GH200", "A100", "5090", "4090"))
+            is_apple_gpu = "MPS" in gpu_name or "APPLE" in gpu_name
+            has_gpu = bool(getattr(node, "has_gpu", False))
+
+            # Log GPU tier detection for visibility
+            if has_gpu and is_high_end_gpu:
+                logger.info(f"LOCAL: High-end GPU detected ({gpu_name_raw}) - using GPU/Gumbel selfplay")
+            elif has_gpu and not is_apple_gpu:
+                logger.info(f"LOCAL: Mid-tier GPU detected ({gpu_name_raw}) - using hybrid selfplay")
+
+            import random  # Import once outside loop
+
             for _ in range(needed):
                 try:
                     # Pick a config weighted by priority (using SelfplayScheduler manager)
                     config = self.selfplay_scheduler.pick_weighted_config(node)
                     if config:
+                        # Jan 2026: Select job type based on GPU tier (consistent with cluster dispatch)
+                        if has_gpu and is_high_end_gpu and not is_apple_gpu:
+                            # High-end GPUs: 50% GUMBEL (quality) / 50% GPU_SELFPLAY (volume)
+                            if random.random() < 0.5:
+                                job_type = JobType.GUMBEL_SELFPLAY
+                                engine_mode = "gumbel-mcts"
+                            else:
+                                job_type = JobType.GPU_SELFPLAY
+                                engine_mode = "gpu"
+                        elif has_gpu and not is_apple_gpu:
+                            # Mid-tier GPUs: HYBRID mode for rule fidelity
+                            job_type = JobType.HYBRID_SELFPLAY
+                            engine_mode = "mixed"
+                        else:
+                            # CPU-only or Apple MPS: CPU selfplay
+                            job_type = JobType.SELFPLAY
+                            engine_mode = config.get("engine_mode", "gumbel-mcts")
+
                         job = await self._start_local_job(
-                            JobType.HYBRID_SELFPLAY,
+                            job_type,
                             board_type=config["board_type"],
                             num_players=config["num_players"],
-                            engine_mode=config.get("engine_mode", "gumbel-mcts"),  # GPU-accelerated
+                            engine_mode=engine_mode,
                         )
                         if job:
                             changes += 1
