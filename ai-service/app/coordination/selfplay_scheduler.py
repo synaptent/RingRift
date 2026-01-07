@@ -1770,9 +1770,10 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
             return allocation  # No donors available
 
         # Dec 30, 2025: More aggressive targets for multiplayer
-        # 4p: 2.5x (was 1.5x) - these have fewest games
+        # 4p: 3.0x (was 2.5x, originally 1.5x) - these have fewest games
+        # Jan 7, 2026: Increased to 3.0x for better 4-player model performance
         # 3p: 1.5x (was unhandled) - also underrepresented
-        min_4p_games = int(games_per_config * 2.5)
+        min_4p_games = int(games_per_config * 3.0)
         min_3p_games = int(games_per_config * 1.5)
         redistributed = 0
 

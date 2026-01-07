@@ -224,7 +224,7 @@ class GossipStateCleanupLoop(BaseLoop):
     """Background loop that cleans up unbounded gossip data structures.
 
     Key features:
-    - TTL-based cleanup for 5 data structures
+    - TTL-based cleanup for 7 data structures
     - Max entry limits to prevent unbounded growth
     - Prioritizes active peers (in self.peers)
     - Emits GOSSIP_STATE_CLEANUP_COMPLETED event with statistics
@@ -236,6 +236,8 @@ class GossipStateCleanupLoop(BaseLoop):
     3. _node_recovery_attempts - recovery attempt timestamps
     4. _peer_reputation - peer reputation scores
     5. _gossip_learned_endpoints - endpoints from gossip discovery
+    6. _promotion_failures - model promotion failures (MEMORY LEAK FIX)
+    7. Job state dicts (distributed_cmaes_state, ssh_tournament_runs, etc.)
     """
 
     def __init__(
@@ -299,6 +301,14 @@ class GossipStateCleanupLoop(BaseLoop):
         endpoints_purged = self._cleanup_learned_endpoints(orchestrator, active_peers, now)
         cycle_purged += endpoints_purged
 
+        # 6. Clean _promotion_failures (Jan 7, 2026 - memory leak fix)
+        promotion_purged = self._cleanup_promotion_failures(orchestrator, now)
+        cycle_purged += promotion_purged
+
+        # 7. Clean job state dictionaries (Jan 7, 2026 - memory leak fix)
+        jobs_purged = self._cleanup_job_states(orchestrator, now)
+        cycle_purged += jobs_purged
+
         # Update statistics
         self._cleanup_stats.total_purged += cycle_purged
         self._cleanup_stats.last_cleanup_time = now
@@ -310,7 +320,8 @@ class GossipStateCleanupLoop(BaseLoop):
                 f"[GossipStateCleanup] Purged {cycle_purged} entries: "
                 f"states={states_purged}, manifests={manifests_purged}, "
                 f"recovery={recovery_purged}, reputation={reputation_purged}, "
-                f"endpoints={endpoints_purged}"
+                f"endpoints={endpoints_purged}, promotion={promotion_purged}, "
+                f"jobs={jobs_purged}"
             )
 
             # Emit event
@@ -324,6 +335,8 @@ class GossipStateCleanupLoop(BaseLoop):
                         "recovery_attempts_purged": recovery_purged,
                         "peer_reputation_purged": reputation_purged,
                         "learned_endpoints_purged": endpoints_purged,
+                        "promotion_failures_purged": promotion_purged,
+                        "job_states_purged": jobs_purged,
                         "total_purged": cycle_purged,
                         "active_peers_count": len(active_peers),
                         "timestamp": now,
@@ -586,6 +599,161 @@ class GossipStateCleanupLoop(BaseLoop):
 
         return len(to_purge)
 
+    def _cleanup_promotion_failures(self, orchestrator: Any, now: float) -> int:
+        """Clean up _promotion_failures dictionary.
+
+        Memory leak fix (Jan 7, 2026): _promotion_failures grows unbounded unlike
+        _handler_failures which has a limit of 10. This method enforces:
+        - Keep only last N entries per config (max_promotion_failures_per_config)
+        - Purge entries older than TTL (promotion_failures_ttl_seconds)
+
+        The _promotion_failures dict has structure:
+        {config_key: [(timestamp, model_path, reason), ...], ...}
+        """
+        failures = getattr(orchestrator, "_promotion_failures", None)
+        if not failures:
+            return 0
+
+        ttl = self.config.promotion_failures_ttl_seconds
+        max_per_config = self.config.max_promotion_failures_per_config
+        total_purged = 0
+
+        configs_to_remove = []
+
+        for config_key, failure_list in failures.items():
+            if not isinstance(failure_list, list):
+                continue
+
+            original_count = len(failure_list)
+
+            # Filter by TTL - keep only recent failures
+            fresh_failures = []
+            for entry in failure_list:
+                # Entry format: (timestamp, model_path, reason) or dict
+                if isinstance(entry, tuple) and len(entry) >= 1:
+                    timestamp = entry[0]
+                elif isinstance(entry, dict):
+                    timestamp = entry.get("timestamp", 0)
+                else:
+                    continue
+
+                if now - timestamp <= ttl:
+                    fresh_failures.append(entry)
+
+            # Enforce max entries per config - keep most recent
+            if len(fresh_failures) > max_per_config:
+                # Sort by timestamp descending (newest first)
+                if fresh_failures and isinstance(fresh_failures[0], tuple):
+                    fresh_failures.sort(key=lambda x: x[0], reverse=True)
+                elif fresh_failures and isinstance(fresh_failures[0], dict):
+                    fresh_failures.sort(
+                        key=lambda x: x.get("timestamp", 0), reverse=True
+                    )
+                fresh_failures = fresh_failures[:max_per_config]
+
+            purged_count = original_count - len(fresh_failures)
+            total_purged += purged_count
+
+            if len(fresh_failures) == 0:
+                configs_to_remove.append(config_key)
+            else:
+                failures[config_key] = fresh_failures
+
+        # Remove empty config entries
+        for config_key in configs_to_remove:
+            failures.pop(config_key, None)
+
+        if total_purged > 0:
+            self._cleanup_stats.promotion_failures_purged += total_purged
+            logger.debug(
+                f"[GossipStateCleanup] Purged {total_purged} promotion failures "
+                f"across {len(failures)} configs"
+            )
+
+        return total_purged
+
+    def _cleanup_job_states(self, orchestrator: Any, now: float) -> int:
+        """Clean up job state dictionaries.
+
+        Memory leak fix (Jan 7, 2026): Job state dicts grow with completed jobs.
+        Cleans: distributed_cmaes_state, distributed_tournament_state,
+                ssh_tournament_runs, improvement_loop_state
+
+        Each dict typically stores job_id -> state mappings. We purge:
+        - Completed jobs older than TTL
+        - Oldest entries if over max_job_states
+        """
+        job_dicts = [
+            "_distributed_cmaes_state",
+            "_distributed_tournament_state",
+            "_ssh_tournament_runs",
+            "_improvement_loop_state",
+        ]
+
+        ttl = self.config.job_states_ttl_seconds
+        max_jobs = self.config.max_job_states
+        total_purged = 0
+
+        for dict_name in job_dicts:
+            job_dict = getattr(orchestrator, dict_name, None)
+            if not job_dict or not isinstance(job_dict, dict):
+                continue
+
+            to_purge = []
+
+            for job_id, state in job_dict.items():
+                # Check if state has completion/timestamp info
+                if isinstance(state, dict):
+                    # Look for completion indicators
+                    status = state.get("status", "")
+                    completed_at = state.get("completed_at", 0)
+                    updated_at = state.get("updated_at", 0)
+                    started_at = state.get("started_at", 0)
+
+                    # Use most recent timestamp
+                    timestamp = max(completed_at, updated_at, started_at)
+
+                    # Purge completed jobs older than TTL
+                    if status in ("completed", "failed", "cancelled", "done"):
+                        if timestamp > 0 and now - timestamp > ttl:
+                            to_purge.append(job_id)
+                    # Purge very old jobs regardless of status (likely orphaned)
+                    elif timestamp > 0 and now - timestamp > ttl * 2:
+                        to_purge.append(job_id)
+
+            # Enforce max entries if still over limit
+            remaining_count = len(job_dict) - len(to_purge)
+            if remaining_count > max_jobs:
+                remaining = [
+                    (k, v) for k, v in job_dict.items() if k not in to_purge
+                ]
+                # Sort by timestamp, oldest first
+                remaining.sort(
+                    key=lambda x: max(
+                        x[1].get("completed_at", 0) if isinstance(x[1], dict) else 0,
+                        x[1].get("updated_at", 0) if isinstance(x[1], dict) else 0,
+                        x[1].get("started_at", 0) if isinstance(x[1], dict) else 0,
+                    )
+                )
+                excess = remaining_count - max_jobs
+                to_purge.extend([k for k, _ in remaining[:excess]])
+
+            # Perform cleanup
+            for job_id in to_purge:
+                job_dict.pop(job_id, None)
+
+            total_purged += len(to_purge)
+
+            if to_purge:
+                logger.debug(
+                    f"[GossipStateCleanup] Purged {len(to_purge)} entries from {dict_name}"
+                )
+
+        if total_purged > 0:
+            self._cleanup_stats.job_states_purged += total_purged
+
+        return total_purged
+
     def get_cleanup_stats(self) -> dict[str, Any]:
         """Get cleanup statistics."""
         return {
@@ -597,11 +765,15 @@ class GossipStateCleanupLoop(BaseLoop):
                 "recovery_attempts_ttl": self.config.recovery_attempts_ttl_seconds,
                 "peer_reputation_ttl": self.config.peer_reputation_ttl_seconds,
                 "learned_endpoints_ttl": self.config.learned_endpoints_ttl_seconds,
+                "promotion_failures_ttl": self.config.promotion_failures_ttl_seconds,
+                "job_states_ttl": self.config.job_states_ttl_seconds,
                 "max_gossip_states": self.config.max_gossip_states,
                 "max_gossip_manifests": self.config.max_gossip_manifests,
                 "max_recovery_attempts": self.config.max_recovery_attempts,
                 "max_peer_reputation": self.config.max_peer_reputation,
                 "max_learned_endpoints": self.config.max_learned_endpoints,
+                "max_promotion_failures_per_config": self.config.max_promotion_failures_per_config,
+                "max_job_states": self.config.max_job_states,
                 "enabled": self.config.enabled,
             },
         }
@@ -636,5 +808,7 @@ class GossipStateCleanupLoop(BaseLoop):
                 "recovery_attempts_purged": stats.recovery_attempts_purged,
                 "peer_reputation_purged": stats.peer_reputation_purged,
                 "learned_endpoints_purged": stats.learned_endpoints_purged,
+                "promotion_failures_purged": stats.promotion_failures_purged,
+                "job_states_purged": stats.job_states_purged,
             },
         }

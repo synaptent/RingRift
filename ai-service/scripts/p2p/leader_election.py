@@ -1704,6 +1704,12 @@ class LeaderElectionMixin(P2PMixinBase):
         # Jan 3, 2026 Sprint 13.3: Add election latency stats
         result["election_latency"] = self.get_election_latency_stats()
 
+        # Jan 7, 2026: Check for stuck elections and auto-escalate
+        election_timeout_info = self._check_election_timeout()
+        result["election_timeout"] = election_timeout_info
+        if election_timeout_info.get("election_stuck"):
+            result["is_healthy"] = False
+
         return result
 
     def health_check(self) -> dict[str, Any]:

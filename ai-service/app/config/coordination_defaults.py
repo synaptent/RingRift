@@ -2431,7 +2431,8 @@ class SelfplayPriorityWeightDefaults:
     # Jan 5, 2026: Increased STALENESS_WEIGHT 0.15→0.25 to improve node utilization
     # (targeting 85%+ cluster utilization, was 40-60% with 0.15)
     STALENESS_WEIGHT: float = _env_float("RINGRIFT_STALENESS_WEIGHT", 0.25)
-    ELO_VELOCITY_WEIGHT: float = _env_float("RINGRIFT_ELO_VELOCITY_WEIGHT", 0.10)
+    # Jan 7, 2026: Increased from 0.10 to 0.15 to prioritize configs with fastest Elo improvement
+    ELO_VELOCITY_WEIGHT: float = _env_float("RINGRIFT_ELO_VELOCITY_WEIGHT", 0.15)
     TRAINING_NEED_WEIGHT: float = _env_float("RINGRIFT_TRAINING_NEED_WEIGHT", 0.10)
     EXPLORATION_BOOST_WEIGHT: float = _env_float("RINGRIFT_EXPLORATION_BOOST_WEIGHT", 0.10)
     # Session 17.42: Increased 0.10→0.40 to give curriculum weights more influence
