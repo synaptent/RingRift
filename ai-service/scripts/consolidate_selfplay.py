@@ -69,14 +69,23 @@ def consolidate_config(config: str, base_dir: Path = Path("data/selfplay/p2p_hyb
 
     # Find all source DBs and import
     total_imported = 0
+    total_skipped_no_moves = 0
+    min_moves_required = 3  # DATA QUALITY GATE: Require at least 3 moves per game
+
     for db_path in source_dbs:
         try:
             src_conn = sqlite3.connect(str(db_path))
 
-            # Import completed games with all columns
-            games = src_conn.execute(
-                "SELECT * FROM games WHERE game_status IN ('complete', 'completed')"
-            ).fetchall()
+            # DATA QUALITY GATE: Only import games that HAVE move data
+            # Uses INNER JOIN to ensure moves exist before importing
+            games = src_conn.execute("""
+                SELECT DISTINCT g.*
+                FROM games g
+                INNER JOIN game_moves m ON g.game_id = m.game_id
+                WHERE g.game_status IN ('complete', 'completed')
+                GROUP BY g.game_id
+                HAVING COUNT(m.game_id) >= ?
+            """, (min_moves_required,)).fetchall()
 
             for game in games:
                 game_id = game[0]  # First column is game_id
@@ -85,7 +94,7 @@ def consolidate_config(config: str, base_dir: Path = Path("data/selfplay/p2p_hyb
                     placeholders = ",".join(["?"] * len(game))
                     dest_conn.execute(f"INSERT OR IGNORE INTO games VALUES ({placeholders})", game)
 
-                    # Copy moves for this game
+                    # Copy moves for this game (guaranteed to exist by INNER JOIN above)
                     moves = src_conn.execute(
                         "SELECT * FROM game_moves WHERE game_id = ?", (game_id,)
                     ).fetchall()
@@ -96,6 +105,19 @@ def consolidate_config(config: str, base_dir: Path = Path("data/selfplay/p2p_hyb
                     total_imported += 1
                 except Exception:
                     pass
+
+            # Track skipped games for reporting
+            skipped = src_conn.execute("""
+                SELECT COUNT(*) FROM games g
+                WHERE g.game_status IN ('complete', 'completed')
+                AND g.game_id NOT IN (
+                    SELECT DISTINCT game_id FROM game_moves
+                    GROUP BY game_id
+                    HAVING COUNT(*) >= ?
+                )
+            """, (min_moves_required,)).fetchone()[0]
+            total_skipped_no_moves += skipped
+
             src_conn.close()
         except Exception as e:
             print(f"Error with {db_path}: {e}")
@@ -106,7 +128,8 @@ def consolidate_config(config: str, base_dir: Path = Path("data/selfplay/p2p_hyb
     # Count final
     final_count = sqlite3.connect(str(dest_db)).execute("SELECT COUNT(*) FROM games").fetchone()[0]
     new_games = final_count - existing_count
-    print(f"{config}: Added {new_games} new games (tried {total_imported}), total now: {final_count}")
+    skipped_msg = f", skipped {total_skipped_no_moves} without moves" if total_skipped_no_moves > 0 else ""
+    print(f"{config}: Added {new_games} new games (tried {total_imported}{skipped_msg}), total now: {final_count}")
     return final_count
 
 
