@@ -365,6 +365,46 @@ class AutoPromotionDaemon(HandlerBase):
             logger.debug(f"[AutoPromotion] Could not get canonical heuristic rate: {e}")
             return None
 
+    def _get_effective_consecutive_passes_required(self, training_game_count: int) -> int:
+        """Get effective consecutive passes required, accounting for bootstrap phase.
+
+        January 6, 2026: Bootstrap configs (<5000 games) use relaxed requirements to
+        break the catch-22 where models can't get games without promotion and can't
+        promote without games.
+
+        Args:
+            training_game_count: Number of training games for this config.
+
+        Returns:
+            1 for bootstrap configs, otherwise the config default (typically 2).
+        """
+        from app.config.thresholds import GAME_COUNT_BOOTSTRAP_THRESHOLD
+
+        is_bootstrap = training_game_count < GAME_COUNT_BOOTSTRAP_THRESHOLD
+        if is_bootstrap:
+            return 1  # Single pass for bootstrap configs
+        return self.config.consecutive_passes_required
+
+    def _get_effective_min_elo_improvement(self, training_game_count: int) -> float:
+        """Get effective minimum Elo improvement, accounting for bootstrap phase.
+
+        January 6, 2026: Bootstrap configs (<5000 games) use relaxed requirements.
+        Any positive Elo improvement (even +5) should be promoted during bootstrap
+        to accelerate the training flywheel.
+
+        Args:
+            training_game_count: Number of training games for this config.
+
+        Returns:
+            5.0 for bootstrap configs, otherwise the config default (typically 10.0).
+        """
+        from app.config.thresholds import GAME_COUNT_BOOTSTRAP_THRESHOLD
+
+        is_bootstrap = training_game_count < GAME_COUNT_BOOTSTRAP_THRESHOLD
+        if is_bootstrap:
+            return 5.0  # Lower Elo threshold for bootstrap configs
+        return self.config.min_elo_improvement
+
     async def _check_promotion(self, candidate: PromotionCandidate) -> None:
         """Check if candidate meets promotion criteria.
 
@@ -464,18 +504,30 @@ class AutoPromotionDaemon(HandlerBase):
                 return
 
             # Check consecutive passes
-            if candidate.consecutive_passes >= self.config.consecutive_passes_required:
+            # Jan 6, 2026: Use bootstrap-aware thresholds for configs with limited data
+            game_count = candidate.training_game_count
+            effective_passes_required = self._get_effective_consecutive_passes_required(game_count)
+            effective_min_elo = self._get_effective_min_elo_improvement(game_count)
+
+            # Log if using bootstrap thresholds
+            if effective_passes_required < self.config.consecutive_passes_required:
+                logger.info(
+                    f"[AutoPromotion] {candidate.config_key}: Using bootstrap thresholds "
+                    f"(games={game_count}, passes={effective_passes_required}, min_elo={effective_min_elo:.1f})"
+                )
+
+            if candidate.consecutive_passes >= effective_passes_required:
                 # Dec 27, 2025: Check Elo improvement requirement (optional)
                 # Note: For relative promotion, we may want to skip this check
                 # since beating champion is already strong signal
                 if (
-                    self.config.min_elo_improvement > 0
+                    effective_min_elo > 0
                     and not candidate.beats_current_best  # Skip Elo check if beat champion
-                    and candidate.elo_improvement < self.config.min_elo_improvement
+                    and candidate.elo_improvement < effective_min_elo
                 ):
                     logger.info(
                         f"[AutoPromotion] {candidate.config_key}: "
-                        f"Elo improvement {candidate.elo_improvement:+.1f} < {self.config.min_elo_improvement} required"
+                        f"Elo improvement {candidate.elo_improvement:+.1f} < {effective_min_elo:.1f} required"
                     )
                     return
                 await self._promote_model(candidate)
