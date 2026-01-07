@@ -5165,6 +5165,44 @@ class P2POrchestrator(
         """
         return os.path.join(self._get_ai_service_path(), "scripts", script_name)
 
+    def _check_yaml_gpu_config(self, node_id: str | None = None) -> tuple[bool, str, int]:
+        """Check if YAML config indicates a node has a GPU.
+
+        Used as fallback when runtime GPU detection fails (e.g., vGPU, containers,
+        driver issues causing torch.cuda.is_available() to return False).
+
+        Args:
+            node_id: Node ID to check. If None, uses self.node_id.
+
+        Returns:
+            Tuple of (has_gpu, gpu_name, gpu_vram_gb)
+
+        Session 17.50 (Jan 2026): Added to fix GPU nodes running CPU selfplay
+        when torch.cuda.is_available() returns False due to driver issues.
+        """
+        target_node = node_id or self.node_id
+        try:
+            from app.config.cluster_config import get_config_cache
+            config = get_config_cache().get_config()
+            host_cfg = config.hosts_raw.get(target_node, {})
+
+            # Check multiple indicators
+            gpu_name = str(host_cfg.get("gpu", ""))
+            gpu_vram = int(host_cfg.get("gpu_vram_gb", 0) or 0)
+            role = str(host_cfg.get("role", ""))
+
+            has_gpu = bool(gpu_name) or gpu_vram > 0 or "gpu" in role.lower()
+
+            if has_gpu:
+                logger.debug(
+                    f"[YAML GPU] Node {target_node}: gpu={gpu_name}, "
+                    f"vram={gpu_vram}GB, role={role}"
+                )
+            return has_gpu, gpu_name, gpu_vram
+        except Exception as e:
+            logger.debug(f"Could not check YAML GPU config for {target_node}: {e}")
+            return False, "", 0
+
     def get_data_directory(self) -> Path:
         """Get the data directory path based on storage configuration.
 
@@ -27754,9 +27792,23 @@ print(json.dumps({{
             # Mid-tier GPUs get HYBRID_SELFPLAY (CPU rules + GPU eval)
             gpu_name_raw = getattr(node, "gpu_name", "") or ""
             gpu_name = gpu_name_raw.upper()
+            has_gpu = bool(getattr(node, "has_gpu", False))
+
+            # Session 17.50: YAML fallback when runtime GPU detection fails
+            # Runtime detection can fail on some nodes (vGPU, containers, driver issues)
+            if not has_gpu or not gpu_name:
+                yaml_has_gpu, yaml_gpu_name, yaml_vram = self._check_yaml_gpu_config()
+                if yaml_has_gpu:
+                    logger.info(
+                        f"LOCAL: Runtime GPU detection failed but YAML shows GPU "
+                        f"({yaml_gpu_name}, {yaml_vram}GB). Using YAML config."
+                    )
+                    has_gpu = True
+                    gpu_name_raw = yaml_gpu_name
+                    gpu_name = yaml_gpu_name.upper()
+
             is_high_end_gpu = any(tag in gpu_name for tag in ("H100", "H200", "GH200", "A100", "5090", "4090"))
             is_apple_gpu = "MPS" in gpu_name or "APPLE" in gpu_name
-            has_gpu = bool(getattr(node, "has_gpu", False))
 
             # Log GPU tier detection for visibility
             if has_gpu and is_high_end_gpu:
@@ -27866,6 +27918,13 @@ print(json.dumps({{
         gpu_percent = float(getattr(self.self_info, "gpu_percent", 0) or 0)
         int(getattr(self.self_info, "selfplay_jobs", 0) or 0)
         gpu_name = (getattr(self.self_info, "gpu_name", "") or "").lower()
+
+        # Session 17.50: YAML fallback when runtime GPU detection fails
+        if not gpu_name:
+            yaml_has_gpu, yaml_gpu_name, _ = self._check_yaml_gpu_config()
+            if yaml_has_gpu and yaml_gpu_name:
+                gpu_name = yaml_gpu_name.lower()
+                logger.debug(f"LOCAL: Using YAML GPU name: {yaml_gpu_name}")
 
         # Track GPU idle time
         if gpu_percent < TARGET_GPU_MIN:
@@ -28389,10 +28448,20 @@ print(json.dumps({{
         # High-end GPUs should use GUMBEL_SELFPLAY (50%) or GPU_SELFPLAY (50%)
         # Mid-tier GPUs use HYBRID mode for 100% rule fidelity
         gpu_name = (peer.gpu_name or "").upper()
+        has_gpu = bool(peer.has_gpu)
+
+        # Session 17.50: YAML fallback when runtime GPU detection fails
+        if not has_gpu or not gpu_name:
+            yaml_has_gpu, yaml_gpu_name, _ = self._check_yaml_gpu_config(node_id)
+            if yaml_has_gpu:
+                has_gpu = True
+                if yaml_gpu_name:
+                    gpu_name = yaml_gpu_name.upper()
+
         is_high_end_gpu = any(tag in gpu_name for tag in ("H100", "H200", "GH200", "A100", "5090", "4090"))
         is_apple_gpu = "MPS" in gpu_name or "APPLE" in gpu_name
 
-        if peer.has_gpu and is_high_end_gpu and not is_apple_gpu:
+        if has_gpu and is_high_end_gpu and not is_apple_gpu:
             # High-end GPUs: 50% GUMBEL (quality) / 50% GPU_SELFPLAY (volume)
             import random
             if random.random() < 0.5:
@@ -28888,6 +28957,16 @@ print(json.dumps({{
                     # This ensures expensive GPU resources are utilized properly
                     # while CPU instances handle CPU-bound tasks efficiently
                     gpu_name = (node.gpu_name or "").upper()
+                    node_has_gpu = bool(node.has_gpu)
+
+                    # Session 17.50: YAML fallback when runtime GPU detection fails
+                    if not node_has_gpu or not gpu_name:
+                        yaml_has_gpu, yaml_gpu_name, _ = self._check_yaml_gpu_config(node.node_id)
+                        if yaml_has_gpu:
+                            node_has_gpu = True
+                            if yaml_gpu_name:
+                                gpu_name = yaml_gpu_name.upper()
+
                     is_high_end_gpu = any(tag in gpu_name for tag in ("H100", "H200", "GH200", "A100", "5090", "4090"))
                     is_apple_gpu = "MPS" in gpu_name or "APPLE" in gpu_name
 
@@ -28898,14 +28977,14 @@ print(json.dumps({{
                     gpu_percent = getattr(node, "gpu_percent", 0) or 0
                     gpu_jobs_count = getattr(node, "gpu_selfplay_jobs", 0) or 0
                     gpu_seems_unavailable = (
-                        node.has_gpu
+                        node_has_gpu
                         and not is_apple_gpu
                         and gpu_jobs_count > 2  # Only flag if GPU JOBS (not CPU jobs) are running
                         and gpu_percent < 1
                     )
                     if gpu_seems_unavailable:
                         logger.info(f"WARNING: {node.node_id} has GPU but 0% utilization with {gpu_jobs_count} GPU jobs - possible driver issue")
-                    elif node.has_gpu and gpu_percent < 10 and node.selfplay_jobs > 0:
+                    elif node_has_gpu and gpu_percent < 10 and node.selfplay_jobs > 0:
                         # GPU idle but has CPU jobs - this is normal, will prioritize GPU work
                         logger.debug(f"Node {node.node_id} has {node.selfplay_jobs} CPU jobs but GPU idle ({gpu_percent:.0f}%) - will add GPU work")
 
