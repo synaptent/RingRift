@@ -2,12 +2,14 @@
 
 January 2026: TTL-based cleanup for unbounded gossip data structures.
 
-Problem: Five data structures in P2P orchestrator grow unbounded over time:
+Problem: Seven data structures in P2P orchestrator grow unbounded over time:
 1. _gossip_peer_states - stores state for every peer ever seen via gossip
 2. _gossip_peer_manifests - stores large NodeDataManifest objects
 3. _node_recovery_attempts - tracks recovery attempts without TTL cleanup
 4. _peer_reputation - tracks reputation for every peer forever
 5. _gossip_learned_endpoints - stores endpoints learned via gossip
+6. _promotion_failures - tracks model promotion failures (MEMORY LEAK - no limit!)
+7. Job state dictionaries (distributed_cmaes_state, ssh_tournament_runs, etc.)
 
 This causes memory growth leading to OOM kills, especially on nodes like
 vultr-a100-20gb (restart counter 602) with limited RAM.
@@ -130,6 +132,32 @@ class GossipStateCleanupConfig:
         in {"1", "true", "yes", "on"}
     )
 
+    # TTL for promotion failures (seconds) - Jan 7, 2026 memory leak fix
+    promotion_failures_ttl_seconds: float = field(
+        default_factory=lambda: float(
+            os.environ.get("RINGRIFT_PROMOTION_FAILURES_TTL", "86400")  # 24 hours
+        )
+    )
+
+    # TTL for completed job states (seconds)
+    job_states_ttl_seconds: float = field(
+        default_factory=lambda: float(
+            os.environ.get("RINGRIFT_JOB_STATES_TTL", "21600")  # 6 hours
+        )
+    )
+
+    # Maximum promotion failures to keep per config
+    max_promotion_failures_per_config: int = field(
+        default_factory=lambda: int(
+            os.environ.get("RINGRIFT_MAX_PROMOTION_FAILURES_PER_CONFIG", "10")
+        )
+    )
+
+    # Maximum job states to keep
+    max_job_states: int = field(
+        default_factory=lambda: int(os.environ.get("RINGRIFT_MAX_JOB_STATES", "100"))
+    )
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
         if self.cleanup_interval_seconds <= 0:
@@ -150,6 +178,8 @@ class GossipCleanupStats:
     recovery_attempts_purged: int = 0
     peer_reputation_purged: int = 0
     learned_endpoints_purged: int = 0
+    promotion_failures_purged: int = 0  # Jan 7, 2026 memory leak fix
+    job_states_purged: int = 0  # Jan 7, 2026 memory leak fix
     total_purged: int = 0
     last_cleanup_time: float = 0.0
     cycles_run: int = 0
@@ -176,6 +206,8 @@ class GossipCleanupStats:
             "recovery_attempts_purged": self.recovery_attempts_purged,
             "peer_reputation_purged": self.peer_reputation_purged,
             "learned_endpoints_purged": self.learned_endpoints_purged,
+            "promotion_failures_purged": self.promotion_failures_purged,
+            "job_states_purged": self.job_states_purged,
             "total_purged": self.total_purged,
             "last_cleanup_time": self.last_cleanup_time,
             "cycles_run": self.cycles_run,

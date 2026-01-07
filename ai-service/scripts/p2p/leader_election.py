@@ -180,7 +180,8 @@ _CONSTANTS = P2PMixinBase._load_config_constants({
     "VOTER_MIN_QUORUM": 3,
     "CONSENSUS_MODE": "bully",
     "RAFT_ENABLED": False,
-    "LEADER_LEASE_EXPIRY_GRACE_SECONDS": 30,  # Jan 2026: Stale leader alerting
+    # Jan 7, 2026: Increased from 30s to 60s to prevent split-brain during cluster startup
+    "LEADER_LEASE_EXPIRY_GRACE_SECONDS": 60,  # Stale leader alerting
 })
 
 VOTER_MIN_QUORUM = _CONSTANTS["VOTER_MIN_QUORUM"]
@@ -473,6 +474,71 @@ class LeaderElectionMixin(P2PMixinBase):
             stats["current_election_duration_seconds"] = time.time() - started_at
 
         return stats
+
+    # Jan 7, 2026: Election timeout threshold for auto-escalation
+    ELECTION_TIMEOUT_THRESHOLD_SECONDS: float = 30.0
+
+    def _check_election_timeout(self) -> dict[str, Any]:
+        """Check if current election has exceeded timeout and trigger escalation.
+
+        Jan 7, 2026: Added for automatic recovery from stuck elections.
+
+        When an election has been in progress for longer than ELECTION_TIMEOUT_THRESHOLD_SECONDS
+        (default 30s), this method:
+        1. Emits ELECTION_TIMEOUT_DETECTED event for observability
+        2. Records the timeout in election statistics
+        3. Returns escalation recommendation
+
+        Returns:
+            Dict with:
+            - election_stuck: True if election exceeds timeout
+            - duration_seconds: How long election has been running
+            - should_escalate: True if escalation is recommended
+            - action_taken: Description of any action taken
+        """
+        result = {
+            "election_stuck": False,
+            "duration_seconds": 0.0,
+            "should_escalate": False,
+            "action_taken": None,
+        }
+
+        started_at = getattr(self, "_election_started_at", 0.0)
+        if started_at <= 0:
+            return result  # No election in progress
+
+        duration = time.time() - started_at
+        result["duration_seconds"] = duration
+
+        if duration < self.ELECTION_TIMEOUT_THRESHOLD_SECONDS:
+            return result  # Election still within timeout
+
+        result["election_stuck"] = True
+        result["should_escalate"] = True
+
+        # Log warning about stuck election
+        self._log_warning(
+            f"[Election] TIMEOUT: Election in progress for {duration:.1f}s "
+            f"(threshold: {self.ELECTION_TIMEOUT_THRESHOLD_SECONDS}s) - escalating"
+        )
+
+        # Emit event for observability
+        self._safe_emit_event("ELECTION_TIMEOUT_DETECTED", {
+            "node_id": self.node_id,
+            "duration_seconds": duration,
+            "threshold_seconds": self.ELECTION_TIMEOUT_THRESHOLD_SECONDS,
+            "current_leader": self.leader_id,
+            "timestamp": time.time(),
+        })
+
+        # Record timeout in statistics
+        self._elections_timeout = getattr(self, "_elections_timeout", 0) + 1
+
+        # Reset election timer to allow retry
+        self._election_started_at = 0.0
+        result["action_taken"] = "election_timer_reset"
+
+        return result
 
     def _get_voter_promotion_cb(self) -> VoterPromotionCircuitBreaker:
         """Get or create the voter promotion circuit breaker."""

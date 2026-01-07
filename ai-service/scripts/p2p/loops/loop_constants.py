@@ -178,7 +178,8 @@ class LoopTimeouts:
     GOSSIP_RPC: float = 10.0                 # Gossip RPC calls
     # Jan 5, 2026: Increased from 5.0 to 8.0 for consistency with HEALTH_CHECK
     PEER_PROBE: float = 8.0                  # Peer health probe
-    PEER_PROBE_NAT: float = 120.0            # NAT-blocked peer probe
+    # Jan 7, 2026: Reduced from 120s to 45s for faster detection of NAT-blocked peers
+    PEER_PROBE_NAT: float = 45.0             # NAT-blocked peer probe
 
     # Leader election
     ELECTION_REQUEST: float = 3.0            # Election request timeout
