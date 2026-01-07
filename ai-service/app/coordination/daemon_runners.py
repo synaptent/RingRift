@@ -1776,9 +1776,9 @@ async def create_elo_progress() -> None:
 async def create_evaluation_daemon() -> None:
     """Create and run evaluation daemon (December 2025)."""
     try:
-        from app.coordination.evaluation_daemon import EvaluationDaemon
+        from app.coordination.evaluation_daemon import get_evaluation_daemon
 
-        daemon = EvaluationDaemon()
+        daemon = get_evaluation_daemon()
         await daemon.start()
         await _wait_for_daemon(daemon)
     except ImportError as e:

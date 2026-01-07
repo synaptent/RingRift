@@ -376,7 +376,8 @@ class SyncFacade:
             daemon = get_auto_sync_daemon()
 
             # Trigger sync cycle
-            if not daemon.is_running():
+            # Jan 2026: is_running is a property, not a method
+            if not daemon.is_running:
                 logger.warning("[SyncFacade] AutoSyncDaemon not running, starting...")
                 await daemon.start()
 
@@ -387,7 +388,7 @@ class SyncFacade:
                 success=True,
                 backend_used=SyncBackend.AUTO_SYNC,
                 details={
-                    "daemon_running": daemon.is_running(),
+                    "daemon_running": daemon.is_running,
                     "games_synced": games_synced,
                 },
             )
@@ -414,7 +415,8 @@ class SyncFacade:
             daemon = create_cluster_data_sync_daemon()
 
             # Trigger immediate sync
-            if not daemon.is_running():
+            # Jan 2026: is_running is a property, not a method
+            if not daemon.is_running:
                 logger.warning(
                     "[SyncFacade] AutoSyncDaemon (broadcast) not running, starting..."
                 )
@@ -427,7 +429,7 @@ class SyncFacade:
                 success=True,
                 backend_used=SyncBackend.CLUSTER_SYNC,
                 details={
-                    "daemon_running": daemon.is_running(),
+                    "daemon_running": daemon.is_running,
                     "files_synced": files_synced,
                     "strategy": "broadcast",
                 },
@@ -494,7 +496,8 @@ class SyncFacade:
 
             daemon = create_ephemeral_sync_daemon()
 
-            if not daemon.is_running():
+            # Jan 2026: is_running is a property, not a method
+            if not daemon.is_running:
                 logger.warning(
                     "[SyncFacade] AutoSyncDaemon (ephemeral) not running, starting..."
                 )
@@ -507,7 +510,7 @@ class SyncFacade:
                 success=True,
                 backend_used=SyncBackend.EPHEMERAL,
                 details={
-                    "daemon_running": daemon.is_running(),
+                    "daemon_running": daemon.is_running,
                     "is_ephemeral": daemon._is_ephemeral,
                     "games_pushed": games_pushed,
                     "strategy": "ephemeral",

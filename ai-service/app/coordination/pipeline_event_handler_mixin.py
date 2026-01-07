@@ -539,7 +539,8 @@ class PipelineEventHandlerMixin(PipelineMixinBase):
             )
 
             daemon = get_unified_replication_daemon()
-            if daemon and daemon.is_running():
+            # Jan 2026: is_running is a property, not a method
+            if daemon and daemon.is_running:
                 # Queue file for re-sync (extract game_id from path if possible)
                 game_id = payload.get("game_id")
                 if game_id:

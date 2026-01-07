@@ -327,7 +327,12 @@ class ConfigurableDaemonAdapter(DaemonAdapter):
         if hasattr(daemon, "start"):
             await daemon.start()
             # Wait while daemon is running
-            while hasattr(daemon, "is_running") and daemon.is_running():
+            # Jan 2026: is_running may be a property or method depending on daemon type
+            while hasattr(daemon, "is_running"):
+                is_running_attr = daemon.is_running
+                running = is_running_attr() if callable(is_running_attr) else is_running_attr
+                if not running:
+                    break
                 await asyncio.sleep(self.config.poll_interval_seconds)
         elif hasattr(daemon, "run"):
             await daemon.run()
@@ -349,8 +354,10 @@ class ConfigurableDaemonAdapter(DaemonAdapter):
             return bool(attr)
 
         # Default health checks
+        # Jan 2026: is_running may be a property or method
         if hasattr(self._daemon_instance, "is_running"):
-            return self._daemon_instance.is_running()
+            is_running_attr = self._daemon_instance.is_running
+            return is_running_attr() if callable(is_running_attr) else is_running_attr
         if hasattr(self._daemon_instance, "_running"):
             return self._daemon_instance._running
         return True

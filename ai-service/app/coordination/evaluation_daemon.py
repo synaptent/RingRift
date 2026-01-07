@@ -331,8 +331,9 @@ class EvaluationDaemon(BaseEventHandler):
             True if successfully started.
         """
         # Call parent start for event subscription
-        success = await super().start()
-        if not success:
+        # Note: parent start() returns None, not bool
+        await super().start()
+        if not self._running:
             return False
 
         # January 3, 2026 (Sprint 13 Session 4): Initialize persistent queue
@@ -683,6 +684,7 @@ class EvaluationDaemon(BaseEventHandler):
 
     async def _evaluation_worker(self) -> None:
         """Worker that processes evaluation requests from the queue."""
+        logger.info("[EvaluationDaemon] Evaluation worker started")
         while self._running:
             try:
                 # December 29, 2025: Process retry queue first
@@ -701,6 +703,7 @@ class EvaluationDaemon(BaseEventHandler):
                 # January 7, 2026 (Session 17.50): Check persistent queue if no in-memory request
                 # This fixes the bug where startup_scan items were never processed
                 if request is None and self._persistent_queue:
+                    logger.debug("[EvaluationDaemon] Checking persistent queue...")
                     persistent_request = self._persistent_queue.claim_next()
                     if persistent_request:
                         # Convert to in-memory request format
