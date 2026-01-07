@@ -48,6 +48,8 @@ from typing import Any
 # December 2025: Import WorkStatus from canonical source
 from app.coordination.types import WorkStatus  # noqa: E402
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult  # noqa: E402
+# Jan 6, 2026: Import node circuit breaker for claim filtering
+from app.coordination.node_circuit_breaker import get_node_circuit_breaker  # noqa: E402
 from app.utils.retry import RetryConfig  # noqa: E402
 from app.utils.disk_utils import is_enospc_error, handle_enospc_error
 from app.coordination.event_utils import parse_config_key
@@ -394,6 +396,7 @@ class ClaimRejectionStats:
     """
 
     total_claim_attempts: int = 0
+    rejected_by_circuit_breaker: int = 0  # Jan 6, 2026: Node circuit is OPEN
     rejected_by_capability: int = 0
     rejected_by_exclusion: int = 0
     rejected_by_target_node: int = 0
@@ -419,6 +422,7 @@ class ClaimRejectionStats:
     def reset(self) -> None:
         """Reset all counters."""
         self.total_claim_attempts = 0
+        self.rejected_by_circuit_breaker = 0
         self.rejected_by_capability = 0
         self.rejected_by_exclusion = 0
         self.rejected_by_target_node = 0
@@ -434,6 +438,7 @@ class ClaimRejectionStats:
         """Convert to dict for JSON serialization."""
         return {
             "total_claim_attempts": self.total_claim_attempts,
+            "rejected_by_circuit_breaker": self.rejected_by_circuit_breaker,
             "rejected_by_capability": self.rejected_by_capability,
             "rejected_by_exclusion": self.rejected_by_exclusion,
             "rejected_by_target_node": self.rejected_by_target_node,
@@ -1385,6 +1390,19 @@ class WorkQueue:
         with self.lock:
             # Jan 2, 2026: Track claim attempts for observability
             self._claim_rejection_stats.total_claim_attempts += 1
+
+            # Jan 6, 2026: Check if claiming node's circuit is open (unhealthy)
+            # This prevents assigning work to nodes that are known to be failing,
+            # avoiding cascade failures where work is assigned but never completes.
+            try:
+                node_breaker = get_node_circuit_breaker()
+                if not node_breaker.can_check(node_id):
+                    self._claim_rejection_stats.rejected_by_circuit_breaker += 1
+                    logger.debug(f"Node {node_id} circuit is OPEN, rejecting work claim")
+                    return None
+            except Exception as e:
+                # Don't block claims if circuit breaker check fails
+                logger.warning(f"Circuit breaker check failed for {node_id}: {e}")
 
             # Get set of completed work_ids for dependency checking
             completed_ids = {
