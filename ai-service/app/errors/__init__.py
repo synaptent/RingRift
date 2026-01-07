@@ -150,7 +150,9 @@ class RingRiftError(Exception):
     def __str__(self) -> str:
         parts = [self.message]
         if self.code != ErrorCode.UNKNOWN:
-            parts.append(f"[{self.code.name}]")
+            # Handle both string and enum codes
+            code_name = self.code.name if isinstance(self.code, ErrorCode) else str(self.code)
+            parts.append(f"[{code_name}]")
         if self.details:
             detail_str = ", ".join(f"{k}={v}" for k, v in self.details.items())
             parts.append(f"({detail_str})")
@@ -158,11 +160,14 @@ class RingRiftError(Exception):
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
+        # Handle both string and enum codes
+        code_value = self.code.value if isinstance(self.code, ErrorCode) else self.code
+        code_name = self.code.name if isinstance(self.code, ErrorCode) else str(self.code)
         return {
             "error": self.__class__.__name__,
             "message": self.message,
-            "code": self.code.value,
-            "code_name": self.code.name,
+            "code": code_value,
+            "code_name": code_name,
             "retryable": self.retryable,
             "details": self.details,
         }
