@@ -38,10 +38,103 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# Cross-Node Event Forwarding (Jan 2026)
+# =============================================================================
+
+# Coordinator URL for forwarding events (gauntlet runs on P2P leader, auto_promotion on coordinator)
+_COORDINATOR_EVENT_URL: str | None = None
+
+
+def _get_coordinator_event_url() -> str | None:
+    """Get the coordinator's /event endpoint URL.
+
+    Returns URL like 'http://mac-studio:8790/event' or None if not configured.
+    Uses RINGRIFT_COORDINATOR_HOST env var, or tries cluster config.
+    """
+    global _COORDINATOR_EVENT_URL
+
+    if _COORDINATOR_EVENT_URL is not None:
+        return _COORDINATOR_EVENT_URL if _COORDINATOR_EVENT_URL else None
+
+    # Check env var first
+    host = os.environ.get("RINGRIFT_COORDINATOR_HOST", "").strip()
+    if not host:
+        # Try cluster config
+        try:
+            from app.config.cluster_config import get_coordinator_node
+            node = get_coordinator_node()
+            if node:
+                host = node.best_ip or node.tailscale_ip or node.ssh_host
+        except Exception:
+            pass
+
+    if not host:
+        _COORDINATOR_EVENT_URL = ""  # Cache negative result
+        return None
+
+    port = int(os.environ.get("RINGRIFT_HEALTH_PORT", "8790"))
+    _COORDINATOR_EVENT_URL = f"http://{host}:{port}/event"
+    logger.info(f"[P2PEventBridge] Coordinator event URL: {_COORDINATOR_EVENT_URL}")
+    return _COORDINATOR_EVENT_URL
+
+
+async def _forward_event_to_coordinator(
+    event_type: str,
+    payload: dict[str, Any],
+    source: str = "p2p_remote",
+) -> bool:
+    """Forward event to coordinator's /event endpoint.
+
+    This enables cross-node event propagation for scenarios where:
+    - Gauntlet runs on P2P leader (e.g., lambda-gh200-5)
+    - auto_promotion_daemon subscribes on coordinator (e.g., mac-studio)
+
+    Returns True if forwarded successfully, False otherwise.
+    """
+    url = _get_coordinator_event_url()
+    if not url:
+        logger.debug("[P2PEventBridge] No coordinator URL configured, skipping forward")
+        return False
+
+    try:
+        import aiohttp
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json={
+                    "event_type": event_type,
+                    "payload": payload,
+                    "source": source,
+                },
+                timeout=aiohttp.ClientTimeout(total=5.0),
+            ) as resp:
+                if resp.status == 200:
+                    logger.info(f"[P2PEventBridge] Forwarded {event_type} to coordinator")
+                    return True
+                else:
+                    text = await resp.text()
+                    logger.warning(
+                        f"[P2PEventBridge] Coordinator rejected event: {resp.status} {text}"
+                    )
+                    return False
+
+    except ImportError:
+        logger.debug("[P2PEventBridge] aiohttp not available, cannot forward events")
+        return False
+    except asyncio.TimeoutError:
+        logger.warning(f"[P2PEventBridge] Timeout forwarding {event_type} to coordinator")
+        return False
+    except Exception as e:
+        logger.warning(f"[P2PEventBridge] Failed to forward {event_type}: {e}")
+        return False
 
 # Import canonical config key parser (December 2025 - DRY consolidation)
 try:
@@ -324,42 +417,57 @@ async def emit_p2p_gauntlet_completed(
     passed: bool,
     node_id: str,
 ) -> None:
-    """Emit EVALUATION_COMPLETED event when gauntlet finishes."""
-    if not HAS_EVENT_ROUTER:
-        logger.info(
-            f"[P2PEventBridge] Gauntlet completed: {model_id} vs {baseline_id} "
-            f"({wins}/{total_games}, {win_rate:.1%}, passed={passed})"
-        )
-        return
+    """Emit EVALUATION_COMPLETED event when gauntlet finishes.
 
+    Jan 2026: Also forwards event to coordinator for cross-node propagation.
+    This ensures auto_promotion_daemon on coordinator receives the event even
+    when gauntlet runs on P2P leader (a different node).
+    """
     # Dec 2025: Validate config_key before emission (logs warning if invalid)
     _validate_config_key(config_key, "emit_p2p_gauntlet_completed")
 
     # Parse config_key using canonical parser (December 2025 - DRY consolidation)
     board_type, num_players = _parse_config_key_safe(config_key)
 
-    try:
-        await publish(
-            event_type="EVALUATION_COMPLETED",
-            payload={
-                "model_id": model_id,
-                "board_type": board_type,
-                "num_players": num_players,
-                "elo": 0.0,  # Gauntlet doesn't compute Elo directly
-                "win_rate": win_rate,
-                "games_played": total_games,
-                "elo_delta": 0.0,
-                "opponents": [baseline_id],
-                "passed": passed,
-                "node_id": node_id,
-                "timestamp": datetime.now().isoformat(),
-            },
-            source="p2p_gauntlet",
-        )
-        logger.debug(f"[P2PEventBridge] Emitted EVALUATION_COMPLETED for {model_id}")
+    # Build payload once for both local and remote emission
+    payload = {
+        "model_id": model_id,
+        "board_type": board_type,
+        "num_players": num_players,
+        "elo": 0.0,  # Gauntlet doesn't compute Elo directly
+        "win_rate": win_rate,
+        "games_played": total_games,
+        "elo_delta": 0.0,
+        "opponents": [baseline_id],
+        "passed": passed,
+        "node_id": node_id,
+        "timestamp": datetime.now().isoformat(),
+    }
 
-    except Exception as e:
-        logger.error(f"[P2PEventBridge] Failed to emit gauntlet completed event: {e}")
+    # 1. Emit locally (for any local subscribers)
+    if HAS_EVENT_ROUTER:
+        try:
+            await publish(
+                event_type="EVALUATION_COMPLETED",
+                payload=payload,
+                source="p2p_gauntlet",
+            )
+            logger.debug(f"[P2PEventBridge] Emitted EVALUATION_COMPLETED for {model_id}")
+        except Exception as e:
+            logger.error(f"[P2PEventBridge] Failed to emit gauntlet completed event: {e}")
+    else:
+        logger.info(
+            f"[P2PEventBridge] Gauntlet completed: {model_id} vs {baseline_id} "
+            f"({wins}/{total_games}, {win_rate:.1%}, passed={passed})"
+        )
+
+    # 2. Forward to coordinator (Jan 2026 - cross-node event propagation)
+    # This ensures auto_promotion_daemon on coordinator receives the event
+    await _forward_event_to_coordinator(
+        event_type="EVALUATION_COMPLETED",
+        payload=payload,
+        source="p2p_gauntlet",
+    )
 
 
 # =============================================================================

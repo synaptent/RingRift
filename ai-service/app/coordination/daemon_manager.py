@@ -3554,12 +3554,52 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                     "_status_circuit_breaker": breaker.get_status(),
                 }, status=504)
 
+        async def handle_event(request: web.Request) -> web.Response:
+            """Receive events from P2P nodes (Jan 7, 2026).
+
+            Enables cross-node event propagation for P2P gauntlet → auto_promotion flow.
+            Events emitted on P2P leader are forwarded here to reach local subscribers.
+            """
+            try:
+                data = await request.json()
+                event_type = data.get("event_type")
+                payload = data.get("payload", {})
+                source = data.get("source", "p2p_remote")
+
+                if not event_type:
+                    return web.json_response(
+                        {"error": "event_type required"},
+                        status=400,
+                    )
+
+                # Publish to local event router
+                try:
+                    from app.coordination.event_router import get_router
+
+                    router = get_router()
+                    await router.publish(event_type, payload, source=source)
+                    logger.info(f"Received cross-node event: {event_type} from {source}")
+                    return web.json_response({"status": "ok", "event_type": event_type})
+                except Exception as e:
+                    logger.error(f"Failed to publish cross-node event {event_type}: {e}")
+                    return web.json_response(
+                        {"error": f"publish failed: {e}"},
+                        status=500,
+                    )
+            except Exception as e:
+                logger.error(f"Failed to parse event request: {e}")
+                return web.json_response(
+                    {"error": f"invalid request: {e}"},
+                    status=400,
+                )
+
         try:
             app = web.Application()
             app.router.add_get('/health', handle_health)
             app.router.add_get('/ready', handle_ready)
             app.router.add_get('/metrics', handle_metrics)
             app.router.add_get('/status', handle_status)
+            app.router.add_post('/event', handle_event)
 
             runner = web.AppRunner(app)
             await runner.setup()

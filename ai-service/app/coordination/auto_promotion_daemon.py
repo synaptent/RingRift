@@ -153,9 +153,12 @@ class AutoPromotionDaemon(HandlerBase):
 
         January 2026: Migrated from manual _subscribe_to_events() to use
         HandlerBase's declarative subscription system.
+
+        Note: Event types must match exactly (case-sensitive) with publisher.
+        The event_router publishes as "EVALUATION_COMPLETED" (uppercase).
         """
         return {
-            "evaluation_completed": self._on_evaluation_completed,
+            "EVALUATION_COMPLETED": self._on_evaluation_completed,
         }
 
     async def _on_start(self) -> None:
