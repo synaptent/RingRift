@@ -1874,7 +1874,8 @@ class DaemonHealthDefaults:
 
     # Dependency wait timeout (seconds) - max time to wait for a dependency
     # Previously hardcoded as 30.0 in daemon_manager.py:1193
-    DEPENDENCY_WAIT_TIMEOUT: float = _env_float("RINGRIFT_DAEMON_DEPENDENCY_TIMEOUT", 30.0)
+    # Session 17.48: Increased from 30s to 90s to allow slower daemons to initialize
+    DEPENDENCY_WAIT_TIMEOUT: float = _env_float("RINGRIFT_DAEMON_DEPENDENCY_TIMEOUT", 90.0)
 
     # Jan 3, 2026 (Sprint 15.1): Adaptive health check timeout settings
     # Base timeout used when system is idle/low load

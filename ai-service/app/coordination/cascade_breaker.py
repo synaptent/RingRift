@@ -145,10 +145,12 @@ DEFAULT_CATEGORY_CONFIGS: dict[DaemonCategory, CategoryBreakerConfig] = {
         cooldown_seconds=90,
         exempt_from_global=False,
     ),
+    # Session 17.48: Increased thresholds and window to prevent restart-looping
+    # Recovery daemons need more restarts to recover from persistent issues
     DaemonCategory.RECOVERY: CategoryBreakerConfig(
-        threshold=4,
-        window_seconds=300,
-        cooldown_seconds=120,
+        threshold=8,  # Allow more restarts before tripping (was 4)
+        window_seconds=600,  # 10-minute window (was 300s, more forgiving)
+        cooldown_seconds=180,  # 3-minute cooldown (was 120s, more time to fix issues)
         exempt_from_global=False,
     ),
     DaemonCategory.PROVIDER: CategoryBreakerConfig(
@@ -180,11 +182,12 @@ class CascadeBreakerConfig:
         critical_exempt_daemons: Daemon names that always bypass all breakers.
     """
 
-    global_threshold: int = 15
+    # Session 17.48: Relaxed thresholds for stability
+    global_threshold: int = 25  # 25 restarts in window (was 15)
     global_window_seconds: int = 300  # 5 minutes
     global_cooldown_seconds: int = 120  # 2 minutes
-    startup_grace_period: int = 180  # 3 minutes
-    startup_threshold: int = 50
+    startup_grace_period: int = 300  # 5 minutes (was 180s, more time for 112 daemon types)
+    startup_threshold: int = 100  # Allow 100 restarts during init (was 50)
 
     category_configs: dict[DaemonCategory, CategoryBreakerConfig] = field(
         default_factory=lambda: dict(DEFAULT_CATEGORY_CONFIGS)

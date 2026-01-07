@@ -208,7 +208,7 @@ class ParityValidationDaemon(HandlerBase):
 
     def health_check(self) -> HealthCheckResult:
         """Return health status."""
-        is_healthy = self._running and self._npx_available is not False
+        is_healthy = self.is_running and self._npx_available is not False
 
         details: dict[str, Any] = {
             "running": self._running,

@@ -147,10 +147,10 @@ PERMANENT_FAILURE_RECOVERY_SECONDS = 86400  # 24 hours - permanently failed daem
 # Prevents "thundering herd" effect when many daemons fail simultaneously
 # If too many restarts happen globally (across all daemons), pause all restarts
 CASCADE_RESTART_WINDOW_SECONDS = 300  # 5 minutes - window for counting global restarts
-CASCADE_RESTART_THRESHOLD = 15  # Max total restarts in window before circuit trips
+CASCADE_RESTART_THRESHOLD = 25  # Max total restarts in window before circuit trips (was 15, Session 17.48)
 CASCADE_COOLDOWN_SECONDS = 120  # 2 minutes - cooldown period when circuit is open
-CASCADE_STARTUP_GRACE_PERIOD = 180  # 3 minutes - higher threshold during startup
-CASCADE_STARTUP_THRESHOLD = 50  # Allow many restarts during startup (normal init)
+CASCADE_STARTUP_GRACE_PERIOD = 300  # 5 minutes - higher threshold during startup (was 180s, Session 17.48)
+CASCADE_STARTUP_THRESHOLD = 100  # Allow many restarts during startup (was 50, Session 17.48)
 
 
 # =============================================================================

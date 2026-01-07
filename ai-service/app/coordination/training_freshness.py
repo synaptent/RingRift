@@ -1068,9 +1068,9 @@ class HighQualityDataSyncWatcher:
         from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 
         uptime = time.time() - self._start_time if self._start_time > 0 else 0
-        is_healthy = self._running and self._errors < 10
+        is_healthy = self.is_running and self._errors < 10
 
-        if not self._running:
+        if not self.is_running:
             return HealthCheckResult(
                 healthy=True,  # Stopped is not unhealthy
                 status=CoordinatorStatus.STOPPED,

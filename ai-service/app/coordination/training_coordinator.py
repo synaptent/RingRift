@@ -2758,7 +2758,7 @@ class TrainingCoordinatorDaemon(HandlerBase if HAS_HANDLER_BASE else object):
         }
 
         # Daemon is healthy if coordinator is healthy and daemon is running
-        healthy = coord_health.healthy and self._running
+        healthy = coord_health.healthy and self.is_running
 
         return HealthCheckResult(
             healthy=healthy,

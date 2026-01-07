@@ -3897,10 +3897,10 @@ class FeedbackLoopController(FeedbackClusterHealthMixin, HandlerBase):
         )
 
         # Determine health status
-        healthy = self._running and self._subscribed
+        healthy = self.is_running and self._subscribed
 
         message = "Running" if healthy else (
-            "Controller stopped" if not self._running else
+            "Controller stopped" if not self.is_running else
             "Not subscribed to events"
         )
 

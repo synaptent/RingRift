@@ -372,7 +372,7 @@ class NPZCombinationDaemon(SingletonMixin, HandlerBase):
     def health_check(self) -> HealthCheckResult:
         """Return health status for daemon manager."""
         # Check if daemon is running and responsive
-        if not self._running:
+        if not self.is_running:
             return HealthCheckResult(
                 healthy=False,
                 status="stopped",

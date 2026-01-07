@@ -769,7 +769,7 @@ class SyncPushDaemon(HandlerBase):
 
     def health_check(self) -> HealthCheckResult:
         """Return health check result for DaemonManager integration."""
-        is_healthy = self._running and self._stats.errors_count < 10
+        is_healthy = self.is_running and self._stats.errors_count < 10
 
         details = {
             "files_pushed": self._files_pushed,

@@ -188,6 +188,11 @@ CONSENSUS_MODE = _CONSTANTS["CONSENSUS_MODE"]
 RAFT_ENABLED = _CONSTANTS["RAFT_ENABLED"]
 LEADER_LEASE_EXPIRY_GRACE_SECONDS = _CONSTANTS["LEADER_LEASE_EXPIRY_GRACE_SECONDS"]
 
+# Session 17.48: Single-node fallback when quorum is lost for extended period
+# After this timeout, a node can become its own leader for local operations
+# to prevent the cluster from being stuck for hours without leadership
+SINGLE_NODE_FALLBACK_TIMEOUT = 600  # 10 minutes without quorum
+
 # Phase 3.2 (January 2026): Dynamic voter management
 # Enable via RINGRIFT_P2P_DYNAMIC_VOTER=true
 #
@@ -478,6 +483,10 @@ class LeaderElectionMixin(P2PMixinBase):
     # Jan 3, 2026: Quorum health level tracking for proactive monitoring
     _last_quorum_health_level: QuorumHealthLevel | None = None
 
+    # Session 17.48: Single-node fallback when quorum is lost for extended period
+    _quorum_lost_at: float | None = None  # Timestamp when quorum was first lost
+    _single_node_mode: bool = False  # Whether we're operating in single-node fallback
+
     def _has_voter_quorum(self) -> bool:
         """Return True if we currently see enough voter nodes alive.
 
@@ -497,15 +506,21 @@ class LeaderElectionMixin(P2PMixinBase):
         return alive >= quorum
 
     def _check_quorum_health(self) -> QuorumHealthLevel:
-        """Proactive quorum health check with early warning.
+        """Proactive quorum health check with early warning and single-node fallback.
 
         Jan 3, 2026: Added for proactive quorum degradation monitoring.
+        Session 17.48: Added single-node fallback when quorum is lost for extended period.
+
+        When quorum is lost for longer than SINGLE_NODE_FALLBACK_TIMEOUT (10 minutes),
+        the node enters single-node mode and returns MINIMUM instead of LOST. This allows
+        the node to become its own leader for local operations, preventing the cluster
+        from being stuck for hours without leadership.
 
         Returns:
             QuorumHealthLevel indicating current quorum state:
             - HEALTHY: >= quorum + 2 voters alive
             - DEGRADED: == quorum + 1 voters alive
-            - MINIMUM: == quorum voters alive (no room for failure)
+            - MINIMUM: == quorum voters alive (no room for failure), OR single-node fallback
             - LOST: < quorum voters alive (cluster cannot make progress)
         """
         voters = list(getattr(self, "voter_node_ids", []) or [])
@@ -525,6 +540,38 @@ class LeaderElectionMixin(P2PMixinBase):
             level = QuorumHealthLevel.DEGRADED
         else:  # alive >= quorum + 2
             level = QuorumHealthLevel.HEALTHY
+
+        # Session 17.48: Single-node fallback when quorum is lost for extended period
+        if level == QuorumHealthLevel.LOST:
+            # Track when quorum was first lost
+            if self._quorum_lost_at is None:
+                self._quorum_lost_at = time.time()
+                logger.warning(
+                    f"Quorum lost ({alive}/{total} voters alive, need {quorum}), "
+                    f"single-node fallback in {SINGLE_NODE_FALLBACK_TIMEOUT}s"
+                )
+
+            # Check if we should enter single-node fallback mode
+            lost_duration = time.time() - self._quorum_lost_at
+            if lost_duration >= SINGLE_NODE_FALLBACK_TIMEOUT:
+                if not self._single_node_mode:
+                    logger.warning(
+                        f"Quorum lost for {lost_duration:.0f}s (> {SINGLE_NODE_FALLBACK_TIMEOUT}s), "
+                        f"enabling single-node fallback mode"
+                    )
+                    self._single_node_mode = True
+                # Return MINIMUM instead of LOST to allow local leadership
+                level = QuorumHealthLevel.MINIMUM
+        else:
+            # Quorum restored - reset tracking
+            if self._quorum_lost_at is not None or self._single_node_mode:
+                if self._single_node_mode:
+                    logger.info(
+                        f"Quorum restored ({alive}/{total} voters alive), "
+                        f"exiting single-node fallback mode"
+                    )
+                self._quorum_lost_at = None
+                self._single_node_mode = False
 
         # Always update Prometheus metrics (counts can change without level change)
         self._update_quorum_metrics(level, alive, total, quorum)

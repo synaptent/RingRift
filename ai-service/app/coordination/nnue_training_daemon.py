@@ -589,7 +589,7 @@ class NNUETrainingDaemon(HandlerBase):
         """Return health check result for this daemon."""
         from app.coordination.contracts import CoordinatorStatus
 
-        is_healthy = self._running
+        is_healthy = self.is_running
 
         details = {
             "configs_tracked": len(self._current_game_counts),

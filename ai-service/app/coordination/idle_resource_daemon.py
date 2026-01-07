@@ -3038,7 +3038,7 @@ class IdleResourceDaemon(HandlerBase):
     # CoordinatorProtocol methods
     async def health_check(self) -> HealthCheckResult:
         """Perform health check for protocol compliance."""
-        is_healthy = self._running and self._coordinator_status == CoordinatorStatus.RUNNING
+        is_healthy = self.is_running and self._coordinator_status == CoordinatorStatus.RUNNING
         message = f"Idle resource daemon: {self._coordinator_status.value}"
 
         # December 30, 2025: Wrap get_stats() in asyncio.to_thread() to avoid

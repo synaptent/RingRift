@@ -416,7 +416,7 @@ class ArchitectureFeedbackController(HandlerBase):
         """Return health check result for this controller."""
         from app.coordination.contracts import CoordinatorStatus
 
-        is_healthy = self._running
+        is_healthy = self.is_running
 
         details = {
             "evaluations_processed": self._state.evaluations_processed,

@@ -1024,7 +1024,7 @@ class MaintenanceDaemon(HandlerBase):
         """
         from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 
-        if not self._running:
+        if not self.is_running:
             return HealthCheckResult(
                 healthy=False,
                 status=CoordinatorStatus.STOPPED,

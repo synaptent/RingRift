@@ -953,7 +953,7 @@ class DLQRetryDaemon:
         dlq_stats = self.dlq.get_stats() if self.dlq else {}
 
         # Daemon is healthy if running and DLQ is accessible
-        is_healthy = self._running and self._task is not None
+        is_healthy = self.is_running and self._task is not None
         if self._task and self._task.done() and not self._task.cancelled():
             # Task crashed unexpectedly
             is_healthy = False
