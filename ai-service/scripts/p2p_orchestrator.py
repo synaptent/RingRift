@@ -7875,6 +7875,27 @@ class P2POrchestrator(
                 logger.debug(f"[P2P] Failed to fetch game counts from {peer.node_id}: {e}")
                 continue
 
+        # Session 17.48: Fallback to known coordinator IPs from config if peer discovery failed
+        # This handles the case where P2P network hasn't converged yet (no heartbeats from coordinator)
+        fallback_coordinator_ips = [
+            "100.69.164.58",  # mac-studio Tailscale IP
+        ]
+        for ip in fallback_coordinator_ips:
+            try:
+                url = f"http://{ip}:8770/game_counts"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            game_counts = data.get("game_counts", {})
+                            if game_counts:
+                                source_node = data.get("node_id", "unknown")
+                                logger.info(f"[P2P] Fetched {len(game_counts)} game counts from fallback {source_node}")
+                                return game_counts
+            except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError) as e:
+                logger.debug(f"[P2P] Fallback fetch from {ip} failed: {e}")
+                continue
+
         return {}
 
     def _find_dbs_to_merge_sync(self, selfplay_dir: Path, main_db_path: Path) -> list[tuple[Path, int]]:

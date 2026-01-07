@@ -464,11 +464,12 @@ class GossipProtocolMixin(P2PMixinBase):
     GOSSIP_MAX_MANIFESTS = 100  # Max manifests to keep
     GOSSIP_MAX_ENDPOINTS = 100  # Max learned endpoints to keep
     # Jan 3, 2026: Use centralized config, fallback to hardcoded for import safety
+    # Jan 6, 2026: Reduced fallback from 3600s to 600s to match coordination_defaults
     try:
         from app.config.coordination_defaults import GossipDefaults as _GD
         GOSSIP_STATE_TTL = _GD.STATE_TTL
     except ImportError:
-        GOSSIP_STATE_TTL = 3600  # 1 hour TTL for stale states
+        GOSSIP_STATE_TTL = 600  # 10 min TTL for stale states (reduced from 1hr)
     GOSSIP_ENDPOINT_TTL = 1800  # 30 min TTL for learned endpoints
 
     # Dec 30, 2025: Configurable gossip parameters via environment variables

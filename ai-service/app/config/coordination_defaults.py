@@ -2433,7 +2433,10 @@ class SelfplayPriorityWeightDefaults:
     ELO_VELOCITY_WEIGHT: float = _env_float("RINGRIFT_ELO_VELOCITY_WEIGHT", 0.10)
     TRAINING_NEED_WEIGHT: float = _env_float("RINGRIFT_TRAINING_NEED_WEIGHT", 0.10)
     EXPLORATION_BOOST_WEIGHT: float = _env_float("RINGRIFT_EXPLORATION_BOOST_WEIGHT", 0.10)
-    CURRICULUM_WEIGHT: float = _env_float("RINGRIFT_CURRICULUM_WEIGHT", 0.10)
+    # Session 17.42: Increased 0.10→0.40 to give curriculum weights more influence
+    # Previously hexagonal configs got 0% allocation despite 1.4 weights because
+    # curriculum factor (1.4-1.0)*0.10=0.04 was overwhelmed by data_deficit (0.25)
+    CURRICULUM_WEIGHT: float = _env_float("RINGRIFT_CURRICULUM_WEIGHT", 0.40)
     IMPROVEMENT_BOOST_WEIGHT: float = _env_float("RINGRIFT_IMPROVEMENT_BOOST_WEIGHT", 0.15)
     DATA_DEFICIT_WEIGHT: float = _env_float("RINGRIFT_DATA_DEFICIT_WEIGHT", 0.25)
     QUALITY_WEIGHT: float = _env_float("RINGRIFT_QUALITY_WEIGHT", 0.15)
@@ -2448,7 +2451,8 @@ class SelfplayPriorityWeightDefaults:
     VELOCITY_WEIGHT_MIN: float = _env_float("RINGRIFT_VELOCITY_WEIGHT_MIN", 0.10)
     VELOCITY_WEIGHT_MAX: float = _env_float("RINGRIFT_VELOCITY_WEIGHT_MAX", 0.30)
     CURRICULUM_WEIGHT_MIN: float = _env_float("RINGRIFT_CURRICULUM_WEIGHT_MIN", 0.05)
-    CURRICULUM_WEIGHT_MAX: float = _env_float("RINGRIFT_CURRICULUM_WEIGHT_MAX", 0.25)
+    # Session 17.42: Increased max 0.25→0.50 to allow higher curriculum influence
+    CURRICULUM_WEIGHT_MAX: float = _env_float("RINGRIFT_CURRICULUM_WEIGHT_MAX", 0.50)
     DATA_DEFICIT_WEIGHT_MIN: float = _env_float("RINGRIFT_DATA_DEFICIT_WEIGHT_MIN", 0.15)
     DATA_DEFICIT_WEIGHT_MAX: float = _env_float("RINGRIFT_DATA_DEFICIT_WEIGHT_MAX", 0.40)
     QUALITY_WEIGHT_MIN: float = _env_float("RINGRIFT_QUALITY_WEIGHT_MIN", 0.05)
@@ -3217,7 +3221,8 @@ class GossipDefaults:
     STALE_STATE_SECONDS: float = _env_float("RINGRIFT_GOSSIP_STALE_STATE", 600.0)
 
     # State TTL: how long gossip states are cached before expiring (seconds)
-    STATE_TTL: float = _env_float("RINGRIFT_GOSSIP_STATE_TTL", 3600.0)
+    # Jan 6, 2026: Reduced from 3600s (1hr) to 600s (10min) for faster peer recovery discovery
+    STATE_TTL: float = _env_float("RINGRIFT_GOSSIP_STATE_TTL", 600.0)
 
     # =========================================================================
     # January 5, 2026 Session 17.28: Recovery Probing for Dead Nodes

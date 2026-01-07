@@ -1281,18 +1281,23 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
             if config_key not in result:
                 result[config_key] = 1.0
 
-        # December 2025: Normalize weights so average is 1.0
-        # This ensures curriculum weights represent relative priority,
-        # not absolute scaling that could distort priority scores
+        # December 2025: Partial normalization of curriculum weights
+        # Session 17.42: Changed from full normalization to 50% partial to preserve differentials
+        # Full normalization was flattening weights (e.g., 1.4 -> 1.23), reducing curriculum influence
+        # Now we apply only 50% of the scaling adjustment to preserve weight differentials
         if result:
             total = sum(result.values())
             target_sum = len(result)  # Average of 1.0
             if total > 0 and abs(total - target_sum) > 0.01:
-                scale = target_sum / total
+                raw_scale = target_sum / total
+                # Apply only 50% of the scaling to preserve differentials
+                # e.g., if raw_scale=0.88, partial_scale=0.94 (keeps half the differential)
+                scale = 1.0 + (raw_scale - 1.0) * 0.5
                 result = {k: v * scale for k, v in result.items()}
                 logger.debug(
-                    f"[SelfplayScheduler] Normalized curriculum weights: "
-                    f"scale={scale:.3f}, sum={sum(result.values()):.2f}"
+                    f"[SelfplayScheduler] Partial normalized curriculum weights: "
+                    f"raw_scale={raw_scale:.3f}, applied_scale={scale:.3f}, "
+                    f"sum={sum(result.values()):.2f}"
                 )
 
         return result
