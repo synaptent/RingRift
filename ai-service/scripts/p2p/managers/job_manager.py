@@ -889,6 +889,37 @@ class JobManager(EventSubscriptionMixin):
             # On error, default to GPU tree enabled
             return True
 
+    def _check_yaml_gpu_config(self) -> bool:
+        """Check if YAML config indicates this node has a GPU.
+
+        Used as fallback when runtime GPU detection fails (e.g., vGPU, containers).
+        Returns True if node has gpu, gpu_vram_gb, or role containing 'gpu'.
+
+        Session 17.50 (Jan 2026): Added to fix GPU nodes running CPU selfplay
+        when torch.cuda.is_available() returns False due to driver issues.
+        """
+        try:
+            from app.config.cluster_config import get_config_cache
+            config = get_config_cache().get_config()
+            host_cfg = config.hosts_raw.get(self.node_id, {})
+
+            # Check multiple indicators
+            gpu_name = host_cfg.get("gpu", "")
+            gpu_vram = host_cfg.get("gpu_vram_gb", 0)
+            role = host_cfg.get("role", "")
+
+            has_gpu = bool(gpu_name) or gpu_vram > 0 or "gpu" in role.lower()
+
+            if has_gpu:
+                logger.debug(
+                    f"[YAML GPU] Node {self.node_id}: gpu={gpu_name}, "
+                    f"vram={gpu_vram}GB, role={role}"
+                )
+            return has_gpu
+        except Exception as e:
+            logger.debug(f"Could not check YAML GPU config: {e}")
+            return False
+
     # =========================================================================
     # GPU Capability Helpers (December 2025)
     # =========================================================================
@@ -1988,23 +2019,34 @@ class JobManager(EventSubscriptionMixin):
                 has_mps = hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
 
                 if not (has_cuda or has_mps):
-                    # No GPU: use weighted CPU engine mix for diversity
-                    try:
-                        from scripts.p2p.managers.selfplay_scheduler import SelfplayScheduler
-                        effective_mode, _ = SelfplayScheduler._select_board_engine(
-                            has_gpu=False,  # CPU-only selection
-                            board_type=board_type,
-                            num_players=num_players,
-                        )
+                    # Jan 2026 (Session 17.50): Check YAML config as authoritative fallback
+                    # Runtime GPU detection can fail on some nodes (vGPU, containers)
+                    yaml_has_gpu = self._check_yaml_gpu_config()
+
+                    if yaml_has_gpu:
                         logger.warning(
-                            f"GPU-required mode requested but no GPU available "
-                            f"(CUDA={has_cuda}, MPS={has_mps}), using CPU mode '{effective_mode}' for job {job_id}"
+                            f"[GPU Detection] Runtime failed (CUDA={has_cuda}, MPS={has_mps}) "
+                            f"but YAML shows GPU for {self.node_id}. Continuing with GPU mode for job {job_id}"
                         )
-                    except Exception:
-                        logger.warning(
-                            f"GPU-required mode requested but no GPU available, falling back to maxn for job {job_id}"
-                        )
-                        effective_mode = "maxn"  # High-quality CPU mode
+                        # Continue with GPU mode - don't fall back to CPU
+                    else:
+                        # No GPU via runtime OR YAML: use CPU mode
+                        try:
+                            from scripts.p2p.managers.selfplay_scheduler import SelfplayScheduler
+                            effective_mode, _ = SelfplayScheduler._select_board_engine(
+                                has_gpu=False,  # CPU-only selection
+                                board_type=board_type,
+                                num_players=num_players,
+                            )
+                            logger.warning(
+                                f"GPU-required mode requested but no GPU available "
+                                f"(CUDA={has_cuda}, MPS={has_mps}), using CPU mode '{effective_mode}' for job {job_id}"
+                            )
+                        except Exception:
+                            logger.warning(
+                                f"GPU-required mode requested but no GPU available, falling back to maxn for job {job_id}"
+                            )
+                            effective_mode = "maxn"  # High-quality CPU mode
                 else:
                     device_type = "CUDA" if has_cuda else "MPS"
                     logger.debug(f"GPU available ({device_type}) for mode '{effective_mode}' job {job_id}")
