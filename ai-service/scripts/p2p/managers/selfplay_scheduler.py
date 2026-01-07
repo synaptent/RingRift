@@ -1147,6 +1147,65 @@ class SelfplayScheduler(EventSubscriptionMixin):
             logger.debug(f"[BootstrapPriority] Failed to compute boost for {config_key}: {e}")
             return 0
 
+    def get_config_priorities(self) -> dict[str, float]:
+        """Get priority scores for all configs, used by autonomous queue loop.
+
+        Session 17.42: Added to fix selfplay not prioritizing starved configs.
+        The autonomous_queue_loop was calling this method but it didn't exist,
+        causing it to fall back to round-robin selection which ignored starvation.
+
+        Returns:
+            Dict mapping config_key -> priority score (higher = more priority).
+            Incorporates:
+            - Bootstrap priority boost for data-starved configs (<50 games = +50)
+            - Staleness boost from curriculum state
+            - Base weights from standard config priorities
+        """
+        # All 12 canonical configs with base weights
+        BASE_WEIGHTS = {
+            "hexagonal_3p": 8,
+            "hexagonal_4p": 8,
+            "square19_3p": 7,
+            "square19_4p": 7,
+            "hex8_3p": 6,
+            "hex8_4p": 6,
+            "hex8_2p": 5,
+            "square8_2p": 5,
+            "hexagonal_2p": 5,
+            "square8_3p": 4,
+            "square8_4p": 4,
+            "square19_2p": 4,
+        }
+
+        priorities = {}
+        game_counts = self._get_game_counts_per_config()
+
+        for config_key, base_weight in BASE_WEIGHTS.items():
+            # Start with base weight
+            priority = float(base_weight)
+
+            # Add bootstrap priority boost for data-starved configs
+            # This is the CRITICAL part - gives +50 boost to configs with <50 games
+            bootstrap_boost = self._get_bootstrap_priority_boost(config_key)
+            priority += bootstrap_boost
+
+            # Add staleness boost from curriculum state
+            staleness_boost = self._get_staleness_boost(config_key)
+            priority += staleness_boost
+
+            # Log configs with significant boosts for visibility
+            game_count = game_counts.get(config_key, 0)
+            if bootstrap_boost > 0 or staleness_boost > 5:
+                logger.debug(
+                    f"[ConfigPriorities] {config_key}: base={base_weight}, "
+                    f"bootstrap={bootstrap_boost}, staleness={staleness_boost}, "
+                    f"total={priority:.1f} (games={game_count})"
+                )
+
+            priorities[config_key] = priority
+
+        return priorities
+
     def update_p2p_game_counts(self, counts: dict[str, int]) -> None:
         """Update game counts from P2P manifest data.
 
