@@ -540,8 +540,8 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         class_name="ExternalDriveSyncDaemon",
     ),
     "vast_cpu_pipeline": RunnerSpec(
-        module="app.coordination.vast_cpu_pipeline",
-        class_name="VastCPUPipelineDaemon",
+        module="app.distributed.vast_cpu_pipeline",
+        class_name="VastCpuPipelineDaemon",
     ),
     "cluster_data_sync": RunnerSpec(
         module="app.coordination.auto_sync_daemon",
@@ -2512,13 +2512,13 @@ async def create_external_drive_sync() -> None:
 async def create_vast_cpu_pipeline() -> None:
     """Create and run Vast CPU pipeline daemon."""
     try:
-        from app.coordination.vast_cpu_pipeline import VastCPUPipelineDaemon
+        from app.distributed.vast_cpu_pipeline import VastCpuPipelineDaemon
 
-        daemon = VastCPUPipelineDaemon()
+        daemon = VastCpuPipelineDaemon()
         await daemon.start()
         await _wait_for_daemon(daemon)
     except ImportError as e:
-        logger.error(f"VastCPUPipelineDaemon not available: {e}")
+        logger.error(f"VastCpuPipelineDaemon not available: {e}")
         raise
 
 

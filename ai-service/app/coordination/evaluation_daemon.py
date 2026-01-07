@@ -688,11 +688,41 @@ class EvaluationDaemon(BaseEventHandler):
                 # December 29, 2025: Process retry queue first
                 await self._process_retry_queue()
 
-                # Wait for an evaluation request
-                request = await asyncio.wait_for(
-                    self._evaluation_queue.get(),
-                    timeout=5.0,  # Check running status periodically
-                )
+                # January 7, 2026: Try to get from in-memory queue first
+                request = None
+                try:
+                    request = await asyncio.wait_for(
+                        self._evaluation_queue.get(),
+                        timeout=1.0,  # Short timeout to check persistent queue
+                    )
+                except asyncio.TimeoutError:
+                    pass  # No in-memory request, check persistent queue
+
+                # January 7, 2026 (Session 17.50): Check persistent queue if no in-memory request
+                # This fixes the bug where startup_scan items were never processed
+                if request is None and self._persistent_queue:
+                    persistent_request = self._persistent_queue.claim_next()
+                    if persistent_request:
+                        # Convert to in-memory request format
+                        request = {
+                            "model_path": persistent_request.model_path,
+                            "board_type": persistent_request.board_type,
+                            "num_players": persistent_request.num_players,
+                            "config_key": persistent_request.config_key,
+                            "timestamp": persistent_request.started_at,
+                            "source": persistent_request.source,
+                            "priority": persistent_request.priority,
+                            "_persistent_request_id": persistent_request.request_id,
+                        }
+                        logger.info(
+                            f"[EvaluationDaemon] Claimed from persistent queue: "
+                            f"{persistent_request.model_path} ({persistent_request.config_key})"
+                        )
+
+                if request is None:
+                    # No request from either queue, wait a bit
+                    await asyncio.sleep(2.0)
+                    continue
 
                 # Skip if already evaluating this model
                 model_path = request["model_path"]
@@ -929,6 +959,15 @@ class EvaluationDaemon(BaseEventHandler):
                 f"{total_games} games, {elapsed:.1f}s)"
             )
 
+            # January 7, 2026 (Session 17.50): Update persistent queue if this came from it
+            persistent_request_id = request.get("_persistent_request_id")
+            if persistent_request_id and self._persistent_queue:
+                estimated_elo = result.get("estimated_elo", result.get("best_elo", 0.0))
+                self._persistent_queue.complete(persistent_request_id, elo=estimated_elo)
+                logger.debug(
+                    f"[EvaluationDaemon] Marked persistent request complete: {persistent_request_id}"
+                )
+
         except asyncio.TimeoutError:
             self._eval_stats.evaluations_failed += 1
             logger.error(f"[EvaluationDaemon] Evaluation timed out: {model_path}")
@@ -942,6 +981,10 @@ class EvaluationDaemon(BaseEventHandler):
             # Emit EVALUATION_FAILED event (Dec 2025 - critical gap fix)
             self._record_gauntlet_complete(run_id, 0, 0, "failed:timeout")
             await self._emit_evaluation_failed(model_path, board_type, num_players, "timeout")
+            # January 7, 2026: Mark persistent queue item as failed
+            persistent_request_id = request.get("_persistent_request_id")
+            if persistent_request_id and self._persistent_queue:
+                self._persistent_queue.fail(persistent_request_id, "timeout")
         except (MemoryError, RuntimeError) as e:
             # December 29, 2025: GPU OOM and RuntimeError (CUDA) are retryable
             self._eval_stats.evaluations_failed += 1
@@ -958,12 +1001,20 @@ class EvaluationDaemon(BaseEventHandler):
             # Emit permanent failure
             self._record_gauntlet_complete(run_id, 0, 0, f"failed:{type(e).__name__}")
             await self._emit_evaluation_failed(model_path, board_type, num_players, str(e))
+            # January 7, 2026: Mark persistent queue item as failed
+            persistent_request_id = request.get("_persistent_request_id")
+            if persistent_request_id and self._persistent_queue:
+                self._persistent_queue.fail(persistent_request_id, str(e))
         except Exception as e:  # noqa: BLE001
             self._eval_stats.evaluations_failed += 1
             logger.error(f"[EvaluationDaemon] Evaluation failed: {model_path}: {e}")
             # Emit EVALUATION_FAILED event (Dec 2025 - critical gap fix)
             self._record_gauntlet_complete(run_id, 0, 0, f"failed:{type(e).__name__}")
             await self._emit_evaluation_failed(model_path, board_type, num_players, str(e))
+            # January 7, 2026: Mark persistent queue item as failed
+            persistent_request_id = request.get("_persistent_request_id")
+            if persistent_request_id and self._persistent_queue:
+                self._persistent_queue.fail(persistent_request_id, str(e))
 
     async def _run_gauntlet(
         self,
