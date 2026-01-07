@@ -273,9 +273,18 @@ class TrainingTriggerDaemon(HandlerBase):
                         elo_velocity = row["elo_velocity"] if "elo_velocity" in row.keys() else 0.0
                         elo_velocity_trend = row["elo_velocity_trend"] if "elo_velocity_trend" in row.keys() else "stable"
                         last_elo_velocity_update = row["last_elo_velocity_update"] if "last_elo_velocity_update" in row.keys() else 0.0
+
+                        # January 2026: Validate board_type loaded from SQLite
+                        board_type = row["board_type"]
+                        if board_type and not isinstance(board_type, str):
+                            logger.warning(
+                                f"[TrainingTriggerDaemon] Invalid board_type in persisted state for {config_key}"
+                            )
+                            continue  # Skip this corrupted entry
+
                         state = ConfigTrainingState(
                             config_key=config_key,
-                            board_type=row["board_type"],
+                            board_type=board_type,
                             num_players=row["num_players"],
                             last_training_time=row["last_training_time"],
                             training_in_progress=False,  # Reset on restart
@@ -2282,6 +2291,19 @@ class TrainingTriggerDaemon(HandlerBase):
         self, config_key: str, board_type: str | None = None, num_players: int | None = None
     ) -> ConfigTrainingState:
         """Get or create training state for a config."""
+        # January 2026: Defensive validation - ensure board_type is a string
+        # This protects against event payloads containing tuples instead of strings
+        if board_type is not None and not isinstance(board_type, str):
+            logger.warning(
+                f"[TrainingTriggerDaemon] Invalid board_type type for {config_key}: "
+                f"expected str, got {type(board_type).__name__}={board_type}"
+            )
+            # Try to extract string if it's a tuple (board_type, num_players)
+            if isinstance(board_type, tuple) and len(board_type) >= 1:
+                board_type = str(board_type[0]) if board_type[0] else None
+            else:
+                board_type = None
+
         if config_key not in self._training_states:
             # Parse config_key if board_type/num_players not provided
             if not board_type or not num_players:
@@ -3936,7 +3958,7 @@ class TrainingTriggerDaemon(HandlerBase):
         )
 
         # Determine health status
-        healthy = self._running
+        healthy = self.is_running
 
         # December 29, 2025 (Phase 4): Include backpressure status in message
         # Jan 2, 2026: Include local-only mode in message

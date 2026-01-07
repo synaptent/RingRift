@@ -346,17 +346,20 @@ class S3NodeSyncDaemon(HandlerBase):
             self._record_error(f"Error handling MODEL_PROMOTED event: {e}", e)
 
     async def _run_push_cycle(self) -> SyncResult:
-        """Run a push cycle - upload local data to S3."""
+        """Run a push cycle - upload local data to S3.
+
+        January 2026: Reordered to upload manifest LAST, after all files are
+        confirmed uploaded. This prevents race conditions where consolidation
+        references files not yet in S3.
+        """
         start_time = time.time()
         result = SyncResult(success=True)
 
         try:
-            # Build local manifest
+            # Build local manifest first (still need it for file list)
             self._local_manifest = await self._build_local_manifest()
 
-            # Push manifest first
-            await self._upload_manifest(self._local_manifest)
-
+            # Push data files BEFORE manifest
             # Push game databases
             if self.config.push_games:
                 games_result = await self._push_games()
@@ -377,6 +380,10 @@ class S3NodeSyncDaemon(HandlerBase):
                 result.uploaded_files.extend(npz_result.uploaded_files)
                 result.errors.extend(npz_result.errors)
                 result.bytes_transferred += npz_result.bytes_transferred
+
+            # Push manifest LAST - after all files are confirmed uploaded
+            # This ensures consolidation never references missing files
+            await self._upload_manifest(self._local_manifest)
 
             result.duration_seconds = time.time() - start_time
             self._last_push_time = time.time()
@@ -878,7 +885,11 @@ class S3ConsolidationDaemon:
         await self._create_consolidated_manifest(manifests)
 
     async def _consolidate_models(self, manifests: dict[str, FileManifest]) -> None:
-        """Consolidate models - keep latest version of each."""
+        """Consolidate models - keep latest version of each.
+
+        January 2026: Updated to track skip counts and handle race conditions
+        where manifest references models not yet uploaded to S3.
+        """
         # Find all model files across nodes
         model_versions: dict[str, tuple[str, float]] = {}  # name -> (node, mtime)
 
@@ -891,15 +902,38 @@ class S3ConsolidationDaemon:
                     if name not in model_versions or mtime > model_versions[name][1]:
                         model_versions[name] = (node_id, mtime)
 
-        # Copy latest versions to consolidated
+        # Copy latest versions to consolidated with skip tracking
+        copied_count = 0
+        skipped_count = 0
+        failed_count = 0
+
         for model_name, (node_id, _) in model_versions.items():
             src = f"nodes/{node_id}/models/{model_name}"
             dst = f"consolidated/models/{model_name}"
-            await self._s3_copy(src, dst)
-            logger.info(f"Consolidated model {model_name} from {node_id}")
+            success, status = await self._s3_copy(src, dst)
+
+            if status == "copied":
+                copied_count += 1
+                logger.info(f"Consolidated model {model_name} from {node_id}")
+            elif status == "skipped_missing":
+                skipped_count += 1
+            else:
+                failed_count += 1
+
+        self._models_consolidated += copied_count
+
+        if skipped_count > 0 or failed_count > 0:
+            logger.info(
+                f"Model consolidation: {copied_count} copied, "
+                f"{skipped_count} skipped (not yet uploaded), {failed_count} failed"
+            )
 
     async def _consolidate_npz(self, manifests: dict[str, FileManifest]) -> None:
-        """Consolidate NPZ files - keep latest version of each config."""
+        """Consolidate NPZ files - keep latest version of each config.
+
+        January 2026: Updated to track skip counts and handle race conditions
+        where manifest references NPZ files not yet uploaded to S3.
+        """
         npz_versions: dict[str, tuple[str, float]] = {}
 
         for node_id, manifest in manifests.items():
@@ -911,11 +945,31 @@ class S3ConsolidationDaemon:
                     if name not in npz_versions or mtime > npz_versions[name][1]:
                         npz_versions[name] = (node_id, mtime)
 
+        # Copy latest versions to consolidated with skip tracking
+        copied_count = 0
+        skipped_count = 0
+        failed_count = 0
+
         for npz_name, (node_id, _) in npz_versions.items():
             src = f"nodes/{node_id}/training/{npz_name}"
             dst = f"consolidated/training/{npz_name}"
-            await self._s3_copy(src, dst)
-            logger.info(f"Consolidated NPZ {npz_name} from {node_id}")
+            success, status = await self._s3_copy(src, dst)
+
+            if status == "copied":
+                copied_count += 1
+                logger.info(f"Consolidated NPZ {npz_name} from {node_id}")
+            elif status == "skipped_missing":
+                skipped_count += 1
+            else:
+                failed_count += 1
+
+        self._npz_consolidated += copied_count
+
+        if skipped_count > 0 or failed_count > 0:
+            logger.info(
+                f"NPZ consolidation: {copied_count} copied, "
+                f"{skipped_count} skipped (not yet uploaded), {failed_count} failed"
+            )
 
     async def _create_consolidated_manifest(
         self, manifests: dict[str, FileManifest]
@@ -960,8 +1014,48 @@ class S3ConsolidationDaemon:
         finally:
             os.unlink(temp_path)
 
-    async def _s3_copy(self, src: str, dst: str) -> bool:
-        """Copy file within S3."""
+    async def _s3_key_exists(self, s3_key: str) -> bool:
+        """Check if a key exists in S3.
+
+        January 2026: Added to pre-validate S3 keys before copy operations,
+        preventing 404 errors during consolidation when manifest is uploaded
+        before model files.
+
+        Returns:
+            True if key exists, False otherwise.
+        """
+        cmd = [
+            "aws", "s3api", "head-object",
+            "--bucket", self.config.s3_bucket,
+            "--key", s3_key,
+        ]
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        await process.communicate()
+
+        return process.returncode == 0
+
+    async def _s3_copy(self, src: str, dst: str) -> tuple[bool, str]:
+        """Copy file within S3.
+
+        January 2026: Updated to pre-validate source existence and return
+        status for better error handling during consolidation.
+
+        Returns:
+            Tuple of (success, status) where status is one of:
+            - "copied" - file was successfully copied
+            - "skipped_missing" - source file does not exist (expected race condition)
+            - "failed" - copy failed for other reason
+        """
+        # Pre-validate source exists before attempting copy
+        if not await self._s3_key_exists(src):
+            logger.info(f"S3 copy skipped (source not yet uploaded): {src}")
+            return (False, "skipped_missing")
+
         cmd = [
             "aws", "s3", "cp",
             f"s3://{self.config.s3_bucket}/{src}",
@@ -979,9 +1073,9 @@ class S3ConsolidationDaemon:
 
         if process.returncode != 0:
             logger.warning(f"S3 copy failed: {stderr.decode()}")
-            return False
+            return (False, "failed")
 
-        return True
+        return (True, "copied")
 
     async def _s3_upload(self, local_path: str, s3_path: str) -> bool:
         """Upload file to S3."""
