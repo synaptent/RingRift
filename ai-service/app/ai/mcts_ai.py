@@ -70,7 +70,12 @@ def _get_cached_nnue_policy(board_type: BoardType, num_players: int) -> Any | No
     """Get cached NNUE policy model or load and cache it."""
     global _NNUE_POLICY_CACHE_LOCK
 
-    cache_key = (board_type.value, num_players)
+    # Handle both BoardType enum and string arguments
+    board_type_value = (
+        board_type.value if hasattr(board_type, "value")
+        else str(board_type).lower()
+    )
+    cache_key = (board_type_value, num_players)
 
     # Fast path - already cached
     if cache_key in _NNUE_POLICY_CACHE:
@@ -93,7 +98,7 @@ def _get_cached_nnue_policy(board_type: BoardType, num_players: int) -> Any | No
 
             model_path = os.path.join(
                 os.path.dirname(__file__), "..", "..",
-                "models", "nnue", f"nnue_policy_{board_type.value}_{num_players}p.pt"
+                "models", "nnue", f"nnue_policy_{board_type_value}_{num_players}p.pt"
             )
             model_path = os.path.normpath(model_path)
 
@@ -134,7 +139,7 @@ def _get_cached_nnue_policy(board_type: BoardType, num_players: int) -> Any | No
 
                 _NNUE_POLICY_CACHE[cache_key] = model
                 logger.info(
-                    f"NNUE Policy Cache: Loaded model for {board_type.value}_{num_players}p "
+                    f"NNUE Policy Cache: Loaded model for {board_type_value}_{num_players}p "
                     f"(hidden={hidden_dim}, layers={num_hidden_layers})"
                 )
                 return model

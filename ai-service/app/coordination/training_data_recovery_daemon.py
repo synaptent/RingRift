@@ -208,7 +208,7 @@ class TrainingDataRecoveryDaemon(SingletonMixin, HandlerBase):
 
     def health_check(self) -> HealthCheckResult:
         """Return health check status."""
-        is_healthy = self.config.enabled and self._is_running
+        is_healthy = self.config.enabled and self._running
 
         # Calculate success rate
         total = self._recoveries_succeeded + self._recoveries_failed

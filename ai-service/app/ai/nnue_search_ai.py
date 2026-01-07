@@ -43,7 +43,7 @@ def find_nnue_model(board_type: BoardType, num_players: int) -> Path | None:
     Searches common model paths for NNUE checkpoints.
 
     Args:
-        board_type: Board type
+        board_type: Board type (enum or string)
         num_players: Number of players
 
     Returns:
@@ -51,11 +51,20 @@ def find_nnue_model(board_type: BoardType, num_players: int) -> Path | None:
     """
     from app.models.discovery import find_canonical_model_path
 
+    # Handle both BoardType enum and string arguments
+    if hasattr(board_type, "value"):
+        board_type_value = board_type.value
+        board_type_name = board_type.name.lower()
+    else:
+        # board_type is a string
+        board_type_value = str(board_type).lower()
+        board_type_name = str(board_type).lower()
+
     # Try various NNUE naming conventions
     prefixes = [
-        f"nnue_{board_type.value}_{num_players}p",
-        f"nnue_{board_type.name.lower()}_{num_players}p",
-        f"canonical_nnue_{board_type.value}_{num_players}p",
+        f"nnue_{board_type_value}_{num_players}p",
+        f"nnue_{board_type_name}_{num_players}p",
+        f"canonical_nnue_{board_type_value}_{num_players}p",
     ]
 
     for prefix in prefixes:

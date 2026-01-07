@@ -102,10 +102,15 @@ class PolicyOnlyAI(BaseAI):
         # Log expected encoder configuration for debugging
         try:
             from app.training.encoder_registry import get_encoder_config
+            # Handle both BoardType enum and string arguments
+            board_type_name = (
+                self.board_type.name if hasattr(self.board_type, "name")
+                else str(self.board_type).upper()
+            )
             for version in ["v2", "v3"]:
                 enc_config = get_encoder_config(self.board_type, version)
                 logger.debug(
-                    f"PolicyOnlyAI: {self.board_type.name} {version} expects "
+                    f"PolicyOnlyAI: {board_type_name} {version} expects "
                     f"{enc_config.in_channels}ch ({enc_config.encoder_type})"
                 )
         except ImportError:
@@ -151,9 +156,14 @@ class PolicyOnlyAI(BaseAI):
 
             # Try to find NNUE policy model
             num_players = getattr(config, 'num_players', 2)
+            # Handle both BoardType enum and string arguments
+            board_type_str = (
+                self.board_type.value if hasattr(self.board_type, "value")
+                else str(self.board_type).lower()
+            )
             model_path = os.path.join(
                 os.path.dirname(__file__), "..", "..",
-                "models", "nnue", f"nnue_policy_{self.board_type.value}_{num_players}p.pt"
+                "models", "nnue", f"nnue_policy_{board_type_str}_{num_players}p.pt"
             )
             model_path = os.path.normpath(model_path)
 
