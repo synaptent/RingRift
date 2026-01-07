@@ -2955,17 +2955,47 @@ class JobManager(EventSubscriptionMixin):
 
         output_file = os.path.join(output_dir, f"{self.node_id}_games.jsonl")
 
-        # Build selfplay command
-        cmd = [
-            sys.executable,
-            self._get_script_path("run_self_play_soak.py"),
-            "--num-games", str(num_games),
-            "--board-type", board_type,
-            "--num-players", str(num_players),
-            "--engine-mode", "gumbel-mcts" if model_path else "maxn",  # Jan 2026: High-quality modes
-            "--max-moves", "10000",  # Avoid draws due to move limit
-            "--log-jsonl", output_file,
-        ]
+        # Jan 2026 (Session 17.50): Use GPU script on GPU nodes for better utilization
+        yaml_has_gpu = self._check_yaml_gpu_config()
+
+        if yaml_has_gpu:
+            # GPU node: use generate_gumbel_selfplay.py for GPU-accelerated selfplay
+            script_path = self._get_script_path("generate_gumbel_selfplay.py")
+            board_norm = board_type.replace("hexagonal", "hex")  # Normalize board type
+            cmd = [
+                sys.executable,
+                script_path,
+                "--board", board_norm,
+                "--num-players", str(num_players),
+                "--num-games", str(num_games),
+                "--db", str(Path(output_dir) / "games.db"),
+                "--seed", str(int(time.time() * 1000) % 2**31),
+                "--simulation-budget", "150",  # Standard budget
+            ]
+            # Use GPU tree for maximum speedup
+            if self._should_use_gpu_tree():
+                cmd.append("--use-gpu-tree")
+                logger.info(
+                    f"[Local Selfplay] Using GPU script with --use-gpu-tree for {self.node_id}"
+                )
+            else:
+                cmd.append("--no-gpu-tree")
+                logger.info(
+                    f"[Local Selfplay] Using GPU script (no GPU tree) for {self.node_id}"
+                )
+        else:
+            # CPU node: use run_self_play_soak.py for CPU selfplay
+            cmd = [
+                sys.executable,
+                self._get_script_path("run_self_play_soak.py"),
+                "--num-games", str(num_games),
+                "--board-type", board_type,
+                "--num-players", str(num_players),
+                "--engine-mode", "gumbel-mcts" if model_path else "maxn",  # High-quality modes
+                "--max-moves", "10000",  # Avoid draws due to move limit
+                "--log-jsonl", output_file,
+            ]
+            logger.debug(f"[Local Selfplay] Using CPU script for {self.node_id}")
 
         # December 29, 2025: Use helper for consistent env setup (includes RINGRIFT_ALLOW_PENDING_GATE)
         env = self._get_subprocess_env()
