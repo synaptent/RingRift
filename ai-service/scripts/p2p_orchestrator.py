@@ -5888,6 +5888,9 @@ class P2POrchestrator(
             for peer_id, peer in self.peers.items():
                 if voter_id in counted_voters:
                     break
+                # Jan 7, 2026: Skip SWIM protocol entries (IP:7947) - they pollute voter health
+                if self._is_swim_peer_id(peer_id):
+                    continue
                 # Check peer info 'host' field
                 if isinstance(peer, dict):
                     peer_host = peer.get("host", "")
@@ -5908,6 +5911,9 @@ class P2POrchestrator(
             for peer_id, peer in self.peers.items():
                 if voter_id in counted_voters:
                     break
+                # Jan 7, 2026: Skip SWIM protocol entries (IP:7947) - they pollute voter health
+                if self._is_swim_peer_id(peer_id):
+                    continue
                 if ":" in peer_id:
                     peer_ip = peer_id.rsplit(":", 1)[0]
                     if peer_ip in voter_ips:
@@ -5928,6 +5934,28 @@ class P2POrchestrator(
         if isinstance(peer_info, dict):
             status = peer_info.get("status", "unknown")
             return status in ("alive", "healthy", "connected")
+        return False
+
+    def _is_swim_peer_id(self, peer_id: str) -> bool:
+        """Check if peer_id is a SWIM protocol entry (IP:7947 format).
+
+        SWIM entries use port 7947 and should not be in the HTTP peer list.
+        These leak from the SWIM membership layer and cause peer pollution.
+
+        Jan 7, 2026 Session 17.43: Added as defensive filter for peer iteration.
+        Primary fix is in the SWIM membership loop, but this provides defense-in-depth.
+
+        Args:
+            peer_id: Node identifier to check.
+
+        Returns:
+            True if this is a SWIM-format peer ID (should be skipped).
+        """
+        if not peer_id or ":" not in peer_id:
+            return False
+        parts = peer_id.rsplit(":", 1)
+        if len(parts) == 2 and parts[1] == "7947":
+            return True
         return False
 
     def _check_voter_health(self) -> dict[str, any]:
@@ -5984,6 +6012,9 @@ class P2POrchestrator(
                     # Check 3: IP:port match
                     voter_ips = voter_ip_map.get(voter_id, set())
                     for peer_id, p in self.peers.items():
+                        # Jan 7, 2026: Skip SWIM protocol entries (IP:7947) - they pollute voter health
+                        if self._is_swim_peer_id(peer_id):
+                            continue
                         if ":" in peer_id:
                             peer_ip = peer_id.split(":")[0]
                             if peer_ip in voter_ips and p.is_alive():
@@ -11336,10 +11367,20 @@ class P2POrchestrator(
                     now = time.time()
                     with self.peers_lock:
                         for peer_id in alive_peers:
+                            # Jan 7, 2026 Session 17.43: Filter SWIM protocol entries (IP:7947 format)
+                            # SWIM peer IDs like "100.126.21.102:7947" should NOT be added to self.peers
+                            # They pollute VoterHealth, Elo sync, and other peer iteration points
+                            # Proper peers are discovered via HTTP gossip with node names or IP:8770
+                            if ":" in peer_id:
+                                _, port_str = peer_id.rsplit(":", 1)
+                                if port_str == "7947":
+                                    # Skip SWIM-format peer IDs - they'll be discovered via HTTP gossip
+                                    continue
+
                             if peer_id not in self.peers:
-                                # New peer detected by SWIM
+                                # New peer detected by SWIM - convert to HTTP format
                                 # peer_id format is typically "host:port" from SWIM
-                                host, port_str = (peer_id.rsplit(":", 1) + ["7947"])[:2] if ":" in peer_id else (peer_id, "7947")
+                                host, port_str = (peer_id.rsplit(":", 1) + ["8770"])[:2] if ":" in peer_id else (peer_id, "8770")
                                 try:
                                     port_int = int(port_str)
                                 except ValueError:
@@ -23577,6 +23618,16 @@ print(json.dumps({{
             for node_id in peers_to_purge:
                 del self.peers[node_id]
                 logger.info(f"Auto-purged stale peer: {node_id} (retired for >{PEER_PURGE_AFTER_SECONDS}s)")
+
+            # Jan 7, 2026 Session 17.43: Purge SWIM protocol entries (IP:7947)
+            # These leak from the SWIM membership layer and pollute VoterHealth/EloSync
+            swim_entries_to_purge = [
+                peer_id for peer_id in self.peers.keys()
+                if self._is_swim_peer_id(peer_id)
+            ]
+            for peer_id in swim_entries_to_purge:
+                del self.peers[peer_id]
+                logger.info(f"Purged SWIM protocol entry from peer list: {peer_id}")
 
             # December 2025: Emit cluster health event if state changed
             # This enables pipeline coordination to pause/resume based on cluster health
