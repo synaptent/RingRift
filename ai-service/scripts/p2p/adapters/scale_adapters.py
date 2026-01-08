@@ -899,10 +899,13 @@ class CompositeScaleAdapter:
             ]
 
             try:
+                import asyncio
                 import subprocess
 
                 logger.info(f"Syncing {description} from {node_id}...")
-                result = subprocess.run(
+                # Jan 7, 2026: Wrap in asyncio.to_thread to avoid blocking event loop
+                result = await asyncio.to_thread(
+                    subprocess.run,
                     rsync_cmd,
                     capture_output=True,
                     text=True,

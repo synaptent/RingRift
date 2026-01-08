@@ -348,6 +348,51 @@ class SelfHealingLoop(BaseLoop):
             **self.stats.to_dict(),
         }
 
+    def health_check(self) -> Any:
+        """Check self-healing loop health for DaemonManager integration.
+
+        Jan 2026: Added specialized health check for resilience monitoring.
+
+        Returns:
+            HealthCheckResult with healing-specific metrics
+        """
+        try:
+            from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+        except ImportError:
+            return {
+                "healthy": self._running,
+                "status": "running" if self._running else "stopped",
+                "message": f"SelfHealingLoop {'running' if self._running else 'stopped'}",
+                "details": self.get_healing_stats(),
+            }
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.STOPPED,
+                message="SelfHealingLoop is stopped",
+            )
+
+        # Check base loop health first
+        base_health = super().health_check()
+        if not base_health.healthy:
+            return base_health
+
+        # Add healing-specific details
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message="SelfHealingLoop operational",
+            details={
+                "stale_processes_cleaned": self._stale_processes_cleaned,
+                "stuck_jobs_recovered": self._stuck_jobs_recovered,
+                "loops_restarted": self._loops_restarted,
+                "is_leader": self._is_leader(),
+                "total_runs": self.stats.total_runs,
+                "success_rate": f"{self.stats.success_rate:.1f}%",
+            },
+        )
+
 
 # =============================================================================
 # PredictiveMonitoringLoop
@@ -523,6 +568,62 @@ class PredictiveMonitoringLoop(BaseLoop):
             "checks_performed": self._checks_performed,
             **self.stats.to_dict(),
         }
+
+    def health_check(self) -> Any:
+        """Check predictive monitoring loop health for DaemonManager integration.
+
+        Jan 2026: Added specialized health check for predictive monitoring.
+
+        Returns:
+            HealthCheckResult with monitoring-specific metrics
+        """
+        try:
+            from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+        except ImportError:
+            return {
+                "healthy": self._running,
+                "status": "running" if self._running else "stopped",
+                "message": f"PredictiveMonitoringLoop {'running' if self._running else 'stopped'}",
+                "details": self.get_monitoring_stats(),
+            }
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.STOPPED,
+                message="PredictiveMonitoringLoop is stopped",
+            )
+
+        # Check base loop health first
+        base_health = super().health_check()
+        if not base_health.healthy:
+            return base_health
+
+        # Non-leader idle state is valid
+        if not self._is_leader():
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.IDLE,
+                message="PredictiveMonitoringLoop idle (not leader)",
+                details={
+                    "is_leader": False,
+                    "checks_performed": self._checks_performed,
+                },
+            )
+
+        # Add monitoring-specific details
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message="PredictiveMonitoringLoop operational",
+            details={
+                "alerts_sent": self._alerts_sent,
+                "checks_performed": self._checks_performed,
+                "is_leader": True,
+                "total_runs": self.stats.total_runs,
+                "success_rate": f"{self.stats.success_rate:.1f}%",
+            },
+        )
 
 
 # =============================================================================
@@ -824,6 +925,83 @@ class SplitBrainDetectionLoop(BaseLoop):
             "last_healthy_time": self._last_healthy_time,
             **self.stats.to_dict(),
         }
+
+    def health_check(self) -> Any:
+        """Check split-brain detection loop health for DaemonManager integration.
+
+        Jan 2026: Added specialized health check for partition detection.
+
+        Returns:
+            HealthCheckResult with partition-specific metrics
+        """
+        try:
+            from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+        except ImportError:
+            return {
+                "healthy": self._running,
+                "status": "running" if self._running else "stopped",
+                "message": f"SplitBrainDetectionLoop {'running' if self._running else 'stopped'}",
+                "details": self.get_detection_stats(),
+            }
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.STOPPED,
+                message="SplitBrainDetectionLoop is stopped",
+            )
+
+        # Check base loop health first
+        base_health = super().health_check()
+        if not base_health.healthy:
+            return base_health
+
+        # Check for active partition - this is a critical condition
+        partition_duration = 0.0
+        if self._partition_start_time > 0.0:
+            partition_duration = time.time() - self._partition_start_time
+
+            # Active partition is a critical condition
+            if partition_duration >= self.config.partition_alert_threshold_seconds:
+                return HealthCheckResult(
+                    healthy=False,
+                    status=CoordinatorStatus.ERROR,
+                    message=f"SPLIT-BRAIN ACTIVE: Partition detected for {partition_duration/60:.1f} minutes",
+                    details={
+                        "partition_active": True,
+                        "partition_duration_seconds": partition_duration,
+                        "leaders_seen": self._last_leaders_seen,
+                        "detections": self._detections,
+                    },
+                )
+
+            # Partition active but under threshold - degraded
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"Partition detected ({partition_duration:.0f}s)",
+                details={
+                    "partition_active": True,
+                    "partition_duration_seconds": partition_duration,
+                    "leaders_seen": self._last_leaders_seen,
+                    "detections": self._detections,
+                },
+            )
+
+        # No active partition - healthy
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message="SplitBrainDetectionLoop operational",
+            details={
+                "partition_active": False,
+                "detections": self._detections,
+                "checks_performed": self._checks_performed,
+                "last_healthy_time": self._last_healthy_time,
+                "total_runs": self.stats.total_runs,
+                "success_rate": f"{self.stats.success_rate:.1f}%",
+            },
+        )
 
 
 __all__ = [

@@ -38,6 +38,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Literal
 
+# Jan 7, 2026: Import aiohttp for exception handling
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None  # type: ignore[assignment]
+
 if TYPE_CHECKING:
     pass
 
@@ -220,7 +226,8 @@ class ICEGatherer:
                             priority=priority,
                         )
                     )
-            except Exception:
+            except (OSError, socket.gaierror):
+                # Jan 7, 2026: Narrowed to socket-specific exceptions
                 pass  # IPv6 not available
 
             # Also try to get the default route IP
@@ -241,7 +248,8 @@ class ICEGatherer:
                             priority=(126 << 24) + (65535 << 8) + 1,
                         )
                     )
-            except Exception:
+            except OSError:
+                # Jan 7, 2026: Narrowed to socket-specific exceptions
                 pass
 
         except Exception as e:
@@ -380,7 +388,8 @@ class ICEGatherer:
             ip = s.getsockname()[0]
             s.close()
             return ip
-        except Exception:
+        except OSError:
+            # Jan 7, 2026: Narrowed to socket-specific exceptions
             return "0.0.0.0"
 
 
@@ -499,8 +508,9 @@ class ICEChecker:
 
     async def _check_http(self, host: str, port: int) -> bool:
         """Check HTTP connectivity."""
+        if aiohttp is None:
+            return False  # aiohttp not installed
         try:
-            import aiohttp
             from aiohttp import ClientTimeout
 
             url = f"http://{host}:{port}/health"
@@ -510,7 +520,8 @@ class ICEChecker:
                 async with session.get(url) as resp:
                     return resp.status == 200
 
-        except Exception:
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
+            # Jan 7, 2026: Narrowed to network/HTTP specific exceptions
             return False
 
     async def _check_tcp(self, host: str, port: int) -> bool:
@@ -524,7 +535,8 @@ class ICEChecker:
             await writer.wait_closed()
             return True
 
-        except Exception:
+        except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
+            # Jan 7, 2026: Narrowed to TCP connection specific exceptions
             return False
 
 

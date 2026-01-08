@@ -648,6 +648,92 @@ echo "P2P restarted"
         self._heal_next_attempt.clear()
         logger.info("[ClusterHealing] Reset all node backoffs")
 
+    def health_check(self) -> Any:
+        """Check cluster healing loop health for DaemonManager integration.
+
+        Jan 2026: Added specialized health check for cluster healing monitoring.
+
+        Returns:
+            HealthCheckResult with healing-specific metrics
+        """
+        try:
+            from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+        except ImportError:
+            return {
+                "healthy": self._running,
+                "status": "running" if self._running else "stopped",
+                "message": f"ClusterHealingLoop {'running' if self._running else 'stopped'}",
+                "details": self.get_healing_stats(),
+            }
+
+        if not self._running:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.STOPPED,
+                message="ClusterHealingLoop is stopped",
+            )
+
+        if not self.config.enabled:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.IDLE,
+                message="ClusterHealingLoop disabled",
+            )
+
+        # Check base loop health first
+        base_health = super().health_check()
+        if not base_health.healthy:
+            return base_health
+
+        # Check for high failure rate
+        success_rate = (
+            self._stats_heal_successes / max(1, self._stats_heal_attempts)
+        )
+        if self._stats_heal_attempts > 5 and success_rate < 0.3:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"Low healing success rate: {success_rate:.1%}",
+                details={
+                    "heal_attempts": self._stats_heal_attempts,
+                    "heal_successes": self._stats_heal_successes,
+                    "heal_failures": self._stats_heal_failures,
+                    "success_rate": f"{success_rate:.1%}",
+                    "nodes_in_backoff": len(self._heal_next_attempt),
+                },
+            )
+
+        # Check if rate limited
+        rate_limit_remaining = self._get_rate_limit_remaining()
+        if rate_limit_remaining == 0:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.DEGRADED,
+                message="ClusterHealingLoop rate limited",
+                details={
+                    "rate_limited": True,
+                    "max_heals_per_window": self.config.max_heals_per_window,
+                    "window_seconds": self.config.rate_limit_window_seconds,
+                },
+            )
+
+        # Healthy
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message="ClusterHealingLoop operational",
+            details={
+                "heal_attempts": self._stats_heal_attempts,
+                "heal_successes": self._stats_heal_successes,
+                "heal_failures": self._stats_heal_failures,
+                "success_rate": f"{success_rate:.1%}",
+                "nodes_in_backoff": len(self._heal_next_attempt),
+                "rate_limit_remaining": rate_limit_remaining,
+                "dry_run": self.config.dry_run,
+                "total_runs": self.stats.total_runs,
+            },
+        )
+
 
 __all__ = [
     "ClusterHealingConfig",

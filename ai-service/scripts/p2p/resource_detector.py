@@ -703,3 +703,49 @@ class ResourceDetectorMixin:
         """
         import asyncio
         return await asyncio.to_thread(self._resource_detector.detect_memory)
+
+    async def _get_tailscale_ip_async(self, prefer_ipv6: bool = True) -> str:
+        """Get Tailscale IP without blocking event loop.
+
+        Jan 7, 2026: Added for async safety in P2P orchestrator.
+        Wraps get_tailscale_ip() in asyncio.to_thread() to avoid blocking
+        the event loop with subprocess calls to tailscale CLI.
+        """
+        import asyncio
+        return await asyncio.to_thread(self._resource_detector.get_tailscale_ip, prefer_ipv6)
+
+    async def _get_tailscale_ipv4_async(self) -> str:
+        """Get Tailscale IPv4 without blocking event loop.
+
+        Jan 7, 2026: Added for async safety in P2P orchestrator.
+        """
+        import asyncio
+        return await asyncio.to_thread(self._resource_detector.get_tailscale_ipv4)
+
+    async def _get_tailscale_ipv6_async(self) -> str:
+        """Get Tailscale IPv6 without blocking event loop.
+
+        Jan 7, 2026: Added for async safety in P2P orchestrator.
+        """
+        import asyncio
+        return await asyncio.to_thread(self._resource_detector.get_tailscale_ipv6)
+
+    async def _get_all_ips_async(self) -> set[str]:
+        """Get all discoverable IPs without blocking event loop.
+
+        Jan 7, 2026: Added for async safety in P2P orchestrator.
+        Wraps get_all_ips() in asyncio.to_thread() to avoid blocking
+        the event loop with subprocess calls to tailscale CLI.
+        """
+        import asyncio
+        return await asyncio.to_thread(self._resource_detector.get_all_ips)
+
+    async def _detect_local_external_work_async(self) -> dict[str, bool]:
+        """Detect external work without blocking event loop.
+
+        Jan 7, 2026: Added for async safety in P2P orchestrator.
+        Wraps detect_local_external_work() in asyncio.to_thread() to avoid
+        blocking the event loop with pgrep subprocess calls.
+        """
+        import asyncio
+        return await asyncio.to_thread(self._resource_detector.detect_local_external_work)
