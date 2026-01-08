@@ -20,54 +20,18 @@ scrape_configs:
   # P2P orchestrator on all nodes
   - job_name: 'ringrift-p2p'
     static_configs:
+      - targets: ['100.106.19.6:9091']
+        labels:
+          node="nebius-h100-1"
+      - targets: ['100.127.168.116:9091']
+        labels:
+          node="lambda-gh200-9"
       - targets: ['100.94.174.19:9091']
         labels:
           node="hetzner-cpu1"
-      - targets: ['38.128.233.145:9091']
+      - targets: ['100.77.186.124:9091']
         labels:
-          node="runpod-a100-1"
-      - targets: ['104.255.9.187:9091']
-        labels:
-          node="runpod-a100-2"
-      - targets: ['100.94.201.92:9091']
-        labels:
-          node="vultr-a100-20gb"
-      - targets: ['217.171.200.22:9091']
-        labels:
-          node="vast-28889766"
-      - targets: ['102.210.171.65:9091']
-        labels:
-          node="runpod-h100"
-      - targets: ['213.173.105.7:9091']
-        labels:
-          node="runpod-a100-storage-1"
-      - targets: ['84.0.194.24:9091']
-        labels:
-          node="vast-29129529"
-      - targets: ['145.236.166.111:9091']
-        labels:
-          node="vast-28925166"
-      - targets: ['100.67.131.72:9091']
-        labels:
-          node="hetzner-cpu2"
-      - targets: ['1.208.108.242:9091']
-        labels:
-          node="vast-29031161"
-      - targets: ['217.171.200.22:9091']
-        labels:
-          node="vast-29046315"
-      - targets: ['211.72.13.201:9091']
-        labels:
-          node="vast-29129151"
-      - targets: ['100.126.21.102:9091']
-        labels:
-          node="hetzner-cpu3"
-      - targets: ['194.228.55.129:9091']
-        labels:
-          node="vast-29128356"
-      - targets: ['76.66.207.49:9091']
-        labels:
-          node="vast-29126088"
+          node="lambda-gh200-4"
       - targets: ['localhost:8770']
         labels:
           node="mac-studio", role="leader"
@@ -75,54 +39,18 @@ scrape_configs:
   # Node exporter on all nodes
   - job_name: 'node_exporter'
     static_configs:
+      - targets: ['100.106.19.6:9100']
+        labels:
+          node="nebius-h100-1"
+      - targets: ['100.127.168.116:9100']
+        labels:
+          node="lambda-gh200-9"
       - targets: ['100.94.174.19:9100']
         labels:
           node="hetzner-cpu1"
-      - targets: ['38.128.233.145:9100']
+      - targets: ['100.77.186.124:9100']
         labels:
-          node="runpod-a100-1"
-      - targets: ['104.255.9.187:9100']
-        labels:
-          node="runpod-a100-2"
-      - targets: ['100.94.201.92:9100']
-        labels:
-          node="vultr-a100-20gb"
-      - targets: ['217.171.200.22:9100']
-        labels:
-          node="vast-28889766"
-      - targets: ['102.210.171.65:9100']
-        labels:
-          node="runpod-h100"
-      - targets: ['213.173.105.7:9100']
-        labels:
-          node="runpod-a100-storage-1"
-      - targets: ['84.0.194.24:9100']
-        labels:
-          node="vast-29129529"
-      - targets: ['145.236.166.111:9100']
-        labels:
-          node="vast-28925166"
-      - targets: ['100.67.131.72:9100']
-        labels:
-          node="hetzner-cpu2"
-      - targets: ['1.208.108.242:9100']
-        labels:
-          node="vast-29031161"
-      - targets: ['217.171.200.22:9100']
-        labels:
-          node="vast-29046315"
-      - targets: ['211.72.13.201:9100']
-        labels:
-          node="vast-29129151"
-      - targets: ['100.126.21.102:9100']
-        labels:
-          node="hetzner-cpu3"
-      - targets: ['194.228.55.129:9100']
-        labels:
-          node="vast-29128356"
-      - targets: ['76.66.207.49:9100']
-        labels:
-          node="vast-29126088"
+          node="lambda-gh200-4"
       - targets: ['localhost:9100']
         labels:
           node="mac-studio", role="leader"
@@ -165,14 +93,14 @@ scrape_configs:
         - '{job="node_exporter"}'  # Node hardware metrics
         - '{__name__=~".*_total|.*_seconds|.*_bytes"}'  # Standard metrics
     static_configs:
-      - targets: ['100.71.89.91:9090']
+      - targets: ['100.68.208.43:9090']
         labels:
-          source_node="lambda-gh200-1"
-      - targets: ['100.110.143.119:9090']
+          source_node="lambda-gh200-training"
+      - targets: ['100.79.47.27:9090']
         labels:
-          source_node="lambda-gh200-2"
-      - targets: ['100.69.101.108:9090']
+          source_node="lambda-gh200-7"
+      - targets: ['100.100.19.96:9090']
         labels:
-          source_node="lambda-gh200-3"
+          source_node="lambda-gh200-10"
     scrape_interval: 30s
     scrape_timeout: 25s
