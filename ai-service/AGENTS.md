@@ -475,15 +475,111 @@ DaemonType.MY_DAEMON: DaemonSpec(
 ),
 ```
 
-### 11.5 Reference Documentation
+### 11.5 HandlerBase Helper Methods (January 2026)
 
-- **Full registry**: `docs/DAEMON_REGISTRY.md` (124 daemons, dependencies, categories)
+`HandlerBase` provides many utility methods to reduce boilerplate in daemon code.
+
+**Event Payload Helpers:**
+
+```python
+# Normalize any event type to a consistent dict format
+payload = self._normalize_event_payload(event)
+# Returns: dict[str, Any] - works with Event objects, dicts, or raw values
+
+# Extract specific fields with defaults (type-safe)
+config_key, elo, model_path = self._extract_event_fields(
+    event,
+    ["config_key", "elo", "model_path"],
+    defaults={"elo": 0, "model_path": None}
+)
+```
+
+**Staleness Helpers:**
+
+```python
+# Check if a timestamp is older than threshold
+if self._is_stale(last_sync_time, threshold_seconds=3600):
+    self.logger.warning("Data is stale, triggering sync")
+
+# Get staleness as a ratio (0.0 = fresh, 1.0 = at threshold, >1.0 = past threshold)
+ratio = self._get_staleness_ratio(timestamp, threshold_seconds=3600)
+if ratio > 2.0:  # More than 2x threshold
+    self._trigger_emergency_sync()
+
+# Get age in seconds or hours
+age_secs = self._get_age_seconds(timestamp)
+age_hours = self._get_age_hours(timestamp)
+```
+
+**Fire-and-Forget Task Helpers:**
+
+```python
+# Create async task with automatic error handling
+# Won't crash daemon if task fails
+self._safe_create_task(
+    self._background_operation(config_key),
+    context="background_sync",  # For error logging
+    error_callback=lambda e: self._record_error(f"Sync failed: {e}"),
+)
+
+# Try to emit event with graceful fallback
+# Returns True if emitted, False if failed (never raises)
+success = self._try_emit_event(
+    "MY_EVENT",
+    {"config_key": config_key, "status": "complete"},
+    emitter_fn=emit_event,  # Function to call
+    context="operation_complete",
+)
+```
+
+**Thread-Safe Queue Helpers:**
+
+```python
+# Append to a queue with lock protection
+self._append_to_queue(self._pending_items, item, self._queue_lock)
+
+# Get a copy of queue and clear original (atomic)
+items = self._pop_queue_copy(self._pending_items, self._queue_lock)
+for item in items:
+    await self._process(item)
+```
+
+**Retry Queue Helpers:**
+
+```python
+# Add item with exponential backoff
+self._add_to_retry_queue(
+    self._retry_queue,
+    {"config_key": "hex8_2p", "attempt": 1},
+    base_delay=60.0,  # 1 minute
+    max_retries=5,
+)
+
+# Get items ready for retry vs still waiting
+ready, waiting = self._get_ready_retry_items(self._retry_queue)
+self._retry_queue = waiting  # Keep items not ready
+for item in ready:
+    success = await self._retry_operation(item)
+    if not success:
+        self._add_to_retry_queue(self._retry_queue, item)
+
+# Convenience: separate, process, and return remaining
+async def _process_retries(self):
+    self._retry_queue = await self._process_retry_queue_items(
+        self._retry_queue,
+        self._do_retry,  # Async function (item) -> bool
+    )
+```
+
+### 11.6 Reference Documentation
+
+- **Full registry**: `docs/DAEMON_REGISTRY.md` (129 daemons, dependencies, categories)
 - **Types and state**: `app/coordination/daemon_types.py`
 - **Specifications**: `app/coordination/daemon_registry.py`
 - **Factory runners**: `app/coordination/daemon_runners.py`
-- **Base classes**: `app/coordination/handler_base.py` (550 LOC, 45 tests)
+- **Base classes**: `app/coordination/handler_base.py` (1,400+ LOC, 92 tests)
 
-### 11.6 Advanced Patterns (Sprint 16.1)
+### 11.7 Advanced Patterns (Sprint 16.1)
 
 **Scheduled Recheck Pattern** - When blocking on a condition (e.g., quality gate), schedule automatic rechecks:
 
