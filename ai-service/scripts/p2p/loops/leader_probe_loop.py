@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import time
 from collections import deque
 from typing import TYPE_CHECKING, Any
@@ -62,6 +63,7 @@ class LeaderProbeLoop(BaseLoop):
         failure_threshold: int = 6,
         probe_timeout: float = 5.0,
         probe_backup_candidates: bool = True,
+        startup_grace_period: float = 45.0,
     ) -> None:
         """Initialize the leader probe loop.
 
@@ -72,6 +74,9 @@ class LeaderProbeLoop(BaseLoop):
             probe_timeout: Timeout for each probe request (default: 5s)
             probe_backup_candidates: Whether to probe backup candidates in parallel (default: True)
                 Session 17.33 Phase 17: Enables faster failover by pre-probing backup candidates
+            startup_grace_period: Seconds to wait after startup before triggering elections (default: 45s)
+                Jan 7, 2026: Allows cluster to converge after mass restarts before treating
+                probe failures as real leader failures.
         """
         super().__init__(
             name="leader_probe",
@@ -86,7 +91,15 @@ class LeaderProbeLoop(BaseLoop):
         self._consecutive_failures = 0
         self._last_success_time = time.time()
         self._election_triggered_recently = False
-        self._election_cooldown = 120.0  # Don't trigger elections too frequently
+
+        # Jan 7, 2026: Adaptive cooldown based on startup phase
+        # During startup: 15-20s cooldown to allow cluster to converge quickly
+        # During normal operation: 120s cooldown to prevent election storms
+        self._startup_grace_period = startup_grace_period
+        self._startup_time = time.time()
+        self._startup_cooldown = 15.0  # Short cooldown during startup
+        self._normal_cooldown = 120.0  # Normal cooldown after startup
+        self._cooldown_jitter = 0.2  # ±20% jitter to stagger elections
 
         # Phase 17.2: Backup candidate tracking
         self._probe_backup_candidates = probe_backup_candidates
@@ -107,6 +120,38 @@ class LeaderProbeLoop(BaseLoop):
         # Detects when claimed leader doesn't acknowledge its own leadership
         self._split_brain_detected = False
         self._split_brain_check_interval = 3  # Check every 3rd cycle (~30s at 10s interval)
+
+    def _is_in_startup_phase(self) -> bool:
+        """Check if we're still in the startup grace period.
+
+        Jan 7, 2026: During startup, the cluster is converging and leader probes
+        may fail due to timing rather than actual leader failures. This grace
+        period allows nodes to come online and establish connectivity.
+
+        Returns:
+            True if within startup grace period, False otherwise
+        """
+        elapsed = time.time() - self._startup_time
+        return elapsed < self._startup_grace_period
+
+    def _get_effective_cooldown(self) -> float:
+        """Get the current election cooldown based on cluster state.
+
+        Jan 7, 2026: Returns a shorter cooldown during startup to allow faster
+        cluster convergence, and a longer cooldown during normal operation to
+        prevent election storms. Adds jitter to stagger election attempts.
+
+        Returns:
+            Cooldown duration in seconds with ±20% jitter
+        """
+        if self._is_in_startup_phase():
+            base_cooldown = self._startup_cooldown
+        else:
+            base_cooldown = self._normal_cooldown
+
+        # Add random jitter (±20%) to stagger elections from different voters
+        jitter = base_cooldown * self._cooldown_jitter * (2 * random.random() - 1)
+        return base_cooldown + jitter
 
     async def _run_once(self) -> None:
         """Single probe iteration - check if leader is reachable.
@@ -341,6 +386,20 @@ class LeaderProbeLoop(BaseLoop):
             leader_id: The leader ID that failed to respond
         """
         self._consecutive_failures += 1
+
+        # Jan 7, 2026: Skip election during startup grace period
+        # During startup, probe failures are often transient as the cluster converges.
+        # We still count failures but don't trigger elections until startup completes.
+        if self._is_in_startup_phase():
+            elapsed = time.time() - self._startup_time
+            remaining = self._startup_grace_period - elapsed
+            logger.debug(
+                f"[LeaderProbe] Startup grace period active ({remaining:.0f}s remaining). "
+                f"Leader {leader_id} unreachable ({self._consecutive_failures}/{self._failure_threshold}) - "
+                f"deferring election"
+            )
+            return
+
         logger.warning(
             f"[LeaderProbe] Leader {leader_id} unreachable "
             f"({self._consecutive_failures}/{self._failure_threshold})"
@@ -647,16 +706,19 @@ class LeaderProbeLoop(BaseLoop):
             return
 
         downtime = time.time() - self._last_success_time
+        is_startup = self._is_in_startup_phase()
+        effective_cooldown = self._get_effective_cooldown()
+
         logger.error(
             f"[LeaderProbe] Leader {unreachable_leader} unreachable for {downtime:.0f}s, "
-            f"triggering election"
+            f"triggering election (cooldown={effective_cooldown:.0f}s, startup={is_startup})"
         )
 
         self._election_triggered_recently = True
 
-        # Schedule cooldown reset
+        # Schedule cooldown reset with adaptive duration
         async def reset_cooldown():
-            await asyncio.sleep(self._election_cooldown)
+            await asyncio.sleep(effective_cooldown)
             self._election_triggered_recently = False
 
         asyncio.create_task(reset_cooldown())
@@ -893,6 +955,19 @@ class LeaderProbeLoop(BaseLoop):
                 details={"running": False},
             )
 
+        # Jan 7, 2026: Collect startup phase and cooldown info for all responses
+        is_startup = self._is_in_startup_phase()
+        effective_cooldown = self._get_effective_cooldown()
+        startup_info = {
+            "is_startup_phase": is_startup,
+            "effective_cooldown": round(effective_cooldown, 1),
+            "cooldown_type": "startup" if is_startup else "normal",
+        }
+        if is_startup:
+            startup_info["startup_remaining_seconds"] = round(
+                self._startup_grace_period - (time.time() - self._startup_time), 1
+            )
+
         # Check if leader is unreachable (approaching election trigger)
         if self._consecutive_failures >= self._failure_threshold:
             return HealthCheckResult(
@@ -904,6 +979,7 @@ class LeaderProbeLoop(BaseLoop):
                     "failure_threshold": self._failure_threshold,
                     "seconds_since_success": time.time() - self._last_success_time,
                     "election_triggered_recently": self._election_triggered_recently,
+                    **startup_info,
                 },
             )
 
@@ -917,6 +993,7 @@ class LeaderProbeLoop(BaseLoop):
                     "split_brain_detected": True,
                     "leader_id": self._get_leader_id(),
                     "seconds_since_success": time.time() - self._last_success_time,
+                    **startup_info,
                 },
             )
 
@@ -930,6 +1007,7 @@ class LeaderProbeLoop(BaseLoop):
                     "consecutive_failures": self._consecutive_failures,
                     "failure_threshold": self._failure_threshold,
                     "seconds_since_success": time.time() - self._last_success_time,
+                    **startup_info,
                 },
             )
 
@@ -943,5 +1021,6 @@ class LeaderProbeLoop(BaseLoop):
                 "seconds_since_success": time.time() - self._last_success_time,
                 "leader_id": self._get_leader_id(),
                 "split_brain_detected": False,
+                **startup_info,
             },
         )
