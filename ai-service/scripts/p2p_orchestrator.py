@@ -53,6 +53,32 @@ _load_env_local()
 import argparse
 import asyncio
 import contextlib
+
+# Python 3.10 compatibility: asyncio.timeout was added in 3.11
+# Use a compatibility shim that works with Python 3.10+
+try:
+    from asyncio import timeout as async_timeout
+except ImportError:
+    # Python 3.10 fallback using wait_for
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def async_timeout(delay):
+        """Compatibility shim for asyncio.timeout (Python 3.11+)."""
+        task = asyncio.current_task()
+        loop = asyncio.get_running_loop()
+
+        def cancel_task():
+            if task is not None:
+                task.cancel()
+
+        handle = loop.call_later(delay, cancel_task)
+        try:
+            yield
+        except asyncio.CancelledError:
+            raise asyncio.TimeoutError()
+        finally:
+            handle.cancel()
 import gzip
 import importlib
 import ipaddress
@@ -12172,7 +12198,7 @@ class P2POrchestrator(
         try:
             # Jan 8, 2026: Use async version with timeout to prevent blocking
             try:
-                async with asyncio.timeout(15):
+                async with async_timeout(15):
                     await self._update_self_info_async()
             except asyncio.TimeoutError:
                 # Return degraded status if update times out

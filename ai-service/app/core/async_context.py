@@ -28,6 +28,29 @@ import random
 import time
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+
+# Python 3.10 compatibility: asyncio.timeout was added in 3.11
+try:
+    from asyncio import timeout as _async_timeout
+except ImportError:
+    # Python 3.10 fallback
+    @asynccontextmanager
+    async def _async_timeout(delay):
+        """Compatibility shim for asyncio.timeout (Python 3.11+)."""
+        task = asyncio.current_task()
+        loop = asyncio.get_running_loop()
+
+        def cancel_task():
+            if task is not None:
+                task.cancel()
+
+        handle = loop.call_later(delay, cancel_task)
+        try:
+            yield
+        except asyncio.CancelledError:
+            raise asyncio.TimeoutError()
+        finally:
+            handle.cancel()
 from dataclasses import dataclass, field
 from typing import (
     Any,
@@ -102,7 +125,7 @@ async def timeout_context(
     ctx = TimeoutContext(timeout=timeout)
 
     try:
-        async with asyncio.timeout(timeout):
+        async with _async_timeout(timeout):
             yield ctx
     except asyncio.TimeoutError:
         ctx.timed_out = True
