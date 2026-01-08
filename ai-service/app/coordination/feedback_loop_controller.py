@@ -1281,37 +1281,23 @@ class FeedbackLoopController(FeedbackClusterHealthMixin, HandlerBase):
             )
 
             # Emit CURRICULUM_ADVANCED event for downstream consumers
-            try:
-                from app.coordination.event_router import DataEventType, get_event_bus
+            from app.coordination.event_router import safe_emit_event
 
-                bus = get_event_bus()
-                if bus:
-                    from app.coordination.event_router import DataEvent
-
-                    event = DataEvent(
-                        event_type=DataEventType.CURRICULUM_ADVANCED,
-                        payload={
-                            "config_key": config_key,
-                            "old_tier": old_tier,
-                            "new_tier": new_tier,
-                            "trigger": "velocity_plateau",
-                            "velocity": velocity,
-                            "plateau_count": state.plateau_count,
-                            "source": "FeedbackLoopController",
-                        },
-                        source="FeedbackLoopController",
-                    )
-                    _safe_create_task(
-                        bus.publish(event),
-                        context=f"emit_curriculum_advanced:{config_key}",
-                    )
-                    logger.debug(
-                        f"[FeedbackLoopController] Emitted CURRICULUM_ADVANCED for {config_key}"
-                    )
-            except (AttributeError, TypeError, ImportError, RuntimeError) as emit_err:
-                logger.debug(
-                    f"[FeedbackLoopController] Failed to emit CURRICULUM_ADVANCED: {emit_err}"
-                )
+            safe_emit_event(
+                "CURRICULUM_ADVANCED",
+                {
+                    "config_key": config_key,
+                    "old_tier": old_tier,
+                    "new_tier": new_tier,
+                    "trigger": "velocity_plateau",
+                    "velocity": velocity,
+                    "plateau_count": state.plateau_count,
+                    "source": "FeedbackLoopController",
+                },
+                log_after=f"[FeedbackLoopController] Emitted CURRICULUM_ADVANCED for {config_key}",
+                log_level=logging.DEBUG,
+                context="FeedbackLoopController._check_velocity_plateau",
+            )
 
             # Also notify CurriculumFeedback to adjust weights
             try:
@@ -2122,19 +2108,18 @@ class FeedbackLoopController(FeedbackClusterHealthMixin, HandlerBase):
                 state.current_exploration_boost = min(EXPLORATION_BOOST_MAX, old_boost * FAILURE_EXPLORATION_BOOST)
 
                 # Emit event for selfplay boost
-                try:
-                    from app.coordination.event_router import DataEventType, get_event_bus
+                from app.coordination.event_router import safe_emit_event
 
-                    bus = get_event_bus()
-                    if bus:
-                        bus.emit(DataEventType.SELFPLAY_TARGET_UPDATED, {
-                            "config_key": config_key,
-                            "priority": "urgent",
-                            "reason": "evaluation_failures_exceeded",
-                            "exploration_boost": state.current_exploration_boost,
-                        })
-                except (AttributeError, TypeError, RuntimeError) as emit_err:
-                    logger.debug(f"Failed to emit selfplay target: {emit_err}")
+                safe_emit_event(
+                    "SELFPLAY_TARGET_UPDATED",
+                    {
+                        "config_key": config_key,
+                        "priority": "urgent",
+                        "reason": "evaluation_failures_exceeded",
+                        "exploration_boost": state.current_exploration_boost,
+                    },
+                    context="FeedbackLoopController._on_evaluation_failed",
+                )
 
                 # Reset failure counter after signaling
                 state.consecutive_failures = 0

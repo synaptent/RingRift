@@ -474,22 +474,20 @@ class JobReaperDaemon:
                 logger.info(f"Marked job {job_id} as TIMEOUT")
 
                 # Emit WORK_TIMEOUT event for pipeline coordination
-                try:
-                    from app.coordination.event_router import DataEvent, DataEventType, get_event_bus
+                from app.coordination.event_emission_helpers import safe_emit_event_async
 
-                    await get_event_bus().publish(DataEvent(
-                        event_type=DataEventType.WORK_TIMEOUT,
-                        payload={
-                            "work_id": job_id,
-                            "work_type": job_type,
-                            "node_id": node_id,
-                            "duration_seconds": duration,
-                            "expected_timeout": job.get("expected_timeout", 0),
-                        },
-                        source="JobReaperDaemon",
-                    ))
-                except Exception as emit_err:
-                    logger.debug(f"Failed to emit WORK_TIMEOUT event: {emit_err}")
+                await safe_emit_event_async(
+                    "WORK_TIMEOUT",
+                    {
+                        "work_id": job_id,
+                        "work_type": job_type,
+                        "node_id": node_id,
+                        "duration_seconds": duration,
+                        "expected_timeout": job.get("expected_timeout", 0),
+                    },
+                    source="JobReaperDaemon",
+                    context="JobReaperDaemon.handle_timeout",
+                )
 
             except Exception as e:
                 logger.error(f"Error marking job {job_id} as timeout: {e}")

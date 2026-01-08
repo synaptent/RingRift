@@ -218,7 +218,7 @@ class SelfplayQualitySignalMixin:
                             "reason": f"training_blocked:{reason}",
                             "exploration_boost": priority.exploration_boost,
                         })
-                except Exception as emit_err:
+                except (ImportError, RuntimeError, AttributeError, TypeError) as emit_err:
                     logger.debug(f"[SelfplayScheduler] Failed to emit target update: {emit_err}")
             else:
                 logger.debug(
@@ -412,7 +412,7 @@ class SelfplayQualitySignalMixin:
                         logger.debug(
                             f"[SelfplayScheduler] Emitted urgent SELFPLAY_TARGET_UPDATED for {config_key}"
                         )
-                except Exception as emit_err:
+                except (ImportError, RuntimeError, AttributeError, TypeError) as emit_err:
                     logger.debug(f"[SelfplayScheduler] Failed to emit target update: {emit_err}")
             else:
                 logger.debug(

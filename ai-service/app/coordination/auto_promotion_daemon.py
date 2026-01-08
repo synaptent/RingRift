@@ -1248,23 +1248,22 @@ class AutoPromotionDaemon(HandlerBase):
                 f"proposal={proposal.proposal_id[:8]}"
             )
 
-            # Emit event for monitoring
-            try:
-                from app.coordination.event_router import safe_emit_event, DataEventType
-                safe_emit_event(
-                    DataEventType.PROMOTION_CONSENSUS_APPROVED,
-                    {
-                        "config_key": candidate.config_key,
-                        "model_path": candidate.model_path,
-                        "model_hash": model_hash,
-                        "proposer_node": node_id,
-                        "proposal_id": proposal.proposal_id,
-                        "win_rate": evidence.win_rate,
-                        "elo": evidence.elo,
-                    },
-                )
-            except Exception as emit_err:  # noqa: BLE001
-                logger.debug(f"[AutoPromotion] Failed to emit consensus event: {emit_err}")
+            # Emit event for monitoring (safe_emit_event handles errors internally)
+            from app.coordination.event_router import safe_emit_event
+
+            safe_emit_event(
+                "PROMOTION_CONSENSUS_APPROVED",
+                {
+                    "config_key": candidate.config_key,
+                    "model_path": candidate.model_path,
+                    "model_hash": model_hash,
+                    "proposer_node": node_id,
+                    "proposal_id": proposal.proposal_id,
+                    "win_rate": evidence.win_rate,
+                    "elo": evidence.elo,
+                },
+                context="AutoPromotionDaemon.submit_to_hashgraph",
+            )
 
         except Exception as e:  # noqa: BLE001
             # Don't fail promotion just because consensus recording failed

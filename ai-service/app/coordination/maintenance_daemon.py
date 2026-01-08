@@ -962,21 +962,20 @@ class MaintenanceDaemon(HandlerBase):
                     )
 
                     # Emit event for downstream consumers
-                    try:
-                        from app.coordination.event_router import publish
-                        await publish(
-                            event_type="ORPHAN_GAMES_REGISTERED",
-                            payload={
-                                "db_path": str(db_path),
-                                "node_id": node_id,
-                                "board_type": board_type,
-                                "num_players": num_players,
-                                "game_count": game_count,
-                            },
-                            source="maintenance_daemon",
-                        )
-                    except (RuntimeError, OSError, ConnectionError) as emit_err:
-                        logger.warning(f"[Maintenance] Event emission failed: {emit_err}")
+                    from app.coordination.event_emission_helpers import safe_emit_event_async
+
+                    await safe_emit_event_async(
+                        "ORPHAN_GAMES_REGISTERED",
+                        {
+                            "db_path": str(db_path),
+                            "node_id": node_id,
+                            "board_type": board_type,
+                            "num_players": num_players,
+                            "game_count": game_count,
+                        },
+                        source="maintenance_daemon",
+                        context="MaintenanceDaemon.recover_orphan_db",
+                    )
 
             except (OSError, RuntimeError) as e:
                 logger.warning(f"[Maintenance] Failed to recover orphan DB {db_path}: {e}")

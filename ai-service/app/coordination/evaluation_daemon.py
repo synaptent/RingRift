@@ -1335,21 +1335,19 @@ class EvaluationDaemon(BaseEventHandler):
                 f"games={games_played}, event={event.event_hash[:8]}"
             )
 
-            # Emit event for monitoring
-            try:
-                safe_emit_event(
-                    DataEventType.EVALUATION_SUBMITTED,
-                    {
-                        "model_path": model_path,
-                        "model_hash": model_hash,
-                        "evaluator_node": node_id,
-                        "win_rate": win_rate,
-                        "games_played": games_played,
-                        "event_hash": event.event_hash,
-                    },
-                )
-            except Exception as emit_err:  # noqa: BLE001
-                logger.debug(f"[EvaluationDaemon] Failed to emit submission event: {emit_err}")
+            # Emit event for monitoring (safe_emit_event handles errors internally)
+            safe_emit_event(
+                "EVALUATION_SUBMITTED",
+                {
+                    "model_path": model_path,
+                    "model_hash": model_hash,
+                    "evaluator_node": node_id,
+                    "win_rate": win_rate,
+                    "games_played": games_played,
+                    "event_hash": event.event_hash,
+                },
+                context="EvaluationDaemon.submit_to_hashgraph",
+            )
 
         except Exception as e:  # noqa: BLE001
             # Don't fail evaluation just because consensus submission failed

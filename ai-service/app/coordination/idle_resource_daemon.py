@@ -2609,7 +2609,7 @@ class IdleResourceDaemon(HandlerBase):
                                 compatible_configs=[],
                                 source="IdleResourceDaemon",
                             )
-                        except Exception as emit_err:
+                        except (ImportError, RuntimeError, OSError, AttributeError, TypeError) as emit_err:
                             logger.debug(f"[IdleResourceDaemon] Failed to emit incompatibility event: {emit_err}")
 
                     logger.warning(

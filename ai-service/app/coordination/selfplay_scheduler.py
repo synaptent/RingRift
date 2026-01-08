@@ -2103,24 +2103,22 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
         # Emit SELFPLAY_RATE_CHANGED if momentum changed by >20%
         if abs(priority.momentum_multiplier - old_momentum) / max(old_momentum, 0.01) > 0.20:
             change_percent = ((priority.momentum_multiplier - old_momentum) / old_momentum) * 100.0
-            try:
-                from app.coordination.event_router import DataEventType, get_event_bus
+            from app.coordination.event_router import safe_emit_event
 
-                bus = get_event_bus()
-                if bus:
-                    bus.emit(DataEventType.SELFPLAY_RATE_CHANGED, {
-                        "config_key": config_key,
-                        "old_rate": old_momentum,
-                        "new_rate": priority.momentum_multiplier,
-                        "change_percent": change_percent,
-                        "reason": "config_boost",
-                    })
-                    logger.debug(
-                        f"[SelfplayScheduler] Emitted SELFPLAY_RATE_CHANGED for {config_key}: "
-                        f"{old_momentum:.2f} → {priority.momentum_multiplier:.2f} ({change_percent:+.1f}%)"
-                    )
-            except Exception as emit_err:
-                logger.debug(f"[SelfplayScheduler] Failed to emit SELFPLAY_RATE_CHANGED: {emit_err}")
+            safe_emit_event(
+                "SELFPLAY_RATE_CHANGED",
+                {
+                    "config_key": config_key,
+                    "old_rate": old_momentum,
+                    "new_rate": priority.momentum_multiplier,
+                    "change_percent": change_percent,
+                    "reason": "config_boost",
+                },
+                log_after=f"[SelfplayScheduler] Emitted SELFPLAY_RATE_CHANGED for {config_key}: "
+                f"{old_momentum:.2f} → {priority.momentum_multiplier:.2f} ({change_percent:+.1f}%)",
+                log_level=logging.DEBUG,
+                context="SelfplayScheduler.boost_config_priority",
+            )
 
         # Force priority recalculation
         self._last_priority_update = 0.0

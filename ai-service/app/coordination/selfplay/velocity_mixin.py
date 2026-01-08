@@ -162,7 +162,7 @@ class SelfplayVelocityMixin:
                             f"[SelfplayScheduler] Emitted SELFPLAY_RATE_CHANGED for {config_key}: "
                             f"{old_momentum:.2f} → {priority.momentum_multiplier:.2f} ({change_percent:+.1f}%)"
                         )
-                except Exception as emit_err:
+                except (ImportError, RuntimeError, AttributeError, TypeError) as emit_err:
                     logger.debug(f"[SelfplayScheduler] Failed to emit SELFPLAY_RATE_CHANGED: {emit_err}")
 
             # Emit SELFPLAY_TARGET_UPDATED for downstream consumers
@@ -178,7 +178,7 @@ class SelfplayVelocityMixin:
                         "momentum_multiplier": priority.momentum_multiplier,
                         "exploration_boost": priority.exploration_boost,
                     })
-            except Exception as emit_err:
+            except (ImportError, RuntimeError, AttributeError, TypeError) as emit_err:
                 logger.debug(f"[SelfplayScheduler] Failed to emit target update: {emit_err}")
 
         except Exception as e:
@@ -368,7 +368,7 @@ class SelfplayVelocityMixin:
                         "exploration_boost": priority.exploration_boost,
                         "anomaly_count": anomaly_count,
                     })
-            except Exception as emit_err:
+            except (ImportError, RuntimeError, AttributeError, TypeError) as emit_err:
                 logger.debug(f"[SelfplayScheduler] Failed to emit target update: {emit_err}")
 
             # Dec 2025: Also emit SELFPLAY_ALLOCATION_UPDATED for feedback loop tracking
@@ -475,7 +475,7 @@ class SelfplayVelocityMixin:
                             "exploration_boost": priority.exploration_boost,
                             "quality_score": quality_score,
                         })
-                except Exception as emit_err:
+                except (ImportError, RuntimeError, AttributeError, TypeError) as emit_err:
                     logger.debug(f"[SelfplayScheduler] Failed to emit target update: {emit_err}")
 
         except Exception as e:
@@ -777,7 +777,7 @@ class SelfplayVelocityMixin:
                         "reason": "exploration_boost_expired",
                         "exploration_boost": 1.0,
                     })
-            except Exception as emit_err:
+            except (ImportError, RuntimeError, AttributeError, TypeError) as emit_err:
                 logger.debug(f"[SelfplayScheduler] Failed to emit boost decay: {emit_err}")
 
         return decayed_count

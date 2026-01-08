@@ -651,10 +651,18 @@ class TestCircuitBreakerDecay:
 
     def test_decay_old_circuits_keeps_recent_open(self) -> None:
         """Test that decay_old_circuits keeps recently opened circuits."""
-        config = CircuitConfig(failure_threshold=3, jitter_factor=0.0)
+        # Use recovery_timeout and max_backoff longer than 30 minutes so
+        # get_state() doesn't trigger HALF_OPEN transition.
+        # Note: backoff is capped at max_backoff, so both must be set.
+        config = CircuitConfig(
+            failure_threshold=3,
+            recovery_timeout=3600.0,  # 1 hour - longer than 30 min test age
+            max_backoff=7200.0,  # 2 hours - must be >= recovery_timeout
+            jitter_factor=0.0,
+        )
         cb = ConcreteCircuitBreaker(config=config)
 
-        # Open circuit with recent timestamp
+        # Open circuit with recent timestamp (30 minutes ago)
         cb._circuits["test"] = CircuitDataBase(
             state=CircuitState.OPEN,
             failure_count=5,
@@ -663,6 +671,8 @@ class TestCircuitBreakerDecay:
 
         result = cb.decay_old_circuits(ttl_seconds=3600)  # 1 hour TTL
         assert "test" not in result["decayed"]
+        # Circuit should still be OPEN (not decayed, not transitioned to HALF_OPEN
+        # because recovery_timeout=3600 > 1800 seconds)
         assert cb.get_state("test") == CircuitState.OPEN
 
 
@@ -689,7 +699,10 @@ class TestCircuitBreakerCallback:
         """Test callback is called when circuit closes."""
         callback = MagicMock()
         config = CircuitConfig(
-            failure_threshold=3, recovery_timeout=0.01, jitter_factor=0.0
+            failure_threshold=3,
+            recovery_timeout=0.05,
+            backoff_multiplier=1.0,  # Disable backoff for predictable timing
+            jitter_factor=0.0,
         )
         cb = ConcreteCircuitBreaker(config=config, on_state_change=callback)
 
@@ -698,11 +711,18 @@ class TestCircuitBreakerCallback:
             cb.record_failure("test")
         callback.reset_mock()
 
-        # Wait for half-open and record success
-        time.sleep(0.02)
-        cb.can_execute("test")  # Trigger half-open check
+        # Wait for half-open transition
+        time.sleep(0.1)
+
+        # Trigger transition to HALF_OPEN via can_execute
+        assert cb.can_execute("test") is True
+        assert cb.get_state("test") == CircuitState.HALF_OPEN
+
+        # Note: _check_recovery does NOT notify, so callback wasn't called for OPEN->HALF_OPEN
+        # But we want to verify the HALF_OPEN->CLOSED callback
         callback.reset_mock()
 
+        # Record success - should transition to CLOSED and call callback
         cb.record_success("test")
         callback.assert_called_with("test", CircuitState.HALF_OPEN, CircuitState.CLOSED)
 
