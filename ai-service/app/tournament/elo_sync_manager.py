@@ -165,6 +165,11 @@ class EloSyncManager(DatabaseSyncManager):
         if SYNC_STATE_PATH.exists():
             self._load_elo_state()
 
+        # January 7, 2026: TTL tracking for failed nodes auto-recovery
+        # Nodes in failed_nodes list will be removed after TTL expires
+        self._failed_node_times: dict[str, float] = {}
+        self._failed_node_ttl_seconds: float = 14400.0  # 4 hours default
+
     def _load_elo_state(self) -> None:
         """Load Elo-specific state from disk."""
         try:
@@ -182,6 +187,50 @@ class EloSyncManager(DatabaseSyncManager):
                 json.dump(self._elo_state.to_dict(), f, indent=2)
         except Exception as e:
             logger.warning(f"Failed to save Elo sync state: {e}")
+
+    def _decay_failed_nodes(self) -> int:
+        """Remove nodes from failed_nodes list after TTL expires.
+
+        January 7, 2026: Added to prevent permanent exclusion of nodes that
+        had transient failures. Without TTL decay, 96/97 nodes were stuck
+        in failed_nodes list, blocking Elo sync propagation.
+
+        Returns:
+            Number of nodes recovered from failed_nodes.
+        """
+        now = time.time()
+        recovered = []
+
+        # Update timestamps for newly failed nodes
+        for node in self._elo_state.failed_nodes:
+            if node not in self._failed_node_times:
+                self._failed_node_times[node] = now
+
+        # Remove nodes that have exceeded TTL
+        for node in list(self._elo_state.failed_nodes):
+            added_time = self._failed_node_times.get(node, now)
+            age_seconds = now - added_time
+            if age_seconds > self._failed_node_ttl_seconds:
+                recovered.append(node)
+                self._elo_state.failed_nodes.discard(node)
+                self._failed_node_times.pop(node, None)
+                # Also sync with base class state if it exists
+                if hasattr(self, "_db_state") and hasattr(self._db_state, "failed_nodes"):
+                    self._db_state.failed_nodes.discard(node)
+
+        if recovered:
+            self._save_elo_state()
+            logger.info(
+                f"[EloSync] TTL decay recovered {len(recovered)} nodes: "
+                + ", ".join(recovered[:5]) + ("..." if len(recovered) > 5 else "")
+            )
+
+        # Cleanup timestamps for nodes no longer in failed_nodes
+        for node in list(self._failed_node_times.keys()):
+            if node not in self._elo_state.failed_nodes:
+                self._failed_node_times.pop(node, None)
+
+        return len(recovered)
 
     # Backward compatibility property
     @property
@@ -446,6 +495,10 @@ class EloSyncManager(DatabaseSyncManager):
 
         while self._running:
             try:
+                # Step 0: TTL decay for failed nodes (January 7, 2026)
+                # Prevents permanent exclusion of nodes after transient failures
+                self._decay_failed_nodes()
+
                 # Step 1: Pull from cluster (may get new matches from training nodes)
                 await self.sync_with_cluster()
 

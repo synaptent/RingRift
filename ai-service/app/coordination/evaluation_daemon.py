@@ -308,10 +308,11 @@ class EvaluationDaemon(BaseEventHandler):
         self._stuck_check_task: asyncio.Task | None = None
 
         # January 7, 2026: Periodic unevaluated model scan (48h autonomous operation)
-        # Runs every 30 minutes to catch models trained on cluster that weren't
+        # Runs every 5 minutes to catch models trained on cluster that weren't
         # triggered via TRAINING_COMPLETED event (event may not reach coordinator)
+        # Reduced from 30 minutes to fix stale Elo ratings
         self._last_model_scan: float | None = None
-        self._model_scan_interval_seconds: float = 1800.0  # 30 minutes
+        self._model_scan_interval_seconds: float = 300.0  # 5 minutes
 
     def _get_subscriptions(self) -> Dict[Any, Callable]:
         """Return event subscriptions for BaseEventHandler.

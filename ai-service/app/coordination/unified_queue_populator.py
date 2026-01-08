@@ -1185,6 +1185,14 @@ class UnifiedQueuePopulator:
                 logger.info(f"All Elo targets met - added {exploration_added} exploration items")
                 self._maybe_emit_queue_exhausted_event()
                 return exploration_added
+
+            # January 7, 2026: Force minimum selfplay to prevent complete stall
+            # When exploration also returns 0, add some selfplay to keep cluster active
+            minimum_added = self._populate_minimum_selfplay(min_items=10)
+            if minimum_added > 0:
+                self._maybe_emit_queue_exhausted_event()
+                return minimum_added
+
             logger.info("All Elo targets met, no population needed")
             self._maybe_emit_queue_exhausted_event()
             return 0
@@ -1434,6 +1442,58 @@ class UnifiedQueuePopulator:
             logger.info(
                 f"[Exploration] Added {added} exploration items for stale configs: "
                 f"{', '.join(t.config_key for t in stale_configs[:added])}"
+            )
+
+        return added
+
+    def _populate_minimum_selfplay(self, min_items: int = 10) -> int:
+        """Add minimum selfplay items to prevent complete pipeline stall.
+
+        January 7, 2026: Added to fix stale Elo ratings. When all_targets_met()
+        returns true and _populate_exploration_work() returns 0, the pipeline
+        completely stalls. This method ensures at least some selfplay continues
+        to keep the cluster active and generate fresh training data.
+
+        Args:
+            min_items: Minimum number of selfplay items to add (default 10)
+
+        Returns:
+            Number of items added
+        """
+        if self._work_queue is None:
+            return 0
+
+        # Pick configs to populate, prioritizing underserved ones
+        all_targets = list(self._targets.values())
+        if not all_targets:
+            return 0
+
+        # Sort by pending count (ascending) to prioritize configs with less work
+        sorted_targets = sorted(
+            all_targets,
+            key=lambda t: t.pending_selfplay_count,
+        )
+
+        added = 0
+        target_idx = 0
+        while added < min_items and target_idx < len(sorted_targets):
+            target = sorted_targets[target_idx % len(sorted_targets)]
+            try:
+                item = self._create_selfplay_item(target.board_type, target.num_players)
+                # Use slightly lower priority to not compete with normal work
+                item.priority = max(10, self.config.selfplay_priority - 10)
+                self._work_queue.add_work(item)
+                self._queued_work_ids.add(item.work_id)
+                target.pending_selfplay_count += 1
+                added += 1
+            except Exception as e:
+                logger.error(f"[MinSelfplay] Failed to add item for {target.config_key}: {e}")
+            target_idx += 1
+
+        if added > 0:
+            logger.info(
+                f"[MinSelfplay] All targets met, added {added} minimum selfplay items "
+                "to prevent pipeline stall"
             )
 
         return added
