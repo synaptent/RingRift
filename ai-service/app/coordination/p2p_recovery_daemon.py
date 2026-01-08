@@ -339,6 +339,59 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
             return self.config.nat_blocked_cooldown_seconds
         return self.config.restart_cooldown_seconds
 
+    def _get_health_check_interval(self) -> float:
+        """Get adaptive health check interval based on cluster state.
+
+        Jan 7, 2026: Adaptive health check - faster during degradation.
+        Implements dynamic interval adjustment based on cluster health status:
+        - Critical (quorum lost): 15s - most aggressive monitoring
+        - Isolated (network partition detected): 30s - fast recovery detection
+        - Degraded (consecutive failures): 45s - moderate concern
+        - Healthy: 60s (or configured base interval) - normal operation
+
+        Returns:
+            Interval in seconds for the next health check cycle.
+        """
+        base_interval = float(self.config.check_interval_seconds)
+
+        # Critical: Quorum lost - check every 15s for fastest recovery
+        if self._quorum_lost:
+            return 15.0
+
+        # Isolated: Network partition detected - check every 30s
+        if self._consecutive_isolation_checks > 0:
+            return 30.0
+
+        # Degraded: Consecutive health check failures - check every 45s
+        if self._consecutive_failures > 0:
+            return 45.0
+
+        # Healing in progress: Check every 30s to detect completion
+        if self._healing_in_progress:
+            return 30.0
+
+        # Healthy: Use configured base interval (default 60s)
+        return base_interval
+
+    def _update_health_check_interval(self) -> None:
+        """Update the cycle interval based on current cluster health.
+
+        Jan 7, 2026: Called at the end of _run_cycle() to adjust the
+        next health check interval dynamically based on cluster state.
+        """
+        new_interval = self._get_health_check_interval()
+        old_interval = self._cycle_interval
+
+        if new_interval != old_interval:
+            logger.info(
+                f"[P2PRecovery] Adjusting health check interval: "
+                f"{old_interval:.0f}s -> {new_interval:.0f}s "
+                f"(quorum_lost={self._quorum_lost}, "
+                f"isolation_checks={self._consecutive_isolation_checks}, "
+                f"failures={self._consecutive_failures})"
+            )
+            self._cycle_interval = new_interval
+
     # =========================================================================
     # Event Subscriptions (December 30, 2025)
     # =========================================================================
@@ -1068,6 +1121,10 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
                     logger.warning(
                         f"P2P restart needed but in cooldown ({cooldown_remaining:.0f}s remaining)"
                     )
+
+        # Jan 7, 2026: Update health check interval based on current cluster state
+        # Faster checks during degradation, normal interval when healthy
+        self._update_health_check_interval()
 
     async def _check_p2p_health(self) -> tuple[bool, dict[str, Any]]:
         """Check P2P orchestrator health via /status endpoint.

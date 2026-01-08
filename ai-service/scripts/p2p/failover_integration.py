@@ -447,12 +447,12 @@ class FailoverIntegrationMixin(P2PMixinBase):
             config_cache = get_config_cache()
             config = config_cache.get_config()
 
-            if not config or "hosts" not in config:
+            if not config or not config.hosts_raw:
                 self._log_debug("No hosts config available for relay discovery")
                 return relay_nodes
 
             # Find nodes with relay_capable: true
-            for node_id, node_config in config["hosts"].items():
+            for node_id, node_config in config.hosts_raw.items():
                 if not isinstance(node_config, dict):
                     continue
 
@@ -465,7 +465,7 @@ class FailoverIntegrationMixin(P2PMixinBase):
             # Sort by preference: voters first, then by role
             def relay_priority(node_id: str) -> tuple[int, int]:
                 """Higher priority = lower number. Voters first, then coordinators."""
-                node_config = config["hosts"].get(node_id, {})
+                node_config = config.hosts_raw.get(node_id, {})
                 role = node_config.get("role", "")
 
                 # Voters are most reliable (P2P always running)

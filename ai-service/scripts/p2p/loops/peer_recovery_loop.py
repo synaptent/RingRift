@@ -45,14 +45,18 @@ __all__ = [
     # Phase 7.2: Provider-aware timeouts
     "PROVIDER_PROBE_TIMEOUTS",
     "get_provider_probe_timeout",
+    # Jan 7, 2026: TCP connectivity check for faster backoff reset
+    "check_tcp_connectivity",
 ]
 
 import asyncio
 import logging
 import os
+import socket
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Coroutine, Protocol
+from urllib.parse import urlparse
 
 from .base import BaseLoop
 
@@ -137,6 +141,48 @@ def get_provider_probe_timeout(node_id: str, base_timeout: float = 20.0) -> floa
     """
     provider = _extract_provider_from_node_id(node_id)
     return PROVIDER_PROBE_TIMEOUTS.get(provider, DEFAULT_PROVIDER_TIMEOUT)
+
+
+def check_tcp_connectivity(address: str, timeout: float = 2.0) -> bool:
+    """Check raw TCP connectivity to an address.
+
+    Jan 7, 2026: Module-level convenience function for external callers.
+    Useful for quick connectivity checks before attempting full HTTP probes.
+
+    Args:
+        address: Peer address (e.g., 'http://10.0.0.1:8770' or '10.0.0.1:8770')
+        timeout: TCP connect timeout in seconds (default: 2.0s)
+
+    Returns:
+        True if TCP connection succeeded, False otherwise
+    """
+    try:
+        # Parse address to extract host and port
+        if address.startswith("http://") or address.startswith("https://"):
+            parsed = urlparse(address)
+            host = parsed.hostname
+            port = parsed.port or 8770
+        else:
+            # Assume host:port format
+            if ":" in address:
+                host, port_str = address.rsplit(":", 1)
+                port = int(port_str)
+            else:
+                host = address
+                port = 8770
+
+        if not host:
+            return False
+
+        # Create socket and attempt connection
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        result = sock.connect_ex((host, port))
+        sock.close()
+        return result == 0
+
+    except (socket.error, socket.timeout, ValueError, OSError):
+        return False
 
 
 # =============================================================================
@@ -322,6 +368,7 @@ class PeerRecoveryLoop(BaseLoop):
         # Filter peers that are ready to be probed (respecting backoff)
         now = time.time()
         ready_peers = []
+        peers_in_backoff = []  # Jan 7, 2026: Track peers in backoff for TCP check
         circuit_broken_peers = []  # Sprint 12 Session 8: Track CB-open peers separately
 
         for peer in peers:
@@ -345,9 +392,16 @@ class PeerRecoveryLoop(BaseLoop):
                 logger.debug(
                     f"[PeerRecovery] Skipping {node_id}: backoff ({remaining:.0f}s remaining)"
                 )
+                # Jan 7, 2026: Track for TCP connectivity check
+                peers_in_backoff.append(peer)
                 continue
 
             ready_peers.append(peer)
+
+        # Jan 7, 2026: Check TCP connectivity for peers in backoff
+        # This reduces recovery time by detecting reachable hosts faster (2s vs 20s)
+        if peers_in_backoff:
+            await self._reset_backoff_for_tcp_reachable_peers(peers_in_backoff, now)
 
         # Sprint 12 Session 8: Try proactive circuit recovery first
         # This reduces mean recovery time from 180s to 5-15s
@@ -535,6 +589,136 @@ class PeerRecoveryLoop(BaseLoop):
             "next_probe_in": max(0, next_probe - now) if next_probe else 0,
             "in_backoff": now < next_probe if next_probe else False,
         }
+
+    def _check_tcp_connectivity(
+        self, address: str, timeout: float = 2.0
+    ) -> bool:
+        """Check raw TCP connectivity to a peer (faster than HTTP).
+
+        Jan 7, 2026: Added for faster backoff reset detection.
+        TCP connect is much faster than HTTP (2s vs 20s timeout), so we can
+        detect recovered hosts more quickly and reset their backoff state.
+
+        Args:
+            address: Peer address (e.g., 'http://10.0.0.1:8770' or '10.0.0.1:8770')
+            timeout: TCP connect timeout in seconds (default: 2.0s)
+
+        Returns:
+            True if TCP connection succeeded, False otherwise
+        """
+        try:
+            # Parse address to extract host and port
+            if address.startswith("http://") or address.startswith("https://"):
+                parsed = urlparse(address)
+                host = parsed.hostname
+                port = parsed.port or 8770
+            else:
+                # Assume host:port format
+                if ":" in address:
+                    host, port_str = address.rsplit(":", 1)
+                    port = int(port_str)
+                else:
+                    host = address
+                    port = 8770
+
+            if not host:
+                return False
+
+            # Create socket and attempt connection
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            return result == 0
+
+        except (socket.error, socket.timeout, ValueError, OSError):
+            return False
+
+    async def _check_tcp_connectivity_async(
+        self, address: str, timeout: float = 2.0
+    ) -> bool:
+        """Async wrapper for TCP connectivity check.
+
+        Runs the blocking socket operation in a thread pool to avoid
+        blocking the event loop.
+
+        Args:
+            address: Peer address
+            timeout: TCP connect timeout in seconds
+
+        Returns:
+            True if TCP connection succeeded, False otherwise
+        """
+        return await asyncio.to_thread(
+            self._check_tcp_connectivity, address, timeout
+        )
+
+    async def _reset_backoff_for_tcp_reachable_peers(
+        self, peers_in_backoff: list[Any], now: float
+    ) -> int:
+        """Check TCP connectivity for peers in backoff and reset if reachable.
+
+        Jan 7, 2026: Reduces recovery time by detecting TCP-reachable hosts
+        before the HTTP probe timeout. If a host responds to TCP connect,
+        we reset its backoff so it will be probed on the next cycle.
+
+        This is especially useful for nodes that are rebooting - they become
+        TCP-reachable (port listening) before the HTTP endpoint is ready.
+
+        Args:
+            peers_in_backoff: List of peers currently in backoff state
+            now: Current timestamp for logging
+
+        Returns:
+            Number of peers that had backoff reset
+        """
+        if not peers_in_backoff:
+            return 0
+
+        reset_count = 0
+
+        # Check up to 10 peers per cycle to avoid overwhelming the network
+        for peer in peers_in_backoff[:10]:
+            node_id = self._get_peer_id(peer)
+            address = self._get_peer_address(peer)
+
+            if not address:
+                continue
+
+            try:
+                # Quick TCP check (2s timeout)
+                tcp_reachable = await self._check_tcp_connectivity_async(address, 2.0)
+
+                if tcp_reachable:
+                    # Reset backoff so peer will be HTTP-probed on next cycle
+                    self.reset_peer_backoff(node_id)
+                    reset_count += 1
+                    logger.info(
+                        f"[PeerRecovery] TCP alive - reset backoff for {node_id}"
+                    )
+
+                    if self._emit_event and self.config.emit_events:
+                        self._emit_event(
+                            "PEER_BACKOFF_RESET_TCP",
+                            {
+                                "node_id": node_id,
+                                "address": address,
+                                "reason": "tcp_connectivity_restored",
+                                "timestamp": now,
+                            },
+                        )
+
+            except Exception as e:
+                logger.debug(
+                    f"[PeerRecovery] TCP check error for {node_id}: {e}"
+                )
+
+        if reset_count > 0:
+            logger.info(
+                f"[PeerRecovery] Reset backoff for {reset_count} TCP-reachable peers"
+            )
+
+        return reset_count
 
     async def _try_proactive_circuit_recovery(
         self, circuit_broken_peers: list[Any], now: float
