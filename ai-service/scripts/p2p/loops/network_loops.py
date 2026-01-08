@@ -2372,6 +2372,412 @@ class TailscaleKeepaliveLoop(BaseLoop):
         )
 
 
+@dataclass
+class TailscaleDaemonHealthConfig:
+    """Configuration for Tailscale daemon health monitoring.
+
+    Jan 7, 2026: Added to detect stale Tailscale daemons where the daemon is
+    running but peer connectivity has degraded (e.g., all peers show as offline).
+    This addresses split-brain issues caused by Tailscale losing mesh connectivity.
+    """
+
+    check_interval_seconds: float = 60.0  # Check every 60 seconds
+    min_expected_peers: int = 3  # Minimum peers we expect to see online
+    peer_degradation_threshold: float = 0.5  # Trigger recovery if <50% of expected peers online
+    consecutive_failures_before_recovery: int = 3  # 3 failures = 3 minutes
+    recovery_cooldown_seconds: float = 600.0  # 10 minutes between recovery attempts
+    recovery_command_timeout: float = 30.0  # Timeout for recovery commands
+
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.check_interval_seconds <= 0:
+            raise ValueError("check_interval_seconds must be > 0")
+        if self.min_expected_peers < 0:
+            raise ValueError("min_expected_peers must be >= 0")
+        if not (0 <= self.peer_degradation_threshold <= 1):
+            raise ValueError("peer_degradation_threshold must be between 0 and 1")
+        if self.consecutive_failures_before_recovery <= 0:
+            raise ValueError("consecutive_failures_before_recovery must be > 0")
+
+
+class TailscaleDaemonHealthLoop(BaseLoop):
+    """Monitor local Tailscale daemon health and trigger auto-recovery.
+
+    Jan 7, 2026: Addresses split-brain issues caused by stale Tailscale daemons.
+
+    Problem Scenario:
+    - Tailscale daemon is running (systemd shows active)
+    - But mesh connectivity is degraded (peers show as offline or "-" status)
+    - P2P cluster loses quorum because nodes can't reach each other
+    - Split-brain can occur as different partitions elect different leaders
+
+    Solution:
+    - Monitor local `tailscale status` output for peer connectivity
+    - Detect when peer count drops significantly below expected
+    - Automatically restart Tailscale daemon to restore mesh connectivity
+    - Emit events for observability
+
+    Usage:
+        loop = TailscaleDaemonHealthLoop(
+            expected_peer_count_fn=lambda: 20,  # e.g., from cluster config
+            on_recovery_triggered=async_recovery_callback,
+        )
+        await loop.run_forever()
+    """
+
+    def __init__(
+        self,
+        expected_peer_count_fn: Callable[[], int] | None = None,
+        on_recovery_triggered: Callable[[str], Coroutine[Any, Any, None]] | None = None,
+        on_health_degraded: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None,
+        config: TailscaleDaemonHealthConfig | None = None,
+    ) -> None:
+        """Initialize Tailscale daemon health loop.
+
+        Args:
+            expected_peer_count_fn: Callback returning expected number of Tailscale peers
+            on_recovery_triggered: Async callback when recovery is triggered
+            on_health_degraded: Async callback when health degrades (but not yet triggering recovery)
+            config: Health check configuration
+        """
+        self.config = config or TailscaleDaemonHealthConfig()
+        super().__init__(
+            name="tailscale_daemon_health",
+            interval=self.config.check_interval_seconds,
+        )
+
+        self._expected_peer_count_fn = expected_peer_count_fn or (lambda: self.config.min_expected_peers)
+        self._on_recovery_triggered = on_recovery_triggered
+        self._on_health_degraded = on_health_degraded
+
+        # State tracking
+        self._consecutive_failures = 0
+        self._last_recovery_time = 0.0
+        self._last_healthy_time = time.time()
+
+        # Statistics
+        self._health_checks_total = 0
+        self._health_checks_passed = 0
+        self._health_checks_failed = 0
+        self._recoveries_attempted = 0
+        self._recoveries_succeeded = 0
+        self._last_peer_count = 0
+        self._last_online_count = 0
+
+    async def _run_once(self) -> None:
+        """Check Tailscale daemon health and trigger recovery if needed."""
+        self._health_checks_total += 1
+        now = time.time()
+
+        # Get current Tailscale status
+        status = await self._get_tailscale_status()
+        if status is None:
+            # Failed to get status - daemon might be stopped
+            await self._on_health_check_failed("tailscale_status_failed", now)
+            return
+
+        # Analyze peer connectivity
+        total_peers = status.get("total_peers", 0)
+        online_peers = status.get("online_peers", 0)
+        expected_peers = self._expected_peer_count_fn()
+
+        self._last_peer_count = total_peers
+        self._last_online_count = online_peers
+
+        # Calculate health metrics
+        peer_ratio = online_peers / max(expected_peers, 1)
+        is_healthy = (
+            online_peers >= self.config.min_expected_peers
+            and peer_ratio >= self.config.peer_degradation_threshold
+        )
+
+        if is_healthy:
+            self._health_checks_passed += 1
+            self._consecutive_failures = 0
+            self._last_healthy_time = now
+            logger.debug(
+                f"[TailscaleDaemonHealth] Healthy: {online_peers}/{total_peers} "
+                f"peers online ({peer_ratio:.1%} of expected {expected_peers})"
+            )
+        else:
+            self._health_checks_failed += 1
+            await self._on_health_check_failed(
+                f"peer_degradation:{online_peers}/{expected_peers}",
+                now,
+            )
+
+            # Notify of degraded health
+            if self._on_health_degraded:
+                try:
+                    await self._on_health_degraded({
+                        "online_peers": online_peers,
+                        "total_peers": total_peers,
+                        "expected_peers": expected_peers,
+                        "peer_ratio": peer_ratio,
+                        "consecutive_failures": self._consecutive_failures,
+                        "time_since_healthy": now - self._last_healthy_time,
+                    })
+                except Exception as e:
+                    logger.warning(f"[TailscaleDaemonHealth] Health degraded callback failed: {e}")
+
+    async def _on_health_check_failed(self, reason: str, now: float) -> None:
+        """Handle a failed health check."""
+        self._consecutive_failures += 1
+
+        logger.warning(
+            f"[TailscaleDaemonHealth] Health check failed: {reason} "
+            f"(consecutive: {self._consecutive_failures}/{self.config.consecutive_failures_before_recovery})"
+        )
+
+        # Check if we should trigger recovery
+        if self._consecutive_failures >= self.config.consecutive_failures_before_recovery:
+            # Check cooldown
+            time_since_last_recovery = now - self._last_recovery_time
+            if time_since_last_recovery < self.config.recovery_cooldown_seconds:
+                logger.info(
+                    f"[TailscaleDaemonHealth] Recovery cooldown active "
+                    f"({self.config.recovery_cooldown_seconds - time_since_last_recovery:.0f}s remaining)"
+                )
+                return
+
+            await self._trigger_recovery(reason)
+
+    async def _trigger_recovery(self, reason: str) -> None:
+        """Trigger Tailscale daemon recovery."""
+        self._recoveries_attempted += 1
+        self._last_recovery_time = time.time()
+
+        logger.warning(
+            f"[TailscaleDaemonHealth] Triggering recovery due to: {reason} "
+            f"(attempt #{self._recoveries_attempted})"
+        )
+
+        # Notify callback
+        if self._on_recovery_triggered:
+            try:
+                await self._on_recovery_triggered(reason)
+            except Exception as e:
+                logger.error(f"[TailscaleDaemonHealth] Recovery callback failed: {e}")
+
+        # Attempt recovery
+        success = await self._attempt_local_recovery()
+
+        if success:
+            self._recoveries_succeeded += 1
+            self._consecutive_failures = 0
+            logger.info("[TailscaleDaemonHealth] Recovery succeeded - connectivity restored")
+        else:
+            logger.error(
+                "[TailscaleDaemonHealth] Recovery failed - manual intervention may be required"
+            )
+
+    async def _attempt_local_recovery(self) -> bool:
+        """Attempt to recover Tailscale connectivity locally.
+
+        Returns:
+            True if recovery succeeded, False otherwise
+        """
+        # Step 1: Try `tailscale up` to re-establish connections
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "tailscale", "up", "--accept-routes",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=self.config.recovery_command_timeout,
+            )
+
+            if proc.returncode == 0:
+                await asyncio.sleep(5)  # Wait for connections to establish
+                # Verify recovery
+                status = await self._get_tailscale_status()
+                if status and status.get("online_peers", 0) >= self.config.min_expected_peers:
+                    return True
+                logger.warning("[TailscaleDaemonHealth] tailscale up succeeded but peers still degraded")
+            else:
+                logger.warning(
+                    f"[TailscaleDaemonHealth] tailscale up failed: {stderr.decode('utf-8', errors='replace')}"
+                )
+
+        except asyncio.TimeoutError:
+            logger.error("[TailscaleDaemonHealth] tailscale up timed out")
+        except Exception as e:
+            logger.error(f"[TailscaleDaemonHealth] tailscale up exception: {e}")
+
+        # Step 2: Try restarting tailscaled service (requires sudo)
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "sudo", "systemctl", "restart", "tailscaled",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            await asyncio.wait_for(
+                proc.communicate(),
+                timeout=self.config.recovery_command_timeout,
+            )
+
+            if proc.returncode == 0:
+                await asyncio.sleep(10)  # Wait for service to fully restart
+                # Verify recovery
+                status = await self._get_tailscale_status()
+                if status and status.get("online_peers", 0) >= self.config.min_expected_peers:
+                    return True
+                logger.warning("[TailscaleDaemonHealth] tailscaled restart succeeded but peers still degraded")
+            else:
+                logger.warning("[TailscaleDaemonHealth] tailscaled restart failed (may need manual intervention)")
+
+        except asyncio.TimeoutError:
+            logger.error("[TailscaleDaemonHealth] tailscaled restart timed out")
+        except FileNotFoundError:
+            # systemctl not available (e.g., macOS)
+            logger.debug("[TailscaleDaemonHealth] systemctl not available - skipping daemon restart")
+        except Exception as e:
+            logger.error(f"[TailscaleDaemonHealth] tailscaled restart exception: {e}")
+
+        return False
+
+    async def _get_tailscale_status(self) -> dict[str, Any] | None:
+        """Get Tailscale status with peer connectivity info.
+
+        Returns:
+            Dict with keys: total_peers, online_peers, self_online, or None if failed
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "tailscale", "status", "--json",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=10.0,
+            )
+
+            if proc.returncode != 0:
+                logger.debug(
+                    f"[TailscaleDaemonHealth] tailscale status failed: "
+                    f"{stderr.decode('utf-8', errors='replace')}"
+                )
+                return None
+
+            import json
+            status = json.loads(stdout.decode("utf-8"))
+
+            # Count peers
+            peers = status.get("Peer", {})
+            total_peers = len(peers)
+            online_peers = sum(1 for p in peers.values() if p.get("Online", False))
+
+            # Check self status
+            self_status = status.get("Self", {})
+            self_online = self_status.get("Online", False)
+
+            return {
+                "total_peers": total_peers,
+                "online_peers": online_peers,
+                "self_online": self_online,
+                "backend_state": status.get("BackendState", "unknown"),
+            }
+
+        except asyncio.TimeoutError:
+            logger.debug("[TailscaleDaemonHealth] tailscale status timed out")
+            return None
+        except json.JSONDecodeError as e:
+            logger.debug(f"[TailscaleDaemonHealth] Failed to parse tailscale status: {e}")
+            return None
+        except FileNotFoundError:
+            logger.debug("[TailscaleDaemonHealth] tailscale command not found")
+            return None
+        except Exception as e:
+            logger.debug(f"[TailscaleDaemonHealth] Exception getting tailscale status: {e}")
+            return None
+
+    def get_health_stats(self) -> dict[str, Any]:
+        """Get health monitoring statistics."""
+        return {
+            "health_checks_total": self._health_checks_total,
+            "health_checks_passed": self._health_checks_passed,
+            "health_checks_failed": self._health_checks_failed,
+            "success_rate": (
+                self._health_checks_passed / self._health_checks_total * 100
+                if self._health_checks_total > 0
+                else 100.0
+            ),
+            "consecutive_failures": self._consecutive_failures,
+            "recoveries_attempted": self._recoveries_attempted,
+            "recoveries_succeeded": self._recoveries_succeeded,
+            "recovery_success_rate": (
+                self._recoveries_succeeded / self._recoveries_attempted * 100
+                if self._recoveries_attempted > 0
+                else 100.0
+            ),
+            "last_peer_count": self._last_peer_count,
+            "last_online_count": self._last_online_count,
+            "seconds_since_healthy": time.time() - self._last_healthy_time,
+            "seconds_since_last_recovery": (
+                time.time() - self._last_recovery_time
+                if self._last_recovery_time > 0
+                else 0.0
+            ),
+            **self.stats.to_dict(),
+        }
+
+    def health_check(self) -> Any:
+        """Check loop health with Tailscale-specific status.
+
+        Returns:
+            HealthCheckResult with daemon health status
+        """
+        try:
+            from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
+        except ImportError:
+            stats = self.get_health_stats()
+            return {
+                "healthy": self.running and self._consecutive_failures < self.config.consecutive_failures_before_recovery,
+                "status": "running" if self.running else "stopped",
+                "message": f"TailscaleDaemonHealthLoop {'running' if self.running else 'stopped'}",
+                "details": stats,
+            }
+
+        if not self.running:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.STOPPED,
+                message="TailscaleDaemonHealthLoop is stopped",
+                details={"running": False},
+            )
+
+        stats = self.get_health_stats()
+
+        # Critical: consecutive failures at or above threshold
+        if self._consecutive_failures >= self.config.consecutive_failures_before_recovery:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.ERROR,
+                message=f"Tailscale daemon unhealthy - {self._consecutive_failures} consecutive failures",
+                details=stats,
+            )
+
+        # Degraded: some failures but not yet critical
+        if self._consecutive_failures > 0:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.DEGRADED,
+                message=f"Tailscale daemon degraded - {self._consecutive_failures} consecutive failures",
+                details=stats,
+            )
+
+        # Healthy
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message=f"TailscaleDaemonHealthLoop healthy ({self._last_online_count}/{self._last_peer_count} peers online)",
+            details=stats,
+        )
+
+
 __all__ = [
     # IP Discovery
     "IpDiscoveryConfig",
@@ -2398,4 +2804,7 @@ __all__ = [
     # Tailscale Keepalive (January 2026)
     "TailscaleKeepaliveConfig",
     "TailscaleKeepaliveLoop",
+    # Tailscale Daemon Health (January 2026)
+    "TailscaleDaemonHealthConfig",
+    "TailscaleDaemonHealthLoop",
 ]

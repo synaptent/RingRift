@@ -926,7 +926,7 @@ class LeaderElectionMixin(P2PMixinBase):
 
             # Jan 7, 2026: Skip SWIM protocol entries (IP:7947 format)
             # These leak from SWIM layer and should not be promoted to voters
-            if self._is_swim_peer_format(node_id):
+            if self._is_swim_peer_id(node_id):
                 continue
 
             # Skip dead/unhealthy peers

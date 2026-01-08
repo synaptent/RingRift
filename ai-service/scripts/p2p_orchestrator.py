@@ -5278,6 +5278,82 @@ class P2POrchestrator(
             logger.info(f"Ramdrive sync stats: {self.ramdrive_syncer.stats}")
             self.ramdrive_syncer = None
 
+    # =========================================================================
+    # GPU Job Tracking (Jan 7, 2026)
+    # =========================================================================
+    # These methods track GPU job lifecycle for adaptive dispatch decisions.
+    # GPU nodes should run GPU-accelerated selfplay, not fall back to CPU.
+    # =========================================================================
+
+    def _get_node_job_preference(self, node_id: str) -> str:
+        """Get preferred job type based on node role from YAML config.
+
+        Jan 7, 2026: Added to enforce role-based job selection.
+        GPU-only nodes should not fall back to CPU selfplay.
+
+        Returns one of:
+        - 'cpu_only': Node should only run CPU jobs (coordinator, cpu_selfplay)
+        - 'gpu_only': Node should only run GPU jobs (gpu_selfplay role)
+        - 'training_only': Node should only run training (gpu_training_primary)
+        - 'both': Node can run both GPU selfplay and training (default)
+        """
+        try:
+            from app.config.cluster_config import get_config_cache
+            config = get_config_cache().get_config()
+            host_cfg = config.hosts_raw.get(node_id, {})
+            role = str(host_cfg.get("role", "")).lower()
+
+            if role in ("coordinator", "cpu_selfplay"):
+                return "cpu_only"
+            if role == "gpu_selfplay":
+                return "gpu_only"
+            if role == "gpu_training_primary":
+                # Training-primary nodes can still do selfplay when idle
+                return "both"
+            if role == "gpu_training_selfplay":
+                return "both"
+            return "both"
+        except Exception as e:
+            logger.debug(f"Could not get job preference for {node_id}: {e}")
+            return "both"
+
+    def _record_gpu_job_result(self, success: bool) -> None:
+        """Record GPU job completion result for adaptive dispatch decisions.
+
+        Jan 7, 2026: Added for GPU failure tracking.
+        Consecutive failures indicate driver issues and should trigger CPU fallback.
+
+        Args:
+            success: True if GPU job completed successfully, False otherwise.
+        """
+        try:
+            now = time.time()
+            if success:
+                self.self_info.last_gpu_job_success = now
+                self.self_info.gpu_failure_count = 0  # Reset on success
+            else:
+                self.self_info.last_gpu_job_failure = now
+                self.self_info.gpu_failure_count = getattr(self.self_info, "gpu_failure_count", 0) + 1
+            logger.debug(f"GPU job result: success={success}, failure_count={self.self_info.gpu_failure_count}")
+        except Exception as e:
+            logger.debug(f"Could not record GPU job result: {e}")
+
+    def _update_gpu_job_count(self, delta: int) -> None:
+        """Update running GPU job count.
+
+        Jan 7, 2026: Added for accurate GPU job tracking.
+        Used to detect driver issues (jobs running but 0% utilization).
+
+        Args:
+            delta: Amount to change count by (+1 for start, -1 for completion).
+        """
+        try:
+            current = getattr(self.self_info, "gpu_job_count", 0) or 0
+            self.self_info.gpu_job_count = max(0, current + delta)
+            logger.debug(f"GPU job count: {current} -> {self.self_info.gpu_job_count}")
+        except Exception as e:
+            logger.debug(f"Could not update GPU job count: {e}")
+
     def _infer_advertise_port(self) -> int:
         """Infer the externally reachable port for this node.
 
@@ -29116,9 +29192,34 @@ print(json.dumps({{
                         # GPU idle but has CPU jobs - this is normal, will prioritize GPU work
                         logger.debug(f"Node {node.node_id} has {node.selfplay_jobs} CPU jobs but GPU idle ({gpu_percent:.0f}%) - will add GPU work")
 
-                    # HYBRID MODE: Decide between GPU and CPU-only based on capacity
-                    spawn_cpu_only = False
-                    if remaining_gpu_slots > 0 and not gpu_seems_unavailable:
+                    # Jan 7, 2026: Role-based job preference to ensure nodes run appropriate job types
+                    job_preference = self._get_node_job_preference(node.node_id)
+
+                    # Role enforcement: respect node's configured role
+                    if job_preference == "training_only":
+                        logger.debug(f"Skipping {node.node_id} for selfplay (training_only role)")
+                        continue
+                    elif job_preference == "cpu_only":
+                        # Coordinator/CPU nodes: force CPU-only selfplay
+                        spawn_cpu_only = True
+                        if remaining_cpu_slots > 0:
+                            remaining_cpu_slots -= 1
+                        else:
+                            logger.debug(f"Skipping {node.node_id} - cpu_only role but no CPU slots")
+                            continue
+                    elif job_preference == "gpu_only" and node_has_gpu and not gpu_seems_unavailable:
+                        # GPU-only nodes: must use GPU, skip if no slots
+                        if remaining_gpu_slots > 0:
+                            remaining_gpu_slots -= 1
+                            spawn_cpu_only = False
+                        else:
+                            logger.debug(f"Skipping {node.node_id} - gpu_only role but no GPU slots")
+                            continue
+                    else:
+                        # "both" role: use original hybrid logic
+                        # HYBRID MODE: Decide between GPU and CPU-only based on capacity
+                        spawn_cpu_only = False
+                        if remaining_gpu_slots > 0 and not gpu_seems_unavailable:
                         remaining_gpu_slots -= 1
                     elif should_use_cpu_only and remaining_cpu_slots > 0:
                         spawn_cpu_only = True
