@@ -676,8 +676,9 @@ class JobManager(EventSubscriptionMixin):
                                 tracker = get_node_queue_tracker()
                                 if tracker:
                                     tracker.on_job_dispatched(node_id)
-                            except Exception:
-                                pass  # Non-critical, don't fail dispatch
+                            except Exception as e:
+                                # Non-critical tracking, log at debug level
+                                logger.debug(f"[JobManager] Queue tracker dispatch failed: {e}")
 
                         # Session 17.38: Track config on node for multi-config support
                         if HAS_CONFIG_TRACKER:
@@ -695,8 +696,9 @@ class JobManager(EventSubscriptionMixin):
                                         f"[JobManager] Added config {config_key} to {node_id} "
                                         f"(vram={gpu_vram}GB)"
                                     )
-                            except Exception:
-                                pass  # Non-critical, don't fail dispatch
+                            except Exception as e:
+                                # Non-critical tracking, log at debug level
+                                logger.debug(f"[JobManager] Config tracker dispatch failed: {e}")
 
                         # Track the job
                         # Session 17.22: Include model_version for architecture feedback loop

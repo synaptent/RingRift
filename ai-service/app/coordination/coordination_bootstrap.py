@@ -822,9 +822,89 @@ def _validate_critical_imports() -> dict[str, Any]:
 
 
 # =============================================================================
-# Helper Functions
+# Configuration Validation (January 2026)
 # =============================================================================
 
+
+def _validate_configuration() -> dict[str, Any]:
+    """Validate configuration files and environment variables at startup.
+
+    January 2026: Added as part of centralized configuration validation.
+    Catches misconfigurations early before expensive operations begin.
+
+    Returns:
+        Dict with 'valid', 'config_errors', 'config_warnings', 'env_errors', 'env_warnings'
+    """
+    result = {
+        "valid": True,
+        "config_errors": [],
+        "config_warnings": [],
+        "env_errors": [],
+        "env_warnings": [],
+    }
+
+    # Validate configuration files (YAML, JSON)
+    try:
+        from app.config.config_validator import validate_all_configs
+
+        config_result = validate_all_configs()
+        result["config_errors"] = config_result.errors
+        result["config_warnings"] = config_result.warnings
+
+        if not config_result.valid:
+            result["valid"] = False
+            for error in config_result.errors:
+                logger.error(f"[Bootstrap] Config validation error: {error}")
+        for warning in config_result.warnings:
+            logger.warning(f"[Bootstrap] Config validation warning: {warning}")
+
+    except ImportError as e:
+        logger.debug(f"[Bootstrap] Config validator not available: {e}")
+    except Exception as e:
+        logger.warning(f"[Bootstrap] Config validation failed: {e}")
+        result["config_errors"].append(str(e))
+
+    # Validate environment variables
+    try:
+        from app.config.env_validator import check_environment
+
+        env_result = check_environment()
+        result["env_errors"] = env_result.errors
+        result["env_warnings"] = env_result.warnings
+
+        if not env_result.valid:
+            result["valid"] = False
+            for error in env_result.errors:
+                logger.error(f"[Bootstrap] Environment validation error: {error}")
+        for warning in env_result.warnings:
+            logger.warning(f"[Bootstrap] Environment validation warning: {warning}")
+
+    except ImportError as e:
+        logger.debug(f"[Bootstrap] Environment validator not available: {e}")
+    except Exception as e:
+        logger.warning(f"[Bootstrap] Environment validation failed: {e}")
+        result["env_errors"].append(str(e))
+
+    # Log summary
+    total_errors = len(result["config_errors"]) + len(result["env_errors"])
+    total_warnings = len(result["config_warnings"]) + len(result["env_warnings"])
+
+    if result["valid"]:
+        logger.info(
+            f"[Bootstrap] Configuration validation passed ({total_warnings} warnings)"
+        )
+    else:
+        logger.error(
+            f"[Bootstrap] Configuration validation failed: "
+            f"{total_errors} errors, {total_warnings} warnings"
+        )
+
+    return result
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
 
 
 def _register_coordinators() -> bool:
@@ -1801,6 +1881,20 @@ def bootstrap_coordination(
         logger.warning(
             f"[Bootstrap] {len(import_status['critical_failures'])} critical imports failed. "
             f"Some coordination features will be unavailable."
+        )
+
+    # January 2026: Validate configuration files and environment variables
+    # This catches misconfigurations early before expensive operations begin
+    config_status = _validate_configuration()
+    if not config_status.get("valid", True):
+        for error in config_status.get("config_errors", []):
+            _state.errors.append(f"Config error: {error}")
+        for error in config_status.get("env_errors", []):
+            _state.errors.append(f"Environment error: {error}")
+        # Log warning but don't fail - allows partial operation with defaults
+        logger.warning(
+            "[Bootstrap] Configuration validation failed. "
+            "Some features may use fallback defaults."
         )
 
     # ==========================================================================
