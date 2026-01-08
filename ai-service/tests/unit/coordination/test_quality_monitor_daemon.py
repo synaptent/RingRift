@@ -299,16 +299,20 @@ class TestQualityCheck:
     ) -> None:
         """Test quality check with non-existent data directory."""
         daemon.config.data_dir = "/nonexistent/path"
-        quality = await daemon._get_current_quality()
-        assert quality == 1.0  # Default when no data
+        # Jan 7, 2026: Updated to check QualityResult for Sprint 2.1
+        quality_result = await daemon._get_current_quality()
+        assert quality_result.quality_score == 1.0  # Default when no data
+        assert quality_result.sample_count == 0
 
     @pytest.mark.asyncio
     async def test_get_current_quality_empty_dir(
         self, daemon: QualityMonitorDaemon, temp_data_dir: Path
     ) -> None:
         """Test quality check with empty directory."""
-        quality = await daemon._get_current_quality()
-        assert quality == 1.0  # Default when no databases
+        # Jan 7, 2026: Updated to check QualityResult for Sprint 2.1
+        quality_result = await daemon._get_current_quality()
+        assert quality_result.quality_score == 1.0  # Default when no databases
+        assert quality_result.sample_count == 0
 
     @pytest.mark.asyncio
     async def test_check_quality_updates_state(
@@ -318,7 +322,10 @@ class TestQualityCheck:
         with patch.object(
             daemon, "_get_current_quality", new_callable=AsyncMock
         ) as mock_quality:
-            mock_quality.return_value = 0.75
+            # Jan 7, 2026: Updated to return QualityResult for Sprint 2.1
+            mock_quality.return_value = QualityResult(
+                quality_score=0.75, sample_count=100, variance=0.01
+            )
 
             # Suppress event emission
             with patch.object(
@@ -339,7 +346,10 @@ class TestQualityCheck:
         with patch.object(
             daemon, "_get_current_quality", new_callable=AsyncMock
         ) as mock_quality:
-            mock_quality.return_value = 0.5  # Significant drop
+            # Jan 7, 2026: Updated to return QualityResult for Sprint 2.1
+            mock_quality.return_value = QualityResult(
+                quality_score=0.5, sample_count=80, variance=0.02
+            )  # Significant drop
 
             with patch.object(
                 daemon, "_emit_quality_event", new_callable=AsyncMock
@@ -580,8 +590,12 @@ class TestEventEmission:
             "app.coordination.event_router.DataEventType",
             mock_event_type,
         ):
+            # Jan 7, 2026: Updated to use QualityResult for Sprint 2.1
+            quality_result = QualityResult(
+                quality_score=0.4, sample_count=50, variance=0.01
+            )
             await daemon._emit_quality_event(
-                quality=0.4,
+                quality_result=quality_result,
                 new_state=QualityState.POOR,
                 old_state=QualityState.GOOD,
             )
@@ -606,8 +620,12 @@ class TestEventEmission:
             "app.coordination.event_router.DataEventType",
             mock_event_type,
         ):
+            # Jan 7, 2026: Updated to use QualityResult for Sprint 2.1
+            quality_result = QualityResult(
+                quality_score=0.85, sample_count=100, variance=0.005
+            )
             await daemon._emit_quality_event(
-                quality=0.85,
+                quality_result=quality_result,
                 new_state=QualityState.GOOD,
                 old_state=QualityState.DEGRADED,
             )
@@ -628,8 +646,12 @@ class TestEventEmission:
             "app.coordination.event_router.get_router",
             return_value=mock_router,
         ):
+            # Jan 7, 2026: Updated to use QualityResult for Sprint 2.1
+            quality_result = QualityResult(
+                quality_score=0.4, sample_count=50, variance=0.01
+            )
             await daemon._emit_quality_event(
-                quality=0.4,
+                quality_result=quality_result,
                 new_state=QualityState.POOR,
                 old_state=QualityState.GOOD,
             )
@@ -661,7 +683,10 @@ class TestOnDemandQualityCheck:
         with patch.object(
             daemon, "_get_current_quality", new_callable=AsyncMock
         ) as mock_quality:
-            mock_quality.return_value = 0.65
+            # Jan 7, 2026: Updated to return QualityResult for Sprint 2.1
+            mock_quality.return_value = QualityResult(
+                quality_score=0.65, sample_count=75, variance=0.015
+            )
 
             with patch.object(
                 daemon, "_emit_quality_event", new_callable=AsyncMock
@@ -954,7 +979,10 @@ class TestQualityCheckEdgeCases:
         with patch.object(
             daemon, "_get_current_quality", new_callable=AsyncMock
         ) as mock_quality:
-            mock_quality.return_value = 0.76  # Small change
+            # Jan 7, 2026: Updated to return QualityResult for Sprint 2.1
+            mock_quality.return_value = QualityResult(
+                quality_score=0.76, sample_count=100, variance=0.01
+            )  # Small change
 
             with patch.object(
                 daemon, "_emit_quality_event", new_callable=AsyncMock
@@ -975,7 +1003,10 @@ class TestQualityCheckEdgeCases:
         with patch.object(
             daemon, "_get_current_quality", new_callable=AsyncMock
         ) as mock_quality:
-            mock_quality.return_value = 0.65  # Degraded (state change)
+            # Jan 7, 2026: Updated to return QualityResult for Sprint 2.1
+            mock_quality.return_value = QualityResult(
+                quality_score=0.65, sample_count=90, variance=0.02
+            )  # Degraded (state change)
 
             with patch.object(
                 daemon, "_emit_quality_event", new_callable=AsyncMock
@@ -993,7 +1024,10 @@ class TestQualityCheckEdgeCases:
         with patch.object(
             daemon, "_get_current_quality", new_callable=AsyncMock
         ) as mock_quality:
-            mock_quality.return_value = 0.8
+            # Jan 7, 2026: Updated to return QualityResult for Sprint 2.1
+            mock_quality.return_value = QualityResult(
+                quality_score=0.8, sample_count=100, variance=0.01
+            )
 
             with patch.object(daemon, "_save_state") as mock_save:
                 await daemon._check_quality()
@@ -1014,9 +1048,13 @@ class TestEventEmissionEdgeCases:
             "app.coordination.event_router.get_router",
             side_effect=ImportError("No module"),
         ):
+            # Jan 7, 2026: Updated to use QualityResult for Sprint 2.1
+            quality_result = QualityResult(
+                quality_score=0.4, sample_count=50, variance=0.01
+            )
             # Should not raise
             await daemon._emit_quality_event(
-                quality=0.4,
+                quality_result=quality_result,
                 new_state=QualityState.POOR,
                 old_state=QualityState.GOOD,
             )
@@ -1061,7 +1099,10 @@ class TestOnDemandQualityCheckEdgeCases:
         with patch.object(
             daemon, "_get_current_quality", new_callable=AsyncMock
         ) as mock_quality:
-            mock_quality.return_value = 0.8
+            # Jan 7, 2026: Updated to return QualityResult for Sprint 2.1
+            mock_quality.return_value = QualityResult(
+                quality_score=0.8, sample_count=100, variance=0.01
+            )
 
             # Should not raise
             await daemon._on_quality_check_requested(mock_event)
@@ -1077,7 +1118,10 @@ class TestOnDemandQualityCheckEdgeCases:
         with patch.object(
             daemon, "_get_current_quality", new_callable=AsyncMock
         ) as mock_quality:
-            mock_quality.return_value = 0.7
+            # Jan 7, 2026: Updated to return QualityResult for Sprint 2.1
+            mock_quality.return_value = QualityResult(
+                quality_score=0.7, sample_count=80, variance=0.015
+            )
 
             with patch.object(
                 daemon, "_emit_quality_event", new_callable=AsyncMock
