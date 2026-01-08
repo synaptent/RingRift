@@ -223,7 +223,21 @@ async def update_node(
             await asyncio.sleep(2)
 
             # Build proper P2P start command
-            venv_activate = node_config.get('venv_activate', 'source venv/bin/activate')
+            # Jan 7, 2026: Handle venv activation robustly
+            # - Use explicit config value if provided
+            # - ':' means no-op (pyenv/conda/system Python)
+            # - Default to source venv/bin/activate with existence check
+            venv_activate = node_config.get('venv_activate')
+            if venv_activate is None:
+                # Default: try to source venv, but test if it exists first
+                venv_activate = (
+                    f"if [ -f {node_path}/venv/bin/activate ]; then "
+                    f"source {node_path}/venv/bin/activate; "
+                    f"fi"
+                )
+            elif venv_activate == ':':
+                # Explicit no-op for pyenv/conda/system Python
+                venv_activate = ':'
 
             # Build P2P arguments
             p2p_args = [

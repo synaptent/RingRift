@@ -34,6 +34,46 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
+def _is_valid_ip(ip_str: str, family: str = "ipv4") -> bool:
+    """Validate that a string looks like an IP address.
+
+    Jan 7, 2026: Prevents error messages from being stored as IP addresses.
+    The Tailscale CLI can print errors to stdout with exit code 0, which
+    previously caused error messages to be treated as IP addresses.
+
+    Args:
+        ip_str: String to validate
+        family: "ipv4" for 100.x.x.x Tailscale IPs, "ipv6" for fd7a:* IPs
+
+    Returns:
+        True if string appears to be a valid IP address
+    """
+    if not ip_str or len(ip_str) > 45:  # Max IPv6 length is 45 chars
+        return False
+
+    if family == "ipv4":
+        # Tailscale IPv4 always starts with 100.
+        if not ip_str.startswith("100."):
+            return False
+        parts = ip_str.split(".")
+        if len(parts) != 4:
+            return False
+        try:
+            return all(0 <= int(p) <= 255 for p in parts)
+        except ValueError:
+            return False
+    elif family == "ipv6":
+        # Tailscale IPv6 starts with fd7a:
+        if not ip_str.startswith("fd7a:"):
+            return False
+        # Basic validation: contains colons, no spaces/letters other than hex
+        if " " in ip_str or any(c.isalpha() and c.lower() not in "abcdef" for c in ip_str):
+            return False
+        return ":" in ip_str
+    return False
+
+
 # January 2026: Use centralized subprocess timeouts from loop_constants
 try:
     from scripts.p2p.loops.loop_constants import LoopTimeouts
@@ -252,7 +292,8 @@ class ResourceDetector:
             if result.returncode != 0:
                 return ""
             ip = (result.stdout or "").strip().splitlines()[0].strip()
-            return ip if ":" in ip else ""
+            # Jan 7, 2026: Validate before returning to prevent error messages as IPs
+            return ip if _is_valid_ip(ip, "ipv6") else ""
         except (FileNotFoundError, subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
             return ""
 
@@ -283,6 +324,13 @@ class ResourceDetector:
                 self._emit_tailscale_health_event(success=False, error=stderr or f"exit code {result.returncode}")
                 return ""
             ip = (result.stdout or "").strip().splitlines()[0].strip()
+            # Jan 7, 2026: Validate IP before returning to prevent error messages as IPs
+            # The Tailscale CLI can print errors to stdout with exit code 0
+            if not _is_valid_ip(ip, "ipv4"):
+                error_msg = f"invalid output from tailscale ip -4: {ip[:100]!r}"
+                logger.warning(f"[ResourceDetector] {error_msg}")
+                self._emit_tailscale_health_event(success=False, error=error_msg)
+                return ""
             # Successful IP retrieval - mark as healthy
             self._emit_tailscale_health_event(success=True)
             return ip
