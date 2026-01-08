@@ -613,6 +613,75 @@ class ResourceDetector:
         # NFS not found or not accessible
         return False
 
+    def validate_gpu_capability(self, configured_role: str | None = None) -> dict[str, Any]:
+        """Validate that configured role matches actual GPU presence.
+
+        Jan 8, 2026: Added for runtime GPU validation. Detects mismatches between
+        configured role (from distributed_hosts.yaml) and actual GPU presence.
+
+        This helps catch:
+        - GPU nodes where GPU has failed/disconnected
+        - Misconfigured nodes marked as GPU but without one
+        - VMs where GPU passthrough failed
+
+        Args:
+            configured_role: The role from config (e.g., "gpu_selfplay", "gpu_training_primary").
+                            If None, attempts to read from RINGRIFT_NODE_ROLE environment variable.
+
+        Returns:
+            Dict with:
+                - valid: bool - True if config matches reality
+                - gpu_detected: bool - Whether a GPU was found
+                - gpu_name: str - Name of detected GPU (empty if none)
+                - configured_role: str - The role that was checked
+                - fallback: str | None - Suggested fallback role if invalid
+                - message: str - Human-readable status message
+        """
+        # Get configured role from argument or environment
+        if configured_role is None:
+            configured_role = os.environ.get("RINGRIFT_NODE_ROLE", "")
+
+        # Detect actual GPU
+        gpu_detected, gpu_name = self.detect_gpu()
+
+        # Check if role expects GPU
+        role_requires_gpu = any(term in configured_role.lower() for term in ["gpu", "training_primary", "cuda"])
+
+        result: dict[str, Any] = {
+            "valid": True,
+            "gpu_detected": gpu_detected,
+            "gpu_name": gpu_name,
+            "configured_role": configured_role,
+            "fallback": None,
+            "message": "",
+        }
+
+        if role_requires_gpu and not gpu_detected:
+            # Mismatch: role expects GPU but none found
+            result["valid"] = False
+            result["fallback"] = "cpu_selfplay"
+            result["message"] = f"Role '{configured_role}' requires GPU but none detected"
+            logger.warning(f"[ResourceDetector] {result['message']}")
+
+            # Emit event for monitoring
+            self._try_emit_event("GPU_CAPABILITY_MISMATCH", {
+                "node_id": self._get_node_id(),
+                "configured_role": configured_role,
+                "gpu_detected": False,
+                "gpu_name": "",
+                "fallback": "cpu_selfplay",
+            })
+        elif not role_requires_gpu and gpu_detected:
+            # Info: GPU available but role doesn't use it (not an error)
+            result["message"] = f"GPU '{gpu_name}' available but role '{configured_role}' doesn't require it"
+            logger.info(f"[ResourceDetector] {result['message']}")
+        elif gpu_detected:
+            result["message"] = f"GPU '{gpu_name}' available and role '{configured_role}' uses it"
+        else:
+            result["message"] = f"No GPU detected, role '{configured_role}' doesn't require it"
+
+        return result
+
     def detect_local_external_work(self) -> dict[str, bool]:
         """Detect external work running on this node (not tracked by P2P orchestrator).
 
@@ -797,3 +866,32 @@ class ResourceDetectorMixin:
         """
         import asyncio
         return await asyncio.to_thread(self._resource_detector.detect_local_external_work)
+
+    def _validate_gpu_capability(self, configured_role: str | None = None) -> dict[str, Any]:
+        """Validate GPU capability matches configured role (delegates to ResourceDetector).
+
+        Jan 8, 2026: Added for runtime GPU validation.
+
+        Args:
+            configured_role: The role from config. If None, reads from environment.
+
+        Returns:
+            Dict with validation result, GPU info, and fallback suggestion.
+        """
+        return self._resource_detector.validate_gpu_capability(configured_role)
+
+    async def _validate_gpu_capability_async(self, configured_role: str | None = None) -> dict[str, Any]:
+        """Validate GPU capability without blocking event loop.
+
+        Jan 8, 2026: Added for async safety in P2P orchestrator.
+        Wraps validate_gpu_capability() in asyncio.to_thread() to avoid
+        blocking the event loop with nvidia-smi subprocess calls.
+
+        Args:
+            configured_role: The role from config. If None, reads from environment.
+
+        Returns:
+            Dict with validation result, GPU info, and fallback suggestion.
+        """
+        import asyncio
+        return await asyncio.to_thread(self._resource_detector.validate_gpu_capability, configured_role)

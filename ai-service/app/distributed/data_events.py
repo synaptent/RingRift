@@ -371,6 +371,7 @@ class DataEventType(Enum):
     P2P_CONNECTION_RESET_REQUESTED = "p2p_connection_reset_requested"  # Jan 2026: Request P2P reset
     TAILSCALE_CLI_ERROR = "tailscale_cli_error"  # Jan 2026: Tailscale CLI command failed
     TAILSCALE_CLI_RECOVERED = "tailscale_cli_recovered"  # Jan 2026: Tailscale CLI working again
+    GPU_CAPABILITY_MISMATCH = "gpu_capability_mismatch"  # Jan 8, 2026: Configured role expects GPU but none detected
     NODE_OVERLOADED = "node_overloaded"  # Node resource overload (job redistribution)
     RECOVERY_INITIATED = "recovery_initiated"  # Auto-recovery started
     RECOVERY_COMPLETED = "recovery_completed"  # Auto-recovery finished

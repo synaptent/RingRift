@@ -12164,9 +12164,26 @@ class P2POrchestrator(
         LEARNED LESSONS - Simple health endpoint for monitoring and load balancers.
         Returns node health status without full cluster state.
         Includes utilization status from resource_optimizer for cluster coordination.
+
+        Jan 8, 2026: Added 15s timeout protection to prevent health endpoint from
+        blocking indefinitely if resource detection hangs. Uses async version of
+        _update_self_info to avoid blocking the event loop.
         """
         try:
-            self._update_self_info()
+            # Jan 8, 2026: Use async version with timeout to prevent blocking
+            try:
+                async with asyncio.timeout(15):
+                    await self._update_self_info_async()
+            except asyncio.TimeoutError:
+                # Return degraded status if update times out
+                logger.warning("[P2P] Health check: _update_self_info_async timed out after 15s")
+                return web.json_response({
+                    "healthy": False,
+                    "node_id": self.node_id,
+                    "error": "health_check_timeout",
+                    "message": "Resource detection timed out after 15 seconds",
+                    "timestamp": datetime.utcnow().isoformat(),
+                }, status=503)
             is_healthy = self.self_info.is_healthy()
 
             # Calculate uptime and leader status
