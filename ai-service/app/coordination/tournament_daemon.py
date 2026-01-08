@@ -204,8 +204,12 @@ class TournamentDaemon(HandlerBase):
         self._periodic_task: asyncio.Task | None = None
         self._calibration_task: asyncio.Task | None = None  # Dec 2025
         self._cross_nn_task: asyncio.Task | None = None  # Dec 2025
-        self._stats = TournamentStats()
+        self._tournament_stats = TournamentStats()
         self._evaluation_queue: asyncio.Queue = asyncio.Queue()
+
+        # Tracking attributes for health_check and get_status (Jan 2026)
+        self._cycle_count: int = 0
+        self._recent_errors: list[str] = []
 
     def _get_event_subscriptions(self) -> dict:
         """Get declarative event subscriptions (HandlerBase pattern).
@@ -323,7 +327,7 @@ class TournamentDaemon(HandlerBase):
 
     def _on_training_completed(self, event) -> None:
         """Handle TRAINING_COMPLETED event."""
-        self._stats.event_triggers += 1
+        self._tournament_stats.event_triggers += 1
 
         payload = getattr(event, "payload", {}) or {}
         model_path = payload.get("model_path")
@@ -360,7 +364,7 @@ class TournamentDaemon(HandlerBase):
         Jan 5, 2026: Now triggers cross-NN tournament after promotion to compare
         newly promoted model against previous model versions.
         """
-        self._stats.event_triggers += 1
+        self._tournament_stats.event_triggers += 1
 
         payload = getattr(event, "payload", {}) or {}
         model_id = payload.get("model_id")
@@ -422,7 +426,7 @@ class TournamentDaemon(HandlerBase):
                 break
             except Exception as e:
                 logger.error(f"Error in periodic ladder: {e}")
-                self._stats.record_failure(str(e))
+                self._tournament_stats.record_failure(str(e))
 
     async def _calibration_loop(self) -> None:
         """Periodic calibration tournament loop (Dec 2025).
@@ -449,7 +453,7 @@ class TournamentDaemon(HandlerBase):
                 break
             except Exception as e:
                 logger.error(f"Error in calibration loop: {e}")
-                self._stats.record_failure(str(e))
+                self._tournament_stats.record_failure(str(e))
 
     async def _cross_nn_loop(self) -> None:
         """Periodic cross-NN version tournament loop (Dec 2025).
@@ -477,7 +481,7 @@ class TournamentDaemon(HandlerBase):
                 break
             except Exception as e:
                 logger.error(f"Error in cross-NN loop: {e}")
-                self._stats.record_failure(str(e))
+                self._tournament_stats.record_failure(str(e))
 
     async def _run_evaluation(
         self,
@@ -497,7 +501,7 @@ class TournamentDaemon(HandlerBase):
         Returns:
             Evaluation results dict
         """
-        self._stats.evaluations_triggered += 1
+        self._tournament_stats.evaluations_triggered += 1
         start_time = time.time()
 
         logger.info(f"Starting evaluation: {model_path} ({board_type}_{num_players}p)")
@@ -570,8 +574,8 @@ class TournamentDaemon(HandlerBase):
                 results["elo"] = gauntlet_results.estimated_elo
                 await self._update_elo(model_path, board_type, num_players, gauntlet_results)
 
-            self._stats.games_played += results["games_played"]
-            self._stats.last_evaluation_time = time.time()
+            self._tournament_stats.games_played += results["games_played"]
+            self._tournament_stats.last_evaluation_time = time.time()
 
             logger.info(
                 f"Evaluation complete: {model_path} - "
@@ -622,7 +626,7 @@ class TournamentDaemon(HandlerBase):
         except asyncio.TimeoutError:
             logger.error(f"Evaluation timeout: {model_path}")
             results["error"] = "timeout"
-            self._stats.record_failure(f"Evaluation timeout: {model_path}")
+            self._tournament_stats.record_failure(f"Evaluation timeout: {model_path}")
 
         except ImportError as e:
             logger.warning(f"GameGauntlet not available: {e}")
@@ -634,7 +638,7 @@ class TournamentDaemon(HandlerBase):
         except Exception as e:
             logger.error(f"Evaluation failed: {e}")
             results["error"] = str(e)
-            self._stats.record_failure(str(e))
+            self._tournament_stats.record_failure(str(e))
 
         results["duration_seconds"] = time.time() - start_time
 
@@ -863,7 +867,7 @@ class TournamentDaemon(HandlerBase):
         Returns:
             Tournament results dict
         """
-        self._stats.evaluations_completed += 1  # Fixed: use base class field, not property
+        self._tournament_stats.evaluations_completed += 1  # Fixed: use base class field, not property
         start_time = time.time()
 
         results = {
@@ -891,14 +895,14 @@ class TournamentDaemon(HandlerBase):
                 results["configs_evaluated"] += 1
 
             results["success"] = True
-            self._stats.last_tournament_time = time.time()
+            self._tournament_stats.last_tournament_time = time.time()
 
         except ImportError:
             logger.warning("Model discovery not available, skipping ladder tournament")
         except Exception as e:
             logger.error(f"Ladder tournament failed: {e}")
             results["error"] = str(e)
-            self._stats.errors.append(str(e))
+            self._tournament_stats.errors.append(str(e))
 
         results["duration_seconds"] = time.time() - start_time
         return results
@@ -999,7 +1003,7 @@ class TournamentDaemon(HandlerBase):
                         if game_result.get("winner") == stronger_player:
                             wins += 1
 
-                        self._stats.games_played += 1
+                        self._tournament_stats.games_played += 1
 
                     except Exception as e:
                         logger.warning(f"Calibration game failed: {e}")
@@ -1033,7 +1037,7 @@ class TournamentDaemon(HandlerBase):
         except Exception as e:
             logger.error(f"Calibration tournament failed: {e}")
             results["error"] = str(e)
-            self._stats.errors.append(str(e))
+            self._tournament_stats.errors.append(str(e))
 
         results["duration_seconds"] = time.time() - start_time
         logger.info(f"Calibration tournament completed: {results.get('all_valid', False)}")
@@ -1240,7 +1244,7 @@ class TournamentDaemon(HandlerBase):
                                 wins_older += 1
 
                             total_games += 1
-                            self._stats.games_played += 1
+                            self._tournament_stats.games_played += 1
 
                             # Record match for Elo update
                             if winner is not None:
@@ -1285,7 +1289,7 @@ class TournamentDaemon(HandlerBase):
         except Exception as e:
             logger.error(f"Cross-NN tournament failed: {e}")
             results["error"] = str(e)
-            self._stats.errors.append(str(e))
+            self._tournament_stats.errors.append(str(e))
 
         results["duration_seconds"] = time.time() - start_time
         logger.info(f"Cross-NN tournament completed: {results.get('games_played', 0)} games")
@@ -1419,17 +1423,18 @@ class TournamentDaemon(HandlerBase):
         base_status = {
             "node_id": self.node_id,
             "running": self._running,
+            "subscribed": self.is_subscribed,
             "queue_size": self._evaluation_queue.qsize(),
             "cycle_count": self._cycle_count,
             "error_count": len(self._recent_errors),
             "stats": {
-                "tournaments_completed": self._stats.tournaments_completed,
-                "games_played": self._stats.games_played,
-                "evaluations_triggered": self._stats.evaluations_triggered,
-                "event_triggers": self._stats.event_triggers,
-                "last_tournament_time": self._stats.last_tournament_time,
-                "last_evaluation_time": self._stats.last_evaluation_time,
-                "recent_errors": self._stats.errors[-5:],
+                "tournaments_completed": self._tournament_stats.tournaments_completed,
+                "games_played": self._tournament_stats.games_played,
+                "evaluations_triggered": self._tournament_stats.evaluations_triggered,
+                "event_triggers": self._tournament_stats.event_triggers,
+                "last_tournament_time": self._tournament_stats.last_tournament_time,
+                "last_evaluation_time": self._tournament_stats.last_evaluation_time,
+                "recent_errors": self._tournament_stats.errors[-5:],
             },
             "config": {
                 "trigger_on_training_completed": self.config.trigger_on_training_completed,
@@ -1467,7 +1472,7 @@ class TournamentDaemon(HandlerBase):
         return HealthCheckResult(
             healthy=True,
             status=CoordinatorStatus.RUNNING,
-            message=f"Tournament daemon running ({self._stats.games_played} games played)",
+            message=f"Tournament daemon running ({self._tournament_stats.games_played} games played)",
             details=self.get_status(),
         )
 

@@ -94,7 +94,7 @@ class BackoffConfig:
 
     initial_delay: float = 1.0  # Initial delay after first error (seconds)
     max_delay: float = 300.0  # Maximum delay cap (5 minutes)
-    multiplier: float = 2.0  # Exponential multiplier
+    multiplier: float = 1.5  # Exponential multiplier (Jan 2026: reduced from 2.0 for faster recovery)
     jitter: float = 0.1  # Random jitter factor (0.1 = +/-10%)
 
     def __post_init__(self) -> None:
@@ -194,6 +194,9 @@ class BaseLoop(ABC):
         # Statistics
         self._stats = LoopStats(name=name)
 
+        # Performance degradation tracking (Jan 2026 - Phase 5.1 P2P Observability)
+        self._performance_degraded_emitted = False
+
         # Callbacks
         self._error_callbacks: list[Callable[[Exception], None]] = []
 
@@ -264,6 +267,9 @@ class BaseLoop(ABC):
                     self._stats.last_success_time = time.time()
                     self._stats.last_run_duration = run_duration
                     self._stats.total_run_duration += run_duration
+
+                    # Phase 5.1: Check for performance degradation
+                    self._check_performance_degradation()
 
                     # Record metric if manager available
                     if self.metrics_manager:
@@ -462,6 +468,60 @@ class BaseLoop(ABC):
             logger.debug(f"[{self.name}] Event system not available for startup failure")
         except Exception as e:
             logger.warning(f"[{self.name}] Failed to emit startup failure event: {e}")
+
+    def _check_performance_degradation(self) -> None:
+        """Check if loop performance is degraded and emit event if so.
+
+        Jan 7, 2026 - Phase 5.1 P2P Observability: Emit LOOP_PERFORMANCE_DEGRADED
+        if avg_run_duration > interval * 0.5 (loop taking >50% of its interval).
+        """
+        if self._stats.successful_runs < 5:
+            # Need at least 5 successful runs to have meaningful average
+            return
+
+        threshold = self.interval * 0.5
+        avg_duration = self._stats.avg_run_duration
+
+        if avg_duration > threshold:
+            if not self._performance_degraded_emitted:
+                self._performance_degraded_emitted = True
+                self._emit_performance_degraded_event(avg_duration, threshold)
+        else:
+            # Performance recovered
+            if self._performance_degraded_emitted:
+                self._performance_degraded_emitted = False
+                logger.info(
+                    f"[{self.name}] Performance recovered: "
+                    f"avg={avg_duration:.2f}s < threshold={threshold:.2f}s"
+                )
+
+    def _emit_performance_degraded_event(
+        self, avg_duration: float, threshold: float
+    ) -> None:
+        """Emit event when loop performance degrades (Phase 5.1)."""
+        try:
+            from app.coordination.event_router import emit_event
+            from app.distributed.data_events import DataEventType
+
+            logger.warning(
+                f"[{self.name}] Performance degraded: "
+                f"avg={avg_duration:.2f}s > threshold={threshold:.2f}s"
+            )
+            emit_event(
+                DataEventType.P2P_LOOP_PERFORMANCE_DEGRADED,
+                {
+                    "loop_name": self.name,
+                    "avg_run_duration": avg_duration,
+                    "interval": self.interval,
+                    "threshold": threshold,
+                    "total_runs": self._stats.total_runs,
+                    "success_rate": self._stats.success_rate,
+                },
+            )
+        except ImportError:
+            logger.debug(f"[{self.name}] Event system not available for perf degradation")
+        except Exception as e:
+            logger.warning(f"[{self.name}] Failed to emit perf degradation event: {e}")
 
     def reset_stats(self) -> None:
         """Reset loop statistics to initial values.
@@ -736,6 +796,8 @@ class LoopManager:
     def _get_startup_order(self) -> list[str]:
         """Get loop names in topological order based on dependencies.
 
+        Jan 7, 2026 - Phase 5.3: Enhanced with cycle detection and logging.
+
         Returns:
             List of loop names in order they should be started
         """
@@ -762,12 +824,73 @@ class LoopManager:
                 if in_degree[dependent] == 0:
                     queue.append(dependent)
 
-        # Add any remaining loops (handles cycles by just appending them)
-        for name in self._loops:
-            if name not in result:
-                result.append(name)
+        # Phase 5.3: Detect and report dependency cycles
+        remaining = [name for name in self._loops if name not in result]
+        if remaining:
+            # We have loops with unresolved dependencies - likely a cycle
+            cycles = self._detect_dependency_cycles(graph, remaining)
+            if cycles:
+                for cycle in cycles:
+                    logger.warning(
+                        f"[{self.name}] Dependency cycle detected: {' -> '.join(cycle)}"
+                    )
+            else:
+                logger.warning(
+                    f"[{self.name}] Loops with unresolved dependencies: {remaining}"
+                )
+            # Still add them to result so they can start (with warning)
+            result.extend(remaining)
 
         return result
+
+    def _detect_dependency_cycles(
+        self, graph: dict[str, list[str]], candidates: list[str]
+    ) -> list[list[str]]:
+        """Detect cycles among candidate nodes using DFS.
+
+        Jan 7, 2026 - Phase 5.3: Helper for cycle detection.
+
+        Args:
+            graph: Dependency graph (node -> dependents)
+            candidates: Nodes to check for cycles
+
+        Returns:
+            List of detected cycles (each cycle is a list of node names)
+        """
+        cycles: list[list[str]] = []
+        visited: set[str] = set()
+        rec_stack: set[str] = set()
+
+        def dfs(node: str, path: list[str]) -> None:
+            if node in rec_stack:
+                # Found cycle - extract it from path
+                cycle_start = path.index(node)
+                cycle = path[cycle_start:] + [node]
+                cycles.append(cycle)
+                return
+
+            if node in visited:
+                return
+
+            visited.add(node)
+            rec_stack.add(node)
+            path.append(node)
+
+            # Check dependencies (reverse direction - who depends on this node)
+            loop = self._loops.get(node)
+            if loop:
+                for dep in loop.depends_on:
+                    if dep in self._loops:
+                        dfs(dep, path)
+
+            path.pop()
+            rec_stack.remove(node)
+
+        for candidate in candidates:
+            if candidate not in visited:
+                dfs(candidate, [])
+
+        return cycles
 
     async def _verify_loops_running(self, timeout: float = 5.0) -> None:
         """Verify all loops have started running.

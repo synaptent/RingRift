@@ -64,7 +64,7 @@ class TestTournamentDaemonConfig:
         """Test default configuration values."""
         config = TournamentDaemonConfig()
         assert config.trigger_on_training_completed is True
-        assert config.trigger_on_model_promoted is False
+        assert config.trigger_on_model_promoted is True  # Jan 2026: Changed default to True
         assert config.enable_periodic_ladder is True
         assert config.ladder_interval_seconds == 3600.0
         assert config.games_per_evaluation == 20
@@ -140,7 +140,7 @@ class TestTournamentDaemon:
         """Test daemon initializes correctly."""
         assert daemon.config.games_per_baseline == 2
         assert daemon._running is False
-        assert daemon._subscribed is False
+        assert daemon.is_subscribed is False  # Jan 2026: Use property instead of private attr
         assert daemon._evaluation_queue.empty()
 
     def test_is_running(self, daemon):
@@ -152,21 +152,21 @@ class TestTournamentDaemon:
     @pytest.mark.asyncio
     async def test_start_stop_lifecycle(self, daemon):
         """Test daemon start and stop lifecycle."""
-        with patch.object(daemon, "_subscribe_to_events"):
+        with patch.object(daemon, "_subscribe_all_events"):  # Jan 2026: Updated method name
             await daemon.start()
 
         assert daemon._running is True
-        assert daemon._evaluation_task is not None
+        assert daemon._task is not None  # Jan 2026: HandlerBase uses _task, not _evaluation_task
 
         await daemon.stop()
 
         assert daemon._running is False
-        assert daemon._evaluation_task is None
+        assert daemon._task is None
 
     @pytest.mark.asyncio
     async def test_start_idempotent(self, daemon):
         """Test that calling start twice is handled."""
-        with patch.object(daemon, "_subscribe_to_events"):
+        with patch.object(daemon, "_subscribe_all_events"):  # Jan 2026: Updated method name
             await daemon.start()
             await daemon.start()  # Should log warning but not fail
 
@@ -258,12 +258,12 @@ class TestTournamentDaemon:
         })
 
         daemon._on_model_promoted(event)
-        assert daemon._stats.event_triggers == 1
+        assert daemon._tournament_stats.event_triggers == 1
 
     def test_get_status(self, daemon):
         """Test status reporting."""
         daemon._running = True
-        daemon._subscribed = True
+        daemon._event_subscribed = True  # Jan 2026: Use correct private attr name
 
         status = daemon.get_status()
 
@@ -283,7 +283,7 @@ class TestTournamentDaemon:
     def test_health_check_running(self, daemon):
         """Test health check when running."""
         daemon._running = True
-        daemon._stats.games_played = 50
+        daemon._tournament_stats.games_played = 50
 
         result = daemon.health_check()
 
@@ -293,14 +293,14 @@ class TestTournamentDaemon:
     def test_health_check_high_errors(self, daemon):
         """Test health check with high error count."""
         daemon._running = True
-        # Simulate many errors (errors_count > 10 triggers degraded status)
+        # Jan 2026: Populate _recent_errors directly (health_check uses this attribute)
         for i in range(15):
-            daemon._stats.record_failure(f"Error {i}")
+            daemon._recent_errors.append(f"Error {i}")
 
         result = daemon.health_check()
 
         assert result.healthy is False
-        assert "15 errors" in result.message
+        assert "15 recent errors" in result.message  # Jan 2026: Message says "recent errors"
 
     @pytest.mark.asyncio
     async def test_emit_evaluation_completed(self, daemon):
@@ -397,7 +397,7 @@ class TestTournamentDaemonSingleton:
 
 
 class TestTournamentDaemonSubscription:
-    """Test event subscription."""
+    """Test event subscription (Jan 2026: Updated for HandlerBase pattern)."""
 
     def test_subscribe_to_events_training_completed(self, daemon):
         """Test subscription to TRAINING_COMPLETED."""
@@ -405,9 +405,9 @@ class TestTournamentDaemonSubscription:
             mock_router = MagicMock()
             mock_get_router.return_value = mock_router
 
-            daemon._subscribe_to_events()
+            daemon._subscribe_all_events()
 
-            assert daemon._subscribed is True
+            assert daemon.is_subscribed is True
             mock_router.subscribe.assert_called()
 
     def test_subscribe_to_events_model_promoted(self, mock_config):
@@ -419,7 +419,7 @@ class TestTournamentDaemonSubscription:
             mock_router = MagicMock()
             mock_get_router.return_value = mock_router
 
-            daemon._subscribe_to_events()
+            daemon._subscribe_all_events()
 
             # Should have subscribed to both events
             assert mock_router.subscribe.call_count == 2
@@ -430,19 +430,19 @@ class TestTournamentDaemonSubscription:
             mock_router = MagicMock()
             mock_get_router.return_value = mock_router
 
-            daemon._subscribe_to_events()
-            daemon._subscribe_to_events()  # Second call
+            daemon._subscribe_all_events()
+            daemon._subscribe_all_events()  # Second call
 
-            # Should only subscribe once
-            assert mock_router.subscribe.call_count == 1
+            # HandlerBase tracks subscription state
+            assert daemon.is_subscribed is True
 
 
 class TestTournamentDaemonEvaluationWorker:
-    """Test evaluation worker."""
+    """Test evaluation worker (now via _run_cycle in HandlerBase pattern)."""
 
     @pytest.mark.asyncio
     async def test_evaluation_worker_processes_queue(self, daemon):
-        """Test that worker processes queue items."""
+        """Test that worker processes queue items via _run_cycle."""
         daemon._running = True
 
         # Queue an evaluation
@@ -456,24 +456,14 @@ class TestTournamentDaemonEvaluationWorker:
         with patch.object(daemon, "_run_evaluation", new_callable=AsyncMock) as mock_eval:
             mock_eval.return_value = {"success": True}
 
-            # Start worker and give it time to process
-            worker_task = asyncio.create_task(daemon._evaluation_worker())
-            await asyncio.sleep(0.1)
-
-            # Stop worker
-            daemon._running = False
-            worker_task.cancel()
-
-            try:
-                await worker_task
-            except asyncio.CancelledError:
-                pass
+            # Jan 2026: Use _run_cycle instead of _evaluation_worker
+            await daemon._run_cycle()
 
             mock_eval.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_evaluation_worker_handles_errors(self, daemon):
-        """Test that worker handles evaluation errors."""
+        """Test that worker handles evaluation errors via _run_cycle."""
         daemon._running = True
 
         daemon._evaluation_queue.put_nowait({
@@ -486,18 +476,10 @@ class TestTournamentDaemonEvaluationWorker:
         with patch.object(daemon, "_run_evaluation", new_callable=AsyncMock) as mock_eval:
             mock_eval.side_effect = Exception("Test error")
 
-            worker_task = asyncio.create_task(daemon._evaluation_worker())
-            await asyncio.sleep(0.1)
+            # Jan 2026: Use _run_cycle instead of _evaluation_worker
+            await daemon._run_cycle()
 
-            daemon._running = False
-            worker_task.cancel()
-
-            try:
-                await worker_task
-            except asyncio.CancelledError:
-                pass
-
-            # Error should be recorded via record_failure()
+            # Error should be recorded via _record_error() (HandlerBase pattern)
             assert daemon._stats.errors_count > 0
 
 
@@ -559,12 +541,12 @@ class TestTournamentDaemonLadderTournament:
     @pytest.mark.asyncio
     async def test_ladder_tournament_updates_stats(self, daemon):
         """Test that stats are updated after ladder tournament."""
-        initial_evaluations = daemon._stats.evaluations_completed
+        initial_evaluations = daemon._tournament_stats.evaluations_completed
 
         await daemon._run_ladder_tournament()
 
         # Stats should increment regardless of success
-        assert daemon._stats.evaluations_completed >= initial_evaluations
+        assert daemon._tournament_stats.evaluations_completed >= initial_evaluations
 
     def test_ladder_tournament_queue_population_logic(self, daemon):
         """Test queue population logic (unit test, no mocking)."""

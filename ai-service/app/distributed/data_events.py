@@ -323,6 +323,7 @@ class DataEventType(Enum):
     P2P_RECOVERY_NEEDED = "p2p_recovery_needed"  # Jan 3, 2026: Max escalation reached, manual intervention needed
     P2P_ZOMBIE_DETECTED = "p2p_zombie_detected"  # Jan 7, 2026: HTTP server crashed but process continues, terminating
     P2P_LOOP_STARTUP_FAILED = "p2p_loop_startup_failed"  # Jan 7, 2026: P2P background loop failed to start within timeout
+    P2P_LOOP_PERFORMANCE_DEGRADED = "p2p_loop_performance_degraded"  # Jan 7, 2026: Loop avg run duration exceeds 50% of interval
     GOSSIP_STATE_CLEANUP_COMPLETED = "gossip_state_cleanup_completed"  # Jan 7, 2026: Gossip state TTL cleanup completed
 
     # Progress monitoring events (December 2025 - 48h autonomous operation)

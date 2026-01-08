@@ -38,6 +38,7 @@ DEFAULT_STATE_PATH = Path("data/coordination/quality_monitor_state.json")
 
 __all__ = [
     "QualityState",
+    "QualityResult",  # Jan 7, 2026: Added for confidence metrics
     "QualityMonitorConfig",
     "QualityMonitorDaemon",
     "create_quality_monitor",
@@ -54,6 +55,51 @@ class QualityState(Enum):
     GOOD = "good"           # >= 0.7
     DEGRADED = "degraded"   # >= 0.5
     POOR = "poor"           # < 0.5
+
+
+@dataclass
+class QualityResult:
+    """Result of quality assessment with confidence metrics.
+
+    Jan 7, 2026: Added for Sprint 2.1 - Quality Confidence in Event Payloads.
+    Enables subscribers to weight decisions by quality confidence level.
+
+    Attributes:
+        quality_score: Average quality score (0-1)
+        sample_count: Number of games assessed
+        variance: Statistical variance in quality scores
+        confidence_interval: 95% confidence interval width
+        trend: Quality trend (improving/stable/declining)
+    """
+    quality_score: float
+    sample_count: int = 0
+    variance: float = 0.0
+    confidence_interval: float = 1.0  # Wide interval = low confidence
+    trend: str = "stable"
+
+    @property
+    def is_high_confidence(self) -> bool:
+        """Return True if sample is large enough for reliable decisions.
+
+        Based on thresholds from app/config/thresholds.py:
+        - <50 games: 50% credibility (low confidence)
+        - 50-500 games: 75% credibility (medium confidence)
+        - 500+ games: 100% credibility (high confidence)
+        """
+        return self.sample_count >= 50
+
+    @property
+    def credibility_weight(self) -> float:
+        """Return credibility weight for this quality measurement.
+
+        Lower sample counts get biased toward neutral 0.5.
+        """
+        if self.sample_count < 50:
+            return 0.5
+        elif self.sample_count < 500:
+            return 0.75
+        else:
+            return 1.0
 
 
 @dataclass
@@ -149,6 +195,8 @@ class QualityMonitorDaemon(HandlerBase):
         Triggered by FeedbackLoopController when training loss anomalies
         or degradation is detected. Performs an immediate quality check
         for the specific config and emits results.
+
+        Jan 7, 2026: Updated to work with QualityResult for Sprint 2.1.
         """
         try:
             # December 30, 2025: Use consolidated extraction from HandlerBase
@@ -162,26 +210,27 @@ class QualityMonitorDaemon(HandlerBase):
                 f"reason={reason}, priority={priority}"
             )
 
-            # Perform immediate quality check
-            quality = await self._get_current_quality()
+            # Perform immediate quality check - returns QualityResult (Jan 7, 2026)
+            quality_result = await self._get_current_quality()
 
-            # Store per-config quality
+            # Store per-config quality (use score for backward compat)
             if config_key:
-                self._config_quality[config_key] = quality
+                self._config_quality[config_key] = quality_result.quality_score
 
             # Update state and emit events
             old_state = self.current_state
-            new_state = self._quality_to_state(quality)
+            new_state = self._quality_to_state(quality_result.quality_score)
 
             # Always emit for on-demand checks (bypass cooldown)
-            await self._emit_quality_event(quality, new_state, old_state)
+            await self._emit_quality_event(quality_result, new_state, old_state)
 
-            self.last_quality = quality
+            self.last_quality = quality_result.quality_score
             self.current_state = new_state
 
             logger.info(
                 f"[QualityMonitorDaemon] On-demand check complete for {config_key}: "
-                f"quality={quality:.3f}, state={new_state.value}"
+                f"quality={quality_result.quality_score:.3f}, state={new_state.value}, "
+                f"confidence={quality_result.credibility_weight:.0%}"
             )
 
         except Exception as e:
@@ -312,22 +361,24 @@ class QualityMonitorDaemon(HandlerBase):
     async def _check_quality(self) -> None:
         """Check current quality and emit events if needed."""
         try:
-            quality = await self._get_current_quality()
+            quality_result = await self._get_current_quality()
             old_state = self.current_state
-            new_state = self._quality_to_state(quality)
+            new_state = self._quality_to_state(quality_result.quality_score)
 
-            # Check for significant change
-            quality_changed = abs(quality - self.last_quality) >= self.config.significant_change
+            # Check for significant change (use quality_score for comparison)
+            quality_changed = abs(quality_result.quality_score - self.last_quality) >= self.config.significant_change
             state_changed = old_state != new_state
 
             if quality_changed or state_changed:
-                await self._emit_quality_event(quality, new_state, old_state)
+                # Jan 7, 2026: Pass full QualityResult for confidence metrics
+                await self._emit_quality_event(quality_result, new_state, old_state)
 
-            self.last_quality = quality
+            self.last_quality = quality_result.quality_score
             self.current_state = new_state
 
             # Dec 2025: Add to history and persist periodically
-            self._add_to_history(quality, new_state)
+            # Jan 7, 2026: Pass quality_score instead of QualityResult for backward compat
+            self._add_to_history(quality_result.quality_score, new_state)
             now = time.time()
             if now - self._last_persist_time >= self.config.persist_interval:
                 self._save_state()
@@ -340,24 +391,27 @@ class QualityMonitorDaemon(HandlerBase):
                 check_type="periodic",
             )
 
-    async def _get_current_quality(self) -> float:
+    async def _get_current_quality(self) -> QualityResult:
         """Get current quality score from recent selfplay data using UnifiedQualityScorer.
 
         Dec 29, 2025: Wrapped SQLite operations in asyncio.to_thread() to avoid
         blocking the event loop.
 
+        Jan 7, 2026: Returns QualityResult with confidence metrics for Sprint 2.1.
+
         Returns:
-            Quality score between 0.0 and 1.0
+            QualityResult with quality_score, sample_count, variance, confidence_interval
         """
         try:
             import sqlite3
+            import math
             from app.quality.unified_quality import compute_game_quality_from_params
 
             data_dir = Path(self.config.data_dir)
 
             if not data_dir.exists():
                 logger.debug(f"Data directory not found: {data_dir}")
-                return 1.0
+                return QualityResult(quality_score=1.0, sample_count=0)
 
             db_files = sorted(
                 data_dir.glob(self.config.database_pattern),
@@ -367,7 +421,7 @@ class QualityMonitorDaemon(HandlerBase):
 
             if not db_files:
                 logger.debug("No selfplay databases found")
-                return 1.0
+                return QualityResult(quality_score=1.0, sample_count=0)
 
             recent_db = db_files[0]
 
@@ -380,7 +434,7 @@ class QualityMonitorDaemon(HandlerBase):
                         FROM games
                         WHERE game_status IN ('complete', 'finished', 'COMPLETE', 'FINISHED')
                         ORDER BY created_at DESC
-                        LIMIT 30
+                        LIMIT 100
                     """)
                     # Convert Row objects to dicts to avoid sqlite3 threading issues
                     return [dict(row) for row in cursor.fetchall()]
@@ -390,7 +444,7 @@ class QualityMonitorDaemon(HandlerBase):
 
                 if not games:
                     logger.debug(f"No completed games in {recent_db.name}")
-                    return 0.5
+                    return QualityResult(quality_score=0.5, sample_count=0)
 
                 quality_scores = []
                 for game in games:
@@ -407,22 +461,81 @@ class QualityMonitorDaemon(HandlerBase):
                         continue
 
                 if not quality_scores:
-                    return 0.5
+                    return QualityResult(quality_score=0.5, sample_count=0)
 
-                avg_quality = sum(quality_scores) / len(quality_scores)
-                logger.debug(f"Quality score for {recent_db.name}: {avg_quality:.3f}")
-                return avg_quality
+                # Jan 7, 2026: Compute confidence metrics
+                sample_count = len(quality_scores)
+                avg_quality = sum(quality_scores) / sample_count
+
+                # Compute variance
+                if sample_count > 1:
+                    variance = sum((q - avg_quality) ** 2 for q in quality_scores) / (sample_count - 1)
+                else:
+                    variance = 1.0  # Maximum uncertainty with single sample
+
+                # Compute 95% confidence interval (1.96 * std_error)
+                if sample_count > 1:
+                    std_error = math.sqrt(variance / sample_count)
+                    confidence_interval = 1.96 * std_error
+                else:
+                    confidence_interval = 1.0  # Maximum uncertainty
+
+                # Determine trend by comparing to history
+                trend = self._compute_quality_trend(avg_quality)
+
+                logger.debug(
+                    f"Quality for {recent_db.name}: score={avg_quality:.3f}, "
+                    f"samples={sample_count}, var={variance:.4f}, ci={confidence_interval:.4f}"
+                )
+
+                return QualityResult(
+                    quality_score=avg_quality,
+                    sample_count=sample_count,
+                    variance=variance,
+                    confidence_interval=confidence_interval,
+                    trend=trend,
+                )
 
             except sqlite3.Error as e:
                 logger.debug(f"Database error for {recent_db.name}: {e}")
-                return self.last_quality
+                return QualityResult(quality_score=self.last_quality, sample_count=0)
 
         except ImportError:
             logger.warning("UnifiedQualityScorer not available")
-            return 1.0
+            return QualityResult(quality_score=1.0, sample_count=0)
         except Exception as e:
             logger.error(f"Error getting quality: {e}")
-            return self.last_quality
+            return QualityResult(quality_score=self.last_quality, sample_count=0)
+
+    def _compute_quality_trend(self, current_quality: float) -> str:
+        """Compute quality trend based on recent history.
+
+        Jan 7, 2026: Added for Sprint 2.1 - Quality Confidence.
+
+        Returns:
+            "improving", "stable", or "declining"
+        """
+        if not self._quality_history:
+            return "stable"
+
+        # Get last 5 quality scores (key is "quality" per _add_to_history)
+        recent_scores = [
+            h.get("quality", 0.5)
+            for h in self._quality_history[-5:]
+        ]
+
+        if not recent_scores:
+            return "stable"
+
+        avg_recent = sum(recent_scores) / len(recent_scores)
+        delta = current_quality - avg_recent
+
+        if delta > 0.05:
+            return "improving"
+        elif delta < -0.05:
+            return "declining"
+        else:
+            return "stable"
 
     def _quality_to_state(self, quality: float) -> QualityState:
         """Convert quality score to state."""
@@ -437,21 +550,32 @@ class QualityMonitorDaemon(HandlerBase):
 
     async def _emit_quality_event(
         self,
-        quality: float,
+        quality_result: QualityResult,
         new_state: QualityState,
         old_state: QualityState,
     ) -> None:
-        """Emit appropriate quality event based on state change."""
+        """Emit appropriate quality event based on state change.
+
+        Jan 7, 2026: Updated to accept QualityResult for Sprint 2.1 confidence metrics.
+        """
         try:
             from app.coordination.event_router import DataEventType, get_router
 
             router = get_router()
 
+            # Jan 7, 2026: Include confidence metrics in payload for Sprint 2.1
             payload = {
-                "quality_score": quality,
+                "quality_score": quality_result.quality_score,
                 "old_state": old_state.value,
                 "new_state": new_state.value,
                 "timestamp": time.time(),
+                # Sprint 2.1: Confidence metrics for quality-weighted decisions
+                "sample_count": quality_result.sample_count,
+                "variance": quality_result.variance,
+                "confidence_interval": quality_result.confidence_interval,
+                "trend": quality_result.trend,
+                "credibility_weight": quality_result.credibility_weight,
+                "is_high_confidence": quality_result.is_high_confidence,
             }
 
             # Determine which event to emit based on transition
@@ -459,7 +583,7 @@ class QualityMonitorDaemon(HandlerBase):
 
             # Session 17.11: Bypass cooldown for critical quality drops (+8-12 Elo improvement)
             # If quality drops by >= 0.15 (15 points), skip cooldown for immediate response
-            quality_drop = self.last_quality - quality
+            quality_drop = self.last_quality - quality_result.quality_score
             critical_drop = quality_drop >= 0.15
 
             if not critical_drop and now - self._last_event_time < self._event_cooldown:
@@ -468,24 +592,33 @@ class QualityMonitorDaemon(HandlerBase):
 
             if critical_drop:
                 logger.info(
-                    f"Critical quality drop detected: {self.last_quality:.2f} → {quality:.2f} "
-                    f"(Δ={quality_drop:.2f}), bypassing cooldown"
+                    f"Critical quality drop detected: {self.last_quality:.2f} → "
+                    f"{quality_result.quality_score:.2f} (Δ={quality_drop:.2f}), bypassing cooldown"
                 )
 
-            if quality < self.config.warning_threshold:
+            if quality_result.quality_score < self.config.warning_threshold:
                 # Quality dropped below warning threshold
                 await router.publish(DataEventType.LOW_QUALITY_DATA_WARNING, payload)
-                logger.warning(f"Low quality warning: {quality:.3f} (state: {new_state.value})")
-            elif quality >= self.config.good_threshold and old_state in (
+                logger.warning(
+                    f"Low quality warning: {quality_result.quality_score:.3f} "
+                    f"(state: {new_state.value}, ci: ±{quality_result.confidence_interval:.3f})"
+                )
+            elif quality_result.quality_score >= self.config.good_threshold and old_state in (
                 QualityState.DEGRADED, QualityState.POOR, QualityState.UNKNOWN
             ):
                 # Quality recovered to good threshold
                 await router.publish(DataEventType.HIGH_QUALITY_DATA_AVAILABLE, payload)
-                logger.info(f"High quality data available: {quality:.3f} (state: {new_state.value})")
+                logger.info(
+                    f"High quality data available: {quality_result.quality_score:.3f} "
+                    f"(state: {new_state.value}, samples: {quality_result.sample_count})"
+                )
             else:
                 # Just report the quality update
                 await router.publish(DataEventType.QUALITY_SCORE_UPDATED, payload)
-                logger.debug(f"Quality updated: {quality:.3f} (state: {new_state.value})")
+                logger.debug(
+                    f"Quality updated: {quality_result.quality_score:.3f} "
+                    f"(state: {new_state.value}, trend: {quality_result.trend})"
+                )
 
             self._last_event_time = now
 
