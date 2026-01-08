@@ -49,6 +49,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.coordination.event_emission_helpers import safe_emit_event
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.protocols import CoordinatorStatus
 
@@ -595,24 +596,21 @@ class TrainingWatchdogDaemon(HandlerBase):
             proc: Killed process info
             stale_duration: How long the process was stale
         """
-        try:
-            from app.distributed.data_events import DataEventType, get_event_bus
-
-            get_event_bus().emit(
-                DataEventType.TRAINING_PROCESS_KILLED,
-                {
-                    "config_key": proc.config_key,
-                    "pid": proc.pid,
-                    "node_id": proc.node_id,
-                    "started_at": proc.started_at,
-                    "last_heartbeat": proc.last_heartbeat,
-                    "stale_duration_seconds": stale_duration,
-                    "killed_at": time.time(),
-                    "killed_by": self._node_id,
-                },
-            )
-        except (ImportError, RuntimeError) as e:
-            logger.debug(f"[{self.name}] Failed to emit event: {e}")
+        safe_emit_event(
+            "TRAINING_PROCESS_KILLED",
+            {
+                "config_key": proc.config_key,
+                "pid": proc.pid,
+                "node_id": proc.node_id,
+                "started_at": proc.started_at,
+                "last_heartbeat": proc.last_heartbeat,
+                "stale_duration_seconds": stale_duration,
+                "killed_at": time.time(),
+                "killed_by": self._node_id,
+            },
+            source="training_watchdog_daemon",
+            context="process_killed",
+        )
 
     # =========================================================================
     # Health Check
@@ -745,19 +743,19 @@ def send_training_heartbeat(config_key: str, pid: int | None = None) -> None:
     """
     pid = pid or os.getpid()
 
-    try:
-        from app.distributed.data_events import DataEventType, get_event_bus
+    success = safe_emit_event(
+        "TRAINING_HEARTBEAT",
+        {
+            "config_key": config_key,
+            "pid": pid,
+            "node_id": socket.gethostname(),
+            "timestamp": time.time(),
+        },
+        source="send_training_heartbeat",
+        context="heartbeat",
+    )
 
-        get_event_bus().emit(
-            DataEventType.TRAINING_HEARTBEAT,
-            {
-                "config_key": config_key,
-                "pid": pid,
-                "node_id": socket.gethostname(),
-                "timestamp": time.time(),
-            },
-        )
-    except (ImportError, RuntimeError):
+    if not success:
         # Fallback: directly update the watchdog daemon
         try:
             daemon = TrainingWatchdogDaemon.get_instance()

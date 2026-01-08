@@ -835,21 +835,18 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
         January 4, 2026: Emitted when partition healing reported success but
         gossip convergence validation failed.
         """
-        try:
-            from app.distributed.data_events import DataEventType, get_event_bus
-
-            get_event_bus().emit(
-                DataEventType.HEALING_CONVERGENCE_FAILED,
-                {
-                    "nodes_healed": nodes_healed,
-                    "reason": "gossip_healthy_ratio_below_threshold",
-                    "threshold": 0.95,
-                    "consecutive_failures": self._consecutive_healing_failures,
-                    "timestamp": time.time(),
-                },
-            )
-        except (ImportError, Exception) as e:
-            logger.debug(f"Could not emit HEALING_CONVERGENCE_FAILED: {e}")
+        safe_emit_event(
+            "HEALING_CONVERGENCE_FAILED",
+            {
+                "nodes_healed": nodes_healed,
+                "reason": "gossip_healthy_ratio_below_threshold",
+                "threshold": 0.95,
+                "consecutive_failures": self._consecutive_healing_failures,
+                "timestamp": time.time(),
+            },
+            source="p2p_recovery_daemon",
+            context="convergence_failure",
+        )
 
     # =========================================================================
     # HealthCoordinator Integration (Jan 3, 2026 Sprint 12 Session 10)

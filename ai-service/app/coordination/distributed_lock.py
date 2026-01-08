@@ -84,6 +84,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from app.utils.paths import DATA_DIR
+from app.coordination.event_emission_helpers import safe_emit_event
 
 if TYPE_CHECKING:
     from pysyncobj.batteries import ReplLockManager
@@ -1118,47 +1119,38 @@ class TrainingLockWithHeartbeat:
 
     def _emit_timeout_event(self, reason: str) -> None:
         """Emit TRAINING_LOCK_TIMEOUT event."""
-        try:
-            from app.distributed.data_events import DataEventType, get_event_bus
-
-            hold_time = time.time() - (self._lock_acquired_time or time.time())
-            get_event_bus().emit(
-                DataEventType.TRAINING_LOCK_TIMEOUT,
-                {
-                    "config_key": self.config_key,
-                    "reason": reason,
-                    "hold_time_seconds": hold_time,
-                    "max_age_hours": TRAINING_LOCK_MAX_AGE_HOURS,
-                    "ttl_seconds": TRAINING_LOCK_TTL_SECONDS,
-                    "timestamp": time.time(),
-                },
-            )
-        except (ImportError, Exception) as e:
-            logger.debug(f"Could not emit TRAINING_LOCK_TIMEOUT: {e}")
+        hold_time = time.time() - (self._lock_acquired_time or time.time())
+        safe_emit_event(
+            "TRAINING_LOCK_TIMEOUT",
+            {
+                "config_key": self.config_key,
+                "reason": reason,
+                "hold_time_seconds": hold_time,
+                "max_age_hours": TRAINING_LOCK_MAX_AGE_HOURS,
+                "ttl_seconds": TRAINING_LOCK_TTL_SECONDS,
+                "timestamp": time.time(),
+            },
+            source="training_lock_heartbeat",
+            context="lock_timeout",
+        )
 
     def _emit_heartbeat_event(self) -> None:
         """Emit TRAINING_HEARTBEAT event for watchdog monitoring.
 
         January 4, 2026: Enables TrainingWatchdogDaemon to track process liveness.
         """
-        try:
-            import os
-            import socket
-
-            from app.distributed.data_events import DataEventType, get_event_bus
-
-            get_event_bus().emit(
-                DataEventType.TRAINING_HEARTBEAT,
-                {
-                    "config_key": self.config_key,
-                    "pid": os.getpid(),
-                    "node_id": socket.gethostname(),
-                    "timestamp": time.time(),
-                    "hold_time_seconds": time.time() - (self._lock_acquired_time or time.time()),
-                },
-            )
-        except (ImportError, Exception) as e:
-            logger.debug(f"Could not emit TRAINING_HEARTBEAT: {e}")
+        safe_emit_event(
+            "TRAINING_HEARTBEAT",
+            {
+                "config_key": self.config_key,
+                "pid": os.getpid(),
+                "node_id": socket.gethostname(),
+                "timestamp": time.time(),
+                "hold_time_seconds": time.time() - (self._lock_acquired_time or time.time()),
+            },
+            source="training_lock_heartbeat",
+            context="heartbeat",
+        )
 
     def __enter__(self) -> "TrainingLockWithHeartbeat":
         """Context manager entry."""

@@ -38,6 +38,7 @@ from app.config.thresholds import (
 from app.coordination.handler_base import HandlerBase
 from app.coordination.protocols import HealthCheckResult
 from app.coordination.event_handler_utils import extract_config_key
+from app.coordination.event_emission_helpers import safe_emit_event
 
 if TYPE_CHECKING:
     from app.coordination.feedback_loop_controller import FeedbackState
@@ -338,20 +339,16 @@ class CurriculumFeedbackHandler(HandlerBase):
         self, config_key: str, new_weight: float, reason: str
     ) -> None:
         """Emit CURRICULUM_REBALANCED event."""
-        try:
-            from app.distributed.data_events import DataEventType, get_event_bus
-
-            bus = get_event_bus()
-            bus.emit(
-                event_type=DataEventType.CURRICULUM_REBALANCED,
-                payload={
-                    "config_key": config_key,
-                    "weight": new_weight,
-                    "reason": reason,
-                },
-            )
-        except (ImportError, AttributeError):
-            pass  # Event system not available
+        safe_emit_event(
+            "CURRICULUM_REBALANCED",
+            {
+                "config_key": config_key,
+                "weight": new_weight,
+                "reason": reason,
+            },
+            source="curriculum_feedback_handler",
+            context="curriculum_rebalance",
+        )
 
     # =========================================================================
     # Adaptive Thresholds

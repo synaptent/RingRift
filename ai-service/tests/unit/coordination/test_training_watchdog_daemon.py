@@ -771,53 +771,41 @@ class TestSendTrainingHeartbeat:
     """Tests for send_training_heartbeat helper function."""
 
     def test_send_heartbeat_via_event_bus(self):
-        """send_training_heartbeat should emit event via event bus."""
-        mock_bus = MagicMock()
-        mock_bus.emit = MagicMock()
-
-        # get_event_bus is imported inside the function, so patch at source
+        """send_training_heartbeat should emit event via safe_emit_event."""
         with patch(
-            "app.distributed.data_events.get_event_bus",
-            return_value=mock_bus,
-        ):
+            "app.coordination.training_watchdog_daemon.safe_emit_event",
+            return_value=True,
+        ) as mock_emit:
             send_training_heartbeat("hex8_2p", pid=12345)
 
-        mock_bus.emit.assert_called_once()
-        call_args = mock_bus.emit.call_args
-        # Positional args: (event_type, payload_dict)
+        mock_emit.assert_called_once()
+        call_args = mock_emit.call_args
+        # safe_emit_event args: (event_name, payload, source=, context=)
+        assert call_args[0][0] == "TRAINING_HEARTBEAT"
         payload = call_args[0][1]
         assert payload["config_key"] == "hex8_2p"
         assert payload["pid"] == 12345
 
     def test_send_heartbeat_default_pid(self):
         """send_training_heartbeat should use current PID by default."""
-        mock_bus = MagicMock()
-        mock_bus.emit = MagicMock()
-
         with patch(
-            "app.distributed.data_events.get_event_bus",
-            return_value=mock_bus,
-        ):
+            "app.coordination.training_watchdog_daemon.safe_emit_event",
+            return_value=True,
+        ) as mock_emit:
             send_training_heartbeat("hex8_2p")
 
-        call_args = mock_bus.emit.call_args
+        call_args = mock_emit.call_args
         payload = call_args[0][1]
         assert payload["pid"] == os.getpid()
 
     def test_send_heartbeat_fallback_on_error(self):
         """send_training_heartbeat should fallback to direct daemon call on error."""
-        # Simulate import error for event bus by patching the import mechanism
-        import sys
-
-        # Create a mock module that raises ImportError on get_event_bus access
-        mock_data_events = MagicMock()
-        mock_data_events.get_event_bus.side_effect = RuntimeError("Event bus unavailable")
-
-        with patch.dict(
-            sys.modules,
-            {"app.distributed.data_events": mock_data_events},
+        # Simulate safe_emit_event returning False (failure)
+        with patch(
+            "app.coordination.training_watchdog_daemon.safe_emit_event",
+            return_value=False,
         ):
-            # Should not raise, just silently fail
+            # Should not raise, just silently fall back to direct daemon call
             send_training_heartbeat("hex8_2p", pid=12345)
 
 

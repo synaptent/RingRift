@@ -50,6 +50,7 @@ except ImportError:
 
 # Dec 29, 2025: Use canonical SSH module for all SSH operations
 from app.core.ssh import SSHClient, SSHConfig, get_ssh_client
+from app.coordination.event_emission_helpers import safe_emit_event
 
 logger = logging.getLogger(__name__)
 
@@ -1036,21 +1037,16 @@ class ClusterMonitor:
         if not stalled_nodes:
             return
 
-        try:
-            from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import get_event_router
-
-            router = get_event_router()
-            router.emit(
-                DataEventType.CLUSTER_STALL_DETECTED,
-                {
-                    "stalled_nodes": stalled_nodes,
-                    "stall_threshold": self._stall_threshold,
-                    "timestamp": time.time(),
-                },
-            )
-        except (ImportError, AttributeError) as e:
-            logger.debug(f"Could not emit stall event: {e}")
+        safe_emit_event(
+            "CLUSTER_STALL_DETECTED",
+            {
+                "stalled_nodes": stalled_nodes,
+                "stall_threshold": self._stall_threshold,
+                "timestamp": time.time(),
+            },
+            source="cluster_status_monitor",
+            context="stall_detection",
+        )
 
     def get_stall_status(self) -> dict[str, dict[str, Any]]:
         """Get current stall detection status for all tracked nodes.
