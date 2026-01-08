@@ -15338,6 +15338,8 @@ print(json.dumps(result))
                         job.status = "failed"
                         job.completed_at = time.time()
                         job.error_message = "missing_jsonl_output"
+                self._record_gpu_job_result(success=False)
+                self._update_gpu_job_count(-1)
                 return
 
             input_jsonl = jsonl_files[0]
@@ -15350,6 +15352,8 @@ print(json.dumps(result))
                             job.status = "failed"
                             job.completed_at = time.time()
                             job.error_message = "empty_jsonl_output"
+                    self._record_gpu_job_result(success=False)
+                    self._update_gpu_job_count(-1)
                     return
             except OSError as e:
                 logger.warning(f"GPU selfplay job {job_id}: Failed to stat JSONL output ({input_jsonl}): {e}")
@@ -15359,6 +15363,8 @@ print(json.dumps(result))
                         job.status = "failed"
                         job.completed_at = time.time()
                         job.error_message = "jsonl_stat_failed"
+                self._record_gpu_job_result(success=False)
+                self._update_gpu_job_count(-1)
                 return
             validated_db = output_dir / "validated_games.db"
 
@@ -15434,10 +15440,16 @@ print(json.dumps(result))
                     asyncio.create_task(self._import_gpu_selfplay_to_canonical(
                         validated_db, board_type, num_players, imported
                     ))
+                    # Jan 7, 2026: Track GPU job success
+                    self._record_gpu_job_result(success=True)
+                    self._update_gpu_job_count(-1)
                 elif validation_rate < 95:
                     logger.info(f"WARNING: GPU selfplay validation rate {validation_rate:.1f}% is below 95%")
                     logger.info("  This indicates potential GPU/CPU rule divergence")
                     logger.info("  Skipping auto-import to canonical database")
+                    # Jan 7, 2026: Low validation rate is a failure
+                    self._record_gpu_job_result(success=False)
+                    self._update_gpu_job_count(-1)
                     # Alert on low validation rate
                     asyncio.create_task(self.notifier.send(
                         title="Low GPU Validation Rate",
@@ -15455,6 +15467,8 @@ print(json.dumps(result))
             else:
                 logger.info(f"GPU selfplay {job_id} CPU validation failed:")
                 logger.info(f"  {stderr.decode()[:500]}")
+                self._record_gpu_job_result(success=False)
+                self._update_gpu_job_count(-1)
 
         except asyncio.TimeoutError:
             logger.info(f"GPU selfplay job {job_id} timed out")
@@ -15462,12 +15476,16 @@ print(json.dumps(result))
                 job = self.local_jobs.get(job_id)
                 if job:
                     job.status = "failed"
+            self._record_gpu_job_result(success=False)
+            self._update_gpu_job_count(-1)
         except Exception as e:  # noqa: BLE001
             logger.info(f"GPU selfplay monitor error for {job_id}: {e}")
             with self.jobs_lock:
                 job = self.local_jobs.get(job_id)
                 if job:
                     job.status = "failed"
+            self._record_gpu_job_result(success=False)
+            self._update_gpu_job_count(-1)
 
     async def _monitor_selfplay_process(
         self,
@@ -29220,12 +29238,12 @@ print(json.dumps({{
                         # HYBRID MODE: Decide between GPU and CPU-only based on capacity
                         spawn_cpu_only = False
                         if remaining_gpu_slots > 0 and not gpu_seems_unavailable:
-                        remaining_gpu_slots -= 1
-                    elif should_use_cpu_only and remaining_cpu_slots > 0:
-                        spawn_cpu_only = True
-                        remaining_cpu_slots -= 1
-                    elif gpu_seems_unavailable:
-                        spawn_cpu_only = True
+                            remaining_gpu_slots -= 1
+                        elif should_use_cpu_only and remaining_cpu_slots > 0:
+                            spawn_cpu_only = True
+                            remaining_cpu_slots -= 1
+                        elif gpu_seems_unavailable:
+                            spawn_cpu_only = True
 
                     if spawn_cpu_only:
                         # Pure CPU selfplay to utilize excess CPU capacity
@@ -30008,6 +30026,9 @@ print(json.dumps({{
 
                 with self.jobs_lock:
                     self.local_jobs[job_id] = job
+
+                # Jan 7, 2026: Track GPU job count for adaptive dispatch decisions
+                self._update_gpu_job_count(+1)
 
                 logger.info(f"Started GPU selfplay job {job_id} (PID {proc.pid}, batch={batch_size})")
 
