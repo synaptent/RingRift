@@ -297,6 +297,15 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         health_check_interval=300.0,  # 5 minutes
         auto_restart=True,
     ),
+    # Sprint 17.9 (Jan 9, 2026): Comprehensive model scan daemon
+    # Scans all model sources, queues multi-harness evaluations
+    DaemonType.COMPREHENSIVE_MODEL_SCAN: DaemonSpec(
+        runner_name="create_comprehensive_model_scan",
+        depends_on=(DaemonType.EVENT_ROUTER,),
+        category="evaluation",
+        health_check_interval=300.0,  # 5 minutes - scans are periodic
+        auto_restart=True,
+    ),
     # =========================================================================
     # Distribution
     # =========================================================================
