@@ -99,6 +99,7 @@ ELECTION_ROUTES = [
     Route("POST", "/election/reset", "handle_election_reset"),
     Route("POST", "/election/force_leader", "handle_election_force_leader"),
     Route("POST", "/election/commitment-ack", "handle_commitment_ack"),  # Jan 2026: Two-phase commit
+    Route("POST", "/leader_announcement", "handle_leader_announcement"),  # Jan 9, 2026: Fast leader propagation (<2s vs 30s gossip)
 ]
 
 # ===========================================================================

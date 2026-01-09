@@ -176,6 +176,41 @@ class ResourceDetector:
         self._cached_gpu = (False, "")
         return self._cached_gpu
 
+    def validate_pytorch_cuda(self) -> dict[str, Any]:
+        """Validate PyTorch has CUDA support when GPU is present.
+
+        Jan 9, 2026: Added to detect CPU-only PyTorch installations on GPU nodes.
+        This caused lambda-gh200-10 to run CPU selfplay with 0% GPU utilization.
+
+        Returns:
+            dict with pytorch_cuda_available, cuda_version, device_count, warning
+        """
+        try:
+            import torch
+
+            cuda_available = torch.cuda.is_available()
+            cuda_version = torch.version.cuda if cuda_available else None
+            device_count = torch.cuda.device_count() if cuda_available else 0
+
+            # Check for mismatch: GPU detected but PyTorch has no CUDA
+            gpu_detected, gpu_name = self.detect_gpu()
+            warning = None
+            if gpu_detected and not cuda_available:
+                warning = (
+                    f"GPU detected ({gpu_name}) but PyTorch has no CUDA support. "
+                    "Fix: pip install torch --index-url https://download.pytorch.org/whl/cu128"
+                )
+                logger.warning(f"[ResourceDetector] {warning}")
+
+            return {
+                "pytorch_cuda_available": cuda_available,
+                "pytorch_cuda_version": cuda_version,
+                "cuda_device_count": device_count,
+                "warning": warning,
+            }
+        except ImportError:
+            return {"pytorch_cuda_available": False, "error": "PyTorch not installed"}
+
     def detect_memory(self) -> int:
         """Detect total system memory in GB.
 
@@ -680,6 +715,20 @@ class ResourceDetector:
         else:
             result["message"] = f"No GPU detected, role '{configured_role}' doesn't require it"
 
+        # Jan 9, 2026: Add PyTorch CUDA validation
+        pytorch_status = self.validate_pytorch_cuda()
+        result["pytorch"] = pytorch_status
+
+        if pytorch_status.get("warning"):
+            result["warnings"] = result.get("warnings", []) + [pytorch_status["warning"]]
+            # Emit event for PyTorch CUDA mismatch
+            self._try_emit_event("PYTORCH_CUDA_MISMATCH", {
+                "node_id": self._get_node_id(),
+                "warning": pytorch_status["warning"],
+                "gpu_detected": gpu_detected,
+                "pytorch_cuda_available": False,
+            })
+
         return result
 
     def detect_local_external_work(self) -> dict[str, bool]:
@@ -895,3 +944,26 @@ class ResourceDetectorMixin:
         """
         import asyncio
         return await asyncio.to_thread(self._resource_detector.validate_gpu_capability, configured_role)
+
+    def _validate_pytorch_cuda(self) -> dict[str, Any]:
+        """Validate PyTorch has CUDA support when GPU is present.
+
+        Jan 9, 2026: Added to detect CPU-only PyTorch installations on GPU nodes.
+
+        Returns:
+            Dict with pytorch_cuda_available, cuda_version, device_count, warning
+        """
+        return self._resource_detector.validate_pytorch_cuda()
+
+    async def _validate_pytorch_cuda_async(self) -> dict[str, Any]:
+        """Validate PyTorch CUDA support without blocking event loop.
+
+        Jan 9, 2026: Added for async safety in P2P orchestrator.
+        Wraps validate_pytorch_cuda() in asyncio.to_thread() to avoid
+        blocking the event loop with torch import and CUDA checks.
+
+        Returns:
+            Dict with pytorch_cuda_available, cuda_version, device_count, warning
+        """
+        import asyncio
+        return await asyncio.to_thread(self._resource_detector.validate_pytorch_cuda)

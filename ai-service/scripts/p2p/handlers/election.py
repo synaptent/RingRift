@@ -438,6 +438,19 @@ class ElectionHandlersMixin(BaseP2PHandler):
                     "term": getattr(self, "cluster_epoch", 0),
                 })
 
+                # Jan 9, 2026: Broadcast leadership to all peers for fast propagation
+                if hasattr(self, "_broadcast_leader_to_all_peers"):
+                    epoch = getattr(self, "cluster_epoch", 0)
+                    if hasattr(self, "_leadership_sm") and self._leadership_sm:
+                        epoch = getattr(self._leadership_sm, "epoch", epoch)
+                    asyncio.create_task(
+                        self._broadcast_leader_to_all_peers(
+                            self.node_id,
+                            epoch,
+                            self.leader_lease_expires,
+                        )
+                    )
+
                 logger.warning(
                     f"FORCED LEADERSHIP: {self.node_id} is now leader via override"
                 )
@@ -759,6 +772,65 @@ class ElectionHandlersMixin(BaseP2PHandler):
         except Exception as e:
             logger.error(f"Error handling leader state change: {e}")
             return self.error_response(str(e), status=500)
+
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
+    async def handle_leader_announcement(self, request: web.Request) -> web.Response:
+        """Receive direct leader announcement from elected leader.
+
+        Jan 9, 2026: Added for fast leader propagation (<2s vs 30s gossip).
+        Non-voter nodes wait 30s for gossip to propagate leader info.
+        Direct broadcast from new leader reduces this to <2s.
+
+        POST /leader_announcement
+        Body: {"leader_id": str, "epoch": int, "lease_expires": float}
+
+        Response: {"accepted": bool, "reason": str (if rejected)}
+        """
+        try:
+            data = await request.json()
+            leader_id = data.get("leader_id")
+            epoch = data.get("epoch", 0)
+            lease_expires = data.get("lease_expires", 0)
+
+            if not leader_id:
+                return self.json_response({"accepted": False, "reason": "missing_leader_id"})
+
+            # Validate epoch is newer than current
+            current_epoch = getattr(self, "_election_epoch", 0)
+            if epoch < current_epoch:
+                logger.debug(
+                    f"[Election] Rejecting stale leader announcement: "
+                    f"epoch {epoch} < current {current_epoch}"
+                )
+                return self.json_response({"accepted": False, "reason": "stale_epoch"})
+
+            # Update leader immediately
+            self.leader_id = leader_id
+            if hasattr(self, "_election_epoch"):
+                self._election_epoch = epoch
+            if hasattr(self, "_leader_lease_expires"):
+                self._leader_lease_expires = lease_expires
+
+            logger.info(
+                f"[Election] Adopted leader {leader_id} via direct announcement (epoch {epoch})"
+            )
+
+            # Emit event for observability
+            _event_bridge.emit(
+                "LEADER_ADOPTED",
+                {
+                    "leader_id": leader_id,
+                    "epoch": epoch,
+                    "source": "direct_announcement",
+                    "node_id": self.node_id,
+                },
+            )
+
+            return self.json_response({"accepted": True})
+
+        except Exception as e:
+            logger.error(f"Error handling leader announcement: {e}")
+            return self.json_response({"accepted": False, "error": str(e)}, status=400)
 
     @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_commitment_ack(self, request: web.Request) -> web.Response:

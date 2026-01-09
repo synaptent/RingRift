@@ -156,6 +156,9 @@ class DataEventType(Enum):
     UNEVALUATED_MODELS_FOUND = "unevaluated_models_found"  # Scanner found models without Elo ratings
     # January 6, 2026: Head-to-head evaluation against previous model version
     HEAD_TO_HEAD_COMPLETED = "head_to_head_completed"  # New model evaluated vs previous best for same config
+    # January 9, 2026: Periodic multi-harness and cross-config tournament events
+    MULTI_HARNESS_EVALUATION_COMPLETED = "multi_harness_evaluation_completed"  # All harnesses evaluated for model
+    CROSS_CONFIG_TOURNAMENT_COMPLETED = "cross_config_tournament_completed"  # Cross-config family tournament done
 
     # Promotion events
     PROMOTION_CANDIDATE = "promotion_candidate"
@@ -372,6 +375,7 @@ class DataEventType(Enum):
     TAILSCALE_CLI_ERROR = "tailscale_cli_error"  # Jan 2026: Tailscale CLI command failed
     TAILSCALE_CLI_RECOVERED = "tailscale_cli_recovered"  # Jan 2026: Tailscale CLI working again
     GPU_CAPABILITY_MISMATCH = "gpu_capability_mismatch"  # Jan 8, 2026: Configured role expects GPU but none detected
+    PYTORCH_CUDA_MISMATCH = "pytorch_cuda_mismatch"  # Jan 9, 2026: GPU detected but PyTorch has no CUDA support
     NODE_OVERLOADED = "node_overloaded"  # Node resource overload (job redistribution)
     RECOVERY_INITIATED = "recovery_initiated"  # Auto-recovery started
     RECOVERY_COMPLETED = "recovery_completed"  # Auto-recovery finished

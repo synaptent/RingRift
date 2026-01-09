@@ -578,11 +578,25 @@ class RemoteP2PRecoveryLoop(BaseLoop):
 
             nodes_to_recover.append((node_id, node_info))
 
-        # Prioritize NAT-blocked nodes (they need more help staying connected)
-        # Jan 2026: NAT-blocked nodes often drop out and need faster recovery
+        # Jan 9, 2026: Prioritize recovery order for faster quorum restoration
+        # Order: 1. Voters (quorum critical) 2. NAT-blocked 3. Others
+        voter_ids = self._get_voter_node_ids()
+
+        # Log urgently if voters need recovery
+        voters_needing_recovery = [n for n, _ in nodes_to_recover if n in voter_ids]
+        if voters_needing_recovery:
+            logger.warning(
+                f"[RemoteP2PRecovery] URGENT: {len(voters_needing_recovery)} voter(s) need recovery: "
+                f"{voters_needing_recovery}"
+            )
+
         nodes_to_recover.sort(
             key=lambda x: (
-                0 if x[1].get("nat_blocked") or x[1].get("force_relay_mode") else 1,
+                # Priority 0: Voters (quorum critical)
+                0 if x[0] in voter_ids else (
+                    # Priority 1: NAT-blocked (need more help staying connected)
+                    1 if x[1].get("nat_blocked") or x[1].get("force_relay_mode") else 2
+                ),
                 x[0],  # Then alphabetical for determinism
             )
         )
@@ -730,6 +744,10 @@ class RemoteP2PRecoveryLoop(BaseLoop):
 
         self._stats.last_recovery_time = now
 
+        # Jan 9, 2026: Update interval based on voter status
+        # Faster checks when voters are missing from the mesh
+        self.interval = self._get_adaptive_check_interval()
+
     def _get_configured_nodes(self) -> dict[str, dict[str, Any]]:
         """Get configured nodes from distributed_hosts.yaml."""
         try:
@@ -754,6 +772,51 @@ class RemoteP2PRecoveryLoop(BaseLoop):
         except ImportError:
             logger.warning("[RemoteP2PRecovery] yaml module not available")
             return {}
+
+    def _get_voter_node_ids(self) -> set[str]:
+        """Get voter node IDs from distributed_hosts.yaml.
+
+        Jan 9, 2026: Added for voter prioritization. Voter nodes are critical
+        for quorum and should be recovered first.
+        """
+        try:
+            import yaml
+            config_path = os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))),
+                "config",
+                "distributed_hosts.yaml",
+            )
+            with open(config_path) as f:
+                config = yaml.safe_load(f)
+            voters = config.get("p2p_voters", [])
+            return set(voters) if voters else set()
+        except Exception:
+            return set()
+
+    def _get_adaptive_check_interval(self) -> float:
+        """Get adaptive check interval - faster when voters need recovery.
+
+        Jan 9, 2026: Added to reduce recovery time for voter nodes.
+        When voters are missing, check every 30s instead of the default 60s.
+        """
+        base_interval = self.config.check_interval_seconds
+
+        try:
+            # Get alive peers
+            alive_peer_ids = set(self._get_alive_peer_ids())
+
+            # Get voter IDs
+            voter_ids = self._get_voter_node_ids()
+
+            # Check if any voters are missing
+            missing_voters = voter_ids - alive_peer_ids
+            if missing_voters:
+                # Use faster interval when voters missing
+                return min(base_interval, 30.0)
+        except Exception:
+            pass
+
+        return base_interval
 
     async def _recover_node(
         self, node_id: str, node_info: dict, paramiko: Any

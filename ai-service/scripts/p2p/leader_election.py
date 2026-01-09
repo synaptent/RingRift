@@ -1579,6 +1579,18 @@ class LeaderElectionMixin(P2PMixinBase):
                     "leader_id": self.node_id,
                     "source": "raft",
                 })
+                # Jan 9, 2026: Broadcast leadership to all peers for fast propagation
+                if hasattr(self, "_broadcast_leader_to_all_peers"):
+                    epoch = getattr(self, "cluster_epoch", 0)
+                    if hasattr(self, "_leadership_sm") and self._leadership_sm:
+                        epoch = getattr(self._leadership_sm, "epoch", epoch)
+                    asyncio.create_task(
+                        self._broadcast_leader_to_all_peers(
+                            self.node_id,
+                            epoch,
+                            self.leader_lease_expires,
+                        )
+                    )
         else:
             if self.role == NodeRole.LEADER:
                 self._log_info(f"[Raft] Stepping down, new leader: {raft_leader_id}")

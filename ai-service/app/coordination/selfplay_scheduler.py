@@ -2283,6 +2283,9 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
             ("ARCHITECTURE_WEIGHTS_UPDATED", self._on_architecture_weights_updated),
             # Quality feedback
             ("QUALITY_FEEDBACK_ADJUSTED", self._on_quality_feedback_adjusted),
+            # Jan 2026: Multi-harness evaluation feedback for harness performance tracking
+            ("MULTI_HARNESS_EVALUATION_COMPLETED", self._on_multi_harness_evaluation_completed),
+            ("CROSS_CONFIG_TOURNAMENT_COMPLETED", self._on_cross_config_tournament_completed),
             # Dec 30, 2025: P2P restart resilience
             ("P2P_RESTARTED", self._on_p2p_restarted),
         ]

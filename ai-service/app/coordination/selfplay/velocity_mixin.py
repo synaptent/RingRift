@@ -73,6 +73,9 @@ class SelfplayVelocityMixin:
             "ARCHITECTURE_WEIGHTS_UPDATED": self._on_architecture_weights_updated,
             # Jan 5, 2026: Real-time game count updates for faster velocity tracking
             "NEW_GAMES_AVAILABLE": self._on_new_games_available,
+            # Jan 9, 2026: Multi-harness evaluation feedback for harness performance tracking
+            "MULTI_HARNESS_EVALUATION_COMPLETED": self._on_multi_harness_evaluation_completed,
+            "CROSS_CONFIG_TOURNAMENT_COMPLETED": self._on_cross_config_tournament_completed,
         }
 
     # =========================================================================
@@ -944,3 +947,151 @@ class SelfplayVelocityMixin:
             Number of distinct opponent types
         """
         return len(self._opponent_types_by_config.get(config_key, set()))
+
+    # =========================================================================
+    # Harness Performance Feedback (January 2026 Sprint 17)
+    # =========================================================================
+
+    # Type hints for harness tracking attributes (initialized in parent class)
+    _harness_performance: dict[str, dict[str, float]]  # config_key -> {harness -> elo}
+    _best_harness_by_config: dict[str, str]  # config_key -> best_harness_type
+
+    def _on_multi_harness_evaluation_completed(self, event: Any) -> None:
+        """Handle MULTI_HARNESS_EVALUATION_COMPLETED event.
+
+        January 2026 Sprint 17: Tracks harness performance across configs to inform
+        which harnesses produce the best Elo ratings. Better-performing harnesses
+        can be prioritized for selfplay data generation.
+
+        Args:
+            event: Event with payload containing config_key, harness_results, best_harness
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            config_key = extract_config_key(payload)
+            best_harness = payload.get("best_harness")
+            best_elo = payload.get("best_elo", 0)
+            harness_results = payload.get("harness_results", {})
+
+            if not config_key:
+                logger.debug("[SelfplayScheduler] Multi-harness event missing config_key")
+                return
+
+            # Initialize harness tracking if needed
+            if not hasattr(self, "_harness_performance"):
+                self._harness_performance = {}
+            if not hasattr(self, "_best_harness_by_config"):
+                self._best_harness_by_config = {}
+
+            # Update harness performance tracking
+            if config_key not in self._harness_performance:
+                self._harness_performance[config_key] = {}
+
+            for harness_type, harness_data in harness_results.items():
+                elo = harness_data.get("elo", 0) if isinstance(harness_data, dict) else 0
+                self._harness_performance[config_key][harness_type] = elo
+
+            # Track best harness
+            if best_harness:
+                self._best_harness_by_config[config_key] = best_harness
+
+            logger.info(
+                f"[SelfplayScheduler] Multi-harness eval for {config_key}: "
+                f"best={best_harness} @ {best_elo:.0f} Elo, "
+                f"{len(harness_results)} harnesses evaluated"
+            )
+
+            # Update priority weight if config is tracked
+            if config_key in self._config_priorities:
+                priority = self._config_priorities[config_key]
+                # Configs with high-performing harnesses may warrant more selfplay
+                if best_elo > 1500 and hasattr(priority, "quality_weight"):
+                    # Boost quality weight slightly for high-performing configs
+                    old_weight = priority.quality_weight
+                    priority.quality_weight = min(1.0, old_weight * 1.1)
+                    logger.debug(
+                        f"[SelfplayScheduler] Boosted {config_key} quality_weight: "
+                        f"{old_weight:.2f} -> {priority.quality_weight:.2f}"
+                    )
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling multi-harness event: {e}")
+
+    def _on_cross_config_tournament_completed(self, event: Any) -> None:
+        """Handle CROSS_CONFIG_TOURNAMENT_COMPLETED event.
+
+        January 2026 Sprint 17: Tracks transfer learning effectiveness by comparing
+        how models from different player counts perform against each other.
+
+        Args:
+            event: Event with payload containing family_results, total_games
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            families_evaluated = payload.get("families_evaluated", 0)
+            total_games = payload.get("total_games", 0)
+            family_results = payload.get("family_results", {})
+
+            logger.info(
+                f"[SelfplayScheduler] Cross-config tournament: "
+                f"{families_evaluated} families, {total_games} games"
+            )
+
+            # Analyze transfer learning effectiveness
+            # If 2p models beat 4p models in 4p games, 2p training may be stronger
+            for family_key, family_data in family_results.items():
+                matchups = family_data.get("matchups", {})
+                for matchup_key, matchup_data in matchups.items():
+                    model_a = matchup_data.get("model_a", "")
+                    model_b = matchup_data.get("model_b", "")
+                    win_rate_a = matchup_data.get("win_rate_a", 0.5)
+
+                    # Track which configs produce stronger transfer models
+                    if win_rate_a > 0.6:
+                        # model_a's config transfers better
+                        logger.debug(
+                            f"[SelfplayScheduler] Transfer strength: {model_a} > {model_b} "
+                            f"(win_rate: {win_rate_a:.1%})"
+                        )
+                        # Could boost priority for the winning config's family
+                        if model_a in self._config_priorities:
+                            priority = self._config_priorities[model_a]
+                            if hasattr(priority, "curriculum_weight"):
+                                priority.curriculum_weight = min(
+                                    1.0, priority.curriculum_weight + 0.05
+                                )
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling cross-config event: {e}")
+
+    def get_best_harness_for_config(self, config_key: str) -> str | None:
+        """Get the best-performing harness for a config.
+
+        January 2026 Sprint 17: Returns the harness type that produced the highest
+        Elo for the given config, based on multi-harness evaluation results.
+
+        Args:
+            config_key: Config like "hex8_2p"
+
+        Returns:
+            Best harness type (e.g., "gumbel_mcts", "minimax") or None
+        """
+        if not hasattr(self, "_best_harness_by_config"):
+            return None
+        return self._best_harness_by_config.get(config_key)
+
+    def get_harness_performance(self, config_key: str) -> dict[str, float]:
+        """Get Elo performance per harness for a config.
+
+        January 2026 Sprint 17: Returns a mapping of harness type to Elo rating
+        from the most recent multi-harness evaluation.
+
+        Args:
+            config_key: Config like "hex8_2p"
+
+        Returns:
+            Dict mapping harness_type -> elo_rating
+        """
+        if not hasattr(self, "_harness_performance"):
+            return {}
+        return self._harness_performance.get(config_key, {})

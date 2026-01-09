@@ -2712,6 +2712,22 @@ class GossipProtocolMixin(P2PMixinBase):
         except Exception as e:
             self._log_debug(f"[Leadership] Failed to emit leader change event: {e}")
 
+        # Jan 9, 2026: Broadcast leadership to all peers for fast propagation (<2s vs 30s gossip)
+        try:
+            if hasattr(self, "_broadcast_leader_to_all_peers"):
+                epoch = getattr(self, "cluster_epoch", 0)
+                if hasattr(self, "_leadership_sm") and self._leadership_sm:
+                    epoch = getattr(self._leadership_sm, "epoch", epoch)
+                asyncio.create_task(
+                    self._broadcast_leader_to_all_peers(
+                        self.node_id,
+                        epoch,
+                        self.leader_lease_expires,
+                    )
+                )
+        except Exception as e:
+            self._log_debug(f"[Leadership] Failed to broadcast leadership: {e}")
+
     def _process_peer_manifests(self, peer_manifests: dict) -> None:
         """Process peer manifest info for P2P sync."""
         try:

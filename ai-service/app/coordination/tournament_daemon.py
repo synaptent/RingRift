@@ -123,6 +123,31 @@ class TournamentDaemonConfig:
     # Only run multi-harness after model passes basic RANDOM/HEURISTIC gate
     multi_harness_min_baseline_winrate: float = 0.60  # 60% vs heuristic required
 
+    # Jan 2026: Periodic multi-harness tournaments for regular diverse evaluation
+    # Runs multi-harness evaluation on top models at regular intervals
+    enable_periodic_multi_harness: bool = True
+    periodic_multi_harness_interval_seconds: float = 3600.0 * 2  # Every 2 hours
+    # Priority configs to evaluate first (most important for training)
+    multi_harness_priority_configs: list[str] = field(default_factory=lambda: [
+        "hex8_2p", "square8_2p", "hex8_4p", "square8_4p",
+    ])
+
+    # Jan 2026: Stale evaluation detection - re-evaluate models with old ratings
+    enable_stale_evaluation_detection: bool = True
+    stale_evaluation_threshold_days: float = 7.0  # Re-evaluate if rating >7 days old
+    stale_evaluation_check_interval_seconds: float = 3600.0  # Check hourly
+
+    # Jan 2026: Cross-config tournaments - compare models across board types
+    # Validates transfer learning effectiveness and curriculum progression
+    enable_cross_config_tournaments: bool = True
+    cross_config_interval_seconds: float = 3600.0 * 6  # Every 6 hours
+    cross_config_games_per_matchup: int = 10
+    # Board family groups for cross-config comparison
+    cross_config_families: list[list[str]] = field(default_factory=lambda: [
+        ["hex8_2p", "hex8_3p", "hex8_4p"],  # Hex family
+        ["square8_2p", "square8_3p", "square8_4p"],  # Square8 family
+    ])
+
     # Concurrency
     max_concurrent_games: int = 4
 
@@ -204,8 +229,14 @@ class TournamentDaemon(HandlerBase):
         self._periodic_task: asyncio.Task | None = None
         self._calibration_task: asyncio.Task | None = None  # Dec 2025
         self._cross_nn_task: asyncio.Task | None = None  # Dec 2025
+        self._multi_harness_task: asyncio.Task | None = None  # Jan 2026
+        self._stale_eval_task: asyncio.Task | None = None  # Jan 2026
+        self._cross_config_task: asyncio.Task | None = None  # Jan 2026
         self._tournament_stats = TournamentStats()
         self._evaluation_queue: asyncio.Queue = asyncio.Queue()
+
+        # Jan 2026: Track last evaluation times per config for stale detection
+        self._last_harness_eval_time: dict[str, float] = {}
 
         # Tracking attributes for health_check and get_status (Jan 2026)
         self._cycle_count: int = 0
@@ -250,10 +281,34 @@ class TournamentDaemon(HandlerBase):
                 context="tournament_cross_nn"
             )
 
+        # Jan 2026: Start periodic multi-harness evaluation loop
+        if self.config.enable_periodic_multi_harness:
+            self._multi_harness_task = self._safe_create_task(
+                self._periodic_multi_harness_loop(),
+                context="tournament_periodic_multi_harness"
+            )
+
+        # Jan 2026: Start stale evaluation detection loop
+        if self.config.enable_stale_evaluation_detection:
+            self._stale_eval_task = self._safe_create_task(
+                self._stale_evaluation_loop(),
+                context="tournament_stale_eval"
+            )
+
+        # Jan 2026: Start cross-config tournament loop
+        if self.config.enable_cross_config_tournaments:
+            self._cross_config_task = self._safe_create_task(
+                self._cross_config_loop(),
+                context="tournament_cross_config"
+            )
+
         logger.info(
             f"TournamentDaemon started (periodic_ladder={self.config.enable_periodic_ladder}, "
             f"calibration={self.config.enable_calibration_tournaments}, "
-            f"cross_nn={self.config.enable_cross_nn_tournaments})"
+            f"cross_nn={self.config.enable_cross_nn_tournaments}, "
+            f"multi_harness={self.config.enable_periodic_multi_harness}, "
+            f"stale_eval={self.config.enable_stale_evaluation_detection}, "
+            f"cross_config={self.config.enable_cross_config_tournaments})"
         )
 
     async def _on_stop(self) -> None:
@@ -284,6 +339,33 @@ class TournamentDaemon(HandlerBase):
             except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
             self._cross_nn_task = None
+
+        # Cancel multi-harness task (Jan 2026)
+        if self._multi_harness_task:
+            self._multi_harness_task.cancel()
+            try:
+                await asyncio.wait_for(self._multi_harness_task, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            self._multi_harness_task = None
+
+        # Cancel stale evaluation task (Jan 2026)
+        if self._stale_eval_task:
+            self._stale_eval_task.cancel()
+            try:
+                await asyncio.wait_for(self._stale_eval_task, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            self._stale_eval_task = None
+
+        # Cancel cross-config task (Jan 2026)
+        if self._cross_config_task:
+            self._cross_config_task.cancel()
+            try:
+                await asyncio.wait_for(self._cross_config_task, timeout=5.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            self._cross_config_task = None
 
         logger.info("TournamentDaemon stopped")
 
@@ -1412,6 +1494,419 @@ class TournamentDaemon(HandlerBase):
             num_players=num_players,
             trigger="manual",
         )
+
+    # =========================================================================
+    # Jan 2026: Periodic Multi-Harness, Stale Evaluation, and Cross-Config Loops
+    # =========================================================================
+
+    async def _periodic_multi_harness_loop(self) -> None:
+        """Periodic multi-harness evaluation loop (Jan 2026).
+
+        Runs multi-harness evaluation on top models at regular intervals
+        to ensure harness-specific Elo ratings stay fresh.
+        """
+        # Initial delay to stagger with other loops
+        await asyncio.sleep(300)  # 5 minute initial delay
+
+        while self._running:
+            try:
+                await asyncio.sleep(self.config.periodic_multi_harness_interval_seconds)
+
+                if not self._running:
+                    break
+
+                logger.info("Running periodic multi-harness evaluation")
+                results = await self._run_periodic_multi_harness()
+
+                if results.get("success"):
+                    configs_evaluated = results.get("configs_evaluated", 0)
+                    total_games = results.get("total_games", 0)
+                    logger.info(
+                        f"Periodic multi-harness complete: {configs_evaluated} configs, "
+                        f"{total_games} games"
+                    )
+                else:
+                    logger.warning(
+                        f"Periodic multi-harness failed: {results.get('error')}"
+                    )
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in periodic multi-harness loop: {e}")
+                self._tournament_stats.record_failure(str(e))
+
+    async def _run_periodic_multi_harness(self) -> dict[str, Any]:
+        """Run multi-harness evaluation on all priority configs.
+
+        Returns:
+            Results dict with configs evaluated and games played
+        """
+        results = {
+            "success": False,
+            "configs_evaluated": 0,
+            "total_games": 0,
+            "harness_results": {},
+        }
+
+        try:
+            from app.models.discovery import find_canonical_models
+
+            models = find_canonical_models()
+            priority_configs = set(self.config.multi_harness_priority_configs)
+
+            for (board_type, num_players), model_path in models.items():
+                config_key = make_config_key(board_type, num_players)
+
+                # Prioritize configured configs, but still run others
+                if config_key not in priority_configs and results["configs_evaluated"] >= 4:
+                    continue  # Limit non-priority configs per cycle
+
+                try:
+                    harness_results = await self._run_multi_harness_evaluation(
+                        str(model_path), board_type, num_players
+                    )
+
+                    results["configs_evaluated"] += 1
+                    results["total_games"] += harness_results.get("total_games", 0)
+                    results["harness_results"][config_key] = harness_results
+
+                    # Update last evaluation time
+                    self._last_harness_eval_time[config_key] = time.time()
+
+                    # Emit event for feedback to selfplay scheduler
+                    try:
+                        from app.distributed.data_events import DataEventType
+                        safe_emit_event(
+                            DataEventType.MULTI_HARNESS_EVALUATION_COMPLETED.value,
+                            {
+                                "config_key": config_key,
+                                "best_harness": harness_results.get("best_harness"),
+                                "best_elo": harness_results.get("best_elo"),
+                                "harness_results": harness_results.get("harness_results", {}),
+                            },
+                            context="TournamentDaemon",
+                        )
+                    except ImportError:
+                        pass  # Event emission not critical
+
+                except Exception as e:
+                    logger.warning(f"Multi-harness eval failed for {config_key}: {e}")
+
+            results["success"] = True
+
+        except ImportError:
+            logger.warning("Model discovery not available for multi-harness")
+            results["error"] = "import_error"
+        except Exception as e:
+            logger.error(f"Periodic multi-harness failed: {e}")
+            results["error"] = str(e)
+
+        return results
+
+    async def _stale_evaluation_loop(self) -> None:
+        """Stale evaluation detection loop (Jan 2026).
+
+        Checks for models with stale ratings and queues re-evaluation.
+        """
+        # Initial delay
+        await asyncio.sleep(600)  # 10 minute initial delay
+
+        while self._running:
+            try:
+                await asyncio.sleep(self.config.stale_evaluation_check_interval_seconds)
+
+                if not self._running:
+                    break
+
+                logger.debug("Checking for stale evaluations")
+                stale_models = await self._find_stale_models()
+
+                if stale_models:
+                    logger.info(f"Found {len(stale_models)} models with stale evaluations")
+                    for model_info in stale_models:
+                        self._evaluation_queue.put_nowait({
+                            "model_path": model_info["model_path"],
+                            "board_type": model_info["board_type"],
+                            "num_players": model_info["num_players"],
+                            "trigger": "stale_evaluation",
+                        })
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in stale evaluation loop: {e}")
+
+    async def _find_stale_models(self) -> list[dict[str, Any]]:
+        """Find models with stale Elo ratings.
+
+        Returns:
+            List of model info dicts for models needing re-evaluation
+        """
+        stale_models = []
+        threshold_seconds = self.config.stale_evaluation_threshold_days * 24 * 3600
+        current_time = time.time()
+
+        try:
+            from app.models.discovery import find_canonical_models
+            from app.training.elo_service import get_elo_service
+
+            models = find_canonical_models()
+            elo_service = get_elo_service()
+
+            for (board_type, num_players), model_path in models.items():
+                model_id = Path(model_path).stem
+                config_key = make_config_key(board_type, num_players)
+
+                # Check when model was last evaluated
+                last_eval = self._last_harness_eval_time.get(config_key, 0)
+
+                # Also check Elo service for last match time
+                try:
+                    rating_info = elo_service.get_rating(model_id)
+                    if rating_info and hasattr(rating_info, "last_match_time"):
+                        last_match = rating_info.last_match_time or 0
+                        last_eval = max(last_eval, last_match)
+                except Exception:
+                    pass
+
+                # Check if stale
+                if current_time - last_eval > threshold_seconds:
+                    stale_models.append({
+                        "model_path": str(model_path),
+                        "board_type": board_type,
+                        "num_players": num_players,
+                        "config_key": config_key,
+                        "days_stale": (current_time - last_eval) / (24 * 3600),
+                    })
+
+        except ImportError:
+            logger.debug("Dependencies not available for stale detection")
+        except Exception as e:
+            logger.warning(f"Error finding stale models: {e}")
+
+        return stale_models
+
+    async def _cross_config_loop(self) -> None:
+        """Cross-config tournament loop (Jan 2026).
+
+        Runs tournaments between models of different configurations
+        within the same board family to validate transfer learning.
+        """
+        # Initial delay
+        await asyncio.sleep(900)  # 15 minute initial delay
+
+        while self._running:
+            try:
+                await asyncio.sleep(self.config.cross_config_interval_seconds)
+
+                if not self._running:
+                    break
+
+                logger.info("Running cross-config tournament")
+                results = await self._run_cross_config_tournament()
+
+                if results.get("success"):
+                    families_evaluated = results.get("families_evaluated", 0)
+                    total_games = results.get("total_games", 0)
+                    logger.info(
+                        f"Cross-config tournament complete: {families_evaluated} families, "
+                        f"{total_games} games"
+                    )
+                else:
+                    logger.warning(
+                        f"Cross-config tournament failed: {results.get('error')}"
+                    )
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in cross-config loop: {e}")
+                self._tournament_stats.record_failure(str(e))
+
+    async def _run_cross_config_tournament(self) -> dict[str, Any]:
+        """Run cross-config tournament within board families.
+
+        Compares models trained on different player counts (2p vs 3p vs 4p)
+        within the same board type to validate curriculum progression.
+
+        Returns:
+            Results dict with families evaluated and games played
+        """
+        results = {
+            "success": False,
+            "families_evaluated": 0,
+            "total_games": 0,
+            "family_results": {},
+        }
+
+        try:
+            from app.models.discovery import find_canonical_models
+            from app.training.game_gauntlet import play_single_game
+            from app.training.elo_service import get_elo_service
+            from app.models import BoardType
+
+            models = find_canonical_models()
+            elo_service = get_elo_service()
+            games_per_matchup = self.config.cross_config_games_per_matchup
+
+            for family in self.config.cross_config_families:
+                family_models = []
+
+                # Collect models for this family
+                for config_key in family:
+                    parsed = parse_config_key(config_key)
+                    if not parsed:
+                        continue
+
+                    model_key = (parsed.board_type, parsed.num_players)
+                    if model_key in models:
+                        family_models.append({
+                            "config_key": config_key,
+                            "board_type": parsed.board_type,
+                            "num_players": parsed.num_players,
+                            "model_path": models[model_key],
+                        })
+
+                if len(family_models) < 2:
+                    continue  # Need at least 2 models to compare
+
+                family_key = "_".join(m["config_key"] for m in family_models)
+                family_result = {
+                    "matchups": {},
+                    "games_played": 0,
+                }
+
+                # Run round-robin within family (comparing different player counts)
+                # Note: This is primarily for transfer learning validation
+                # We compare how 2p model performs when adapted to 4p scenarios, etc.
+                for i, model_a in enumerate(family_models):
+                    for model_b in family_models[i + 1:]:
+                        matchup_key = f"{model_a['config_key']}_vs_{model_b['config_key']}"
+
+                        # Use the larger player count for the matchup
+                        num_players = max(model_a["num_players"], model_b["num_players"])
+                        board_type = model_a["board_type"]
+
+                        wins_a = 0
+                        for game_num in range(games_per_matchup):
+                            try:
+                                # Alternate starting positions
+                                if game_num % 2 == 0:
+                                    player_models = [model_a["model_path"], model_b["model_path"]]
+                                    model_a_player = 0
+                                else:
+                                    player_models = [model_b["model_path"], model_a["model_path"]]
+                                    model_a_player = 1
+
+                                # Create player AIs for additional players if needed
+                                from app.training.game_gauntlet import (
+                                    create_neural_ai,
+                                    BaselineOpponent,
+                                    create_baseline_ai,
+                                )
+
+                                player_ais = []
+                                for p in range(num_players):
+                                    if p < 2:
+                                        # Use the competing models
+                                        player_ais.append(
+                                            create_neural_ai(
+                                                str(player_models[p]),
+                                                p + 1,
+                                                BoardType(board_type),
+                                                num_players,
+                                            )
+                                        )
+                                    else:
+                                        # Fill with heuristic for 3p/4p games
+                                        player_ais.append(
+                                            create_baseline_ai(
+                                                BaselineOpponent.HEURISTIC,
+                                                p + 1,
+                                                BoardType(board_type),
+                                                num_players,
+                                            )
+                                        )
+
+                                game_result = play_single_game(
+                                    board_type=BoardType(board_type),
+                                    num_players=num_players,
+                                    player_ais=player_ais,
+                                    timeout=self.config.game_timeout_seconds,
+                                )
+
+                                winner = game_result.get("winner")
+                                if winner == model_a_player:
+                                    wins_a += 1
+
+                                family_result["games_played"] += 1
+                                results["total_games"] += 1
+                                self._tournament_stats.games_played += 1
+
+                            except Exception as e:
+                                logger.warning(f"Cross-config game failed: {e}")
+
+                        win_rate_a = wins_a / games_per_matchup if games_per_matchup > 0 else 0
+                        family_result["matchups"][matchup_key] = {
+                            "model_a": model_a["config_key"],
+                            "model_b": model_b["config_key"],
+                            "wins_a": wins_a,
+                            "games": games_per_matchup,
+                            "win_rate_a": win_rate_a,
+                        }
+
+                        # Record in Elo service
+                        try:
+                            for _ in range(wins_a):
+                                elo_service.record_match(
+                                    participant_a=Path(model_a["model_path"]).stem,
+                                    participant_b=Path(model_b["model_path"]).stem,
+                                    winner=Path(model_a["model_path"]).stem,
+                                    board_type=board_type,
+                                    num_players=num_players,
+                                    tournament_id=f"cross_config_{family_key}",
+                                )
+                            for _ in range(games_per_matchup - wins_a):
+                                elo_service.record_match(
+                                    participant_a=Path(model_a["model_path"]).stem,
+                                    participant_b=Path(model_b["model_path"]).stem,
+                                    winner=Path(model_b["model_path"]).stem,
+                                    board_type=board_type,
+                                    num_players=num_players,
+                                    tournament_id=f"cross_config_{family_key}",
+                                )
+                        except Exception as e:
+                            logger.warning(f"Failed to record cross-config Elo: {e}")
+
+                results["family_results"][family_key] = family_result
+                results["families_evaluated"] += 1
+
+            results["success"] = True
+
+            # Emit event for cross-config results
+            try:
+                from app.distributed.data_events import DataEventType
+                safe_emit_event(
+                    DataEventType.CROSS_CONFIG_TOURNAMENT_COMPLETED.value,
+                    {
+                        "families_evaluated": results["families_evaluated"],
+                        "total_games": results["total_games"],
+                        "family_results": results["family_results"],
+                    },
+                    context="TournamentDaemon",
+                )
+            except ImportError:
+                pass  # Event emission not critical
+
+        except ImportError as e:
+            logger.warning(f"Cross-config tournament dependencies not available: {e}")
+            results["error"] = "import_error"
+        except Exception as e:
+            logger.error(f"Cross-config tournament failed: {e}")
+            results["error"] = str(e)
+
+        return results
 
     def get_status(self) -> dict[str, Any]:
         """Get current daemon status.

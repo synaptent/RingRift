@@ -31061,6 +31061,43 @@ print(json.dumps({{
         else:
             logger.info("[Startup Validation] No voters configured - quorum checks disabled")
 
+        # Jan 9, 2026: PyTorch CUDA validation - detect CPU-only PyTorch on GPU nodes
+        # Root cause of lambda-gh200-10 running at 0% GPU utilization
+        try:
+            pytorch_status = self._resource_detector.validate_pytorch_cuda()
+            status["pytorch"] = pytorch_status
+
+            if pytorch_status.get("warning"):
+                status["warnings"].append(pytorch_status["warning"])
+                logger.warning(f"[Startup Validation] {pytorch_status['warning']}")
+
+                # Emit event for monitoring and dashboards
+                try:
+                    from app.distributed.data_events import DataEventType, get_event_bus
+
+                    get_event_bus().emit(
+                        DataEventType.PYTORCH_CUDA_MISMATCH,
+                        {
+                            "node_id": self.node_id,
+                            "warning": pytorch_status["warning"],
+                            "gpu_detected": pytorch_status.get("gpu_detected", False),
+                            "pytorch_cuda_available": pytorch_status.get("pytorch_cuda_available", False),
+                            "timestamp": datetime.now(timezone.utc).isoformat(),
+                        },
+                    )
+                except (ImportError, Exception) as e:
+                    logger.debug(f"[Startup Validation] Could not emit PyTorch CUDA event: {e}")
+            elif pytorch_status.get("pytorch_cuda_available"):
+                logger.info(
+                    f"[Startup Validation] PyTorch CUDA OK: "
+                    f"version={pytorch_status.get('pytorch_cuda_version')}, "
+                    f"devices={pytorch_status.get('cuda_device_count')}"
+                )
+            elif pytorch_status.get("error"):
+                logger.debug(f"[Startup Validation] PyTorch not installed: {pytorch_status.get('error')}")
+        except Exception as e:
+            logger.debug(f"[Startup Validation] PyTorch validation failed: {e}")
+
         # Summary log
         available_count = sum(1 for v in status["managers"].values() if v)
         total_count = len(status["managers"])

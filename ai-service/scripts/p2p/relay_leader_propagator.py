@@ -443,3 +443,88 @@ class RelayLeaderPropagatorMixin:
 
         # Try to update our leader from this claim
         return self._update_leader_from_gossip()
+
+    async def _broadcast_leader_to_all_peers(
+        self,
+        leader_id: str,
+        epoch: int,
+        lease_expires: float,
+    ) -> int:
+        """Broadcast leadership to all known peers for fast propagation.
+
+        Jan 9, 2026: Added for fast leader propagation (<2s vs 30s gossip).
+        Fire-and-forget to avoid blocking on slow/dead nodes.
+
+        Args:
+            leader_id: The new leader's node ID
+            epoch: Leadership epoch
+            lease_expires: Lease expiration timestamp
+
+        Returns:
+            Number of peers notified successfully
+        """
+        import aiohttp
+
+        peers = getattr(self, "peers", {})
+        if not peers:
+            return 0
+
+        payload = {
+            "leader_id": leader_id,
+            "epoch": epoch,
+            "lease_expires": lease_expires,
+        }
+
+        success_count = 0
+
+        async def notify_peer(peer_id: str, peer_info: Any) -> bool:
+            """Notify a single peer about the new leader."""
+            try:
+                # Get peer IP and port
+                ip = None
+                if hasattr(peer_info, "tailscale_ip"):
+                    ip = peer_info.tailscale_ip
+                elif hasattr(peer_info, "ip"):
+                    ip = peer_info.ip
+                elif isinstance(peer_info, dict):
+                    ip = peer_info.get("ip") or peer_info.get("tailscale_ip")
+
+                if not ip:
+                    return False
+
+                port = getattr(peer_info, "port", None)
+                if port is None and isinstance(peer_info, dict):
+                    port = peer_info.get("port", 8770)
+                if port is None:
+                    port = 8770
+
+                url = f"http://{ip}:{port}/leader_announcement"
+
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(url, json=payload, timeout=2.0) as resp:
+                        if resp.status == 200:
+                            logger.debug(
+                                f"[LeaderBroadcast] Leader broadcast accepted by {peer_id}"
+                            )
+                            return True
+                return False
+            except Exception:
+                # Fire-and-forget, don't log failures
+                return False
+
+        # Launch all notifications concurrently
+        node_id = getattr(self, "node_id", "")
+        tasks = []
+        for pid, pinfo in peers.items():
+            if pid != node_id:
+                tasks.append(notify_peer(pid, pinfo))
+
+        if tasks:
+            import asyncio
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            success_count = sum(1 for r in results if r is True)
+            logger.info(
+                f"[LeaderBroadcast] Broadcast leadership to {success_count}/{len(tasks)} peers"
+            )
+
+        return success_count
