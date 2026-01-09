@@ -106,6 +106,15 @@ from .metrics import MetricsHandlersMixin
 from .models import ModelHandlersMixin, setup_model_routes
 from .selfplay_api import SelfplayHandlersMixin
 from .cluster_api import ClusterApiHandlersMixin
+from .dashboard import DashboardHandlersMixin
+from .recovery import RecoveryHandlersMixin
+from .configuration import ConfigurationHandlersMixin
+from .training_control import TrainingControlHandlersMixin
+from .elo_analytics import EloAnalyticsHandlersMixin
+from .evaluation_play import EvaluationPlayHandlersMixin
+from .event_management import EventManagementHandlersMixin
+from .status import StatusHandlersMixin
+from .cluster_nodes import ClusterNodeHandlersMixin
 
 __all__ = [
     # Base class (Dec 2025 - handler consolidation)
@@ -145,4 +154,22 @@ __all__ = [
     "SelfplayHandlersMixin",
     # Cluster API (January 2026 - P2P Modularization)
     "ClusterApiHandlersMixin",
+    # Dashboard (January 2026 - P2P Modularization)
+    "DashboardHandlersMixin",
+    # Recovery (January 2026 - P2P Modularization Phase 2b)
+    "RecoveryHandlersMixin",
+    # Configuration (January 2026 - P2P Modularization Phase 2c)
+    "ConfigurationHandlersMixin",
+    # Training Control (January 2026 - P2P Modularization Phase 3a)
+    "TrainingControlHandlersMixin",
+    # Elo Analytics (January 2026 - P2P Modularization Phase 4a)
+    "EloAnalyticsHandlersMixin",
+    # Evaluation Play (January 2026 - P2P Modularization Phase 5a)
+    "EvaluationPlayHandlersMixin",
+    # Event Management (January 2026 - P2P Modularization Phase 5b)
+    "EventManagementHandlersMixin",
+    # Status (January 2026 - P2P Modularization Phase 6a)
+    "StatusHandlersMixin",
+    # Cluster Nodes (January 2026 - P2P Modularization Phase 7b)
+    "ClusterNodeHandlersMixin",
 ]

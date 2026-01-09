@@ -1,7 +1,11 @@
-"""P2P Prometheus Metrics Handler.
+"""P2P Metrics HTTP handlers.
 
 January 2026: Extracted from p2p_orchestrator.py to reduce file size.
-Provides /metrics/prometheus endpoint for Grafana/Prometheus scraping.
+
+Endpoints:
+- GET /metrics - Metrics with content negotiation (JSON or Prometheus format)
+- GET /metrics/prometheus - Prometheus-compatible metrics export
+- GET /pipeline/status - Current pipeline phase status
 
 The handler accesses orchestrator state via `self.*` since it's designed
 as a mixin that gets inherited by P2POrchestrator.
@@ -844,3 +848,72 @@ class MetricsHandlersMixin:
 
         except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)})
+
+    async def handle_metrics(self, request: web.Request) -> web.Response:
+        """GET /metrics - Get metrics summary and history.
+
+        Content negotiation:
+        - Accept: text/plain -> Prometheus format (same as /metrics/prometheus)
+        - Accept: application/json -> JSON format
+        - Default (no header) -> Prometheus format for Prometheus scraper compatibility
+
+        January 2026 - P2P Modularization Phase 4b
+        """
+        try:
+            # Content negotiation for Prometheus compatibility
+            accept = request.headers.get("Accept", "")
+            # Prometheus sends "text/plain" or "application/openmetrics-text"
+            # Also check for explicit format param
+            format_param = request.query.get("format", "").lower()
+            if format_param == "prometheus" or "text/plain" in accept or "openmetrics" in accept or not accept:
+                # Return Prometheus format
+                return await self.handle_metrics_prometheus(request)
+
+            hours = float(request.query.get("hours", "24"))
+            metric_type = request.query.get("type")
+            board_type = request.query.get("board_type")
+            num_players_str = request.query.get("num_players")
+            num_players = int(num_players_str) if num_players_str else None
+
+            if metric_type:
+                # Get specific metric history
+                history = self.get_metrics_history(
+                    metric_type=metric_type,
+                    board_type=board_type,
+                    num_players=num_players,
+                    hours=hours,
+                )
+                return web.json_response({
+                    "success": True,
+                    "metric_type": metric_type,
+                    "period_hours": hours,
+                    "count": len(history),
+                    "history": history,
+                })
+            else:
+                # Get summary of all metrics
+                summary = self.get_metrics_summary(hours=hours)
+                return web.json_response({
+                    "success": True,
+                    **summary,
+                })
+
+        except Exception as e:  # noqa: BLE001
+            return web.json_response({"success": False, "error": str(e)})
+
+    async def handle_pipeline_status(self, request: web.Request) -> web.Response:
+        """GET /pipeline/status - Get current pipeline phase status.
+
+        January 2026 - P2P Modularization Phase 4b
+        """
+        if not self._is_leader() and request.query.get("local") != "1":
+            proxied = await self._proxy_to_leader(request)
+            if proxied.status not in (502, 503):
+                return proxied
+        pipeline_status = getattr(self, '_pipeline_status', {})
+        return web.json_response({
+            "success": True,
+            "node_id": self.node_id,
+            "is_leader": self._is_leader(),
+            "current_job": pipeline_status,
+        })

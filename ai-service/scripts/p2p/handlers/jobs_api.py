@@ -1,7 +1,7 @@
 """Jobs API HTTP Handlers Mixin.
 
 Provides HTTP endpoints for job management via REST API.
-Handles listing, submitting, getting details, and cancelling jobs.
+Handles listing, submitting, getting details, cancelling, and managing jobs.
 
 Usage:
     class P2POrchestrator(JobsApiHandlersMixin, ...):
@@ -12,6 +12,12 @@ Endpoints:
     POST /api/jobs - Submit a new job
     GET /api/jobs/{job_id} - Get job details
     POST /api/jobs/{job_id}/cancel - Cancel a job
+    POST /start_job - Start a job (from leader)
+    POST /stop_job - Stop a running job
+    POST /job/kill - Forcefully kill a stuck job
+    POST /cleanup - Trigger disk cleanup
+    POST /restart_stuck_jobs - Restart stuck selfplay jobs
+    POST /cleanup_files - Delete specific files
 
 Requires the implementing class to have:
     - node_id: str
@@ -28,18 +34,27 @@ Requires the implementing class to have:
     - _start_local_job(job_type, board_type, num_players, engine_mode) method
     - _save_state() method
     - _emit_task_abandoned(task_id, task_type, reason, node_id) method
+    - _cleanup_local_disk() method
+    - _get_resource_usage() method
+    - _restart_local_stuck_jobs() method
+    - get_data_directory() method
 """
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import os
 import signal
+import subprocess
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
+
+from scripts.p2p.network import AsyncLockWrapper
 
 from scripts.p2p.handlers.base import BaseP2PHandler
 from scripts.p2p.handlers.timeout_decorator import (
@@ -503,3 +518,288 @@ class JobsApiHandlersMixin(BaseP2PHandler):
 
         except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
+
+    # -------------------------------------------------------------------------
+    # Job Management Handlers - Extracted from p2p_orchestrator.py
+    # January 2026 - P2P Modularization Phase 7a
+    # -------------------------------------------------------------------------
+
+    async def handle_start_job(self, request: web.Request) -> web.Response:
+        """Handle request to start a job (from leader).
+
+        Request body:
+            job_type: Type of job (selfplay, gpu_selfplay, data_export, etc.)
+            board_type: Board type (default: square8)
+            num_players: Number of players (default: 2)
+            engine_mode: Engine mode (default: gumbel-mcts)
+            job_id: Optional job ID
+            cuda_visible_devices: Optional CUDA device selection
+            export_params: Optional params for DATA_EXPORT jobs
+
+        Returns:
+            success: True if job started
+            job: Job details dict
+        """
+        try:
+            data = await request.json()
+
+            # Import JobType lazily to avoid circular imports
+            job_type_enum = self._get_job_type_enum(data.get("job_type", "selfplay"))
+            if job_type_enum is None:
+                # Try direct import for all job types
+                try:
+                    from scripts.p2p_orchestrator import JobType
+                    job_type_enum = JobType(data.get("job_type", "selfplay"))
+                except (ImportError, ValueError):
+                    return web.json_response(
+                        {"error": f"Unknown job type: {data.get('job_type')}"},
+                        status=400,
+                    )
+
+            board_type = data.get("board_type", "square8")
+            num_players = data.get("num_players", 2)
+            engine_mode = data.get("engine_mode", "gumbel-mcts")
+            job_id = data.get("job_id")
+            cuda_visible_devices = data.get("cuda_visible_devices")
+
+            # Extra params for DATA_EXPORT jobs
+            export_params = None
+            try:
+                from scripts.p2p_orchestrator import JobType as JT
+                if job_type_enum == JT.DATA_EXPORT:
+                    export_params = {
+                        "input_path": data.get("input_path"),
+                        "output_path": data.get("output_path"),
+                        "encoder_version": data.get("encoder_version", "v3"),
+                        "max_games": data.get("max_games", 5000),
+                        "is_jsonl": data.get("is_jsonl", False),
+                    }
+            except ImportError:
+                pass
+
+            job = await self._start_local_job(
+                job_type_enum,
+                board_type=board_type,
+                num_players=num_players,
+                engine_mode=engine_mode,
+                job_id=job_id,
+                cuda_visible_devices=cuda_visible_devices,
+                export_params=export_params,
+            )
+
+            if job:
+                return web.json_response({"success": True, "job": job.to_dict()})
+            else:
+                return web.json_response(
+                    {"success": False, "error": "Failed to start job"},
+                    status=500,
+                )
+        except Exception as e:  # noqa: BLE001
+            return web.json_response({"error": str(e)}, status=400)
+
+    async def handle_stop_job(self, request: web.Request) -> web.Response:
+        """Handle request to stop a job.
+
+        Request body:
+            job_id: ID of the job to stop
+
+        Returns:
+            success: True if job was stopped
+        """
+        try:
+            data = await request.json()
+            job_id = data.get("job_id")
+
+            async with AsyncLockWrapper(self.jobs_lock):
+                if job_id in self.local_jobs:
+                    job = self.local_jobs[job_id]
+                    try:
+                        os.kill(job.pid, signal.SIGTERM)
+                        job.status = "stopped"
+                    except OSError:
+                        pass  # Process already dead
+                    return web.json_response({"success": True})
+
+            return web.json_response(
+                {"success": False, "error": "Job not found"},
+                status=404,
+            )
+        except Exception as e:  # noqa: BLE001
+            return web.json_response({"error": str(e)}, status=400)
+
+    async def handle_job_kill(self, request: web.Request) -> web.Response:
+        """Handle request to forcefully kill a stuck job (SIGKILL).
+
+        Used by the leader's self-healing system to kill stuck jobs remotely.
+        Supports killing by job_id or by job_type pattern.
+
+        Request body:
+            job_id: Optional job ID to kill
+            job_type: Optional job type pattern ("training", "selfplay", etc.)
+            reason: Reason for killing the job
+
+        Returns:
+            success: True if any processes were killed
+            killed: Number of processes killed
+            reason: The provided reason
+        """
+        try:
+            data = await request.json()
+            job_id = data.get("job_id")
+            job_type = data.get("job_type")  # "training", "selfplay", etc.
+            reason = data.get("reason", "unknown")
+
+            killed = 0
+
+            # Try to kill by job_id first
+            if job_id:
+                async with AsyncLockWrapper(self.jobs_lock):
+                    if job_id in self.local_jobs:
+                        job = self.local_jobs[job_id]
+                        try:
+                            os.kill(job.pid, signal.SIGKILL)
+                            job.status = "killed"
+                            killed += 1
+                            logger.info(f"Killed job {job_id} (pid {job.pid}): {reason}")
+                        except Exception as e:  # noqa: BLE001
+                            logger.error(f"Failed to kill job {job_id}: {e}")
+
+            # Kill by job_type pattern (for stuck training, etc.)
+            if job_type and killed == 0:
+                patterns = {
+                    "training": ["train_nnue", "train.*model"],
+                    "selfplay": ["selfplay", "run_hybrid_selfplay"],
+                }
+                for pattern in patterns.get(job_type, [job_type]):
+                    try:
+                        result = subprocess.run(
+                            ["pkill", "-9", "-f", pattern],
+                            timeout=5,
+                            capture_output=True,
+                        )
+                        if result.returncode == 0:
+                            killed += 1
+                            logger.info(f"Killed processes matching '{pattern}': {reason}")
+                    except Exception as e:  # noqa: BLE001
+                        logger.info(f"pkill error for {pattern}: {e}")
+
+            return web.json_response({
+                "success": killed > 0,
+                "killed": killed,
+                "reason": reason,
+            })
+
+        except Exception as e:  # noqa: BLE001
+            return web.json_response({"error": str(e)}, status=400)
+
+    async def handle_cleanup(self, request: web.Request) -> web.Response:
+        """Handle cleanup request (from leader or manual).
+
+        LEARNED LESSONS - This endpoint allows remote nodes to trigger disk cleanup
+        when the leader detects disk usage approaching critical thresholds.
+
+        Returns:
+            success: True if cleanup was initiated
+            disk_percent_before: Disk usage before cleanup
+            message: Status message
+        """
+        try:
+            logger.info("Cleanup request received")
+
+            # Run cleanup in background to avoid blocking the request
+            asyncio.create_task(self._cleanup_local_disk())
+
+            # Return current disk usage
+            usage = self._get_resource_usage()
+            return web.json_response({
+                "success": True,
+                "disk_percent_before": usage["disk_percent"],
+                "message": "Cleanup initiated",
+            })
+        except Exception as e:  # noqa: BLE001
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_restart_stuck_jobs(self, request: web.Request) -> web.Response:
+        """Handle request to restart stuck selfplay jobs.
+
+        LEARNED LESSONS - Called by leader when it detects GPU idle with running processes.
+        Kills all selfplay processes and clears job tracking so they restart.
+
+        Returns:
+            success: True if restart was initiated
+            message: Status message
+        """
+        try:
+            logger.info("Restart stuck jobs request received")
+
+            # Run in background to avoid blocking
+            asyncio.create_task(self._restart_local_stuck_jobs())
+
+            return web.json_response({
+                "success": True,
+                "message": "Stuck job restart initiated",
+            })
+        except Exception as e:  # noqa: BLE001
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_cleanup_files(self, request: web.Request) -> web.Response:
+        """Delete specific files from this node (for post-sync cleanup).
+
+        Called by leader after successful sync to training nodes to free
+        disk space on source nodes with high disk usage.
+
+        Request body:
+            files: List of file paths to delete (relative to data directory)
+            reason: Reason for cleanup
+
+        Returns:
+            success: True if any files were deleted
+            freed_bytes: Total bytes freed
+            deleted_count: Number of files deleted
+        """
+        try:
+            data = await request.json()
+            files = data.get("files", [])
+            reason = data.get("reason", "manual")
+
+            if not files:
+                return web.json_response(
+                    {"success": False, "error": "No files specified"},
+                    status=400,
+                )
+
+            logger.info(f"Cleanup files request: {len(files)} files, reason={reason}")
+
+            data_dir = self.get_data_directory()
+            freed_bytes = 0
+            deleted_count = 0
+
+            for file_path in files:
+                # Security: only allow deletion within data directory
+                full_path = data_dir / (file_path or "").lstrip("/")
+                try:
+                    data_root = data_dir.resolve()
+                    resolved = full_path.resolve()
+                    resolved.relative_to(data_root)
+                except (AttributeError, ValueError):
+                    logger.info(f"Cleanup: skipping path outside data dir: {file_path}")
+                    continue
+
+                if resolved.exists():
+                    try:
+                        size = resolved.stat().st_size
+                        resolved.unlink()
+                        freed_bytes += size
+                        deleted_count += 1
+                    except Exception as e:  # noqa: BLE001
+                        logger.error(f"Failed to delete {file_path}: {e}")
+
+            logger.info(f"Cleanup complete: {deleted_count} files, {freed_bytes / 1e6:.1f}MB freed")
+
+            return web.json_response({
+                "success": True,
+                "freed_bytes": freed_bytes,
+                "deleted_count": deleted_count,
+            })
+        except Exception as e:  # noqa: BLE001
+            return web.json_response({"error": str(e)}, status=500)
