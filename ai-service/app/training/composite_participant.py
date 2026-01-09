@@ -516,6 +516,39 @@ def is_composite_id(participant_id: str) -> bool:
     return participant_id.count(":") == 2
 
 
+def extract_harness_type(participant_id: str) -> str | None:
+    """Extract the harness/algorithm type from a participant ID.
+
+    Works with both composite IDs and legacy IDs.
+
+    Args:
+        participant_id: Participant ID (composite or legacy)
+
+    Returns:
+        Harness type (e.g., "gumbel_mcts", "brs", "maxn") if composite ID,
+        None for legacy IDs or invalid formats.
+
+    Examples:
+        >>> extract_harness_type("ringrift_v5:gumbel_mcts:b200")
+        "gumbel_mcts"
+        >>> extract_harness_type("canonical_hex8_2p")
+        None
+        >>> extract_harness_type("nn:brs:abc123")
+        "brs"
+
+    January 2026: Added to support harness_type propagation to match_history.
+    Enables per-harness Elo tracking in the training pipeline.
+    """
+    if not is_composite_id(participant_id):
+        return None
+
+    try:
+        _, ai_type, _ = parse_composite_participant_id(participant_id)
+        return ai_type
+    except ValueError:
+        return None
+
+
 def get_standard_config(ai_type: str) -> dict[str, Any]:
     """Get the standard configuration for an algorithm type.
 

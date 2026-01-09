@@ -75,6 +75,7 @@ WORK_QUEUE_ROUTES = [
     Route("GET", "/work/claim", "handle_work_claim"),
     Route("GET", "/work/claim_batch", "handle_work_claim_batch"),  # Session 17.34: Batch claiming for +30-40% utilization
     Route("GET", "/work/claim_training", "handle_work_claim_training"),  # Jan 4, 2026: Pull-based training claim
+    Route("GET", "/work/claim_evaluation", "handle_work_claim_evaluation"),  # Jan 9, 2026: Pull-based evaluation claim
     Route("POST", "/work/peer_claim", "handle_work_peer_claim"),  # Session 17.43: Split-brain resilience - peer work claiming
     Route("POST", "/work/start", "handle_work_start"),
     Route("POST", "/work/complete", "handle_work_complete"),

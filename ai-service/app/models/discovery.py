@@ -424,6 +424,51 @@ def find_canonical_models(
     return results
 
 
+def find_tournament_models(
+    models_dir: Path | None = None,
+    include_best: bool = True,
+) -> dict[tuple[str, int], Path]:
+    """Find models for tournament evaluation including both canonical and best models.
+
+    January 2026: Added to ensure promoted best models (ringrift_best_*) are included
+    in tournaments and regular evaluation, not just canonical models.
+
+    Args:
+        models_dir: Directory to scan (default: AI_SERVICE_ROOT/models)
+        include_best: If True, include ringrift_best_* symlinks (preferred over canonical)
+
+    Returns:
+        Dict mapping (board_type, num_players) tuples to model paths.
+        If both canonical and best exist for a config, best is preferred.
+    """
+    if models_dir is None:
+        models_dir = MODELS_DIR
+
+    models_dir = Path(models_dir)
+
+    # Start with canonical models
+    results = find_canonical_models(models_dir)
+
+    if include_best:
+        # Also find ringrift_best_* symlinks - these take priority over canonical
+        best_pattern = re.compile(r"^ringrift_best_([a-z0-9]+)_(\d)p\.pth$")
+
+        for f in models_dir.glob("ringrift_best_*.pth"):
+            if f.stem.startswith("."):
+                continue
+
+            match = best_pattern.match(f.name)
+            if match:
+                board_type = match.group(1)
+                num_players = int(match.group(2))
+                # ringrift_best_* takes priority over canonical
+                results[(board_type, num_players)] = f
+                logger.debug(f"Found best model: {board_type}_{num_players}p -> {f}")
+
+    logger.info(f"Discovered {len(results)} tournament models in {models_dir}")
+    return results
+
+
 def generate_all_sidecars(models_dir: Path | None = None, overwrite: bool = False) -> int:
     """Generate sidecar JSON files for all models.
 

@@ -9,7 +9,8 @@ import sqlite3
 import time
 from pathlib import Path
 
-SCHEMA_VERSION = 2  # Must match GameReplayDB expected version
+# Import canonical schema version from GameReplayDB (January 2026 fix)
+from app.db.game_replay import SCHEMA_VERSION
 
 def main():
     synced_dir = Path("data/games/synced")

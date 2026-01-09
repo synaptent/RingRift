@@ -685,6 +685,70 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             return self.error_response(str(e), status=500)
 
     @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
+    async def handle_work_claim_evaluation(self, request: web.Request) -> web.Response:
+        """Pull-based evaluation job claim - works without leader for cluster-wide model evaluation.
+
+        Jan 9, 2026: Added for Phase 3 of cluster-wide model evaluation system.
+
+        GPU nodes call this to claim evaluation work from the EvaluationScheduler.
+        Jobs evaluate models under various harnesses (Gumbel MCTS, MaxN, BRS, etc.)
+        producing fresh Elo rankings.
+
+        Query params:
+            node_id: ID of the claiming node (required)
+            capabilities: Comma-separated capabilities e.g. "gpu,nn,nnue" (optional)
+
+        Response:
+        {
+            "status": "claimed" | "no_work_available",
+            "source": "evaluation_scheduler",
+            "job": {...} | null
+        }
+        """
+        try:
+            node_id = request.query.get("node_id", "")
+            capabilities_str = request.query.get("capabilities", "")
+
+            if not node_id:
+                return self.bad_request("node_id required")
+
+            capabilities = [c.strip() for c in capabilities_str.split(",") if c.strip()] or None
+
+            # Check node capacity for evaluation work
+            has_capacity, reason = self._check_node_capacity(node_id, "evaluation")
+            if not has_capacity:
+                return self._insufficient_capacity_response(reason)
+
+            # Get evaluation scheduler
+            try:
+                from app.coordination.evaluation_scheduler import get_evaluation_scheduler
+                scheduler = get_evaluation_scheduler()
+            except ImportError:
+                logger.warning("EvaluationScheduler not available")
+                return self.json_response({"status": "no_work_available"})
+
+            # Get next job for this node
+            job = scheduler.get_next_job(node_id=node_id, capabilities=capabilities)
+            if job is None:
+                return self.json_response({"status": "no_work_available"})
+
+            # Claim the job
+            if scheduler.claim_job(job.job_id, node_id):
+                logger.info(f"Evaluation job {job.job_id} claimed by {node_id}")
+                return self.json_response({
+                    "status": "claimed",
+                    "source": "evaluation_scheduler",
+                    "job": job.to_dict(),
+                })
+
+            # Claim failed (race condition - another node claimed it)
+            return self.json_response({"status": "no_work_available"})
+
+        except Exception as e:
+            logger.error(f"Error claiming evaluation work: {e}")
+            return self.error_response(str(e), status=500)
+
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_work_peer_claim(self, request: web.Request) -> web.Response:
         """Allow peers to claim work from this node's queue for split-brain resilience.
 

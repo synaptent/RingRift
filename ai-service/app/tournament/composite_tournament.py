@@ -58,6 +58,7 @@ from app.tournament.scheduler import Match, MatchStatus, RoundRobinScheduler, Sw
 from app.training.composite_participant import (
     STANDARD_ALGORITHM_CONFIGS,
     extract_ai_type,
+    extract_harness_type,
     extract_nn_id,
     get_standard_config,
     make_composite_participant_id,
@@ -211,7 +212,8 @@ class BaseTournament(ABC):
                 )
 
                 if result:
-                    # Record match
+                    # Record match - January 2026: Extract harness_type for Elo tracking
+                    harness_type = extract_harness_type(result["participant_a"])
                     self.elo_service.record_match(
                         participant_a=result["participant_a"],
                         participant_b=result["participant_b"],
@@ -220,6 +222,7 @@ class BaseTournament(ABC):
                         num_players=self.num_players,
                         game_length=result["game_length"],
                         duration_sec=result["duration_sec"],
+                        harness_type=harness_type,
                     )
                     matches_played += 1
 
@@ -499,6 +502,8 @@ class CombinedTournament(BaseTournament):
                     )
 
                     if result:
+                        # January 2026: Extract harness_type for Elo tracking
+                        harness_type = extract_harness_type(result["participant_a"])
                         self.elo_service.record_match(
                             participant_a=result["participant_a"],
                             participant_b=result["participant_b"],
@@ -507,6 +512,7 @@ class CombinedTournament(BaseTournament):
                             num_players=self.num_players,
                             game_length=result["game_length"],
                             duration_sec=result["duration_sec"],
+                            harness_type=harness_type,
                         )
                         matches_played += 1
 

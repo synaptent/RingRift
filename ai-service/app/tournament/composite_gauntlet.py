@@ -41,6 +41,7 @@ from typing import Any
 
 from app.training.composite_participant import (
     STANDARD_ALGORITHM_CONFIGS,
+    extract_harness_type,
     extract_nn_id,
     get_standard_config,
     is_composite_id,
@@ -508,6 +509,8 @@ class CompositeGauntlet:
                     elif result["winner"] == "baseline":
                         winner = baseline_id
 
+                    # January 2026: Extract harness_type from composite IDs for Elo tracking
+                    harness_type = extract_harness_type(participant_id)
                     self.elo_service.record_match(
                         participant_a=participant_id,
                         participant_b=baseline_id,
@@ -516,6 +519,7 @@ class CompositeGauntlet:
                         num_players=self.num_players,
                         game_length=result.get("game_length", 0),
                         duration_sec=result.get("duration_sec", 0),
+                        harness_type=harness_type,
                     )
                     total_games += 1
 

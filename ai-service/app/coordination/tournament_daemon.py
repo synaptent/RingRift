@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 from app.coordination.daemon_stats import EvaluationDaemonStats
 from app.coordination.event_utils import make_config_key, parse_config_key
 from app.coordination.event_emission_helpers import safe_emit_event
+from app.training.composite_participant import extract_harness_type
 from app.coordination.handler_base import HandlerBase
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 
@@ -134,7 +135,7 @@ class TournamentDaemonConfig:
 
     # Jan 2026: Stale evaluation detection - re-evaluate models with old ratings
     enable_stale_evaluation_detection: bool = True
-    stale_evaluation_threshold_days: float = 7.0  # Re-evaluate if rating >7 days old
+    stale_evaluation_threshold_days: float = 1.0  # Re-evaluate if rating >1 day old (was 7)
     stale_evaluation_check_interval_seconds: float = 3600.0  # Check hourly
 
     # Jan 2026: Cross-config tournaments - compare models across board types
@@ -959,12 +960,12 @@ class TournamentDaemon(HandlerBase):
         }
 
         try:
-            # Find all canonical models
-            from app.models.discovery import find_canonical_models
+            # Find all tournament models (includes both canonical and ringrift_best_*)
+            from app.models.discovery import find_tournament_models
 
-            models = find_canonical_models()
+            models = find_tournament_models()
 
-            # find_canonical_models() returns {(board_type, num_players): Path}
+            # find_tournament_models() returns {(board_type, num_players): Path}
             for (board_type, num_players), model_path in models.items():
                 # Queue evaluation
                 self._evaluation_queue.put_nowait({
@@ -1332,11 +1333,14 @@ class TournamentDaemon(HandlerBase):
                             if winner is not None:
                                 winner_id = newer_path.stem if winner == newer_player else older_path.stem
                                 loser_id = older_path.stem if winner == newer_player else newer_path.stem
+                                # January 2026: Extract harness_type for per-harness Elo tracking
+                                harness_type = extract_harness_type(winner_id)
                                 elo_service.record_match(
                                     winner_id=winner_id,
                                     loser_id=loser_id,
                                     board_type=board,
                                     num_players=num_players,
+                                    harness_type=harness_type,
                                 )
 
                         except Exception as e:
@@ -1431,6 +1435,8 @@ class TournamentDaemon(HandlerBase):
 
                 winner_id = model_id if winner == 0 else (opponent_id if winner == 1 else None)
 
+                # January 2026: Extract harness_type for per-harness Elo tracking
+                harness_type = extract_harness_type(model_id)
                 elo_service.record_match(
                     participant_a=model_id,
                     participant_b=opponent_id,
@@ -1439,6 +1445,7 @@ class TournamentDaemon(HandlerBase):
                     num_players=num_players,
                     game_length=match.get("game_length", 0),
                     duration_sec=match.get("duration", 0.0),
+                    harness_type=harness_type,
                 )
 
             logger.info(f"Updated ELO for {model_id} with {len(match_results)} matches")
@@ -1550,9 +1557,9 @@ class TournamentDaemon(HandlerBase):
         }
 
         try:
-            from app.models.discovery import find_canonical_models
+            from app.models.discovery import find_tournament_models
 
-            models = find_canonical_models()
+            models = find_tournament_models()
             priority_configs = set(self.config.multi_harness_priority_configs)
 
             for (board_type, num_players), model_path in models.items():
@@ -1648,10 +1655,10 @@ class TournamentDaemon(HandlerBase):
         current_time = time.time()
 
         try:
-            from app.models.discovery import find_canonical_models
+            from app.models.discovery import find_tournament_models
             from app.training.elo_service import get_elo_service
 
-            models = find_canonical_models()
+            models = find_tournament_models()
             elo_service = get_elo_service()
 
             for (board_type, num_players), model_path in models.items():
@@ -1741,12 +1748,12 @@ class TournamentDaemon(HandlerBase):
         }
 
         try:
-            from app.models.discovery import find_canonical_models
+            from app.models.discovery import find_tournament_models
             from app.training.game_gauntlet import play_single_game
             from app.training.elo_service import get_elo_service
             from app.models import BoardType
 
-            models = find_canonical_models()
+            models = find_tournament_models()
             elo_service = get_elo_service()
             games_per_matchup = self.config.cross_config_games_per_matchup
 
@@ -1858,23 +1865,29 @@ class TournamentDaemon(HandlerBase):
 
                         # Record in Elo service
                         try:
+                            participant_a = Path(model_a["model_path"]).stem
+                            participant_b = Path(model_b["model_path"]).stem
+                            # January 2026: Extract harness_type for per-harness Elo tracking
+                            harness_type = extract_harness_type(participant_a)
                             for _ in range(wins_a):
                                 elo_service.record_match(
-                                    participant_a=Path(model_a["model_path"]).stem,
-                                    participant_b=Path(model_b["model_path"]).stem,
-                                    winner=Path(model_a["model_path"]).stem,
+                                    participant_a=participant_a,
+                                    participant_b=participant_b,
+                                    winner=participant_a,
                                     board_type=board_type,
                                     num_players=num_players,
                                     tournament_id=f"cross_config_{family_key}",
+                                    harness_type=harness_type,
                                 )
                             for _ in range(games_per_matchup - wins_a):
                                 elo_service.record_match(
-                                    participant_a=Path(model_a["model_path"]).stem,
-                                    participant_b=Path(model_b["model_path"]).stem,
-                                    winner=Path(model_b["model_path"]).stem,
+                                    participant_a=participant_a,
+                                    participant_b=participant_b,
+                                    winner=participant_b,
                                     board_type=board_type,
                                     num_players=num_players,
                                     tournament_id=f"cross_config_{family_key}",
+                                    harness_type=harness_type,
                                 )
                         except Exception as e:
                             logger.warning(f"Failed to record cross-config Elo: {e}")

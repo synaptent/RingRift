@@ -659,9 +659,13 @@ class SyncPullMixin(SyncMixinBase):
         ) -> tuple[int, str | None]:
             """Sync helper to merge databases without blocking event loop.
 
+            CRITICAL: Only copies games that have move data to prevent orphan games.
+
             Returns:
                 Tuple of (new_games_count, error_message_or_none)
             """
+            from app.db.move_data_validator import MIN_MOVES_REQUIRED
+
             try:
                 with sqlite3.connect(str(canonical), timeout=30.0) as conn:
                     cursor = conn.cursor()
@@ -670,22 +674,44 @@ class SyncPullMixin(SyncMixinBase):
                     cursor.execute("ATTACH DATABASE ? AS pulled", (str(pulled),))
 
                     try:
+                        # Check if pulled database has game_moves table
+                        cursor.execute(
+                            "SELECT name FROM pulled.sqlite_master "
+                            "WHERE type='table' AND name='game_moves'"
+                        )
+                        has_game_moves = cursor.fetchone() is not None
+
+                        if not has_game_moves:
+                            logger.warning(
+                                f"[AutoSyncDaemon] Pulled database has no game_moves table, "
+                                f"skipping merge to prevent orphan games"
+                            )
+                            return 0, None
+
                         # Get count before merge
                         cursor.execute("SELECT COUNT(*) FROM games")
                         before_count = cursor.fetchone()[0]
 
-                        # Copy games that don't exist
-                        cursor.execute("""
+                        # CRITICAL: Only copy games that have sufficient moves
+                        # This prevents orphan games (metadata without moves)
+                        cursor.execute(f"""
                             INSERT OR IGNORE INTO games
-                            SELECT * FROM pulled.games
-                            WHERE game_id NOT IN (SELECT game_id FROM games)
+                            SELECT g.* FROM pulled.games g
+                            INNER JOIN (
+                                SELECT game_id, COUNT(*) as move_count
+                                FROM pulled.game_moves
+                                GROUP BY game_id
+                                HAVING move_count >= {MIN_MOVES_REQUIRED}
+                            ) gm ON g.game_id = gm.game_id
+                            WHERE g.game_id NOT IN (SELECT game_id FROM games)
                         """)
 
-                        # Copy moves for new games
+                        # Copy moves for new games (only for games we just inserted)
                         cursor.execute("""
                             INSERT OR IGNORE INTO game_moves
                             SELECT * FROM pulled.game_moves
-                            WHERE game_id NOT IN (SELECT DISTINCT game_id FROM game_moves)
+                            WHERE game_id IN (SELECT game_id FROM games)
+                              AND game_id NOT IN (SELECT DISTINCT game_id FROM game_moves)
                         """)
 
                         conn.commit()

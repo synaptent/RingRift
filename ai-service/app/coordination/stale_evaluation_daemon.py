@@ -50,8 +50,8 @@ __all__ = [
 # Configuration
 # ============================================================================
 
-# Default staleness threshold: 30 days
-DEFAULT_STALE_AGE_DAYS = 30
+# Default staleness threshold: 1 day (was 30, reduced Jan 2026 for active training)
+DEFAULT_STALE_AGE_DAYS = 1
 
 # Default check interval: 24 hours
 DEFAULT_CHECK_INTERVAL_SECONDS = 86400

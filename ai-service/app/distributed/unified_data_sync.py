@@ -1040,6 +1040,7 @@ class UnifiedDataSyncService:
         """Merge games from source database into aggregated database.
 
         Uses INSERT OR IGNORE with game_id as key to deduplicate.
+        CRITICAL: Only merges games that have move data to prevent orphan games.
 
         Args:
             source_db: Path to source database
@@ -1048,6 +1049,8 @@ class UnifiedDataSyncService:
         Returns:
             Number of new games added
         """
+        from app.db.move_data_validator import MIN_MOVES_REQUIRED
+
         aggregated_path = AI_SERVICE_ROOT / self.config.aggregator_db
         aggregated_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1063,6 +1066,12 @@ class UnifiedDataSyncService:
             if not source_cursor.fetchone():
                 source_conn.close()
                 return 0
+
+            # Check if source has game_moves table (canonical schema)
+            source_cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='game_moves'"
+            )
+            has_game_moves_table = source_cursor.fetchone() is not None
 
             # Get game count before
             agg_conn = sqlite3.connect(aggregated_path)
@@ -1107,12 +1116,41 @@ class UnifiedDataSyncService:
             insert_cols = ", ".join(available_cols) + ", source_host, source_db"
             placeholders = f"{select_cols}, '{host_name}', '{source_db.name}'"
 
-            # Insert with deduplication
-            agg_cursor.execute(f"""
-                INSERT OR IGNORE INTO games ({insert_cols})
-                SELECT {placeholders}
-                FROM source.games
-            """)
+            # CRITICAL: Only insert games that have move data
+            # This prevents orphan games (metadata without moves) from polluting the database
+            if has_game_moves_table:
+                # Source uses canonical schema with separate game_moves table
+                # Only copy games that have sufficient moves in game_moves table
+                agg_cursor.execute(f"""
+                    INSERT OR IGNORE INTO games ({insert_cols})
+                    SELECT {placeholders}
+                    FROM source.games g
+                    INNER JOIN (
+                        SELECT game_id, COUNT(*) as move_count
+                        FROM source.game_moves
+                        GROUP BY game_id
+                        HAVING move_count >= {MIN_MOVES_REQUIRED}
+                    ) gm ON g.game_id = gm.game_id
+                """)
+            elif "moves_json" in source_columns:
+                # Source uses embedded moves_json column
+                # Only copy games with non-empty moves_json
+                agg_cursor.execute(f"""
+                    INSERT OR IGNORE INTO games ({insert_cols})
+                    SELECT {placeholders}
+                    FROM source.games
+                    WHERE moves_json IS NOT NULL AND moves_json != '' AND moves_json != '[]'
+                """)
+            else:
+                # Source has no move data at all - skip this database
+                logger.warning(
+                    f"Skipping {source_db.name} from {host_name}: "
+                    f"no game_moves table or moves_json column (metadata-only database)"
+                )
+                agg_cursor.execute("DETACH DATABASE source")
+                source_conn.close()
+                agg_conn.close()
+                return 0
 
             agg_conn.commit()
 

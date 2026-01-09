@@ -53,6 +53,7 @@ Migration from EloDatabase:
 
 December 2025: Created as part of Elo unification initiative.
 December 2025: Added architecture performance ranking for unified NN/NNUE tracking.
+January 2026: Added harness_type extraction from composite participant IDs.
 """
 
 from __future__ import annotations
@@ -73,6 +74,14 @@ except ImportError:
     get_elo_service = None  # type: ignore
     EloService = None  # type: ignore
     EloRating = None  # type: ignore
+
+# Import harness type extraction (January 2026)
+try:
+    from app.training.composite_participant import extract_harness_type
+except ImportError:
+    def extract_harness_type(participant_id: str) -> str | None:  # type: ignore
+        """Fallback if composite_participant not available."""
+        return None
 
 
 @dataclass
@@ -139,6 +148,7 @@ class EloServiceFacade:
         metadata: dict | None = None,
         k_factor: float = 32.0,
         game_id: str | None = None,
+        harness_type: str | None = None,
     ) -> tuple[int, dict[str, float]]:
         """Record a match using EloDatabase-style API.
 
@@ -156,6 +166,7 @@ class EloServiceFacade:
             metadata: Additional match metadata (optional)
             k_factor: K-factor for Elo calculation (unused - EloService uses its own)
             game_id: Optional game UUID for deduplication
+            harness_type: AI harness type (e.g., "gumbel_mcts", "brs") for per-harness Elo (Jan 2026)
 
         Returns:
             Tuple of (match_id, dict of participant_id -> new_rating)
@@ -174,6 +185,11 @@ class EloServiceFacade:
         full_metadata["game_id"] = game_id
 
         new_ratings: dict[str, float] = {}
+
+        # January 2026: Try to extract harness_type from composite participant IDs if not provided
+        effective_harness_type = harness_type
+        if effective_harness_type is None and participant_ids:
+            effective_harness_type = extract_harness_type(participant_ids[0])
 
         # For 2-player games, use direct record_match
         if len(participant_ids) == 2:
@@ -195,6 +211,7 @@ class EloServiceFacade:
                 duration_sec=duration_sec,
                 tournament_id=tournament_id,
                 metadata=full_metadata,
+                harness_type=effective_harness_type,
             )
 
             # Get new ratings
@@ -237,6 +254,7 @@ class EloServiceFacade:
                         duration_sec=duration_sec,
                         tournament_id=tournament_id,
                         metadata=full_metadata,
+                        harness_type=effective_harness_type,
                     )
                     if hasattr(result, "match_id"):
                         match_id = result.match_id

@@ -188,6 +188,11 @@ from .tournament_data_pipeline_loop import (
     DatabaseStats as TournamentDatabaseStats,
     ExportResult as TournamentExportResult,
 )
+from .evaluation_worker_loop import (
+    EvaluationWorkerConfig,
+    EvaluationWorkerLoop,
+    create_evaluation_worker_loop,
+)
 
 __all__ = [
     # Base
@@ -319,4 +324,8 @@ __all__ = [
     "TournamentPipelineCycleStats",
     "TournamentDatabaseStats",
     "TournamentExportResult",
+    # Evaluation Worker (Jan 9, 2026 - Cluster-Wide Model Evaluation)
+    "EvaluationWorkerConfig",
+    "EvaluationWorkerLoop",
+    "create_evaluation_worker_loop",
 ]

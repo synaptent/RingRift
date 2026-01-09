@@ -370,8 +370,18 @@ class GossipSyncDaemon:
         return games
 
     def _store_games(self, games: list[dict]) -> int:
-        """Store received games in local database with transaction isolation."""
+        """Store received games in local database with transaction isolation.
+
+        CRITICAL: Only stores games that have move data to prevent orphan games.
+        """
         if not games:
+            return 0
+
+        # Filter games to only include those with move data
+        valid_games, skipped = self._filter_games_with_moves(games)
+        if skipped > 0:
+            logger.debug(f"[GossipSync] Skipped {skipped} games without move data")
+        if not valid_games:
             return 0
 
         # Store in a gossip-specific database
@@ -380,7 +390,7 @@ class GossipSyncDaemon:
 
         try:
             # Create table if needed (use first game's columns)
-            columns = list(games[0].keys())
+            columns = list(valid_games[0].keys())
             conn.execute(f"""
                 CREATE TABLE IF NOT EXISTS games (
                     {', '.join(f'{col} TEXT' for col in columns)},
@@ -396,7 +406,7 @@ class GossipSyncDaemon:
 
             # Use executemany for better performance and atomicity
             placeholders = ",".join(["?" for _ in columns])
-            for game in games:
+            for game in valid_games:
                 try:
                     conn.execute(
                         f"INSERT OR IGNORE INTO games ({','.join(columns)}) VALUES ({placeholders})",
@@ -425,6 +435,58 @@ class GossipSyncDaemon:
             return 0
         finally:
             conn.close()
+
+    def _filter_games_with_moves(
+        self,
+        games: list[dict],
+    ) -> tuple[list[dict], int]:
+        """Filter games to only include those with move data.
+
+        Args:
+            games: List of game dicts from gossip sync.
+
+        Returns:
+            Tuple of (valid_games, skipped_count).
+            valid_games: Games that have move data.
+            skipped_count: Number of games without move data that were skipped.
+        """
+        from app.db.move_data_validator import MIN_MOVES_REQUIRED
+
+        valid_games = []
+        skipped = 0
+
+        for game in games:
+            # Check for moves in various fields used by different sync protocols
+            moves = game.get("moves") or game.get("moves_json") or game.get("canonical_history")
+
+            if moves is None:
+                skipped += 1
+                continue
+
+            # Parse moves if it's a JSON string
+            if isinstance(moves, str):
+                if not moves or moves == "[]" or moves == "null":
+                    skipped += 1
+                    continue
+                try:
+                    moves = json.loads(moves)
+                except json.JSONDecodeError:
+                    # Invalid JSON - skip this game
+                    skipped += 1
+                    continue
+
+            # Check if moves is a list with sufficient entries
+            if not isinstance(moves, list):
+                skipped += 1
+                continue
+
+            if len(moves) < MIN_MOVES_REQUIRED:
+                skipped += 1
+                continue
+
+            valid_games.append(game)
+
+        return valid_games, skipped
 
     def _get_peer_game_ids(self, sample: list[str]) -> list[str]:
         """Get game IDs that peer might have but we don't."""

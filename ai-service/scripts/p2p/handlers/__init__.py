@@ -102,6 +102,10 @@ from .manifest import ManifestHandlersMixin
 from .sync import SyncHandlersMixin
 from .tables import TableHandlersMixin
 from .work_queue import WorkQueueHandlersMixin
+from .metrics import MetricsHandlersMixin
+from .models import ModelHandlersMixin, setup_model_routes
+from .selfplay_api import SelfplayHandlersMixin
+from .cluster_api import ClusterApiHandlersMixin
 
 __all__ = [
     # Base class (Dec 2025 - handler consolidation)
@@ -132,4 +136,13 @@ __all__ = [
     "TableHandlersMixin",
     "TournamentHandlersMixin",
     "WorkQueueHandlersMixin",
+    # Model inventory (January 2026 - Comprehensive Model Evaluation Pipeline)
+    "ModelHandlersMixin",
+    "setup_model_routes",
+    # Metrics (January 2026 - P2P Modularization)
+    "MetricsHandlersMixin",
+    # Selfplay API (January 2026 - P2P Modularization)
+    "SelfplayHandlersMixin",
+    # Cluster API (January 2026 - P2P Modularization)
+    "ClusterApiHandlersMixin",
 ]

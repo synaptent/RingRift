@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from app.models import BoardType, GameStatus
+from app.training.composite_participant import extract_harness_type
 
 from .agents import AgentType, AIAgent, AIAgentRegistry
 from .elo import EloCalculator
@@ -493,6 +494,8 @@ class TournamentRunner:
             try:
                 board_type = match.board_type.value
                 tournament_id = self.tournament_id or "default"
+                # January 2026: Extract harness_type from agent IDs for per-harness Elo
+                harness_type = extract_harness_type(result.agent_ids[0]) if result.agent_ids else None
                 if len(result.rankings) == 2:
                     self._elo_service.record_match(
                         result.agent_ids[0],
@@ -503,6 +506,7 @@ class TournamentRunner:
                         game_length=result.game_length,
                         duration_sec=result.duration_seconds,
                         tournament_id=tournament_id,
+                        harness_type=harness_type,
                     )
                 else:
                     self._record_multiplayer_elo(
@@ -512,6 +516,7 @@ class TournamentRunner:
                         tournament_id=tournament_id,
                         game_length=result.game_length,
                         duration_sec=result.duration_seconds,
+                        harness_type=harness_type,
                     )
             except Exception as e:
                 logger.warning(f"Failed to persist match to Elo service: {e}")
@@ -544,6 +549,7 @@ class TournamentRunner:
         tournament_id: str,
         game_length: int,
         duration_sec: float,
+        harness_type: str | None = None,
     ) -> None:
         """Record a multiplayer result into EloService via pairwise matches.
 
@@ -567,6 +573,7 @@ class TournamentRunner:
                     game_length=game_length,
                     duration_sec=duration_sec,
                     tournament_id=tournament_id,
+                    harness_type=harness_type,
                 )
 
     def _create_ai_instance(

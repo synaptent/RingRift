@@ -1869,29 +1869,73 @@ class EvaluationDaemon(BaseEventHandler):
                     except ValueError:
                         continue
 
-                    # Check if model has Elo rating
-                    if self._has_elo_rating(str(model_path)):
-                        logger.debug(
-                            f"[EvaluationDaemon] Already has Elo: {model_path.name}"
-                        )
-                        continue
+                    # January 2026: Iterate over compatible harnesses instead of just
+                    # checking if model has ANY Elo rating. This enables per-harness
+                    # Elo tracking for multi-harness evaluation.
+                    try:
+                        from app.ai.harness.harness_registry import get_harnesses_for_model_and_players
+                        from app.ai.harness.base_harness import ModelType
 
-                    # Add to persistent queue with high priority
-                    if self._persistent_queue:
-                        request_id = self._persistent_queue.add_request(
-                            model_path=str(model_path),
-                            board_type=board_type,
+                        # Assume NN model type for canonical/ringrift_best models
+                        compatible_harnesses = get_harnesses_for_model_and_players(
+                            model_type=ModelType.NN,
                             num_players=num_players,
-                            priority=self.config.startup_scan_canonical_priority,
-                            source="startup_scan",
                         )
-
-                        if request_id:
-                            queued += 1
-                            logger.info(
-                                f"[EvaluationDaemon] Queued unevaluated model: {model_path.name} "
-                                f"({board_type}_{num_players}p)"
+                    except ImportError:
+                        # Fallback to simple check if harness registry not available
+                        if self._has_elo_rating(str(model_path)):
+                            logger.debug(
+                                f"[EvaluationDaemon] Already has Elo: {model_path.name}"
                             )
+                            continue
+                        compatible_harnesses = []  # Will skip harness loop below
+
+                        # Queue without harness_type (legacy behavior)
+                        if self._persistent_queue:
+                            request_id = self._persistent_queue.add_request(
+                                model_path=str(model_path),
+                                board_type=board_type,
+                                num_players=num_players,
+                                priority=self.config.startup_scan_canonical_priority,
+                                source="startup_scan",
+                            )
+                            if request_id:
+                                queued += 1
+                                logger.info(
+                                    f"[EvaluationDaemon] Queued unevaluated model: {model_path.name} "
+                                    f"({board_type}_{num_players}p)"
+                                )
+                        continue  # Skip harness loop
+
+                    # Queue evaluation for each harness that needs it
+                    for harness_type in compatible_harnesses:
+                        harness_name = harness_type.value
+
+                        # Check if this specific (model, harness) combo needs evaluation
+                        if not self._needs_harness_evaluation(str(model_path), harness_name):
+                            logger.debug(
+                                f"[EvaluationDaemon] Already evaluated: {model_path.name} "
+                                f"under {harness_name}"
+                            )
+                            continue
+
+                        # Add to persistent queue with harness_type
+                        if self._persistent_queue:
+                            request_id = self._persistent_queue.add_request(
+                                model_path=str(model_path),
+                                board_type=board_type,
+                                num_players=num_players,
+                                priority=self.config.startup_scan_canonical_priority,
+                                source="startup_scan",
+                                harness_type=harness_name,
+                            )
+
+                            if request_id:
+                                queued += 1
+                                logger.info(
+                                    f"[EvaluationDaemon] Queued for {harness_name}: "
+                                    f"{model_path.name} ({board_type}_{num_players}p)"
+                                )
 
             logger.info(
                 f"[EvaluationDaemon] Startup scan complete: "

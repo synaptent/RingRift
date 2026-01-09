@@ -41,6 +41,7 @@ from app.coordination.event_utils import make_config_key
 from app.coordination.event_emission_helpers import safe_emit_event
 from app.utils.game_discovery import GameDiscovery, DatabaseInfo, ALL_BOARD_TYPES, ALL_PLAYER_COUNTS
 from app.config.thresholds import SQLITE_TIMEOUT
+from app.db.game_replay import SCHEMA_VERSION
 
 logger = logging.getLogger(__name__)
 
@@ -689,8 +690,8 @@ class ComprehensiveConsolidationDaemon(HandlerBase):
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
         with sqlite3.connect(str(db_path), timeout=SQLITE_TIMEOUT) as conn:
-            # Main games table
-            conn.execute("""
+            # Main games table - January 2026: Use canonical SCHEMA_VERSION
+            conn.execute(f"""
                 CREATE TABLE IF NOT EXISTS games (
                     game_id TEXT PRIMARY KEY,
                     board_type TEXT NOT NULL,
@@ -705,7 +706,7 @@ class ComprehensiveConsolidationDaemon(HandlerBase):
                     total_turns INTEGER NOT NULL,
                     duration_ms INTEGER,
                     source TEXT,
-                    schema_version INTEGER NOT NULL DEFAULT 5,
+                    schema_version INTEGER NOT NULL DEFAULT {SCHEMA_VERSION},
                     time_control_type TEXT DEFAULT 'none',
                     initial_time_ms INTEGER,
                     time_increment_ms INTEGER,
