@@ -1732,54 +1732,76 @@ class EvaluationDaemon(BaseEventHandler):
                 logger.warning("[EvaluationDaemon] Models directory not found")
                 return
 
-            # Scan all canonical models
-            for model_path in models_dir.glob("canonical_*.pth"):
-                scanned += 1
+            # Jan 2026: Track seen actual paths to avoid duplicate evaluation
+            # (ringrift_best_* are symlinks to canonical_* models)
+            seen_actual_paths: set[str] = set()
 
-                # Extract board_type and num_players from filename
-                # Format: canonical_{board_type}_{n}p.pth
-                stem = model_path.stem  # e.g., "canonical_hex8_2p"
-                parts = stem.split("_")
+            # Scan both canonical AND promoted best models
+            for pattern in ["canonical_*.pth", "ringrift_best_*.pth"]:
+                for model_path in models_dir.glob(pattern):
+                    # Resolve symlinks to get actual model path
+                    actual_path = model_path.resolve() if model_path.is_symlink() else model_path
 
-                if len(parts) < 3:
-                    logger.debug(f"[EvaluationDaemon] Skipping unrecognized filename: {model_path}")
-                    continue
-
-                board_type = parts[1]
-                players_part = parts[2]
-
-                # Handle architectures like canonical_hex8_2p_v5heavy.pth
-                if not players_part.endswith("p"):
-                    continue
-
-                try:
-                    num_players = int(players_part[:-1])
-                except ValueError:
-                    continue
-
-                # Check if model has Elo rating
-                if self._has_elo_rating(str(model_path)):
-                    logger.debug(
-                        f"[EvaluationDaemon] Already has Elo: {model_path.name}"
-                    )
-                    continue
-
-                # Add to persistent queue with high priority
-                if self._persistent_queue:
-                    request_id = self._persistent_queue.add_request(
-                        model_path=str(model_path),
-                        board_type=board_type,
-                        num_players=num_players,
-                        priority=self.config.startup_scan_canonical_priority,
-                        source="startup_scan",
-                    )
-
-                    if request_id:
-                        queued += 1
-                        logger.info(
-                            f"[EvaluationDaemon] Queued unevaluated model: {model_path.name} "
-                            f"({board_type}_{num_players}p)"
+                    # Skip duplicates (ringrift_best_* symlinks to canonical_*)
+                    if str(actual_path) in seen_actual_paths:
+                        logger.debug(
+                            f"[EvaluationDaemon] Skipping duplicate (via symlink): {model_path.name}"
                         )
+                        continue
+                    seen_actual_paths.add(str(actual_path))
+
+                    scanned += 1
+
+                    # Extract board_type and num_players from filename
+                    # Format: canonical_{board_type}_{n}p.pth or ringrift_best_{board_type}_{n}p.pth
+                    stem = model_path.stem  # e.g., "canonical_hex8_2p" or "ringrift_best_hex8_2p"
+                    parts = stem.split("_")
+
+                    # Determine the prefix length: "canonical" = 1 part, "ringrift_best" = 2 parts
+                    if stem.startswith("ringrift_best_"):
+                        prefix_parts = 2  # "ringrift_best" is 2 parts
+                    else:
+                        prefix_parts = 1  # "canonical" is 1 part
+
+                    if len(parts) < prefix_parts + 2:
+                        logger.debug(f"[EvaluationDaemon] Skipping unrecognized filename: {model_path}")
+                        continue
+
+                    board_type = parts[prefix_parts]
+                    players_part = parts[prefix_parts + 1]
+
+                    # Handle architectures like canonical_hex8_2p_v5heavy.pth
+                    if not players_part.endswith("p"):
+                        continue
+
+                    try:
+                        num_players = int(players_part[:-1])
+                    except ValueError:
+                        continue
+
+                    # Check if model has Elo rating
+                    if self._has_elo_rating(str(model_path)):
+                        logger.debug(
+                            f"[EvaluationDaemon] Already has Elo: {model_path.name}"
+                        )
+                        continue
+
+                    # Add to persistent queue with high priority
+                    if self._persistent_queue:
+                        request_id = self._persistent_queue.add_request(
+                            model_path=str(model_path),
+                            board_type=board_type,
+                            num_players=num_players,
+                            priority=self.config.startup_scan_canonical_priority,
+                            source="startup_scan",
+                        )
+
+                        if request_id:
+                            queued += 1
+                            logger.info(
+                                f"[EvaluationDaemon] Queued unevaluated model: {model_path.name} "
+                                f"({board_type}_{num_players}p)"
+                            )
 
             logger.info(
                 f"[EvaluationDaemon] Startup scan complete: "
@@ -1817,6 +1839,45 @@ class EvaluationDaemon(BaseEventHandler):
         except Exception as e:
             logger.debug(f"[EvaluationDaemon] Elo check failed: {e}")
             return False
+
+    def _needs_harness_evaluation(self, model_path: str, harness_type: str) -> bool:
+        """Check if model needs evaluation under a specific harness.
+
+        January 2026: Enables per-harness Elo tracking. A model may have been
+        evaluated under gumbel_mcts but not under minimax, so we need to check
+        each harness separately.
+
+        Args:
+            model_path: Path to the model file
+            harness_type: The harness/AI type (e.g., "gumbel_mcts", "minimax")
+
+        Returns:
+            True if model needs evaluation under this harness, False otherwise
+        """
+        try:
+            from app.training.composite_participant import make_composite_participant_id
+            from app.training.elo_service import get_elo_service
+            from pathlib import Path
+
+            model_name = Path(model_path).stem
+            composite_id = make_composite_participant_id(
+                nn_id=model_name,
+                ai_type=harness_type,
+                config=None,  # Use default config for harness
+            )
+
+            elo_service = get_elo_service()
+            rating = elo_service.get_rating(composite_id)
+            return rating is None  # Needs eval if no rating
+
+        except ImportError:
+            logger.debug(
+                f"[EvaluationDaemon] Dependencies not available for harness check: {harness_type}"
+            )
+            return True  # Assume needs eval on import error
+        except Exception as e:
+            logger.debug(f"[EvaluationDaemon] Harness Elo check failed: {e}")
+            return True  # Assume needs eval on error
 
     async def _stuck_evaluation_check_loop(self) -> None:
         """Periodically check for and recover stuck evaluations.

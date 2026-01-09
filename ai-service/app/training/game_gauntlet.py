@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from app.training.env import get_theoretical_max_moves
+from app.training.composite_participant import make_composite_participant_id
 
 logger = logging.getLogger(__name__)
 
@@ -1321,6 +1322,7 @@ def _evaluate_single_opponent(
     model_id: str | None = None,
     parallel_games: int = 1,
     recording_config: Any | None = None,
+    harness_type: str = "",  # Jan 2026: Harness type for composite Elo tracking
 ) -> dict[str, Any]:
     """Evaluate a model against a single baseline opponent.
 
@@ -1511,14 +1513,36 @@ def _evaluate_single_opponent(
                 else:
                     winner_id = None  # Draw
 
+                # Jan 2026: Generate composite participant IDs for model+harness tracking
+                if harness_type:
+                    composite_model_id = make_composite_participant_id(
+                        nn_id=model_id,
+                        ai_type=harness_type,
+                        config=None,  # Use default config for harness
+                    )
+                    # Baseline remains simple since it's not a model+harness combo
+                    composite_baseline = baseline_name
+                    # Update winner to use composite ID
+                    if winner_id == model_id:
+                        composite_winner = composite_model_id
+                    elif winner_id == baseline_name:
+                        composite_winner = composite_baseline
+                    else:
+                        composite_winner = None
+                else:
+                    composite_model_id = model_id
+                    composite_baseline = baseline_name
+                    composite_winner = winner_id
+
                 elo_service.record_match(
-                    participant_a=model_id,
-                    participant_b=baseline_name,
-                    winner=winner_id,
+                    participant_a=composite_model_id,
+                    participant_b=composite_baseline,
+                    winner=composite_winner,
                     board_type=board_value,
                     num_players=num_players,
                     game_length=game_result.move_count,
                     tournament_id=f"gauntlet_{board_value}_{num_players}p",
+                    harness_type=harness_type if harness_type else None,
                 )
             except ImportError:
                 pass  # EloService not available
@@ -1856,6 +1880,7 @@ def run_baseline_gauntlet(
                     effective_model_id,
                     parallel_games,
                     recording_config,
+                    harness_type,  # Jan 2026: Pass harness type for Elo tracking
                 ): baseline
                 for baseline in opponents
             }
@@ -1896,6 +1921,7 @@ def run_baseline_gauntlet(
                 effective_model_id,
                 parallel_games,
                 recording_config,
+                harness_type,  # Jan 2026: Pass harness type for Elo tracking
             )
             opponent_eval_results.append(eval_result)
 

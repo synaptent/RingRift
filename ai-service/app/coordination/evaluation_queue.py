@@ -101,6 +101,7 @@ class EvaluationRequest:
     error: str
     result_elo: float | None
     source: str
+    harness_type: str = ""  # Jan 2026: AI harness type for composite Elo tracking
 
     @property
     def is_stuck(self) -> bool:
@@ -128,6 +129,7 @@ class EvaluationRequest:
             "error": self.error,
             "result_elo": self.result_elo,
             "source": self.source,
+            "harness_type": self.harness_type,
         }
 
 
@@ -194,9 +196,17 @@ class PersistentEvaluationQueue:
                     error TEXT DEFAULT '',
                     result_elo REAL,
                     source TEXT DEFAULT 'training',
-                    UNIQUE(model_path, config_key)
+                    harness_type TEXT DEFAULT '',
+                    UNIQUE(model_path, config_key, harness_type)
                 )
             """)
+
+            # Jan 2026: Add harness_type column to existing databases
+            try:
+                conn.execute("ALTER TABLE evaluation_requests ADD COLUMN harness_type TEXT DEFAULT ''")
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass  # Column already exists
 
             # Index for efficient status + priority queries
             conn.execute("""
@@ -231,11 +241,12 @@ class PersistentEvaluationQueue:
         num_players: int,
         priority: int = 50,
         source: str = "training",
+        harness_type: str = "",
     ) -> str | None:
         """Add an evaluation request to the queue.
 
-        Uses UPSERT semantics: if a request for the same model+config exists
-        and is still pending, update priority if higher. If already
+        Uses UPSERT semantics: if a request for the same model+config+harness
+        exists and is still pending, update priority if higher. If already
         completed/failed/running, skip.
 
         Args:
@@ -244,6 +255,7 @@ class PersistentEvaluationQueue:
             num_players: Number of players (2, 3, or 4)
             priority: Priority (higher = evaluated sooner), default 50
             source: Source of the request (training, scanner, owc_import)
+            harness_type: AI harness type for composite Elo (Jan 2026)
 
         Returns:
             Request ID if added/updated, None if skipped (duplicate)
@@ -253,14 +265,14 @@ class PersistentEvaluationQueue:
 
         with self._lock:
             with self._get_connection() as conn:
-                # Check for existing request
+                # Check for existing request (now includes harness_type)
                 existing = conn.execute(
                     """
                     SELECT request_id, status, priority
                     FROM evaluation_requests
-                    WHERE model_path = ? AND config_key = ?
+                    WHERE model_path = ? AND config_key = ? AND harness_type = ?
                     """,
-                    (model_path, config_key),
+                    (model_path, config_key, harness_type),
                 ).fetchone()
 
                 if existing:
@@ -269,7 +281,7 @@ class PersistentEvaluationQueue:
                         self._stats.duplicate_requests_skipped += 1
                         logger.debug(
                             f"[EvaluationQueue] Skipping duplicate: {model_path} "
-                            f"({config_key}) - already {existing['status']}"
+                            f"({config_key}, {harness_type or 'default'}) - already {existing['status']}"
                         )
                         return None
 
@@ -299,8 +311,8 @@ class PersistentEvaluationQueue:
                     INSERT INTO evaluation_requests (
                         request_id, model_path, board_type, num_players,
                         config_key, status, priority, created_at,
-                        max_attempts, source
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        max_attempts, source, harness_type
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         request_id,
@@ -313,13 +325,15 @@ class PersistentEvaluationQueue:
                         time.time(),
                         self.max_attempts,
                         source,
+                        harness_type,
                     ),
                 )
                 conn.commit()
 
+                harness_info = f" harness={harness_type}" if harness_type else ""
                 logger.info(
                     f"[EvaluationQueue] Added request: {model_path} "
-                    f"({config_key}) priority={priority} source={source}"
+                    f"({config_key}) priority={priority} source={source}{harness_info}"
                 )
                 return request_id
 
@@ -657,6 +671,12 @@ class PersistentEvaluationQueue:
 
     def _row_to_request(self, row: sqlite3.Row) -> EvaluationRequest:
         """Convert a database row to EvaluationRequest."""
+        # Handle old rows that may not have harness_type column
+        try:
+            harness_type = row["harness_type"] if "harness_type" in row.keys() else ""
+        except (KeyError, IndexError):
+            harness_type = ""
+
         return EvaluationRequest(
             request_id=row["request_id"],
             model_path=row["model_path"],
@@ -673,6 +693,7 @@ class PersistentEvaluationQueue:
             error=row["error"],
             result_elo=row["result_elo"],
             source=row["source"],
+            harness_type=harness_type,
         )
 
 
