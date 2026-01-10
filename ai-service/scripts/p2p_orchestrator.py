@@ -2341,14 +2341,15 @@ class P2POrchestrator(
             # SpawnVerificationLoop - verifies dispatched jobs actually start running
             # January 2026 Sprint 6: Addresses 10-15% wasted capacity from unconfirmed spawns
             # Runs on leader only - verifies pending job spawns and emits events
-            if self.selfplay_scheduler is not None:
+            # Jan 9, 2026: Now uses OrchestratorContext for unified callback access
+            if ctx.selfplay_scheduler is not None:
                 spawn_verification = SpawnVerificationLoop(
-                    verify_pending_spawns=self.selfplay_scheduler.verify_pending_spawns,
+                    verify_pending_spawns=ctx.selfplay_scheduler.verify_pending_spawns,
                     get_spawn_stats=lambda: {
                         "per_node": {
-                            node_id: self.selfplay_scheduler.get_spawn_success_rate(node_id)
-                            for node_id in list(self.peers.keys())[:20]  # Limit to avoid overhead
-                        } if self.peers else {},
+                            node_id: ctx.selfplay_scheduler.get_spawn_success_rate(node_id)
+                            for node_id in list(ctx.get_peers().keys())[:20]  # Limit to avoid overhead
+                        } if ctx.get_peers() else {},
                     },
                 )
                 manager.register(spawn_verification)
@@ -2373,10 +2374,11 @@ class P2POrchestrator(
             # JobReassignmentLoop - automatically reassigns orphaned jobs (P1 Sprint 6, Jan 2026)
             # Detects jobs without heartbeats and reassigns within 5 min (vs 1 hour for JobReaper)
             # Uses JobManager.process_stale_jobs() with exponential backoff
-            if self.job_manager is not None:
+            # Jan 9, 2026: Now uses OrchestratorContext for unified callback access
+            if ctx.job_manager is not None:
                 job_reassignment = JobReassignmentLoop(
-                    get_role=lambda: self.role,
-                    check_and_reassign=self.job_manager.process_stale_jobs,
+                    get_role=ctx.get_role,
+                    check_and_reassign=ctx.job_manager.process_stale_jobs,
                     get_healthy_nodes=self._get_healthy_node_ids_for_reassignment,
                 )
                 manager.register(job_reassignment)
@@ -2442,8 +2444,9 @@ class P2POrchestrator(
 
             # ManifestCollectionLoop - periodic manifest collection for dashboard/training/sync
             # December 27, 2025: Migrated from inline _manifest_collection_loop
+            # Jan 9, 2026: Now uses OrchestratorContext for get_role
             manifest_collection = ManifestCollectionLoop(
-                get_role=lambda: self.role,
+                get_role=ctx.get_role,
                 collect_cluster_manifest=self._collect_cluster_manifest,
                 collect_local_manifest=self._collect_local_data_manifest,
                 update_manifest=self._update_manifest_from_loop,
@@ -2576,8 +2579,9 @@ class P2POrchestrator(
                     """Check if model was already fetched."""
                     return job_id in _fetched_model_jobs
 
+                # Jan 9, 2026: Now uses OrchestratorContext for is_leader
                 model_fetch = ModelFetchLoop(
-                    is_leader=self._is_leader,
+                    is_leader=ctx.is_leader,
                     get_completed_training_jobs=_get_completed_training_jobs,
                     fetch_model=_fetch_model_for_job,
                     mark_model_fetched=_mark_model_fetched,
@@ -2601,8 +2605,9 @@ class P2POrchestrator(
             async def _send_validation_notification(msg: str, severity: str, context: dict) -> None:
                 await self.notifier.send(msg, severity=severity, context=context)
 
+            # Jan 9, 2026: Now uses OrchestratorContext for is_leader
             validation = ValidationLoop(
-                is_leader=lambda: self.role == NodeRole.LEADER,
+                is_leader=ctx.is_leader,
                 get_model_registry=_get_model_registry,
                 get_work_queue=get_work_queue,
                 send_notification=_send_validation_notification,
@@ -2644,8 +2649,9 @@ class P2POrchestrator(
 
             try:
                 from scripts.p2p.loops import TailscalePeerDiscoveryLoop
+                # Jan 9, 2026: Now uses OrchestratorContext for is_leader
                 ts_peer_discovery = TailscalePeerDiscoveryLoop(
-                    is_leader=lambda: self.role == NodeRole.LEADER,
+                    is_leader=ctx.is_leader,
                     get_current_peers=_get_current_peer_ids,
                     get_alive_peer_count=_get_alive_peer_count,
                     probe_and_connect=_probe_and_connect_peer,
@@ -2880,11 +2886,12 @@ class P2POrchestrator(
 
             try:
                 from scripts.p2p.loops import FollowerDiscoveryLoop
+                # Jan 9, 2026: Now uses OrchestratorContext for is_leader
                 follower_discovery = FollowerDiscoveryLoop(
                     get_known_peers=_get_known_peer_addresses,
                     query_peer_list=_query_peer_list,
                     add_peer=_add_discovered_peer,
-                    is_leader=lambda: self.role == NodeRole.LEADER,
+                    is_leader=ctx.is_leader,
                 )
                 manager.register(follower_discovery)
             except (ImportError, TypeError) as e:
@@ -2905,8 +2912,9 @@ class P2POrchestrator(
                         return await lm.restart_stopped_loops()
                     return {}
 
+                # Jan 9, 2026: Now uses OrchestratorContext for is_leader
                 self_healing = SelfHealingLoop(
-                    is_leader=lambda: self.role == NodeRole.LEADER,
+                    is_leader=ctx.is_leader,
                     get_health_manager=get_health_manager,
                     get_work_queue=get_work_queue,
                     cleanup_stale_processes=self._cleanup_stale_processes,
@@ -2936,9 +2944,10 @@ class P2POrchestrator(
                 # P2POrchestrator doesn't have _emit_event but the loop is optional
                 # Jan 2, 2026: Added is_leader callback - CRITICAL to prevent
                 # all nodes from trying to restart each other simultaneously
+                # Jan 9, 2026: Now uses OrchestratorContext for is_leader
                 remote_recovery = RemoteP2PRecoveryLoop(
                     get_alive_peer_ids=_get_alive_peer_ids_for_recovery,
-                    is_leader=lambda: self.is_leader,  # is_leader is a property, not a method
+                    is_leader=ctx.is_leader,
                 )
                 manager.register(remote_recovery)
                 logger.info(f"[LoopManager] RemoteP2PRecoveryLoop registered (node: {self.node_id}, leader-only execution)")
