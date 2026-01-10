@@ -220,6 +220,182 @@ function FinalStatsTable({
 }
 
 /**
+ * Victory breakdown component explaining why the winner won
+ */
+function VictoryBreakdown({
+  gameResult,
+  winner,
+  playerCount,
+}: {
+  gameResult: GameResult | null;
+  winner?: PlayerFinalStatsViewModel | undefined;
+  playerCount: number;
+}) {
+  if (!gameResult) return null;
+
+  const { reason, finalScore } = gameResult;
+  const winnerNum = winner?.player.playerNumber;
+
+  const getBreakdownContent = () => {
+    switch (reason) {
+      case 'ring_elimination': {
+        if (!winnerNum) return null;
+        const winnerEliminated = finalScore.ringsEliminated[winnerNum] ?? 0;
+        const totalEliminated = Object.values(finalScore.ringsEliminated).reduce(
+          (a, b) => a + b,
+          0
+        );
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-green-400">
+              <span className="text-xl">💀</span>
+              <span className="font-medium">Ring Elimination Victory</span>
+            </div>
+            <p className="text-slate-300 text-sm">
+              {winner?.player.username || `Player ${winnerNum}`} eliminated all opponents&apos;
+              rings.
+            </p>
+            <div className="flex gap-4 text-sm">
+              <div className="bg-slate-700/50 px-3 py-1 rounded">
+                <span className="text-slate-400">Rings eliminated: </span>
+                <span className="text-green-400 font-semibold">{winnerEliminated}</span>
+              </div>
+              {totalEliminated > winnerEliminated && (
+                <div className="bg-slate-700/50 px-3 py-1 rounded">
+                  <span className="text-slate-400">Total eliminated: </span>
+                  <span className="text-slate-200">{totalEliminated}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      case 'territory_control': {
+        if (!winnerNum) return null;
+        const allTerritories = Object.entries(finalScore.territorySpaces)
+          .map(([num, spaces]) => ({ player: parseInt(num), spaces }))
+          .sort((a, b) => b.spaces - a.spaces);
+
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-blue-400">
+              <span className="text-xl">🏰</span>
+              <span className="font-medium">Territory Control Victory</span>
+            </div>
+            <p className="text-slate-300 text-sm">
+              {winner?.player.username || `Player ${winnerNum}`} controlled the most territory when
+              the board was full.
+            </p>
+            <div className="flex flex-wrap gap-2 text-sm">
+              {allTerritories.map(({ player, spaces }, idx) => (
+                <div
+                  key={player}
+                  className={`px-3 py-1 rounded ${
+                    player === winnerNum
+                      ? 'bg-blue-900/50 border border-blue-600'
+                      : 'bg-slate-700/50'
+                  }`}
+                >
+                  <span className="text-slate-400">P{player}: </span>
+                  <span
+                    className={
+                      player === winnerNum ? 'text-blue-400 font-semibold' : 'text-slate-200'
+                    }
+                  >
+                    {spaces} cells
+                  </span>
+                  {idx === 0 && player === winnerNum && (
+                    <span className="ml-1 text-yellow-400">👑</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      }
+
+      case 'last_player_standing': {
+        const activePlayers = Object.entries(finalScore.ringsRemaining)
+          .filter(([_, rings]) => rings > 0)
+          .map(([num]) => parseInt(num));
+
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-purple-400">
+              <span className="text-xl">👑</span>
+              <span className="font-medium">Last Player Standing</span>
+            </div>
+            <p className="text-slate-300 text-sm">
+              {winner?.player.username || `Player ${winnerNum}`} was the only player with rings
+              remaining.
+            </p>
+            <div className="bg-slate-700/50 px-3 py-1 rounded text-sm inline-block">
+              <span className="text-slate-400">Opponents eliminated: </span>
+              <span className="text-purple-400 font-semibold">
+                {playerCount - activePlayers.length}
+              </span>
+            </div>
+          </div>
+        );
+      }
+
+      case 'timeout':
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-orange-400">
+              <span className="text-xl">⏰</span>
+              <span className="font-medium">Victory by Timeout</span>
+            </div>
+            <p className="text-slate-300 text-sm">An opponent ran out of time on their clock.</p>
+          </div>
+        );
+
+      case 'resignation':
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-slate-400">
+              <span className="text-xl">🏳️</span>
+              <span className="font-medium">Victory by Resignation</span>
+            </div>
+            <p className="text-slate-300 text-sm">An opponent resigned from the game.</p>
+          </div>
+        );
+
+      case 'abandonment':
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-red-400">
+              <span className="text-xl">🚪</span>
+              <span className="font-medium">Victory by Abandonment</span>
+            </div>
+            <p className="text-slate-300 text-sm">An opponent left the game without resigning.</p>
+          </div>
+        );
+
+      case 'draw':
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-slate-300">
+              <span className="text-xl">🤝</span>
+              <span className="font-medium">Game Drawn</span>
+            </div>
+            <p className="text-slate-300 text-sm">The game ended in a draw - no clear winner.</p>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  const content = getBreakdownContent();
+  if (!content) return null;
+
+  return <div className="bg-slate-800/70 rounded-lg p-4 border border-slate-600/50">{content}</div>;
+}
+
+/**
  * Game summary component
  */
 function GameSummary({ summary }: { summary: VictoryViewModel['gameSummary'] }) {
@@ -698,6 +874,15 @@ export function VictoryModal({
                 </button>
               </div>
             )}
+          </div>
+
+          {/* Victory Breakdown - explains why the winner won */}
+          <div className={`${!effectiveReducedMotion ? 'stats-animate' : ''} relative z-10`.trim()}>
+            <VictoryBreakdown
+              gameResult={effectiveGameResult}
+              winner={finalStats.find((s) => s.isWinner)}
+              playerCount={gameSummary.playerCount}
+            />
           </div>
 
           {/* Statistics Table with staggered animation */}
