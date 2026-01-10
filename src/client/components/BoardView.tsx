@@ -1008,48 +1008,49 @@ export const BoardView: React.FC<BoardViewProps> = ({
     }
   }, [selectedPosition, validTargets.length]);
 
-  // Auto-scale large boards to fit viewport without requiring zoom out
+  // Auto-scale boards to fit viewport with room for sidebar
   // RR-FIX-2025-01-10: Calculate scale factor based on board natural size vs available space
   useEffect(() => {
-    const isLargeBoard = effectiveBoardType === 'square19' || effectiveBoardType === 'hexagonal';
-    if (!isLargeBoard) {
-      setBoardScale(1);
-      setScaledDimensions(null);
-      return;
-    }
-
     const calculateScale = () => {
       // Get viewport dimensions
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
-
-      // Estimate board natural dimensions based on board type
-      // Cell sizes: sq19 uses 44px mobile / 56px desktop, hex uses 44px / 48px
       const isDesktop = viewportWidth >= 1024;
-      const cellSize =
-        effectiveBoardType === 'square19' ? (isDesktop ? 56 : 44) : isDesktop ? 48 : 44;
-      const gap = 2; // gap between cells
 
+      // Calculate board natural dimensions based on board type and cell sizes
       let naturalWidth: number;
       let naturalHeight: number;
+      const gap = 2; // gap between cells
 
-      if (effectiveBoardType === 'square19') {
-        // 19x19 board: 19 cells + 18 gaps
+      if (effectiveBoardType === 'square8') {
+        // 8x8 board: uses larger cells (44px mobile, 80px desktop)
+        const cellSize = isDesktop ? 80 : 44;
+        naturalWidth = 8 * cellSize + 7 * gap;
+        naturalHeight = naturalWidth;
+      } else if (effectiveBoardType === 'square19') {
+        // 19x19 board: uses smaller cells (44px mobile, 56px desktop)
+        const cellSize = isDesktop ? 56 : 44;
         naturalWidth = 19 * cellSize + 18 * gap;
         naturalHeight = naturalWidth;
+      } else if (effectiveBoardType === 'hex8') {
+        // Hex8 board (radius 4): approximately 9 cells wide
+        const cellSize = isDesktop ? 48 : 44;
+        naturalWidth = 9 * cellSize * 1.1;
+        naturalHeight = 9 * cellSize * 0.95;
       } else {
-        // Hexagonal board (radius 12): approximately 25 cells wide at widest point
-        // Hex layout is more complex, estimate conservatively
-        naturalWidth = 25 * cellSize * 0.9; // hex cells overlap slightly
-        naturalHeight = 25 * cellSize * 0.85; // hex boards are slightly shorter
+        // Hexagonal board (radius 12): approximately 25 cells wide
+        const cellSize = isDesktop ? 48 : 44;
+        naturalWidth = 25 * cellSize * 1.05;
+        naturalHeight = 25 * cellSize * 0.95;
       }
 
-      // Calculate available space - use conservative estimates to avoid over-shrinking
-      // Sidebar is roughly 300-350px, padding is minimal
+      // Calculate available space for the board
+      // On desktop: leave room for sidebar (~320px) and padding
+      // On mobile: full width with minimal padding
       const sidebarWidth = isDesktop ? 340 : 0;
       const padding = isDesktop ? 48 : 24;
       const availableWidth = viewportWidth - sidebarWidth - padding;
-      const availableHeight = viewportHeight - 140; // Account for header, controls
+      const availableHeight = viewportHeight - 160; // Account for header, controls
 
       // Calculate scale factors for width and height
       const scaleX = availableWidth / naturalWidth;
@@ -1058,14 +1059,15 @@ export const BoardView: React.FC<BoardViewProps> = ({
       // Use the smaller scale to fit both dimensions, but don't scale up
       const scale = Math.min(scaleX, scaleY, 1);
 
-      // Apply a minimum scale to keep the board usable (don't go below 0.55)
-      // This ensures boards remain playable even on smaller screens
-      const finalScale = Math.max(scale, 0.55);
+      // Apply minimum scales based on board type
+      // Larger boards can scale down more, smaller boards need more readable cells
+      const minScale =
+        effectiveBoardType === 'square8' || effectiveBoardType === 'hex8' ? 0.65 : 0.5;
+      const finalScale = Math.max(scale, minScale);
 
       setBoardScale(finalScale);
 
-      // Calculate scaled dimensions for the wrapper
-      // This ensures the layout accounts for the scaled size, not the natural size
+      // Calculate scaled dimensions for the wrapper (only if scaling down)
       if (finalScale < 1) {
         setScaledDimensions({
           width: Math.ceil(naturalWidth * finalScale),
@@ -2528,14 +2530,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
     return null;
   };
 
-  // Mobile viewport scroll handling (W3-12):
-  // - Square8: 8×44px cells + 7×2px gaps = 366px fits in 375px viewport
-  // - Square19: 19×44px + 18×2px = 872px requires horizontal scroll (or scaling)
-  // - Hex8: 9×44px = 396px fits in most mobile viewports
-  // - Hexagonal (radius-12): large board requires scroll (or scaling)
-  // RR-FIX-2025-01-10: Use auto-scaling for large boards instead of scroll
-  const isLargeBoard = effectiveBoardType === 'square19' || effectiveBoardType === 'hexagonal';
-  const needsScaling = isLargeBoard && boardScale < 1;
+  // Board scaling (RR-FIX-2025-01-10):
+  // All board types can be scaled to fit viewport with room for sidebar/panels.
+  // Scaling is applied when the calculated scale is less than 1.
+  const needsScaling = boardScale < 1 && scaledDimensions !== null;
   const boardAriaName =
     effectiveBoardType === 'square8'
       ? '8x8'
