@@ -1024,24 +1024,27 @@ export const BoardView: React.FC<BoardViewProps> = ({
 
       // Calculate natural board dimensions based on actual CSS cell sizes
       // These must match what the board actually renders at scale=1.0
+      // Coordinate labels use negative positioning (-24px) so we need extra buffer
+      // on all sides: +100px total (50px each side) to prevent scrolling
+      const labelBuffer = 100;
       if (effectiveBoardType === 'square8') {
         const cellSize = isDesktop ? 80 : 44;
-        naturalWidth = 8 * cellSize + 7 * gap + 60; // +60 for coordinate labels
-        naturalHeight = 8 * cellSize + 7 * gap + 60;
+        naturalWidth = 8 * cellSize + 7 * gap + labelBuffer;
+        naturalHeight = 8 * cellSize + 7 * gap + labelBuffer;
       } else if (effectiveBoardType === 'square19') {
         const cellSize = isDesktop ? 56 : 44;
-        naturalWidth = 19 * cellSize + 18 * gap + 60;
-        naturalHeight = 19 * cellSize + 18 * gap + 60;
+        naturalWidth = 19 * cellSize + 18 * gap + labelBuffer;
+        naturalHeight = 19 * cellSize + 18 * gap + labelBuffer;
       } else if (effectiveBoardType === 'hex8') {
         // Hex8 board (radius 4): needs more space for hexagonal layout
         const cellSize = isDesktop ? 48 : 44;
-        naturalWidth = 9 * cellSize * 1.2; // Wider for hex layout
-        naturalHeight = 9 * cellSize * 1.1;
+        naturalWidth = 9 * cellSize * 1.2 + labelBuffer;
+        naturalHeight = 9 * cellSize * 1.1 + labelBuffer;
       } else {
         // Hexagonal board (radius 12): large hex grid
         const cellSize = isDesktop ? 48 : 44;
-        naturalWidth = 25 * cellSize * 1.1;
-        naturalHeight = 25 * cellSize * 1.0;
+        naturalWidth = 25 * cellSize * 1.1 + labelBuffer;
+        naturalHeight = 25 * cellSize * 1.0 + labelBuffer;
       }
 
       // Calculate available space for the board
