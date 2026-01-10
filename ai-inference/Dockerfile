@@ -13,6 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy ai-service (for imports) - only the app/ directory
 COPY ai-service/app /app/ai-service/app
+# Copy archive for legacy module symlinks
+COPY ai-service/archive /app/ai-service/archive
 
 # Copy inference service
 COPY ai-inference/inference /app/ai-inference/inference
