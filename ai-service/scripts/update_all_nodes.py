@@ -52,6 +52,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# Config files to sync (relative to ai-service directory)
+# These are files in .gitignore that need explicit sync
+CONFIG_FILES_TO_SYNC = [
+    'config/distributed_hosts.yaml',
+]
+
 # Node path mappings by provider
 PATH_MAPPINGS = {
     'runpod': '/workspace/ringrift/ai-service',
@@ -124,13 +130,89 @@ async def check_p2p_running(client, node_name: str, node_path: str) -> bool:
     return False
 
 
+async def sync_config_files(
+    client,
+    node_name: str,
+    node_path: str,
+    local_base_path: Path,
+    dry_run: bool = False,
+) -> Tuple[bool, str]:
+    """
+    Sync non-git-tracked config files to a node via SCP.
+
+    These files are in .gitignore so git pull doesn't update them.
+    This function explicitly syncs them to prevent configuration drift.
+
+    Args:
+        client: SSH client for the node
+        node_name: Name of the node
+        node_path: Remote path to ringrift/ai-service
+        local_base_path: Local path to ai-service directory
+        dry_run: Preview mode without making changes
+
+    Returns:
+        (success, message)
+    """
+    synced_files = []
+    failed_files = []
+
+    for config_file in CONFIG_FILES_TO_SYNC:
+        local_file = local_base_path / config_file
+        if not local_file.exists():
+            logger.warning(f"[{node_name}] Config file not found locally: {config_file}")
+            failed_files.append(config_file)
+            continue
+
+        remote_file = f"{node_path}/{config_file}"
+
+        if dry_run:
+            logger.info(f"[{node_name}] DRY-RUN: Would sync {config_file}")
+            synced_files.append(config_file)
+            continue
+
+        # Use SCP to copy the file
+        # The SSHClient doesn't have direct SCP support, so we use cat + ssh
+        try:
+            with open(local_file, 'r') as f:
+                content = f.read()
+
+            # Ensure parent directory exists
+            parent_dir = '/'.join(remote_file.rsplit('/', 1)[:-1])
+            await client.run_async(f"mkdir -p {parent_dir}", timeout=10)
+
+            # Write content via heredoc
+            # Escape any single quotes in the content
+            escaped_content = content.replace("'", "'\"'\"'")
+            cmd = f"cat > {remote_file} << 'CONFIGEOF'\n{content}\nCONFIGEOF"
+            result = await client.run_async(cmd, timeout=30)
+
+            if result.returncode == 0:
+                logger.info(f"[{node_name}] Synced {config_file}")
+                synced_files.append(config_file)
+            else:
+                logger.warning(f"[{node_name}] Failed to sync {config_file}: {result.stderr}")
+                failed_files.append(config_file)
+
+        except Exception as e:
+            logger.error(f"[{node_name}] Error syncing {config_file}: {e}")
+            failed_files.append(config_file)
+
+    if failed_files:
+        return (False, f"Config sync partial: {len(synced_files)} OK, {len(failed_files)} failed")
+    elif synced_files:
+        return (True, f"Config synced: {', '.join(synced_files)}")
+    else:
+        return (True, "No config files to sync")
+
+
 async def update_node(
     node_name: str,
     node_config: dict,
     commit_hash: str,
     restart_p2p: bool,
     dry_run: bool,
-    include_coordinators: bool = False
+    include_coordinators: bool = False,
+    sync_config: bool = False,
 ) -> Tuple[str, bool, str]:
     """
     Update a single node to the latest code.
@@ -142,6 +224,7 @@ async def update_node(
         restart_p2p: Whether to restart P2P orchestrator
         dry_run: Preview mode without making changes
         include_coordinators: Include coordinator nodes in updates (default: False for local-mac only)
+        sync_config: Sync non-git-tracked config files (like distributed_hosts.yaml)
 
     Returns:
         (node_name, success, message)
@@ -222,6 +305,20 @@ async def update_node(
 
         logger.info(f"[{node_name}] Updated to commit {current_commit}")
 
+        # Sync config files if requested (for files in .gitignore)
+        config_sync_msg = ""
+        if sync_config:
+            local_base = Path(__file__).parent.parent  # ai-service directory
+            sync_success, sync_msg = await sync_config_files(
+                client, node_name, node_path, local_base, dry_run
+            )
+            if sync_success:
+                config_sync_msg = f", {sync_msg}"
+                logger.info(f"[{node_name}] {sync_msg}")
+            else:
+                logger.warning(f"[{node_name}] {sync_msg}")
+                config_sync_msg = f", {sync_msg}"
+
         # Restart P2P if it was running and requested
         if p2p_was_running and restart_p2p:
             logger.info(f"[{node_name}] Restarting P2P orchestrator...")
@@ -293,11 +390,11 @@ async def update_node(
                 await asyncio.sleep(3)
                 # Verify it's running
                 if await check_p2p_running(client, node_name, node_path):
-                    return (node_name, True, f"Updated to {current_commit}, P2P restarted")
+                    return (node_name, True, f"Updated to {current_commit}{config_sync_msg}, P2P restarted")
                 else:
-                    return (node_name, True, f"Updated to {current_commit}, P2P restart failed")
+                    return (node_name, True, f"Updated to {current_commit}{config_sync_msg}, P2P restart failed")
 
-        return (node_name, True, f"Updated to {current_commit}")
+        return (node_name, True, f"Updated to {current_commit}{config_sync_msg}")
 
     except Exception as e:
         logger.error(f"[{node_name}] Error: {e}")
@@ -309,7 +406,8 @@ async def update_all_nodes(
     restart_p2p: bool,
     dry_run: bool,
     max_parallel: int = 10,
-    include_coordinators: bool = False
+    include_coordinators: bool = False,
+    sync_config: bool = False,
 ) -> Dict[str, Tuple[bool, str]]:
     """
     Update all cluster nodes in parallel.
@@ -320,6 +418,7 @@ async def update_all_nodes(
         dry_run: Preview mode without making changes
         max_parallel: Maximum concurrent updates
         include_coordinators: Include coordinator nodes (local-mac)
+        sync_config: Sync non-git-tracked config files (like distributed_hosts.yaml)
 
     Returns:
         Dict mapping node_name -> (success, message)
@@ -342,7 +441,8 @@ async def update_all_nodes(
     for node_name, node_config in hosts.items():
         task = update_node(
             node_name, node_config, commit_hash, restart_p2p, dry_run,
-            include_coordinators=include_coordinators
+            include_coordinators=include_coordinators,
+            sync_config=sync_config,
         )
         tasks.append(task)
 
@@ -485,6 +585,13 @@ Examples:
         help='Seconds to wait for cluster convergence (default: 120)'
     )
 
+    # January 9, 2026: Config file sync for gitignored files
+    parser.add_argument(
+        '--sync-config',
+        action='store_true',
+        help='Sync non-git-tracked config files (like distributed_hosts.yaml)'
+    )
+
     args = parser.parse_args()
 
     if args.dry_run:
@@ -493,6 +600,8 @@ Examples:
     logger.info(f"Target commit: {args.commit}")
     logger.info(f"Restart P2P: {args.restart_p2p}")
     logger.info(f"Include coordinators: {args.include_coordinators}")
+    if args.sync_config:
+        logger.info(f"Sync config: {CONFIG_FILES_TO_SYNC}")
 
     # January 3, 2026 - Sprint 16.2: Use QuorumSafeUpdateCoordinator in safe mode
     if args.safe_mode:
@@ -578,7 +687,8 @@ Examples:
             args.restart_p2p,
             args.dry_run,
             args.max_parallel,
-            args.include_coordinators
+            args.include_coordinators,
+            args.sync_config,
         ))
 
         # Print summary
