@@ -247,22 +247,35 @@ hosts:
                 get_peers=lambda: {},
             )
 
-            # Clear env and mock cluster_config to fail
-            with patch.dict(os.environ, {}, clear=False):
-                os.environ.pop("RINGRIFT_P2P_VOTERS", None)
+            # Clear env and make cluster_config import fail
+            orig_env = os.environ.pop("RINGRIFT_P2P_VOTERS", None)
+            try:
+                import sys
 
-                # Mock cluster_config to raise ImportError
-                with patch("scripts.p2p.managers.quorum_manager.get_p2p_voters", side_effect=ImportError):
-                    import sys
-                    # Remove cached module if exists
-                    sys.modules.pop("app.config.cluster_config", None)
+                # Remove cached module to force re-import (which will fail)
+                orig_module = sys.modules.pop("app.config.cluster_config", None)
 
+                # Create a mock module that raises ImportError when accessed
+                class FailingModule:
+                    def __getattr__(self, name):
+                        raise ImportError("Mock ImportError")
+
+                sys.modules["app.config.cluster_config"] = FailingModule()
+
+                try:
                     voters = manager.load_voter_node_ids()
+                finally:
+                    sys.modules.pop("app.config.cluster_config", None)
+                    if orig_module is not None:
+                        sys.modules["app.config.cluster_config"] = orig_module
 
-            assert "hetzner-cpu1" in voters
-            assert "hetzner-cpu2" in voters
-            assert "nebius-backbone-1" in voters
-            assert manager.voter_config_source == "config"
+                assert "hetzner-cpu1" in voters
+                assert "hetzner-cpu2" in voters
+                assert "nebius-backbone-1" in voters
+                assert manager.voter_config_source == "config"
+            finally:
+                if orig_env is not None:
+                    os.environ["RINGRIFT_P2P_VOTERS"] = orig_env
         finally:
             config_path.unlink()
 
