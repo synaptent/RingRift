@@ -15,7 +15,7 @@ COPY ai-service/app /app/ai-service/app
 COPY ai-service/requirements.txt /app/ai-service/
 
 # Copy inference service
-COPY ai-inference/app /app/ai-inference/app
+COPY ai-inference/inference /app/ai-inference/inference
 COPY ai-inference/requirements.txt /app/ai-inference/
 
 # Install dependencies

@@ -17,11 +17,13 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-# Add ai-service to path for imports
-AI_SERVICE_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "ai-service")
-sys.path.insert(0, AI_SERVICE_PATH)
+# Add ai-service to path BEFORE importing from it
+# This must happen before any ai-service imports
+_ai_service_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "ai-service"))
+if _ai_service_path not in sys.path:
+    sys.path.insert(0, _ai_service_path)
 
-# Import only what we need from ai-service
+# Now we can safely import from ai-service/app/
 from app.models.core import AIType, AIConfig, GameState
 from app.ai.factory import AIFactory
 from app.ai.unified_loader import UnifiedModelLoader
@@ -61,6 +63,8 @@ def load_models():
     configs = [
         ("hex8", 2), ("hex8", 3), ("hex8", 4),
         ("square8", 2), ("square8", 3), ("square8", 4),
+        ("square19", 2), ("square19", 3), ("square19", 4),
+        ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
     ]
 
     for board_type, num_players in configs:
