@@ -1249,6 +1249,18 @@ class UnifiedQueuePopulator:
                 f"{original} -> {items_needed}"
             )
 
+        # January 10, 2026: Apply worker capacity limit to prevent queue overfilling
+        # This prevents the queue from hitting the hard limit (4000) by not adding
+        # more work than workers can reasonably process.
+        worker_capacity = self._get_worker_capacity()
+        if items_needed > worker_capacity:
+            original = items_needed
+            items_needed = worker_capacity
+            logger.info(
+                f"[QueuePopulator] Worker capacity limit: {original} -> {items_needed} "
+                f"(capacity={worker_capacity})"
+            )
+
         # Get scheduler priorities
         scheduler_priorities = self._get_scheduler_priorities()
 
@@ -1550,6 +1562,59 @@ class UnifiedQueuePopulator:
             configured_nodes = 40  # Default cluster size
             dead_count = len(self._dead_nodes)
             return max(1, configured_nodes - dead_count)
+
+    def _get_worker_capacity(self) -> int:
+        """Estimate worker capacity based on completion rate and pending work.
+
+        January 10, 2026: Added to fix queue backpressure issues on 40+ node clusters.
+        Prevents overfilling the queue by estimating how many items workers can process.
+
+        Returns:
+            Estimated number of items workers can process per population cycle.
+        """
+        if self._work_queue is None:
+            return self.config.min_queue_depth
+
+        try:
+            # Get queue statistics
+            stats = self._work_queue.get_stats()
+            pending_count = stats.get("pending_count", 0)
+            completed_count = stats.get("completed_count", 0)
+            failed_count = stats.get("failed_count", 0)
+
+            # Get completion rate (items per minute) from recent activity
+            # Use a sliding window of completions to estimate throughput
+            total_completed = completed_count + failed_count
+            active_nodes = self._get_active_node_count()
+
+            # Estimate: each active node can process ~2 items per minute on average
+            # (accounting for job duration, network overhead, etc.)
+            estimated_throughput_per_minute = active_nodes * 2.0
+
+            # Scale by check interval (default 5 seconds)
+            items_per_cycle = estimated_throughput_per_minute * (
+                self.config.check_interval_seconds / 60.0
+            )
+
+            # Add headroom: we want queue to have enough work for 2-3 cycles
+            headroom_multiplier = 3.0
+            target_queue_size = int(items_per_cycle * headroom_multiplier)
+
+            # Calculate capacity as gap between target and current pending
+            capacity = max(0, target_queue_size - pending_count)
+
+            logger.debug(
+                f"[QueuePopulator] Worker capacity: {capacity} "
+                f"(pending={pending_count}, target={target_queue_size}, "
+                f"nodes={active_nodes}, throughput={items_per_cycle:.1f}/cycle)"
+            )
+
+            return max(1, capacity)  # Always allow at least 1 item
+
+        except Exception as e:
+            logger.debug(f"[QueuePopulator] Could not estimate worker capacity: {e}")
+            # Fallback to config-based calculation
+            return self.config.min_queue_depth
 
     def _populate_trickle_items(self) -> int:
         """Add minimal items under extreme backpressure (Phase 15.1.2).

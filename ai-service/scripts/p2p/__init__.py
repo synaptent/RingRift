@@ -72,6 +72,8 @@ from .resource_utils import (
 # Re-export network utilities
 from .network import (
     AsyncLockWrapper,
+    NonBlockingAsyncLockWrapper,
+    LOCK_ORDER,
     get_client_session,
     check_peer_circuit,
     record_peer_success,

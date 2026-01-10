@@ -3,13 +3,43 @@
 This module contains network-related utilities for the P2P orchestrator,
 including HTTP client helpers and circuit breaker functions.
 Extracted from p2p_orchestrator.py for better modularity.
+
+January 10, 2026: Added NonBlockingAsyncLockWrapper and lock ordering protocol
+to fix lock contention issues on 40+ node clusters.
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import threading
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
+
+# =============================================================================
+# Lock Ordering Protocol (January 10, 2026)
+# =============================================================================
+# To prevent deadlocks on large clusters, locks must always be acquired in this
+# order (lower number = acquire first). Never acquire a lower-numbered lock
+# while holding a higher-numbered one.
+#
+# Example: If holding jobs_lock (2), you can acquire training_lock (3), but not
+# peers_lock (1). If you need both, acquire peers_lock first, then jobs_lock.
+
+LOCK_ORDER: dict[str, int] = {
+    "peers_lock": 1,
+    "jobs_lock": 2,
+    "training_lock": 3,
+    "manifest_lock": 4,
+    "sync_lock": 5,
+    "relay_lock": 6,
+    "ssh_tournament_lock": 7,
+}
+
+# Thread-local storage to track currently held locks for ordering validation
+_held_locks: threading.local = threading.local()
 
 # HTTP client imports
 try:
@@ -60,6 +90,9 @@ except ImportError:
 class AsyncLockWrapper:
     """Synchronous context manager wrapper for threading locks in async code.
 
+    DEPRECATED: Use NonBlockingAsyncLockWrapper instead, which doesn't block
+    the event loop during lock acquisition.
+
     This wraps a threading.RLock for use in async handlers. Since the critical
     sections protected by this lock are typically fast (reading/copying dicts),
     we use synchronous locking which briefly blocks the event loop but guarantees
@@ -83,6 +116,144 @@ class AsyncLockWrapper:
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         self._lock.release()
+        return False
+
+
+class NonBlockingAsyncLockWrapper:
+    """Non-blocking async wrapper for threading.RLock with timeout support.
+
+    January 10, 2026: Created to fix lock contention issues on 40+ node clusters.
+    Unlike AsyncLockWrapper which blocks the event loop during acquire, this
+    wrapper uses asyncio.to_thread() for non-blocking lock acquisition.
+
+    Features:
+    - Non-blocking acquire via asyncio.to_thread()
+    - Configurable timeout to prevent indefinite waiting
+    - Lock ordering validation to prevent deadlocks
+    - Debug logging for lock contention analysis
+
+    Usage:
+        # Basic usage (recommended for P2P handlers)
+        async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
+            # ... critical section
+
+        # Manual acquisition with timeout check
+        wrapper = NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0)
+        if await wrapper.acquire():
+            try:
+                # ... critical section
+            finally:
+                wrapper.release()
+        else:
+            # Handle timeout gracefully
+            logger.warning("Lock acquisition timed out")
+    """
+
+    def __init__(
+        self,
+        lock: threading.RLock,
+        lock_name: str = "unknown",
+        timeout: float = 5.0,
+        validate_order: bool = True,
+    ):
+        """Initialize non-blocking lock wrapper.
+
+        Args:
+            lock: The threading.RLock to wrap
+            lock_name: Name of the lock (for ordering validation and logging)
+            timeout: Maximum time to wait for lock acquisition in seconds
+            validate_order: If True, validate lock ordering to prevent deadlocks
+        """
+        self._lock = lock
+        self._lock_name = lock_name
+        self._timeout = timeout
+        self._validate_order = validate_order
+        self._acquired = False
+
+    def _get_held_locks(self) -> set[str]:
+        """Get the set of locks currently held by this thread."""
+        if not hasattr(_held_locks, "locks"):
+            _held_locks.locks = set()
+        return _held_locks.locks
+
+    def _check_lock_order(self) -> bool:
+        """Check if acquiring this lock would violate ordering protocol.
+
+        Returns:
+            True if ordering is valid, False if violation detected.
+        """
+        if not self._validate_order:
+            return True
+
+        held = self._get_held_locks()
+        if not held:
+            return True
+
+        my_order = LOCK_ORDER.get(self._lock_name, 999)
+        for held_lock in held:
+            held_order = LOCK_ORDER.get(held_lock, 999)
+            if held_order > my_order:
+                logger.warning(
+                    f"Lock ordering violation: attempting to acquire {self._lock_name} "
+                    f"(order={my_order}) while holding {held_lock} (order={held_order}). "
+                    f"This may cause deadlocks on large clusters."
+                )
+                return False
+        return True
+
+    async def acquire(self, timeout: Optional[float] = None) -> bool:
+        """Acquire the lock with timeout, non-blocking for event loop.
+
+        Args:
+            timeout: Override timeout in seconds. Uses default if None.
+
+        Returns:
+            True if lock acquired, False if timeout exceeded.
+        """
+        # Check lock ordering before attempting acquire
+        if not self._check_lock_order():
+            # Log warning but still attempt acquire (don't break existing code)
+            pass
+
+        wait_time = timeout if timeout is not None else self._timeout
+
+        def _blocking_acquire() -> bool:
+            """Blocking acquire in thread pool."""
+            return self._lock.acquire(blocking=True, timeout=wait_time)
+
+        try:
+            # Run blocking acquire in thread pool to avoid blocking event loop
+            acquired = await asyncio.wait_for(
+                asyncio.to_thread(_blocking_acquire),
+                timeout=wait_time + 1.0,  # Slight buffer for thread scheduling
+            )
+            if acquired:
+                self._acquired = True
+                self._get_held_locks().add(self._lock_name)
+            return acquired
+        except asyncio.TimeoutError:
+            logger.debug(f"Lock {self._lock_name} acquisition timed out after {wait_time}s")
+            return False
+
+    def release(self) -> None:
+        """Release the lock."""
+        if self._acquired:
+            self._lock.release()
+            self._get_held_locks().discard(self._lock_name)
+            self._acquired = False
+
+    async def __aenter__(self):
+        """Async context manager entry. Raises TimeoutError on timeout."""
+        acquired = await self.acquire()
+        if not acquired:
+            raise asyncio.TimeoutError(
+                f"Lock {self._lock_name} acquisition timed out after {self._timeout}s"
+            )
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        self.release()
         return False
 
 

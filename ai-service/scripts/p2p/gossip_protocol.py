@@ -51,11 +51,12 @@ except ImportError:
     GOSSIP_FAILURE_SUSPECT_THRESHOLD = 5  # Fallback
 
 # Jan 2026: Use centralized timeout from LoopTimeouts
+# Jan 10, 2026: Reduced from 5.0 to 2.0 to fix lock contention on 40+ node clusters
 try:
     from scripts.p2p.loops.loop_constants import LoopTimeouts
     _GOSSIP_LOCK_TIMEOUT = LoopTimeouts.GOSSIP_LOCK
 except ImportError:
-    _GOSSIP_LOCK_TIMEOUT = 5.0  # Fallback
+    _GOSSIP_LOCK_TIMEOUT = 2.0  # Fallback (reduced from 5.0)
 
 
 @dataclass
@@ -767,19 +768,37 @@ class GossipProtocolMixin(P2PMixinBase):
                 )
 
             # 7. Jan 3, 2026 (Sprint 13.3): Clean up per-peer locks for inactive peers
+            # Jan 10, 2026: Enhanced to also clean up locks for dead peers (>5 minutes)
             cleaned_locks = 0
+            DEAD_PEER_LOCK_TTL = 300.0  # 5 minutes - lock cleanup threshold
             if hasattr(self, "_per_peer_locks") and hasattr(self, "_per_peer_locks_rlock"):
                 with self._per_peer_locks_rlock:
-                    # Remove locks for peers we haven't heard from
+                    # Remove locks for peers we haven't heard from at all
                     active_peers = set(self._gossip_peer_states.keys())
-                    stale_peer_locks = [
-                        peer_id for peer_id in self._per_peer_locks
-                        if peer_id not in active_peers
-                    ]
+                    now = time.time()
+
+                    stale_peer_locks = []
+                    for peer_id in self._per_peer_locks:
+                        if peer_id not in active_peers:
+                            # Not in gossip state at all - definitely stale
+                            stale_peer_locks.append(peer_id)
+                        else:
+                            # Check if peer is dead (no recent heartbeat)
+                            peer_state = self._gossip_peer_states.get(peer_id, {})
+                            last_seen = peer_state.get("last_seen", peer_state.get("timestamp", 0))
+                            if now - last_seen > DEAD_PEER_LOCK_TTL:
+                                # Peer hasn't been seen in >5 minutes - dead
+                                stale_peer_locks.append(peer_id)
+
                     for peer_id in stale_peer_locks:
                         lock = self._per_peer_locks.pop(peer_id, None)
                         if lock and not lock.locked():
                             cleaned_locks += 1
+
+                    if cleaned_locks > 0:
+                        self._log_debug(
+                            f"Cleaned up {cleaned_locks} per-peer locks for dead peers"
+                        )
 
             # Log if significant cleanup occurred
             total_cleaned = cleaned_states + cleaned_manifests + cleaned_endpoints + cleaned_health + cleaned_locks

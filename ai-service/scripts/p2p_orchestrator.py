@@ -931,10 +931,12 @@ SOCKS_PROXY = os.environ.get("RINGRIFT_SOCKS_PROXY", "")
 # Added to fix P2P cluster connectivity issues where HTTP handlers blocked
 # indefinitely on slow operations (lock acquisition, daemon status collection).
 
-def with_request_timeout(timeout_seconds: float = 10.0):
+def with_request_timeout(timeout_seconds: float = 20.0):
     """Decorator to add timeout protection to HTTP handlers.
 
     December 30, 2025: Added to prevent HTTP endpoints from blocking indefinitely.
+    January 10, 2026: Increased default from 10s to 20s to exceed typical lock wait
+    times (reduced from 5s to 2s for gossip locks, but other operations can take longer).
 
     Usage:
         @with_request_timeout(5.0)
@@ -2625,8 +2627,10 @@ class P2POrchestrator(
 
             def _get_alive_peer_count() -> int:
                 """Count peers that are currently alive."""
+                # Jan 10, 2026: Copy-on-read - minimize lock hold time
                 with self.peers_lock:
-                    return sum(1 for p in self.peers.values() if p.is_alive())
+                    peers_snapshot = list(self.peers.values())
+                return sum(1 for p in peers_snapshot if p.is_alive())
 
             async def _probe_and_connect_peer(ip: str, hostname: str) -> bool:
                 """Probe peer health endpoint and send heartbeat to connect."""
@@ -2839,12 +2843,14 @@ class P2POrchestrator(
                 Returns alive peers from runtime list, falling back to bootstrap
                 seeds when no peers are known yet.
                 """
+                # Jan 10, 2026: Copy-on-read - minimize lock hold time
                 with self.peers_lock:
-                    addresses = [
-                        f"{p.host}:{p.port}"
-                        for p in self.peers.values()
-                        if p.is_alive() and p.host and p.port
-                    ]
+                    peers_snapshot = list(self.peers.values())
+                addresses = [
+                    f"{p.host}:{p.port}"
+                    for p in peers_snapshot
+                    if p.is_alive() and p.host and p.port
+                ]
 
                 # Fall back to bootstrap seeds if no alive peers known
                 # This enables discovery when starting fresh
@@ -2937,8 +2943,10 @@ class P2POrchestrator(
 
                 def _get_alive_peer_ids_for_recovery() -> list[str]:
                     """Get list of alive peer IDs."""
+                    # Jan 10, 2026: Copy-on-read - minimize lock hold time
                     with self.peers_lock:
-                        return [p.node_id for p in self.peers.values() if p.is_alive()]
+                        peers_snapshot = list(self.peers.values())
+                    return [p.node_id for p in peers_snapshot if p.is_alive()]
 
                 # Note: emit_event omitted - uses internal logging instead
                 # P2POrchestrator doesn't have _emit_event but the loop is optional
@@ -2970,8 +2978,10 @@ class P2POrchestrator(
             # Proactive monitoring and alerting for cluster health
             def _get_peers_for_monitoring() -> list[Any]:
                 """Get list of alive peers for monitoring."""
+                # Jan 10, 2026: Copy-on-read - minimize lock hold time
                 with self.peers_lock:
-                    return [p for p in self.peers.values() if p.is_alive()]
+                    peers_snapshot = list(self.peers.values())
+                return [p for p in peers_snapshot if p.is_alive()]
 
             def _get_production_models() -> tuple[list[str], float]:
                 """Get production model info for alert checks."""
@@ -3079,8 +3089,10 @@ class P2POrchestrator(
 
                 def _get_node_ids_for_health() -> list[str]:
                     """Get list of alive peer node IDs."""
+                    # Jan 10, 2026: Copy-on-read - minimize lock hold time
                     with self.peers_lock:
-                        return [p.node_id for p in self.peers.values() if p.is_alive()]
+                        peers_snapshot = list(self.peers.values())
+                    return [p.node_id for p in peers_snapshot if p.is_alive()]
 
                 async def _fetch_node_health_for_loop(node_id: str) -> dict[str, Any]:
                     """Fetch health metrics from a specific node."""
@@ -3278,12 +3290,14 @@ class P2POrchestrator(
 
                 def _get_alive_peer_addresses() -> list[str]:
                     """Get list of alive peer HTTP addresses."""
+                    # Jan 10, 2026: Copy-on-read - minimize lock hold time
                     with self.peers_lock:
-                        return [
-                            f"http://{p.tailscale_ip or p.host or p.ip}:{p.port or DEFAULT_PORT}"
-                            for p in self.peers.values()
-                            if p.is_alive() and (p.tailscale_ip or p.host or p.ip)
-                        ]
+                        peers_snapshot = list(self.peers.values())
+                    return [
+                        f"http://{p.tailscale_ip or p.host or p.ip}:{p.port or DEFAULT_PORT}"
+                        for p in peers_snapshot
+                        if p.is_alive() and (p.tailscale_ip or p.host or p.ip)
+                    ]
 
                 def _on_node_joined(node_id: str) -> None:
                     """Callback when a node is healed and joins."""
@@ -15691,10 +15705,11 @@ print(json.dumps(result))
                 url = self._url_for_peer(leader_peer, f"/work/claim?node_id={self.node_id}&capabilities={caps_str}")
                 async with session.get(url, headers=self._auth_headers()) as resp:
                     if resp.status == 200:
+                        # Jan 10, 2026: Update timestamp on any leader response (not just work)
+                        # This prevents false stall detection when queue is empty
+                        self.last_work_from_leader = time.time()
                         data = await resp.json()
                         if data.get("status") == "claimed":
-                            # Dec 30, 2025: Track that leader is actively dispatching work
-                            self.last_work_from_leader = time.time()
                             return data.get("work")
         except Exception as e:  # noqa: BLE001
             logger.debug(f"Failed to claim work from leader: {e}")
@@ -15736,10 +15751,11 @@ print(json.dumps(result))
                 )
                 async with session.get(url, headers=self._auth_headers()) as resp:
                     if resp.status == 200:
+                        # Jan 10, 2026: Update timestamp on any leader response (not just work)
+                        # This prevents false stall detection when queue is empty
+                        self.last_work_from_leader = time.time()
                         data = await resp.json()
                         if data.get("status") == "claimed" and data.get("items"):
-                            # Track that leader is actively dispatching work
-                            self.last_work_from_leader = time.time()
                             return data.get("items", [])
         except Exception as e:  # noqa: BLE001
             logger.debug(f"Failed to batch claim work from leader: {e}")
@@ -24199,12 +24215,15 @@ print(json.dumps({{
         # Prevent job concentration on a few nodes by checking cluster average
         # Skip spawning if we're already above average + 2 to give idle nodes a chance
         try:
+            # Jan 10, 2026: Copy-on-read pattern - minimize lock hold time
             with self.peers_lock:
-                peer_job_counts = [
-                    int(getattr(p, "selfplay_jobs", 0) or 0)
-                    for p in self.peers.values()
-                    if p.is_alive() and hasattr(p, "selfplay_jobs")
-                ]
+                peers_snapshot = list(self.peers.values())
+            # Compute job counts outside lock (is_alive() can be slow)
+            peer_job_counts = [
+                int(getattr(p, "selfplay_jobs", 0) or 0)
+                for p in peers_snapshot
+                if p.is_alive() and hasattr(p, "selfplay_jobs")
+            ]
             if peer_job_counts:
                 avg_jobs = sum(peer_job_counts) / len(peer_job_counts)
                 if current_jobs > avg_jobs + 2:
@@ -24495,10 +24514,12 @@ print(json.dumps({{
             logger.info(f"LOCAL: Disk at {node.disk_percent:.0f}% - triggering cleanup")
             await self._cleanup_local_disk()
 
-        # Memory pressure - reduce jobs
+        # Memory pressure - reduce jobs and clear caches
         if node.memory_percent >= MEMORY_CRITICAL_THRESHOLD:
-            logger.info(f"LOCAL: Memory CRITICAL at {node.memory_percent:.0f}%")
+            logger.warning(f"LOCAL: Memory CRITICAL at {node.memory_percent:.0f}% - emergency cleanup")
             await self._reduce_local_selfplay_jobs(0, reason="memory_critical")
+            # Jan 10, 2026: Clear gossip caches to free memory
+            self._emergency_memory_cleanup()
         elif node.memory_percent >= MEMORY_WARNING_THRESHOLD:
             current = int(getattr(node, "selfplay_jobs", 0) or 0)
             target = max(1, current // 2)
@@ -25552,6 +25573,37 @@ print(json.dumps({{
                             num_players=config["num_players"],
                             engine_mode=config["engine_mode"],
                         )
+
+    def _emergency_memory_cleanup(self) -> None:
+        """Emergency memory cleanup when memory is critical.
+
+        Jan 10, 2026: Clears gossip caches and triggers garbage collection
+        to free memory when above MEMORY_CRITICAL_THRESHOLD (90%).
+        """
+        import gc
+
+        # Clear gossip state caches
+        gossip_states = getattr(self, "_gossip_peer_states", None)
+        gossip_manifests = getattr(self, "_gossip_peer_manifests", None)
+
+        states_cleared = 0
+        manifests_cleared = 0
+
+        if gossip_states:
+            states_cleared = len(gossip_states)
+            gossip_states.clear()
+
+        if gossip_manifests:
+            manifests_cleared = len(gossip_manifests)
+            gossip_manifests.clear()
+
+        # Force garbage collection
+        gc.collect()
+
+        logger.info(
+            f"Emergency memory cleanup: cleared {states_cleared} gossip states, "
+            f"{manifests_cleared} manifests, ran gc.collect()"
+        )
 
     async def _cleanup_local_disk(self):
         """Clean up disk space on local node.

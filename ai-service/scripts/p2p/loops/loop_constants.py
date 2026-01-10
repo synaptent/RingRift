@@ -174,7 +174,8 @@ class LoopTimeouts:
     HTTP_LONG: float = 30.0                  # Long HTTP requests (data)
 
     # P2P-specific timeouts
-    GOSSIP_LOCK: float = 5.0                 # Gossip state lock acquisition
+    # Jan 10, 2026: Reduced from 5.0 to 2.0 to reduce lock contention on 40+ node clusters
+    GOSSIP_LOCK: float = 2.0                 # Gossip state lock acquisition
     GOSSIP_RPC: float = 10.0                 # Gossip RPC calls
     # Jan 5, 2026: Increased from 5.0 to 8.0 for consistency with HEALTH_CHECK
     PEER_PROBE: float = 8.0                  # Peer health probe

@@ -327,16 +327,35 @@ class QueueMonitor:
             trend = "stable"
 
         # Calculate backpressure level
+        # January 10, 2026: Enhanced to use graduated levels for smoother throttling
+        # This prevents oscillation between full speed and hard stop.
         config = self.config.get(queue_type, {})
         soft_limit = config.get("soft_limit", 10000)
         hard_limit = config.get("hard_limit", 50000)
 
+        # Graduated backpressure levels:
+        # - NONE: depth < 25% of soft_limit (full speed)
+        # - LOW: 25-50% of soft_limit (slight throttle)
+        # - SOFT: 50-100% of soft_limit (moderate throttle)
+        # - MEDIUM: soft_limit to 50% of hard_limit (significant throttle)
+        # - HARD: 50-75% of hard_limit (heavy throttle)
+        # - HIGH: 75-90% of hard_limit (near-stop)
+        # - CRITICAL: 90-100% of hard_limit (emergency)
+        # - STOP: at or above hard_limit (complete stop)
         if depth >= hard_limit:
             backpressure = BackpressureLevel.STOP
-        elif depth >= hard_limit * 0.9:
+        elif depth >= hard_limit * 0.90:
+            backpressure = BackpressureLevel.CRITICAL
+        elif depth >= hard_limit * 0.75:
+            backpressure = BackpressureLevel.HIGH
+        elif depth >= hard_limit * 0.50:
             backpressure = BackpressureLevel.HARD
         elif depth >= soft_limit:
+            backpressure = BackpressureLevel.MEDIUM
+        elif depth >= soft_limit * 0.75:
             backpressure = BackpressureLevel.SOFT
+        elif depth >= soft_limit * 0.50:
+            backpressure = BackpressureLevel.LOW
         else:
             backpressure = BackpressureLevel.NONE
 
