@@ -1025,7 +1025,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
       // Board-specific size adjustments based on user feedback
       // These adjust the "effective" natural size to control final rendered size
       const sizeAdjustments: Record<string, number> = {
-        square8: 1.25, // Make 20% smaller: increase natural size → smaller scale
+        square8: 1.08, // Slightly smaller than default (was overcorrected at 1.25)
         square19: 0.77, // Make 30% larger: decrease natural size → larger scale
         hex8: 0.7, // Make 30% larger: decrease natural size → larger scale
         hexagonal: 1.0, // No change (correct size)
@@ -2544,8 +2544,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
 
   // Board scaling (RR-FIX-2025-01-10):
   // All board types can be scaled to fit viewport with room for sidebar/panels.
-  // Scaling is applied when the calculated scale is less than 1.
-  const needsScaling = boardScale < 1 && scaledDimensions !== null;
+  // Scaling is applied when scale differs significantly from 1 (both up and down).
+  const needsScaling = Math.abs(boardScale - 1) > 0.01 && scaledDimensions !== null;
   const boardAriaName =
     effectiveBoardType === 'square8'
       ? '8x8'

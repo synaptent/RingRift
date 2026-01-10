@@ -155,9 +155,9 @@ export const SandboxBoardSection: React.FC<SandboxBoardSectionProps> = ({
 }) => {
   return (
     <section className="flex-shrink-0 flex justify-center lg:justify-start">
-      <div className="inline-block space-y-3">
+      <div className="inline-block space-y-3 max-w-full">
         {/* Board header with mode toggle and action buttons */}
-        <div className="p-3 sm:p-4 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg">
+        <div className="p-3 sm:p-4 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
             <div>
               <p className="text-[10px] sm:text-xs uppercase tracking-wide text-slate-400">
@@ -311,7 +311,7 @@ export const SandboxBoardSection: React.FC<SandboxBoardSectionProps> = ({
         />
 
         {/* Board info panel */}
-        <section className="mt-1 p-3 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 text-xs text-slate-200">
+        <section className="mt-1 p-3 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 text-xs text-slate-200 overflow-hidden">
           <div className="flex flex-wrap items-center gap-2">
             {(() => {
               let primarySubtitleText = boardDisplaySubtitle;

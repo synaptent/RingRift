@@ -311,7 +311,7 @@ export const SandboxGameSidebar: React.FC<SandboxGameSidebarProps> = ({
   })();
 
   return (
-    <aside className="w-full lg:w-80 flex-shrink-0 space-y-3 sm:space-y-4 text-sm text-slate-100">
+    <aside className="w-full max-w-md mx-auto lg:mx-0 lg:w-[256px] flex-shrink-0 space-y-2 text-xs text-slate-100">
       {/* Unified Game HUD - full HUD on desktop, compact HUD on mobile */}
       {hudViewModel &&
         (isMobile ? (

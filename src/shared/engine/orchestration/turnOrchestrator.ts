@@ -1213,6 +1213,32 @@ function createForcedEliminationDecision(state: GameState): PendingDecision | un
 }
 
 /**
+ * Create a pending decision for mandatory territory self-elimination.
+ * Per RR-CANON-R145 / FAQ Q23, after processing a disconnected region,
+ * the player must eliminate their entire cap from a controlled stack
+ * outside the processed region.
+ */
+function createTerritoryEliminationDecision(
+  _state: GameState,
+  player: number,
+  eliminationMoves: Move[]
+): PendingDecision {
+  return {
+    type: 'elimination_target',
+    player,
+    options: eliminationMoves,
+    context: {
+      description: 'Territory claimed. You must eliminate your entire cap from an eligible stack.',
+      relevantPositions: eliminationMoves.map((m) => m.to).filter((p): p is Position => !!p),
+      extra: {
+        reason: 'territory_self_elimination',
+        eliminationContext: 'territory',
+      },
+    },
+  };
+}
+
+/**
  * Create a pending decision for chain capture continuation.
  */
 function createChainCaptureDecision(state: GameState, continuations: Move[]): PendingDecision {
@@ -2305,6 +2331,34 @@ function applyMoveWithChainInfo(
 
     case 'choose_territory_option': {
       const outcome = applyProcessTerritoryRegionDecision(state, move);
+
+      // RR-CANON-R145: After processing a territory region, the player MUST
+      // perform a mandatory self-elimination from a stack OUTSIDE the region.
+      if (outcome.pendingSelfElimination) {
+        const eliminationMoves = enumerateTerritoryEliminationMoves(
+          outcome.nextState,
+          move.player,
+          { processedRegion: outcome.processedRegion, eliminationContext: 'territory' }
+        );
+
+        if (eliminationMoves.length > 0) {
+          // Surface elimination decision - player must choose which stack to eliminate from
+          const pendingDecision = createTerritoryEliminationDecision(
+            outcome.nextState,
+            move.player,
+            eliminationMoves
+          );
+          return {
+            nextState: {
+              ...outcome.nextState,
+              currentPhase: 'territory_processing' as GamePhase,
+            },
+            pendingDecision,
+          };
+        }
+        // No eligible stacks - fall through (hand elimination handled elsewhere)
+      }
+
       return { nextState: outcome.nextState };
     }
 
