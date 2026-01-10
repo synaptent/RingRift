@@ -82,6 +82,27 @@ from app.coordination.training_execution import (
     emit_training_complete as _emit_training_complete_impl,
     emit_training_failed as _emit_training_failed_impl,
 )
+# Jan 9, 2026: Architecture selection functions moved to training_architecture_selector.py
+from app.coordination.training_architecture_selector import (
+    get_training_params_for_intensity,
+    select_architecture_for_training,
+    apply_velocity_amplification,
+)
+# Jan 9, 2026: Data availability functions moved to training_data_availability.py
+from app.coordination.training_data_availability import (
+    DataAvailabilityChecker,
+    DataAvailabilityConfig,
+    check_gpu_availability,
+    check_cluster_availability,
+    scan_local_npz_files,
+    parse_config_from_filename,
+)
+# Jan 9, 2026: Retry management utilities moved to training_retry_manager.py
+from app.coordination.training_retry_manager import (
+    get_velocity_adjusted_cooldown,
+    get_adaptive_max_data_age,
+    RetryQueueConfig,
+)
 from app.utils.retry import RetryConfig
 
 logger = logging.getLogger(__name__)
