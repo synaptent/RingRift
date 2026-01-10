@@ -47,6 +47,24 @@ from .job_orchestration_manager import (
     JobOrchestrationStats,
     create_job_orchestration_manager,
 )
+# January 2026: Phase 2 Quorum Manager extraction
+from .quorum_manager import (
+    QuorumConfig,
+    QuorumManager,
+    VoterHealthStatus,
+    create_quorum_manager,
+    get_quorum_manager,
+    set_quorum_manager,
+)
+# January 2026: Phase 3 Network Config Manager extraction
+from .network_config_manager import (
+    NetworkConfig,
+    NetworkConfigManager,
+    NetworkState,
+    create_network_config_manager,
+    get_network_config_manager,
+    set_network_config_manager,
+)
 
 __all__ = [
     "DiscoveryChannel",
@@ -76,4 +94,18 @@ __all__ = [
     "JobOrchestrationManager",
     "JobOrchestrationStats",
     "create_job_orchestration_manager",
+    # Quorum Manager
+    "QuorumConfig",
+    "QuorumManager",
+    "VoterHealthStatus",
+    "create_quorum_manager",
+    "get_quorum_manager",
+    "set_quorum_manager",
+    # Network Config Manager
+    "NetworkConfig",
+    "NetworkConfigManager",
+    "NetworkState",
+    "create_network_config_manager",
+    "get_network_config_manager",
+    "set_network_config_manager",
 ]
