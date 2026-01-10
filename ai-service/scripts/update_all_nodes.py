@@ -622,6 +622,7 @@ Examples:
             voter_update_delay=args.batch_delay,
             max_parallel_non_voters=args.max_parallel,
             dry_run=args.dry_run,
+            sync_config=args.sync_config,
         )
         coordinator = QuorumSafeUpdateCoordinator(config=config)
 

@@ -366,7 +366,8 @@ class NetworkConfigManager:
                 ip = addr_info[4][0]
                 if ip and not ip.startswith("fe80:") and ip != "::1":
                     ips.add(ip)
-        except Exception:
+        except (socket.gaierror, socket.herror, socket.timeout, OSError):
+            # DNS lookup or socket errors
             pass
         return ips
 
@@ -411,9 +412,11 @@ class NetworkConfigManager:
                 s.close()
                 if local_ip and local_ip != "127.0.0.1":
                     ips.add(local_ip)
-            except Exception:
+            except (socket.error, OSError):
+                # Socket connection error
                 pass
-        except Exception:
+        except (OSError, ValueError, KeyError, AttributeError):
+            # Interface enumeration errors
             pass
         return ips
 
@@ -443,9 +446,17 @@ class NetworkConfigManager:
                         ip = addr_info[4][0]
                         if ip and not ip.startswith("fe80:") and ip != "::1":
                             ips.add(ip)
-                except Exception:
+                except (socket.gaierror, socket.herror, socket.timeout, OSError):
+                    # DNS lookup or socket errors
                     pass
-        except Exception:
+        except ImportError:
+            # cluster_config module not available
+            pass
+        except (OSError, IOError):
+            # File I/O errors during config loading
+            pass
+        except (AttributeError, KeyError, TypeError):
+            # Unexpected config structure
             pass
         return ips
 

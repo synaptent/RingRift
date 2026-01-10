@@ -35,7 +35,8 @@ class TestSyncPlannerConfig:
     def test_default_values(self):
         """Test default configuration values."""
         config = SyncPlannerConfig()
-        assert config.manifest_cache_age_seconds == 300
+        # Uses PeerDefaults.MANIFEST_TIMEOUT (60s) as of Jan 2, 2026
+        assert config.manifest_cache_age_seconds == 60
         assert config.manifest_collection_interval == 60
         assert config.max_files_per_sync_job == 50
         assert config.sync_mtime_tolerance_seconds == 60

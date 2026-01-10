@@ -31,7 +31,7 @@ from app.rules.capture_chain import (
     validate_capture_segment_on_board_py,
 )
 
-from .conftest import (
+from conftest import (
     ALL_BOARD_TYPES,
     HEX_BOARDS,
     SQUARE_BOARDS,

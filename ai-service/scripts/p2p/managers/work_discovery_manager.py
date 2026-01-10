@@ -69,7 +69,11 @@ def _is_selfplay_enabled_for_node() -> bool:
                     with open(config_path) as f:
                         cluster_config = yaml.safe_load(f)
                     break
-                except Exception:
+                except (OSError, IOError):
+                    # File read error
+                    continue
+                except yaml.YAMLError:
+                    # Malformed YAML
                     continue
 
         if not cluster_config:
@@ -492,6 +496,76 @@ class WorkDiscoveryManager:
             **self._stats.to_dict(),
             "can_query_peers": self._can_query_peers(),
             "can_direct_selfplay": self._can_direct_selfplay(["selfplay"]),
+        }
+
+    def health_check(self) -> dict[str, Any]:
+        """Return health status for DaemonManager integration.
+
+        Returns a dict with:
+        - healthy: True if discovery is functional
+        - status: "active" if channels are configured, "limited" if some missing
+        - channels_enabled: Which discovery channels are active
+        - stats: Discovery statistics by channel
+        - last_success: Time since last successful discovery
+        """
+        # Calculate total attempts and successes
+        total_attempts = sum(self._stats.attempts_by_channel.values())
+        total_successes = sum(self._stats.successes_by_channel.values())
+
+        # Determine health based on success rate (if we've had attempts)
+        if total_attempts == 0:
+            # No attempts yet - healthy but idle
+            healthy = True
+            status = "idle"
+        elif total_successes > 0:
+            # At least one success - healthy
+            success_rate = total_successes / total_attempts
+            healthy = True
+            status = "active" if success_rate >= 0.1 else "degraded"
+        else:
+            # All attempts failed
+            healthy = False
+            status = "failing"
+
+        # Check which channels are properly configured
+        channels_enabled = {
+            "leader": self.config.leader_enabled,
+            "peer": self.config.peer_discovery_enabled and self._get_alive_peers is not None,
+            "autonomous": self.config.autonomous_enabled and self._pop_autonomous_work is not None,
+            "direct": self.config.direct_selfplay_enabled and self._create_direct_selfplay_work is not None,
+        }
+
+        # If no channels enabled, mark as degraded
+        if not any(channels_enabled.values()):
+            healthy = False
+            status = "no_channels"
+
+        # Calculate time since last success
+        last_success_ago = None
+        if self._stats.last_success_time:
+            last_success_ago = time.time() - self._stats.last_success_time
+
+        total_failures = sum(self._stats.failures_by_channel.values())
+
+        return {
+            "healthy": healthy,
+            "status": status,
+            "channels_enabled": channels_enabled,
+            "stats": {
+                "attempts": self._stats.attempts_by_channel.copy(),
+                "successes": self._stats.successes_by_channel.copy(),
+                "failures": self._stats.failures_by_channel.copy(),
+                "total_attempts": total_attempts,
+                "total_successes": total_successes,
+                "total_failures": total_failures,
+                "success_rate": total_successes / total_attempts if total_attempts > 0 else None,
+            },
+            "last_success_channel": self._stats.last_success_channel,
+            "last_success_seconds_ago": last_success_ago,
+            "cooldowns": {
+                "can_query_peers": self._can_query_peers(),
+                "can_direct_selfplay": self._can_direct_selfplay(["selfplay"]),
+            },
         }
 
 

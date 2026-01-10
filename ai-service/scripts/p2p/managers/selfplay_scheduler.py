@@ -904,7 +904,11 @@ class SelfplayScheduler(EventSubscriptionMixin):
         curriculum_weights = {}
         try:
             curriculum_weights = self.load_curriculum_weights()
-        except Exception:
+        except (OSError, IOError):
+            # File I/O errors
+            pass
+        except (ValueError, TypeError, KeyError, AttributeError):
+            # Data structure errors
             pass
 
         weighted_configs = []
@@ -948,7 +952,8 @@ class SelfplayScheduler(EventSubscriptionMixin):
             elif age_hours > 6:
                 return 1
             return 0
-        except Exception:
+        except (TypeError, AttributeError, KeyError):
+            # Defensive - shouldn't happen but gracefully handle
             return 0
 
     def record_job_dispatched(self, config_key: str) -> None:
@@ -1084,7 +1089,8 @@ class SelfplayScheduler(EventSubscriptionMixin):
             # Return empty dict if no data available
             return {}
 
-        except Exception:
+        except (TypeError, AttributeError):
+            # Defensive - shouldn't happen but gracefully handle
             return {}
 
     def update_config_game_count(self, config_key: str, game_count: int) -> None:
@@ -2643,7 +2649,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
                             "work_items_created": result.get("work_items_created", 0),
                             "source": "selfplay_scheduler",
                         })
-                    except Exception:
+                    except (ImportError, AttributeError, TypeError, RuntimeError):
                         pass  # Non-critical, don't fail on event emission
                 else:
                     self._log_warning(

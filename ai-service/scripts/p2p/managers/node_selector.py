@@ -104,7 +104,7 @@ class NodeSelector:
             try:
                 import asyncio
                 await asyncio.wait_for(asyncio.shield(self._recovery_task), timeout=2.0)
-            except Exception:
+            except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass  # Task cancelled or timed out
             self._recovery_task = None
 

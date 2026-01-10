@@ -146,6 +146,14 @@ class UpdateCoordinatorConfig:
     dry_run: bool = False
     config_path: str | Path | None = None
     health_check_endpoint: str = "http://localhost:8770/status"
+    sync_config: bool = False  # Sync non-git-tracked config files
+
+
+# Config files to sync (relative to ai-service directory)
+# These are files in .gitignore that need explicit sync
+CONFIG_FILES_TO_SYNC = [
+    'config/distributed_hosts.yaml',
+]
 
 
 @dataclass
@@ -221,6 +229,7 @@ class QuorumSafeUpdateCoordinator:
             self.max_parallel_non_voters = config.max_parallel_non_voters
             self.voter_update_delay = config.voter_update_delay
             self._dry_run = config.dry_run
+            self._sync_config = config.sync_config
         else:
             self.config_path = config_path or self._find_config_path()
             self.health_endpoint = health_check_endpoint
@@ -228,6 +237,7 @@ class QuorumSafeUpdateCoordinator:
             self.max_parallel_non_voters = max_parallel_non_voters
             self.voter_update_delay = voter_update_delay
             self._dry_run = False
+            self._sync_config = False
 
         # Load config on init
         self._config: dict[str, Any] | None = None
@@ -443,6 +453,67 @@ class QuorumSafeUpdateCoordinator:
         result = await client.run_async("pgrep -f p2p_orchestrator", timeout=10)
         return result.returncode == 0 and bool(result.stdout.strip())
 
+    async def _sync_config_files(
+        self,
+        client: SSHClient,
+        node: NodeConfig,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Sync non-git-tracked config files to a node.
+
+        These files are in .gitignore so git pull doesn't update them.
+
+        Returns:
+            (success, message)
+        """
+        local_base = Path(__file__).parent.parent  # ai-service directory
+        synced_files = []
+        failed_files = []
+
+        for config_file in CONFIG_FILES_TO_SYNC:
+            local_file = local_base / config_file
+            if not local_file.exists():
+                logger.warning(f"[{node.name}] Config file not found locally: {config_file}")
+                failed_files.append(config_file)
+                continue
+
+            remote_file = f"{node.ringrift_path}/{config_file}"
+
+            if dry_run:
+                logger.info(f"[{node.name}] DRY-RUN: Would sync {config_file}")
+                synced_files.append(config_file)
+                continue
+
+            try:
+                with open(local_file, 'r') as f:
+                    content = f.read()
+
+                # Ensure parent directory exists
+                parent_dir = '/'.join(remote_file.rsplit('/', 1)[:-1])
+                await client.run_async(f"mkdir -p {parent_dir}", timeout=10)
+
+                # Write content via heredoc
+                cmd = f"cat > {remote_file} << 'CONFIGEOF'\n{content}\nCONFIGEOF"
+                result = await client.run_async(cmd, timeout=30)
+
+                if result.returncode == 0:
+                    logger.info(f"[{node.name}] Synced {config_file}")
+                    synced_files.append(config_file)
+                else:
+                    logger.warning(f"[{node.name}] Failed to sync {config_file}: {result.stderr}")
+                    failed_files.append(config_file)
+
+            except Exception as e:
+                logger.error(f"[{node.name}] Error syncing {config_file}: {e}")
+                failed_files.append(config_file)
+
+        if failed_files:
+            return (False, f"Config sync partial: {len(synced_files)} OK, {len(failed_files)} failed")
+        elif synced_files:
+            return (True, f"Config synced: {', '.join(synced_files)}")
+        else:
+            return (True, "No config files to sync")
+
     async def _save_batch_checkpoint(
         self,
         batch: UpdateBatch,
@@ -483,6 +554,7 @@ class QuorumSafeUpdateCoordinator:
         target_commit: str,
         restart_p2p: bool,
         dry_run: bool,
+        sync_config: bool = False,
     ) -> tuple[str, bool, str]:
         """Update a single node.
 
@@ -502,6 +574,8 @@ class QuorumSafeUpdateCoordinator:
 
             if dry_run:
                 msg = f"DRY-RUN: Would update {node.ringrift_path}"
+                if sync_config:
+                    msg += " and sync config"
                 if p2p_was_running and restart_p2p:
                     msg += " and restart P2P"
                 return (node.name, True, msg)
@@ -523,6 +597,15 @@ class QuorumSafeUpdateCoordinator:
                 timeout=10,
             )
             current_commit = verify.stdout.strip() if verify.returncode == 0 else "unknown"
+
+            # Sync config files if requested (for files in .gitignore)
+            config_sync_msg = ""
+            if sync_config:
+                sync_success, sync_msg = await self._sync_config_files(client, node, dry_run)
+                if sync_success:
+                    config_sync_msg = f", {sync_msg}"
+                else:
+                    config_sync_msg = f", {sync_msg}"
 
             # Restart P2P if needed
             if p2p_was_running and restart_p2p:
@@ -563,11 +646,11 @@ class QuorumSafeUpdateCoordinator:
                 await asyncio.sleep(3)
 
                 if await self._check_p2p_running(client, node.name):
-                    return (node.name, True, f"Updated to {current_commit}, P2P restarted")
+                    return (node.name, True, f"Updated to {current_commit}{config_sync_msg}, P2P restarted")
                 else:
-                    return (node.name, True, f"Updated to {current_commit}, P2P restart failed")
+                    return (node.name, True, f"Updated to {current_commit}{config_sync_msg}, P2P restart failed")
 
-            return (node.name, True, f"Updated to {current_commit}")
+            return (node.name, True, f"Updated to {current_commit}{config_sync_msg}")
 
         except Exception as e:
             logger.error(f"[{node.name}] Update error: {e}")
@@ -579,6 +662,7 @@ class QuorumSafeUpdateCoordinator:
         target_commit: str,
         restart_p2p: bool,
         dry_run: bool,
+        sync_config: bool = False,
     ) -> list[tuple[str, bool, str]]:
         """Update all nodes in a batch.
 
@@ -592,7 +676,7 @@ class QuorumSafeUpdateCoordinator:
             async def update_with_semaphore(node: NodeConfig):
                 async with semaphore:
                     return await self._update_single_node(
-                        node, target_commit, restart_p2p, dry_run
+                        node, target_commit, restart_p2p, dry_run, sync_config
                     )
 
             tasks = [update_with_semaphore(n) for n in batch.nodes]
@@ -602,7 +686,7 @@ class QuorumSafeUpdateCoordinator:
             results = []
             for node in batch.nodes:
                 result = await self._update_single_node(
-                    node, target_commit, restart_p2p, dry_run
+                    node, target_commit, restart_p2p, dry_run, sync_config
                 )
                 results.append(result)
             return results
@@ -776,7 +860,7 @@ class QuorumSafeUpdateCoordinator:
 
             # Update batch
             batch_results = await self._update_batch(
-                batch, target_commit, restart_p2p, dry_run
+                batch, target_commit, restart_p2p, dry_run, self._sync_config
             )
 
             # Process results

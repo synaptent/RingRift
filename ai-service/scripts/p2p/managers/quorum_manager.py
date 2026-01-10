@@ -246,7 +246,17 @@ class QuorumManager:
 
             data = yaml.safe_load(cfg_path.read_text()) or {}
             hosts = data.get("hosts", {}) or {}
-        except Exception:
+        except ImportError:
+            # yaml module not available
+            return {}
+        except (OSError, IOError):
+            # File read error
+            return {}
+        except yaml.YAMLError:
+            # Malformed YAML
+            return {}
+        except (TypeError, KeyError, AttributeError):
+            # Unexpected data structure
             return {}
 
         voter_ip_map: dict[str, set[str]] = {}
@@ -285,7 +295,17 @@ class QuorumManager:
 
             data = yaml.safe_load(cfg_path.read_text()) or {}
             hosts = data.get("hosts", {}) or {}
-        except Exception:
+        except ImportError:
+            # yaml module not available
+            return {}
+        except (OSError, IOError):
+            # File read error
+            return {}
+        except yaml.YAMLError:
+            # Malformed YAML
+            return {}
+        except (TypeError, KeyError, AttributeError):
+            # Unexpected data structure
             return {}
 
         ip_to_node: dict[str, str] = {}

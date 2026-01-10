@@ -273,9 +273,11 @@ class TestApplyVelocityAmplification:
             base_params, elo_velocity=0.8, velocity_trend="accelerating"
         )
 
-        # With velocity 0.8 (0.5-1.0 range), base LR is 0.8
-        # Then accelerating adds 1.05x
-        expected_lr = 0.8 * 1.05
+        # With velocity 0.8 (0.5-1.0 range), no primary adjustment applies
+        # - velocity is not > 2.0 (fast) or > 1.0 (good)
+        # - velocity is not < 0.5 (slow) or < 0.0 (regression)
+        # So base LR stays at 1.0, then accelerating adds 1.05x
+        expected_lr = 1.0 * 1.05
         assert abs(lr_mult - expected_lr) < 0.01
 
     def test_plateauing_trend_boosts_epochs(self):
@@ -297,9 +299,11 @@ class TestApplyVelocityAmplification:
             base_params, elo_velocity=0.8, velocity_trend="decelerating"
         )
 
-        # With velocity 0.8 (0.5-1.0 range), base LR is 0.8
-        # Then decelerating reduces by 0.95x
-        expected_lr = 0.8 * 0.95
+        # With velocity 0.8 (0.5-1.0 range), no primary adjustment applies
+        # - velocity is not > 2.0 (fast) or > 1.0 (good)
+        # - velocity is not < 0.5 (slow) or < 0.0 (regression)
+        # So base LR stays at 1.0, then decelerating reduces by 0.95x
+        expected_lr = 1.0 * 0.95
         assert abs(lr_mult - expected_lr) < 0.01
 
     def test_clamp_epochs_minimum(self):
@@ -367,10 +371,11 @@ class TestApplyVelocityAmplification:
             base_params, elo_velocity=0.8, velocity_trend="stable"
         )
 
-        # Velocity 0.8 is in 0.5-1.0 range, so LR gets 0.8x
+        # Velocity 0.8 is in 0.5-1.0 range - no primary adjustment applies
+        # stable trend doesn't adjust, so LR stays at 1.0
         assert epochs == 50
         assert batch_size == 512
-        assert abs(lr_mult - 0.8) < 0.01
+        assert abs(lr_mult - 1.0) < 0.01
 
     def test_unknown_trend_no_adjustment(self):
         """Unknown trend should not cause error."""
