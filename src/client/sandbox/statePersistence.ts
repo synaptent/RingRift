@@ -319,6 +319,13 @@ function validateScenario(data: unknown): ScenarioValidationResult {
         ? (fixture.description as string)
         : `Imported sandbox fixture (phase ${currentPhase ?? 'unknown'})`;
 
+    // Use the fixture's actual state if present, otherwise fall back to initial state.
+    // The fixture's state contains the current game position (e.g., mid-chain-capture),
+    // while initialSerializedState is a blank starting position.
+    const stateToUse = serializedState
+      ? (serializedState as LoadableScenario['state'])
+      : (initialSerializedState as LoadableScenario['state']);
+
     const scenario: LoadableScenario = {
       id: `imported_${Date.now()}_${baseId}`,
       name,
@@ -329,12 +336,11 @@ function validateScenario(data: unknown): ScenarioValidationResult {
       playerCount,
       createdAt: new Date().toISOString(),
       source: 'custom',
-      state: initialSerializedState as LoadableScenario['state'],
+      state: stateToUse,
       selfPlayMeta: {
         dbPath: 'sandbox_fixture',
         gameId: baseId,
         totalMoves: fixtureMoves.length,
-
         moves: fixtureMoves as any[],
       },
     };
