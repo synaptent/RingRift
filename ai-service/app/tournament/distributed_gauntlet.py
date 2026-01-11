@@ -558,6 +558,7 @@ class DistributedNNGauntlet:
 
         # Aggregate results and update Elo
         self._aggregate_results(results)
+        await self._update_elo_from_results(config_key, results)
 
         # Mark complete
         self._current_run.completed_at = time.time()
