@@ -1164,6 +1164,12 @@ export class ClientSandboxEngine {
               currentPhase: 'movement',
             };
 
+            // RR-FIX-2026-01-11: Reset _selectedStackKey to placement position before
+            // calling handleMovementClick. Exploratory clicks during ring_placement
+            // (at line 1188) may have changed _selectedStackKey to a different position,
+            // causing handleMovementClick to look for moves from the wrong stack.
+            this._selectedStackKey = this._placementPositionThisTurn;
+
             // Apply the movement move
             this._movementInvocationContext = 'human';
             try {
