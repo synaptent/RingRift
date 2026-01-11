@@ -4045,11 +4045,13 @@ class P2POrchestrator(
                 elif hasattr(manager, "health_check"):
                     health = manager.health_check()
                     # Handle both dict and HealthCheckResult return types
+                    # Jan 2026: Fixed to accept "running" status from managers (CoordinatorStatus.RUNNING)
+                    healthy_statuses = ("healthy", "ready", "running")
                     if hasattr(health, "status"):
-                        is_healthy = str(health.status).lower() in ("healthy", "ready")
+                        is_healthy = str(health.status).lower() in healthy_statuses
                         health_status = str(health.status)
                     else:
-                        is_healthy = health.get("status") == "healthy"
+                        is_healthy = health.get("status") in healthy_statuses
                         health_status = health.get("status", "unknown")
                     status["managers"][name] = {
                         "status": health_status,
@@ -4072,7 +4074,7 @@ class P2POrchestrator(
         if status["all_healthy"]:
             logger.info(f"[P2P] Manager health: all {manager_count} managers healthy ✓")
         else:
-            unhealthy = [n for n, s in status["managers"].items() if s.get("status") not in ("healthy", "initialized", "ready")]
+            unhealthy = [n for n, s in status["managers"].items() if s.get("status") not in ("healthy", "initialized", "ready", "running")]
             logger.warning(f"[P2P] Manager health: {len(unhealthy)}/{manager_count} unhealthy: {unhealthy}")
 
         return status
