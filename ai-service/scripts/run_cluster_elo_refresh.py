@@ -186,13 +186,15 @@ async def run_evaluation_games(
                 check_baseline_gating=False,  # Skip gating for refresh
             )
             # Extract RANDOM-specific results from the gauntlet result
-            if hasattr(result, 'opponent_results') and BaselineOpponent.RANDOM in result.opponent_results:
-                opp_result = result.opponent_results[BaselineOpponent.RANDOM]
-                random_results["wins"] = opp_result.wins
-                random_results["losses"] = opp_result.losses
+            # opponent_results uses string keys like "random", "heuristic"
+            if hasattr(result, 'opponent_results') and "random" in result.opponent_results:
+                opp_result = result.opponent_results["random"]
+                random_results["wins"] = opp_result.get("wins", 0)
+                random_results["losses"] = opp_result.get("losses", 0)
             else:
-                random_results["wins"] = result.wins
-                random_results["losses"] = result.losses
+                # Fall back to total counts
+                random_results["wins"] = getattr(result, 'total_wins', 0)
+                random_results["losses"] = getattr(result, 'total_losses', 0)
             logger.info(f"  vs Random: {random_results['wins']}/{games_vs_random} wins")
         except Exception as e:
             logger.warning(f"  vs Random failed: {e}")
@@ -213,13 +215,15 @@ async def run_evaluation_games(
                 check_baseline_gating=False,  # Skip gating for refresh
             )
             # Extract HEURISTIC-specific results from the gauntlet result
-            if hasattr(result, 'opponent_results') and BaselineOpponent.HEURISTIC in result.opponent_results:
-                opp_result = result.opponent_results[BaselineOpponent.HEURISTIC]
-                heuristic_results["wins"] = opp_result.wins
-                heuristic_results["losses"] = opp_result.losses
+            # opponent_results uses string keys like "random", "heuristic"
+            if hasattr(result, 'opponent_results') and "heuristic" in result.opponent_results:
+                opp_result = result.opponent_results["heuristic"]
+                heuristic_results["wins"] = opp_result.get("wins", 0)
+                heuristic_results["losses"] = opp_result.get("losses", 0)
             else:
-                heuristic_results["wins"] = result.wins
-                heuristic_results["losses"] = result.losses
+                # Fall back to total counts
+                heuristic_results["wins"] = getattr(result, 'total_wins', 0)
+                heuristic_results["losses"] = getattr(result, 'total_losses', 0)
             logger.info(f"  vs Heuristic: {heuristic_results['wins']}/{games_vs_heuristic} wins")
         except Exception as e:
             logger.warning(f"  vs Heuristic failed: {e}")
