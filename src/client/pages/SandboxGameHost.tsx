@@ -54,7 +54,9 @@ import {
   Position,
   positionToString,
   TimeControl,
+  RingEliminationChoice,
 } from '../../shared/types/game';
+import { enumerateTerritoryEliminationMoves } from '../../shared/engine';
 import { useAuth } from '../contexts/AuthContext';
 import { useAccessibility } from '../contexts/AccessibilityContext';
 import { useSandbox, LocalConfig, LocalPlayerType } from '../contexts/SandboxContext';
@@ -1188,6 +1190,128 @@ export const SandboxGameHost: React.FC = () => {
       }
     }
   }, [sandboxEngine, sandboxGameState, validTargets.length, setSelected, setValidTargets]);
+
+  // RR-FIX-2026-01-11: Derive ring_elimination choice from game state when needed.
+  // This handles the case where a game state is loaded (fixture, replay, etc.) and the
+  // UI needs to show elimination highlights without the engine having actively called
+  // requestChoice(). When:
+  // 1. We're in territory_processing phase
+  // 2. The last move was choose_territory_option (mandatory elimination pending)
+  // 3. No sandboxPendingChoice is currently set
+  // Then we derive and set a RingEliminationChoice to trigger the visual highlights.
+  useEffect(() => {
+    // Only derive if we don't already have a pending choice
+    if (sandboxPendingChoice) {
+      return;
+    }
+
+    if (
+      !sandboxGameState ||
+      sandboxGameState.gameStatus !== 'active' ||
+      sandboxGameState.currentPhase !== 'territory_processing'
+    ) {
+      return;
+    }
+
+    // Check if the last move was choose_territory_option (indicating pending elimination)
+    const moveHistory = sandboxGameState.moveHistory;
+    if (moveHistory.length === 0) {
+      return;
+    }
+
+    const lastMove = moveHistory[moveHistory.length - 1];
+    if (lastMove.type !== 'choose_territory_option') {
+      return;
+    }
+
+    // Verify the last move was by the current player
+    if (lastMove.player !== sandboxGameState.currentPlayer) {
+      return;
+    }
+
+    // Derive elimination moves from the game state
+    const currentPlayer = sandboxGameState.currentPlayer;
+    const eliminationMoves = enumerateTerritoryEliminationMoves(sandboxGameState, currentPlayer);
+
+    if (eliminationMoves.length === 0) {
+      return;
+    }
+
+    // Determine elimination context (territory vs recovery)
+    let territoryEliminationContext: 'territory' | 'recovery' = 'territory';
+    for (let i = moveHistory.length - 1; i >= 0; i--) {
+      const move = moveHistory[i];
+      if (move.player !== currentPlayer) {
+        break;
+      }
+      if (move.type === 'recovery_slide') {
+        territoryEliminationContext = 'recovery';
+        break;
+      }
+    }
+
+    // Build descriptive prompt from the processed region
+    const regionSpaces = lastMove.disconnectedRegions?.[0]?.spaces ?? [];
+    const spacesList = regionSpaces
+      .slice(0, 4)
+      .map((p) => `(${p.x},${p.y})`)
+      .join(', ');
+    const truncated = regionSpaces.length > 4 ? ` +${regionSpaces.length - 4} more` : '';
+    const territoryPrompt =
+      territoryEliminationContext === 'recovery'
+        ? `Territory claimed at ${spacesList}${truncated}. You must extract ONE buried ring from a stack outside the region.`
+        : `Territory claimed at ${spacesList}${truncated}. You must eliminate your ENTIRE CAP from an eligible stack outside the region.`;
+
+    // Build the RingEliminationChoice
+    const choice: RingEliminationChoice = {
+      id: `derived-territory-elim-${Date.now()}`,
+      gameId: sandboxGameState.id,
+      playerNumber: currentPlayer,
+      type: 'ring_elimination',
+      eliminationContext: territoryEliminationContext,
+      prompt: territoryPrompt,
+      options: eliminationMoves.map((opt: Move) => {
+        const pos = opt.to as Position;
+        const key = positionToString(pos);
+        const stack = sandboxGameState.board.stacks.get(key);
+
+        const capHeight =
+          (opt.eliminationFromStack && opt.eliminationFromStack.capHeight) ||
+          (stack ? stack.capHeight : 1);
+        const totalHeight =
+          (opt.eliminationFromStack && opt.eliminationFromStack.totalHeight) ||
+          (stack ? stack.stackHeight : capHeight || 1);
+
+        const ringsToEliminate =
+          typeof opt.eliminatedRings?.[0]?.count === 'number'
+            ? opt.eliminatedRings[0].count
+            : capHeight;
+
+        return {
+          stackPosition: pos,
+          capHeight,
+          totalHeight,
+          ringsToEliminate,
+          moveId: opt.id || key,
+        };
+      }),
+    };
+
+    // eslint-disable-next-line no-console
+    console.log('[SandboxGameHost] Derived ring_elimination choice from game state:', {
+      phase: sandboxGameState.currentPhase,
+      lastMoveType: lastMove.type,
+      choiceId: choice.id,
+      optionsCount: choice.options.length,
+      options: choice.options.map((opt) => ({
+        stackPosition: opt.stackPosition,
+        capHeight: opt.capHeight,
+        ringsToEliminate: opt.ringsToEliminate,
+      })),
+    });
+
+    setSandboxPendingChoice(choice);
+  }, [sandboxGameState, sandboxPendingChoice, setSandboxPendingChoice]);
 
   // RR-FIX-2026-01-11: Initialize targets when in decision phases.
   // This handles:
