@@ -1023,32 +1023,35 @@ export const BoardView: React.FC<BoardViewProps> = ({
       const gap = 2; // gap between cells
 
       // Calculate natural board dimensions based on actual CSS cell sizes
-      // These must match what the board actually renders at scale=1.0
-      // Coordinate labels use negative positioning (-24px) so we need extra buffer
-      // Board-specific buffers and scale multipliers for visual tuning
+      // Calibrated using diagnostics: target ~15px extra space (like sq19)
+      // Diagnostics showed: sq8 had 81px extra, hex8 had 115px extra, hexagonal had 62px extra
       if (effectiveBoardType === 'square8') {
-        // Use smaller cell size (72px instead of 80px) to make board 10% smaller naturally
+        // Cell size 72px (10% smaller than original 80px)
         const cellSize = isDesktop ? 72 : 40;
-        const labelBuffer = 20; // Minimal buffer - grid gap handles label spacing
+        // Reduced from 110 to 40 (was 81px over, reduce by ~70px)
+        const labelBuffer = 40;
         naturalWidth = 8 * cellSize + 7 * gap + labelBuffer;
         naturalHeight = 8 * cellSize + 7 * gap + labelBuffer;
       } else if (effectiveBoardType === 'square19') {
         const cellSize = isDesktop ? 56 : 44;
-        const labelBuffer = 30; // Minimal buffer - grid gap handles label spacing
+        // sq19 is calibrated well - only 13px extra
+        const labelBuffer = 35;
         naturalWidth = 19 * cellSize + 18 * gap + labelBuffer;
         naturalHeight = 19 * cellSize + 18 * gap + labelBuffer;
       } else if (effectiveBoardType === 'hex8') {
-        // Hex8 board (radius 4): needs more space for hexagonal layout
+        // Hex8 board (radius 4)
+        // Diagnostics: board 585x538, wrapper 621x582 (68px gap, too large)
+        // Target: ~600x555 wrapper, with 1.30 scale: naturalWidth = 600/1.30 = 462
         const cellSize = isDesktop ? 48 : 44;
-        const labelBuffer = 20;
-        naturalWidth = 9 * cellSize * 1.2 + labelBuffer;
-        naturalHeight = 9 * cellSize * 1.1 + labelBuffer;
+        naturalWidth = 9 * cellSize * 1.0 + 30; // ~462
+        naturalHeight = 9 * cellSize * 0.93 + 25; // ~427
       } else {
-        // Hexagonal board (radius 12): large hex grid
+        // Hexagonal board (radius 12)
+        // Diagnostics: board 675x619, wrapper 674x620 (1px overflow)
+        // Add small buffer to prevent overflow
         const cellSize = isDesktop ? 48 : 44;
-        const labelBuffer = 20;
-        naturalWidth = 25 * cellSize * 1.1 + labelBuffer;
-        naturalHeight = 25 * cellSize * 1.0 + labelBuffer;
+        naturalWidth = 25 * cellSize * 1.0 + 20; // ~1220, slight extra for safety
+        naturalHeight = 25 * cellSize * 0.92 + 15; // ~1115 for full hex
       }
 
       // Calculate available space for the board
@@ -1083,17 +1086,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
 
       setBoardScale(finalScale);
 
-      // Container dimensions based on containerScale (without shrink factor)
-      // This keeps the container large enough for coordinate labels
+      // Container dimensions - always use scaled dimensions to match board transform
+      // This ensures container matches the visual size of the transformed board
       const scaledWidth = Math.ceil(naturalWidth * containerScale);
       const scaledHeight = Math.ceil(naturalHeight * containerScale);
-
-      if (containerScale < 0.99) {
-        setScaledDimensions({ width: scaledWidth, height: scaledHeight });
-      } else {
-        // At scale 1.0, use natural dimensions for the wrapper
-        setScaledDimensions({ width: Math.ceil(naturalWidth), height: Math.ceil(naturalHeight) });
-      }
+      setScaledDimensions({ width: scaledWidth, height: scaledHeight });
     };
 
     calculateScale();
