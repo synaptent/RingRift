@@ -496,8 +496,8 @@ class TrainConfig:
     warmup_epochs: int = 1  # LR warmup for training stability
     lr_scheduler: str = "cosine"  # Options: 'none', 'step', 'cosine', 'cosine-warm-restarts'
     lr_min: float = 1e-6  # Minimum LR for cosine annealing
-    early_stopping_patience: int = 25  # Epochs without loss improvement before stopping (0=disabled) - was 5, too aggressive
-    elo_early_stopping_patience: int = 25  # Epochs without Elo improvement before stopping (0=disabled) - was 10
+    early_stopping_patience: int = 7  # Epochs without loss improvement before stopping (0=disabled) - Jan 2026: 25 was too lenient, causing severe overfitting
+    elo_early_stopping_patience: int = 10  # Epochs without Elo improvement before stopping (0=disabled)
     elo_min_improvement: float = 5.0  # Minimum Elo gain to reset patience counter
 
     # Policy label smoothing: mix targets with uniform distribution for regularization
