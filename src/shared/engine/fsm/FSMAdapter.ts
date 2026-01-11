@@ -2007,30 +2007,12 @@ export function computeFSMOrchestration(
     }
   }
 
-  // Post-transition adjustment for territory processing: The pure FSM expects
-  // a two-step process (PROCESS_REGION then ELIMINATE_FROM_STACK for internal
-  // eliminations), but the game engine's choose_territory_option move handles
-  // internal eliminations atomically. If the FSM stays in territory_processing
-  // after a choose_territory_option move,
-  // transition to turn_end because:
-  // 1. The game engine atomically processes the region (including internal eliminations)
-  // 2. The orchestrator will surface another pending decision if more regions exist
-  // 3. The FSM can't accurately predict whether more regions exist post-move
-  if (move.type === 'choose_territory_option' && nextState.phase === 'territory_processing') {
-    // Always transition to turn_end after choose_territory_option
-    // The orchestrator handles surfacing additional region decisions if needed
-    // Use computeNextNonEliminatedPlayer to skip permanently eliminated players (RR-CANON-R201)
-    const computedNextPlayer = computeNextNonEliminatedPlayer(
-      gameState,
-      move.player,
-      context.numPlayers
-    );
-    nextState = {
-      phase: 'turn_end',
-      completedPlayer: move.player,
-      nextPlayer: computedNextPlayer,
-    } as TurnEndState;
-  }
+  // NOTE: We no longer force turn_end after choose_territory_option.
+  // Per RR-CANON-R145, the orchestrator now properly handles pending self-elimination
+  // decisions by returning a pendingDecision when the player must eliminate from a
+  // stack OUTSIDE the processed region. The FSM should remain in territory_processing
+  // until all eliminations are complete. Removed the automatic turn_end transition
+  // that was incorrectly assuming internal eliminations were the only eliminations.
 
   // Handle no_territory_action: this also ends the turn and advances to next player
   // The FSM may return ring_placement directly, but we need to ensure correct next player

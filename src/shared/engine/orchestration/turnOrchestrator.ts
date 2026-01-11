@@ -1635,7 +1635,17 @@ export function processTurn(
   if (needsPostMoveProcessing) {
     // Process post-move phases only for movement/capture moves, or for decision moves
     // that actually changed state, or for line-phase moves (always need phase transition check).
-    result = processPostMovePhases(stateMachine, options);
+    // RR-FIX-2026-01-10: Preserve pendingDecision from applyMoveWithChainInfo if one exists.
+    // For choose_territory_option with pendingSelfElimination, we must surface the elimination
+    // decision rather than letting processPostMovePhases overwrite it.
+    const existingPendingDecision = result.pendingDecision;
+    const postMoveResult = processPostMovePhases(stateMachine, options);
+    // Merge results, preserving existing pendingDecision if set (e.g., territory self-elimination)
+    const mergedPendingDecision = existingPendingDecision ?? postMoveResult.pendingDecision;
+    result = {
+      ...postMoveResult,
+      ...(mergedPendingDecision && { pendingDecision: mergedPendingDecision }),
+    };
 
     // DEBUG: Trace stacks after processPostMovePhases for choose_line_option
     if (process.env.RINGRIFT_TRACE_DEBUG === '1' && move.type === 'choose_line_option') {
