@@ -1028,18 +1028,19 @@ export const BoardView: React.FC<BoardViewProps> = ({
       if (effectiveBoardType === 'square8') {
         // Cell size 72px (10% smaller than original 80px)
         const cellSize = isDesktop ? 72 : 40;
-        // Reduced buffer since overflow:visible now allows labels to extend outside
-        const labelBuffer = 15;
+        // Buffer for coordinate labels + padding. Increased from 15 to 45 to reduce
+        // board overflow into panel space (was -11px overlap, user wanted less overlap)
+        const labelBuffer = 45;
         naturalWidth = 8 * cellSize + 7 * gap + labelBuffer;
         naturalHeight = 8 * cellSize + 7 * gap + labelBuffer;
       } else if (effectiveBoardType === 'square19') {
         const cellSize = isDesktop ? 56 : 44;
-        // Use NEGATIVE buffer to create overflow (like sq8) so board overlaps into panel space
-        // This creates the tight layout with minimal gap between board and bottom panel
-        // -15 creates ~25px overflow without excessive sidebar intrusion
-        const labelBuffer = -15;
-        naturalWidth = 19 * cellSize + 18 * gap + labelBuffer;
-        naturalHeight = 19 * cellSize + 18 * gap + labelBuffer;
+        // Board is full-size (internal scale-75 was removed), so calculate actual dimensions:
+        // 19 cells + 18 gaps (space-y-0.5 = 2px) + padding (p-2 = 8px each side) + coord labels
+        const gridSize = 19 * cellSize + 18 * gap; // 1064 + 36 = 1100
+        const labelBuffer = 40; // Space for coordinate labels outside grid
+        naturalWidth = gridSize + labelBuffer;
+        naturalHeight = gridSize + labelBuffer;
       } else if (effectiveBoardType === 'hex8') {
         // Hex8 board (radius 4)
         // Diagnostics 2026-01-11: board 585x538, wrapper 562x534 (23px width overflow)
@@ -1071,10 +1072,11 @@ export const BoardView: React.FC<BoardViewProps> = ({
       const fitScale = Math.min(scaleX, scaleY);
 
       // Board-specific scale multipliers for visual tuning
-      // sq19 and hex8 appear 30% too small, so multiply by 1.30
+      // hex8 appears 30% too small, so multiply by 1.30
+      // sq19 is now full-size (internal scale-75 removed), so no multiplier needed
       const scaleMultipliers: Record<string, number> = {
         square8: 1.0,
-        square19: 1.3,
+        square19: 1.0,
         hex8: 1.3,
         hexagonal: 1.0,
       };
@@ -1865,13 +1867,18 @@ export const BoardView: React.FC<BoardViewProps> = ({
           }
         }
 
+        // Suppress move-destination pulse when elimination or territory decisions are active
+        // so the user focuses on the decision targets rather than the prior move
+        const suppressMoveDestinationPulse =
+          isRingEliminationDecisionContext || isTerritoryRegionDecisionContext;
+
         const cellClasses = [
           'relative border flex items-center justify-center text-[11px] md:text-xs rounded-sm',
           squareCellSizeClasses,
           'border-slate-600 text-slate-900',
           territoryClasses || baseSquareBg,
           decisionHighlightClass,
-          isMoveDestination ? 'move-destination-pulse' : '',
+          isMoveDestination && !suppressMoveDestinationPulse ? 'move-destination-pulse' : '',
           shouldPulseCaptureLanding ? 'decision-pulse-capture' : '',
           shouldPulseCaptureTarget ? 'capture-target-pulse' : '',
           shouldPulseEliminationTarget ? 'decision-pulse-elimination' : '',
@@ -1881,7 +1888,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
           // Valid target highlighting on square boards: thin, bright-green inset
           // ring plus a deeper emerald tint that reads clearly even over the
           // dark board container background. Also apply noticeable pulse animation.
-          effectiveIsValid
+          // Suppress when elimination or territory decisions are active to avoid distraction.
+          effectiveIsValid && !suppressMoveDestinationPulse
             ? 'outline outline-[2px] outline-emerald-400/95 outline-offset-[-4px] bg-emerald-100/90 valid-move-cell valid-move-cell-square'
             : '',
           // Invalid move shake animation
@@ -2094,10 +2102,13 @@ export const BoardView: React.FC<BoardViewProps> = ({
         </div>
       );
     }
+    // Note: sq19 previously had scale-75 here but that's now handled by the outer
+    // scaling wrapper (scaledDimensions + boardScale). Removed to prevent double-scaling
+    // which caused extra empty space within the board container.
     const containerClasses =
       boardType === 'square8'
         ? 'relative space-y-1 bg-slate-800/60 p-2 rounded-md border border-slate-700 shadow-inner inline-block'
-        : 'relative space-y-0.5 bg-slate-800/60 p-2 rounded-md border border-slate-700 shadow-inner inline-block scale-75 origin-top-left';
+        : 'relative space-y-0.5 bg-slate-800/60 p-2 rounded-md border border-slate-700 shadow-inner inline-block';
 
     return (
       <div
@@ -2267,12 +2278,17 @@ export const BoardView: React.FC<BoardViewProps> = ({
         // Using rounded-full for hex shape appearance
         const hexCellSizeClasses = 'w-11 h-11 md:w-12 md:h-12'; // 44px → 48px
 
+        // Suppress move-destination and valid-target pulse when elimination or territory decisions
+        // are active so the user focuses on the decision targets rather than the prior move
+        const suppressMoveDestinationPulseHex =
+          isRingEliminationDecisionContext || isTerritoryRegionDecisionContext;
+
         const cellClasses = [
           `relative ${hexCellSizeClasses} mx-0 flex items-center justify-center text-[11px] md:text-xs rounded-full border`,
           'border-slate-600 text-slate-100',
           territoryClasses,
           decisionHighlightClass,
-          isMoveDestination ? 'move-destination-pulse' : '',
+          isMoveDestination && !suppressMoveDestinationPulseHex ? 'move-destination-pulse' : '',
           decisionHighlight === 'primary' && isCaptureDirectionDecisionContext
             ? 'decision-pulse-capture'
             : '',
@@ -2282,7 +2298,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
           ...territoryRegionClassesHex,
           effectiveIsSelected ? 'ring-2 ring-emerald-400 ring-offset-2 ring-offset-slate-950' : '',
           // Valid target highlighting with subtle pulse animation
-          effectiveIsValid
+          // Suppress when elimination or territory decisions are active to avoid distraction.
+          effectiveIsValid && !suppressMoveDestinationPulseHex
             ? 'outline outline-[2px] outline-emerald-300/90 outline-offset-[-4px] bg-emerald-400/[0.03] valid-move-cell'
             : '',
           // Invalid move shake animation
