@@ -107,11 +107,22 @@ def get_cluster_nodes() -> list[dict]:
             config = yaml.safe_load(f)
 
         nodes = []
-        for node_id, node_config in config.get("nodes", {}).items():
-            if node_config.get("status") != "active":
+        # Note: YAML uses "hosts:" key, not "nodes:"
+        hosts = config.get("hosts", {})
+        if not hosts:
+            logger.warning("No 'hosts' key found in distributed_hosts.yaml")
+            return []
+
+        for node_id, node_config in hosts.items():
+            # Accept both "active" and "ready" status
+            status = node_config.get("status", "")
+            if status not in ("active", "ready"):
                 continue
             # Skip local/coordinator nodes
-            if node_id in ("local-mac", "mac-studio"):
+            if node_id in ("local-mac", "mac-studio", "macbook-pro-3", "macbook-pro-4"):
+                continue
+            # Skip proxy-only nodes
+            if node_config.get("role") == "proxy":
                 continue
 
             # Determine path based on provider
@@ -130,6 +141,7 @@ def get_cluster_nodes() -> list[dict]:
                     "path": path,
                 })
 
+        logger.info(f"Found {len(nodes)} cluster nodes")
         return nodes
     except Exception as e:
         logger.error(f"Error loading cluster config: {e}")

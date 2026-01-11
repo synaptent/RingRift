@@ -1136,6 +1136,15 @@ export function deriveBoardDecisionHighlights(
     case 'ring_elimination': {
       // Each option exposes a concrete stackPosition; highlight all such
       // stacks as primary candidates.
+      // RR-DEBUG-2026-01-10: Log ring elimination options for debugging
+      // eslint-disable-next-line no-console
+      console.log('[deriveBoardDecisionHighlights] ring_elimination options:', {
+        optionsCount: pendingChoice.options?.length ?? 0,
+        options: pendingChoice.options?.map((opt) => ({
+          stackPosition: opt.stackPosition,
+          positionKey: opt.stackPosition ? positionToString(opt.stackPosition) : null,
+        })),
+      });
       for (const option of pendingChoice.options) {
         pushPosition(option.stackPosition, 'primary');
       }

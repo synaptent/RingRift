@@ -354,6 +354,18 @@ export const SandboxGameHost: React.FC = () => {
             setSandboxCaptureChoice(choice);
             setSandboxCaptureTargets(targets);
           } else {
+            // RR-DEBUG-2026-01-10: Log pending choice for territory elimination debugging
+            // eslint-disable-next-line no-console
+            console.log('[SandboxInteractionHandler] Setting sandboxPendingChoice:', {
+              choiceType: choice.type,
+              choiceId: choice.id,
+              playerNumber: choice.playerNumber,
+              optionsCount: (choice as any).options?.length ?? 0,
+              options: (choice as any).options?.map((opt: any) => ({
+                stackPosition: opt.stackPosition,
+                regionId: opt.regionId,
+              })),
+            });
             setSandboxPendingChoice(choice);
           }
 
@@ -1159,6 +1171,22 @@ export const SandboxGameHost: React.FC = () => {
     sandboxGameState && activePendingChoice
       ? deriveBoardDecisionHighlights(sandboxGameState, activePendingChoice)
       : undefined;
+
+  // RR-DEBUG-2026-01-10: Log decision highlights for territory elimination debugging
+  React.useEffect(() => {
+    if (activePendingChoice?.type === 'ring_elimination') {
+      // eslint-disable-next-line no-console
+      console.log('[SandboxGameHost] Ring elimination decision state:', {
+        hasGameState: !!sandboxGameState,
+        activePendingChoiceType: activePendingChoice?.type,
+        activePendingChoiceId: activePendingChoice?.id,
+        optionsCount: (activePendingChoice as any)?.options?.length ?? 0,
+        baseDecisionHighlightsChoiceKind: baseDecisionHighlights?.choiceKind,
+        baseDecisionHighlightsCount: baseDecisionHighlights?.highlights?.length ?? 0,
+        highlightPositions: baseDecisionHighlights?.highlights?.map((h) => h.positionKey),
+      });
+    }
+  }, [activePendingChoice, sandboxGameState, baseDecisionHighlights]);
 
   // Merge transient line highlights into the decision highlight model so
   // recently-collapsed lines receive a brief visual cue even when no

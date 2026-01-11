@@ -2969,6 +2969,21 @@ export class ClientSandboxEngine {
                 }),
               };
 
+              // RR-DEBUG-2026-01-10: Log territory elimination choice for debugging
+              // eslint-disable-next-line no-console
+              console.log('[ClientSandboxEngine] Building territory ring_elimination choice:', {
+                choiceId: choice.id,
+                playerNumber: choice.playerNumber,
+                eliminationContext: territoryEliminationContext,
+                optionsCount: choice.options.length,
+                options: choice.options.map((opt) => ({
+                  stackPosition: opt.stackPosition,
+                  capHeight: opt.capHeight,
+                  totalHeight: opt.totalHeight,
+                  ringsToEliminate: opt.ringsToEliminate,
+                })),
+              });
+
               const response = await this.interactionHandler.requestChoice(choice);
               const selectedPos = response.selectedOption?.stackPosition as Position | undefined;
 
