@@ -579,6 +579,9 @@ class EloService:
                     draws INTEGER DEFAULT 0,
                     peak_rating REAL DEFAULT 1500.0,
                     last_update REAL,
+                    -- Jan 2026: Harness tracking for composite Elo
+                    harness_type TEXT,          -- e.g., "gumbel_mcts", "minimax", "policy_only"
+                    simulation_count INTEGER,   -- e.g., 64, 200, 800, 1600
                     PRIMARY KEY (participant_id, board_type, num_players)
                 )
             """)
@@ -666,6 +669,34 @@ class EloService:
                     WHERE model_path LIKE '%canonical_%' OR model_path LIKE '%ringrift_best_%'
                 """)
                 logger.info("Migrated participants: added is_deployable column")
+
+            # January 2026: Add harness tracking columns for composite Elo
+            cursor = conn.execute("PRAGMA table_info(elo_ratings)")
+            elo_columns = {row[1] for row in cursor.fetchall()}
+            if "harness_type" not in elo_columns:
+                conn.execute("ALTER TABLE elo_ratings ADD COLUMN harness_type TEXT")
+                conn.execute("ALTER TABLE elo_ratings ADD COLUMN simulation_count INTEGER")
+                # Backfill from composite participant IDs (e.g., "model:gumbel_mcts:b800")
+                conn.execute("""
+                    UPDATE elo_ratings
+                    SET harness_type = CASE
+                        WHEN participant_id LIKE '%:gumbel_mcts:%' THEN 'gumbel_mcts'
+                        WHEN participant_id LIKE '%:minimax:%' THEN 'minimax'
+                        WHEN participant_id LIKE '%:maxn:%' THEN 'maxn'
+                        WHEN participant_id LIKE '%:policy_only:%' THEN 'policy_only'
+                        ELSE NULL
+                    END,
+                    simulation_count = CASE
+                        WHEN participant_id LIKE '%:b64' THEN 64
+                        WHEN participant_id LIKE '%:b150' THEN 150
+                        WHEN participant_id LIKE '%:b200' THEN 200
+                        WHEN participant_id LIKE '%:b800' THEN 800
+                        WHEN participant_id LIKE '%:b1600' THEN 1600
+                        ELSE NULL
+                    END
+                    WHERE participant_id LIKE '%:%'
+                """)
+                logger.info("Migrated elo_ratings: added harness_type and simulation_count columns")
 
             # Model identity tracking tables (January 2026)
             # Track model files by SHA256 hash for deduplication and alias resolution

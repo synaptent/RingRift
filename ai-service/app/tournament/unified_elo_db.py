@@ -289,6 +289,9 @@ class EloDatabase:
                 draws INTEGER DEFAULT 0,
                 rating_deviation REAL DEFAULT 350.0,
                 last_update REAL,
+                -- Jan 2026: Harness tracking for composite Elo
+                harness_type TEXT,          -- e.g., "gumbel_mcts", "minimax", "policy_only"
+                simulation_count INTEGER,   -- e.g., 64, 200, 800, 1600
                 PRIMARY KEY (participant_id, board_type, num_players)
             );
 
@@ -425,6 +428,31 @@ class EloDatabase:
             conn.execute("ALTER TABLE elo_ratings ADD COLUMN archived_at REAL")
         if "archive_reason" not in elo_cols:
             conn.execute("ALTER TABLE elo_ratings ADD COLUMN archive_reason TEXT")
+
+        # Jan 2026: Add harness tracking columns for composite Elo
+        if "harness_type" not in elo_cols:
+            conn.execute("ALTER TABLE elo_ratings ADD COLUMN harness_type TEXT")
+            conn.execute("ALTER TABLE elo_ratings ADD COLUMN simulation_count INTEGER")
+            # Backfill from composite participant IDs (e.g., "model:gumbel_mcts:b800")
+            conn.execute("""
+                UPDATE elo_ratings
+                SET harness_type = CASE
+                    WHEN participant_id LIKE '%:gumbel_mcts:%' THEN 'gumbel_mcts'
+                    WHEN participant_id LIKE '%:minimax:%' THEN 'minimax'
+                    WHEN participant_id LIKE '%:maxn:%' THEN 'maxn'
+                    WHEN participant_id LIKE '%:policy_only:%' THEN 'policy_only'
+                    ELSE NULL
+                END,
+                simulation_count = CASE
+                    WHEN participant_id LIKE '%:b64' THEN 64
+                    WHEN participant_id LIKE '%:b150' THEN 150
+                    WHEN participant_id LIKE '%:b200' THEN 200
+                    WHEN participant_id LIKE '%:b800' THEN 800
+                    WHEN participant_id LIKE '%:b1600' THEN 1600
+                    ELSE NULL
+                END
+                WHERE participant_id LIKE '%:%'
+            """)
 
         conn.commit()
 
