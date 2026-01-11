@@ -1664,7 +1664,7 @@ export const SandboxGameHost: React.FC = () => {
           }}
         />
 
-        <main className="flex flex-col lg:flex-row lg:gap-8 gap-4">
+        <main className="flex flex-col lg:flex-row lg:gap-4 gap-4">
           {/* Board Section - extracted component */}
           {sandboxBoardState && sandboxBoardViewModel && sandboxGameState && (
             <SandboxBoardSection

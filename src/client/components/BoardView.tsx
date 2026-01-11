@@ -1028,14 +1028,14 @@ export const BoardView: React.FC<BoardViewProps> = ({
       if (effectiveBoardType === 'square8') {
         // Cell size 72px (10% smaller than original 80px)
         const cellSize = isDesktop ? 72 : 40;
-        // Reduced from 110 to 40 (was 81px over, reduce by ~70px)
-        const labelBuffer = 40;
+        // Reduced buffer since overflow:visible now allows labels to extend outside
+        const labelBuffer = 15;
         naturalWidth = 8 * cellSize + 7 * gap + labelBuffer;
         naturalHeight = 8 * cellSize + 7 * gap + labelBuffer;
       } else if (effectiveBoardType === 'square19') {
         const cellSize = isDesktop ? 56 : 44;
-        // sq19 is calibrated well - only 13px extra
-        const labelBuffer = 35;
+        // Reduced buffer since overflow:visible now allows labels to extend outside
+        const labelBuffer = 15;
         naturalWidth = 19 * cellSize + 18 * gap + labelBuffer;
         naturalHeight = 19 * cellSize + 18 * gap + labelBuffer;
       } else if (effectiveBoardType === 'hex8') {
