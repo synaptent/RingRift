@@ -4950,7 +4950,8 @@ class P2POrchestrator(
                 continue
 
             # Build URL for peer
-            url = f"http://{peer_info.advertise_host}:{peer_info.advertise_port}/leader-state-change"
+            # Jan 10, 2026: Fixed - NodeInfo uses host/port, not advertise_host/advertise_port
+            url = f"http://{peer_info.host}:{peer_info.port}/leader-state-change"
             tasks.append(self._broadcast_to_peer(url, message, peer_id))
 
         if tasks:
