@@ -1028,9 +1028,9 @@ export const BoardView: React.FC<BoardViewProps> = ({
       if (effectiveBoardType === 'square8') {
         // Cell size 72px (10% smaller than original 80px)
         const cellSize = isDesktop ? 72 : 40;
-        // Buffer for coordinate labels + padding. Increased from 15 to 45 to reduce
-        // board overflow into panel space (was -11px overlap, user wanted less overlap)
-        const labelBuffer = 45;
+        // Buffer for coordinate labels + padding + panel gaps.
+        // Increased by 15px (45→60) to prevent overlap with surrounding panels.
+        const labelBuffer = 60;
         naturalWidth = 8 * cellSize + 7 * gap + labelBuffer;
         naturalHeight = 8 * cellSize + 7 * gap + labelBuffer;
       } else if (effectiveBoardType === 'square19') {
@@ -1038,7 +1038,8 @@ export const BoardView: React.FC<BoardViewProps> = ({
         // Board is full-size (internal scale-75 was removed), so calculate actual dimensions:
         // 19 cells + 18 gaps (space-y-0.5 = 2px) + padding (p-2 = 8px each side) + coord labels
         const gridSize = 19 * cellSize + 18 * gap; // 1064 + 36 = 1100
-        const labelBuffer = 40; // Space for coordinate labels outside grid
+        // Buffer increased by 15px (40→55) to prevent overlap with surrounding panels.
+        const labelBuffer = 55;
         naturalWidth = gridSize + labelBuffer;
         naturalHeight = gridSize + labelBuffer;
       } else if (effectiveBoardType === 'hex8') {
