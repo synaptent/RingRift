@@ -3,7 +3,10 @@ import { BoardView, type MoveAnimationData } from '../BoardView';
 import { VictoryConditionsPanel } from '../GameHUD';
 import type { BoardState, Position, GameState } from '../../../shared/types/game';
 import type { GameEndExplanation } from '../../../shared/engine/gameEndExplanation';
-import type { BoardViewModel } from '../../adapters/gameViewModels';
+import type {
+  BoardViewModel,
+  BoardDecisionHighlightsViewModel,
+} from '../../adapters/gameViewModels';
 import type { LocalConfig, LocalPlayerType } from '../../contexts/SandboxContext';
 import type { LoadedScenario } from '../../hooks/useSandboxScenarios';
 
@@ -86,6 +89,13 @@ export interface SandboxBoardSectionProps {
   /** Whether chain capture continuation is active */
   isChainCaptureContinuationStep: boolean;
 
+  /**
+   * Optional decision-phase highlights. When provided, passed directly to
+   * BoardView to ensure highlights are always up-to-date.
+   * RR-FIX-2026-01-11: Added to fix visual feedback for elimination targets.
+   */
+  decisionHighlights?: BoardDecisionHighlightsViewModel;
+
   // Handlers
   onCellClick: (pos: Position) => void;
   onCellDoubleClick: (pos: Position) => void;
@@ -139,6 +149,7 @@ export const SandboxBoardSection: React.FC<SandboxBoardSectionProps> = ({
   isRingEliminationChoice,
   isRegionOrderChoice,
   isChainCaptureContinuationStep,
+  decisionHighlights,
   onCellClick,
   onCellDoubleClick,
   onCellContextMenu,
@@ -309,6 +320,7 @@ export const SandboxBoardSection: React.FC<SandboxBoardSectionProps> = ({
           onAnimationComplete={isInReplayMode ? onReplayAnimationComplete : onAnimationComplete}
           chainCapturePath={isInReplayMode ? undefined : chainCapturePath}
           shakingCellKey={isInReplayMode ? null : shakingCellKey}
+          decisionHighlights={isInReplayMode ? undefined : decisionHighlights}
         />
 
         {/* Board info panel */}

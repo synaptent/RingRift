@@ -11,7 +11,12 @@ import { formatPosition, type MoveNotationOptions } from '../../shared/engine/no
 import { debugLog, isSandboxAnimationDebugEnabled } from '../../shared/utils/envFlags';
 import { computeBoardMovementGrid } from '../utils/boardMovementGrid';
 import type { MovementGrid } from '../utils/boardMovementGrid';
-import type { BoardViewModel, CellViewModel, StackViewModel } from '../adapters/gameViewModels';
+import type {
+  BoardViewModel,
+  CellViewModel,
+  StackViewModel,
+  BoardDecisionHighlightsViewModel,
+} from '../adapters/gameViewModels';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Touch Gesture Support
@@ -161,6 +166,15 @@ export interface BoardViewProps {
    * The animation is typically cleared automatically after ~400ms.
    */
   shakingCellKey?: string | null;
+  /**
+   * Optional decision-phase highlights as a direct prop, providing redundancy
+   * with viewModel.decisionHighlights. When both are set, this prop takes
+   * precedence to ensure highlights are always up-to-date even if the viewModel
+   * is stale. Used for ring_elimination, territory_region_order, line_order,
+   * and capture_direction decision contexts.
+   * RR-FIX-2026-01-11: Added to fix visual feedback for elimination targets.
+   */
+  decisionHighlights?: BoardDecisionHighlightsViewModel;
 }
 
 // Tailwind-friendly, fixed color classes per player number to avoid
@@ -628,6 +642,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   chainCapturePath,
   shakingCellKey,
   squareRankFromBottom = false,
+  decisionHighlights: decisionHighlightsProp,
 }) => {
   // Animation state tracking
   const [animations, setAnimations] = useState<AnimationState[]>([]);
@@ -673,14 +688,19 @@ export const BoardView: React.FC<BoardViewProps> = ({
     }
     return map;
   }, [viewModel]);
+
+  // RR-FIX-2026-01-11: Use direct prop with fallback to viewModel.decisionHighlights.
+  // This ensures highlights are always up-to-date even if the viewModel is stale.
+  const effectiveDecisionHighlights = decisionHighlightsProp ?? viewModel?.decisionHighlights;
+
   // Precompute a lookup map for decision highlights when provided. When
   // multiple highlights target the same cell, primary intensity wins.
   const highlightByKey = useMemo(() => {
     type HighlightMeta = { intensity: 'primary' | 'secondary'; groupIds?: string[] };
 
     const map = new Map<string, HighlightMeta>();
-    if (viewModel?.decisionHighlights) {
-      for (const h of viewModel.decisionHighlights.highlights) {
+    if (effectiveDecisionHighlights) {
+      for (const h of effectiveDecisionHighlights.highlights) {
         const existing = map.get(h.positionKey);
         if (!existing) {
           const next: HighlightMeta = {
@@ -712,19 +732,42 @@ export const BoardView: React.FC<BoardViewProps> = ({
       }
     }
     return map;
-  }, [viewModel]);
+  }, [effectiveDecisionHighlights]);
 
   // Lightweight flags indicating the current decision highlight context. These
   // are used to tailor board-level animations (line bursts, pulsing targets,
   // etc.) without leaking PlayerChoice details into the view.
-  const decisionChoiceKind = viewModel?.decisionHighlights?.choiceKind;
+  const decisionChoiceKind = effectiveDecisionHighlights?.choiceKind;
   const isLineDecisionContext =
     decisionChoiceKind === 'line_order' || decisionChoiceKind === 'line_reward';
   const isCaptureDirectionDecisionContext = decisionChoiceKind === 'capture_direction';
   const isRingEliminationDecisionContext = decisionChoiceKind === 'ring_elimination';
   const isTerritoryRegionDecisionContext = decisionChoiceKind === 'territory_region_order';
+
+  // RR-DEBUG-2026-01-11: Log decision highlight context in BoardView
+  React.useEffect(() => {
+    if (isRingEliminationDecisionContext || highlightByKey.size > 0) {
+      // eslint-disable-next-line no-console
+      console.log('[BoardView] Decision highlight state:', {
+        decisionChoiceKind,
+        isRingEliminationDecisionContext,
+        highlightByKeySize: highlightByKey.size,
+        highlightKeys: Array.from(highlightByKey.keys()),
+        hasDecisionHighlightsProp: !!decisionHighlightsProp,
+        hasViewModelHighlights: !!viewModel?.decisionHighlights,
+        effectiveHighlightsCount: effectiveDecisionHighlights?.highlights?.length ?? 0,
+      });
+    }
+  }, [
+    decisionChoiceKind,
+    isRingEliminationDecisionContext,
+    highlightByKey,
+    decisionHighlightsProp,
+    viewModel,
+    effectiveDecisionHighlights,
+  ]);
   const territoryRegionIdsInDisplayOrder =
-    viewModel?.decisionHighlights?.territoryRegions?.regionIdsInDisplayOrder ?? [];
+    effectiveDecisionHighlights?.territoryRegions?.regionIdsInDisplayOrder ?? [];
 
   // Chain capture accessibility helpers: track which cells are part of the
   // currently visualized chain path so we can expose richer aria-labels.
@@ -2260,6 +2303,19 @@ export const BoardView: React.FC<BoardViewProps> = ({
           decisionHighlight === 'primary' && isRingEliminationDecisionContext;
         const shouldPulseTerritoryRegionHex =
           decisionHighlight === 'primary' && isTerritoryRegionDecisionContext;
+
+        // RR-DEBUG-2026-01-11: Log per-cell elimination highlight state
+        if (isRingEliminationDecisionContext && (hexHighlightMeta || effectiveIsValid)) {
+          // eslint-disable-next-line no-console
+          console.log('[BoardView][Hex] Cell elimination check:', {
+            key,
+            hasHighlightMeta: !!hexHighlightMeta,
+            decisionHighlight,
+            shouldPulseEliminationTargetHex,
+            effectiveIsValid,
+            isInHighlightByKey: highlightByKey.has(key),
+          });
+        }
 
         // Track palette index for ARIA descriptions; -1 means "not assigned".
         let territoryRegionPaletteIndexHex = -1;

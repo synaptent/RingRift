@@ -111,7 +111,7 @@ class RetrainConfig:
     data_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / "games")
     models_dir: Path = field(default_factory=lambda: PROJECT_ROOT / "models" / "nnue")
     state_file: Path = field(default_factory=lambda: PROJECT_ROOT / "data" / ".auto_retrain_state.json")
-    epochs: int = 50
+    epochs: int = 20  # Jan 2026: Reduced from 50 to prevent overfitting (patience=7 will early stop)
     batch_size: int = 256
     dry_run: bool = False
 

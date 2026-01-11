@@ -10390,7 +10390,7 @@ class P2POrchestrator(
                 "--num-players", "2",
                 "--run-dir", run_dir,
                 "--data-path", data_path,
-                "--epochs", "50",
+                "--epochs", "20",  # Jan 2026: Reduced from 50 to prevent overfitting (patience=7 will early stop)
                 "--model-version", "v3",
             ]
 
@@ -15796,7 +15796,7 @@ print(json.dumps(result))
                 # Previously this was a NO-OP that just logged and returned True
                 board_type = config.get("board_type", "square8")
                 num_players = config.get("num_players", 2)
-                epochs = config.get("epochs", 50)
+                epochs = config.get("epochs", 20)  # Jan 2026: Reduced from 50 to prevent overfitting
                 batch_size = config.get("batch_size", 256)
                 learning_rate = config.get("learning_rate", 1e-3)
                 model_version = config.get("model_version", "v5")

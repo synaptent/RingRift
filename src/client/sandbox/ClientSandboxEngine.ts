@@ -979,11 +979,15 @@ export class ClientSandboxEngine {
     this.interactionHandler = interactionHandler;
 
     // 4. Reset internal per-turn state flags
-    this._hasPlacedThisTurn = false;
-    this._mustMoveFromStackKey = undefined;
-    this._selectedStackKey = undefined;
-    this._ringsPlacedThisTurn = 0;
-    this._placementPositionThisTurn = undefined;
+    // RR-FIX-2026-01-11: Sync _mustMoveFromStackKey from loaded state instead of
+    // resetting to undefined. Fixtures may represent mid-turn states where a ring
+    // was placed and movement is constrained to that position.
+    const loadedMustMove = gameState.mustMoveFromStackKey;
+    this._hasPlacedThisTurn = !!loadedMustMove;
+    this._mustMoveFromStackKey = loadedMustMove;
+    this._selectedStackKey = loadedMustMove;
+    this._ringsPlacedThisTurn = loadedMustMove ? 1 : 0;
+    this._placementPositionThisTurn = loadedMustMove;
     this._movementInvocationContext = null;
     this._lastAIMove = null;
     this._pendingLineRewardElimination = false;
@@ -1179,6 +1183,35 @@ export class ClientSandboxEngine {
             }
             return;
           }
+        }
+      }
+
+      // RR-FIX-2026-01-11: Handle movement when player has 0 rings in hand.
+      // When the player can't place rings (ringsInHand == 0), they're still in
+      // ring_placement phase but need to move. Check if they have a stack selected
+      // and are clicking on a valid landing position for that stack.
+      const player = beforeState.players.find((p) => p.playerNumber === playerNumber);
+      const canPlaceRings = player && player.ringsInHand > 0;
+      if (!canPlaceRings && this._selectedStackKey) {
+        const selectedPos = stringToPosition(this._selectedStackKey);
+        const landingPositions = this.getValidLandingPositionsForCurrentPlayer(selectedPos);
+        const isValidLanding = landingPositions.some((t) => positionsEqual(t, pos));
+
+        if (isValidLanding) {
+          // User wants to move from selected stack - transition to movement and apply
+          this.gameState = {
+            ...this.gameState,
+            currentPhase: 'movement',
+          };
+
+          // Apply the movement move
+          this._movementInvocationContext = 'human';
+          try {
+            await this.handleMovementClick(pos);
+          } finally {
+            this._movementInvocationContext = null;
+          }
+          return;
         }
       }
 

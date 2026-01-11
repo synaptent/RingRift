@@ -989,6 +989,19 @@ export const SandboxGameHost: React.FC = () => {
   const isRingEliminationChoice =
     (sandboxCaptureChoice ?? sandboxPendingChoice)?.type === 'ring_elimination';
 
+  // RR-DEBUG-2026-01-11: Log isRingEliminationChoice state
+  React.useEffect(() => {
+    if (sandboxPendingChoice?.type === 'ring_elimination' || isRingEliminationChoice) {
+      // eslint-disable-next-line no-console
+      console.log('[SandboxGameHost] isRingEliminationChoice debug:', {
+        isRingEliminationChoice,
+        sandboxPendingChoiceType: sandboxPendingChoice?.type,
+        sandboxCaptureChoiceType: sandboxCaptureChoice?.type,
+        activePendingChoiceType: (sandboxCaptureChoice ?? sandboxPendingChoice)?.type,
+      });
+    }
+  }, [isRingEliminationChoice, sandboxPendingChoice, sandboxCaptureChoice]);
+
   // When a territory region-order decision is active, surface a territory-
   // specific prompt chip so territory-processing phases receive the same
   // high-attention treatment as line-formation eliminations.
@@ -1115,9 +1128,46 @@ export const SandboxGameHost: React.FC = () => {
         );
       }
 
+      // RR-FIX-2026-01-11: Clear movement selection/targets when entering decision phases.
+      // Otherwise, leftover movement highlights from previous phase appear during
+      // line_processing/territory_processing, confusing the user.
+      const isDecisionPhase =
+        nextPhase === 'line_processing' || nextPhase === 'territory_processing';
+      if (isDecisionPhase) {
+        setSelected(undefined);
+        setValidTargets([]);
+
+        // RR-FIX-2026-01-11: Compute and display elimination targets for decision phases.
+        // After clearing old movement highlights, check if there are elimination moves
+        // available and highlight their target positions so the player knows where to click.
+        if (sandboxEngine) {
+          const currentPlayer = sandboxGameState.currentPlayer;
+          const validMoves = sandboxEngine.getValidMoves(currentPlayer);
+          const eliminationMoves = validMoves.filter(
+            (m) => m.type === 'eliminate_rings_from_stack'
+          );
+
+          if (eliminationMoves.length > 0) {
+            const eliminationTargets = eliminationMoves
+              .map((m) => m.to)
+              .filter((pos): pos is Position => pos !== undefined);
+
+            if (eliminationTargets.length > 0) {
+              // eslint-disable-next-line no-console
+              console.log('[SandboxPhaseDebug] Setting elimination targets:', {
+                phase: nextPhase,
+                targetCount: eliminationTargets.length,
+                targets: eliminationTargets.map((p) => positionToString(p)),
+              });
+              setValidTargets(eliminationTargets);
+            }
+          }
+        }
+      }
+
       lastSandboxPhaseRef.current = nextPhase;
     }
-  }, [sandboxGameState]);
+  }, [sandboxGameState, sandboxEngine, setSelected, setValidTargets]);
 
   // Initialize chain capture valid targets when loading a game directly into chain_capture phase.
   // The normal interaction handlers only set valid targets when transitioning INTO chain_capture
@@ -1138,6 +1188,104 @@ export const SandboxGameHost: React.FC = () => {
       }
     }
   }, [sandboxEngine, sandboxGameState, validTargets.length, setSelected, setValidTargets]);
+
+  // RR-FIX-2026-01-11: Initialize targets when in decision phases.
+  // This handles:
+  // 1. Loading a fixture directly into an elimination state
+  // 2. When a player makes a territory_option choice (staying in territory_processing)
+  //    that triggers elimination moves
+  // 3. When there are choose_territory_option moves - highlight the claimable territory spaces
+  // 4. RR-FIX-2026-01-11: When a ring_elimination pending choice is set, override
+  //    any stale targets (e.g., leftover territory claim targets) with elimination targets
+  useEffect(() => {
+    if (
+      sandboxEngine &&
+      sandboxGameState &&
+      sandboxGameState.gameStatus === 'active' &&
+      (sandboxGameState.currentPhase === 'territory_processing' ||
+        sandboxGameState.currentPhase === 'line_processing')
+    ) {
+      const currentPlayer = sandboxGameState.currentPlayer;
+      const validMoves = sandboxEngine.getValidMoves(currentPlayer);
+
+      // RR-FIX-2026-01-11: When a ring_elimination pending choice is active,
+      // force update targets from the choice options. This handles the case where
+      // territory claim targets are set, then the player claims a territory, and
+      // a ring_elimination choice is returned but the old targets remain.
+      if (sandboxPendingChoice?.type === 'ring_elimination') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accessing choice options
+        const options = (sandboxPendingChoice as any).options ?? [];
+        const eliminationTargets: Position[] = options
+          .map((opt: { stackPosition?: Position }) => opt.stackPosition)
+          .filter((pos: Position | undefined): pos is Position => pos !== undefined);
+
+        if (eliminationTargets.length > 0) {
+          // eslint-disable-next-line no-console
+          console.log('[SandboxGameHost] Setting elimination targets from pending choice:', {
+            phase: sandboxGameState.currentPhase,
+            choiceId: sandboxPendingChoice.id,
+            targetCount: eliminationTargets.length,
+            targets: eliminationTargets.map((p) => positionToString(p)),
+          });
+          setValidTargets(eliminationTargets);
+          return;
+        }
+      }
+
+      // Only proceed with automatic target initialization if validTargets is empty
+      if (validTargets.length > 0) {
+        return;
+      }
+
+      // Check for elimination moves first
+      const eliminationMoves = validMoves.filter((m) => m.type === 'eliminate_rings_from_stack');
+
+      if (eliminationMoves.length > 0) {
+        const eliminationTargets = eliminationMoves
+          .map((m) => m.to)
+          .filter((pos): pos is Position => pos !== undefined);
+
+        if (eliminationTargets.length > 0) {
+          // eslint-disable-next-line no-console
+          console.log('[SandboxGameHost] Initializing elimination targets:', {
+            phase: sandboxGameState.currentPhase,
+            targetCount: eliminationTargets.length,
+            targets: eliminationTargets.map((p) => positionToString(p)),
+          });
+          setValidTargets(eliminationTargets);
+          return;
+        }
+      }
+
+      // Check for choose_territory_option moves - highlight claimable territory spaces
+      const territoryOptionMoves = validMoves.filter((m) => m.type === 'choose_territory_option');
+
+      if (territoryOptionMoves.length > 0) {
+        // Collect all spaces from claimable territories owned by current player
+        const territories = sandboxGameState.board.territories;
+        const claimableSpaces: Position[] = [];
+
+        for (const [, territory] of territories.entries()) {
+          // Only show territories owned by the current player
+          if (territory.controllingPlayer !== currentPlayer) continue;
+          if (!territory.isDisconnected) continue;
+
+          const spaces = territory.spaces ?? [];
+          claimableSpaces.push(...spaces);
+        }
+
+        if (claimableSpaces.length > 0) {
+          // eslint-disable-next-line no-console
+          console.log('[SandboxGameHost] Initializing territory claim targets:', {
+            phase: sandboxGameState.currentPhase,
+            targetCount: claimableSpaces.length,
+            territories: Array.from(territories.keys()),
+          });
+          setValidTargets(claimableSpaces);
+        }
+      }
+    }
+  }, [sandboxEngine, sandboxGameState, sandboxPendingChoice, validTargets.length, setValidTargets]);
 
   const humanSeatCount = sandboxPlayersList.filter((p) => p.type === 'human').length;
   const aiSeatCount = sandboxPlayersList.length - humanSeatCount;
@@ -1733,6 +1881,7 @@ export const SandboxGameHost: React.FC = () => {
               isRingEliminationChoice={isRingEliminationChoice}
               isRegionOrderChoice={isRegionOrderChoice}
               isChainCaptureContinuationStep={isChainCaptureContinuationStep}
+              decisionHighlights={decisionHighlights}
               onCellClick={handleSandboxCellClick}
               onCellDoubleClick={handleSandboxCellDoubleClick}
               onCellContextMenu={handleSandboxCellContextMenu}
