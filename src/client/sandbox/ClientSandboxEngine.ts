@@ -3352,14 +3352,21 @@ export class ClientSandboxEngine {
       // decision, to preserve the legacy "Option 2 by default" sandbox
       // behaviour.
       if (line.length > requiredLength) {
-        const lineKey = line.positions.map((p) => positionToString(p)).join('|');
+        // Use sorted position key for order-independent matching
+        const lineKey = line.positions
+          .map((p) => positionToString(p))
+          .sort()
+          .join('|');
         const rewardCandidates = moves.filter(
           (m) =>
             normalizeMoveType(m.type) === 'choose_line_option' &&
             m.formedLines &&
             m.formedLines.length > 0 &&
             m.formedLines[0].positions.length === line.positions.length &&
-            m.formedLines[0].positions.map((p) => positionToString(p)).join('|') === lineKey
+            m.formedLines[0].positions
+              .map((p) => positionToString(p))
+              .sort()
+              .join('|') === lineKey
         );
 
         const preferredSegment = line.positions.slice(0, requiredLength);
@@ -3378,6 +3385,9 @@ export class ClientSandboxEngine {
 
         if (minCollapse) {
           moveToApply = minCollapse;
+        } else if (rewardCandidates.length > 0) {
+          // Fallback: use first available reward candidate to prevent freeze
+          moveToApply = rewardCandidates[0];
         }
       }
 
