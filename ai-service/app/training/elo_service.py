@@ -1625,10 +1625,11 @@ class EloService:
                 )
 
                 # Record match history in local SQLite for queries
+                # Note: id is INTEGER PRIMARY KEY AUTOINCREMENT, so we use game_id for UUID
                 with self._transaction() as conn:
                     conn.execute("""
                         INSERT INTO match_history
-                        (id, participant_ids, winner_id, game_length, duration_sec,
+                        (game_id, participant_ids, winner_id, game_length, duration_sec,
                          board_type, num_players, timestamp, elo_before, elo_after,
                          tournament_id, metadata)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1752,9 +1753,10 @@ class EloService:
                 ))
 
             # Record match with optional metadata (e.g., weight profiles used)
+            # Note: id is INTEGER PRIMARY KEY AUTOINCREMENT, so we use game_id for UUID
             conn.execute("""
                 INSERT INTO match_history
-                (id, participant_ids, winner_id, game_length, duration_sec,
+                (game_id, participant_ids, winner_id, game_length, duration_sec,
                  board_type, num_players, timestamp, elo_before, elo_after,
                  tournament_id, metadata)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
