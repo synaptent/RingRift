@@ -3866,7 +3866,37 @@ export function getValidMoves(state: GameState): Move[] {
       // 'use_board_cache' mode may return no moves when board.formedLines
       // is empty or stale, causing a mismatch with hasPhaseLocalInteractiveMove
       // which always uses fresh detection.
-      return enumerateProcessLineMoves(state, player, { detectionMode: 'detect_now' });
+      const lineMoves = enumerateProcessLineMoves(state, player, { detectionMode: 'detect_now' });
+
+      // RR-FIX-2026-01-11: When line reward elimination is pending, include elimination moves.
+      // After a line collapse that grants an elimination reward, the player must select a
+      // stack to eliminate from. Without this, getValidMoves() returns only process_line
+      // moves, causing the sandbox to appear stuck.
+      if (state.pendingLineRewardElimination) {
+        const eliminationMoves: Move[] = [];
+
+        for (const [key, stack] of state.board.stacks.entries()) {
+          if (stack.controllingPlayer !== player) continue;
+          const capHeight = stack.capHeight ?? 0;
+          if (capHeight <= 0) continue;
+
+          eliminationMoves.push({
+            id: `eliminate-line-${key}`,
+            type: 'eliminate_rings_from_stack',
+            player,
+            to: stack.position,
+            eliminatedRings: [{ player, count: 1 }], // Line cost is always 1 ring
+            eliminationContext: 'line',
+            timestamp: new Date(),
+            thinkTime: 0,
+            moveNumber,
+          } as Move);
+        }
+
+        return [...lineMoves, ...eliminationMoves];
+      }
+
+      return lineMoves;
     }
 
     case 'territory_processing': {

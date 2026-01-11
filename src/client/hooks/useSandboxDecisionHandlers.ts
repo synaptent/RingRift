@@ -263,8 +263,14 @@ export function useSandboxDecisionHandlers({
             setSandboxStateVersion((v) => v + 1);
             maybeRunSandboxAiIfNeeded();
           }, 0);
+          return true;
         }
-        return true;
+
+        // RR-FIX-2026-01-11: Return false when no matching option found so the phase
+        // handler can try fallback logic using getValidMoves(). Previously returned
+        // true unconditionally, which blocked the line_processing phase handler from
+        // processing elimination moves when the decision options were empty or stale.
+        return false;
       }
 
       // Handle capture_direction choice
