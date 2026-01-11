@@ -536,6 +536,10 @@ from app.distributed.circuit_breaker import (
     CircuitState,
     get_circuit_registry,
 )
+# Jan 2026: Adaptive budget selection based on config Elo
+from app.coordination.budget_calculator import (
+    get_adaptive_budget_for_elo,
+)
 from app.utils.ramdrive import (
     RamdriveSyncer,
     get_system_resources,
@@ -26741,10 +26745,19 @@ print(json.dumps({{
                 # Uses generate_gumbel_selfplay.py with proper MCTS simulation budget
                 # Budget tiers: THROUGHPUT(64), BOOTSTRAP(150), QUALITY(800), ULTIMATE(1600), MASTER(3200)
                 #
-                # GPU tree search is much faster per simulation but still needs reasonable budgets.
-                # Default to 150 (BOOTSTRAP tier) which completes games in reasonable time on GPU.
-                # For higher quality, callers can request QUALITY(800) or higher.
-                effective_budget = simulation_budget if simulation_budget is not None else 150
+                # Jan 2026: Use adaptive budget based on config Elo instead of hardcoded 150.
+                # This ensures mature configs (Elo > 1400) use quality budgets for better training data.
+                if simulation_budget is not None:
+                    effective_budget = simulation_budget
+                else:
+                    # Look up config Elo and use adaptive budget
+                    config_key = f"{board_type}_{num_players}p"
+                    try:
+                        config_elo = self.selfplay_scheduler.get_config_elo(config_key) if hasattr(self, 'selfplay_scheduler') else 1200.0
+                        effective_budget = get_adaptive_budget_for_elo(config_elo)
+                        logger.debug(f"[Gumbel] {config_key}: Elo={config_elo:.0f} -> budget={effective_budget}")
+                    except Exception:
+                        effective_budget = 150  # Fallback to bootstrap tier
 
                 # Games based on board type and budget
                 # Lower budget = can run more games in same time
