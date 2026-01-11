@@ -344,7 +344,10 @@ export class SandboxOrchestratorAdapter {
       // the UI always sees the latest board snapshot during decision phases.
 
       // DEBUG: Log decision loop entry conditions for chain capture debugging
-      if (workingState.currentPhase === 'chain_capture' || result.pendingDecision?.type === 'chain_capture') {
+      if (
+        workingState.currentPhase === 'chain_capture' ||
+        result.pendingDecision?.type === 'chain_capture'
+      ) {
         // eslint-disable-next-line no-console
         console.log('[SandboxOrchestratorAdapter.processMove] Chain capture scenario detected:', {
           resultStatus: result.status,

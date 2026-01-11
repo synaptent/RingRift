@@ -417,3 +417,5 @@ ai-service/scripts/vast_p2p_sync.py
 # Grafana dashboards with cluster-specific node IPs
 monitoring/grafana/dashboards/ai-cluster.json
 monitoring/grafana/dashboards/ringrift-full.json
+diagnostics-output/
+diagnostics-output/
