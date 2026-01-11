@@ -1031,6 +1031,16 @@ export class SandboxOrchestratorAdapter {
           return { ...baseMoveProps, type: 'no_line_action' };
         } else if (state.currentPhase === 'movement') {
           return { ...baseMoveProps, type: 'no_movement_action' };
+        } else if (state.currentPhase === 'ring_placement') {
+          // RR-FIX-2026-01-11: When in ring_placement with 0 rings in hand,
+          // use no_placement_action instead of skip_placement
+          const currentPlayer = state.players.find(
+            (p) => p.id === decision.player
+          );
+          if (currentPlayer && currentPlayer.ringsInHand <= 0) {
+            return { ...baseMoveProps, type: 'no_placement_action' };
+          }
+          return { ...baseMoveProps, type: 'skip_placement' };
         }
         // Last resort fallback
         return { ...baseMoveProps, type: 'skip_placement' };
