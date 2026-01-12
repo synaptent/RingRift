@@ -19,7 +19,7 @@
  * @see docs/rules/SSOT_BANNER_GUIDE.md
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { Position } from '../../shared/types/game';
 import { useSandbox } from '../contexts/SandboxContext';
 
@@ -53,6 +53,11 @@ export function useSandboxAILoop({
   // React state derived from GameState hasn't otherwise changed.
   const [, setSandboxTurn] = useState(0);
 
+  // RR-FIX-2026-01-11: Guard against concurrent AI loop executions.
+  // Multiple calls to maybeRunSandboxAiIfNeeded can race and cause phase
+  // desynchronization errors like "place_ring is not valid for phase movement".
+  const aiLoopRunningRef = useRef(false);
+
   const bumpSandboxTurn = useCallback(() => {
     setSandboxTurn((t) => t + 1);
   }, []);
@@ -61,42 +66,56 @@ export function useSandboxAILoop({
     const engine = sandboxEngine;
     if (!engine) return;
 
-    let safetyCounter = 0;
-    // Allow a bounded number of consecutive AI turns per batch to avoid
-    // accidental infinite loops, but drive progression one visible move at a
-    // time so AI-vs-AI games feel continuous rather than "bursty".
-    while (safetyCounter < 32) {
-      const state = engine.getGameState();
-      if (state.gameStatus !== 'active') break;
-      const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
-      if (!current || current.type !== 'ai') break;
-
-      await engine.maybeRunAITurn();
-
-      // After each AI move, clear any stale selection/highlights and bump the
-      // sandboxTurn counter so BoardView re-renders with the latest state.
-      setSelected(undefined);
-      setValidTargets([]);
-      setSandboxTurn((t) => t + 1);
-      setSandboxLastProgressAt(Date.now());
-      setSandboxStallWarning(null);
-
-      safetyCounter += 1;
-
-      // Small delay between moves so AI-only games progress in a smooth
-      // sequence rather than a single visual burst of many moves.
-      await new Promise((resolve) => window.setTimeout(resolve, 120));
+    // RR-FIX-2026-01-11: Prevent concurrent AI loop executions.
+    // If a loop is already running, skip this call to avoid race conditions.
+    if (aiLoopRunningRef.current) {
+      return;
     }
+    aiLoopRunningRef.current = true;
 
-    // If the game is still active and the next player is an AI, schedule
-    // another batch so AI-vs-AI games continue advancing without manual
-    // clicks. The safety counter above still bounds each batch.
-    const finalState = engine.getGameState();
-    const next = finalState.players.find((p) => p.playerNumber === finalState.currentPlayer);
-    if (finalState.gameStatus === 'active' && next && next.type === 'ai') {
-      window.setTimeout(() => {
-        void runSandboxAiTurnLoop();
-      }, 200);
+    try {
+      let safetyCounter = 0;
+      // Allow a bounded number of consecutive AI turns per batch to avoid
+      // accidental infinite loops, but drive progression one visible move at a
+      // time so AI-vs-AI games feel continuous rather than "bursty".
+      while (safetyCounter < 32) {
+        const state = engine.getGameState();
+        if (state.gameStatus !== 'active') break;
+        const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
+        if (!current || current.type !== 'ai') break;
+
+        await engine.maybeRunAITurn();
+
+        // After each AI move, clear any stale selection/highlights and bump the
+        // sandboxTurn counter so BoardView re-renders with the latest state.
+        setSelected(undefined);
+        setValidTargets([]);
+        setSandboxTurn((t) => t + 1);
+        setSandboxLastProgressAt(Date.now());
+        setSandboxStallWarning(null);
+
+        safetyCounter += 1;
+
+        // Small delay between moves so AI-only games progress in a smooth
+        // sequence rather than a single visual burst of many moves.
+        await new Promise((resolve) => window.setTimeout(resolve, 120));
+      }
+
+      // If the game is still active and the next player is an AI, schedule
+      // another batch so AI-vs-AI games continue advancing without manual
+      // clicks. The safety counter above still bounds each batch.
+      const finalState = engine.getGameState();
+      const next = finalState.players.find((p) => p.playerNumber === finalState.currentPlayer);
+      if (finalState.gameStatus === 'active' && next && next.type === 'ai') {
+        // Release the lock before scheduling next batch to allow re-entry
+        aiLoopRunningRef.current = false;
+        window.setTimeout(() => {
+          void runSandboxAiTurnLoop();
+        }, 200);
+        return; // Don't release lock again in finally
+      }
+    } finally {
+      aiLoopRunningRef.current = false;
     }
   }, [
     sandboxEngine,

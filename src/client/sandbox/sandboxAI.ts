@@ -892,6 +892,30 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
 
     // === Ring placement phase: canonical candidates + shared selector ===
     if (gameState.currentPhase === 'ring_placement') {
+      // RR-FIX-2026-01-11: Handle inconsistent state where mustMoveFromStackKey is set
+      // during ring_placement phase. This can happen when a fixture is loaded mid-turn
+      // or when state becomes corrupted. If mustMoveFromStackKey is set, placement has
+      // already occurred and we just need to advance to movement phase.
+      const mustMoveKey = hooks.getMustMoveFromStackKey();
+      if (mustMoveKey) {
+        // Placement already happened this turn - advance to movement via no_placement_action
+        const stateForAdvance = hooks.getGameState();
+        const moveNumber = stateForAdvance.history.length + 1;
+        const advanceMove: Move = {
+          type: 'no_placement_action',
+          player: current.playerNumber,
+          id: `no-placement-action-advance-${moveNumber}`,
+          moveNumber,
+          timestamp: new Date(),
+          thinkTime: 0,
+        } as Move;
+
+        await hooks.applyCanonicalMove(advanceMove);
+        lastAIMove = advanceMove;
+        hooks.setLastAIMove(lastAIMove);
+        return;
+      }
+
       const ringsInHand = current.ringsInHand ?? 0;
       if (ringsInHand <= 0) {
         // With no rings in hand, ring_placement is not a real decision
