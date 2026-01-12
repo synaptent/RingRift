@@ -22,6 +22,7 @@
 import { useState, useCallback, useRef } from 'react';
 import type { Position } from '../../shared/types/game';
 import { useSandbox } from '../contexts/SandboxContext';
+import { FreezeDebugger } from '../utils/freezeDebugger';
 
 export interface UseSandboxAILoopOptions {
   setSelected: (pos: Position | undefined) => void;
@@ -91,7 +92,15 @@ export function useSandboxAILoop({
         // events (scroll, clicks, DevTools) before the next heavy computation.
         await new Promise((resolve) => window.setTimeout(resolve, 0));
 
+        // RR-FIX-2026-01-12: Capture state BEFORE AI turn for freeze debugging.
+        // If the browser freezes, the last saved state is the problematic one.
+        // Enable via: window.__FREEZE_DEBUGGER__.enable() in browser console.
+        FreezeDebugger.beforeAITurn(state, safetyCounter);
+
         await engine.maybeRunAITurn();
+
+        // Mark turn complete for freeze debugger watchdog
+        FreezeDebugger.afterAITurn();
 
         // After each AI move, clear any stale selection/highlights and bump the
         // sandboxTurn counter so BoardView re-renders with the latest state.

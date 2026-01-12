@@ -144,6 +144,9 @@ MAX_DATA_STALENESS_HOURS = DataFreshnessDefaults().MAX_DATA_AGE_HOURS
 STATE_DB_PATH = Path(__file__).parent.parent / "data" / "coordination" / "master_loop_state.db"
 STATE_SAVE_INTERVAL_SECONDS = env.state_save_interval  # RINGRIFT_STATE_SAVE_INTERVAL (default: 300)
 
+# Jan 2026: Daemon startup timeout to prevent hanging on unresponsive daemon.start()
+DAEMON_STARTUP_TIMEOUT_SECONDS = int(os.environ.get("RINGRIFT_DAEMON_STARTUP_TIMEOUT", "60"))
+
 # Load forecasting snapshot interval (December 2025)
 LOAD_SNAPSHOT_INTERVAL = 3600  # 1 hour - record cluster load for pattern learning
 
@@ -1398,9 +1401,19 @@ class MasterLoopController:
                     logger.info(f"[MasterLoop] [DRY RUN] Would start {daemon_type.value}")
                     started_daemons.add(daemon_type.value)
                 else:
-                    await self.daemon_manager.start(daemon_type)
-                    started_daemons.add(daemon_type.value)
-                    logger.debug(f"[MasterLoop] Started {daemon_type.value}")
+                    try:
+                        await asyncio.wait_for(
+                            self.daemon_manager.start(daemon_type),
+                            timeout=DAEMON_STARTUP_TIMEOUT_SECONDS,
+                        )
+                        started_daemons.add(daemon_type.value)
+                        logger.debug(f"[MasterLoop] Started {daemon_type.value}")
+                    except asyncio.TimeoutError:
+                        failed_daemons.add(daemon_type.value)
+                        logger.error(
+                            f"[MasterLoop] Daemon {daemon_type.value} startup timed out "
+                            f"after {DAEMON_STARTUP_TIMEOUT_SECONDS}s"
+                        )
             except Exception as e:
                 failed_daemons.add(daemon_type.value)
                 logger.warning(f"[MasterLoop] Failed to start {daemon_type.value}: {e}")

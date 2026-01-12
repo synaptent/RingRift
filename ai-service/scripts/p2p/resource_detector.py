@@ -891,6 +891,33 @@ class ResourceDetectorMixin:
         import asyncio
         return await asyncio.to_thread(self._resource_detector.get_tailscale_ipv4)
 
+    async def get_tailscale_ipv4_with_retry(
+        self, max_retries: int = 5, delay: float = 2.0
+    ) -> str | None:
+        """Get Tailscale IPv4 with retry logic for startup timing issues.
+
+        Jan 12, 2026: Added to fix IP advertisement timing issue where
+        Tailscale daemon is not ready at P2P orchestrator startup, causing
+        fallback to local IP (10.0.0.x) instead of Tailscale IP (100.x.x.x).
+
+        Args:
+            max_retries: Maximum number of attempts. Default 5 (10s total).
+            delay: Seconds between retries. Default 2.0.
+
+        Returns:
+            Tailscale IPv4 address or None if not available after retries.
+        """
+        import asyncio
+
+        for attempt in range(max_retries):
+            ip = await self._get_tailscale_ipv4_async()
+            if ip and not ip.startswith("10."):  # Not local network
+                return ip
+            if attempt < max_retries - 1:
+                await asyncio.sleep(delay)
+
+        return None
+
     async def _get_tailscale_ipv6_async(self) -> str:
         """Get Tailscale IPv6 without blocking event loop.
 

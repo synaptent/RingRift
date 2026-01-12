@@ -1547,17 +1547,26 @@ class P2POrchestrator(
             # behind NAT remain reachable and the cluster converges on a single
             # view of peer endpoints.
             #
-            # Jan 12, 2026: Use retry mechanism instead of single attempt.
-            # Root cause fix: If Tailscale CLI isn't ready yet, we'd fall back
-            # to local IP (e.g., 10.0.0.62) which other nodes can't reach.
-            # Now we wait up to 30s for Tailscale to become available.
-            ts_ip = _wait_for_tailscale_ip(timeout_seconds=30, interval_seconds=2.0)
-            self.advertise_host = ts_ip or self._get_local_ip()
-            if not ts_ip:
-                logger.warning(
-                    f"[P2P] Tailscale unavailable, using local IP: {self.advertise_host}. "
-                    "Set RINGRIFT_ADVERTISE_HOST or ensure Tailscale is running."
-                )
+            # Jan 12, 2026: Multi-fallback IP resolution with YAML config priority.
+            # Order: 1) YAML config tailscale_ip, 2) Tailscale CLI with retry,
+            #        3) Local IP (last resort)
+            #
+            # YAML fallback added because Tailscale CLI may not be ready at startup,
+            # and the pre-configured tailscale_ip in distributed_hosts.yaml is a
+            # reliable source for the correct IP.
+            yaml_ip = self._get_yaml_tailscale_ip()
+            if yaml_ip:
+                self.advertise_host = yaml_ip
+                logger.info(f"[P2P] Using YAML config tailscale_ip: {yaml_ip}")
+            else:
+                # Try Tailscale detection with retry (up to 30s)
+                ts_ip = _wait_for_tailscale_ip(timeout_seconds=30, interval_seconds=2.0)
+                self.advertise_host = ts_ip or self._get_local_ip()
+                if not ts_ip:
+                    logger.warning(
+                        f"[P2P] Tailscale unavailable, using local IP: {self.advertise_host}. "
+                        "Set RINGRIFT_ADVERTISE_HOST or ensure Tailscale is running."
+                    )
 
         # Dec 30, 2025: Validate advertise_host to prevent private IP issues
         # that cause P2P quorum loss when nodes can't reach each other
@@ -6080,6 +6089,37 @@ class P2POrchestrator(
             logger.debug(f"[P2P] Failed to load force_relay_mode from config: {e}")
 
         return False
+
+    def _get_yaml_tailscale_ip(self) -> str | None:
+        """Get Tailscale IP from distributed_hosts.yaml for this node.
+
+        Jan 12, 2026: Added to fix IP advertisement timing issue. When Tailscale
+        CLI isn't ready at startup, we now fall back to the pre-configured
+        tailscale_ip from YAML before falling back to local IP.
+
+        This provides a reliable source for the correct IP even when Tailscale
+        daemon is slow to start, preventing nodes from advertising unreachable
+        local IPs (e.g., 10.0.0.62).
+
+        Returns:
+            Tailscale IP from config if available for this node, else None.
+        """
+        try:
+            from app.config.cluster_config import load_cluster_config
+            config = load_cluster_config()
+            nodes = getattr(config, "hosts_raw", {}) or {}
+            node_cfg = nodes.get(self.node_id, {})
+
+            tailscale_ip = node_cfg.get("tailscale_ip")
+            if tailscale_ip:
+                logger.debug(f"[P2P] Found tailscale_ip in YAML config: {tailscale_ip}")
+                return tailscale_ip
+        except ImportError:
+            logger.debug("[P2P] cluster_config not available for tailscale_ip lookup")
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[P2P] Failed to load tailscale_ip from config: {e}")
+
+        return None
 
     def _load_voter_node_ids(self) -> list[str]:
         """Load the set of P2P voter node_ids (for quorum-based leadership).
