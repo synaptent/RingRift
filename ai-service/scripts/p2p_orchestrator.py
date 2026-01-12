@@ -5830,11 +5830,12 @@ class P2POrchestrator(
                 self._validate_and_fix_advertise_host()
 
                 if old_host != self.advertise_host:
-                    logger.warning(f"[P2P] IP revalidation: {old_host} -> {self.advertise_host}")
-                    # Update peer info with new IP
-                    self._update_self_info()
+                    # Jan 12, 2026: The setter in _validate_and_fix_advertise_host() now
+                    # updates self.self_info.host atomically, so we don't need to call
+                    # _update_self_info() here. The setter already logged the change.
+                    logger.warning(f"[P2P] IP revalidation detected change: {old_host} -> {self.advertise_host}")
 
-                    # Jan 12, 2026: Re-announce to bootstrap seeds with corrected IP
+                    # Re-announce to bootstrap seeds with corrected IP
                     try:
                         await self._announce_to_bootstrap_seeds()
                         logger.info("[P2P] Re-announced to bootstrap seeds with corrected IP")
