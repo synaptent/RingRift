@@ -48,6 +48,7 @@ import {
 } from '../../shared/utils/envFlags';
 import { normalizeLegacyMoveType } from '../../shared/engine/legacy/legacyMoveTypes';
 import { recordSandboxAiDiagnostics, type SandboxAiDecisionSource } from './sandboxAiDiagnostics';
+import { getSandboxAIServiceAvailable } from '../utils/aiServiceAvailability';
 
 const SANDBOX_AI_CAPTURE_DEBUG_ENABLED = isSandboxAiCaptureDebugEnabled();
 const SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED = isSandboxAiStallDiagnosticsEnabled();
@@ -209,6 +210,11 @@ async function tryRequestSandboxAIMove(payload: {
   nnueCheckpoint?: string | null;
 } | null> {
   if (typeof fetch !== 'function') {
+    return null;
+  }
+
+  // Skip API call in production without AI service configured
+  if (!getSandboxAIServiceAvailable()) {
     return null;
   }
 

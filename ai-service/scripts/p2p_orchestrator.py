@@ -16489,6 +16489,22 @@ print(json.dumps(result))
     # Support methods for PredictiveScalingLoop - proactive job spawning
     # =========================================================================
 
+    def _get_work_queue(self) -> Any:
+        """Get work queue instance for WorkQueueMaintenanceLoop.
+
+        This method wraps the global get_work_queue() function to make it
+        accessible via OrchestratorContext.from_orchestrator().
+
+        Returns:
+            Work queue instance, or None if unavailable.
+
+        Note:
+            January 11, 2026: Added to fix "'NoneType' object is not callable"
+            error in WorkQueueMaintenanceLoop. The OrchestratorContext was
+            looking for this method but it didn't exist.
+        """
+        return get_work_queue()
+
     def _get_work_queue_depth(self) -> int:
         """Get current work queue depth for predictive scaling decisions.
 
@@ -28452,7 +28468,30 @@ def _auto_detect_node_id() -> str | None:
                             if ip and not ip.startswith("127.") and not ip.startswith("fe80"):
                                 local_ips.add(ip.split("%")[0])  # Remove interface suffix
         except ImportError:
-            pass
+            # Fallback: use subprocess to get IPs (works without netifaces)
+            import subprocess
+            try:
+                # Try 'ip addr' (Linux)
+                result = subprocess.run(
+                    ["ip", "-4", "addr", "show"], capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0:
+                    import re
+                    for match in re.findall(r"inet\s+(\d+\.\d+\.\d+\.\d+)", result.stdout):
+                        if not match.startswith("127."):
+                            local_ips.add(match)
+            except (subprocess.SubprocessError, FileNotFoundError):
+                try:
+                    # Try 'hostname -I' (simpler Linux fallback)
+                    result = subprocess.run(
+                        ["hostname", "-I"], capture_output=True, text=True, timeout=5
+                    )
+                    if result.returncode == 0:
+                        for ip in result.stdout.strip().split():
+                            if not ip.startswith("127."):
+                                local_ips.add(ip)
+                except (subprocess.SubprocessError, FileNotFoundError):
+                    pass
 
         # Load config and match
         config_path = Path(__file__).parent.parent / "config" / "distributed_hosts.yaml"
@@ -28475,12 +28514,18 @@ def _auto_detect_node_id() -> str | None:
     except Exception as e:  # noqa: BLE001
         logger.debug(f"Config-based node_id detection failed: {e}")
 
-    # 3. Fall back to hostname
+    # 3. Fall back to hostname with WARNING
+    # This often results in wrong node-id on cloud nodes where hostname != config name
     try:
         hostname = socket.gethostname()
         # Clean up hostname (remove .local, etc.)
         if "." in hostname:
             hostname = hostname.split(".")[0]
+        logger.warning(
+            f"[NODE-ID] Falling back to hostname '{hostname}' - this may not match "
+            f"distributed_hosts.yaml! Set RINGRIFT_NODE_ID environment variable or "
+            f"pass --node-id explicitly to avoid cluster partition issues."
+        )
         return hostname
     except Exception:  # noqa: BLE001
         return None

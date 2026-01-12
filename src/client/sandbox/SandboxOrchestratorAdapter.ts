@@ -44,6 +44,7 @@ import {
 import { validateMoveWithFSM } from '../../shared/engine/fsm/FSMAdapter';
 import { validatePlacement } from '../../shared/engine/aggregates/PlacementAggregate';
 import { normalizeLegacyMove } from '../../shared/engine/legacy/legacyMoveTypes';
+import { getSandboxAIServiceAvailable } from '../utils/aiServiceAvailability';
 import {
   debugLog,
   isSandboxAiStallDiagnosticsEnabled,
@@ -1034,9 +1035,7 @@ export class SandboxOrchestratorAdapter {
         } else if (state.currentPhase === 'ring_placement') {
           // RR-FIX-2026-01-11: When in ring_placement with 0 rings in hand,
           // use no_placement_action instead of skip_placement
-          const currentPlayer = state.players.find(
-            (p) => p.id === decision.player
-          );
+          const currentPlayer = state.players.find((p) => p.id === decision.player);
           if (currentPlayer && currentPlayer.ringsInHand <= 0) {
             return { ...baseMoveProps, type: 'no_placement_action' };
           }
@@ -1134,6 +1133,11 @@ export class SandboxOrchestratorAdapter {
     nnueCheckpoint?: string | null;
   } | null> {
     if (typeof fetch !== 'function') {
+      return null;
+    }
+
+    // Skip API call in production without AI service configured
+    if (!getSandboxAIServiceAvailable()) {
       return null;
     }
 

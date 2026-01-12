@@ -23,6 +23,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-hot-toast';
 import type { GameState } from '../../shared/types/game';
 import type { ClientSandboxEngine } from '../sandbox/ClientSandboxEngine';
+import { getSandboxAIServiceAvailable } from '../utils/aiServiceAvailability';
 
 /**
  * State for AI timing tracking.
@@ -162,6 +163,12 @@ export function useSandboxAITracking(
     }
     if (typeof fetch !== 'function') {
       toast.error('Fetch API unavailable.');
+      return;
+    }
+
+    // Skip in production without AI service configured
+    if (!getSandboxAIServiceAvailable()) {
+      setAiLadderHealthError('AI service not available in this environment');
       return;
     }
 

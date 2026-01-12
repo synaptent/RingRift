@@ -24,6 +24,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { PositionEvaluationPayload } from '../../shared/types/websocket';
 import type { ClientSandboxEngine } from '../sandbox/ClientSandboxEngine';
+import { getSandboxAIServiceAvailable } from '../utils/aiServiceAvailability';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -98,6 +99,11 @@ export function useSandboxEvaluation(options: SandboxEvaluationOptions): Sandbox
     // Get game state from engine directly to avoid forward reference issues
     const currentState = engine?.getGameState();
     if (!engine || !currentState) {
+      return;
+    }
+
+    // Skip evaluation in production without AI service configured
+    if (!getSandboxAIServiceAvailable()) {
       return;
     }
 
