@@ -169,9 +169,9 @@ export const SandboxBoardSection: React.FC<SandboxBoardSectionProps> = ({
       {/* Grid layout: board determines column width, panels constrained to match */}
       <div className="grid gap-4" style={{ gridTemplateColumns: 'min-content' }}>
         {/* Board header with mode toggle and action buttons */}
-        <div className="p-3 sm:p-4 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg overflow-x-auto">
-          <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-3">
-            <h1 className="text-base sm:text-xl font-bold text-white">
+        <div className="p-2 sm:p-2.5 rounded-xl border border-slate-700 bg-slate-900/70 shadow-lg overflow-x-auto">
+          <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2">
+            <h1 className="text-sm sm:text-base font-bold text-white">
               <span className="text-slate-400 font-medium">Local Sandbox</span>
               <span className="mx-2 text-slate-600">–</span>
               {boardDisplayLabel}
