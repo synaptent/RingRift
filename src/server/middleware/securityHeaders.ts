@@ -42,7 +42,10 @@ export const securityHeaders: RequestHandler = helmet({
 
       // Script sources - no inline scripts in production for XSS protection
       // In development, we may need 'unsafe-eval' for HMR/Vite tooling
-      scriptSrc: config.isDevelopment ? ["'self'", "'unsafe-inline'", "'unsafe-eval'"] : ["'self'"],
+      // Production includes Cloudflare Insights for analytics (injected by Cloudflare proxy)
+      scriptSrc: config.isDevelopment
+        ? ["'self'", "'unsafe-inline'", "'unsafe-eval'"]
+        : ["'self'", 'https://static.cloudflareinsights.com'],
 
       // Styles - allow inline for CSS-in-JS libraries (React Hot Toast, etc.)
       styleSrc: ["'self'", "'unsafe-inline'"],
