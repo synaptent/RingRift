@@ -109,6 +109,8 @@ class LockBackendType(str, Enum):
 _raft_available: bool | None = None
 _raft_lock_manager: "ReplLockManager | None" = None
 _raft_node_id: str | None = None
+# January 2026: Thread lock to protect global Raft state from race conditions
+_raft_state_lock = threading.Lock()
 
 
 def _check_raft_available() -> bool:
@@ -121,86 +123,99 @@ def _check_raft_available() -> bool:
     4. Lock manager is accessible
 
     Result is cached for performance.
+
+    January 2026: Thread-safe via _raft_state_lock to prevent race conditions
+    when multiple threads call this concurrently during startup.
     """
     global _raft_available, _raft_lock_manager, _raft_node_id
 
+    # Fast path: check cached value without lock
     if _raft_available is not None:
         return _raft_available
 
-    try:
-        # Check if Raft is enabled
-        from scripts.p2p.consensus_mixin import (
-            PYSYNCOBJ_AVAILABLE,
-            RAFT_ENABLED,
-        )
+    # Slow path: acquire lock and check/update
+    with _raft_state_lock:
+        # Double-check after acquiring lock (another thread may have set it)
+        if _raft_available is not None:
+            return _raft_available
 
-        if not RAFT_ENABLED or not PYSYNCOBJ_AVAILABLE:
-            logger.debug("Raft locks disabled: RAFT_ENABLED=%s, PYSYNCOBJ=%s", RAFT_ENABLED, PYSYNCOBJ_AVAILABLE)
-            _raft_available = False
-            return False
-
-        # Try to get lock manager from P2P orchestrator
         try:
-            from scripts.p2p_orchestrator import P2POrchestrator
+            # Check if Raft is enabled
+            from scripts.p2p.consensus_mixin import (
+                PYSYNCOBJ_AVAILABLE,
+                RAFT_ENABLED,
+            )
 
-            # Check for singleton instance
-            orchestrator = getattr(P2POrchestrator, "_instance", None)
-            if orchestrator is None:
-                logger.debug("Raft locks: P2P orchestrator not running")
+            if not RAFT_ENABLED or not PYSYNCOBJ_AVAILABLE:
+                logger.debug("Raft locks disabled: RAFT_ENABLED=%s, PYSYNCOBJ=%s", RAFT_ENABLED, PYSYNCOBJ_AVAILABLE)
                 _raft_available = False
                 return False
 
-            # Check if Raft is initialized
-            raft_initialized = getattr(orchestrator, "_raft_initialized", False)
-            if not raft_initialized:
-                logger.debug("Raft locks: Raft not initialized on orchestrator")
+            # Try to get lock manager from P2P orchestrator
+            try:
+                from scripts.p2p_orchestrator import P2POrchestrator
+
+                # Check for singleton instance
+                orchestrator = getattr(P2POrchestrator, "_instance", None)
+                if orchestrator is None:
+                    logger.debug("Raft locks: P2P orchestrator not running")
+                    _raft_available = False
+                    return False
+
+                # Check if Raft is initialized
+                raft_initialized = getattr(orchestrator, "_raft_initialized", False)
+                if not raft_initialized:
+                    logger.debug("Raft locks: Raft not initialized on orchestrator")
+                    _raft_available = False
+                    return False
+
+                # Get the lock manager from ReplicatedWorkQueue
+                raft_wq = getattr(orchestrator, "_raft_work_queue", None)
+                if raft_wq is None:
+                    logger.debug("Raft locks: Raft work queue not available")
+                    _raft_available = False
+                    return False
+
+                lock_manager = getattr(raft_wq, "_lock_manager", None)
+                if lock_manager is None:
+                    logger.debug("Raft locks: Lock manager not on work queue")
+                    _raft_available = False
+                    return False
+
+                # Success - cache the lock manager
+                _raft_lock_manager = lock_manager
+                _raft_node_id = getattr(orchestrator, "node_id", "unknown")
+                _raft_available = True
+                logger.info("Raft locks available via P2P orchestrator (node: %s)", _raft_node_id)
+                return True
+
+            except ImportError:
+                logger.debug("Raft locks: Could not import P2P orchestrator")
                 _raft_available = False
                 return False
-
-            # Get the lock manager from ReplicatedWorkQueue
-            raft_wq = getattr(orchestrator, "_raft_work_queue", None)
-            if raft_wq is None:
-                logger.debug("Raft locks: Raft work queue not available")
-                _raft_available = False
-                return False
-
-            lock_manager = getattr(raft_wq, "_lock_manager", None)
-            if lock_manager is None:
-                logger.debug("Raft locks: Lock manager not on work queue")
-                _raft_available = False
-                return False
-
-            # Success - cache the lock manager
-            _raft_lock_manager = lock_manager
-            _raft_node_id = getattr(orchestrator, "node_id", "unknown")
-            _raft_available = True
-            logger.info("Raft locks available via P2P orchestrator (node: %s)", _raft_node_id)
-            return True
 
         except ImportError:
-            logger.debug("Raft locks: Could not import P2P orchestrator")
+            logger.debug("Raft locks: pysyncobj or consensus_mixin not available")
             _raft_available = False
             return False
-
-    except ImportError:
-        logger.debug("Raft locks: pysyncobj or consensus_mixin not available")
-        _raft_available = False
-        return False
-    except Exception as e:
-        logger.warning("Raft locks: Unexpected error checking availability: %s", e)
-        _raft_available = False
-        return False
+        except (RuntimeError, AttributeError, TypeError) as e:
+            logger.warning("Raft locks: Unexpected error checking availability: %s", e)
+            _raft_available = False
+            return False
 
 
 def reset_raft_cache() -> None:
     """Reset the Raft availability cache.
 
     Call this if P2P orchestrator state changes (e.g., Raft initialization).
+
+    January 2026: Thread-safe via _raft_state_lock.
     """
     global _raft_available, _raft_lock_manager, _raft_node_id
-    _raft_available = None
-    _raft_lock_manager = None
-    _raft_node_id = None
+    with _raft_state_lock:
+        _raft_available = None
+        _raft_lock_manager = None
+        _raft_node_id = None
 
 
 class RaftLockWrapper:

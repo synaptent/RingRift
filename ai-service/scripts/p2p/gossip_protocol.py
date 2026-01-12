@@ -191,6 +191,9 @@ class GossipHealthTracker:
     # Jan 5, 2026 (Phase 6): Jitter factor to prevent thundering herd
     # Applied as multiplier: backoff * random(1-jitter, 1+jitter)
     BACKOFF_JITTER_FACTOR: float = 0.25  # +/- 25% jitter
+    # January 2026: Grace period for new peers before marking them stale
+    # New peers are not marked stale until grace period expires
+    NEW_PEER_GRACE_PERIOD_SECONDS: float = 60.0
 
     def __init__(self, failure_threshold: int = GOSSIP_FAILURE_SUSPECT_THRESHOLD):
         """Initialize gossip health tracker.
@@ -203,6 +206,7 @@ class GossipHealthTracker:
         self._failure_counts: dict[str, int] = {}
         self._last_success: dict[str, float] = {}
         self._last_failure: dict[str, float] = {}  # Jan 3, 2026: Track last failure time
+        self._peer_first_seen: dict[str, float] = {}  # January 2026: Track when peer was first seen
         self._failure_threshold = failure_threshold
         self._suspect_emitted: set[str] = set()  # Track which peers have been marked suspect
 
@@ -218,10 +222,17 @@ class GossipHealthTracker:
             Tuple of (should_emit_suspect, failure_count)
             - should_emit_suspect: True if this failure crosses the threshold
             - failure_count: Current consecutive failure count
+
+        January 2026: Also tracks first-seen time for new peers to enable
+        grace period before marking them as stale.
         """
         with self._state_lock:
+            now = time.time()
+            # January 2026: Track first-seen time for new peers (grace period support)
+            if peer_id not in self._peer_first_seen:
+                self._peer_first_seen[peer_id] = now
             self._failure_counts[peer_id] = self._failure_counts.get(peer_id, 0) + 1
-            self._last_failure[peer_id] = time.time()  # Jan 3, 2026: Track failure time
+            self._last_failure[peer_id] = now  # Jan 3, 2026: Track failure time
             count = self._failure_counts[peer_id]
 
             # Check if we should emit suspect (only once per failure streak)
@@ -308,13 +319,20 @@ class GossipHealthTracker:
 
         Returns:
             True if peer was previously suspected (recovered), False otherwise
+
+        January 2026: Also tracks first-seen time for new peers.
         """
         with self._state_lock:
+            now = time.time()
             was_suspected = peer_id in self._suspect_emitted
+
+            # January 2026: Track first-seen time for new peers (grace period support)
+            if peer_id not in self._peer_first_seen:
+                self._peer_first_seen[peer_id] = now
 
             # Reset failure count and remove from suspect set
             self._failure_counts[peer_id] = 0
-            self._last_success[peer_id] = time.time()
+            self._last_success[peer_id] = now
             self._suspect_emitted.discard(peer_id)
 
             return was_suspected
@@ -375,6 +393,9 @@ class GossipHealthTracker:
 
         Thread-safe: Uses _state_lock to protect shared state.
 
+        January 2026: Respects grace period - new peers won't be cleaned up
+        until their grace period expires.
+
         Args:
             max_age_seconds: Remove peers not seen in this many seconds
 
@@ -385,15 +406,21 @@ class GossipHealthTracker:
             now = time.time()
             cutoff = now - max_age_seconds
 
-            # Find stale peers
+            # Find stale peers (excluding those still within grace period)
             stale_peers = [
                 peer_id for peer_id, last_seen in self._last_success.items()
                 if last_seen < cutoff
+                # January 2026: Exclude peers still within grace period
+                and now - self._peer_first_seen.get(peer_id, 0) > self.NEW_PEER_GRACE_PERIOD_SECONDS
             ]
 
             # Also include peers with high failure counts but no success
             for peer_id in list(self._failure_counts.keys()):
                 if peer_id not in self._last_success:
+                    # January 2026: Skip peers still within grace period
+                    first_seen = self._peer_first_seen.get(peer_id, 0)
+                    if now - first_seen <= self.NEW_PEER_GRACE_PERIOD_SECONDS:
+                        continue
                     # Peer has never succeeded, check if it's been tracked too long
                     # We use a simple heuristic: high failure count = stale
                     if self._failure_counts[peer_id] > self._failure_threshold * 10:
@@ -405,6 +432,7 @@ class GossipHealthTracker:
                 self._failure_counts.pop(peer_id, None)
                 self._last_success.pop(peer_id, None)
                 self._last_failure.pop(peer_id, None)  # Jan 3, 2026: Clean up backoff tracking
+                self._peer_first_seen.pop(peer_id, None)  # January 2026: Clean up first-seen tracking
                 self._suspect_emitted.discard(peer_id)
 
             return len(stale_peers)
@@ -415,6 +443,9 @@ class GossipHealthTracker:
         Jan 3, 2026 Sprint 13: Public API to decouple HealthCoordinator
         from private attributes. All data is copied under lock.
 
+        January 2026: Respects grace period for new peers - they are not
+        marked as stale until grace period expires.
+
         Returns:
             GossipHealthSummary with copied state data.
         """
@@ -423,6 +454,8 @@ class GossipHealthTracker:
             stale_peers = [
                 peer_id for peer_id, last_seen in self._last_success.items()
                 if now - last_seen > 300  # 5 minutes
+                # January 2026: Exclude peers still within grace period
+                and now - self._peer_first_seen.get(peer_id, 0) > self.NEW_PEER_GRACE_PERIOD_SECONDS
             ]
             return GossipHealthSummary(
                 failure_counts=dict(self._failure_counts),

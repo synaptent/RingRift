@@ -511,70 +511,70 @@ class FeedbackLoopController(FeedbackClusterHealthMixin, HandlerBase):
 
             # Dec 2025: Subscribe to TRAINING_ROLLBACK_NEEDED for rollback coordination
             if hasattr(DataEventType, 'TRAINING_ROLLBACK_NEEDED'):
-                bus.subscribe(DataEventType.TRAINING_ROLLBACK_NEEDED, self._on_training_rollback_needed)
+                self._safe_subscribe(bus, DataEventType.TRAINING_ROLLBACK_NEEDED, self._on_training_rollback_needed)
                 event_count += 1
 
             # Dec 28, 2025: Subscribe to TRAINING_ROLLBACK_COMPLETED for post-rollback recovery
             # Closes feedback loop: rollback complete → update state, resume training with adjustments
             if hasattr(DataEventType, 'TRAINING_ROLLBACK_COMPLETED'):
-                bus.subscribe(DataEventType.TRAINING_ROLLBACK_COMPLETED, self._on_training_rollback_completed)
+                self._safe_subscribe(bus, DataEventType.TRAINING_ROLLBACK_COMPLETED, self._on_training_rollback_completed)
                 event_count += 1
 
             # Dec 2025: Subscribe to QUALITY_CHECK_FAILED for quality feedback
             if hasattr(DataEventType, 'QUALITY_CHECK_FAILED'):
-                bus.subscribe(DataEventType.QUALITY_CHECK_FAILED, self._on_quality_check_failed)
+                self._safe_subscribe(bus, DataEventType.QUALITY_CHECK_FAILED, self._on_quality_check_failed)
                 event_count += 1
 
             # Dec 2025: Subscribe to QUALITY_FEEDBACK_ADJUSTED for dynamic training adjustments
             # Closes feedback loop: quality assessment → training intensity/exploration adjustments
             if hasattr(DataEventType, 'QUALITY_FEEDBACK_ADJUSTED'):
-                bus.subscribe(DataEventType.QUALITY_FEEDBACK_ADJUSTED, self._on_quality_feedback_adjusted)
+                self._safe_subscribe(bus, DataEventType.QUALITY_FEEDBACK_ADJUSTED, self._on_quality_feedback_adjusted)
                 event_count += 1
 
             # Dec 2025: Subscribe to CPU_PIPELINE_JOB_COMPLETED for Vast.ai CPU selfplay jobs
             # Closes integration gap: CPU selfplay completions now trigger downstream pipeline
             if hasattr(DataEventType, 'CPU_PIPELINE_JOB_COMPLETED'):
-                bus.subscribe(DataEventType.CPU_PIPELINE_JOB_COMPLETED, self._on_cpu_pipeline_job_completed)
+                self._safe_subscribe(bus, DataEventType.CPU_PIPELINE_JOB_COMPLETED, self._on_cpu_pipeline_job_completed)
                 event_count += 1
 
             # Dec 2025: Subscribe to HIGH_QUALITY_DATA_AVAILABLE for quality recovery
             # Closes feedback loop: quality recovery → reduce exploration, resume normal training
             if hasattr(DataEventType, 'HIGH_QUALITY_DATA_AVAILABLE'):
-                bus.subscribe(DataEventType.HIGH_QUALITY_DATA_AVAILABLE, self._on_high_quality_data_available)
+                self._safe_subscribe(bus, DataEventType.HIGH_QUALITY_DATA_AVAILABLE, self._on_high_quality_data_available)
                 event_count += 1
 
             # Dec 27, 2025: Subscribe to QUALITY_SCORE_UPDATED for quality tracking
             # Closes feedback loop: quality monitoring → training intensity adjustments
             if hasattr(DataEventType, 'QUALITY_SCORE_UPDATED'):
-                bus.subscribe(DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_score_updated)
+                self._safe_subscribe(bus, DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_score_updated)
                 event_count += 1
 
             # Dec 27, 2025: Subscribe to CLUSTER_CAPACITY_CHANGED for resource adjustments
             # Closes feedback loop: cluster capacity changes → selfplay/training rate adjustments
             if hasattr(DataEventType, 'CLUSTER_CAPACITY_CHANGED'):
-                bus.subscribe(DataEventType.CLUSTER_CAPACITY_CHANGED, self._on_cluster_capacity_changed)
+                self._safe_subscribe(bus, DataEventType.CLUSTER_CAPACITY_CHANGED, self._on_cluster_capacity_changed)
                 event_count += 1
 
             # Dec 27, 2025: Subscribe to HEALTH_CHECK_PASSED/FAILED for node health tracking
             # Closes feedback loop: node health changes → training scheduling adjustments
             if hasattr(DataEventType, 'HEALTH_CHECK_PASSED'):
-                bus.subscribe(DataEventType.HEALTH_CHECK_PASSED, self._on_health_check_passed)
+                self._safe_subscribe(bus, DataEventType.HEALTH_CHECK_PASSED, self._on_health_check_passed)
                 event_count += 1
             if hasattr(DataEventType, 'HEALTH_CHECK_FAILED'):
-                bus.subscribe(DataEventType.HEALTH_CHECK_FAILED, self._on_health_check_failed)
+                self._safe_subscribe(bus, DataEventType.HEALTH_CHECK_FAILED, self._on_health_check_failed)
                 event_count += 1
 
             # Dec 29, 2025: Subscribe to PLATEAU_DETECTED for exploration boost
             # Closes feedback loop: plateau detection → exploration boost → break out of plateau
             if hasattr(DataEventType, 'PLATEAU_DETECTED'):
-                bus.subscribe(DataEventType.PLATEAU_DETECTED, self._on_plateau_detected)
+                self._safe_subscribe(bus, DataEventType.PLATEAU_DETECTED, self._on_plateau_detected)
                 event_count += 1
 
             # Jan 3, 2026: Subscribe to TRAINING_TIMEOUT_REACHED for timeout recovery
             # Closes feedback loop: training timeout → exploration boost, selfplay priority bump
             # Critical gap fix: event was emitted at training_trigger_daemon.py:3314 but had no handler
             if hasattr(DataEventType, 'TRAINING_TIMEOUT_REACHED'):
-                bus.subscribe(DataEventType.TRAINING_TIMEOUT_REACHED, self._on_training_timeout_reached)
+                self._safe_subscribe(bus, DataEventType.TRAINING_TIMEOUT_REACHED, self._on_training_timeout_reached)
                 event_count += 1
 
             logger.info(f"[FeedbackLoopController] Subscribed to {event_count} event types")
@@ -727,7 +727,8 @@ class FeedbackLoopController(FeedbackClusterHealthMixin, HandlerBase):
                     logger.debug(f"[FeedbackLoopController] Lazy wiring failed: {e}")
 
             # P0.6 Dec 2025: Use DataEventType enum for type-safe subscription
-            bus.subscribe(DataEventType.SCHEDULER_REGISTERED, on_scheduler_registered)
+            # January 2026: Track subscription for safe unsubscription
+            self._safe_subscribe(bus, DataEventType.SCHEDULER_REGISTERED, on_scheduler_registered)
             logger.debug("[FeedbackLoopController] Subscribed to SCHEDULER_REGISTERED")
 
         except (AttributeError, TypeError, RuntimeError) as e:
