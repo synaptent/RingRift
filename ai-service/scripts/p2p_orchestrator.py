@@ -5747,13 +5747,9 @@ class P2POrchestrator(
                 # Prefer IPv4 for primary
                 primary, alternates = self._select_primary_advertise_host(all_ips)
                 if primary and primary != self.advertise_host:
-                    old_host = self.advertise_host
-                    self.advertise_host = primary
+                    # Jan 12, 2026: Use setter to ensure self.self_info.host is also updated
+                    self._set_advertise_host(primary, "ipv6_to_ipv4_switch")
                     self.alternate_ips = alternates
-                    logger.info(
-                        f"[P2P] Switched advertise_host from IPv6 {old_host} to IPv4 {primary} "
-                        f"(IPv4 preferred for compatibility)"
-                    )
                     return
 
             # Current host is valid, just update alternates
@@ -5780,10 +5776,11 @@ class P2POrchestrator(
 
         if primary:
             old_host = self.advertise_host
-            self.advertise_host = primary
+            # Jan 12, 2026: Use setter to ensure self.self_info.host is also updated
+            changed = self._set_advertise_host(primary, "primary_selection")
             self.alternate_ips = alternates
 
-            if old_host and old_host != primary:
+            if changed and old_host:
                 print(
                     f"[P2P] WARNING: advertise_host auto-fixed: {old_host} -> {primary} "
                     f"(alternate IPs: {len(alternates)})"
@@ -5792,7 +5789,7 @@ class P2POrchestrator(
                     f"P2P advertise_host auto-fixed: {old_host} -> {primary} "
                     f"(discovered {len(all_ips)} IPs, {len(alternates)} alternates)"
                 )
-            else:
+            elif not old_host:
                 logger.info(
                     f"[P2P] advertise_host set to {primary} with {len(alternates)} alternate IPs"
                 )
@@ -5810,28 +5807,55 @@ class P2POrchestrator(
         """Periodically revalidate advertise_host for late Tailscale availability.
 
         Dec 31, 2025: Added for 48-hour autonomous operation.
+        Jan 12, 2026: Enhanced with aggressive startup checking and re-announcement.
 
         Problem: If Tailscale is not ready at startup, coordinator advertises private
         IP (10.x.x.x) which breaks mesh connectivity. Tailscale may become available
         later but the private IP persists.
 
-        Solution: Check every 5 minutes if we're advertising a private IP and Tailscale
-        is now available. If so, switch to Tailscale IP and update peer info.
+        Solution: Check every 30s for first 3 minutes (aggressive startup), then
+        every 5 minutes. If advertising wrong IP and Tailscale is available, switch
+        to Tailscale IP, update peer info, and re-announce to bootstrap seeds.
         """
-        await asyncio.sleep(30)  # Initial delay
+        interval = 30.0  # Fast checking during startup
+        stable_count = 0
+        startup_fast_period = 180.0  # 3 minutes of fast checking
+        start_time = time.time()
+
+        await asyncio.sleep(10)  # Brief initial delay
+
         while self.running:
             try:
                 old_host = self.advertise_host
                 self._validate_and_fix_advertise_host()
 
                 if old_host != self.advertise_host:
-                    logger.info(f"[P2P] IP revalidation: {old_host} -> {self.advertise_host}")
+                    logger.warning(f"[P2P] IP revalidation: {old_host} -> {self.advertise_host}")
                     # Update peer info with new IP
                     self._update_self_info()
+
+                    # Jan 12, 2026: Re-announce to bootstrap seeds with corrected IP
+                    try:
+                        await self._announce_to_bootstrap_seeds()
+                        logger.info("[P2P] Re-announced to bootstrap seeds with corrected IP")
+                    except Exception as announce_err:  # noqa: BLE001
+                        logger.debug(f"[P2P] Failed to re-announce after IP correction: {announce_err}")
+
+                    stable_count = 0
+                else:
+                    stable_count += 1
+
+                # Slow down after startup fast period and stable checks
+                elapsed = time.time() - start_time
+                if elapsed > startup_fast_period and stable_count >= 3:
+                    if interval < 300.0:
+                        interval = 300.0  # Slow to 5-minute checks
+                        logger.debug("[P2P] IP validation: switching to 5-minute interval")
+
             except Exception as e:  # noqa: BLE001
                 logger.debug(f"[P2P] IP revalidation error: {e}")
 
-            await asyncio.sleep(300)  # Check every 5 minutes
+            await asyncio.sleep(interval)
 
     def _discover_all_ips(self, exclude_primary: str | None = None) -> set[str]:
         """Discover all IP addresses this node can be reached at (IPv4 AND IPv6).
@@ -17771,6 +17795,47 @@ print(json.dumps({{
                 )
             except (ImportError, RuntimeError, AttributeError):
                 pass  # Event system not available or no event loop
+
+        # Jan 12, 2026: Sync host/port when advertise_host changes
+        # Root cause fix: self.self_info.host was never updated after init,
+        # causing heartbeats to broadcast stale IPs to all peers.
+        if self.self_info.host != self.advertise_host:
+            old_host = self.self_info.host
+            self.self_info.host = self.advertise_host
+            logger.info(f"[P2P] Updated self.self_info.host: {old_host} -> {self.advertise_host}")
+        if self.self_info.port != self.advertise_port:
+            self.self_info.port = self.advertise_port
+
+    def _set_advertise_host(self, new_host: str, reason: str = "") -> bool:
+        """Atomically update advertise_host and self.self_info.host.
+
+        Jan 12, 2026: Centralized setter to prevent host desync.
+
+        Previously, multiple code paths could set advertise_host without
+        updating self.self_info.host, causing heartbeats to broadcast stale IPs.
+        This setter ensures both are always in sync.
+
+        Args:
+            new_host: New IP/hostname to advertise
+            reason: Why the change is happening (for logging)
+
+        Returns:
+            True if host changed, False if no change needed
+        """
+        if not new_host or new_host == self.advertise_host:
+            return False
+
+        old_host = self.advertise_host
+        self.advertise_host = new_host
+
+        # CRITICAL: Update self.self_info snapshot immediately
+        if hasattr(self, "self_info") and self.self_info:
+            self.self_info.host = new_host
+            self.self_info.last_heartbeat = time.time()
+
+        reason_str = f" ({reason})" if reason else ""
+        logger.info(f"[P2P] advertise_host changed: {old_host} -> {new_host}{reason_str}")
+        return True
 
     async def _update_self_info_async(self, cache_ttl: float = 5.0):
         """Async version of _update_self_info() to avoid blocking event loop.
