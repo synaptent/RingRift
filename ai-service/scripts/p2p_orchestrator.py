@@ -6167,14 +6167,19 @@ class P2POrchestrator(
             host_cfg = hosts.get(voter_id, {})
             ips: set[str] = set()
 
-            # Collect all known IPs for this voter
+            # Jan 12, 2026: Use Tailscale IPs exclusively for voter matching.
+            # Root cause fix: SSH host IPs can be NAT/public IPs that don't match
+            # what peers actually advertise. Tailscale IPs are consistent across
+            # the mesh network and should always match.
             if host_cfg.get("tailscale_ip"):
                 ips.add(host_cfg["tailscale_ip"])
-            if host_cfg.get("ssh_host"):
+            elif host_cfg.get("ssh_host"):
+                # Only use ssh_host as fallback when tailscale_ip is NOT available
                 ssh_host = host_cfg["ssh_host"]
                 # Only add if it's an IP (not a hostname like "ssh5.vast.ai")
                 if ssh_host and not any(c.isalpha() for c in ssh_host.replace(".", "")):
                     ips.add(ssh_host)
+                    logger.debug(f"[VOTER] Using ssh_host fallback for {voter_id}: {ssh_host}")
 
             if ips:
                 voter_ip_map[voter_id] = ips
@@ -6197,12 +6202,15 @@ class P2POrchestrator(
             return {}
         ip_to_node: dict[str, str] = {}
         for node_id, host_cfg in hosts.items():
+            # Jan 12, 2026: Prioritize Tailscale IPs for node resolution.
+            # Only use ssh_host as fallback when tailscale_ip is NOT available.
             ts_ip = host_cfg.get("tailscale_ip")
             if ts_ip:
                 ip_to_node[ts_ip] = node_id
-            ssh_host = host_cfg.get("ssh_host")
-            if ssh_host and not any(c.isalpha() for c in ssh_host.replace(".", "")):
-                ip_to_node[ssh_host] = node_id
+            elif host_cfg.get("ssh_host"):
+                ssh_host = host_cfg["ssh_host"]
+                if ssh_host and not any(c.isalpha() for c in ssh_host.replace(".", "")):
+                    ip_to_node[ssh_host] = node_id
         return ip_to_node
 
     def _resolve_peer_id_to_node_name(self, peer_id: str) -> str:

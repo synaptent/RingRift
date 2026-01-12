@@ -132,6 +132,69 @@ async def check_p2p_running(client, node_name: str, node_path: str) -> bool:
     return False
 
 
+async def provision_node_id(
+    client,
+    node_name: str,
+    dry_run: bool = False,
+) -> Tuple[bool, str]:
+    """
+    Provision /etc/ringrift/node-id file on a node.
+
+    Jan 12, 2026: Added to fix Lambda node ID detection.
+
+    Root cause: Cloud nodes (Lambda, Vast.ai, etc.) often start P2P without
+    RINGRIFT_NODE_ID set, causing the node ID detection to fall back to
+    hostname (which may be a dashed IP like "192-222-51-29"). This file
+    provides a persistent, canonical source for node identification.
+
+    Args:
+        client: SSH client for the node
+        node_name: Name of the node (this will be written to the file)
+        dry_run: Preview mode without making changes
+
+    Returns:
+        (success, message)
+    """
+    if dry_run:
+        return (True, f"DRY-RUN: Would provision node-id '{node_name}'")
+
+    # Check if already provisioned with correct value
+    check_cmd = "cat /etc/ringrift/node-id 2>/dev/null || echo ''"
+    check_result = await client.run_async(check_cmd, timeout=10)
+    current_id = check_result.stdout.strip() if check_result.returncode == 0 else ""
+
+    if current_id == node_name:
+        return (True, f"node-id already set to '{node_name}'")
+
+    # Provision the node-id file
+    # Use sudo since /etc requires root access
+    provision_cmd = (
+        f"sudo mkdir -p /etc/ringrift && "
+        f"echo '{node_name}' | sudo tee /etc/ringrift/node-id > /dev/null"
+    )
+    result = await client.run_async(provision_cmd, timeout=15)
+
+    if result.returncode != 0:
+        # Try without sudo (some containers run as root)
+        provision_cmd_no_sudo = (
+            f"mkdir -p /etc/ringrift && "
+            f"echo '{node_name}' > /etc/ringrift/node-id"
+        )
+        result = await client.run_async(provision_cmd_no_sudo, timeout=15)
+
+    if result.returncode != 0:
+        return (False, f"Failed to provision node-id: {result.stderr}")
+
+    # Verify
+    verify_result = await client.run_async("cat /etc/ringrift/node-id", timeout=5)
+    if verify_result.returncode == 0 and verify_result.stdout.strip() == node_name:
+        if current_id:
+            return (True, f"node-id updated: '{current_id}' -> '{node_name}'")
+        return (True, f"node-id provisioned: '{node_name}'")
+
+    return (False, f"Verification failed after provisioning")
+
+
 async def sync_config_files(
     client,
     node_name: str,
@@ -536,6 +599,15 @@ async def update_node(
         current_commit = verify_result.stdout.strip() if verify_result.returncode == 0 else "unknown"
 
         logger.info(f"[{node_name}] Updated to commit {current_commit}")
+
+        # Jan 12, 2026: Provision /etc/ringrift/node-id for reliable node identification
+        # This runs on every update to ensure node-id is always correct, even after
+        # container rebuilds or system resets.
+        node_id_success, node_id_msg = await provision_node_id(client, node_name, dry_run)
+        if node_id_success:
+            logger.info(f"[{node_name}] {node_id_msg}")
+        else:
+            logger.warning(f"[{node_name}] {node_id_msg}")
 
         # Sync config files if requested (for files in .gitignore)
         config_sync_msg = ""
