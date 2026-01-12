@@ -91,6 +91,16 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         category="sync",
         health_check_interval=60.0,  # Dec 2025: Critical for data movement
     ),
+    # Config sync daemon (January 2026) - auto-sync distributed_hosts.yaml
+    # Coordinator detects mtime changes and emits CONFIG_UPDATED event
+    # Workers pull config via rsync when they receive the event
+    DaemonType.CONFIG_SYNC: DaemonSpec(
+        runner_name="create_config_sync",
+        depends_on=(DaemonType.EVENT_ROUTER,),
+        category="sync",
+        health_check_interval=60.0,
+        auto_restart=True,  # Critical for cluster config consistency
+    ),
     # Training node watcher (Phase 6)
     DaemonType.TRAINING_NODE_WATCHER: DaemonSpec(
         runner_name="create_training_node_watcher",

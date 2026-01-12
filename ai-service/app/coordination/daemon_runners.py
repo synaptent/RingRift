@@ -937,6 +937,24 @@ async def create_auto_sync() -> None:
         raise
 
 
+async def create_config_sync() -> None:
+    """Create and run config sync daemon (January 2026).
+
+    Automatically syncs distributed_hosts.yaml across cluster nodes.
+    - Coordinator: Detects file changes via mtime polling, emits CONFIG_UPDATED
+    - Workers: Subscribe to event, pull newer config via rsync
+    """
+    try:
+        from app.coordination.config_sync_daemon import get_config_sync_daemon
+
+        daemon = get_config_sync_daemon()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"ConfigSyncDaemon not available: {e}")
+        raise
+
+
 async def create_training_node_watcher() -> None:
     """Create and run training activity daemon (December 2025).
 

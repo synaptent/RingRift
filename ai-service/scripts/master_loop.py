@@ -1162,6 +1162,9 @@ class MasterLoopController:
             # Sync daemons (emit events that DATA_PIPELINE receives)
             # Dec 30 2025: Removed deprecated CLUSTER_DATA_SYNC (use AUTO_SYNC with broadcast strategy)
             DaemonType.AUTO_SYNC,
+            # Jan 2026: CONFIG_SYNC auto-syncs distributed_hosts.yaml across cluster
+            # Fixes P2P voter config drift issue where nodes have mismatched voter lists
+            DaemonType.CONFIG_SYNC,
             DaemonType.ELO_SYNC,
             # Jan 3, 2026: ELO_PROGRESS snapshots Elo periodically for trend tracking
             DaemonType.ELO_PROGRESS,

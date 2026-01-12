@@ -132,6 +132,11 @@ class DaemonType(Enum):
     # Automated P2P data sync (December 2025)
     AUTO_SYNC = "auto_sync"
 
+    # Config sync daemon (January 2026) - auto-sync distributed_hosts.yaml across cluster
+    # Coordinator detects changes via mtime polling, workers pull on CONFIG_UPDATED event
+    # Fixes P2P voter config drift issue where nodes have mismatched voter lists
+    CONFIG_SYNC = "config_sync"
+
     # Training node watcher (December 2025 - Phase 6)
     TRAINING_NODE_WATCHER = "training_node_watcher"
 
