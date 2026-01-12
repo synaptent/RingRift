@@ -1267,6 +1267,9 @@ class SelfplayRunner(ABC):
 
         This method uses GameWriter.add_move() which supports move_probs and search_stats
         columns (schema v10-v11) for storing soft policy targets and rich statistics.
+
+        Jan 2026: Also stores pre-computed heuristic features (v18) when
+        config.compute_heuristics_on_write is True, enabling 10-20x faster exports.
         """
         from ..game_engine import GameEngine
 
@@ -1286,6 +1289,13 @@ class SelfplayRunner(ABC):
                 state_before = state
                 state_after = GameEngine.apply_move(state, move)
 
+                # Compute heuristic features if enabled (Jan 2026 - v18 schema)
+                heuristic_features = None
+                if getattr(self.config, "compute_heuristics_on_write", False):
+                    heuristic_features = self._compute_move_heuristics(
+                        state_before, state_before.current_player
+                    )
+
                 # Record move with MCTS data
                 # CRITICAL: Pass state_before to ensure phase is extracted from pre-move state,
                 # not inferred from previous iteration's post-move state (which causes game_over bug)
@@ -1295,6 +1305,7 @@ class SelfplayRunner(ABC):
                     state_after=state_after,
                     move_probs=move_probs,
                     search_stats=search_stats,
+                    heuristic_features=heuristic_features,
                 )
 
                 state = state_after
@@ -1306,6 +1317,37 @@ class SelfplayRunner(ABC):
                 final_state=state,
                 metadata=finalize_metadata,
             )
+
+    def _compute_move_heuristics(
+        self, state: "GameState", player_number: int
+    ) -> "np.ndarray | None":
+        """Compute heuristic features for a game state.
+
+        Args:
+            state: The game state to evaluate
+            player_number: Player number for perspective
+
+        Returns:
+            numpy float32 array of heuristic features, or None if computation fails
+        """
+        try:
+            import numpy as np
+
+            if getattr(self.config, "full_heuristics", True):
+                from app.training.fast_heuristic_features import extract_full_heuristic_features
+
+                return extract_full_heuristic_features(
+                    state, player_number=player_number, normalize=True
+                )
+            else:
+                from app.training.fast_heuristic_features import extract_heuristic_features
+
+                return extract_heuristic_features(
+                    state, player_number=player_number, eval_mode="full", normalize=True
+                )
+        except Exception as e:
+            logger.debug(f"[SelfplayRunner] Heuristic computation failed: {e}")
+            return None
 
     def on_game_complete(self, callback: Callable[[GameResult], None]) -> None:
         """Register callback for game completion events."""

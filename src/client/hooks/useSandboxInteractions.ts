@@ -145,6 +145,37 @@ export function useSandboxInteractions({
       return;
     }
 
+    // Movement phase - auto-apply no_movement_action when no valid moves exist
+    // RR-FIX-2026-01-12: Handle stuck movement phase for human players.
+    // When a player has no movements, captures, or recovery options, we must
+    // construct and apply a no_movement_action move to progress to line_processing.
+    // This eventually leads to forced_elimination if the player has no actions all turn.
+    if (phaseBefore === 'movement') {
+      const validMoves = engine.getValidMoves(stateBefore.currentPlayer);
+
+      if (validMoves.length === 0) {
+        // No valid moves in movement phase - construct and apply no_movement_action
+        const noMovementAction = {
+          id: `no-movement-${stateBefore.moveHistory.length + 1}`,
+          type: 'no_movement_action' as const,
+          player: stateBefore.currentPlayer,
+          to: { x: 0, y: 0 },
+          timestamp: new Date(),
+          thinkTime: 0,
+          moveNumber: stateBefore.moveHistory.length + 1,
+        };
+        void (async () => {
+          await engine.applyCanonicalMove(noMovementAction);
+          bumpSandboxTurn();
+          setSandboxStateVersion((v) => v + 1);
+          maybeRunSandboxAiIfNeeded();
+        })();
+        return;
+      }
+
+      // Fall through to normal click handling if there are valid moves
+    }
+
     // Territory processing phase - auto-apply no_territory_action when no regions to process
     // RR-FIX-2025-01-10: Handle stuck territory_processing phase for human players
     if (phaseBefore === 'territory_processing') {

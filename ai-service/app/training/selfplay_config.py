@@ -221,6 +221,13 @@ class SelfplayConfig:
     snapshot_interval: int = 20
     cache_nnue_features: bool = True
 
+    # Heuristic pre-computation (Jan 2026 - for fast v5-heavy exports)
+    # When True, computes and stores heuristic features during selfplay
+    # This provides 10-20x speedup for exports with --full-heuristics
+    # Default True: new selfplay games are automatically cache-ready
+    compute_heuristics_on_write: bool = True
+    full_heuristics: bool = True  # True = 49 features, False = 21 fast features
+
     # Resource settings
     num_workers: int = 1
     batch_size: int = 256  # Default 256, use get_optimal_batch_size() for auto-tuning

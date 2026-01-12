@@ -52,7 +52,8 @@ logger = logging.getLogger(__name__)
 # - v15: Added performance indexes (idx_games_config, idx_games_orphans, idx_moves_lookup)
 # - v16: Added opponent_type and opponent_model_id for training data diversity tracking
 # - v17: Updated enforce_moves_on_complete trigger to require MIN_MOVES_REQUIRED (5) instead of > 0
-SCHEMA_VERSION = 17
+# - v18: Added heuristic_features BLOB column to game_moves for pre-computed heuristics (Jan 2026)
+SCHEMA_VERSION = 18
 
 # Default snapshot interval (every N moves)
 DEFAULT_SNAPSHOT_INTERVAL = 20
@@ -507,6 +508,7 @@ class GameWriter:
         fsm_error_code: str | None = None,
         move_probs: dict[str, float] | None = None,
         search_stats: dict | None = None,
+        heuristic_features: "np.ndarray | None" = None,
     ) -> None:
         """Add a move to the game.
 
@@ -526,6 +528,8 @@ class GameWriter:
                 Dict mapping move keys to probabilities: {"move_key": probability, ...}
             search_stats: Optional rich search statistics for auxiliary training (v11)
                 Dict with q_values, visit_counts, uncertainty, root_value, etc.
+            heuristic_features: Optional pre-computed heuristic features for v5 training (v18)
+                numpy array of shape (49,) for full heuristics or (21,) for fast heuristics
         """
         if self._finalized:
             raise RuntimeError("GameWriter has been finalized")
@@ -558,6 +562,12 @@ class GameWriter:
             move_probs=move_probs,
             search_stats=search_stats,
         )
+
+        # Store pre-computed heuristic features if provided (v18, Jan 2026)
+        if heuristic_features is not None:
+            self._db.store_move_heuristics(
+                self._game_id, self._move_count, heuristic_features
+            )
 
         # Handle snapshots
         should_snapshot = False
@@ -1599,6 +1609,36 @@ class GameReplayDB:
         self._set_schema_version(conn, 17)
         logger.info("Migration to v17 complete - trigger updated to require MIN_MOVES_REQUIRED")
 
+    def _migrate_v17_to_v18(self, conn: sqlite3.Connection) -> None:
+        """Migrate from schema v17 to v18.
+
+        Adds heuristic_features BLOB column to game_moves table for storing
+        pre-computed heuristic features (January 2026).
+
+        This enables:
+        1. Pre-compute 49 heuristic features during selfplay instead of export
+        2. 10-20x faster training data export with --full-heuristics
+        3. Eliminates redundant O(50) evaluate_position calls during export
+
+        Storage format: Raw numpy float32 bytes (49 × 4 = 196 bytes per move)
+        """
+        logger.info("Migrating schema from v17 to v18")
+
+        # Add heuristic_features column to game_moves
+        try:
+            conn.execute("""
+                ALTER TABLE game_moves ADD COLUMN heuristic_features BLOB
+            """)
+            logger.info("Added heuristic_features column to game_moves")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" in str(e).lower():
+                logger.info("heuristic_features column already exists, skipping")
+            else:
+                raise
+
+        self._set_schema_version(conn, 18)
+        logger.info("Migration to v18 complete - heuristic_features column added")
+
     # =========================================================================
     # Write Operations
     # =========================================================================
@@ -2093,6 +2133,125 @@ class GameReplayDB:
                         pass  # Skip invalid JSON
 
         return results
+
+    # =========================================================================
+    # Heuristic Features Methods (v18)
+    # =========================================================================
+
+    def store_move_heuristics(
+        self,
+        game_id: str,
+        move_number: int,
+        features: "np.ndarray",
+    ) -> None:
+        """Store pre-computed heuristic features for a move.
+
+        Args:
+            game_id: Game identifier
+            move_number: Move number (0-indexed)
+            features: numpy float32 array of heuristic features (typically 49 elements)
+
+        Note:
+            Features are stored as raw bytes for efficient storage and retrieval.
+            196 bytes per move (49 × 4 bytes) vs ~400+ bytes for JSON.
+        """
+        import numpy as np
+
+        features_blob = features.astype(np.float32).tobytes()
+        with self._get_conn() as conn:
+            conn.execute(
+                """
+                UPDATE game_moves
+                SET heuristic_features = ?
+                WHERE game_id = ? AND move_number = ?
+                """,
+                (features_blob, game_id, move_number),
+            )
+
+    def get_move_heuristics(
+        self,
+        game_id: str,
+        move_number: int,
+    ) -> "np.ndarray | None":
+        """Load pre-computed heuristic features for a move.
+
+        Args:
+            game_id: Game identifier
+            move_number: Move number (0-indexed)
+
+        Returns:
+            numpy float32 array of heuristic features, or None if not stored
+        """
+        import numpy as np
+
+        with self._get_conn() as conn:
+            row = conn.execute(
+                """
+                SELECT heuristic_features
+                FROM game_moves
+                WHERE game_id = ? AND move_number = ?
+                """,
+                (game_id, move_number),
+            ).fetchone()
+
+            if row and row["heuristic_features"]:
+                return np.frombuffer(row["heuristic_features"], dtype=np.float32)
+            return None
+
+    def get_game_heuristics_batch(
+        self,
+        game_id: str,
+    ) -> dict[int, "np.ndarray"]:
+        """Load all pre-computed heuristics for a game.
+
+        Args:
+            game_id: Game identifier
+
+        Returns:
+            Dict mapping move_number -> numpy float32 array of heuristic features.
+            Only includes moves with stored heuristics.
+        """
+        import numpy as np
+
+        result: dict[int, np.ndarray] = {}
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                """
+                SELECT move_number, heuristic_features
+                FROM game_moves
+                WHERE game_id = ? AND heuristic_features IS NOT NULL
+                ORDER BY move_number
+                """,
+                (game_id,),
+            ).fetchall()
+
+            for row in rows:
+                if row["heuristic_features"]:
+                    result[row["move_number"]] = np.frombuffer(
+                        row["heuristic_features"], dtype=np.float32
+                    )
+
+        return result
+
+    def has_heuristics(self, game_id: str) -> bool:
+        """Check if a game has any pre-computed heuristics.
+
+        Args:
+            game_id: Game identifier
+
+        Returns:
+            True if at least one move has stored heuristics
+        """
+        with self._get_conn() as conn:
+            row = conn.execute(
+                """
+                SELECT 1 FROM game_moves
+                WHERE game_id = ? AND heuristic_features IS NOT NULL
+                LIMIT 1
+                """,
+                (game_id,),
+            ).fetchone()
+            return row is not None
 
     def get_move_records(
         self,

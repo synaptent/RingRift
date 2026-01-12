@@ -1110,11 +1110,40 @@ function createLineOrderDecision(state: GameState, lines: DetectedLineInfo[]): P
 
 /**
  * Create a pending decision for territory region processing.
+ *
+ * RR-FIX-2026-01-12: Build moves directly from the `regions` parameter instead
+ * of calling `enumerateProcessTerritoryRegionMoves`. The latter uses moveHistory
+ * to check for pending eliminations, but during the decision loop moveHistory
+ * is not yet updated. This caused 0-option decisions after eliminate_rings_from_stack
+ * moves, breaking visual feedback for sequential territory claims.
  */
 function createRegionOrderDecision(state: GameState, regions: Territory[]): PendingDecision {
   const player = state.currentPlayer;
-  const regionMoves = enumerateProcessTerritoryRegionMoves(state, player);
-  const elimMoves = enumerateTerritoryEliminationMoves(state, player);
+  const moveNumber = state.moveHistory.length + 1;
+
+  // Build moves directly from the regions parameter.
+  // This mirrors the logic in enumerateProcessTerritoryRegionMoves but without
+  // the moveHistory-based pending elimination check that can be stale during
+  // the decision loop.
+  const regionMoves: Move[] = [];
+  regions.forEach((region, index) => {
+    if (!region.spaces || region.spaces.length === 0) {
+      return;
+    }
+    const representative = region.spaces[0];
+    const regionKey = representative ? positionToString(representative) : `region-${index}`;
+
+    regionMoves.push({
+      id: `process-region-${index}-${regionKey}`,
+      type: 'choose_territory_option',
+      player,
+      to: representative ?? { x: 0, y: 0 },
+      disconnectedRegions: [region],
+      timestamp: new Date(),
+      thinkTime: 0,
+      moveNumber,
+    } as Move);
+  });
 
   const moves: Move[] = [...regionMoves];
 
@@ -1123,8 +1152,10 @@ function createRegionOrderDecision(state: GameState, regions: Territory[]): Pend
   // canonical skip_territory_processing Move alongside the explicit
   // choose_territory_option options. This keeps the PendingDecision
   // surface aligned with getValidMoves for territory_processing.
+  // Use enumerateTerritoryEliminationMoves for the elimination check since
+  // it's safe to call here (we already know regions exist).
+  const elimMoves = enumerateTerritoryEliminationMoves(state, player);
   if (regionMoves.length > 0 && elimMoves.length === 0) {
-    const moveNumber = state.moveHistory.length + 1;
     moves.push({
       id: `skip-territory-${moveNumber}`,
       type: 'skip_territory_processing',

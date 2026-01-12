@@ -966,6 +966,15 @@ def export_replay_dataset_multi(
             history_frames: list[np.ndarray] = []
             samples_before = len(features_list)
 
+            # Load pre-computed heuristics from database cache (Jan 2026)
+            # This provides 10-20x speedup for --full-heuristics exports
+            cached_heuristics: dict[int, np.ndarray] = {}
+            if include_heuristics:
+                try:
+                    cached_heuristics = db.get_game_heuristics_batch(game_id)
+                except Exception:
+                    pass  # Fallback to computing on-the-fly
+
             # Use incremental state updates instead of replaying from scratch for each move.
             # This reduces complexity from O(n²) to O(n) per game.
             from app.game_engine import GameEngine
@@ -1035,26 +1044,34 @@ def export_replay_dataset_multi(
                 # Extract heuristic features for v5 training (if enabled)
                 # Fast mode: 21 component scores (O(1) extraction)
                 # Full mode: 49 weight decomposition features (O(50) extraction)
+                # Jan 2026: Check DB cache first for 10-20x speedup
                 heuristic_vec = None
                 if include_heuristics:
-                    try:
-                        if full_heuristics:
-                            heuristic_vec = extract_full_heuristic_features(
-                                state_before,
-                                player_number=state_before.current_player,
-                                normalize=True,
-                            )  # Returns np.ndarray of shape (49,)
-                        else:
-                            heuristic_vec = extract_heuristic_features(
-                                state_before,
-                                player_number=state_before.current_player,
-                                eval_mode="full",
-                                normalize=True,
-                            )  # Returns np.ndarray of shape (21,)
-                    except Exception as e:
-                        # Fallback to zeros if extraction fails
-                        heuristic_vec = np.zeros(effective_num_heuristics, dtype=np.float32)
-                        logger.debug(f"Heuristic extraction failed at move {move_index}: {e}")
+                    expected_size = 49 if full_heuristics else 21
+                    # Try cached heuristics first (loaded at start of game loop)
+                    cached = cached_heuristics.get(move_index)
+                    if cached is not None and len(cached) == expected_size:
+                        heuristic_vec = cached
+                    else:
+                        # Compute on-the-fly (legacy games without cache)
+                        try:
+                            if full_heuristics:
+                                heuristic_vec = extract_full_heuristic_features(
+                                    state_before,
+                                    player_number=state_before.current_player,
+                                    normalize=True,
+                                )  # Returns np.ndarray of shape (49,)
+                            else:
+                                heuristic_vec = extract_heuristic_features(
+                                    state_before,
+                                    player_number=state_before.current_player,
+                                    eval_mode="full",
+                                    normalize=True,
+                                )  # Returns np.ndarray of shape (21,)
+                        except Exception as e:
+                            # Fallback to zeros if extraction fails
+                            heuristic_vec = np.zeros(effective_num_heuristics, dtype=np.float32)
+                            logger.debug(f"Heuristic extraction failed at move {move_index}: {e}")
 
                 game_samples.append((
                     stacked, globals_vec, idx, state_before.current_player,

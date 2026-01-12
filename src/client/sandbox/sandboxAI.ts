@@ -1361,53 +1361,163 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
         return;
       }
 
-      const stateForMove = hooks.getGameState();
-      const moveNumber = stateForMove.history.length + 1;
+      // RR-FIX-2026-01-12: Handle placement validation failures gracefully.
+      // When a place_ring move fails validation (e.g., no-dead-placement rule),
+      // remove the failed candidate and retry with another move. This prevents
+      // AI vs AI games from getting stuck when the sandbox's pre-check differs
+      // slightly from the orchestrator's validation.
+      let remainingCandidates = [...candidates];
+      let currentSelection: Move | null = selected;
+      let attempts = 0;
+      const maxAttempts = remainingCandidates.length + 1;
 
-      let moveToApply: Move | null = null;
+      while (attempts < maxAttempts && remainingCandidates.length > 0 && currentSelection) {
+        attempts++;
 
-      if (selected.type === 'skip_placement') {
-        moveToApply = {
-          id: '',
-          type: 'skip_placement',
-          player: current.playerNumber,
-          from: undefined,
-          // Preserve the sentinel position chosen when we fabricated the
-          // skip_placement candidate so traces match the Python engine.
-          to: selected.to ?? ({ x: 0, y: 0 } as Position),
-          timestamp: new Date(),
-          thinkTime: 0,
-          moveNumber,
-        } as Move;
-      } else if (selected.type === 'place_ring') {
-        // Removed the `&& selected.to` check that was causing stalls when selected.to
-        // was somehow missing/corrupted. Instead, provide a defensive fallback.
-        if (!selected.to) {
-          console.error('[Sandbox AI] place_ring selected but to is missing:', selected);
+        const stateForMove = hooks.getGameState();
+        const moveNumber = stateForMove.history.length + 1;
+
+        let moveToApply: Move | null = null;
+
+        if (currentSelection.type === 'skip_placement') {
+          moveToApply = {
+            id: '',
+            type: 'skip_placement',
+            player: current.playerNumber,
+            from: undefined,
+            // Preserve the sentinel position chosen when we fabricated the
+            // skip_placement candidate so traces match the Python engine.
+            to: currentSelection.to ?? ({ x: 0, y: 0 } as Position),
+            timestamp: new Date(),
+            thinkTime: 0,
+            moveNumber,
+          } as Move;
+        } else if (currentSelection.type === 'place_ring') {
+          // Removed the `&& selected.to` check that was causing stalls when selected.to
+          // was somehow missing/corrupted. Instead, provide a defensive fallback.
+          if (!currentSelection.to) {
+            console.error('[Sandbox AI] place_ring selected but to is missing:', currentSelection);
+            // Remove this invalid candidate and try another
+            remainingCandidates = remainingCandidates.filter((c) => c !== currentSelection);
+            if (remainingCandidates.length > 0) {
+              currentSelection = parityMode
+                ? chooseLocalMoveFromCandidates(
+                    current.playerNumber,
+                    gameState,
+                    remainingCandidates,
+                    rng
+                  )
+                : selectMoveWithDifficulty(
+                    current.playerNumber,
+                    gameState,
+                    remainingCandidates,
+                    rng,
+                    aiDifficulty
+                  );
+              if (!currentSelection) break;
+              continue;
+            }
+            break;
+          }
+          moveToApply = {
+            id: '',
+            type: 'place_ring',
+            player: current.playerNumber,
+            from: undefined,
+            to: currentSelection.to,
+            placementCount: currentSelection.placementCount ?? 1,
+            timestamp: new Date(),
+            thinkTime: 0,
+            moveNumber,
+          } as Move;
+        } else {
+          // Unexpected move type in ring_placement; log for debugging.
+          console.error(
+            '[Sandbox AI] Unexpected move type in ring_placement:',
+            currentSelection.type
+          );
           return;
         }
-        moveToApply = {
-          id: '',
-          type: 'place_ring',
-          player: current.playerNumber,
-          from: undefined,
-          to: selected.to,
-          placementCount: selected.placementCount ?? 1,
-          timestamp: new Date(),
-          thinkTime: 0,
-          moveNumber,
-        } as Move;
-      } else {
-        // Unexpected move type in ring_placement; log for debugging.
 
-        console.error('[Sandbox AI] Unexpected move type in ring_placement:', selected.type);
-        return;
+        try {
+          await hooks.applyCanonicalMove(moveToApply);
+          lastAIMove = moveToApply;
+          hooks.setLastAIMove(lastAIMove);
+          return;
+        } catch (error) {
+          // RR-FIX-2026-01-12: Placement validation failed. This can happen when:
+          // 1. The no-dead-placement check in the orchestrator differs slightly from
+          //    the sandbox's pre-check (e.g., race conditions, subtle view differences)
+          // 2. The board state changed between candidate enumeration and move application
+          //
+          // Remove this candidate and try another move from the remaining candidates.
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.warn(
+            `[Sandbox AI] Placement validation failed for ${moveToApply.type} at ` +
+              `(${moveToApply.to?.x},${moveToApply.to?.y}): ${errorMessage}. ` +
+              `Trying another candidate (${remainingCandidates.length - 1} remaining).`
+          );
+
+          // Remove the failed candidate
+          remainingCandidates = remainingCandidates.filter((c) => {
+            if (c.type !== moveToApply!.type) return true;
+            if (c.type === 'place_ring' && moveToApply!.type === 'place_ring') {
+              // Remove candidates at the same position with same or higher count
+              // since they're likely to fail too
+              const samePos =
+                c.to &&
+                moveToApply!.to &&
+                c.to.x === moveToApply!.to.x &&
+                c.to.y === moveToApply!.to.y &&
+                (c.to.z === undefined || c.to.z === moveToApply!.to.z);
+              if (samePos && (c.placementCount ?? 1) >= (moveToApply!.placementCount ?? 1)) {
+                return false;
+              }
+            }
+            return true;
+          });
+
+          if (remainingCandidates.length === 0) {
+            // All candidates exhausted - fall back to forced elimination
+            console.warn(
+              '[Sandbox AI] All placement candidates failed validation. Falling back to forced elimination.'
+            );
+            const eliminated = hooks.maybeProcessForcedEliminationForCurrentPlayer();
+            if (!eliminated) {
+              console.error('[Sandbox AI] Forced elimination also failed. Game may be stuck.');
+            }
+            return;
+          }
+
+          // Select another candidate from the remaining list
+          currentSelection = parityMode
+            ? chooseLocalMoveFromCandidates(
+                current.playerNumber,
+                gameState,
+                remainingCandidates,
+                rng
+              )
+            : selectMoveWithDifficulty(
+                current.playerNumber,
+                gameState,
+                remainingCandidates,
+                rng,
+                aiDifficulty
+              );
+
+          if (!currentSelection) {
+            console.warn(
+              '[Sandbox AI] No valid candidate selected after filtering. Trying forced elimination.'
+            );
+            hooks.maybeProcessForcedEliminationForCurrentPlayer();
+            return;
+          }
+        }
       }
 
-      await hooks.applyCanonicalMove(moveToApply);
-
-      lastAIMove = moveToApply;
-      hooks.setLastAIMove(lastAIMove);
+      // If we get here without returning, all attempts failed
+      console.warn('[Sandbox AI] Exhausted all placement attempts. Trying forced elimination.');
+      hooks.maybeProcessForcedEliminationForCurrentPlayer();
       return;
     }
 

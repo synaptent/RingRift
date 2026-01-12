@@ -831,7 +831,7 @@ export function VictoryModal({
           {/* Shimmer effect overlay for victories */}
           {showConfetti && (
             <div
-              className="absolute inset-0 victory-shimmer pointer-events-none"
+              className="absolute top-0 left-0 right-0 bottom-0 w-full h-full victory-shimmer pointer-events-none rounded-xl"
               aria-hidden="true"
             />
           )}

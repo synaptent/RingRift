@@ -27,6 +27,7 @@ function createMockEngine(
   overrides: Partial<{
     gameState: ReturnType<typeof createTestGameState>;
     validLandingPositions: Position[];
+    validMoves?: Array<{ type: string; player: number; from?: Position; to?: Position }>;
   }> = {}
 ) {
   const defaultState = createTestGameState({
@@ -35,9 +36,12 @@ function createMockEngine(
     gameStatus: 'active',
   });
 
+  // Default valid moves for movement phase to avoid triggering no_movement_action auto-apply
+  const defaultValidMoves = [{ type: 'move_stack', player: 1, from: pos(0, 0), to: pos(1, 1) }];
+
   return {
     getGameState: jest.fn(() => overrides.gameState ?? defaultState),
-    getValidMoves: jest.fn(() => []),
+    getValidMoves: jest.fn(() => overrides.validMoves ?? defaultValidMoves),
     getValidLandingPositionsForCurrentPlayer: jest.fn(() => overrides.validLandingPositions ?? []),
     handleHumanCellClick: jest.fn().mockResolvedValue(undefined),
     clearSelection: jest.fn(),
@@ -635,7 +639,10 @@ describe('useSandboxInteractions', () => {
 
           const engine: any = {
             getGameState: jest.fn(() => currentState),
-            getValidMoves: jest.fn(() => []),
+            // Return a valid move so the movement phase doesn't auto-apply no_movement_action
+            getValidMoves: jest.fn(() => [
+              { type: 'move_stack', player: 1, from: pos(0, 0), to: pos(1, 1) },
+            ]),
             getValidLandingPositionsForCurrentPlayer: jest.fn(() => [pos(1, 1)]),
             handleHumanCellClick: jest.fn(async () => {
               currentState = chainCaptureState;
@@ -1421,7 +1428,10 @@ describe('useSandboxInteractions', () => {
 
       const chainEngine = {
         getGameState: jest.fn(() => state),
-        getValidMoves: jest.fn(() => []),
+        // Return valid moves so movement phase doesn't auto-apply no_movement_action
+        getValidMoves: jest.fn(() => [
+          { type: 'move_stack', player: 1, from: pos(0, 0), to: pos(1, 1) },
+        ]),
         getValidLandingPositionsForCurrentPlayer: jest.fn(() => [pos(1, 1)]),
         handleHumanCellClick: jest.fn(async () => {
           state.currentPhase = 'chain_capture';
@@ -1479,7 +1489,10 @@ describe('useSandboxInteractions', () => {
 
       const chainEngine = {
         getGameState: jest.fn(() => state),
-        getValidMoves: jest.fn(() => []),
+        // Return valid moves so movement phase doesn't auto-apply no_movement_action
+        getValidMoves: jest.fn(() => [
+          { type: 'move_stack', player: 1, from: pos(0, 0), to: pos(1, 1) },
+        ]),
         getValidLandingPositionsForCurrentPlayer: jest.fn(() => [pos(1, 1)]),
         handleHumanCellClick: jest.fn(async () => {
           state.currentPhase = 'movement';

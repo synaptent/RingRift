@@ -6167,9 +6167,8 @@ class P2POrchestrator(
         if cached is not None and (now - cached_time) < max_age_seconds:
             return cached
 
-        # Take new snapshot under lock
-        with self.peers_lock:
-            snapshot = list(self.peers.values())
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
+        snapshot = list(self._peer_snapshot.get_snapshot().values())
 
         setattr(self, cache_key, snapshot)
         setattr(self, cache_time_key, now)
@@ -6193,9 +6192,8 @@ class P2POrchestrator(
             Tuple of (peer_key, peer_info) where peer_key is the key in
             self.peers, or (None, None) if not found.
         """
-        # Jan 12, 2026: Copy-on-write - snapshot for thread-safe iteration
-        with self.peers_lock:
-            peers_snapshot = dict(self.peers)
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
+        peers_snapshot = self._peer_snapshot.get_snapshot()
 
         # Strategy 1: Direct node_id match (most reliable when peers use friendly names)
         if voter_id in peers_snapshot:
@@ -6555,8 +6553,8 @@ class P2POrchestrator(
         voters = list(getattr(self, "voter_node_ids", []) or [])
 
         # Count how many voters are reachable
-        with self.peers_lock:
-            peers_by_id = dict(self.peers)
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
+        peers_by_id = self._peer_snapshot.get_snapshot()
         reachable_voters = 0
         for voter_id in voters:
             if voter_id == self.node_id:
@@ -6612,8 +6610,8 @@ class P2POrchestrator(
             return False
 
         # Check if we can reach any original voters
-        with self.peers_lock:
-            peers_by_id = dict(self.peers)
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
+        peers_by_id = self._peer_snapshot.get_snapshot()
         for voter_id in original:
             if voter_id == self.node_id:
                 continue
@@ -6633,8 +6631,8 @@ class P2POrchestrator(
 
     def _get_eligible_voters(self) -> list[str]:
         """Get list of nodes eligible to be voters (GPU nodes with good health)."""
-        with self.peers_lock:
-            peers = dict(self.peers)
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
+        peers = self._peer_snapshot.get_snapshot()
 
         eligible = []
         now = time.time()
@@ -6690,8 +6688,8 @@ class P2POrchestrator(
         eligible = self._get_eligible_voters()
 
         # Count how many current voters are healthy
-        with self.peers_lock:
-            peers = dict(self.peers)
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
+        peers = self._peer_snapshot.get_snapshot()
 
         healthy_voters = []
         unhealthy_voters = []
@@ -6752,8 +6750,8 @@ class P2POrchestrator(
         if self.role != NodeRole.LEADER:
             return True
 
-        with self.peers_lock:
-            peers = list(self.peers.values())
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
+        peers = list(self._peer_snapshot.get_snapshot().values())
 
         if not peers:
             return True
@@ -6828,8 +6826,8 @@ class P2POrchestrator(
                 lease_ttls.append(float(duration))
                 acks += 1
 
-            with self.peers_lock:
-                peers_by_id = dict(self.peers)
+            # Jan 2026: Use lock-free PeerSnapshot for read-only access
+            peers_by_id = self._peer_snapshot.get_snapshot()
 
             # STABILITY FIX: Use 15s timeout for voter lease operations (was 5s).
             # Cross-geographic Tailscale connections can have latency spikes.
@@ -7536,9 +7534,8 @@ class P2POrchestrator(
             if self.verbose:
                 logger.debug(f"[P2P] Error collecting gossip states: {e}")
 
-        # Collect peer states - Jan 12, 2026: Copy-on-write pattern to reduce lock hold time
-        with self.peers_lock:
-            peers_snapshot = dict(self.peers)  # Quick snapshot, release lock immediately
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
+        peers_snapshot = self._peer_snapshot.get_snapshot()
 
         # Process snapshot outside lock to avoid blocking other operations
         for node_id, peer in peers_snapshot.items():
@@ -8007,8 +8004,8 @@ class P2POrchestrator(
         Returns:
             True if partition detected (majority of peers unreachable)
         """
-        with self.peers_lock:
-            peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
+        peers_snapshot = [p for p in self._peer_snapshot.get_snapshot().values() if p.node_id != self.node_id]
 
         if len(peers_snapshot) < 2:
             return False
@@ -8802,8 +8799,8 @@ class P2POrchestrator(
             NodeDataManifest or None if request failed
         """
         # Look up peer info
-        with self.peers_lock:
-            peer_info = self.peers.get(peer_id)
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
+        peer_info = self._peer_snapshot.get_snapshot().get(peer_id)
 
         if not peer_info:
             logger.debug(f"Peer {peer_id} not found in peers dict")
