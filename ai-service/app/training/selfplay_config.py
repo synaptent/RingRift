@@ -205,7 +205,7 @@ class SelfplayConfig:
     engine_mode: EngineMode = EngineMode.NNUE_GUIDED
     search_depth: int = 3
     mcts_simulations: int = 800
-    simulation_budget: int | None = None  # Gumbel MCTS budget (default uses difficulty)
+    simulation_budget: int = 800  # Gumbel MCTS budget (800 = quality, 64 = throughput)
     difficulty: int = 8  # AI difficulty level (1-10), affects simulation budget
     temperature: float = 1.0
     temperature_threshold: int = 40  # Move number after which to use greedy (increased for more exploration)
@@ -305,11 +305,8 @@ class SelfplayConfig:
     # Prioritizes opponents with ~50% win rate for maximum learning signal
     use_pfsp: bool = True  # Enabled by default
 
-    # Gumbel MCTS simulation budget (overrides mcts_simulations for Gumbel engines)
-    simulation_budget: int | None = None
-
-    # Difficulty level (used to determine simulation_budget if not set)
-    difficulty: int | None = None
+    # Note: simulation_budget defined above (default 800)
+    # Note: difficulty defined above (default 8)
 
     # Elo-adaptive budget (December 2025)
     model_elo: float | None = None  # Model Elo for adaptive budget calculation
@@ -393,41 +390,14 @@ class SelfplayConfig:
     def get_effective_budget(self) -> int:
         """Get the effective simulation budget for MCTS search.
 
-        Priority order:
-        1. Explicit simulation_budget if set
-        2. Elo-adaptive budget if model_elo is set
-        3. Difficulty-based budget if difficulty is set
-        4. Default budget (150)
+        Returns the simulation_budget field (default 800).
+        Note: simulation_budget was changed to default 800 in Jan 2026 fix.
+        Previously it could be None and would fallback through Elo/difficulty.
 
         Returns:
-            Simulation budget for MCTS search
-
-        Example:
-            >>> config = SelfplayConfig(model_elo=1450, training_epoch=50)
-            >>> budget = config.get_effective_budget()
-            >>> print(f"Budget: {budget}")
-            Budget: 225
+            Simulation budget for MCTS search (default: 800)
         """
-        from app.ai.gumbel_common import (
-            GUMBEL_BUDGET_STANDARD,
-            get_budget_for_difficulty,
-            get_elo_adaptive_budget,
-        )
-
-        # Priority 1: Explicit budget
-        if self.simulation_budget is not None:
-            return self.simulation_budget
-
-        # Priority 2: Elo-adaptive budget
-        if self.model_elo is not None:
-            return get_elo_adaptive_budget(self.model_elo, self.training_epoch)
-
-        # Priority 3: Difficulty-based budget
-        if self.difficulty is not None:
-            return get_budget_for_difficulty(self.difficulty)
-
-        # Priority 4: Default
-        return GUMBEL_BUDGET_STANDARD
+        return self.simulation_budget
 
     def get_player_ai_config(self, player: int) -> dict[str, Any]:
         """Get the AI configuration for a specific player.

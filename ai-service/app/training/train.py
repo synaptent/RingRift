@@ -440,6 +440,116 @@ from app.training.heuristic_tuning import (
 )
 
 
+# =============================================================================
+# LossMonitor - Detect learning stalls during training (Jan 2026 fix)
+# =============================================================================
+
+class LossMonitor:
+    """Track loss curves and detect learning failures during training.
+
+    This class monitors training progress and emits events when the model
+    stops learning (loss not decreasing for consecutive epochs).
+
+    Usage:
+        monitor = LossMonitor(patience=5, config_key="hex8_2p")
+        for epoch in range(epochs):
+            train_loss = train_epoch(...)
+            val_loss = validate(...)
+
+            if not monitor.record(epoch, train_loss, val_loss):
+                logger.error("Training stalled - stopping early")
+                break
+    """
+
+    def __init__(self, patience: int = 5, config_key: str = "unknown"):
+        """Initialize the loss monitor.
+
+        Args:
+            patience: Number of epochs without improvement before signaling stall.
+            config_key: Configuration key for event emission (e.g., "hex8_2p").
+        """
+        self.patience = patience
+        self.config_key = config_key
+        self.history: list[dict[str, float]] = []
+        self.best_loss = float('inf')
+        self.stale_epochs = 0
+        self._logger = logging.getLogger(__name__)
+
+    def record(self, epoch: int, train_loss: float, val_loss: float) -> bool:
+        """Record epoch losses and check for learning stall.
+
+        Args:
+            epoch: Current epoch number.
+            train_loss: Training loss for this epoch.
+            val_loss: Validation loss for this epoch.
+
+        Returns:
+            True if training should continue, False if stalled.
+        """
+        self.history.append({
+            'epoch': epoch,
+            'train_loss': train_loss,
+            'val_loss': val_loss,
+        })
+
+        # Check for improvement (1% threshold)
+        if val_loss < self.best_loss * 0.99:
+            self.best_loss = val_loss
+            self.stale_epochs = 0
+        else:
+            self.stale_epochs += 1
+
+        # Emit warning if approaching stall
+        if self.stale_epochs >= self.patience:
+            self._logger.warning(
+                f"[LossMonitor] Loss not decreasing for {self.patience} epochs! "
+                f"Best: {self.best_loss:.4f}, Current: {val_loss:.4f}"
+            )
+
+            # Emit anomaly event if available
+            if HAS_TRAINING_EVENTS and emit_training_loss_anomaly is not None:
+                try:
+                    emit_training_loss_anomaly(
+                        config_key=self.config_key,
+                        anomaly_type="learning_stall",
+                        epochs_stale=self.stale_epochs,
+                        best_loss=self.best_loss,
+                        current_loss=val_loss,
+                    )
+                except (RuntimeError, TypeError) as e:
+                    self._logger.debug(f"Failed to emit anomaly event: {e}")
+
+            return False  # Signal to stop
+
+        # Emit trend info periodically
+        if epoch % 5 == 0 and HAS_TRAINING_EVENTS and emit_training_loss_trend is not None:
+            try:
+                emit_training_loss_trend(
+                    config_key=self.config_key,
+                    epoch=epoch,
+                    train_loss=train_loss,
+                    val_loss=val_loss,
+                )
+            except (RuntimeError, TypeError):
+                pass  # Non-critical, don't log
+
+        return True  # Continue training
+
+    def get_summary(self) -> dict[str, Any]:
+        """Get summary of loss monitoring.
+
+        Returns:
+            Dictionary with monitoring summary.
+        """
+        return {
+            'config_key': self.config_key,
+            'epochs_recorded': len(self.history),
+            'best_loss': self.best_loss,
+            'stale_epochs': self.stale_epochs,
+            'is_stalled': self.stale_epochs >= self.patience,
+        }
+
+
 def evaluate_heuristic_candidate(
     tier_spec: HeuristicTierSpec,
     base_profile_id: str,
@@ -3817,6 +3927,9 @@ def train_model(
     # Define config_label unconditionally (used for metrics and event logging)
     config_label = f"{config.board_type.value}_{num_players}p"
 
+    # Initialize LossMonitor for early learning stall detection (Jan 2026 fix)
+    loss_monitor = LossMonitor(patience=5, config_key=config_label)
+
     # Report batch size metric at start of training
     if HAS_PROMETHEUS and (not distributed or is_main_process()):
         BATCH_SIZE.labels(config=config_label).set(config.batch_size)
@@ -5302,6 +5415,16 @@ def train_model(
                     except (RuntimeError, ConnectionError, TimeoutError) as e:
                         # Event emission can fail due to async runtime or network issues
                         logger.debug(f"Failed to publish training progress event: {e}")
+
+            # LossMonitor: Check for learning stall (Jan 2026 fix)
+            if not loss_monitor.record(epoch, avg_train_loss, avg_val_loss):
+                logger.warning(
+                    f"[LossMonitor] Training stalled - loss not improving. "
+                    f"Consider checking data quality or model architecture. "
+                    f"Summary: {loss_monitor.get_summary()}"
+                )
+                # Don't break early - let existing early stopping handle it
+                # This is just for observability/alerting
 
             # Overfitting detection: warn if validation diverges significantly from train
             if avg_train_loss > 0 and epoch >= 3:

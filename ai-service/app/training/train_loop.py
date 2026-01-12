@@ -40,16 +40,106 @@ See Also:
 
 import json
 import os
+import random as py_random
 import shutil
 
 from app.ai.descent_ai import DescentAI
+from app.ai.heuristic_ai import HeuristicAI
 from app.ai.heuristic_weights import HEURISTIC_WEIGHT_PROFILES
 from app.config.thresholds import WIN_RATE_BEAT_BEST
 from app.models import AIConfig
 from app.training.config import TrainConfig, get_model_version_for_board
 from app.training.generate_data import generate_dataset, generate_dataset_gpu_parallel
+from app.training.selfplay_config import CURRICULUM_STAGES, CurriculumStage
 from app.training.tournament import Tournament
 from app.training.train import train_model
+
+
+def get_diverse_opponent(
+    player_num: int,
+    seed: int,
+    model_path: str | None = None,
+) -> DescentAI | HeuristicAI:
+    """Select opponent with diversity for training data quality.
+
+    Mix: 50% heuristic (strong baseline), 30% descent (tree search), 20% weak heuristic.
+    This diversity prevents the vicious cycle of weak-vs-weak selfplay.
+
+    Args:
+        player_num: Player number (1 or 2)
+        seed: Random seed for reproducibility
+        model_path: Path to neural net model for NN-based opponents (not yet used)
+
+    Returns:
+        Selected AI opponent
+    """
+    rng = py_random.Random(seed + player_num * 1000)
+    roll = rng.random()
+
+    if roll < 0.5:
+        # 50% strong heuristic (difficulty 7-8) - provides strong baseline
+        difficulty = rng.choice([7, 8])
+        return HeuristicAI(
+            player_num,
+            AIConfig(
+                difficulty=difficulty,
+                think_time=1000,
+                randomness=0.05,
+                rngSeed=seed + player_num,
+            ),
+        )
+    elif roll < 0.8:
+        # 30% descent AI (tree search) - tactical depth
+        return DescentAI(
+            player_num,
+            AIConfig(
+                difficulty=6,
+                think_time=500,
+                randomness=0.1,
+                rngSeed=seed + player_num,
+            ),
+        )
+    else:
+        # 20% weak heuristic (difficulty 3-4) - builds confidence, finds basic patterns
+        difficulty = rng.choice([3, 4])
+        return HeuristicAI(
+            player_num,
+            AIConfig(
+                difficulty=difficulty,
+                think_time=300,
+                randomness=0.15,
+                rngSeed=seed + player_num,
+            ),
+        )
+
+
+def get_curriculum_stage(total_games: int, total_iterations: int) -> CurriculumStage:
+    """Get curriculum stage based on training progress.
+
+    Progresses through curriculum stages to build from exploration to strong play:
+    - Early: High exploration, random/weak opponents
+    - Mid: Moderate strength, tactical learning
+    - Late: Strong play, quality trajectories
+
+    Args:
+        total_games: Total games played so far
+        total_iterations: Number of iterations completed
+
+    Returns:
+        CurriculumStage for current training phase
+    """
+    # Progress based on cumulative games played
+    if total_games < 200:
+        return CURRICULUM_STAGES["explore_weak"]
+    elif total_games < 1000:
+        return CURRICULUM_STAGES["moderate_mcts"]
+    elif total_games < 3000:
+        return CURRICULUM_STAGES["moderate_nnue"]
+    elif total_games < 10000:
+        return CURRICULUM_STAGES["strong_gumbel"]
+    else:
+        return CURRICULUM_STAGES["strong_full"]
+
 
 # Optional integration with OptimizedTrainingPipeline (December 2025)
 # Provides: export caching, curriculum feedback, health monitoring, distributed locks
@@ -125,9 +215,13 @@ def run_training_loop(config: TrainConfig | None = None, use_optimized_pipeline:
     # Use the configured number of training iterations so callers can control
     # how many self-play / training / evaluation cycles are run.
     num_loops = config.iterations
+    total_games = 0  # Track cumulative games for curriculum progression
 
     for i in range(num_loops):
+        # Get curriculum stage for current training progress
+        stage = get_curriculum_stage(total_games, i)
         print(f"\n=== Iteration {i+1}/{num_loops} ===")
+        print(f"Curriculum stage: {stage.name} (games: {total_games}, temp: {stage.temperature})")
 
         # 1. Self-Play Data Generation
         # Choose between GPU parallel (fast, heuristic-based) or CPU sequential
@@ -146,32 +240,21 @@ def run_training_loop(config: TrainConfig | None = None, use_optimized_pipeline:
                 gpu_batch_size=config.gpu_batch_size,
             )
         else:
-            print("Generating self-play data (CPU sequential mode)...")
+            print("Generating self-play data (CPU sequential mode with diverse opponents)...")
 
-            # Initialize Descent AIs
-            # They will use the current neural net (if available) for evaluation.
-            # Use rngSeed so that DescentAI/BaseAI derive a deterministic
-            # per-instance RNG for self-play games in the training loop.
-            ai1 = DescentAI(
-                1,
-                AIConfig(
-                    difficulty=5,
-                    think_time=500,
-                    randomness=0.1,
-                    rngSeed=config.seed,
-                ),
+            # Use diverse opponents to prevent weak-vs-weak selfplay trap
+            # Mix: 50% strong heuristic, 30% descent, 20% weak heuristic
+            ai1 = get_diverse_opponent(
+                player_num=1,
+                seed=config.seed + i * 100,  # Vary by iteration for diversity
+                model_path=model_file if os.path.exists(model_file) else None,
             )
-            ai2 = DescentAI(
-                2,
-                AIConfig(
-                    difficulty=5,
-                    think_time=500,
-                    randomness=0.1,
-                    # Use a different per-instance seed from player 1 to avoid
-                    # correlated exploration in self-play.
-                    rngSeed=(config.seed + 1),
-                ),
+            ai2 = get_diverse_opponent(
+                player_num=2,
+                seed=config.seed + i * 100 + 1,  # Different seed from player 1
+                model_path=model_file if os.path.exists(model_file) else None,
             )
+            print(f"  Player 1: {type(ai1).__name__}, Player 2: {type(ai2).__name__}")
 
             # Generate data
             generate_dataset(
@@ -184,6 +267,9 @@ def run_training_loop(config: TrainConfig | None = None, use_optimized_pipeline:
                 history_length=config.history_length,
                 feature_version=config.feature_version,
             )
+
+        # Update total games for curriculum tracking
+        total_games += config.episodes_per_iter
 
         # 2. Train Neural Net
         print("Training neural network...")
@@ -326,15 +412,19 @@ def _run_training_loop_optimized(config: TrainConfig) -> None:
                 gpu_batch_size=config.gpu_batch_size,
             )
         else:
-            print("Generating self-play data (CPU sequential mode)...")
-            ai1 = DescentAI(
-                1,
-                AIConfig(difficulty=5, think_time=500, randomness=0.1, rngSeed=config.seed),
+            print("Generating self-play data (CPU sequential mode with diverse opponents)...")
+            # Use diverse opponents to prevent weak-vs-weak selfplay trap
+            ai1 = get_diverse_opponent(
+                player_num=1,
+                seed=config.seed + i * 100,
+                model_path=model_file if os.path.exists(model_file) else None,
             )
-            ai2 = DescentAI(
-                2,
-                AIConfig(difficulty=5, think_time=500, randomness=0.1, rngSeed=config.seed + 1),
+            ai2 = get_diverse_opponent(
+                player_num=2,
+                seed=config.seed + i * 100 + 1,
+                model_path=model_file if os.path.exists(model_file) else None,
             )
+            print(f"  Player 1: {type(ai1).__name__}, Player 2: {type(ai2).__name__}")
             generate_dataset(
                 num_games=effective_games,
                 output_file=data_file,

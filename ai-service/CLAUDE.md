@@ -328,6 +328,21 @@ python -m app.training.train \
 2. **Board conventions**: Hex boards use radius. hex8 = radius 4 = 61 cells.
 3. **GPU memory**: v2 models with batch_size=512 need ~8GB VRAM.
 4. **PYTHONPATH**: Set `PYTHONPATH=.` when running scripts from ai-service directory.
+5. **Sandbox AI in production**: To enable sandbox AI play in production, set `RINGRIFT_AI_SERVICE_URL=<url>` (e.g., `http://ai-service:8000`). Without this, the client disables AI endpoints to prevent 404 errors.
+
+## Training Fixes (Jan 2026)
+
+Critical fixes for NN training quality:
+
+| Fix | File | Change |
+|-----|------|--------|
+| Simulation budget | `gumbel_search_engine.py:394` | `for_throughput()` → `for_selfplay()` (64→800 sims) |
+| Default budget | `selfplay_config.py:207` | `simulation_budget: int = 800` (was None) |
+| Opponent diversity | `train_loop.py` | 50% heuristic, 30% descent, 20% weak |
+| Curriculum stages | `train_loop.py` | Progressive difficulty based on games played |
+| Loss monitoring | `train.py` | `LossMonitor` class for stall detection |
+
+**Root cause**: Selfplay was using 64 simulations (throughput mode) instead of 800 (quality mode), producing garbage training data. Combined with no opponent diversity, the NNs were stuck in a weak-vs-weak cycle.
 
 ## File Structure
 

@@ -388,10 +388,12 @@ class GumbelSearchEngine:
         Returns:
             Configured GumbelSearchEngine.
         """
+        # CRITICAL FIX (Jan 2026): Use for_selfplay() (800 sims) instead of for_throughput() (64 sims)
+        # The 64-sim budget was producing garbage training data, causing NNs to be weaker than heuristic
         return cls(
             neural_net=neural_net,
             mode=SearchMode.MULTI_GAME_PARALLEL,
-            config=SearchConfig.for_throughput(),
+            config=SearchConfig.for_selfplay(),
             device=device,
             num_games=num_games,
             board_type=board_type,
