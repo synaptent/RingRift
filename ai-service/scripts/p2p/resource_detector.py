@@ -574,40 +574,43 @@ class ResourceDetector:
             result["disk_free_gb"] = usage.free / (1024**3)
 
             # GPU (NVIDIA) - handle multi-GPU by using max
-            try:
-                out = subprocess.run(
-                    [
-                        "nvidia-smi",
-                        "--query-gpu=utilization.gpu,memory.used,memory.total",
-                        "--format=csv,noheader,nounits",
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                if out.returncode == 0:
-                    lines = out.stdout.strip().split("\n")
-                    gpu_utils: list[float] = []
-                    mem_percents: list[float] = []
-                    for line in lines:
-                        parts = line.strip().split(",")
-                        if len(parts) >= 3:
-                            try:
-                                gpu_utils.append(float(parts[0].strip()))
-                                mem_used = float(parts[1].strip())
-                                mem_total = float(parts[2].strip())
-                                if mem_total > 0:
-                                    mem_percents.append(100.0 * mem_used / mem_total)
-                            except (ValueError, IndexError):
-                                continue
-                    if gpu_utils:
-                        # Use max utilization across GPUs (more representative)
-                        result["gpu_percent"] = max(gpu_utils)
-                    if mem_percents:
-                        result["gpu_memory_percent"] = max(mem_percents)
-            except (ValueError, KeyError, IndexError, AttributeError):
-                # Silently ignore nvidia-smi errors (not all nodes have GPUs)
-                pass
+            # Jan 2026: Check cached GPU detection first to avoid spinning nvidia-smi on non-GPU nodes
+            has_nvidia, gpu_name = self.detect_gpu()
+            if has_nvidia and "MPS" not in gpu_name:  # Only run nvidia-smi for NVIDIA GPUs
+                try:
+                    out = subprocess.run(
+                        [
+                            "nvidia-smi",
+                            "--query-gpu=utilization.gpu,memory.used,memory.total",
+                            "--format=csv,noheader,nounits",
+                        ],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if out.returncode == 0:
+                        lines = out.stdout.strip().split("\n")
+                        gpu_utils: list[float] = []
+                        mem_percents: list[float] = []
+                        for line in lines:
+                            parts = line.strip().split(",")
+                            if len(parts) >= 3:
+                                try:
+                                    gpu_utils.append(float(parts[0].strip()))
+                                    mem_used = float(parts[1].strip())
+                                    mem_total = float(parts[2].strip())
+                                    if mem_total > 0:
+                                        mem_percents.append(100.0 * mem_used / mem_total)
+                                except (ValueError, IndexError):
+                                    continue
+                        if gpu_utils:
+                            # Use max utilization across GPUs (more representative)
+                            result["gpu_percent"] = max(gpu_utils)
+                        if mem_percents:
+                            result["gpu_memory_percent"] = max(mem_percents)
+                except (ValueError, KeyError, IndexError, AttributeError, subprocess.TimeoutExpired, OSError):
+                    # Silently ignore nvidia-smi errors
+                    pass
 
         except Exception as e:
             logger.info(f"Resource check error: {e}")

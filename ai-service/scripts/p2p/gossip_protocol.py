@@ -58,6 +58,26 @@ try:
 except ImportError:
     _GOSSIP_LOCK_TIMEOUT = 2.0  # Fallback (reduced from 5.0)
 
+# Jan 2026: NonBlockingAsyncLockWrapper for async-safe lock acquisition
+try:
+    from scripts.p2p.network import NonBlockingAsyncLockWrapper
+except ImportError:
+    # Fallback - use asyncio.to_thread for non-blocking lock acquisition
+    class NonBlockingAsyncLockWrapper:
+        """Fallback non-blocking lock wrapper for async contexts."""
+        def __init__(self, lock, lock_name: str = "unknown", timeout: float = 5.0):
+            self._lock = lock
+            self._lock_name = lock_name
+            self._timeout = timeout
+
+        async def __aenter__(self):
+            await asyncio.to_thread(self._lock.acquire)
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            self._lock.release()
+            return False
+
 
 @dataclass
 class GossipHealthSummary:
@@ -1025,7 +1045,8 @@ class GossipProtocolMixin(P2PMixinBase):
         self._last_endpoint_validation = now
 
         # Find peers with stale endpoints
-        with self.peers_lock:
+        # Jan 2026: Use non-blocking lock wrapper to avoid event loop blocking
+        async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
             stale_peers = [
                 peer for peer in list(self.peers.values())
                 if not getattr(peer, "retired", False)
@@ -1044,7 +1065,8 @@ class GossipProtocolMixin(P2PMixinBase):
                 # Dec 30, 2025: Use retry wrapper for transient failures
                 new_host = await self._probe_endpoint_with_retry(peer)
                 if new_host:
-                    with self.peers_lock:
+                    # Jan 2026: Use non-blocking lock wrapper
+                    async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                         if peer.node_id in self.peers:
                             old_host = self.peers[peer.node_id].host
                             if new_host != old_host:
@@ -1118,7 +1140,8 @@ class GossipProtocolMixin(P2PMixinBase):
             suspected_peer_ids = tracker.get_suspected_peers()
 
         # 2. Get dead (non-alive, non-retired) peers
-        with self.peers_lock:
+        # Jan 2026: Use non-blocking lock wrapper
+        async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
             for peer in list(self.peers.values()):
                 # Skip retired peers - they're intentionally offline
                 if getattr(peer, "retired", False):
@@ -1155,7 +1178,8 @@ class GossipProtocolMixin(P2PMixinBase):
                             )
 
                     # Update peer's host if it changed
-                    with self.peers_lock:
+                    # Jan 2026: Use non-blocking lock wrapper
+                    async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                         if peer.node_id in self.peers:
                             old_host = self.peers[peer.node_id].host
                             if working_ip != old_host:
@@ -1707,8 +1731,9 @@ class GossipProtocolMixin(P2PMixinBase):
         # Dec 2025: Copy peer IDs under lock to avoid stale references.
         # Previously, we copied NodeInfo objects which could become stale
         # between lock release and gossip sending, causing race conditions.
+        # Jan 2026: Use non-blocking lock wrapper in async context
         import random
-        with self.peers_lock:
+        async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
             alive_peer_ids = [
                 p.node_id for p in self.peers.values()
                 if p.is_alive() and not getattr(p, "retired", False)
@@ -1777,7 +1802,8 @@ class GossipProtocolMixin(P2PMixinBase):
                 )
                 continue
 
-            with self.peers_lock:
+            # Jan 2026: Use non-blocking lock wrapper
+            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                 peer = self.peers.get(peer_id)
             if peer and peer.is_alive():
                 # Jan 2, 2026: Per-peer timeout based on NAT status
@@ -3008,7 +3034,8 @@ class GossipProtocolMixin(P2PMixinBase):
             # Try to send heartbeat
             info = await self._send_heartbeat_to_peer(host, port)
             if info:
-                with self.peers_lock:
+                # Jan 2026: Use non-blocking lock wrapper
+                async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                     self.peers[info.node_id] = info
                 self._log_info(f"Successfully connected to gossip-learned peer: {info.node_id}")
 
@@ -3079,7 +3106,8 @@ class GossipProtocolMixin(P2PMixinBase):
         self._last_anti_entropy_repair = now
 
         # Select a random healthy peer for full state exchange
-        with self.peers_lock:
+        # Jan 2026: Use non-blocking lock wrapper
+        async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
             alive_peers = [
                 p for p in self.peers.values()
                 if p.is_alive() and not getattr(p, "retired", False)

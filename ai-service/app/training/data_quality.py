@@ -499,7 +499,10 @@ class DatabaseQualityChecker:
             return False, stats
 
         try:
-            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=10.0)
+            # Jan 2026 fix: Use absolute path and skip URI for read-only
+            # URI mode with file: fails on some systems (macOS)
+            abs_path = db_path.resolve()
+            conn = sqlite3.connect(str(abs_path), timeout=10.0)
             cursor = conn.cursor()
 
             # Check if game_moves table exists

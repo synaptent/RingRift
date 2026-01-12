@@ -180,26 +180,34 @@ def verify_model_architecture(
     if not isinstance(state_dict, dict):
         return False, "Checkpoint does not contain model_state_dict"
 
-    # Check value head dimensions
-    value_fc2_key = None
+    # Check value head dimensions - find the FINAL value layer
+    # v2 models have: value_fc1, value_fc2 (output)
+    # v5-heavy models have: value_fc1, value_fc2, value_fc3 (output)
+    import re
+    value_fc_pattern = re.compile(r"value_fc(\d+)\.weight$")
+    value_layers = {}
     for key in state_dict.keys():
-        if "value_fc2.weight" in key or key == "value_fc2.weight":
-            value_fc2_key = key
-            break
+        match = value_fc_pattern.search(key)
+        if match:
+            layer_num = int(match.group(1))
+            value_layers[layer_num] = key
 
-    if value_fc2_key is None:
+    if not value_layers:
         # Model doesn't have standard value head naming - skip check
-        logger.debug(f"[verify_arch] No value_fc2.weight found in {path.name}, skipping check")
+        logger.debug(f"[verify_arch] No value_fc*.weight found in {path.name}, skipping check")
         return True, ""
 
-    value_fc2_weight = state_dict[value_fc2_key]
-    actual_outputs = value_fc2_weight.shape[0]
+    # Get the highest-numbered layer (the final output layer)
+    final_layer_num = max(value_layers.keys())
+    final_layer_key = value_layers[final_layer_num]
+    final_layer_weight = state_dict[final_layer_key]
+    actual_outputs = final_layer_weight.shape[0]
     expected_outputs = num_players
 
     if actual_outputs != expected_outputs:
         board_str = getattr(board_type, "value", str(board_type)) if board_type else "unknown"
         return False, (
-            f"Model architecture mismatch: value_fc2 has {actual_outputs} outputs, "
+            f"Model architecture mismatch: value_fc{final_layer_num} has {actual_outputs} outputs, "
             f"expected {expected_outputs} for {num_players}-player {board_str} config. "
             f"Model may have been trained for {actual_outputs}-player games."
         )

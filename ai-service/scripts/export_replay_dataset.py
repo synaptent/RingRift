@@ -586,6 +586,8 @@ def export_replay_dataset_multi(
     exclude_sources: set[str] | None = None,  # Source types to exclude
     # Move data validation (January 2026 - Phase 6 Data Integrity)
     fail_on_orphans: bool = True,  # Fail export if orphan games found (no move data)
+    # Quality-weighted sampling (December 2025)
+    quality_weighted: bool = False,  # Use quality-weighted sample weights
 ) -> None:
     """
     Export training samples from multiple GameReplayDB files into an NPZ dataset
@@ -1340,7 +1342,7 @@ def export_replay_dataset_multi(
 
     # Add quality-weighted sample weights (December 2025)
     # Combines source quality (Gumbel 3x, MCTS 3x) with data freshness (half-life 3 days)
-    if getattr(args, 'quality_weighted', False):
+    if quality_weighted:
         if HAS_SOURCE_WEIGHTING:
             timestamps_arr = np.array(timestamps_list, dtype=np.float64)
             sample_weights = compute_combined_weights(
@@ -2323,6 +2325,8 @@ def main(argv: list[str] | None = None) -> int:
         exclude_sources=exclude_sources,
         # Move data validation (January 2026 - Phase 6 Data Integrity)
         fail_on_orphans=args.strict,
+        # Quality-weighted sampling
+        quality_weighted=args.quality_weighted,
     )
 
     # Update cache if enabled

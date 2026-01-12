@@ -1,3 +1,53 @@
+> **Doc Status (2026-01-11): CRITICAL UPDATE - Neural Networks Below Heuristic Baseline**
+>
+> ## January 2026 Critical Assessment
+>
+> **Problem:** Neural network models are NOT beating the heuristic baseline:
+>
+> - Heuristic Elo: 1517-1531
+> - Best Neural (square8_2p:gumbel_mcts:b800): 1502 Elo
+> - Best Neural (hex8_2p:gumbel_mcts:b800): 1494 Elo
+>
+> **Root Causes Identified:**
+>
+> 1. Insufficient training data (~2-3K games per config locally)
+> 2. Low simulation budget in selfplay (b150-b200 instead of b800+)
+> 3. Training data scattered across cluster, not consolidated
+>
+> **Immediate Actions Required:**
+>
+> 1. Sync training data from cluster (89MB+ NPZ files exist on lambda-gh200-training)
+> 2. Generate 10K+ high-quality games per priority config (hex8_2p, square8_2p)
+> 3. Train with lower learning rate (1e-4) and more epochs (50)
+> 4. Run gauntlet evaluation after each training iteration
+>
+> **Training Data Status (Jan 11, 2026):**
+> | Config | Local Games | Cluster NPZ | Status |
+> |--------|-------------|-------------|--------|
+> | hex8*2p | 2,939 | 89MB | Needs more |
+> | hex8_3p | 2,580 | 89MB | Needs more |
+> | hex8_4p | 0 | 83MB | Data exists |
+> | hexagonal*_ | 0 | 113-238MB | Data exists |
+> | square8\__ | 0 | - | Needs data |
+> | square19\_\* | 0 | 83MB (3p) | Limited |
+>
+> **Quick Start to Improve AI Strength:**
+>
+> ```bash
+> # 1. Sync cluster data
+> rsync -avz ubuntu@100.69.101.108:~/ringrift/ai-service/data/training/*.npz data/training/
+>
+> # 2. Train with better hyperparameters
+> python -m app.training.train --board-type hex8 --num-players 2 \
+>   --data-path data/training/hex8_2p_iter1.npz --epochs 50 --lr 0.0001
+>
+> # 3. Evaluate
+> python -m app.gauntlet.runner --board-type hex8 --num-players 2 \
+>   --model-path models/canonical_hex8_2p.pth --games 100
+> ```
+
+---
+
 > **Doc Status (2025-12-22): Active (AI host improvement plan, Python service only)**
 >
 > - Role: prioritized technical improvement and performance plan for the Python AI microservice (agents, search patterns, training pipeline). It informs work on the AI host, but does not redefine game rules.

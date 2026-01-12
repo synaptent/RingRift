@@ -355,6 +355,7 @@ class OWCMirror:
             str(local_path),
             s3_uri,
             "--no-progress",
+            "--no-follow-symlinks",  # Avoid broken symlink issues
         ]
 
         # Add include patterns
@@ -391,19 +392,30 @@ class OWCMirror:
                 timeout=7200.0,  # 2 hour timeout for large directories
             )
 
-            if process.returncode != 0:
-                error_msg = stderr.decode().strip()
-                logger.error(f"Sync failed for {sync_dir.local_path}: {error_msg}")
-                return SyncResult(
-                    directory=sync_dir.local_path,
-                    success=False,
-                    duration_seconds=time.time() - start_time,
-                    error=error_msg,
-                )
-
-            # Parse output to count files
+            # AWS CLI returns exit code 2 for warnings (like skipped files)
+            # This is OK if files were actually synced
             output = stdout.decode()
             file_count = output.count("upload:") + output.count("copy:")
+
+            if process.returncode != 0:
+                error_msg = stderr.decode().strip()
+                # Exit code 2 with "warning:" is acceptable if we synced files
+                # or if it's just about skipped symlinks/unreadable files
+                if process.returncode == 2 and "warning:" in error_msg:
+                    if file_count > 0 or "Skipping" in error_msg:
+                        logger.warning(f"Sync completed with warnings for {sync_dir.local_path}: {error_msg}")
+                    else:
+                        logger.warning(f"Sync had warnings but no files for {sync_dir.local_path}: {error_msg}")
+                else:
+                    logger.error(f"Sync failed for {sync_dir.local_path}: {error_msg}")
+                    return SyncResult(
+                        directory=sync_dir.local_path,
+                        success=False,
+                        duration_seconds=time.time() - start_time,
+                        error=error_msg,
+                    )
+
+            # file_count already computed above
 
             # Estimate bytes (rough estimate from directory size change tracking)
             bytes_transferred = 0

@@ -357,7 +357,12 @@ def _encode_single_game(
                     heuristics_arr: np.ndarray | None = None
                     if heuristic_extractor is not None:
                         try:
-                            heuristics_arr = heuristic_extractor(state_before)
+                            # Jan 2026 fix: Pass player_number to heuristic extractors
+                            # Both extract_heuristic_features and extract_full_heuristic_features
+                            # require (game_state, player_number) signature
+                            heuristics_arr = heuristic_extractor(
+                                state_before, state_before.current_player
+                            )
                         except Exception as e:
                             # Log but don't fail on heuristic extraction errors
                             logger.debug(f"Heuristic extraction failed: {e}")

@@ -132,7 +132,9 @@ class GossipHandlersMixin(BaseP2PHandler):
                     data = json.loads(body.decode("utf-8"))
             else:
                 data = await request.json()
-        except (json.JSONDecodeError, AttributeError):
+        except (json.JSONDecodeError, AttributeError, ConnectionResetError, aiohttp.ClientError) as e:
+            # Jan 2026: Handle connection reset and client errors during request read
+            logger.debug(f"Gossip request read failed: {type(e).__name__}: {e}")
             data = {}
 
         try:
@@ -227,7 +229,9 @@ class GossipHandlersMixin(BaseP2PHandler):
                 return self.error_response("unauthorized", status=401)
 
             data = await request.json()
-        except (AttributeError):
+        except (json.JSONDecodeError, AttributeError, ConnectionResetError, aiohttp.ClientError) as e:
+            # Jan 2026: Handle connection reset and client errors during request read
+            logger.debug(f"Anti-entropy request read failed: {type(e).__name__}: {e}")
             data = {}
 
         # Jan 3, 2026 Sprint 13.3: Extract sender for per-peer lock

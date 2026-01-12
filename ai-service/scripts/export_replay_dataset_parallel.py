@@ -186,6 +186,12 @@ def export_parallel(
         samples_to_arrays,
     )
 
+    # January 2026 fix: full_heuristics implies include_heuristics
+    # Same logic as export_replay_dataset_multi() to ensure consistent behavior
+    if full_heuristics and not include_heuristics:
+        logger.info("Note: --full-heuristics implies --include-heuristics")
+        include_heuristics = True
+
     # Check cache if enabled
     if use_cache:
         cache = get_export_cache()
