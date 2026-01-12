@@ -84,6 +84,13 @@ export function useSandboxAILoop({
         const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
         if (!current || current.type !== 'ai') break;
 
+        // RR-FIX-2026-01-12: Yield to browser BEFORE heavy AI computation to prevent
+        // browser freeze on large boards. The move enumeration can take 500ms-2s+ on
+        // large boards (square19, hexagonal) with many stacks, causing the UI to become
+        // completely unresponsive. By yielding here, the browser can process pending
+        // events (scroll, clicks, DevTools) before the next heavy computation.
+        await new Promise((resolve) => window.setTimeout(resolve, 0));
+
         await engine.maybeRunAITurn();
 
         // After each AI move, clear any stale selection/highlights and bump the
@@ -96,9 +103,18 @@ export function useSandboxAILoop({
 
         safetyCounter += 1;
 
+        // RR-FIX-2026-01-12: Adaptive delay based on board size to prevent browser
+        // freeze on large boards. Large boards (square19, hexagonal) have quadratic
+        // complexity in move enumeration due to O(stacks × directions × board_size).
+        // Use longer delays to keep the browser responsive during AI-vs-AI games.
+        const boardCellCount = state.board.stacks.size + state.board.markers.size;
+        const isLargeBoard = state.boardType === 'square19' || state.boardType === 'hexagonal';
+        const hasManyPieces = boardCellCount > 30;
+        const baseDelay = isLargeBoard || hasManyPieces ? 250 : 120;
+
         // Small delay between moves so AI-only games progress in a smooth
         // sequence rather than a single visual burst of many moves.
-        await new Promise((resolve) => window.setTimeout(resolve, 120));
+        await new Promise((resolve) => window.setTimeout(resolve, baseDelay));
       }
 
       // If the game is still active and the next player is an AI, schedule

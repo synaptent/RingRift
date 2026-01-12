@@ -1,57 +1,62 @@
-#\!/bin/bash
-# Automated Disk Cleanup Script
-# Runs daily to maintain disk below 80%
+#!/bin/bash
+# RingRift Disk Cleanup Script
+# Prevents disk space exhaustion from Claude Code caches and temp files
 
-LOG_FILE="/var/log/disk_cleanup.log"
-THRESHOLD=80
-GAMES_DIR="/home/ubuntu/ringrift/ai-service/data/games"
-CORRUPTED_DIR="/home/ubuntu/ringrift/ai-service/data/corrupted"
+LOG_FILE="/Users/armand/Development/RingRift/ai-service/logs/disk_cleanup.log"
+TIMESTAMP=$(date "+%Y-%m-%d %H:%M:%S")
 
 log() {
-    echo "[$(date "+%Y-%m-%d %H:%M:%S")] $1" | tee -a "$LOG_FILE"
+    echo "[$TIMESTAMP] $1" >> "$LOG_FILE"
 }
 
-log "========================================="
-log "Disk Cleanup Started"
+# Check disk usage first
+USAGE=$(df -h /System/Volumes/Data | awk 'NR==2 {gsub(/%/,"",$5); print $5}')
+log "Disk usage before cleanup: ${USAGE}%"
 
-# Get current disk usage
-DISK_USAGE=$(df -h /home | awk "NR==2 {gsub(/%/,\"\"); print \$5}")
-log "Current disk usage: ${DISK_USAGE}%"
-
-if [ "$DISK_USAGE" -lt "$THRESHOLD" ]; then
-    log "Disk usage below threshold ($THRESHOLD%), no cleanup needed"
-    exit 0
+# 1. Clean Claude debug logs (safe - just debug output)
+if [ -d "$HOME/.claude/debug" ]; then
+    COUNT=$(find "$HOME/.claude/debug" -type f 2>/dev/null | wc -l)
+    rm -rf "$HOME/.claude/debug"/* 2>/dev/null
+    log "Cleaned Claude debug logs: ~$COUNT files"
 fi
 
-log "Disk usage above threshold, starting cleanup..."
-
-# 1. Remove corrupted files
-if [ -d "$CORRUPTED_DIR" ]; then
-    SIZE=$(du -sh "$CORRUPTED_DIR" 2>/dev/null | cut -f1)
-    log "Removing corrupted directory ($SIZE)..."
-    rm -rf "$CORRUPTED_DIR"
+# 2. Clean old Claude file-history (older than 7 days)
+if [ -d "$HOME/.claude/file-history" ]; then
+    COUNT=$(find "$HOME/.claude/file-history" -mtime +7 -type f 2>/dev/null | wc -l)
+    find "$HOME/.claude/file-history" -mtime +7 -type f -delete 2>/dev/null
+    log "Cleaned Claude file-history older than 7 days: ~$COUNT files"
 fi
 
-# 2. Remove old log files (>7 days)
-log "Cleaning old logs..."
-find /home/ubuntu/ringrift/ai-service/logs -name "*.log" -mtime +7 -delete 2>/dev/null
-find /var/log -name "*.log.*" -mtime +7 -delete 2>/dev/null
+# 3. Clean temp model files (older than 7 days)
+COUNT=$(find /tmp -name "*.pth" -mtime +7 2>/dev/null | wc -l)
+find /tmp -name "*.pth" -mtime +7 -delete 2>/dev/null
+log "Cleaned temp .pth files older than 7 days: ~$COUNT files"
 
-# 3. Clean Python cache
-log "Cleaning Python cache..."
-find /home/ubuntu/ringrift -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null
-find /home/ubuntu/ringrift -name "*.pyc" -delete 2>/dev/null
+# 4. Clean old cluster backups in /tmp (older than 3 days)
+if [ -d "/tmp/cluster_backup" ]; then
+    SIZE=$(du -sh /tmp/cluster_backup 2>/dev/null | cut -f1)
+    find /tmp/cluster_backup -mtime +3 -delete 2>/dev/null
+    log "Cleaned old cluster backups: $SIZE"
+fi
 
-# 4. Remove empty game databases
-log "Removing empty game databases..."
-find "$GAMES_DIR" -name "*.db" -size 0 -delete 2>/dev/null
+# 5. Clean ringrift coordination temp files (older than 7 days)
+COUNT=$(find /tmp -name "ringrift_*" -mtime +7 2>/dev/null | wc -l)
+find /tmp -name "ringrift_*" -mtime +7 -type f -delete 2>/dev/null
+find /tmp -name "ringrift_*" -mtime +7 -type d -exec rm -rf {} + 2>/dev/null
+log "Cleaned ringrift temp files older than 7 days: ~$COUNT"
 
-# 5. Compress old game databases (>30 days, not already compressed)
-log "Compressing old databases..."
-find "$GAMES_DIR" -name "*.db" -mtime +30 \! -name "*.gz" -exec gzip {} \; 2>/dev/null
+# Check disk usage after
+USAGE_AFTER=$(df -h /System/Volumes/Data | awk 'NR==2 {gsub(/%/,"",$5); print $5}')
+log "Disk usage after cleanup: ${USAGE_AFTER}%"
 
-# Final disk usage
-DISK_USAGE_AFTER=$(df -h /home | awk "NR==2 {gsub(/%/,\"\"); print \$5}")
-log "Disk usage after cleanup: ${DISK_USAGE_AFTER}%"
-log "Freed: $((DISK_USAGE - DISK_USAGE_AFTER))%"
+# Alert if still high
+if [ "$USAGE_AFTER" -gt 85 ]; then
+    log "WARNING: Disk usage still high at ${USAGE_AFTER}%"
+    echo "WARNING: Disk usage at ${USAGE_AFTER}% - manual cleanup may be needed"
+    echo "Large directories:"
+    du -sh ~/.claude 2>/dev/null
+    du -sh ~/Development/RingRift/ai-service/data 2>/dev/null
+    du -sh ~/Development/RingRift/ai-service/models 2>/dev/null
+fi
+
 log "Cleanup complete"
