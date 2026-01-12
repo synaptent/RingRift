@@ -1903,7 +1903,7 @@ export const SandboxGameHost: React.FC = () => {
   // === Active sandbox game ===
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8 space-y-3 sm:space-y-4">
+      <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3 space-y-2 sm:space-y-2">
         {/* Screen reader live region for game announcements (accessibility parity with BackendGameHost) */}
         <ScreenReaderAnnouncer
           queue={announcementQueue}
