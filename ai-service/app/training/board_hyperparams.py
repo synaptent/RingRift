@@ -55,7 +55,8 @@ class BoardHyperparams:
 
     # Advanced
     gradient_clip: float = 1.0
-    early_stopping_patience: int = 15
+    early_stopping_patience: int = 7  # Jan 2026: Reduced from 15, overfitting observed at epoch 3-5
+    elo_patience: int = 5  # Jan 2026: Elo-based early stopping (peak Elo often before best val loss)
     swa_start_fraction: float = 0.75
 
     def to_dict(self) -> dict[str, Any]:
@@ -64,166 +65,140 @@ class BoardHyperparams:
 
 
 # Board-specific configurations (empirically tuned)
+# Jan 2026: Reduced epochs 100→20 and patience 30→7 based on overfitting analysis
+# Observation: Elo peaks at epoch 3-5, val loss continues to improve but generalization degrades
 BOARD_HYPERPARAMS: dict[str, BoardHyperparams] = {
     # Square 8x8 - baseline, fast training
-    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "square8_2p": BoardHyperparams(
         learning_rate=0.0003,
         batch_size=64,
-        epochs=100,
+        epochs=20,
         hidden_dim=512,
         num_hidden_layers=6,
         weight_decay=0.0001,
         label_smoothing=0.05,
         augmentation_factor=4,
-        early_stopping_patience=30,
     ),
-    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "square8_3p": BoardHyperparams(
         learning_rate=0.0003,
         batch_size=64,
-        epochs=100,
+        epochs=20,
         hidden_dim=512,
         num_hidden_layers=6,
         weight_decay=0.0001,
         policy_weight=1.2,
         label_smoothing=0.07,
-        early_stopping_patience=30,
     ),
-    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "square8_4p": BoardHyperparams(
         learning_rate=0.0003,
         batch_size=64,
-        epochs=100,
+        epochs=20,
         hidden_dim=512,
         num_hidden_layers=6,
         weight_decay=0.0001,
         policy_weight=1.5,
         label_smoothing=0.08,
-        early_stopping_patience=30,
     ),
 
     # Square 19x19 - large state space
-    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "square19_2p": BoardHyperparams(
         learning_rate=0.0003,
         batch_size=64,
-        epochs=100,
+        epochs=20,
         hidden_dim=512,
         num_hidden_layers=6,
         weight_decay=0.0001,
         label_smoothing=0.06,
-        warmup_epochs=10,
+        warmup_epochs=3,
         gradient_clip=0.5,  # Tighter clipping for stability
-        early_stopping_patience=30,
     ),
-    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "square19_3p": BoardHyperparams(
         learning_rate=0.0003,
         batch_size=64,
-        epochs=100,
+        epochs=20,
         hidden_dim=512,
         num_hidden_layers=6,
         weight_decay=0.0001,
         policy_weight=1.3,
         label_smoothing=0.08,
-        early_stopping_patience=30,
     ),
-    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "square19_4p": BoardHyperparams(
         learning_rate=0.0003,
         batch_size=64,
-        epochs=100,
+        epochs=20,
         hidden_dim=512,
         num_hidden_layers=6,
         weight_decay=0.0001,
         policy_weight=1.5,
         label_smoothing=0.10,
-        early_stopping_patience=30,
     ),
 
     # Hexagonal (full) - D6 symmetry
-    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "hexagonal_2p": BoardHyperparams(
         learning_rate=0.0003,
         batch_size=64,
-        epochs=100,
+        epochs=20,
         hidden_dim=512,
         num_hidden_layers=6,
         augmentation_factor=6,  # D6 symmetry
         label_smoothing=0.05,
         weight_decay=0.0001,
-        early_stopping_patience=30,
     ),
-    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "hexagonal_3p": BoardHyperparams(
         learning_rate=0.0003,
         batch_size=64,
-        epochs=100,
+        epochs=20,
         hidden_dim=512,
         num_hidden_layers=6,
         augmentation_factor=6,
         policy_weight=1.2,
         label_smoothing=0.06,
         weight_decay=0.0001,
-        early_stopping_patience=30,
     ),
-    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "hexagonal_4p": BoardHyperparams(
         learning_rate=0.0003,
         batch_size=64,
-        epochs=100,
+        epochs=20,
         hidden_dim=512,
         num_hidden_layers=6,
         augmentation_factor=6,
         policy_weight=1.4,
         label_smoothing=0.08,
         weight_decay=0.0001,
-        early_stopping_patience=30,
     ),
 
     # Hex8 (small hex) - balanced for good generalization
-    # Dec 28, 2025: Major architecture upgrade to reach 2000+ Elo
-    # - Increased hidden_dim 192→512 and layers 2→6 for deeper representation
-    # - Reduced batch_size 256→64 for ~5K sample datasets
-    # - Reduced learning_rate 0.0006→0.0003 for stable convergence
-    # - Increased patience 10→30 and epochs 40→100 to let it train fully
-    # - Reduced weight_decay 0.001→0.0001 to prevent underfitting
+    # Jan 2026: Reduced epochs/patience based on overfitting analysis (Elo peaked at epoch 3)
     "hex8_2p": BoardHyperparams(
         learning_rate=0.0003,
         batch_size=64,
-        epochs=100,
+        epochs=20,
         hidden_dim=512,
         num_hidden_layers=6,
         weight_decay=0.0001,
         augmentation_factor=6,
         label_smoothing=0.05,
-        early_stopping_patience=30,
     ),
-    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "hex8_3p": BoardHyperparams(
         learning_rate=0.0003,
         batch_size=64,
-        epochs=100,
+        epochs=20,
         hidden_dim=512,
         num_hidden_layers=6,
         weight_decay=0.0001,
         augmentation_factor=6,
         label_smoothing=0.05,
-        early_stopping_patience=30,
     ),
-    # Dec 28, 2025: Upgraded architecture for 2000+ Elo
     "hex8_4p": BoardHyperparams(
         learning_rate=0.0003,
         batch_size=64,
-        epochs=100,
+        epochs=20,
         hidden_dim=512,
         num_hidden_layers=6,
         weight_decay=0.0001,
         augmentation_factor=6,
         policy_weight=1.2,
         label_smoothing=0.05,
-        early_stopping_patience=30,
     ),
 }
 
