@@ -4052,6 +4052,16 @@ class P2POrchestrator(
             "timestamp": time.time(),
         }
 
+        # Jan 2026: Startup grace period - during first STARTUP_GRACE_PERIOD seconds,
+        # treat unhealthy managers as "starting" instead of failing. This prevents
+        # false alarms during initialization when managers are still subscribing to
+        # events, connecting to databases, or waiting for first sync.
+        uptime = time.time() - getattr(self, "start_time", time.time())
+        in_grace_period = uptime < STARTUP_GRACE_PERIOD
+        if in_grace_period:
+            status["in_startup_grace_period"] = True
+            status["grace_period_remaining"] = round(STARTUP_GRACE_PERIOD - uptime, 1)
+
         for name, manager in managers:
             try:
                 if manager is None:
@@ -4076,8 +4086,15 @@ class P2POrchestrator(
                         "errors": health.get("errors_count", 0) if isinstance(health, dict) else 0,
                     }
                     if not is_healthy:
-                        status["all_healthy"] = False
-                        status["unhealthy_count"] += 1
+                        # Jan 2026: During startup grace period, treat unhealthy as "starting"
+                        # Managers may still be initializing - give them time to become healthy
+                        if in_grace_period:
+                            status["managers"][name]["status"] = "starting"
+                            status["managers"][name]["original_status"] = health_status
+                            # Don't mark all_healthy=False during grace period
+                        else:
+                            status["all_healthy"] = False
+                            status["unhealthy_count"] += 1
                 else:
                     # Manager initialized but no health_check method
                     status["managers"][name] = {"status": "initialized", "health_check": "not_available"}
@@ -4097,9 +4114,19 @@ class P2POrchestrator(
         # Log results
         manager_count = len(managers)
         if status["all_healthy"]:
-            logger.info(f"[P2P] Manager health: all {manager_count} managers healthy ✓")
+            if in_grace_period:
+                starting = [n for n, s in status["managers"].items() if s.get("status") == "starting"]
+                if starting:
+                    logger.info(
+                        f"[P2P] Manager health: {manager_count - len(starting)}/{manager_count} healthy, "
+                        f"{len(starting)} starting (grace period: {status.get('grace_period_remaining', 0):.0f}s remaining)"
+                    )
+                else:
+                    logger.info(f"[P2P] Manager health: all {manager_count} managers healthy ✓")
+            else:
+                logger.info(f"[P2P] Manager health: all {manager_count} managers healthy ✓")
         else:
-            unhealthy = [n for n, s in status["managers"].items() if s.get("status") not in ("healthy", "initialized", "ready", "running")]
+            unhealthy = [n for n, s in status["managers"].items() if s.get("status") not in ("healthy", "initialized", "ready", "running", "starting")]
             logger.warning(f"[P2P] Manager health: {len(unhealthy)}/{manager_count} unhealthy: {unhealthy}")
 
         return status
@@ -4961,9 +4988,8 @@ class P2POrchestrator(
         }
 
         tasks = []
-        peers_snapshot: dict[str, Any] = {}
-        with self.peers_lock:
-            peers_snapshot = dict(self.peers)
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
+        peers_snapshot = self._peer_snapshot.get_snapshot()
 
         for peer_id, peer_info in peers_snapshot.items():
             if not peer_info.is_alive():
@@ -7026,8 +7052,8 @@ class P2POrchestrator(
             if leader_id and expires > now:
                 counts[leader_id] = counts.get(leader_id, 0) + 1
 
-        with self.peers_lock:
-            peers_by_id = dict(self.peers)
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
+        peers_by_id = self._peer_snapshot.get_snapshot()
 
         # STABILITY FIX: Use 15s timeout for voter operations (was 5s).
         timeout = ClientTimeout(total=15)
@@ -7139,8 +7165,8 @@ class P2POrchestrator(
         if self._is_leader():
             return self.self_info
 
-        with self.peers_lock:
-            peers_snapshot = list(self.peers.values())
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
+        peers_snapshot = list(self._peer_snapshot.get_snapshot().values())
 
         conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
 
@@ -8142,11 +8168,11 @@ class P2POrchestrator(
                 ip_to_node[ts_ip] = (name, h)
 
         # Get current alive peer IDs
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
         current_ids: set[str] = set()
-        with self.peers_lock:
-            for peer in self.peers.values():
-                if peer.is_alive():
-                    current_ids.add(peer.node_id)
+        for peer in self._peer_snapshot.get_snapshot().values():
+            if peer.is_alive():
+                current_ids.add(peer.node_id)
 
         # Find and reconnect missing peers
         reconnected: list[str] = []
@@ -8344,18 +8370,18 @@ class P2POrchestrator(
             Dict mapping config_key -> game_count from peers
         """
         # Try coordinator nodes first (they have canonical databases)
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
+        peers_snapshot = self._peer_snapshot.get_snapshot()
         coordinator_candidates = []
-        with self.peers_lock:
-            for peer_id, peer in self.peers.items():
-                # Coordinator nodes or nodes with role=coordinator
-                role_str = getattr(peer.role, "value", str(peer.role)) if peer.role else ""
-                if "coordinator" in role_str.lower() or "mac-studio" in peer_id.lower():
-                    coordinator_candidates.append(peer)
+        for peer_id, peer in peers_snapshot.items():
+            # Coordinator nodes or nodes with role=coordinator
+            role_str = getattr(peer.role, "value", str(peer.role)) if peer.role else ""
+            if "coordinator" in role_str.lower() or "mac-studio" in peer_id.lower():
+                coordinator_candidates.append(peer)
 
         # Fallback to any alive peer
         if not coordinator_candidates:
-            with self.peers_lock:
-                coordinator_candidates = [p for p in self.peers.values() if p.is_alive()]
+            coordinator_candidates = [p for p in peers_snapshot.values() if p.is_alive()]
 
         for peer in coordinator_candidates[:3]:  # Try up to 3 candidates
             try:
@@ -8851,14 +8877,15 @@ class P2POrchestrator(
         # Only probe peers that are currently alive and not retired; terminated
         # or long-dead nodes should not stall manifest collection. NAT-blocked
         # peers can't accept inbound /data_manifest, so they are excluded too.
-        with self.peers_lock:
-            peers = [
-                p
-                for p in self.peers.values()
-                if p.is_alive()
-                and not bool(getattr(p, "retired", False))
-                and not bool(getattr(p, "nat_blocked", False))
-            ]
+        # Jan 2026: Use lock-free PeerSnapshot for read-only access
+        peers_snapshot = self._peer_snapshot.get_snapshot()
+        peers = [
+            p
+            for p in peers_snapshot.values()
+            if p.is_alive()
+            and not bool(getattr(p, "retired", False))
+            and not bool(getattr(p, "nat_blocked", False))
+        ]
 
         tasks = [self._request_peer_manifest(peer) for peer in peers]
         # December 2025: Add timeout to prevent hang if peers are unresponsive
