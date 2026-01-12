@@ -593,6 +593,8 @@ class TrainingControlHandlersMixin:
                 "--epochs", str(epochs),
                 "--batch-size", str(batch_size),
                 "--save-path", output_path,
+                # Jan 2026: Skip canonical registry check - cluster nodes may not have registry file
+                "--allow-noncanonical",
                 # Phase 1: Core Training Optimizations
                 "--spectral-norm",  # Gradient stability
                 "--cyclic-lr", "--cyclic-lr-period", "5",  # Cyclic LR
