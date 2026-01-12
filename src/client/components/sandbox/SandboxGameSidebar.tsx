@@ -362,18 +362,20 @@ export const SandboxGameSidebar: React.FC<SandboxGameSidebarProps> = ({
           />
         ))}
 
-      {/* AI Think Time Progress Bar - shows when AI is thinking */}
-      {currentAiPlayer && (
-        <AIThinkTimeProgress
-          isAiThinking={aiThinkingStartedAt !== null}
-          thinkingStartedAt={aiThinkingStartedAt}
-          aiDifficulty={aiDifficulty}
-          aiPlayerName={aiPlayerName}
-        />
-      )}
+      {/* AI Think Time Progress Bar - min-height reserves space to prevent layout shift */}
+      <div className="min-h-[60px]">
+        {currentAiPlayer && (
+          <AIThinkTimeProgress
+            isAiThinking={aiThinkingStartedAt !== null}
+            thinkingStartedAt={aiThinkingStartedAt}
+            aiDifficulty={aiDifficulty}
+            aiPlayerName={aiPlayerName}
+          />
+        )}
+      </div>
 
-      {/* Dynamic alerts zone */}
-      <div className="flex flex-col justify-end transition-all duration-200 ease-in-out">
+      {/* Dynamic alerts zone - min-height prevents layout shift when alerts appear/disappear */}
+      <div className="min-h-[24px] flex flex-col justify-end transition-all duration-200 ease-in-out">
         {/* Onboarding scenario context for curated rules/FAQ scenarios */}
         {lastLoadedScenario && lastLoadedScenario.onboarding && lastLoadedScenario.rulesSnippet && (
           <div className="p-4 border border-emerald-700 rounded-2xl bg-emerald-950/60 space-y-2 mb-3">

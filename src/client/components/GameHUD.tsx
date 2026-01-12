@@ -1950,7 +1950,7 @@ function GameHUDFromViewModel({
         <WeirdStateBanner weirdState={surfaceableWeirdState} onShowHelp={handleWeirdStateHelp} />
       )}
       {/* Dynamic indicators zone - reserve space to prevent layout shifts when indicators appear/disappear */}
-      <div className="min-h-[16px]">
+      <div className="min-h-[32px]">
         {/* LPS tracking indicator - shows when a player has consecutive exclusive rounds */}
         <LpsTrackingIndicator lpsTracking={lpsTracking} players={players} />
         {/* Victory progress indicator - shows ring elimination and territory progress */}
