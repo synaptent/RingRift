@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from app.utils.checksum_utils import compute_string_checksum
+from app.utils.parallel_defaults import get_dataloader_workers
 
 
 @dataclass
@@ -172,9 +173,9 @@ class NeuralNetConfig:
     augment_rotations: bool = True
     augment_reflections: bool = True
 
-    # Device and performance
+    # Device and performance (Jan 12, 2026: dynamic num_workers based on platform/GPU)
     device: str = "auto"  # auto, cpu, cuda, mps
-    num_workers: int = 4
+    num_workers: int = field(default_factory=get_dataloader_workers)
     pin_memory: bool = True
 
     # Checkpointing

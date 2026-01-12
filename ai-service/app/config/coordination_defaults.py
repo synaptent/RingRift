@@ -116,15 +116,19 @@ class SyncDefaults:
     - MAX_CONCURRENT_CLUSTER: 5 → 10 (3 was bottleneck with 40+ nodes)
     - MAX_CONCURRENT_PER_HOST: 1 → 2 (high-bandwidth nodes can handle more)
     - DATA_SYNC_INTERVAL: 300 → 120 (faster data availability)
+
+    Jan 2026: Further increased for parallelism-by-default:
+    - MAX_CONCURRENT_PER_HOST: 2 → 4 (modern GPUs and networks can handle more)
+    - MAX_CONCURRENT_CLUSTER: 10 → 16 (better cluster-wide throughput)
     """
     # Sync lock timeout (seconds)
     LOCK_TIMEOUT: int = _env_int("RINGRIFT_SYNC_LOCK_TIMEOUT", 120)
 
-    # Maximum concurrent syncs per host (Dec 2025: 1 → 2 for faster throughput)
-    MAX_CONCURRENT_PER_HOST: int = _env_int("RINGRIFT_MAX_SYNCS_PER_HOST", 2)
+    # Maximum concurrent syncs per host (Jan 2026: 2 → 4 for better parallelism)
+    MAX_CONCURRENT_PER_HOST: int = _env_int("RINGRIFT_MAX_SYNCS_PER_HOST", 4)
 
-    # Maximum concurrent syncs cluster-wide (Dec 2025: 5 → 10 for 43-node cluster)
-    MAX_CONCURRENT_CLUSTER: int = _env_int("RINGRIFT_MAX_SYNCS_CLUSTER", 10)
+    # Maximum concurrent syncs cluster-wide (Jan 2026: 10 → 16 for throughput)
+    MAX_CONCURRENT_CLUSTER: int = _env_int("RINGRIFT_MAX_SYNCS_CLUSTER", 16)
 
     # Data sync interval (seconds) (Dec 2025: 300 → 120 for faster availability)
     DATA_SYNC_INTERVAL: float = _env_float("RINGRIFT_DATA_SYNC_INTERVAL", 120.0)
