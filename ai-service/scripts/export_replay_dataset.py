@@ -597,6 +597,8 @@ def export_replay_dataset_multi(
     fail_on_orphans: bool = True,  # Fail export if orphan games found (no move data)
     # Quality-weighted sampling (December 2025)
     quality_weighted: bool = False,  # Use quality-weighted sample weights
+    # Quality tier filtering (January 2026 - Training Quality Fix)
+    quality_tier: str | None = None,  # Filter by engine mode: bootstrap, standard, quality, ultimate
 ) -> None:
     """
     Export training samples from multiple GameReplayDB files into an NPZ dataset
@@ -726,6 +728,8 @@ def export_replay_dataset_multi(
         filter_desc.append("excluding recovery games")
     if min_quality is not None:
         filter_desc.append(f"min quality score {min_quality:.2f}")
+    if quality_tier is not None and quality_tier != "bootstrap":
+        filter_desc.append(f"quality tier: {quality_tier}")
     if filter_desc:
         print(f"Quality filters: {', '.join(filter_desc)}")
     print(f"Value targets: {'rank-aware' if use_rank_aware_values else 'binary winner/loser'}")
@@ -827,6 +831,46 @@ def export_replay_dataset_multi(
                 if exclude_sources is not None and game_source in exclude_sources:
                     games_skipped += 1
                     continue
+
+            # Quality tier filtering (January 2026 - Training Quality Fix)
+            # Filter games by engine mode to exclude low-quality heuristic-only data
+            if quality_tier is not None and quality_tier != "bootstrap":
+                source_raw_qt = str(meta.get("source", "") or "").lower()
+                # Determine engine mode from source
+                if "gumbel" in source_raw_qt:
+                    qt_engine_mode = "gumbel_mcts"
+                elif "mcts" in source_raw_qt:
+                    qt_engine_mode = "mcts"
+                elif "mixed" in source_raw_qt:
+                    qt_engine_mode = "mixed"
+                elif "policy" in source_raw_qt:
+                    qt_engine_mode = "policy_only"
+                elif "descent" in source_raw_qt:
+                    qt_engine_mode = "descent"
+                elif "gpu" in source_raw_qt or "heuristic" in source_raw_qt:
+                    qt_engine_mode = "heuristic"
+                else:
+                    qt_engine_mode = "unknown"
+
+                # Apply quality tier filter
+                # standard: Exclude heuristic-only data (no tree search)
+                # quality: Only tree search engines (mcts, gumbel-mcts, mixed)
+                # ultimate: Only gumbel-mcts (highest quality)
+                if quality_tier == "standard":
+                    # Exclude pure heuristic games (no tree search)
+                    if qt_engine_mode == "heuristic":
+                        games_skipped += 1
+                        continue
+                elif quality_tier == "quality":
+                    # Only include tree search engines
+                    if qt_engine_mode not in ("gumbel_mcts", "mcts", "mixed"):
+                        games_skipped += 1
+                        continue
+                elif quality_tier == "ultimate":
+                    # Only include gumbel-mcts (highest quality)
+                    if qt_engine_mode != "gumbel_mcts":
+                        games_skipped += 1
+                        continue
 
             if require_completed:
                 status = str(meta.get("game_status", ""))
@@ -1537,6 +1581,7 @@ def export_replay_dataset(
     require_moves: bool = True,
     min_quality: float | None = None,
     fail_on_orphans: bool = True,
+    quality_tier: str | None = None,  # January 2026: Quality tier filtering
 ) -> None:
     """
     Export training samples from a single GameReplayDB into an NPZ dataset.
@@ -1568,6 +1613,7 @@ def export_replay_dataset(
         encoder_version=encoder_version,
         min_quality=min_quality,
         fail_on_orphans=fail_on_orphans,
+        quality_tier=quality_tier,
     )
 
 
@@ -1820,6 +1866,19 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Minimum quality score (0.0-1.0) to include a game. Uses UnifiedQualityScorer "
             "to evaluate game quality based on completion status, move count, and source. "
             "Recommended: 0.5 for adequate+ quality, 0.7 for good+ quality."
+        ),
+    )
+    parser.add_argument(
+        "--quality-tier",
+        type=str,
+        choices=["bootstrap", "standard", "quality", "ultimate"],
+        default=None,
+        help=(
+            "Filter games by quality tier based on engine mode (Jan 2026). "
+            "bootstrap: All data (no filtering). "
+            "standard: Exclude gpu_heuristic and heuristic-only (no tree search). "
+            "quality: Only mcts/gumbel-mcts/mixed games (tree search enabled). "
+            "ultimate: Only gumbel-mcts games (highest quality data)."
         ),
     )
     parser.add_argument(
@@ -2353,6 +2412,8 @@ def main(argv: list[str] | None = None) -> int:
         fail_on_orphans=args.strict,
         # Quality-weighted sampling
         quality_weighted=args.quality_weighted,
+        # Quality tier filtering (January 2026 - Training Quality Fix)
+        quality_tier=args.quality_tier,
     )
 
     # Update cache if enabled

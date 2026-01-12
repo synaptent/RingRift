@@ -292,7 +292,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
         ("maxn", 5, False, None),  # 5% - highest heuristic quality
         ("nn-descent", 5, True, None),  # 5% - exploration via neural descent (GPU)
         ("policy-only", 15, True, None),  # 15% - neural guided (GPU)
-        ("gumbel-mcts", 50, True, {"budget": 150}),  # 50% - HIGH QUALITY neural (GPU) - primary mode
+        ("gumbel-mcts", 50, True, {"budget": 800}),  # 50% - HIGH QUALITY neural (GPU) - primary mode
     ]
 
     # CPU-only variant for nodes without GPU
@@ -319,7 +319,7 @@ class SelfplayScheduler(EventSubscriptionMixin):
         ("maxn", 5, False, None),  # 5% - highest heuristic quality
         ("nn-descent", 5, True, None),  # 5% - exploration via neural descent (GPU)
         ("policy-only", 10, True, None),  # 10% - neural guided (GPU)
-        ("gumbel-mcts", 60, True, {"budget": 200}),  # 60% - HIGH QUALITY neural (GPU) - primary mode
+        ("gumbel-mcts", 60, True, {"budget": 800}),  # 60% - HIGH QUALITY neural (GPU) - primary mode
     ]
 
     # CPU-only variant for standard boards

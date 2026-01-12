@@ -7,17 +7,25 @@ Run daily via cron to build improvement timeline.
 Usage:
     python scripts/track_elo_progress.py              # Add snapshot
     python scripts/track_elo_progress.py --report     # Show progress report
+    python scripts/track_elo_progress.py --generations # Show generation progress
     python scripts/track_elo_progress.py --plot       # Generate plot (requires matplotlib)
+
+January 2026 - Updated to integrate with generation tracking system.
 """
 
 import argparse
 import csv
 import sqlite3
+import sys
 from datetime import datetime
 from pathlib import Path
 
+# Add parent to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 TRACKING_FILE = Path("data/elo_progress.csv")
 ELO_DB = Path("data/unified_elo.db")
+GENERATION_DB = Path("data/generation_tracking.db")
 
 CONFIGS = [
     "hex8_2p", "hex8_3p", "hex8_4p",
@@ -130,14 +138,43 @@ def show_report():
         print(f"{'Average':<15} {'':>8} {'':>8} {'+' if avg_change >= 0 else ''}{avg_change:.0f}")
 
 
+def show_generation_progress():
+    """Show generation progress from generation tracking database."""
+    try:
+        from app.coordination.generation_tracker import get_generation_tracker
+        tracker = get_generation_tracker()
+        print(tracker.get_improvement_report())
+
+        # Also show detailed stats
+        stats = tracker.get_stats()
+        print()
+        print(f"=== Generation Stats ===")
+        print(f"Total generations: {stats['total_generations']}")
+        print(f"Total tournaments: {stats['total_tournaments']}")
+        print(f"Total Elo snapshots: {stats['total_elo_snapshots']}")
+
+        # Show per-config generation counts
+        if stats['generations_by_config']:
+            print()
+            print("Generations per config:")
+            for config, count in sorted(stats['generations_by_config'].items()):
+                print(f"  {config}: {count}")
+    except ImportError as e:
+        print(f"Could not import generation tracker: {e}")
+        print("Make sure you're running from the ai-service directory.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Track Elo progress over time")
-    parser.add_argument("--report", action="store_true", help="Show progress report")
+    parser.add_argument("--report", action="store_true", help="Show Elo progress report")
+    parser.add_argument("--generations", action="store_true", help="Show generation progress")
     parser.add_argument("--plot", action="store_true", help="Generate progress plot")
     args = parser.parse_args()
-    
+
     if args.report:
         show_report()
+    elif args.generations:
+        show_generation_progress()
     elif args.plot:
         print("Plot generation requires matplotlib. Install with: pip install matplotlib")
         # TODO: Add plot generation

@@ -53,6 +53,14 @@ from app.coordination.event_handler_utils import extract_config_from_path, extra
 
 logger = logging.getLogger(__name__)
 
+# Generation tracking for research demonstration
+try:
+    from app.coordination.generation_tracker import get_generation_tracker
+    HAS_GENERATION_TRACKER = True
+except ImportError:
+    HAS_GENERATION_TRACKER = False
+    get_generation_tracker = None
+
 
 class ModelState(Enum):
     """Model lifecycle states."""
@@ -546,6 +554,43 @@ class ModelLifecycleCoordinator:
             f"val_loss={model.val_loss:.4f}"
         )
 
+        # Record generation for research demonstration (January 2026)
+        if HAS_GENERATION_TRACKER and get_generation_tracker is not None:
+            try:
+                tracker = get_generation_tracker()
+                config_key = extract_config_key(payload)
+                if config_key:
+                    # Parse board_type and num_players from config_key (e.g., "hex8_2p")
+                    parts = config_key.rsplit("_", 1)
+                    if len(parts) == 2 and parts[1].endswith("p"):
+                        board_type = parts[0]
+                        num_players = int(parts[1][:-1])
+
+                        # Get training metadata
+                        training_samples = payload.get("training_samples", 0)
+                        training_games = payload.get("training_games", 0)
+                        model_path = payload.get("model_path", model_id)
+
+                        # Find parent generation (latest for this config)
+                        latest = tracker.get_latest_generation(board_type, num_players)
+                        parent_id = latest.generation_id if latest else None
+
+                        # Record the new generation
+                        gen_id = tracker.record_generation(
+                            model_path=model_path,
+                            board_type=board_type,
+                            num_players=num_players,
+                            parent_generation_id=parent_id,
+                            training_games=training_games,
+                            training_samples=training_samples,
+                        )
+                        logger.info(
+                            f"[ModelLifecycleCoordinator] Recorded generation {gen_id} "
+                            f"for {config_key} (parent={parent_id})"
+                        )
+            except Exception as e:
+                logger.warning(f"[ModelLifecycleCoordinator] Failed to record generation: {e}")
+
     async def _on_elo_updated(self, event) -> None:
         """Handle ELO_UPDATED event."""
         payload = event.payload
@@ -557,6 +602,34 @@ class ModelLifecycleCoordinator:
             model.elo_uncertainty = payload.get("uncertainty", model.elo_uncertainty)
             model.games_played = payload.get("games_played", model.games_played)
             model.win_rate = payload.get("win_rate", model.win_rate)
+
+        # Record Elo snapshot in generation tracker (January 2026)
+        if HAS_GENERATION_TRACKER and get_generation_tracker is not None:
+            try:
+                config_key = extract_config_key(payload)
+                elo = payload.get("elo")
+                games_played = payload.get("games_played", 0)
+
+                if config_key and elo is not None:
+                    parts = config_key.rsplit("_", 1)
+                    if len(parts) == 2 and parts[1].endswith("p"):
+                        board_type = parts[0]
+                        num_players = int(parts[1][:-1])
+
+                        tracker = get_generation_tracker()
+                        latest = tracker.get_latest_generation(board_type, num_players)
+                        if latest:
+                            tracker.record_elo_snapshot(
+                                generation_id=latest.generation_id,
+                                elo=elo,
+                                games_played=games_played,
+                            )
+                            logger.debug(
+                                f"[ModelLifecycleCoordinator] Recorded Elo snapshot: "
+                                f"gen {latest.generation_id} = {elo:.0f}"
+                            )
+            except Exception as e:
+                logger.debug(f"[ModelLifecycleCoordinator] Failed to record Elo snapshot: {e}")
 
     async def _on_model_corrupted(self, event) -> None:
         """Handle MODEL_CORRUPTED event - trigger model recovery/re-download.

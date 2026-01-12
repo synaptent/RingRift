@@ -2067,7 +2067,8 @@ class JobManager(EventSubscriptionMixin):
                 return
 
             # December 2025: Get budget from engine_extra_args if provided (for large board mix)
-            simulation_budget = 150  # Default standard budget
+            # Jan 2026: Increased to 800 - AlphaZero minimum for quality training data
+            simulation_budget = 800  # Quality tier - matches AlphaZero minimum
             if engine_extra_args and "budget" in engine_extra_args:
                 simulation_budget = engine_extra_args["budget"]
                 logger.debug(f"Using custom budget {simulation_budget} from engine_extra_args for job {job_id}")
