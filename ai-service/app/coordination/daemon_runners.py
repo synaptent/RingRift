@@ -168,6 +168,16 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         module="app.coordination.auto_sync_daemon",
         class_name="AutoSyncDaemon",
     ),
+    "config_sync": RunnerSpec(
+        module="app.coordination.config_sync_daemon",
+        class_name="ConfigSyncDaemon",
+        style=InstantiationStyle.FACTORY,
+        factory_func="get_config_sync_daemon",
+    ),
+    "config_validator": RunnerSpec(
+        module="app.coordination.config_validator_daemon",
+        class_name="ConfigValidatorDaemon",
+    ),
     "training_node_watcher": RunnerSpec(
         module="app.coordination.training_activity_daemon",
         class_name="TrainingActivityDaemon",
@@ -952,6 +962,23 @@ async def create_config_sync() -> None:
         await _wait_for_daemon(daemon)
     except ImportError as e:
         logger.error(f"ConfigSyncDaemon not available: {e}")
+        raise
+
+
+async def create_config_validator() -> None:
+    """Create and run config validator daemon (January 2026).
+
+    Validates distributed_hosts.yaml against provider APIs (Lambda, Vast,
+    RunPod, Tailscale) to detect configuration drift and stale entries.
+    """
+    try:
+        from app.coordination.config_validator_daemon import ConfigValidatorDaemon
+
+        daemon = ConfigValidatorDaemon()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"ConfigValidatorDaemon not available: {e}")
         raise
 
 
@@ -3312,6 +3339,8 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.HIGH_QUALITY_SYNC.name: create_high_quality_sync,
         DaemonType.ELO_SYNC.name: create_elo_sync,
         DaemonType.AUTO_SYNC.name: create_auto_sync,
+        DaemonType.CONFIG_SYNC.name: create_config_sync,  # Jan 12, 2026: Config sync
+        DaemonType.CONFIG_VALIDATOR.name: create_config_validator,  # Jan 12, 2026: Config validation
         DaemonType.TRAINING_NODE_WATCHER.name: create_training_node_watcher,
         DaemonType.TRAINING_DATA_SYNC.name: create_training_data_sync,
         DaemonType.TRAINING_DATA_RECOVERY.name: create_training_data_recovery,

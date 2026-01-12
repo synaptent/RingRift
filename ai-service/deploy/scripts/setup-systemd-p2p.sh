@@ -22,7 +22,11 @@ COORDINATOR_URL=$COORDINATOR_URL
 RINGRIFT_PATH=$RINGRIFT_PATH
 EOF
 
-echo "[setup] Created /etc/ringrift/node.conf"
+# Write canonical node-id file (used by P2P auto-detection)
+# Jan 12, 2026: This file is the authoritative source for node identity
+echo "$NODE_ID" | sudo tee /etc/ringrift/node-id > /dev/null
+
+echo "[setup] Created /etc/ringrift/node.conf and /etc/ringrift/node-id"
 
 # Copy service file
 sudo cp "$RINGRIFT_PATH/ai-service/deploy/systemd/ringrift-p2p-universal.service" /etc/systemd/system/ringrift-p2p.service

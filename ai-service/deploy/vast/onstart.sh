@@ -23,6 +23,17 @@ echo "[$(date)] Starting RingRift onstart script..."
 NODE_ID="${VAST_CONTAINERLABEL:-$(hostname)}"
 echo "[$(date)] Node ID: $NODE_ID"
 
+# Export RINGRIFT_NODE_ID environment variable for P2P auto-detection
+# Jan 12, 2026: Ensures P2P uses correct node-id even if hostname is IP-based
+export RINGRIFT_NODE_ID="$NODE_ID"
+
+# Write node-id file if we have write access (best practice for persistent identity)
+if [ -w /etc ] || sudo -n true 2>/dev/null; then
+    sudo mkdir -p /etc/ringrift 2>/dev/null || true
+    echo "$NODE_ID" | sudo tee /etc/ringrift/node-id > /dev/null 2>&1 || true
+    echo "[$(date)] Written node-id to /etc/ringrift/node-id"
+fi
+
 # ============================================
 # 1. Install and configure Tailscale
 # ============================================

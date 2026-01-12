@@ -28511,18 +28511,32 @@ def _auto_detect_node_id() -> str | None:
     """Auto-detect node ID from environment, config, or hostname.
 
     Jan 2, 2026: Added to prevent startup failures when --node-id is forgotten.
+    Jan 12, 2026: Added /etc/ringrift/node-id file support and IP normalization
+                  to fix cloud nodes using dashed IP hostnames as node-id.
 
     Detection order:
-    1. RINGRIFT_NODE_ID environment variable
-    2. Match current IP addresses against distributed_hosts.yaml
-    3. Fall back to hostname
+    1. /etc/ringrift/node-id file (canonical source, set during deployment)
+    2. RINGRIFT_NODE_ID environment variable
+    3. Match current IP addresses against distributed_hosts.yaml
+    4. Normalize dashed hostname (192-222-51-29 -> 192.222.51.29) and re-match
+    5. Fall back to hostname (with warning)
 
     Returns:
         Detected node_id string, or None if detection failed
     """
     import socket
 
-    # 1. Check environment variable
+    # 1. Check /etc/ringrift/node-id file (most authoritative)
+    try:
+        with open("/etc/ringrift/node-id") as f:
+            node_id = f.read().strip()
+            if node_id:
+                logger.info(f"[NODE-ID] Using node-id from /etc/ringrift/node-id: {node_id}")
+                return node_id
+    except (FileNotFoundError, PermissionError):
+        pass
+
+    # 2. Check environment variable
     node_id = os.environ.get("RINGRIFT_NODE_ID")
     if node_id:
         return node_id
@@ -28597,8 +28611,49 @@ def _auto_detect_node_id() -> str | None:
 
     except Exception as e:  # noqa: BLE001
         logger.debug(f"Config-based node_id detection failed: {e}")
+        config = {}  # Used for IP normalization fallback
 
-    # 3. Fall back to hostname with WARNING
+    # 4. Try to normalize dashed hostname (e.g., "192-222-51-29" -> "192.222.51.29")
+    # Cloud nodes often have IP-based hostnames with dashes instead of dots
+    try:
+        hostname = socket.gethostname()
+        # Clean up hostname (remove .local, etc.)
+        if "." in hostname:
+            hostname = hostname.split(".")[0]
+
+        # Normalize dashed hostnames that look like IPs
+        normalized = hostname.replace("-", ".")
+        if normalized.count(".") == 3:  # Looks like IPv4
+            # Verify it's actually a valid IP pattern
+            parts = normalized.split(".")
+            if all(p.isdigit() and 0 <= int(p) <= 255 for p in parts):
+                logger.debug(f"[NODE-ID] Hostname '{hostname}' normalized to IP: {normalized}")
+
+                # Try to match normalized IP against config
+                config_path = Path(__file__).parent.parent / "config" / "distributed_hosts.yaml"
+                if config_path.exists() and not config:
+                    import yaml
+                    with open(config_path) as f:
+                        config = yaml.safe_load(f) or {}
+
+                for name, host_cfg in config.get("hosts", {}).items():
+                    host_ips = set()
+                    if host_cfg.get("ssh_host"):
+                        host_ips.add(host_cfg["ssh_host"])
+                    if host_cfg.get("tailscale_ip"):
+                        host_ips.add(host_cfg["tailscale_ip"])
+                    host_ips.discard(None)
+
+                    if normalized in host_ips:
+                        logger.info(
+                            f"[NODE-ID] Matched node_id '{name}' by normalized IP: "
+                            f"{hostname} -> {normalized}"
+                        )
+                        return name
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"IP normalization failed: {e}")
+
+    # 5. Fall back to hostname with WARNING
     # This often results in wrong node-id on cloud nodes where hostname != config name
     try:
         hostname = socket.gethostname()

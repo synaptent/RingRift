@@ -137,6 +137,10 @@ class DaemonType(Enum):
     # Fixes P2P voter config drift issue where nodes have mismatched voter lists
     CONFIG_SYNC = "config_sync"
 
+    # Config validator daemon (January 2026) - validates config against provider APIs
+    # Checks Lambda, Vast, RunPod, Tailscale to detect config drift
+    CONFIG_VALIDATOR = "config_validator"
+
     # Training node watcher (December 2025 - Phase 6)
     TRAINING_NODE_WATCHER = "training_node_watcher"
 

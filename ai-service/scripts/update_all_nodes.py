@@ -592,6 +592,13 @@ Examples:
         help='Sync non-git-tracked config files (like distributed_hosts.yaml)'
     )
 
+    # January 12, 2026: Tailscale voter validation
+    parser.add_argument(
+        '--validate-tailscale',
+        action='store_true',
+        help='Validate p2p_voters against Tailscale before sync (use with --sync-config)'
+    )
+
     args = parser.parse_args()
 
     if args.dry_run:
@@ -602,6 +609,32 @@ Examples:
     logger.info(f"Include coordinators: {args.include_coordinators}")
     if args.sync_config:
         logger.info(f"Sync config: {CONFIG_FILES_TO_SYNC}")
+
+    # January 12, 2026: Validate voters against Tailscale before sync
+    if args.validate_tailscale:
+        logger.info("Validating p2p_voters against Tailscale...")
+        try:
+            from app.coordination.voter_validator import VoterValidator
+
+            validator = VoterValidator()
+            result = validator.validate()
+            validator.print_report(result)
+
+            if not result.is_valid:
+                logger.error("Voter validation FAILED. Fix errors before syncing config.")
+                if not args.dry_run:
+                    logger.info("Use --dry-run to proceed anyway for testing.")
+                    sys.exit(1)
+            else:
+                logger.info("Voter validation PASSED")
+
+        except ImportError as e:
+            logger.warning(f"VoterValidator not available: {e}")
+            logger.warning("Skipping Tailscale validation")
+        except Exception as e:
+            logger.error(f"Voter validation error: {e}")
+            if not args.dry_run:
+                sys.exit(1)
 
     # January 3, 2026 - Sprint 16.2: Use QuorumSafeUpdateCoordinator in safe mode
     if args.safe_mode:
