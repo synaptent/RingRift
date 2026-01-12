@@ -896,7 +896,7 @@ class RemoteP2PRecoveryLoop(BaseLoop):
 
             # First kill any existing P2P process
             client.exec_command("pkill -f p2p_orchestrator || true")
-            await asyncio.sleep(1)  # Jan 2026: Fixed blocking sleep
+            time.sleep(1)  # Sync function running in thread - use time.sleep
 
             # Pull latest code and start P2P
             # Use python3 explicitly since 'python' may not exist on all nodes
@@ -912,7 +912,7 @@ PYTHONPATH=. nohup python3 scripts/p2p_orchestrator.py --node-id {node_id} --por
             stdout.channel.recv_exit_status()  # Wait for completion
 
             # Wait for process to start
-            await asyncio.sleep(3)  # Jan 2026: Fixed blocking sleep
+            time.sleep(3)  # Sync function running in thread - use time.sleep
 
             # Verify it started
             _, stdout2, _ = client.exec_command("pgrep -f p2p_orchestrator")
