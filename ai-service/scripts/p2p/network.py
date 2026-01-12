@@ -240,9 +240,16 @@ class NonBlockingAsyncLockWrapper:
             True if lock acquired, False if timeout exceeded.
         """
         # Check lock ordering before attempting acquire
+        # January 2026: Added strict mode via RINGRIFT_STRICT_LOCK_ORDER env var
         if not self._check_lock_order():
+            strict_mode = os.environ.get("RINGRIFT_STRICT_LOCK_ORDER", "false").lower() == "true"
+            if strict_mode:
+                raise RuntimeError(
+                    f"Lock ordering violation: attempting to acquire {self._lock_name} "
+                    f"while holding higher-order locks. "
+                    "Disable strict mode with RINGRIFT_STRICT_LOCK_ORDER=false to bypass."
+                )
             # Log warning but still attempt acquire (don't break existing code)
-            pass
 
         wait_time = timeout if timeout is not None else self._timeout
 

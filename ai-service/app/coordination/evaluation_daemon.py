@@ -347,6 +347,16 @@ class EvaluationDaemon(BaseEventHandler):
         self._last_model_scan: float | None = None
         self._model_scan_interval_seconds: float = 300.0  # 5 minutes
 
+        # January 2026: OOM recovery with adaptive batch size reduction
+        # Maps config_key -> reduced parallel_games count (default 16 -> 8 -> 4 -> 2 -> 1)
+        # This prevents infinite OOM retry loops by progressively reducing memory usage
+        self._oom_parallel_games: dict[str, int] = {}
+        self._oom_recovery_stats = {
+            "oom_reductions": 0,
+            "oom_recoveries": 0,
+            "oom_exhausted": 0,
+        }
+
     def _get_subscriptions(self) -> Dict[Any, Callable]:
         """Return event subscriptions for BaseEventHandler.
 
@@ -1052,6 +1062,28 @@ class EvaluationDaemon(BaseEventHandler):
                     f"[EvaluationDaemon] Retry #{retry_attempt} succeeded for {model_path}"
                 )
 
+            # January 2026: Track OOM recovery success and gradually restore parallel_games
+            config_key = make_config_key(board_type, num_players)
+            if config_key in self._oom_parallel_games:
+                current_parallel = self._oom_parallel_games[config_key]
+                self._oom_recovery_stats["oom_recoveries"] += 1
+                logger.info(
+                    f"[EvaluationDaemon] OOM recovery succeeded for {config_key} "
+                    f"with parallel_games={current_parallel}"
+                )
+                # Gradually restore parallel_games: if at 8 -> try 12, at 4 -> try 6, etc.
+                # This allows the system to recover to full speed over multiple evaluations
+                if current_parallel < 16:
+                    restored = min(16, current_parallel + current_parallel // 2)
+                    self._oom_parallel_games[config_key] = restored
+                    logger.debug(
+                        f"[EvaluationDaemon] Restoring parallel_games to {restored} "
+                        f"for {config_key}"
+                    )
+                else:
+                    # Back at default, remove from tracking
+                    del self._oom_parallel_games[config_key]
+
             # Count games played
             total_games = sum(
                 opp.get("games_played", 0)
@@ -1114,17 +1146,39 @@ class EvaluationDaemon(BaseEventHandler):
                 self._persistent_queue.fail(persistent_request_id, "timeout")
         except (MemoryError, RuntimeError) as e:
             # December 29, 2025: GPU OOM and RuntimeError (CUDA) are retryable
+            # January 2026: With adaptive batch size reduction to prevent infinite loops
             self._eval_stats.evaluations_failed += 1
             error_str = str(e).lower()
             is_gpu_error = "cuda" in error_str or "out of memory" in error_str
             logger.error(f"[EvaluationDaemon] Evaluation failed ({type(e).__name__}): {model_path}: {e}")
             if is_gpu_error:
-                retry_attempt = request.get("_retry_attempt", 0)
-                if self._queue_for_retry(
-                    model_path, board_type, num_players, f"GPU error: {e}", retry_attempt
-                ):
-                    self._record_gauntlet_complete(run_id, 0, 0, "retry_queued")
-                    return  # Will retry
+                # January 2026: Reduce parallel_games on OOM to prevent infinite retry loop
+                config_key = make_config_key(board_type, num_players)
+                current_parallel = self._oom_parallel_games.get(config_key, 16)
+                if current_parallel > 1:
+                    # Reduce by half: 16 -> 8 -> 4 -> 2 -> 1
+                    reduced_parallel = max(1, current_parallel // 2)
+                    self._oom_parallel_games[config_key] = reduced_parallel
+                    self._oom_recovery_stats["oom_reductions"] += 1
+                    logger.warning(
+                        f"[EvaluationDaemon] OOM recovery: reducing parallel_games "
+                        f"from {current_parallel} to {reduced_parallel} for {config_key}"
+                    )
+
+                    retry_attempt = request.get("_retry_attempt", 0)
+                    if self._queue_for_retry(
+                        model_path, board_type, num_players,
+                        f"GPU OOM: reduced parallel_games to {reduced_parallel}",
+                        retry_attempt
+                    ):
+                        self._record_gauntlet_complete(run_id, 0, 0, "retry_queued_oom")
+                        return  # Will retry with reduced batch (uses _oom_parallel_games lookup)
+                else:
+                    # Already at minimum batch size, cannot reduce further
+                    self._oom_recovery_stats["oom_exhausted"] += 1
+                    logger.error(
+                        f"[EvaluationDaemon] OOM with parallel_games=1, cannot reduce further: {model_path}"
+                    )
             # Emit permanent failure
             self._record_gauntlet_complete(run_id, 0, 0, f"failed:{type(e).__name__}")
             await self._emit_evaluation_failed(model_path, board_type, num_players, str(e))
@@ -1222,6 +1276,14 @@ class EvaluationDaemon(BaseEventHandler):
         # Dec 29: Enable parallel_games=16 for 2-4x faster gauntlet throughput
         # Jan 2, 2026 (Phase 1.3): Use graduated timeout based on board size
         # Jan 10, 2026: Added player count scaling for longer 3p/4p games
+        # January 2026: Use reduced parallel_games if OOM recovery is active
+        parallel_games = self._oom_parallel_games.get(config_key, 16)
+        if parallel_games < 16:
+            logger.info(
+                f"[EvaluationDaemon] Using reduced parallel_games={parallel_games} "
+                f"for {config_key} (OOM recovery)"
+            )
+
         timeout = self.config.get_timeout_for_board(board_type, num_players)
         result = await asyncio.wait_for(
             asyncio.to_thread(
@@ -1235,7 +1297,7 @@ class EvaluationDaemon(BaseEventHandler):
                 early_stopping=self.config.early_stopping_enabled,
                 early_stopping_confidence=self.config.early_stopping_confidence,
                 early_stopping_min_games=self.config.early_stopping_min_games,
-                parallel_games=16,  # Dec 29: Increased for faster evaluation
+                parallel_games=parallel_games,  # Jan 2026: Adaptive, reduced on OOM
                 game_count=game_count,  # Dec 30: Graduated thresholds
                 harness_type="gumbel_mcts",  # Jan 11, 2026: Track harness in Elo
             ),
@@ -1829,6 +1891,11 @@ class EvaluationDaemon(BaseEventHandler):
             "retries_queued": self._retry_stats["retries_queued"],
             "retries_succeeded": self._retry_stats["retries_succeeded"],
             "retries_exhausted": self._retry_stats["retries_exhausted"],
+            # January 2026: OOM recovery stats
+            "oom_reductions": self._oom_recovery_stats["oom_reductions"],
+            "oom_recoveries": self._oom_recovery_stats["oom_recoveries"],
+            "oom_exhausted": self._oom_recovery_stats["oom_exhausted"],
+            "oom_active_configs": len(self._oom_parallel_games),
         }
 
         # January 3, 2026: Add persistent queue stats

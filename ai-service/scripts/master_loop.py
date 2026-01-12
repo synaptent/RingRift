@@ -1372,13 +1372,21 @@ class MasterLoopController:
         )
 
         # December 2025: Validate daemon dependency graph before starting
+        # January 2026: Made configurable via RINGRIFT_ALLOW_BROKEN_DEPS
         try:
             validate_startup_order_or_raise()
             logger.debug("[MasterLoop] Daemon startup order validated successfully")
         except ValueError as e:
             logger.error(f"[MasterLoop] Daemon dependency validation failed: {e}")
-            # Continue with warning - don't block startup, but log prominently
-            logger.warning("[MasterLoop] Proceeding despite dependency issues")
+            # Check if we should fail hard or continue with warning
+            allow_broken_deps = os.environ.get("RINGRIFT_ALLOW_BROKEN_DEPS", "true").lower() == "true"
+            if not allow_broken_deps:
+                logger.critical(
+                    "[MasterLoop] Exiting due to broken daemon dependencies. "
+                    "Set RINGRIFT_ALLOW_BROKEN_DEPS=true to bypass."
+                )
+                raise SystemExit(1)
+            logger.warning("[MasterLoop] Proceeding despite dependency issues (RINGRIFT_ALLOW_BROKEN_DEPS=true)")
 
         # Track which daemons started successfully
         started_daemons: set[str] = set()

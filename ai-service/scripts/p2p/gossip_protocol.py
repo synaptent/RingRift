@@ -25,6 +25,7 @@ import gzip
 import json
 import os
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -573,11 +574,12 @@ class GossipProtocolMixin(P2PMixinBase):
             "_last_anti_entropy_repair": 0.0,
             "_last_gossip_cleanup": 0.0,
             # Gossip metrics state (merged from GossipMetricsMixin)
+            # Jan 2026: Use deque(maxlen=100) for propagation_delay_ms to prevent memory leak
             "_gossip_metrics": {
                 "message_sent": 0,
                 "message_received": 0,
                 "state_updates": 0,
-                "propagation_delay_ms": [],
+                "propagation_delay_ms": deque(maxlen=100),
                 "anti_entropy_repairs": 0,
                 "stale_states_detected": 0,
                 "last_reset": time.time(),
@@ -3573,11 +3575,12 @@ class GossipProtocolMixin(P2PMixinBase):
             latency_ms: Latency in milliseconds (for latency events)
         """
         # Ensure metrics state exists
+        # Jan 2026: Use deque(maxlen=100) for propagation_delay_ms to prevent memory leak
         self._ensure_state_attr("_gossip_metrics", {
             "message_sent": 0,
             "message_received": 0,
             "state_updates": 0,
-            "propagation_delay_ms": [],
+            "propagation_delay_ms": deque(maxlen=100),
             "anti_entropy_repairs": 0,
             "stale_states_detected": 0,
             "last_reset": time.time(),
@@ -3598,10 +3601,12 @@ class GossipProtocolMixin(P2PMixinBase):
             metrics["stale_states_detected"] = metrics.get("stale_states_detected", 0) + 1
         elif event == "latency":
             # Keep last 100 latency measurements
-            delays = metrics.setdefault("propagation_delay_ms", [])
-            delays.append(latency_ms)
-            if len(delays) > 100:
-                metrics["propagation_delay_ms"] = delays[-100:]
+            # Jan 2026: Use deque(maxlen=100) for automatic bounded size
+            delays = metrics.get("propagation_delay_ms")
+            if not isinstance(delays, deque):
+                delays = deque(maxlen=100)
+                metrics["propagation_delay_ms"] = delays
+            delays.append(latency_ms)  # deque auto-removes oldest when full
 
         # Reset metrics every hour
         if time.time() - metrics.get("last_reset", 0) > 3600:
@@ -3615,11 +3620,12 @@ class GossipProtocolMixin(P2PMixinBase):
         self._ensure_state_attr("_gossip_metrics", {})
         old_metrics = self._gossip_metrics.copy()
 
+        # Jan 2026: Use deque(maxlen=100) for propagation_delay_ms to prevent memory leak
         self._gossip_metrics = {
             "message_sent": 0,
             "message_received": 0,
             "state_updates": 0,
-            "propagation_delay_ms": [],
+            "propagation_delay_ms": deque(maxlen=100),
             "anti_entropy_repairs": 0,
             "stale_states_detected": 0,
             "last_reset": time.time(),

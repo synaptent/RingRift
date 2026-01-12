@@ -35,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import deque
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
@@ -379,7 +380,8 @@ class LeaderElectionMixin(P2PMixinBase):
     # Jan 3, 2026 Sprint 13.3: Leader election latency tracking
     _election_started_at: float = 0.0
     _last_election_latency_seconds: float = 0.0
-    _election_latencies: list[float] = []  # Rolling window of last 10 latencies
+    # Jan 2026: Use deque(maxlen=10) for bounded rolling window (prevents memory leak)
+    _election_latencies: deque[float] | None = None
     _elections_completed: int = 0
     _elections_won: int = 0
     _elections_lost: int = 0
@@ -411,11 +413,10 @@ class LeaderElectionMixin(P2PMixinBase):
         self._election_started_at = 0.0  # Reset for next election
 
         # Update rolling window (keep last 10)
+        # Jan 2026: Use deque(maxlen=10) for automatic bounded size
         if not hasattr(self, "_election_latencies") or self._election_latencies is None:
-            self._election_latencies = []
-        self._election_latencies.append(latency)
-        if len(self._election_latencies) > 10:
-            self._election_latencies = self._election_latencies[-10:]
+            self._election_latencies = deque(maxlen=10)
+        self._election_latencies.append(latency)  # deque auto-removes oldest when full
 
         # Update counters
         self._elections_completed = getattr(self, "_elections_completed", 0) + 1
@@ -578,7 +579,7 @@ class LeaderElectionMixin(P2PMixinBase):
         Jan 3, 2026: Added for proactive quorum degradation monitoring.
         Session 17.48: Added single-node fallback when quorum is lost for extended period.
 
-        When quorum is lost for longer than SINGLE_NODE_FALLBACK_TIMEOUT (10 minutes),
+        When quorum is lost for longer than SINGLE_NODE_FALLBACK_TIMEOUT (3 minutes),
         the node enters single-node mode and returns MINIMUM instead of LOST. This allows
         the node to become its own leader for local operations, preventing the cluster
         from being stuck for hours without leadership.
