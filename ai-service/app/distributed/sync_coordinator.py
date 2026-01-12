@@ -129,18 +129,7 @@ try:
 except ImportError:
     HAS_SYNC_METRICS = False
 
-# December 2025: Per-node circuit breaker for sync operations
-try:
-    from app.coordination.node_circuit_breaker import (
-        get_node_circuit_breaker,
-        NodeCircuitBreaker,
-    )
-    HAS_CIRCUIT_BREAKER = True
-except ImportError:
-    HAS_CIRCUIT_BREAKER = False
-    get_node_circuit_breaker = None  # type: ignore
-    NodeCircuitBreaker = None  # type: ignore
-
+    # Stub functions when metrics module not available
     def record_sync_coordinator_op(*args, **kwargs) -> None:
         """Stub: metrics module not available."""
         return None
@@ -156,6 +145,18 @@ except ImportError:
     def update_sync_sources_count(*args, **kwargs) -> None:
         """Stub: metrics module not available."""
         return None
+
+# December 2025: Per-node circuit breaker for sync operations
+try:
+    from app.coordination.node_circuit_breaker import (
+        get_node_circuit_breaker,
+        NodeCircuitBreaker,
+    )
+    HAS_CIRCUIT_BREAKER = True
+except ImportError:
+    HAS_CIRCUIT_BREAKER = False
+    get_node_circuit_breaker = None  # type: ignore
+    NodeCircuitBreaker = None  # type: ignore
 
 # Event emission for sync feedback loops (Phase 21.2 - Dec 2025)
 try:
