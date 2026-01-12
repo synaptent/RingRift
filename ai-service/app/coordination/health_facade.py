@@ -803,6 +803,127 @@ def get_data_sync_health_summary() -> DataSyncHealthSummary:
     return get_cluster_health_dashboard()._get_data_sync_health()
 
 
+# =============================================================================
+# Coordinator Health Check (January 2026 - Phase 4)
+# =============================================================================
+
+
+@dataclass
+class CoordinatorHealthResult:
+    """Result of coordinator health check.
+
+    Attributes:
+        is_healthy: Overall health status
+        owc_mounted: Whether OWC drive is mounted
+        ssh_key_exists: Whether cluster SSH key exists
+        tailscale_connected: Whether Tailscale is connected
+        p2p_reachable: Whether P2P orchestrator is reachable
+        details: Additional details about each check
+    """
+
+    is_healthy: bool = True
+    owc_mounted: bool = False
+    ssh_key_exists: bool = False
+    tailscale_connected: bool = False
+    p2p_reachable: bool = False
+    details: dict = field(default_factory=dict)
+
+
+def check_coordinator_health() -> CoordinatorHealthResult:
+    """Verify coordinator-specific requirements.
+
+    Checks:
+    1. OWC drive mounted at /Volumes/RingRift-Data
+    2. SSH key exists at ~/.ssh/id_cluster
+    3. Tailscale connected (has 100.x.x.x IP)
+    4. P2P orchestrator reachable
+
+    Returns:
+        CoordinatorHealthResult with all check results
+
+    Example:
+        from app.coordination.health_facade import check_coordinator_health
+
+        result = check_coordinator_health()
+        if not result.is_healthy:
+            print(f"Coordinator unhealthy: {result.details}")
+    """
+    import os
+    import subprocess
+    from pathlib import Path
+
+    result = CoordinatorHealthResult()
+    issues: list[str] = []
+
+    # Check 1: OWC drive mounted
+    owc_path = Path("/Volumes/RingRift-Data")
+    if owc_path.exists() and owc_path.is_dir():
+        result.owc_mounted = True
+        result.details["owc_path"] = str(owc_path)
+        # Check if it has expected subdirectories
+        expected_dirs = ["selfplay_repository", "canonical_models"]
+        found_dirs = [d for d in expected_dirs if (owc_path / d).exists()]
+        result.details["owc_subdirs"] = found_dirs
+        if len(found_dirs) < len(expected_dirs):
+            issues.append(f"OWC missing subdirs: {set(expected_dirs) - set(found_dirs)}")
+    else:
+        issues.append("OWC drive not mounted at /Volumes/RingRift-Data")
+
+    # Check 2: SSH key exists
+    ssh_key_path = Path.home() / ".ssh" / "id_cluster"
+    if ssh_key_path.exists():
+        result.ssh_key_exists = True
+        result.details["ssh_key_path"] = str(ssh_key_path)
+    else:
+        issues.append("SSH key not found at ~/.ssh/id_cluster")
+
+    # Check 3: Tailscale connected
+    try:
+        ts_result = subprocess.run(
+            ["tailscale", "ip", "-4"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if ts_result.returncode == 0:
+            ts_ip = ts_result.stdout.strip()
+            if ts_ip.startswith("100."):
+                result.tailscale_connected = True
+                result.details["tailscale_ip"] = ts_ip
+            else:
+                issues.append(f"Tailscale IP not in 100.x range: {ts_ip}")
+        else:
+            issues.append("Tailscale not running")
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        issues.append(f"Tailscale check failed: {e}")
+
+    # Check 4: P2P orchestrator reachable
+    try:
+        from app.config.ports import get_local_p2p_url
+        import urllib.request
+
+        p2p_url = f"{get_local_p2p_url()}/health"
+        with urllib.request.urlopen(p2p_url, timeout=5) as resp:
+            if resp.status == 200:
+                result.p2p_reachable = True
+                result.details["p2p_url"] = p2p_url
+    except Exception as e:
+        issues.append(f"P2P orchestrator not reachable: {e}")
+
+    # Determine overall health
+    result.is_healthy = (
+        result.owc_mounted
+        and result.ssh_key_exists
+        and result.tailscale_connected
+        and result.p2p_reachable
+    )
+
+    if issues:
+        result.details["issues"] = issues
+
+    return result
+
+
 __all__ = [
     # System-level health
     "get_health_manager",
@@ -839,6 +960,9 @@ __all__ = [
     "get_sync_health_summary",
     "get_data_sync_health_summary",  # January 2026
     "DEFAULT_JOB_SCHEDULING_THRESHOLD",
+    # Coordinator health (January 2026 - Phase 4)
+    "CoordinatorHealthResult",
+    "check_coordinator_health",
     # Backward compat (deprecated)
     "get_node_health_monitor",
     "get_system_health",
