@@ -677,6 +677,10 @@ export const SandboxGameHost: React.FC = () => {
   const { queue: announcementQueue, announce, removeAnnouncement } = useGameAnnouncements();
 
   const lastSandboxPhaseRef = useRef<string | null>(null);
+  // RR-FIX-2026-01-12: Track the last processed pending choice ID to prevent infinite re-render
+  // when setting elimination targets. Without this, the useEffect that handles ring_elimination
+  // choices would call setValidTargets on every render, triggering itself via validTargets.length.
+  const lastProcessedPendingChoiceIdRef = useRef<string | null>(null);
 
   // Sandbox-only visual cue: transient highlight of newly-collapsed line
   // segments, populated from the engine after automatic line processing.
@@ -1336,7 +1340,13 @@ export const SandboxGameHost: React.FC = () => {
       // force update targets from the choice options. This handles the case where
       // territory claim targets are set, then the player claims a territory, and
       // a ring_elimination choice is returned but the old targets remain.
+      // RR-FIX-2026-01-12: Only process each pending choice once to prevent infinite re-render.
       if (sandboxPendingChoice?.type === 'ring_elimination') {
+        // Skip if we've already processed this pending choice
+        if (lastProcessedPendingChoiceIdRef.current === sandboxPendingChoice.id) {
+          return;
+        }
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accessing choice options
         const options = (sandboxPendingChoice as any).options ?? [];
         const eliminationTargets: Position[] = options
@@ -1351,9 +1361,13 @@ export const SandboxGameHost: React.FC = () => {
             targetCount: eliminationTargets.length,
             targets: eliminationTargets.map((p) => positionToString(p)),
           });
+          lastProcessedPendingChoiceIdRef.current = sandboxPendingChoice.id;
           setValidTargets(eliminationTargets);
           return;
         }
+      } else {
+        // Reset ref when there's no ring_elimination choice active
+        lastProcessedPendingChoiceIdRef.current = null;
       }
 
       // Only proceed with automatic target initialization if validTargets is empty
