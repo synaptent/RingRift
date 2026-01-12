@@ -557,7 +557,8 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
         Args:
             event: Event dict with 'type' key for routing
         """
-        event_type = event.get("type", "")
+        # Jan 2026: Handle both RouterEvent and dict types
+        event_type = event.event_type if hasattr(event, "event_type") else event.get("type", "")
         handler = self._event_handlers.get(event_type)
         if handler:
             if asyncio.iscoroutinefunction(handler):

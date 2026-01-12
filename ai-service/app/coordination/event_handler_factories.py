@@ -99,8 +99,10 @@ def create_logging_handler(
     """
     log = logging.getLogger(logger_name) if logger_name else logger
 
-    async def handler(event: dict[str, Any]) -> None:
-        value = event.get(extract_key, "unknown")
+    async def handler(event) -> None:
+        # Jan 2026: Handle both RouterEvent and dict types
+        payload = event.payload if hasattr(event, "payload") else event
+        value = payload.get(extract_key, "unknown")
         log.log(log_level, f"{event_name}: {value}")
 
     return handler

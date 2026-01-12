@@ -243,8 +243,10 @@ class TrainingDataRecoveryDaemon(SingletonMixin, HandlerBase):
         if not self.config.enabled:
             return
 
-        config_key = event.get("config_key", "")
-        error_message = str(event.get("error", "") or event.get("reason", ""))
+        # Jan 2026: Use _get_payload() to handle both RouterEvent and dict types
+        payload = self._get_payload(event)
+        config_key = payload.get("config_key", "")
+        error_message = str(payload.get("error", "") or payload.get("reason", ""))
 
         if not config_key:
             logger.debug("[DataRecovery] TRAINING_FAILED without config_key, skipping")

@@ -784,7 +784,8 @@ from scripts.p2p.models import (
 )
 from scripts.p2p.p2p_mixin_base import SubscriptionRetryConfig
 from scripts.p2p.network import (
-    AsyncLockWrapper,
+    AsyncLockWrapper,  # DEPRECATED - kept for compatibility
+    NonBlockingAsyncLockWrapper,
     TimeoutAsyncLockWrapper,
     get_client_session,
 )
@@ -8029,7 +8030,7 @@ class P2POrchestrator(
             await self._send_heartbeat_to_peer(host, port)
 
             # Check if peer is now in our peers dict
-            async with AsyncLockWrapper(self.peers_lock):
+            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                 if actual_node_id not in self.peers or not self.peers[actual_node_id].is_alive():
                     # Register the peer
                     self.peers[actual_node_id] = PeerInfo(
@@ -10817,7 +10818,7 @@ class P2POrchestrator(
             # send us heartbeats) while still being unreachable for inbound HTTP
             # (e.g. NAT/firewall). Our outbound heartbeat failures track that.
             # Use AsyncLockWrapper to avoid blocking event loop under high load
-            async with AsyncLockWrapper(self.peers_lock):
+            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                 existing = self.peers.get(peer_info.node_id)
                 # Dec 2025: Track first-contact for HOST_ONLINE emission
                 is_first_contact = existing is None
@@ -18526,7 +18527,7 @@ print(json.dumps({{
             try:
                 info = await self._send_heartbeat_to_peer(host, port, scheme=scheme)
                 if info and info.node_id != self.node_id:
-                    async with AsyncLockWrapper(self.peers_lock):
+                    async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                         is_first_contact = info.node_id not in self.peers
                         info.last_heartbeat = time.time()
                         self.peers[info.node_id] = info
@@ -18719,7 +18720,7 @@ print(json.dumps({{
                         if info.node_id == self.node_id:
                             continue
                         # Dec 2025: Track first-contact for HOST_ONLINE emission
-                        async with AsyncLockWrapper(self.peers_lock):
+                        async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                             is_first_contact = info.node_id not in self.peers
                             info.last_heartbeat = time.time()
                             self.peers[info.node_id] = info
@@ -18734,7 +18735,7 @@ print(json.dumps({{
                             await self._emit_host_online(info.node_id, capabilities)
                             logger.info(f"First-contact peer via heartbeat loop: {info.node_id}")
                         if info.role == NodeRole.LEADER and info.node_id != self.node_id:
-                            async with AsyncLockWrapper(self.peers_lock):
+                            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                                 peers_snapshot = list(self.peers.values())
                             conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
                             if not self._is_leader_eligible(info, conflict_keys, require_alive=False):
@@ -18762,7 +18763,7 @@ print(json.dumps({{
                             self._set_leader(info.node_id, reason="heartbeat_configured_leader", save_state=False)
 
                 # Send to discovered peers (skip NAT-blocked peers and ambiguous endpoints).
-                async with AsyncLockWrapper(self.peers_lock):
+                async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                     peers_snapshot = list(self.peers.values())
                 conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
                 peer_list = [
@@ -18824,7 +18825,7 @@ print(json.dumps({{
                         if info:
                             info.consecutive_failures = 0
                             info.last_failure_time = 0.0
-                            async with AsyncLockWrapper(self.peers_lock):
+                            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                                 info.last_heartbeat = time.time()
                                 self.peers[info.node_id] = info
                             if info.role == NodeRole.LEADER and self.role != NodeRole.LEADER:
@@ -18846,7 +18847,7 @@ print(json.dumps({{
                                 # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
                                 self._set_leader(info.node_id, reason="heartbeat_adopt_leader", save_state=False)
                         else:
-                            async with AsyncLockWrapper(self.peers_lock):
+                            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                                 existing = self.peers.get(peer.node_id)
                                 if existing:
                                     existing.consecutive_failures = int(getattr(existing, "consecutive_failures", 0) or 0) + 1
@@ -19030,7 +19031,7 @@ print(json.dumps({{
                 for voter_id in other_voters:
                     # Find voter peer info by IP mapping (Jan 2, 2026 fix)
                     # Peers dict uses IP:port keys from SWIM, not friendly node_ids
-                    async with AsyncLockWrapper(self.peers_lock):
+                    async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                         peer_key, voter_peer = self._find_voter_peer_by_ip(voter_id)
 
                     if not voter_peer:
@@ -19045,7 +19046,7 @@ print(json.dumps({{
                         # AGGRESSIVE NAT RECOVERY: Clear NAT-blocked immediately on success
                         if VOTER_NAT_RECOVERY_AGGRESSIVE and voter_peer.nat_blocked:
                             logger.info(f"Voter {voter_id} (key={peer_key}) NAT-blocked status cleared (heartbeat succeeded)")
-                            async with AsyncLockWrapper(self.peers_lock):
+                            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                                 # Use peer_key (IP:port) not voter_id (friendly name)
                                 if peer_key and peer_key in self.peers:
                                     self.peers[peer_key].nat_blocked = False
@@ -19113,7 +19114,7 @@ print(json.dumps({{
         while self.running:
             try:
                 now = time.time()
-                async with AsyncLockWrapper(self.peers_lock):
+                async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                     peers_snapshot = list(self.peers.items())
 
                 reconnect_attempts = 0
@@ -19200,7 +19201,7 @@ print(json.dumps({{
 
                     if success:
                         reconnect_successes += 1
-                        async with AsyncLockWrapper(self.peers_lock):
+                        async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                             if node_id in self.peers:
                                 self.peers[node_id].consecutive_failures = 0
                                 self.peers[node_id].last_heartbeat = time.time()
@@ -19908,7 +19909,7 @@ print(json.dumps({{
         dead_peers = []
         peers_to_purge = []
 
-        async with AsyncLockWrapper(self.peers_lock):
+        async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
             for node_id, info in self.peers.items():
                 if not info.is_alive() and node_id != self.node_id:
                     dead_peers.append(node_id)
@@ -20028,7 +20029,7 @@ print(json.dumps({{
 
         # If leader is dead, start election
         if self.leader_id and self.leader_id != self.node_id:
-            async with AsyncLockWrapper(self.peers_lock):
+            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                 leader = self.peers.get(self.leader_id)
                 peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
             if leader:
@@ -20101,7 +20102,7 @@ print(json.dumps({{
         detect nodes that have come back online after being retired.
         """
         # Collect retired peers (excluding self)
-        async with AsyncLockWrapper(self.peers_lock):
+        async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
             retired = [
                 p for p in self.peers.values()
                 if getattr(p, "retired", False) and p.node_id != self.node_id
@@ -20123,7 +20124,7 @@ print(json.dumps({{
                     async with session.get(url) as resp:
                         if resp.status == 200:
                             # Node is alive - un-retire it
-                            async with AsyncLockWrapper(self.peers_lock):
+                            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                                 if peer.node_id in self.peers:
                                     self.peers[peer.node_id].retired = False
                                     self.peers[peer.node_id].retired_at = 0.0
@@ -20138,7 +20139,7 @@ print(json.dumps({{
                             await self._emit_host_online(peer.node_id, caps)
 
                             # Emit CLUSTER_CAPACITY_CHANGED
-                            async with AsyncLockWrapper(self.peers_lock):
+                            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                                 alive_count = sum(
                                     1 for p in self.peers.values()
                                     if p.is_alive() and not getattr(p, "retired", False)
@@ -20682,7 +20683,7 @@ print(json.dumps({{
         logger.info(f"Provisional leadership claimed: lease={provisional_lease_id}")
 
         # Announce provisional claim to all peers
-        async with AsyncLockWrapper(self.peers_lock):
+        async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
             peers = [p for p in self.peers.values() if p.node_id != self.node_id and p.is_alive()]
 
         if not peers:
@@ -20827,7 +20828,7 @@ print(json.dumps({{
         asyncio.create_task(self._emit_leader_elected(self.node_id, getattr(self, "cluster_epoch", 0)))
 
         # Announce to all peers
-        async with AsyncLockWrapper(self.peers_lock):
+        async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
             peers = list(self.peers.values())
 
         timeout = aiohttp.ClientTimeout(total=5)
@@ -20967,7 +20968,7 @@ print(json.dumps({{
             eligible_nodes.append(self.node_id)
 
         # Check peers
-        async with AsyncLockWrapper(self.peers_lock):
+        async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
             for peer_id, peer in self.peers.items():
                 if peer.is_alive() and not getattr(peer, "nat_blocked", False):
                     eligible_nodes.append(peer_id)
