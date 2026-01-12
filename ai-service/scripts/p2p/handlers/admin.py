@@ -190,9 +190,9 @@ class AdminHandlersMixin(BaseP2PHandler):
         """
         try:
             # Import here to avoid circular imports
-            from scripts.p2p_orchestrator import AsyncLockWrapper
+            from scripts.p2p.network import NonBlockingAsyncLockWrapper
 
-            async with AsyncLockWrapper(self.peers_lock):
+            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                 retired_peers = [
                     node_id for node_id, info in self.peers.items()
                     if getattr(info, "retired", False)
@@ -231,14 +231,14 @@ class AdminHandlersMixin(BaseP2PHandler):
             dry_run: If 1, just report what would be purged without deleting
         """
         try:
-            from scripts.p2p_orchestrator import AsyncLockWrapper
+            from scripts.p2p.network import NonBlockingAsyncLockWrapper
 
             max_age = int(request.query.get("max_age", "3600"))
             dry_run = request.query.get("dry_run", "0") == "1"
             now = time.time()
 
             stale_peers = []
-            async with AsyncLockWrapper(self.peers_lock):
+            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                 for node_id, info in self.peers.items():
                     if node_id == self.node_id:
                         continue  # Don't purge self
@@ -262,7 +262,7 @@ class AdminHandlersMixin(BaseP2PHandler):
 
             purged_ids = []
             if not dry_run:
-                async with AsyncLockWrapper(self.peers_lock):
+                async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                     for peer in stale_peers:
                         node_id = peer["node_id"]
                         if node_id in self.peers:
@@ -297,7 +297,7 @@ class AdminHandlersMixin(BaseP2PHandler):
             JSON with success status and node info
         """
         try:
-            from scripts.p2p_orchestrator import AsyncLockWrapper
+            from scripts.p2p.network import NonBlockingAsyncLockWrapper
 
             node_id = request.query.get("node_id", "").strip()
             if not node_id:
@@ -305,7 +305,7 @@ class AdminHandlersMixin(BaseP2PHandler):
                     "error": "node_id parameter is required"
                 }, status=400)
 
-            async with AsyncLockWrapper(self.peers_lock):
+            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                 if node_id not in self.peers:
                     # List available nodes for debugging
                     available = list(self.peers.keys())
@@ -371,7 +371,8 @@ class AdminHandlersMixin(BaseP2PHandler):
             JSON with success status and updated node info
         """
         try:
-            from scripts.p2p_orchestrator import AsyncLockWrapper, NodeRole
+            from scripts.p2p.network import NonBlockingAsyncLockWrapper
+            from scripts.p2p.types import NodeRole
 
             # Leader-only endpoint
             if self.role != NodeRole.LEADER:
@@ -386,7 +387,7 @@ class AdminHandlersMixin(BaseP2PHandler):
                     "error": "node_id is required in request body"
                 }, status=400)
 
-            async with AsyncLockWrapper(self.peers_lock):
+            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                 if node_id not in self.peers:
                     available = list(self.peers.keys())
                     return web.json_response({
@@ -441,7 +442,7 @@ class AdminHandlersMixin(BaseP2PHandler):
             JSON with success status and peer info
         """
         try:
-            from scripts.p2p_orchestrator import AsyncLockWrapper
+            from scripts.p2p.network import NonBlockingAsyncLockWrapper
 
             data = await request.json()
             node_id = data.get("node_id", "").strip()
@@ -459,7 +460,7 @@ class AdminHandlersMixin(BaseP2PHandler):
                 }, status=400)
 
             # Check if peer already exists
-            async with AsyncLockWrapper(self.peers_lock):
+            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                 already_exists = node_id in self.peers
 
             if already_exists:
@@ -503,13 +504,13 @@ class AdminHandlersMixin(BaseP2PHandler):
                     leader_id=peer_info_from_health.get("leader_id"),
                 )
 
-                async with AsyncLockWrapper(self.peers_lock):
+                async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                     self.peers[node_id] = new_peer
                     logger.info(f"Added peer {node_id} at {address}:{port} (reachable={is_reachable})")
 
             except ImportError:
                 # Fallback if models not available - just add raw dict
-                async with AsyncLockWrapper(self.peers_lock):
+                async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                     self.peers[node_id] = {
                         "node_id": node_id,
                         "host": address,
@@ -620,7 +621,7 @@ class AdminHandlersMixin(BaseP2PHandler):
             JSON with count of cleared peers.
         """
         try:
-            from scripts.p2p_orchestrator import AsyncLockWrapper
+            from scripts.p2p.network import NonBlockingAsyncLockWrapper
 
             node_id = request.query.get("node_id", "").strip()
             voters_only = request.query.get("voters_only", "").lower() == "true"
@@ -636,7 +637,7 @@ class AdminHandlersMixin(BaseP2PHandler):
                     for ip in ips:
                         voter_ip_map[ip] = vid
 
-            async with AsyncLockWrapper(self.peers_lock):
+            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                 for peer_key, peer_info in list(self.peers.items()):
                     # Skip if filtering by specific node_id
                     if node_id and peer_key != node_id:

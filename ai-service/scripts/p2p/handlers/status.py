@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
-from scripts.p2p.network import AsyncLockWrapper
+from scripts.p2p.network import NonBlockingAsyncLockWrapper
 
 if TYPE_CHECKING:
     pass
@@ -285,7 +285,7 @@ class StatusHandlersMixin:
         """
         self._update_self_info()
 
-        async with AsyncLockWrapper(self.peers_lock):
+        async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
             peers_snapshot = list(self.peers.values())
 
         # Collect external work info

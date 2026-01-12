@@ -61,20 +61,28 @@ except ImportError:
     NodeInfo = None
     NodeRole = None
 
-# AsyncLockWrapper helper
+# NonBlockingAsyncLockWrapper helper (Jan 2026 - fix lock contention)
 try:
-    from app.utils.async_utils import AsyncLockWrapper
+    from scripts.p2p.network import NonBlockingAsyncLockWrapper
 except ImportError:
-    # Fallback - use contextmanager for sync lock in async context
+    # Fallback - use asyncio.to_thread for non-blocking lock acquisition
+    import asyncio
     import contextlib
 
-    @contextlib.asynccontextmanager
-    async def AsyncLockWrapper(lock):
-        lock.acquire()
-        try:
-            yield
-        finally:
-            lock.release()
+    class NonBlockingAsyncLockWrapper:
+        """Fallback non-blocking lock wrapper."""
+        def __init__(self, lock, lock_name: str = "unknown", timeout: float = 5.0):
+            self._lock = lock
+            self._lock_name = lock_name
+            self._timeout = timeout
+
+        async def __aenter__(self):
+            await asyncio.to_thread(self._lock.acquire)
+            return self
+
+        async def __aexit__(self, exc_type, exc_val, exc_tb):
+            self._lock.release()
+            return False
 
 
 class RelayHandlersMixin(BaseP2PHandler):
@@ -156,14 +164,14 @@ class RelayHandlersMixin(BaseP2PHandler):
                     peer_info.role = NodeRole.FOLLOWER
 
             # Store in peers list (they're part of the cluster even if not directly reachable)
-            async with AsyncLockWrapper(self.peers_lock):
+            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                 self.peers[peer_info.node_id] = peer_info
 
             logger.info(f"Relay heartbeat from {peer_info.node_id} (real IP: {real_ip})")
 
             # Apply relay ACKs/results and return any queued commands.
             commands_to_send: list[dict[str, Any]] = []
-            async with AsyncLockWrapper(self.relay_lock):
+            async with NonBlockingAsyncLockWrapper(self.relay_lock, "relay_lock", timeout=5.0):
                 queue = list(self.relay_command_queue.get(peer_info.node_id, []))
                 now = time.time()
                 queue = [
@@ -202,7 +210,7 @@ class RelayHandlersMixin(BaseP2PHandler):
 
             # Return cluster state so they can see all peers
             self._update_self_info()
-            async with AsyncLockWrapper(self.peers_lock):
+            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                 peers = {k: v.to_dict() for k, v in self.peers.items()}
 
             effective_leader = self._get_leader_peer()
@@ -303,7 +311,7 @@ class RelayHandlersMixin(BaseP2PHandler):
                 return self.error_response("unauthorized", status=401)
             self._update_self_info()
             effective_leader = self._get_leader_peer()
-            async with AsyncLockWrapper(self.peers_lock):
+            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                 all_peers = {k: v.to_dict() for k, v in self.peers.items()}
 
             # Separate NAT-blocked and directly reachable

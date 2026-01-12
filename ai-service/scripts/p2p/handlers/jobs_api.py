@@ -54,7 +54,7 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
-from scripts.p2p.network import AsyncLockWrapper
+from scripts.p2p.network import NonBlockingAsyncLockWrapper
 
 from scripts.p2p.handlers.base import BaseP2PHandler
 from scripts.p2p.handlers.timeout_decorator import (
@@ -610,7 +610,7 @@ class JobsApiHandlersMixin(BaseP2PHandler):
             data = await request.json()
             job_id = data.get("job_id")
 
-            async with AsyncLockWrapper(self.jobs_lock):
+            async with NonBlockingAsyncLockWrapper(self.jobs_lock, "jobs_lock", timeout=5.0):
                 if job_id in self.local_jobs:
                     job = self.local_jobs[job_id]
                     try:
@@ -653,7 +653,7 @@ class JobsApiHandlersMixin(BaseP2PHandler):
 
             # Try to kill by job_id first
             if job_id:
-                async with AsyncLockWrapper(self.jobs_lock):
+                async with NonBlockingAsyncLockWrapper(self.jobs_lock, "jobs_lock", timeout=5.0):
                     if job_id in self.local_jobs:
                         job = self.local_jobs[job_id]
                         try:

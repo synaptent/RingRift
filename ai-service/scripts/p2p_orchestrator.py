@@ -6104,6 +6104,36 @@ class P2POrchestrator(
         ip_map = getattr(self, "_ip_to_node_map", {})
         return ip_map.get(ip, peer_id)
 
+    def _get_cached_peer_snapshot(self, max_age_seconds: float = 1.0) -> list:
+        """Get cached peer snapshot to reduce lock acquisitions.
+
+        Jan 12, 2026: Added to reduce lock contention in read-only contexts.
+        Returns cached copy if < max_age_seconds old, otherwise takes new snapshot.
+
+        Args:
+            max_age_seconds: Maximum age of cached snapshot before refreshing (default 1.0s)
+
+        Returns:
+            List of peer NodeInfo objects (may be up to max_age_seconds stale)
+        """
+        now = time.time()
+        cache_key = "_peer_snapshot_cache"
+        cache_time_key = "_peer_snapshot_cache_time"
+
+        cached = getattr(self, cache_key, None)
+        cached_time = getattr(self, cache_time_key, 0)
+
+        if cached is not None and (now - cached_time) < max_age_seconds:
+            return cached
+
+        # Take new snapshot under lock
+        with self.peers_lock:
+            snapshot = list(self.peers.values())
+
+        setattr(self, cache_key, snapshot)
+        setattr(self, cache_time_key, now)
+        return snapshot
+
     def _find_voter_peer_by_ip(self, voter_id: str) -> tuple[str | None, "NodeInfo | None"]:
         """Find a voter's peer entry by matching their known IPs against peers dict.
 
@@ -10969,14 +10999,24 @@ class P2POrchestrator(
         # CRITICAL: threading.RLock must be acquired AND released in the same thread
         # Wrap the entire lock-protected operation in asyncio.to_thread
         # Updated Jan 10, 2026: Increased timeout from 2.0s to 5.0s for large clusters
+        # Updated Jan 12, 2026: Try non-blocking first, then brief blocking for reduced latency
         def _get_peers_snapshot_with_lock() -> list | None:
             """Get peers snapshot with lock - runs in thread pool."""
-            if self.peers_lock.acquire(True, 5.0):  # blocking=True, timeout=5.0
+            # Try non-blocking first - instant success if lock available
+            if self.peers_lock.acquire(False):  # blocking=False
                 try:
                     return list(self.peers.values())
                 finally:
                     self.peers_lock.release()
-            return None
+
+            # Lock contended - wait briefly (reduced from 5.0s)
+            if self.peers_lock.acquire(True, 1.0):  # blocking=True, timeout=1.0s
+                try:
+                    return list(self.peers.values())
+                finally:
+                    self.peers_lock.release()
+
+            return None  # Return None for graceful degradation
 
         peers_snapshot: list | None = None
         try:
@@ -11051,14 +11091,24 @@ class P2POrchestrator(
         # Non-blocking jobs lock acquisition (December 30, 2025)
         # CRITICAL: threading.RLock must be acquired AND released in the same thread
         # Updated Jan 10, 2026: Increased timeout from 2.0s to 5.0s for large clusters
+        # Updated Jan 12, 2026: Try non-blocking first, then brief blocking for reduced latency
         def _get_jobs_snapshot_with_lock() -> dict:
             """Get jobs snapshot with lock - runs in thread pool."""
-            if self.jobs_lock.acquire(True, 5.0):  # blocking=True, timeout=5.0
+            # Try non-blocking first - instant success if lock available
+            if self.jobs_lock.acquire(False):  # blocking=False
                 try:
                     return {k: v.to_dict() for k, v in self.local_jobs.items()}
                 finally:
                     self.jobs_lock.release()
-            return {"error": "lock_timeout"}
+
+            # Lock contended - wait briefly (reduced from 5.0s)
+            if self.jobs_lock.acquire(True, 1.0):  # blocking=True, timeout=1.0s
+                try:
+                    return {k: v.to_dict() for k, v in self.local_jobs.items()}
+                finally:
+                    self.jobs_lock.release()
+
+            return {"error": "lock_timeout", "contended": True}
 
         jobs: dict = {}
         try:
@@ -18763,8 +18813,8 @@ print(json.dumps({{
                             self._set_leader(info.node_id, reason="heartbeat_configured_leader", save_state=False)
 
                 # Send to discovered peers (skip NAT-blocked peers and ambiguous endpoints).
-                async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
-                    peers_snapshot = list(self.peers.values())
+                # Jan 12, 2026: Use cached snapshot to reduce lock contention (1s staleness OK for heartbeat)
+                peers_snapshot = self._get_cached_peer_snapshot(max_age_seconds=1.0)
                 conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
                 peer_list = [
                     p for p in peers_snapshot
@@ -19028,6 +19078,10 @@ print(json.dumps({{
                 # Get all other voters
                 other_voters = [v for v in self.voter_node_ids if v != self.node_id]
 
+                # Jan 12, 2026: Consolidate peer updates to reduce lock contention
+                # Collect all peer updates, then apply in a single lock acquisition
+                peer_updates: dict[str, dict] = {}
+
                 for voter_id in other_voters:
                     # Find voter peer info by IP mapping (Jan 2, 2026 fix)
                     # Peers dict uses IP:port keys from SWIM, not friendly node_ids
@@ -19046,23 +19100,34 @@ print(json.dumps({{
                         # AGGRESSIVE NAT RECOVERY: Clear NAT-blocked immediately on success
                         if VOTER_NAT_RECOVERY_AGGRESSIVE and voter_peer.nat_blocked:
                             logger.info(f"Voter {voter_id} (key={peer_key}) NAT-blocked status cleared (heartbeat succeeded)")
-                            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
-                                # Use peer_key (IP:port) not voter_id (friendly name)
-                                if peer_key and peer_key in self.peers:
-                                    self.peers[peer_key].nat_blocked = False
-                                    self.peers[peer_key].nat_blocked_since = 0.0
-                                    self.peers[peer_key].consecutive_failures = 0
+                            # Collect update instead of acquiring lock here
+                            if peer_key:
+                                peer_updates[peer_key] = {
+                                    "nat_blocked": False,
+                                    "nat_blocked_since": 0.0,
+                                    "consecutive_failures": 0,
+                                }
                     else:
                         # Try alternative endpoints
                         success = await self._try_voter_alternative_endpoints(voter_peer)
 
                         if not success:
-                            # Increment failure count but don't mark NAT-blocked yet
-                            with self.peers_lock:
-                                # Use peer_key (IP:port) not voter_id (friendly name)
-                                if peer_key and peer_key in self.peers:
-                                    self.peers[peer_key].consecutive_failures = \
-                                        int(getattr(self.peers[peer_key], "consecutive_failures", 0) or 0) + 1
+                            # Collect failure update instead of acquiring lock here
+                            if peer_key:
+                                peer_updates[peer_key] = {"inc_failures": True}
+
+                # Apply all peer updates in a single lock acquisition
+                if peer_updates:
+                    async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
+                        for key, updates in peer_updates.items():
+                            if key in self.peers:
+                                if "nat_blocked" in updates:
+                                    self.peers[key].nat_blocked = updates["nat_blocked"]
+                                    self.peers[key].nat_blocked_since = updates["nat_blocked_since"]
+                                    self.peers[key].consecutive_failures = updates["consecutive_failures"]
+                                elif updates.get("inc_failures"):
+                                    self.peers[key].consecutive_failures = \
+                                        int(getattr(self.peers[key], "consecutive_failures", 0) or 0) + 1
 
                 # Periodic voter mesh refresh - ensure all voters know about each other
                 if now - last_voter_mesh_refresh > VOTER_MESH_REFRESH_INTERVAL:
