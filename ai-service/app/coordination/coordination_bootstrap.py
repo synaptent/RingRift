@@ -649,6 +649,8 @@ def _init_pipeline_orchestrator(
     training_epochs: int | None = None,
     training_batch_size: int | None = None,
     training_model_version: str | None = None,
+    training_use_best_data: bool = False,
+    training_data_path: str | None = None,
 ) -> BootstrapCoordinatorStatus:
     """Initialize DataPipelineOrchestrator.
 
@@ -664,6 +666,8 @@ def _init_pipeline_orchestrator(
             training_epochs=training_epochs,
             training_batch_size=training_batch_size,
             training_model_version=training_model_version,
+            training_use_best_data=training_use_best_data,
+            training_data_path=training_data_path,
         )
         status.initialized = True
         status.subscribed = orchestrator._subscribed
@@ -1772,6 +1776,8 @@ def bootstrap_coordination(
     training_epochs: int | None = None,
     training_batch_size: int | None = None,
     training_model_version: str | None = None,
+    training_use_best_data: bool = False,  # Jan 2026: Use best available training data
+    training_data_path: str | None = None,  # Jan 2026: Explicit training data path
     # Master loop enforcement (December 2025)
     require_master_loop: bool = False,  # Set True to enforce master loop for full automation
 ) -> dict[str, Any]:
@@ -1832,6 +1838,8 @@ def bootstrap_coordination(
         training_epochs: Override default training epochs for pipeline
         training_batch_size: Override default training batch size for pipeline
         training_model_version: Override default model version for pipeline
+        training_use_best_data: Use best available training data (combined NPZ or largest fresh)
+        training_data_path: Explicit path to training data (overrides best_data selection)
         require_master_loop: If True, enforce that master loop is running
 
     Returns:
@@ -1969,6 +1977,8 @@ def bootstrap_coordination(
             training_epochs=training_epochs,
             training_batch_size=training_batch_size,
             training_model_version=training_model_version,
+            training_use_best_data=training_use_best_data,
+            training_data_path=training_data_path,
         )
         _state.coordinators["pipeline_orchestrator"] = status
         if status.error:

@@ -3326,6 +3326,8 @@ def wire_pipeline_events(
     training_epochs: int | None = None,
     training_batch_size: int | None = None,
     training_model_version: str | None = None,
+    training_use_best_data: bool = False,
+    training_data_path: str | None = None,
 ) -> DataPipelineOrchestrator:
     """Wire pipeline events to the orchestrator.
 
@@ -3334,6 +3336,8 @@ def wire_pipeline_events(
         training_epochs: Override default training epochs
         training_batch_size: Override default training batch size
         training_model_version: Override default model version
+        training_use_best_data: Use best available training data (combined NPZ or largest fresh)
+        training_data_path: Explicit path to training data (overrides best_data selection)
 
     Returns:
         The wired DataPipelineOrchestrator instance
@@ -3348,6 +3352,10 @@ def wire_pipeline_events(
         _pipeline_orchestrator._config.training_batch_size = training_batch_size
     if training_model_version is not None:
         _pipeline_orchestrator._config.training_model_version = training_model_version
+
+    # Jan 2026: Store data selection config on orchestrator instance
+    _pipeline_orchestrator.training_use_best_data = training_use_best_data
+    _pipeline_orchestrator.training_data_path = training_data_path
 
     _pipeline_orchestrator.subscribe_to_events()
     _pipeline_orchestrator.subscribe_to_data_events()  # December 2025
