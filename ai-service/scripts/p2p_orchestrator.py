@@ -8223,6 +8223,187 @@ class P2POrchestrator(
         except Exception as e:
             logger.debug(f"[SelfReg] Failed to emit HOST_ONLINE: {e}")
 
+    # =========================================================================
+    # H2 fix: Lifecycle event emission methods (Jan 12, 2026)
+    # These methods emit HOST_ONLINE, HOST_OFFLINE, P2P_NODE_DEAD, and
+    # CLUSTER_CAPACITY_CHANGED events for cluster coordination.
+    # =========================================================================
+
+    async def _emit_host_online(self, node_id: str, capabilities: list[str] | None = None) -> None:
+        """Emit HOST_ONLINE event for a peer coming online."""
+        try:
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import emit_event
+
+            peer_info = self.peers.get(node_id)
+            emit_event(DataEventType.HOST_ONLINE.value, {
+                "node_id": node_id,
+                "host": getattr(peer_info, "host", "") if peer_info else "",
+                "port": getattr(peer_info, "port", 0) if peer_info else 0,
+                "has_gpu": getattr(peer_info, "has_gpu", False) if peer_info else False,
+                "gpu_name": getattr(peer_info, "gpu_name", "") if peer_info else "",
+                "capabilities": capabilities or [],
+                "source": "peer_discovery",
+            })
+            logger.debug(f"[P2P] Emitted HOST_ONLINE for peer: {node_id}")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug(f"[P2P] Failed to emit HOST_ONLINE for {node_id}: {e}")
+
+    def _emit_host_online_sync(self, node_id: str, capabilities: list[str] | None = None) -> None:
+        """Sync version of _emit_host_online for non-async contexts."""
+        try:
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import emit_event
+
+            peer_info = self.peers.get(node_id)
+            emit_event(DataEventType.HOST_ONLINE.value, {
+                "node_id": node_id,
+                "host": getattr(peer_info, "host", "") if peer_info else "",
+                "port": getattr(peer_info, "port", 0) if peer_info else 0,
+                "has_gpu": getattr(peer_info, "has_gpu", False) if peer_info else False,
+                "gpu_name": getattr(peer_info, "gpu_name", "") if peer_info else "",
+                "capabilities": capabilities or [],
+                "source": "peer_recovery_sync",
+            })
+            logger.debug(f"[P2P] Emitted HOST_ONLINE (sync) for peer: {node_id}")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug(f"[P2P] Failed to emit HOST_ONLINE (sync) for {node_id}: {e}")
+
+    async def _emit_host_offline(self, node_id: str, reason: str, last_heartbeat: float | None) -> None:
+        """Emit HOST_OFFLINE event for a peer going offline."""
+        try:
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import emit_event
+
+            emit_event(DataEventType.HOST_OFFLINE.value, {
+                "node_id": node_id,
+                "reason": reason,
+                "last_heartbeat": last_heartbeat,
+                "source": "peer_retirement",
+            })
+            logger.debug(f"[P2P] Emitted HOST_OFFLINE for peer: {node_id} (reason={reason})")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug(f"[P2P] Failed to emit HOST_OFFLINE for {node_id}: {e}")
+
+    def _emit_host_offline_sync(self, node_id: str, reason: str, last_heartbeat: float | None) -> None:
+        """Sync version of _emit_host_offline for non-async contexts."""
+        try:
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import emit_event
+
+            emit_event(DataEventType.HOST_OFFLINE.value, {
+                "node_id": node_id,
+                "reason": reason,
+                "last_heartbeat": last_heartbeat,
+                "source": "peer_retirement_sync",
+            })
+            logger.debug(f"[P2P] Emitted HOST_OFFLINE (sync) for peer: {node_id} (reason={reason})")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug(f"[P2P] Failed to emit HOST_OFFLINE (sync) for {node_id}: {e}")
+
+    async def _emit_node_dead(self, node_id: str, reason: str, last_heartbeat: float | None, dead_for: float) -> None:
+        """Emit P2P_NODE_DEAD event for a dead peer."""
+        try:
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import emit_event
+
+            emit_event(DataEventType.P2P_NODE_DEAD.value, {
+                "node_id": node_id,
+                "reason": reason,
+                "last_heartbeat": last_heartbeat,
+                "dead_for_seconds": dead_for,
+                "source": "peer_timeout",
+            })
+            logger.debug(f"[P2P] Emitted P2P_NODE_DEAD for peer: {node_id} (dead_for={dead_for:.0f}s)")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug(f"[P2P] Failed to emit P2P_NODE_DEAD for {node_id}: {e}")
+
+    def _emit_node_dead_sync(self, node_id: str, reason: str, last_heartbeat: float | None, dead_for: float) -> None:
+        """Sync version of _emit_node_dead for non-async contexts."""
+        try:
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import emit_event
+
+            emit_event(DataEventType.P2P_NODE_DEAD.value, {
+                "node_id": node_id,
+                "reason": reason,
+                "last_heartbeat": last_heartbeat,
+                "dead_for_seconds": dead_for,
+                "source": "peer_timeout_sync",
+            })
+            logger.debug(f"[P2P] Emitted P2P_NODE_DEAD (sync) for peer: {node_id} (dead_for={dead_for:.0f}s)")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug(f"[P2P] Failed to emit P2P_NODE_DEAD (sync) for {node_id}: {e}")
+
+    async def _emit_cluster_capacity_changed(
+        self,
+        total_nodes: int,
+        alive_nodes: int,
+        gpu_nodes: int,
+        training_nodes: int,
+        change_type: str,
+        change_details: dict | None = None,
+    ) -> None:
+        """Emit CLUSTER_CAPACITY_CHANGED event when cluster capacity changes."""
+        try:
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import emit_event
+
+            emit_event(DataEventType.CLUSTER_CAPACITY_CHANGED.value, {
+                "total_nodes": total_nodes,
+                "alive_nodes": alive_nodes,
+                "gpu_nodes": gpu_nodes,
+                "training_nodes": training_nodes,
+                "change_type": change_type,
+                "change_details": change_details or {},
+                "source": "peer_management",
+            })
+            logger.debug(f"[P2P] Emitted CLUSTER_CAPACITY_CHANGED: {change_type}, alive={alive_nodes}")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug(f"[P2P] Failed to emit CLUSTER_CAPACITY_CHANGED: {e}")
+
+    def _emit_cluster_capacity_changed_sync(
+        self,
+        change_type: str,
+        node_id: str,
+        total_nodes: int,
+        gpu_nodes: int,
+        reason: str,
+    ) -> None:
+        """Sync version of _emit_cluster_capacity_changed for non-async contexts."""
+        try:
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import emit_event
+
+            emit_event(DataEventType.CLUSTER_CAPACITY_CHANGED.value, {
+                "total_nodes": total_nodes,
+                "alive_nodes": total_nodes,  # Sync version has less info
+                "gpu_nodes": gpu_nodes,
+                "training_nodes": 0,  # Not tracked in sync version
+                "change_type": change_type,
+                "change_details": {"node_id": node_id, "reason": reason},
+                "source": "peer_management_sync",
+            })
+            logger.debug(f"[P2P] Emitted CLUSTER_CAPACITY_CHANGED (sync): {change_type}, node={node_id}")
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.debug(f"[P2P] Failed to emit CLUSTER_CAPACITY_CHANGED (sync): {e}")
+
     def _sync_peer_snapshot(self) -> None:
         """Synchronize PeerSnapshot with current peers dictionary.
 

@@ -809,6 +809,26 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
       return;
     }
 
+    // RR-FIX-2026-01-12: Log warning for very complex board states.
+    // This helps users understand why the game might be slow on large boards
+    // with many pieces. The move enumeration complexity is O(stacks × directions × cells).
+    const stackCount = gameState.board.stacks.size;
+    const isLargeBoard = gameState.boardType === 'square19' || gameState.boardType === 'hexagonal';
+    if (stackCount > 80 || (isLargeBoard && stackCount > 50)) {
+      // Only log once per 10 turns to avoid spamming the console
+      if (gameState.history.length % 10 === 0) {
+        console.debug(
+          `[Sandbox AI] Complex board state: ${stackCount} stacks on ${gameState.boardType}. ` +
+            'AI turns may take longer to compute.'
+        );
+      }
+    }
+
+    // RR-FIX-2026-01-12: Yield to browser before heavy computation.
+    // This gives the browser a chance to process any pending events before
+    // we start the expensive move enumeration.
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+
     const parityMode = isSandboxAiParityModeEnabled();
 
     // Get AI difficulty for current player (if available)
@@ -2093,6 +2113,14 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
             }
           );
           break;
+        }
+
+        // RR-FIX-2026-01-12: Yield to browser during chain capture resolution.
+        // On large boards with long capture chains, each iteration calls
+        // enumerateCaptureSegmentsFrom which can be expensive. Yielding every
+        // few iterations keeps the browser responsive.
+        if (steps % 4 === 0) {
+          await new Promise((resolve) => window.setTimeout(resolve, 0));
         }
 
         // Re-read current state to ensure we have the latest player after any

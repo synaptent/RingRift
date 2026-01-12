@@ -76,21 +76,46 @@ export function useSandboxAILoop({
 
     try {
       let safetyCounter = 0;
+
+      // RR-FIX-2026-01-12: Determine batch size based on board complexity.
+      // Large boards with many pieces need smaller batches to prevent freezes.
+      const initialState = engine.getGameState();
+      const stackCount = initialState.board.stacks.size;
+      const isLargeBoard =
+        initialState.boardType === 'square19' || initialState.boardType === 'hexagonal';
+      const isVeryComplex = stackCount > 60 || (isLargeBoard && stackCount > 30);
+      const isModeratelyComplex = stackCount > 30 || isLargeBoard;
+
+      // Reduce batch size on complex boards to give browser more breathing room
+      const batchSize = isVeryComplex ? 4 : isModeratelyComplex ? 8 : 32;
+
       // Allow a bounded number of consecutive AI turns per batch to avoid
       // accidental infinite loops, but drive progression one visible move at a
       // time so AI-vs-AI games feel continuous rather than "bursty".
-      while (safetyCounter < 32) {
+      while (safetyCounter < batchSize) {
         const state = engine.getGameState();
         if (state.gameStatus !== 'active') break;
         const current = state.players.find((p) => p.playerNumber === state.currentPlayer);
         if (!current || current.type !== 'ai') break;
 
-        // RR-FIX-2026-01-12: Yield to browser BEFORE heavy AI computation to prevent
-        // browser freeze on large boards. The move enumeration can take 500ms-2s+ on
-        // large boards (square19, hexagonal) with many stacks, causing the UI to become
-        // completely unresponsive. By yielding here, the browser can process pending
-        // events (scroll, clicks, DevTools) before the next heavy computation.
-        await new Promise((resolve) => window.setTimeout(resolve, 0));
+        // RR-FIX-2026-01-12: Use requestIdleCallback when available for smoother
+        // scheduling. This allows the browser to prioritize user interactions
+        // and layout work before running the next AI turn.
+        const yieldToBrowser = (): Promise<void> => {
+          return new Promise((resolve) => {
+            if (typeof requestIdleCallback !== 'undefined') {
+              // Use requestIdleCallback for smoother scheduling
+              requestIdleCallback(() => resolve(), { timeout: 100 });
+            } else {
+              // Fallback to setTimeout(0) for Safari and older browsers
+              window.setTimeout(resolve, 0);
+            }
+          });
+        };
+
+        // Yield to browser BEFORE heavy AI computation to prevent
+        // browser freeze on large boards.
+        await yieldToBrowser();
 
         // RR-FIX-2026-01-12: Capture state BEFORE AI turn for freeze debugging.
         // If the browser freezes, the last saved state is the problematic one.
@@ -112,14 +137,29 @@ export function useSandboxAILoop({
 
         safetyCounter += 1;
 
-        // RR-FIX-2026-01-12: Adaptive delay based on board size to prevent browser
-        // freeze on large boards. Large boards (square19, hexagonal) have quadratic
-        // complexity in move enumeration due to O(stacks × directions × board_size).
-        // Use longer delays to keep the browser responsive during AI-vs-AI games.
-        const boardCellCount = state.board.stacks.size + state.board.markers.size;
-        const isLargeBoard = state.boardType === 'square19' || state.boardType === 'hexagonal';
-        const hasManyPieces = boardCellCount > 30;
-        const baseDelay = isLargeBoard || hasManyPieces ? 250 : 120;
+        // RR-FIX-2026-01-12: Adaptive delay based on board complexity to prevent
+        // browser freeze. The key insight is that move enumeration complexity is
+        // O(stacks × directions × cells), which grows quadratically on large boards.
+        // With 90+ stacks and 30+ capture options (as seen in the freeze logs),
+        // each AI turn can take 500ms-2s+ of pure computation.
+        const currentStackCount = state.board.stacks.size;
+        const markerCount = state.board.markers.size;
+        const currentIsLarge = state.boardType === 'square19' || state.boardType === 'hexagonal';
+
+        let baseDelay: number;
+        if (currentStackCount > 80 || (currentIsLarge && currentStackCount > 50)) {
+          // Very complex state: 500ms delay to let browser recover
+          baseDelay = 500;
+        } else if (currentStackCount > 50 || (currentIsLarge && currentStackCount > 30)) {
+          // Complex state: 350ms delay
+          baseDelay = 350;
+        } else if (currentIsLarge || currentStackCount > 30 || markerCount > 30) {
+          // Moderately complex: 250ms delay
+          baseDelay = 250;
+        } else {
+          // Simple state: 120ms delay
+          baseDelay = 120;
+        }
 
         // Small delay between moves so AI-only games progress in a smooth
         // sequence rather than a single visual burst of many moves.
