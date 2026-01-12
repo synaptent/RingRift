@@ -11,10 +11,18 @@ to fix lock contention issues on 40+ node clusters.
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 import os
 import threading
-from typing import Any, Optional
+import time
+from typing import TYPE_CHECKING, Any, Generic, Optional, TypeVar
+
+if TYPE_CHECKING:
+    from .models import NodeInfo
+
+# Generic type for PeerSnapshot to work with any peer info type
+T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +161,7 @@ class NonBlockingAsyncLockWrapper:
         self,
         lock: threading.RLock,
         lock_name: str = "unknown",
-        timeout: float = 5.0,
+        timeout: float = 10.0,  # Jan 2026: Increased from 5s to 10s for 40+ node clusters
         validate_order: bool = True,
     ):
         """Initialize non-blocking lock wrapper.
@@ -257,6 +265,89 @@ class NonBlockingAsyncLockWrapper:
         return False
 
 
+class MetricsLockWrapper(NonBlockingAsyncLockWrapper):
+    """Lock wrapper with contention metrics for observability.
+
+    January 12, 2026: Added to provide visibility into lock contention issues.
+    Extends NonBlockingAsyncLockWrapper with timing metrics and logging.
+
+    Features:
+    - Logs warnings when lock acquisition takes >100ms (configurable)
+    - Tracks contention counts per lock
+    - Provides metrics for proactive monitoring
+
+    Usage:
+        # Drop-in replacement for NonBlockingAsyncLockWrapper
+        async with MetricsLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
+            # ... critical section
+    """
+
+    # Class-level contention counters
+    _contention_counts: dict[str, int] = {}
+    _total_wait_time: dict[str, float] = {}
+
+    def __init__(
+        self,
+        lock: threading.RLock,
+        lock_name: str = "unknown",
+        timeout: float = 5.0,
+        validate_order: bool = True,
+        contention_threshold: float = 0.1,  # 100ms threshold
+    ):
+        """Initialize metrics lock wrapper.
+
+        Args:
+            lock: The threading.RLock to wrap
+            lock_name: Name of the lock
+            timeout: Maximum time to wait for lock acquisition
+            validate_order: If True, validate lock ordering
+            contention_threshold: Log warning if wait exceeds this (seconds)
+        """
+        super().__init__(lock, lock_name, timeout, validate_order)
+        self._contention_threshold = contention_threshold
+
+    async def acquire(self, timeout: Optional[float] = None) -> bool:
+        """Acquire lock with metrics tracking."""
+        start = time.monotonic()
+        result = await super().acquire(timeout)
+        wait_time = time.monotonic() - start
+
+        # Track metrics
+        if self._lock_name not in MetricsLockWrapper._contention_counts:
+            MetricsLockWrapper._contention_counts[self._lock_name] = 0
+            MetricsLockWrapper._total_wait_time[self._lock_name] = 0.0
+
+        MetricsLockWrapper._total_wait_time[self._lock_name] += wait_time
+
+        # Log if contention exceeds threshold
+        if wait_time > self._contention_threshold:
+            MetricsLockWrapper._contention_counts[self._lock_name] += 1
+            logger.warning(
+                f"[LockMetrics] {self._lock_name} contention: {wait_time:.3f}s "
+                f"(threshold: {self._contention_threshold}s, "
+                f"total_contentions: {MetricsLockWrapper._contention_counts[self._lock_name]})"
+            )
+
+        return result
+
+    @classmethod
+    def get_contention_stats(cls) -> dict[str, Any]:
+        """Get contention statistics for all locks."""
+        return {
+            "contention_counts": dict(cls._contention_counts),
+            "total_wait_times": dict(cls._total_wait_time),
+            "locks_with_contention": [
+                name for name, count in cls._contention_counts.items() if count > 0
+            ],
+        }
+
+    @classmethod
+    def reset_stats(cls) -> None:
+        """Reset contention statistics."""
+        cls._contention_counts.clear()
+        cls._total_wait_time.clear()
+
+
 class TimeoutAsyncLockWrapper:
     """Async lock with configurable timeout to prevent deadlocks.
 
@@ -333,6 +424,225 @@ class TimeoutAsyncLockWrapper:
         """Async context manager exit."""
         self.release()
         return False
+
+
+# =============================================================================
+# Copy-on-Write Peer Snapshot (January 12, 2026)
+# =============================================================================
+
+
+class PeerSnapshot(Generic[T]):
+    """Lock-free peer state access using copy-on-write pattern.
+
+    January 12, 2026: Added to eliminate lock contention for read-heavy
+    operations like /status endpoint. Before this change, /status could block
+    for 6+ seconds under load waiting for peers_lock.
+
+    Design:
+    - Maintains internal mutable dictionary for writes (protected by lock)
+    - Maintains immutable snapshot for reads (no lock needed)
+    - On each write, atomically replaces the snapshot with a new copy
+    - Read operations return the snapshot directly without locking
+
+    Thread Safety:
+    - Reads are lock-free and always return a consistent snapshot
+    - Writes are protected by an RLock
+    - The snapshot reference assignment is atomic in Python (GIL)
+
+    Performance:
+    - Reads: O(1), no lock acquisition
+    - Writes: O(n) due to copy, but writes are infrequent
+    - Snapshot refresh on every write ensures readers always see recent data
+
+    Usage:
+        # Create snapshot manager
+        peers = PeerSnapshot[NodeInfo]()
+
+        # Lock-free read (for /status endpoint)
+        snapshot = peers.get_snapshot()
+        for node_id, info in snapshot.items():
+            ...
+
+        # Write operations (updates trigger snapshot refresh)
+        peers.update_peer("node-1", node_info)
+        peers.remove_peer("node-2")
+
+        # Bulk update (single lock acquisition, single snapshot refresh)
+        with peers.bulk_update():
+            peers.update_peer("node-1", info1)
+            peers.update_peer("node-2", info2)
+    """
+
+    def __init__(self, initial_data: dict[str, T] | None = None):
+        """Initialize PeerSnapshot with optional initial data.
+
+        Args:
+            initial_data: Optional initial dictionary of peers
+        """
+        # Internal mutable state (write-side)
+        self._peers: dict[str, T] = dict(initial_data) if initial_data else {}
+
+        # Immutable snapshot (read-side) - atomically replaced on writes
+        self._snapshot: dict[str, T] = dict(self._peers)
+
+        # Version counter for tracking changes
+        self._snapshot_version: int = 0
+
+        # Lock for write operations only
+        self._write_lock = threading.RLock()
+
+        # Timestamp of last snapshot update
+        self._last_update: float = time.time()
+
+        # Flag for bulk update mode
+        self._in_bulk_update: bool = False
+
+    def get_snapshot(self) -> dict[str, T]:
+        """Get current peer state as an immutable snapshot.
+
+        This is the primary read method - returns instantly without locking.
+        The returned dictionary should be treated as read-only. Modifying it
+        will not affect the internal state.
+
+        Returns:
+            Dictionary mapping node_id to peer info (immutable copy)
+        """
+        # No lock needed - snapshot is immutable and reference is atomic
+        return self._snapshot
+
+    def get_peer(self, node_id: str) -> T | None:
+        """Get a single peer from the snapshot.
+
+        Lock-free read of a specific peer.
+
+        Args:
+            node_id: ID of the peer to retrieve
+
+        Returns:
+            Peer info if found, None otherwise
+        """
+        return self._snapshot.get(node_id)
+
+    def __contains__(self, node_id: str) -> bool:
+        """Check if peer exists in snapshot (lock-free)."""
+        return node_id in self._snapshot
+
+    def __len__(self) -> int:
+        """Return number of peers in snapshot (lock-free)."""
+        return len(self._snapshot)
+
+    def update_peer(self, node_id: str, info: T) -> None:
+        """Update or add a peer.
+
+        This acquires the write lock and refreshes the snapshot.
+        If in bulk update mode, defers snapshot refresh until bulk completes.
+
+        Args:
+            node_id: Unique peer identifier
+            info: Peer information object
+        """
+        with self._write_lock:
+            self._peers[node_id] = info
+            if not self._in_bulk_update:
+                self._refresh_snapshot()
+
+    def remove_peer(self, node_id: str) -> bool:
+        """Remove a peer if it exists.
+
+        Args:
+            node_id: ID of peer to remove
+
+        Returns:
+            True if peer was removed, False if not found
+        """
+        with self._write_lock:
+            if node_id in self._peers:
+                del self._peers[node_id]
+                if not self._in_bulk_update:
+                    self._refresh_snapshot()
+                return True
+            return False
+
+    def clear(self) -> None:
+        """Remove all peers."""
+        with self._write_lock:
+            self._peers.clear()
+            if not self._in_bulk_update:
+                self._refresh_snapshot()
+
+    def _refresh_snapshot(self) -> None:
+        """Create a new immutable snapshot from current state.
+
+        Must be called while holding the write lock.
+        Uses shallow copy - peer objects are shared between snapshots.
+        For deep isolation, callers should not mutate returned NodeInfo objects.
+        """
+        self._snapshot = dict(self._peers)
+        self._snapshot_version += 1
+        self._last_update = time.time()
+
+    class _BulkUpdateContext:
+        """Context manager for bulk update operations."""
+
+        def __init__(self, snapshot: "PeerSnapshot"):
+            self._snapshot = snapshot
+
+        def __enter__(self):
+            self._snapshot._write_lock.acquire()
+            self._snapshot._in_bulk_update = True
+            return self._snapshot
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            try:
+                self._snapshot._in_bulk_update = False
+                self._snapshot._refresh_snapshot()
+            finally:
+                self._snapshot._write_lock.release()
+            return False
+
+    def bulk_update(self) -> "_BulkUpdateContext":
+        """Context manager for efficient bulk updates.
+
+        Acquires lock once and defers snapshot refresh until all updates complete.
+        Use this when making multiple updates in sequence.
+
+        Returns:
+            Context manager that holds write lock
+
+        Example:
+            with peers.bulk_update():
+                peers.update_peer("node-1", info1)
+                peers.update_peer("node-2", info2)
+                peers.remove_peer("node-3")
+            # Single snapshot refresh happens here
+        """
+        return self._BulkUpdateContext(self)
+
+    @property
+    def version(self) -> int:
+        """Get current snapshot version number.
+
+        Increments on each update. Useful for change detection.
+        """
+        return self._snapshot_version
+
+    @property
+    def last_update_time(self) -> float:
+        """Get timestamp of last snapshot update."""
+        return self._last_update
+
+    def get_stats(self) -> dict[str, Any]:
+        """Get snapshot statistics for monitoring.
+
+        Returns:
+            Dictionary with peer count, version, and timing info
+        """
+        return {
+            "peer_count": len(self._snapshot),
+            "version": self._snapshot_version,
+            "last_update": self._last_update,
+            "age_seconds": time.time() - self._last_update,
+        }
 
 
 def get_client_session(timeout: ClientTimeout = None) -> ClientSession:

@@ -786,6 +786,7 @@ from scripts.p2p.p2p_mixin_base import SubscriptionRetryConfig
 from scripts.p2p.network import (
     AsyncLockWrapper,  # DEPRECATED - kept for compatibility
     NonBlockingAsyncLockWrapper,
+    PeerSnapshot,  # Jan 12, 2026: Lock-free peer reads
     TimeoutAsyncLockWrapper,
     get_client_session,
 )
@@ -1606,6 +1607,9 @@ class P2POrchestrator(
 
         self.verbose = bool(os.environ.get("RINGRIFT_P2P_VERBOSE", "").strip())
         self.peers: dict[str, NodeInfo] = {}
+        # Jan 12, 2026: Lock-free peer snapshot for read-heavy operations like /status
+        # PeerSnapshot maintains an immutable copy that can be read without acquiring peers_lock
+        self._peer_snapshot: PeerSnapshot[NodeInfo] = PeerSnapshot()
         self.local_jobs: dict[str, ClusterJob] = {}
         self.active_jobs: dict[str, dict[str, Any]] = {}  # Track running jobs by type (selfplay, training, etc.)
 
@@ -2687,6 +2691,8 @@ class P2POrchestrator(
                         if node_id in self.peers:
                             del self.peers[node_id]
                             logger.debug(f"[PeerCleanup] Removed peer from dict: {node_id}")
+                            # Jan 12, 2026: Sync to lock-free snapshot after peer removal
+                            self._sync_peer_snapshot()
                             return True
                     return False
 
@@ -4056,7 +4062,8 @@ class P2POrchestrator(
                     health = manager.health_check()
                     # Handle both dict and HealthCheckResult return types
                     # Jan 2026: Fixed to accept "running" status from managers (CoordinatorStatus.RUNNING)
-                    healthy_statuses = ("healthy", "ready", "running")
+                    # Jan 2026: Added "starting" and "initializing" for startup grace period
+                    healthy_statuses = ("healthy", "ready", "running", "starting", "initializing")
                     if hasattr(health, "status"):
                         is_healthy = str(health.status).lower() in healthy_statuses
                         health_status = str(health.status)
@@ -7890,6 +7897,9 @@ class P2POrchestrator(
             if not was_present:
                 logger.info(f"[SelfReg] Registered self in peers: {self.node_id}")
 
+        # Jan 12, 2026: Sync to lock-free snapshot
+        self._sync_peer_snapshot()
+
         # Emit HOST_ONLINE if this is first registration (consistency with peer discovery)
         if not was_present:
             try:
@@ -7918,6 +7928,26 @@ class P2POrchestrator(
             pass  # Event system not available
         except Exception as e:
             logger.debug(f"[SelfReg] Failed to emit HOST_ONLINE: {e}")
+
+    def _sync_peer_snapshot(self) -> None:
+        """Synchronize PeerSnapshot with current peers dictionary.
+
+        January 12, 2026: Added for lock-free reads in handle_status.
+        Call this after any operation that modifies self.peers.
+
+        This uses bulk_update for efficiency when there are many peers.
+        The PeerSnapshot will be atomically updated with the current state.
+        """
+        try:
+            # Use bulk update for efficiency - single lock acquisition, single snapshot refresh
+            with self._peer_snapshot.bulk_update():
+                # Clear and repopulate (handles removes and updates)
+                self._peer_snapshot.clear()
+                for node_id, info in self.peers.items():
+                    self._peer_snapshot.update_peer(node_id, info)
+        except Exception as e:  # noqa: BLE001
+            # Log but don't fail - reads will use stale snapshot
+            logger.warning(f"[PeerSnapshot] Sync failed: {e}")
 
     # _is_tailscale_host provided by NetworkUtilsMixin
 
@@ -10974,6 +11004,9 @@ class P2POrchestrator(
                 await self._emit_host_online(peer_info.node_id, capabilities)
                 logger.info(f"First-contact peer registered: {peer_info.node_id} (caps: {capabilities})")
 
+            # Jan 12, 2026: Sync to lock-free snapshot after peer update
+            self._sync_peer_snapshot()
+
             # Return our info
             self._update_self_info()
             payload = self.self_info.to_dict()
@@ -11013,41 +11046,12 @@ class P2POrchestrator(
         alive_only = request.query.get("alive_only", "true").lower() != "false"
         include_stale_jobs = request.query.get("include_stale_jobs", "false").lower() == "true"
 
-        # Non-blocking peers lock acquisition (December 30, 2025)
-        # CRITICAL: threading.RLock must be acquired AND released in the same thread
-        # Wrap the entire lock-protected operation in asyncio.to_thread
-        # Updated Jan 10, 2026: Increased timeout from 2.0s to 5.0s for large clusters
-        # Updated Jan 12, 2026: Try non-blocking first, then brief blocking for reduced latency
-        def _get_peers_snapshot_with_lock() -> list | None:
-            """Get peers snapshot with lock - runs in thread pool."""
-            # Try non-blocking first - instant success if lock available
-            if self.peers_lock.acquire(False):  # blocking=False
-                try:
-                    return list(self.peers.values())
-                finally:
-                    self.peers_lock.release()
-
-            # Lock contended - wait briefly (reduced from 5.0s)
-            if self.peers_lock.acquire(True, 1.0):  # blocking=True, timeout=1.0s
-                try:
-                    return list(self.peers.values())
-                finally:
-                    self.peers_lock.release()
-
-            return None  # Return None for graceful degradation
-
-        peers_snapshot: list | None = None
-        try:
-            peers_snapshot = await asyncio.wait_for(
-                asyncio.to_thread(_get_peers_snapshot_with_lock),
-                timeout=6.0
-            )
-        except asyncio.TimeoutError:
-            logger.warning("handle_status: peers_lock acquisition timed out")
-
-        # Handle case when peers lock acquisition failed
-        if peers_snapshot is None:
-            peers_snapshot = []  # Empty list for graceful degradation
+        # Jan 12, 2026: Lock-free peer snapshot using copy-on-write pattern
+        # PeerSnapshot.get_snapshot() returns instantly without acquiring any lock.
+        # The snapshot is updated atomically whenever peers are modified.
+        # This eliminates the 6+ second timeouts that occurred under load.
+        snapshot_dict = self._peer_snapshot.get_snapshot()
+        peers_snapshot: list = list(snapshot_dict.values())
 
         conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
         effective_leader = self._get_leader_peer()
@@ -18088,6 +18092,9 @@ print(json.dumps({{
                             self.peers[info.node_id] = info
                         after = len(self.peers)
 
+                    # Jan 12, 2026: Sync to lock-free snapshot after gossip merge
+                    self._sync_peer_snapshot()
+
                     new = max(0, after - before)
                     if new:
                         imported_any = True
@@ -18272,6 +18279,9 @@ print(json.dumps({{
                                         )
                                     except (ValueError, KeyError, IndexError, AttributeError):
                                         continue
+
+                        # Jan 12, 2026: Sync to lock-free snapshot after relay peer import
+                        self._sync_peer_snapshot()
 
                     # Adopt leader if provided
                     leader_id = str(data.get("leader_id") or "").strip()
@@ -20083,6 +20093,9 @@ print(json.dumps({{
             quorum_met = self._has_voter_quorum() if hasattr(self, '_has_voter_quorum') else True
             self._emit_cluster_health_event_sync(is_healthy, final_alive_count, quorum_met)
 
+            # Jan 12, 2026: Sync to lock-free snapshot after peer retirement/purge
+            self._sync_peer_snapshot()
+
         # Clear stale leader IDs after restarts/partitions
         if self.leader_id and not self._is_leader_lease_valid():
             old_leader_id = self.leader_id
@@ -20357,6 +20370,9 @@ print(json.dumps({{
             is_healthy = final_alive_count > 0
             quorum_met = self._has_voter_quorum() if hasattr(self, '_has_voter_quorum') else True
             self._emit_cluster_health_event_sync(is_healthy, final_alive_count, quorum_met)
+
+            # Jan 12, 2026: Sync to lock-free snapshot after peer retirement/purge (sync version)
+            self._sync_peer_snapshot()
 
         # LEARNED LESSONS - Clear stale leader IDs after restarts/partitions.
         #
