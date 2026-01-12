@@ -31,6 +31,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+import aiohttp
 from aiohttp import web
 
 # Dec 2025: Use consolidated handler utilities
