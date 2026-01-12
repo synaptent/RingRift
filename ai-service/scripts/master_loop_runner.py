@@ -43,6 +43,8 @@ from pathlib import Path
 ai_service_root = Path(__file__).parent.parent
 sys.path.insert(0, str(ai_service_root))
 
+from app.config.ports import get_local_p2p_status_url, get_local_p2p_url
+
 # Configure logging with rotation
 LOG_DIR = ai_service_root / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -79,7 +81,7 @@ def detect_node_role() -> str:
         import urllib.request
         import json
 
-        with urllib.request.urlopen("http://localhost:8770/status", timeout=2) as resp:
+        with urllib.request.urlopen(get_local_p2p_status_url(), timeout=2) as resp:
             status = json.loads(resp.read().decode())
             if status.get("is_leader"):
                 return "coordinator"
@@ -120,7 +122,7 @@ async def register_with_p2p(role: str) -> bool:
         }).encode()
 
         req = urllib.request.Request(
-            "http://localhost:8770/register_service",
+            f"{get_local_p2p_url()}/register_service",
             data=data,
             headers={"Content-Type": "application/json"},
             method="POST",

@@ -45,6 +45,7 @@ from enum import Enum
 from typing import Any, Callable, Optional
 
 from app.config.env import env
+from app.config.ports import get_local_p2p_status_url
 from app.coordination.coordinator_base import CoordinatorBase
 from app.coordination.singleton_mixin import SingletonMixin
 
@@ -538,7 +539,7 @@ class ClusterResilienceOrchestrator(CoordinatorBase, SingletonMixin):
                 import urllib.request
 
                 with urllib.request.urlopen(
-                    "http://localhost:8770/status", timeout=5
+                    get_local_p2p_status_url(), timeout=5
                 ) as resp:
                     data = json.loads(resp.read())
                     alive_peers = data.get("alive_peers", 0)

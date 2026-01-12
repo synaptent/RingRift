@@ -49,6 +49,7 @@ from app.config.coordination_defaults import (
     SyncDefaults,
 )
 from app.config.env import env
+from app.config.ports import get_local_p2p_status_url
 from app.coordination.event_handler_utils import extract_config_from_path, extract_config_key
 from app.coordination.event_utils import make_config_key, parse_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
@@ -2899,7 +2900,7 @@ class TrainingTriggerDaemon(HandlerBase):
             # Check P2P status endpoint
             import aiohttp
 
-            p2p_url = "http://localhost:8770/status"
+            p2p_url = get_local_p2p_status_url()
             async with aiohttp.ClientSession() as session:
                 async with session.get(p2p_url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
                     if resp.status == 200:

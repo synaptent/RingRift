@@ -113,6 +113,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from app.config.coordination_defaults import CircuitBreakerDefaults
+from app.config.ports import get_local_p2p_status_url
 from app.coordination.coordinator_persistence import StatePersistenceMixin
 from app.coordination.protocols import (
     CoordinatorStatus,
@@ -1168,7 +1169,7 @@ class DataPipelineOrchestrator(
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=timeout)
             ) as session:
-                async with session.get("http://localhost:8770/status") as response:
+                async with session.get(get_local_p2p_status_url()) as response:
                     return response.status == 200
         except Exception:
             return False

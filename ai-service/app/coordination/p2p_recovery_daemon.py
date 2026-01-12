@@ -20,10 +20,11 @@ import os
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.config.ports import get_local_p2p_status_url, get_p2p_endpoints
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.contracts import CoordinatorStatus
 from app.coordination.coordinator_persistence import StatePersistenceMixin
@@ -67,7 +68,7 @@ class P2PRecoveryConfig:
 
     enabled: bool = True  # Whether daemon should run
     check_interval_seconds: int = 60
-    health_endpoint: str = "http://localhost:8770/status"
+    health_endpoint: str = field(default_factory=get_local_p2p_status_url)
     max_consecutive_failures: int = 3
     restart_cooldown_seconds: int = 300  # 5 minutes (initial cooldown)
     # Jan 2026: NAT-blocked nodes need faster recovery (more likely to disconnect)
@@ -93,7 +94,7 @@ class P2PRecoveryConfig:
     # Dec 29, 2025: Self-healing for quorum and leader gaps
     max_leader_gap_seconds: int = 10  # Jan 3, 2026: Reduced from 45s for faster failover
     quorum_recovery_enabled: bool = True
-    leader_election_endpoint: str = "http://localhost:8770/election/start"
+    leader_election_endpoint: str = field(default_factory=lambda: get_p2p_endpoints()['election'])
     # Jan 2026: Proactive voter quorum monitoring
     voter_quorum_monitoring_enabled: bool = True
     min_voters_for_healthy_quorum: int = 5  # Trigger recovery if < 5 of 7 voters healthy

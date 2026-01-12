@@ -135,6 +135,53 @@ def get_local_p2p_url() -> str:
     )
 
 
+def get_p2p_endpoints() -> dict[str, str]:
+    """Get all P2P-related endpoint URLs based on local P2P configuration.
+
+    This is the canonical way to get P2P endpoint URLs. Uses environment
+    variable configuration via get_local_p2p_url().
+
+    Returns:
+        Dictionary with endpoint URLs:
+        - 'base': Base P2P URL (e.g., "http://localhost:8770")
+        - 'status': Status endpoint (e.g., "http://localhost:8770/status")
+        - 'health': Health endpoint (e.g., "http://localhost:8770/health")
+        - 'election': Leader election endpoint
+        - 'work': Work queue endpoint
+        - 'tailscale_health': Tailscale health endpoint
+
+    Example:
+        from app.config.ports import get_p2p_endpoints
+        endpoints = get_p2p_endpoints()
+        response = requests.get(endpoints['status'])
+    """
+    base = get_local_p2p_url()
+    return {
+        'base': base,
+        'status': f"{base}/status",
+        'health': f"{base}/health",
+        'election': f"{base}/election/start",
+        'work': f"{base}/work",
+        'tailscale_health': f"{base}/tailscale_health",
+    }
+
+
+def get_local_p2p_status_url() -> str:
+    """Get the local P2P status endpoint URL.
+
+    Convenience function that returns the status URL using local P2P
+    configuration. Equivalent to get_p2p_endpoints()['status'].
+
+    Returns:
+        P2P status endpoint URL (e.g., "http://localhost:8770/status")
+
+    Example:
+        from app.config.ports import get_local_p2p_status_url
+        response = requests.get(get_local_p2p_status_url())
+    """
+    return f"{get_local_p2p_url()}/status"
+
+
 def get_data_server_url(host: str, port: Optional[int] = None, path: str = "") -> str:
     """Build data server URL for file transfers.
 

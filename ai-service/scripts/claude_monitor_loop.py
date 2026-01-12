@@ -20,10 +20,16 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+# Setup PYTHONPATH for app imports
+_ai_service_root = Path(__file__).parent.parent
+sys.path.insert(0, str(_ai_service_root))
+
+from app.config.ports import get_local_p2p_status_url
+
 # Configuration
 CHECK_INTERVAL = 300  # 5 minutes
 LOG_FILE = Path("/tmp/claude_monitor.log")
-P2P_URL = "http://localhost:8770/status"
+P2P_URL = get_local_p2p_status_url()
 
 def log(msg: str, level: str = "INFO"):
     """Log message with timestamp."""

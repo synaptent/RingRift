@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from app.config.ports import get_local_p2p_status_url
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.contracts import CoordinatorStatus
 from app.coordination.event_emission_helpers import safe_emit_event
@@ -107,7 +108,7 @@ class UtilizationWatchdogConfig:
     emit_events: bool = True
 
     # P2P status endpoint
-    p2p_status_endpoint: str = "http://localhost:8770/status"
+    p2p_status_endpoint: str = field(default_factory=get_local_p2p_status_url)
 
     def __post_init__(self) -> None:
         """Validate configuration."""

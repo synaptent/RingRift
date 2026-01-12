@@ -1710,9 +1710,8 @@ def create_full_selfplay_training_loop(
 
 async def main():
     """Example usage of P2P integration."""
-    # Create integration manager
+    # Create integration manager (p2p_base_url defaults to get_local_p2p_url())
     config = P2PIntegrationConfig(
-        p2p_base_url="http://localhost:8770",
         auto_scale_selfplay=False  # Disable for testing
     )
 

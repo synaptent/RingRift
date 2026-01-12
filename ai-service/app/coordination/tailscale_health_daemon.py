@@ -33,6 +33,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from app.config.ports import get_p2p_endpoints
 from app.coordination.contracts import HealthCheckResult
 from app.coordination.handler_base import HandlerBase, HandlerStats
 
@@ -86,7 +87,7 @@ class TailscaleHealthConfig:
 
     # P2P reporting
     report_to_p2p: bool = True
-    p2p_status_endpoint: str = "http://localhost:8770/tailscale_health"
+    p2p_status_endpoint: str = field(default_factory=lambda: get_p2p_endpoints()['tailscale_health'])
 
     # Environment overrides
     @classmethod

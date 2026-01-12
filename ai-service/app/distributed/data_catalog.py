@@ -58,6 +58,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Path setup
+from app.config.ports import get_local_p2p_url
 from app.utils.paths import DATA_DIR, GAMES_DIR
 
 try:
@@ -1404,14 +1405,16 @@ class ClusterAwareDataCatalog:
     def __init__(
         self,
         local_catalog: DataCatalog | None = None,
-        p2p_base_url: str = "http://localhost:8770",
+        p2p_base_url: str | None = None,
     ):
         """Initialize cluster-aware catalog.
 
         Args:
             local_catalog: Local DataCatalog instance (uses singleton if None)
-            p2p_base_url: Base URL for P2P orchestrator API
+            p2p_base_url: Base URL for P2P orchestrator API (defaults to get_local_p2p_url())
         """
+        if p2p_base_url is None:
+            p2p_base_url = get_local_p2p_url()
         self._local_catalog = local_catalog or get_data_catalog()
         self._p2p_base_url = p2p_base_url
 

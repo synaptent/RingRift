@@ -118,6 +118,7 @@ ALL_CONFIGS = [
 # Loop timing - now configurable via environment (Dec 2025)
 # Use env.master_loop_interval, env.training_check_interval, etc.
 from app.config.env import env
+from app.config.ports import get_local_p2p_status_url
 
 # December 29, 2025: Reactive dispatch mode (48-hour autonomous operation)
 # When enabled, selfplay is dispatched via events instead of polling
@@ -1946,7 +1947,7 @@ class MasterLoopController:
         try:
             import requests
 
-            resp = requests.get("http://localhost:8770/status", timeout=5)
+            resp = requests.get(get_local_p2p_status_url(), timeout=5)
             if resp.status_code != 200:
                 return True  # Assume healthy on error
 

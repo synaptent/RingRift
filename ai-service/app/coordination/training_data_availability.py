@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.config.ports import get_local_p2p_status_url
 from app.coordination.event_utils import make_config_key
 
 logger = logging.getLogger(__name__)
@@ -107,7 +108,7 @@ async def check_cluster_availability(
     try:
         import aiohttp
 
-        p2p_url = "http://localhost:8770/status"
+        p2p_url = get_local_p2p_status_url()
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 p2p_url, timeout=aiohttp.ClientTimeout(total=timeout_seconds)
