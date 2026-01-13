@@ -380,6 +380,8 @@ class TestGauntletEvaluationFlow:
                             move_count=10,
                         )
 
+                        # Jan 2026: Force sequential execution (parallel_games=1) to test
+                        # the sequential code path which emits EVALUATION_PROGRESS events
                         game_gauntlet._evaluate_single_opponent(
                             baseline=BaselineOpponent.RANDOM,
                             model_path="dummy.pth",
@@ -392,6 +394,7 @@ class TestGauntletEvaluationFlow:
                             early_stopping=False,
                             early_stopping_confidence=0.95,
                             early_stopping_min_games=1,
+                            parallel_games=1,  # Force sequential to test event emission
                         )
 
         assert len(stub_bus.events) > 0
