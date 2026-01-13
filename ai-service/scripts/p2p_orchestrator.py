@@ -19058,10 +19058,27 @@ print(json.dumps({{
         Returns:
             True if node has status="proxy_only" in config
         """
+        # Jan 13, 2026: Known aliases for proxy nodes that may appear under different names
+        # These are nodes that registered with a different name than their config entry
+        PROXY_ALIASES = {
+            "aws-staging": "aws-proxy",  # EC2 staging instance is the proxy
+        }
+
         try:
             hosts = self._load_distributed_hosts().get("hosts", {})
+            # Check direct name first
             node_config = hosts.get(node_id, {})
-            return node_config.get("status", "") == "proxy_only"
+            if node_config.get("status", "") == "proxy_only":
+                return True
+            # Check if this is a known alias for a proxy node
+            if node_id in PROXY_ALIASES:
+                alias_config = hosts.get(PROXY_ALIASES[node_id], {})
+                if alias_config.get("status", "") == "proxy_only":
+                    logger.debug(
+                        f"[ProxyCheck] {node_id} is alias for {PROXY_ALIASES[node_id]} (proxy_only)"
+                    )
+                    return True
+            return False
         except Exception:  # noqa: BLE001
             return False
 
