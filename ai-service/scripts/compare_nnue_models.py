@@ -107,7 +107,7 @@ def play_game(
     moves = 0
 
     while not mutable.is_game_over() and moves < max_moves:
-        current_player = mutable.current_player_index
+        current_player = mutable.current_player
 
         # Select evaluator based on player
         if current_player == model_a_player:
@@ -132,7 +132,7 @@ def play_game(
             value = evaluator.evaluate(mutable)
 
             # Negate for opponent's perspective
-            if mutable.current_player_index != current_player:
+            if mutable.current_player != current_player:
                 value = -value
 
             mutable.unmake_move()
