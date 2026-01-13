@@ -33,6 +33,7 @@ from typing import Any, Callable
 
 from app.coordination.event_handler_utils import extract_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
+from app.coordination.p2p_integration import get_p2p_leader_url
 from app.core.async_context import safe_create_task
 
 logger = logging.getLogger(__name__)
@@ -354,7 +355,13 @@ class ReactiveDispatcher(HandlerBase):
         try:
             import aiohttp
 
-            url = f"http://localhost:{self._dispatcher_config.p2p_port}{self._dispatcher_config.p2p_dispatch_endpoint}"
+            # Get the actual P2P leader URL (not hardcoded localhost)
+            leader_url = await get_p2p_leader_url()
+            if not leader_url:
+                logger.warning("[ReactiveDispatcher] P2P leader unknown, cannot dispatch")
+                return False
+
+            url = f"{leader_url}{self._dispatcher_config.p2p_dispatch_endpoint}"
 
             payload = {
                 "event_type": event.event_type,
