@@ -377,26 +377,27 @@ class ParityValidationDaemon(HandlerBase):
         games_needing_validation = []
 
         # Get all completed games
+        # Jan 2026: Use _get_connection() context manager, not _connection attribute
         try:
-            conn = db._connection  # Use internal connection
-            cursor = conn.execute(
-                """
-                SELECT game_id, parity_status
-                FROM games
-                WHERE game_status = 'completed'
-                ORDER BY created_at DESC
-                """
-            )
-            for row in cursor.fetchall():
-                game_id = row[0]
-                parity_status = row[1] if len(row) > 1 else None
+            with db._get_connection() as conn:
+                cursor = conn.execute(
+                    """
+                    SELECT game_id, parity_status
+                    FROM games
+                    WHERE game_status = 'completed'
+                    ORDER BY created_at DESC
+                    """
+                )
+                for row in cursor.fetchall():
+                    game_id = row[0]
+                    parity_status = row[1] if len(row) > 1 else None
 
-                # Check if needs validation
-                # Jan 2026: Fixed column name (parity_status not parity_gate)
-                # and added "pending" to match actual database values
-                if parity_status in (None, "pending", "pending_gate", "failed"):
-                    if not has_ts_hashes(db, game_id):
-                        games_needing_validation.append(game_id)
+                    # Check if needs validation
+                    # Jan 2026: Fixed column name (parity_status not parity_gate)
+                    # and added "pending" to match actual database values
+                    if parity_status in (None, "pending", "pending_gate", "failed"):
+                        if not has_ts_hashes(db, game_id):
+                            games_needing_validation.append(game_id)
 
         except Exception as e:
             logger.debug(f"Error getting games needing validation: {e}")
@@ -415,13 +416,14 @@ class ParityValidationDaemon(HandlerBase):
 
             # Update parity_status to 'passed'
             # Jan 2026: Fixed column name (parity_status not parity_gate)
+            # Jan 2026: Use _get_connection() context manager
             try:
-                conn = db._connection
-                conn.execute(
-                    "UPDATE games SET parity_status = 'passed' WHERE game_id = ?",
-                    (game_id,),
-                )
-                conn.commit()
+                with db._get_connection() as conn:
+                    conn.execute(
+                        "UPDATE games SET parity_status = 'passed' WHERE game_id = ?",
+                        (game_id,),
+                    )
+                    conn.commit()
             except Exception as e:
                 logger.debug(f"Error updating parity_status for {game_id}: {e}")
 
