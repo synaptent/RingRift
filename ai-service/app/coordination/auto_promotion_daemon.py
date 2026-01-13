@@ -1632,8 +1632,10 @@ class AutoPromotionDaemon(HandlerBase):
             "last_promotion": last_promotion,
             "promotion_history_count": len(self._promotion_history),
             "thresholds": {
-                "min_win_rate_vs_random": self.config.min_win_rate_vs_random,
-                "min_win_rate_vs_heuristic": self.config.min_win_rate_vs_heuristic,
+                # Jan 2026: Use correct config attributes (was referencing non-existent attrs)
+                "min_games_vs_random": self.config.min_games_vs_random,
+                "min_games_vs_heuristic": self.config.min_games_vs_heuristic,
+                "min_gauntlet_win_rate": self.config.min_gauntlet_win_rate,
                 "consecutive_passes_required": self.config.consecutive_passes_required,
             },
             "enabled": self.config.enabled,
