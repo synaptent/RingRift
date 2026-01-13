@@ -42,9 +42,11 @@ export default function RegisterPage() {
       // On successful registration, you are logged in via AuthContext
       // and redirected into the main app shell.
       navigate('/');
-    } catch (error: unknown) {
+    } catch (err: unknown) {
+      // Log the full error for debugging
+      console.error('Registration error:', err);
       const message = extractErrorMessage(
-        error,
+        err,
         'Registration failed. Please check your details and try again.'
       );
       setError(message);
@@ -125,6 +127,9 @@ export default function RegisterPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                 />
+                <p className="text-xs text-slate-500">
+                  At least 8 characters with uppercase, lowercase, and a number
+                </p>
               </div>
 
               <div className="space-y-1">
