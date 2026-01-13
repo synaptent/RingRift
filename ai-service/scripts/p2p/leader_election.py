@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from collections import deque
 from enum import Enum
@@ -185,7 +186,11 @@ _CONSTANTS = P2PMixinBase._load_config_constants({
     "LEADER_LEASE_EXPIRY_GRACE_SECONDS": 60,  # Stale leader alerting
 })
 
-VOTER_MIN_QUORUM = _CONSTANTS["VOTER_MIN_QUORUM"]
+# Jan 2026: Environment variable override for quorum threshold
+# Set RINGRIFT_VOTER_MIN_QUORUM=2 to allow 2-of-N quorum (lower threshold)
+# This is useful when cluster stability is prioritized over split-brain prevention
+_env_quorum = os.environ.get("RINGRIFT_VOTER_MIN_QUORUM", "").strip()
+VOTER_MIN_QUORUM = int(_env_quorum) if _env_quorum.isdigit() else _CONSTANTS["VOTER_MIN_QUORUM"]
 CONSENSUS_MODE = _CONSTANTS["CONSENSUS_MODE"]
 RAFT_ENABLED = _CONSTANTS["RAFT_ENABLED"]
 LEADER_LEASE_EXPIRY_GRACE_SECONDS = _CONSTANTS["LEADER_LEASE_EXPIRY_GRACE_SECONDS"]
@@ -194,7 +199,8 @@ LEADER_LEASE_EXPIRY_GRACE_SECONDS = _CONSTANTS["LEADER_LEASE_EXPIRY_GRACE_SECOND
 # After this timeout, a node can become its own leader for local operations
 # to prevent the cluster from being stuck for hours without leadership
 # January 8, 2026: Reduced from 600s to 180s for faster autonomous recovery
-SINGLE_NODE_FALLBACK_TIMEOUT = 180  # 3 minutes without quorum
+# January 12, 2026: Reduced from 180s to 60s for faster quorum loss recovery
+SINGLE_NODE_FALLBACK_TIMEOUT = 60  # 1 minute without quorum
 
 # Phase 3.2 (January 2026): Dynamic voter management
 # Enable via RINGRIFT_P2P_DYNAMIC_VOTER=true
