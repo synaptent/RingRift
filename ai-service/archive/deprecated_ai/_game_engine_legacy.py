@@ -3940,8 +3940,17 @@ class GameEngine:
             game_state.zobrist_hash ^= zobrist.get_marker_hash(from_key, move.player)
 
         # Process markers along from→target and target→landing
+        # Track collapsed space delta for territory_spaces update (per RR-CANON-R092/R102)
+        collapsed_before = len(board.collapsed_spaces)
         GameEngine._process_markers_along_path(board, from_pos, target_pos, move.player, game_state)
         GameEngine._process_markers_along_path(board, target_pos, landing_pos, move.player, game_state)
+        collapsed_after = len(board.collapsed_spaces)
+        collapsed_delta = collapsed_after - collapsed_before
+        if collapsed_delta > 0:
+            for p in game_state.players:
+                if p.player_number == move.player:
+                    p.territory_spaces += collapsed_delta
+                    break
 
         # Capture top ring from target (top = end of list)
         if not target_stack.rings:

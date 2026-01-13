@@ -471,34 +471,59 @@ def advance_phases(inp: PhaseTransitionInput) -> None:
             game_state.current_phase = GamePhase.TERRITORY_PROCESSING
 
     elif normalized_type == MoveType.ELIMINATE_RINGS_FROM_STACK:
-        # After an explicit ELIMINATE_RINGS_FROM_STACK decision, re-evaluate whether
-        # more territory decisions remain for the **same player**.
+        # ELIMINATE_RINGS_FROM_STACK can occur in two contexts:
+        # 1. LINE_PROCESSING: Option 1 line reward (eliminates 1 ring)
+        # 2. TERRITORY_PROCESSING: Territory claim prerequisite (eliminates cap)
         #
-        # This follows the same pattern as CHOOSE_TERRITORY_OPTION: check for remaining
-        # regions and call _on_territory_processing_complete() when none remain.
-        # Per TS processPostMovePhases, after eliminate_rings_from_stack, if no more
-        # territory regions exist, advance to the next player's ring_placement.
-        remaining_regions = GameEngine._get_territory_processing_moves(
-            game_state,
-            current_player,
-        )
+        # Check the move's elimination_context or current phase to route correctly.
+        elimination_context = getattr(last_move, 'elimination_context', None)
 
-        if remaining_regions:
-            # Stay in territory_processing and keep the current player; hosts will
-            # surface the next territory decision (choose_territory_option or another
-            # eliminate_rings_from_stack).
-            game_state.current_phase = GamePhase.TERRITORY_PROCESSING
+        if elimination_context == 'line' or game_state.current_phase == GamePhase.LINE_PROCESSING:
+            # Line reward elimination - check for remaining lines, then territory
+            # Per RR-CANON-R123, after line elimination, continue with normal line processing flow
+            remaining_lines = [
+                m
+                for m in GameEngine._get_line_processing_moves(
+                    game_state,
+                    current_player,
+                )
+                if m.type != MoveType.NO_LINE_ACTION
+            ]
+            if remaining_lines:
+                # Stay in line_processing; hosts will surface the next PROCESS_LINE
+                game_state.current_phase = GamePhase.LINE_PROCESSING
+            else:
+                # No more lines - transition to territory or end turn
+                _on_line_processing_complete(
+                    game_state,
+                    trace_mode=trace_mode,
+                    last_move=last_move,
+                )
         else:
-            # No further territory decisions remain; delegate to the shared
-            # post-territory helper so that we either:
-            # - enter FORCED_ELIMINATION when the player had no actions this
-            #   entire turn but still controls stacks; or
-            # - end the turn and rotate to the next player.
-            _on_territory_processing_complete(
+            # Territory elimination - check for remaining regions
+            # This follows the same pattern as CHOOSE_TERRITORY_OPTION: check for remaining
+            # regions and call _on_territory_processing_complete() when none remain.
+            remaining_regions = GameEngine._get_territory_processing_moves(
                 game_state,
-                trace_mode=trace_mode,
-                last_move=last_move,
+                current_player,
             )
+
+            if remaining_regions:
+                # Stay in territory_processing and keep the current player; hosts will
+                # surface the next territory decision (choose_territory_option or another
+                # eliminate_rings_from_stack).
+                game_state.current_phase = GamePhase.TERRITORY_PROCESSING
+            else:
+                # No further territory decisions remain; delegate to the shared
+                # post-territory helper so that we either:
+                # - enter FORCED_ELIMINATION when the player had no actions this
+                #   entire turn but still controls stacks; or
+                # - end the turn and rotate to the next player.
+                _on_territory_processing_complete(
+                    game_state,
+                    trace_mode=trace_mode,
+                    last_move=last_move,
+                )
 
     elif normalized_type == MoveType.CHOOSE_TERRITORY_OPTION:
         # TS treat non-processable territory decisions as a no-op, which must NOT
