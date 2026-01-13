@@ -1868,6 +1868,48 @@ class ClusterManifest:
         """Get capacity information for a node."""
         return self._capacity_manager.get_node_capacity(node_id)
 
+    def refresh_capacity_data(self, nodes: list[str] | None = None) -> int:
+        """Refresh capacity data for all or specified nodes.
+
+        Called when cluster membership changes (CLUSTER_CAPACITY_CHANGED event)
+        to ensure routing decisions use current state rather than stale cache.
+
+        Args:
+            nodes: List of node IDs to refresh. If None, refreshes all active nodes.
+
+        Returns:
+            Number of nodes refreshed.
+
+        Note:
+            This method is called by SyncRouter._on_cluster_capacity_changed()
+            to invalidate cached capacity after topology changes.
+        """
+        from app.config.cluster_config import get_active_nodes
+
+        try:
+            nodes_to_refresh = nodes or [n.name for n in get_active_nodes()]
+        except Exception as e:
+            logger.debug(f"[ClusterManifest] Could not get active nodes: {e}")
+            nodes_to_refresh = []
+
+        refreshed = 0
+        for node_id in nodes_to_refresh:
+            try:
+                # Clear cached capacity for this node to force re-fetch
+                if hasattr(self._capacity_manager, "clear_cache"):
+                    self._capacity_manager.clear_cache(node_id)
+                elif hasattr(self._capacity_manager, "_node_capacity"):
+                    # Direct cache invalidation fallback
+                    self._capacity_manager._node_capacity.pop(node_id, None)
+                refreshed += 1
+            except Exception as e:
+                logger.debug(f"Could not refresh capacity for {node_id}: {e}")
+
+        if refreshed > 0:
+            logger.debug(f"[ClusterManifest] Refreshed capacity data for {refreshed} nodes")
+
+        return refreshed
+
     def get_node_inventory(self, node_id: str) -> NodeInventory:
         """Get full inventory for a node."""
         return self._capacity_manager.get_node_inventory(node_id)
