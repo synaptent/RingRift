@@ -3780,6 +3780,55 @@ class SelfplayScheduler(EventSubscriptionMixin):
         # CPU-only nodes always benefit from full CPU utilization
         return True
 
+    def resolve_engine_mode(
+        self,
+        engine_mode: str,
+        has_gpu: bool = True,
+    ) -> tuple[str, dict[str, Any] | None]:
+        """Resolve a mode-specific engine to a specific engine from the mix.
+
+        This allows mode categories like 'minimax-only', 'mcts-only', 'descent-only'
+        to be resolved to specific engines (brs, maxn, minimax, etc.) for diversity tracking.
+
+        Args:
+            engine_mode: The engine mode to resolve (e.g., 'minimax-only', 'mixed')
+            has_gpu: Whether the node has GPU capability
+
+        Returns:
+            Tuple of (resolved_engine, extra_args) where extra_args may be None
+
+        Example:
+            >>> scheduler.resolve_engine_mode('minimax-only', has_gpu=False)
+            ('brs', None)  # or ('maxn', None) or ('minimax', {'depth': 4})
+        """
+        # Check mode-specific mixes first
+        if engine_mode in self.MODE_SPECIFIC_MIXES:
+            gpu_mix, cpu_mix = self.MODE_SPECIFIC_MIXES[engine_mode]
+            engine_mix = gpu_mix if has_gpu else cpu_mix
+
+            # Filter to available engines (respect GPU requirements)
+            available_engines = [
+                (mode, weight, gpu_required, args)
+                for mode, weight, gpu_required, args in engine_mix
+                if not gpu_required or has_gpu
+            ]
+
+            if available_engines:
+                # Weighted random selection
+                weighted_engines = []
+                for mode, weight, _gpu, args in available_engines:
+                    weighted_engines.extend([(mode, args)] * weight)
+
+                if weighted_engines:
+                    return random.choice(weighted_engines)
+
+        # For 'mixed' or 'diverse', use board engine selection (defaults to standard mix)
+        if engine_mode in ("mixed", "diverse"):
+            return self._select_board_engine(has_gpu=has_gpu, board_type="hex8")
+
+        # Not a mode-specific engine, return as-is
+        return (engine_mode, None)
+
     def track_diversity(self, config: dict[str, Any]) -> None:
         """Track diversity metrics for a scheduled selfplay game.
 

@@ -185,10 +185,15 @@ class SelfplayHandlersMixin:
             logger.info(f"Started GPU selfplay job {job_id}: {board_type}/{num_players}p, {num_games} games")
 
             # Track diversity metrics for monitoring (Phase 2B, Dec 2025)
+            # Jan 2026: Resolve mode-specific engines (minimax-only -> brs/maxn/minimax)
+            # This ensures BRS and MaxN appear as distinct tracked modes
+            resolved_engine, _ = self.selfplay_scheduler.resolve_engine_mode(
+                engine_mode, has_gpu=True
+            )
             self.selfplay_scheduler.track_diversity({
                 "board_type": board_type,
                 "num_players": num_players,
-                "engine_mode": engine_mode,
+                "engine_mode": resolved_engine,
             })
 
             return web.json_response({
