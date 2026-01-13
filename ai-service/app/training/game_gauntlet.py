@@ -1030,7 +1030,7 @@ def create_baseline_ai(
             extra={
                 "num_sampled_actions": 16,
                 "device": device,
-                "eval_mode": "heuristic",  # Fast GPU heuristic rollouts
+                "eval_mode": "nn",  # Jan 2026: Use NN evaluation for accurate play
             },
         )
 
