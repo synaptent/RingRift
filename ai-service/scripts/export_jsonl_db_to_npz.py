@@ -25,11 +25,38 @@ import numpy as np
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.rules import GameEngine, GameState, Move, BoardType
-from app.training.parallel_encoding import encode_state_features
+from app.game_engine import GameEngine
+from app.models import GameState, Move, BoardType
+from app.training.encoding import HexStateEncoder, SquareStateEncoder
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+
+def get_state_encoder(board_type: str):
+    """Get the appropriate encoder for the board type."""
+    if board_type in ("hex8", "hexagonal"):
+        board_size = 9 if board_type == "hex8" else 25
+        return HexStateEncoder(board_size=board_size)
+    else:
+        board_size = 8 if board_type == "square8" else 19
+        return SquareStateEncoder(board_type=board_type, board_size=board_size)
+
+
+def encode_state_features(game_state: GameState, board_type: str, num_players: int) -> np.ndarray:
+    """Encode game state to feature array for training.
+
+    Args:
+        game_state: The game state to encode
+        board_type: Board type string (square8, hex8, etc.)
+        num_players: Number of players
+
+    Returns:
+        Feature array suitable for neural network input
+    """
+    encoder = get_state_encoder(board_type)
+    features, _ = encoder.encode_state(game_state)
+    return features
 
 
 def parse_move(move_dict: dict[str, Any], board_type: str) -> Move | None:
