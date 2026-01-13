@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.ai.nnue import RingRiftNNUE, extract_features_from_mutable
 from app.models import BoardType
-from app.rules import MutableGameState, create_game_state
+from app.rules import MutableGameState, create_game_state, get_rules_engine
 from app.utils.torch_utils import safe_load_checkpoint
 
 
@@ -102,6 +102,7 @@ def play_game(
 
     state = create_game_state(board_type=board_type, num_players=num_players)
     mutable = MutableGameState.from_immutable(state)
+    rules_engine = get_rules_engine(board_type)
 
     start_time = time.time()
     moves = 0
@@ -115,8 +116,9 @@ def play_game(
         else:
             evaluator = eval_b
 
-        # Get legal moves
-        legal_moves = list(mutable.get_legal_moves())
+        # Get legal moves using rules engine
+        immutable_state = mutable.to_immutable()
+        legal_moves = rules_engine.get_valid_moves(immutable_state, current_player)
         if not legal_moves:
             break
 
