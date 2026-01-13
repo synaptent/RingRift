@@ -206,7 +206,21 @@ export const QUICK_START_PRESETS: QuickStartPreset[] = [
       playerTypes: ['human', 'ai', 'ai', 'ai'],
     },
   },
-  // ===== hex8 presets (6) =====
+  // ===== hex8 presets (7) =====
+  {
+    id: 'learn-basics-hex8',
+    label: 'Learn the Basics',
+    description: 'Tutorial mode',
+    learnMoreText:
+      'Perfect for new players! Learn hexagonal movement with 6 directions on a compact board.',
+    icon: '🎓',
+    badge: 'New Player',
+    config: {
+      boardType: 'hex8',
+      numPlayers: 2,
+      playerTypes: ['human', 'ai', 'human', 'human'],
+    },
+  },
   {
     id: 'hex8-1h-1ai',
     label: 'Human vs AI',
@@ -584,7 +598,8 @@ export const SandboxGameConfig: React.FC<SandboxGameConfigProps> = ({
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {presetsForType.map((preset) => {
-                    const isLearnBasics = preset.id === 'learn-basics';
+                    const isLearnBasics =
+                      preset.id === 'learn-basics' || preset.id === 'learn-basics-hex8';
                     const shouldHighlight = isLearnBasics && isFirstTimePlayer;
                     const boardLabel = BOARD_TYPE_LABELS[preset.config.boardType];
 

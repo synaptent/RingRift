@@ -319,7 +319,7 @@ export function useSandboxGameLifecycle(deps: GameLifecycleDeps): UseSandboxGame
    */
   const applyQuickStartPreset = useCallback(
     (preset: QuickStartPreset) => {
-      if (preset.id === 'learn-basics') {
+      if (preset.id === 'learn-basics' || preset.id === 'learn-basics-hex8') {
         markWelcomeSeen();
         setSandboxMode('beginner'); // Enable beginner mode for tutorial hints
       }
