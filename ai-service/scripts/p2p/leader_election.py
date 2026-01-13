@@ -200,7 +200,21 @@ LEADER_LEASE_EXPIRY_GRACE_SECONDS = _CONSTANTS["LEADER_LEASE_EXPIRY_GRACE_SECOND
 # to prevent the cluster from being stuck for hours without leadership
 # January 8, 2026: Reduced from 600s to 180s for faster autonomous recovery
 # January 12, 2026: Reduced from 180s to 60s for faster quorum loss recovery
-SINGLE_NODE_FALLBACK_TIMEOUT = 60  # 1 minute without quorum
+# January 13, 2026: Made configurable via RINGRIFT_SINGLE_NODE_FALLBACK_TIMEOUT
+_env_single_node_timeout = os.environ.get("RINGRIFT_SINGLE_NODE_FALLBACK_TIMEOUT", "").strip()
+SINGLE_NODE_FALLBACK_TIMEOUT = int(_env_single_node_timeout) if _env_single_node_timeout.isdigit() else 60
+
+# January 13, 2026: Allow disabling single-node fallback for strict quorum enforcement
+# Set RINGRIFT_ALLOW_SINGLE_NODE=false to disable (default: true)
+ALLOW_SINGLE_NODE_FALLBACK = os.environ.get("RINGRIFT_ALLOW_SINGLE_NODE", "true").lower() != "false"
+
+# January 13, 2026: Partition tolerance - stale quorum grace period
+# When network partitions occur, voters may become temporarily unreachable.
+# This grace period allows the cluster to continue operating based on
+# last-known quorum state, preventing quorum flip-flopping.
+# Set RINGRIFT_QUORUM_STALE_GRACE to customize (default: 30 seconds)
+_env_stale_grace = os.environ.get("RINGRIFT_QUORUM_STALE_GRACE", "").strip()
+QUORUM_STALE_GRACE_SECONDS = int(_env_stale_grace) if _env_stale_grace.isdigit() else 30
 
 # Phase 3.2 (January 2026): Dynamic voter management
 # Enable via RINGRIFT_P2P_DYNAMIC_VOTER=true
@@ -561,6 +575,10 @@ class LeaderElectionMixin(P2PMixinBase):
     _quorum_lost_at: float | None = None  # Timestamp when quorum was first lost
     _single_node_mode: bool = False  # Whether we're operating in single-node fallback
 
+    # January 13, 2026: Partition tolerance - track last-healthy quorum state
+    _last_healthy_quorum_at: float | None = None  # Timestamp when quorum was last healthy
+    _last_healthy_voter_list: list[str] | None = None  # Last known alive voters when healthy
+
     def _has_voter_quorum(self) -> bool:
         """Return True if we currently see enough voter nodes alive.
 
@@ -584,16 +602,21 @@ class LeaderElectionMixin(P2PMixinBase):
 
         Jan 3, 2026: Added for proactive quorum degradation monitoring.
         Session 17.48: Added single-node fallback when quorum is lost for extended period.
+        January 13, 2026: Added partition tolerance with stale quorum grace period.
 
-        When quorum is lost for longer than SINGLE_NODE_FALLBACK_TIMEOUT (3 minutes),
+        When quorum is lost for longer than SINGLE_NODE_FALLBACK_TIMEOUT (60 seconds),
         the node enters single-node mode and returns MINIMUM instead of LOST. This allows
         the node to become its own leader for local operations, preventing the cluster
         from being stuck for hours without leadership.
 
+        Partition tolerance: When quorum drops to LOST, we check if we recently had
+        healthy quorum (within QUORUM_STALE_GRACE_SECONDS). If so, we return DEGRADED
+        instead of LOST to prevent flip-flopping during network partitions.
+
         Returns:
             QuorumHealthLevel indicating current quorum state:
             - HEALTHY: >= quorum + 2 voters alive
-            - DEGRADED: == quorum + 1 voters alive
+            - DEGRADED: == quorum + 1 voters alive, OR partition tolerance grace period
             - MINIMUM: == quorum voters alive (no room for failure), OR single-node fallback
             - LOST: < quorum voters alive (cluster cannot make progress)
         """
@@ -605,6 +628,9 @@ class LeaderElectionMixin(P2PMixinBase):
         quorum = min(VOTER_MIN_QUORUM, total)
         alive = self._count_alive_peers(voters)
 
+        # Get list of alive voters for tracking
+        alive_voter_list = self._get_alive_peer_list(voters)
+
         # Determine health level based on margin above quorum
         if alive < quorum:
             level = QuorumHealthLevel.LOST
@@ -615,27 +641,56 @@ class LeaderElectionMixin(P2PMixinBase):
         else:  # alive >= quorum + 2
             level = QuorumHealthLevel.HEALTHY
 
+        # January 13, 2026: Track last-healthy state for partition tolerance
+        if level in (QuorumHealthLevel.HEALTHY, QuorumHealthLevel.DEGRADED, QuorumHealthLevel.MINIMUM):
+            self._last_healthy_quorum_at = time.time()
+            self._last_healthy_voter_list = alive_voter_list
+
+        # January 13, 2026: Partition tolerance - stale quorum grace period
+        # If we just dropped to LOST but had healthy quorum recently, use grace period
+        if level == QuorumHealthLevel.LOST and QUORUM_STALE_GRACE_SECONDS > 0:
+            last_healthy = getattr(self, "_last_healthy_quorum_at", None)
+            if last_healthy is not None:
+                time_since_healthy = time.time() - last_healthy
+                if time_since_healthy < QUORUM_STALE_GRACE_SECONDS:
+                    # Within grace period - treat as DEGRADED instead of LOST
+                    logger.info(
+                        f"Quorum appears lost ({alive}/{total}) but within stale grace period "
+                        f"({time_since_healthy:.1f}s < {QUORUM_STALE_GRACE_SECONDS}s), "
+                        f"treating as DEGRADED"
+                    )
+                    level = QuorumHealthLevel.DEGRADED
+
         # Session 17.48: Single-node fallback when quorum is lost for extended period
+        # January 13, 2026: Respect ALLOW_SINGLE_NODE_FALLBACK setting
         if level == QuorumHealthLevel.LOST:
             # Track when quorum was first lost
             if self._quorum_lost_at is None:
                 self._quorum_lost_at = time.time()
-                logger.warning(
-                    f"Quorum lost ({alive}/{total} voters alive, need {quorum}), "
-                    f"single-node fallback in {SINGLE_NODE_FALLBACK_TIMEOUT}s"
-                )
+                if ALLOW_SINGLE_NODE_FALLBACK:
+                    logger.warning(
+                        f"Quorum lost ({alive}/{total} voters alive, need {quorum}), "
+                        f"single-node fallback in {SINGLE_NODE_FALLBACK_TIMEOUT}s"
+                    )
+                else:
+                    logger.warning(
+                        f"Quorum lost ({alive}/{total} voters alive, need {quorum}), "
+                        f"single-node fallback DISABLED"
+                    )
 
             # Check if we should enter single-node fallback mode
-            lost_duration = time.time() - self._quorum_lost_at
-            if lost_duration >= SINGLE_NODE_FALLBACK_TIMEOUT:
-                if not self._single_node_mode:
-                    logger.warning(
-                        f"Quorum lost for {lost_duration:.0f}s (> {SINGLE_NODE_FALLBACK_TIMEOUT}s), "
-                        f"enabling single-node fallback mode"
-                    )
-                    self._single_node_mode = True
-                # Return MINIMUM instead of LOST to allow local leadership
-                level = QuorumHealthLevel.MINIMUM
+            # Only if ALLOW_SINGLE_NODE_FALLBACK is enabled
+            if ALLOW_SINGLE_NODE_FALLBACK:
+                lost_duration = time.time() - self._quorum_lost_at
+                if lost_duration >= SINGLE_NODE_FALLBACK_TIMEOUT:
+                    if not self._single_node_mode:
+                        logger.warning(
+                            f"Quorum lost for {lost_duration:.0f}s (> {SINGLE_NODE_FALLBACK_TIMEOUT}s), "
+                            f"enabling single-node fallback mode"
+                        )
+                        self._single_node_mode = True
+                    # Return MINIMUM instead of LOST to allow local leadership
+                    level = QuorumHealthLevel.MINIMUM
         else:
             # Quorum restored - reset tracking
             if self._quorum_lost_at is not None or self._single_node_mode:
@@ -760,6 +815,11 @@ class LeaderElectionMixin(P2PMixinBase):
         alive = self._count_alive_peers(voters) if voters else 0
         level = self._check_quorum_health()
 
+        # January 13, 2026: Include single-node fallback status
+        single_node_mode = getattr(self, "_single_node_mode", False)
+        quorum_lost_at = getattr(self, "_quorum_lost_at", None)
+        lost_duration = (time.time() - quorum_lost_at) if quorum_lost_at else 0.0
+
         return {
             "health_level": level.value,
             "alive_voters": alive,
@@ -769,6 +829,25 @@ class LeaderElectionMixin(P2PMixinBase):
             "is_healthy": level == QuorumHealthLevel.HEALTHY,
             "is_at_risk": level in (QuorumHealthLevel.DEGRADED, QuorumHealthLevel.MINIMUM),
             "is_lost": level == QuorumHealthLevel.LOST,
+            # January 13, 2026: Single-node fallback status
+            "single_node_fallback": {
+                "enabled": ALLOW_SINGLE_NODE_FALLBACK,
+                "active": single_node_mode,
+                "timeout_seconds": SINGLE_NODE_FALLBACK_TIMEOUT,
+                "quorum_lost_duration": lost_duration,
+                "time_until_fallback": max(0, SINGLE_NODE_FALLBACK_TIMEOUT - lost_duration) if quorum_lost_at and not single_node_mode else None,
+            },
+            # January 13, 2026: Partition tolerance status
+            "partition_tolerance": {
+                "grace_period_seconds": QUORUM_STALE_GRACE_SECONDS,
+                "last_healthy_at": getattr(self, "_last_healthy_quorum_at", None),
+                "last_healthy_voters": getattr(self, "_last_healthy_voter_list", None),
+                "time_since_healthy": (time.time() - getattr(self, "_last_healthy_quorum_at", time.time())) if getattr(self, "_last_healthy_quorum_at", None) else None,
+                "within_grace_period": (
+                    getattr(self, "_last_healthy_quorum_at", None) is not None
+                    and (time.time() - getattr(self, "_last_healthy_quorum_at", 0)) < QUORUM_STALE_GRACE_SECONDS
+                ),
+            },
         }
 
     def _release_voter_grant_if_self(self) -> None:
@@ -874,6 +953,76 @@ class LeaderElectionMixin(P2PMixinBase):
             "total": len(voters),
             "quorum_required": quorum,
             "quorum_met": len(alive_voters) >= quorum,
+        }
+
+    def get_priority_voters_for_recovery(self) -> list[str]:
+        """Get priority-ordered list of voters for quorum recovery.
+
+        January 13, 2026: Fix B - Use last-healthy voter list to prioritize
+        reconnection to voters that were recently alive.
+
+        When quorum is lost, this method returns voters in priority order:
+        1. Voters that were alive in the last healthy state
+        2. All other configured voters
+
+        This helps the P2P layer prioritize reconnection to voters that are
+        most likely to restore quorum quickly.
+
+        Returns:
+            List of voter node IDs ordered by recovery priority
+        """
+        voters = list(getattr(self, "voter_node_ids", []) or [])
+        if not voters:
+            return []
+
+        # Get last-healthy voter list
+        last_healthy_voters = getattr(self, "_last_healthy_voter_list", None) or []
+
+        # Build priority list: last-healthy voters first, then others
+        priority_list: list[str] = []
+        seen: set[str] = set()
+
+        # Add last-healthy voters first (they're most likely to restore quorum)
+        for voter_id in last_healthy_voters:
+            if voter_id in voters and voter_id not in seen:
+                priority_list.append(voter_id)
+                seen.add(voter_id)
+
+        # Add remaining voters
+        for voter_id in voters:
+            if voter_id not in seen:
+                priority_list.append(voter_id)
+                seen.add(voter_id)
+
+        return priority_list
+
+    def get_quorum_recovery_status(self) -> dict[str, Any]:
+        """Get status information for quorum recovery operations.
+
+        January 13, 2026: Provides information to help with quorum recovery.
+
+        Returns:
+            Dict with recovery-relevant information
+        """
+        voters = list(getattr(self, "voter_node_ids", []) or [])
+        quorum = min(VOTER_MIN_QUORUM, len(voters)) if voters else 0
+        alive = self._count_alive_peers(voters) if voters else 0
+        last_healthy_voters = getattr(self, "_last_healthy_voter_list", None) or []
+
+        # Calculate how many more voters needed
+        voters_needed = max(0, quorum - alive)
+
+        # Check which last-healthy voters are currently offline
+        offline_healthy_voters = [v for v in last_healthy_voters if v not in self._get_alive_peer_list(voters)]
+
+        return {
+            "quorum_required": quorum,
+            "current_alive": alive,
+            "voters_needed_for_quorum": voters_needed,
+            "priority_voters": self.get_priority_voters_for_recovery(),
+            "last_healthy_voters": last_healthy_voters,
+            "offline_healthy_voters": offline_healthy_voters,
+            "recovery_possible": len(offline_healthy_voters) >= voters_needed,
         }
 
     # =========================================================================
