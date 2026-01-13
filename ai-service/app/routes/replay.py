@@ -8,6 +8,7 @@ See docs/archive/plans/GAME_REPLAY_DB_SANDBOX_INTEGRATION_PLAN.md for specificat
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -206,12 +207,15 @@ async def list_games(
             filters["max_moves"] = max_moves
 
         # Fetch one extra to determine hasMore
-        games = db.query_games(**filters, limit=limit + 1, offset=offset)
+        # Wrap blocking SQLite calls in asyncio.to_thread to prevent event loop blocking
+        games = await asyncio.to_thread(
+            db.query_games, **filters, limit=limit + 1, offset=offset
+        )
         has_more = len(games) > limit
         games = games[:limit]
 
         # Get total count for this filter set
-        total = db.get_game_count(**filters)
+        total = await asyncio.to_thread(db.get_game_count, **filters)
 
         # Convert to response format
         game_list = []
@@ -259,7 +263,8 @@ async def get_game(game_id: str):
     """Get detailed metadata for a specific game including player info."""
     try:
         db = get_replay_db()
-        game = db.get_game_with_players(game_id)
+        # Wrap blocking SQLite call in asyncio.to_thread to prevent event loop blocking
+        game = await asyncio.to_thread(db.get_game_with_players, game_id)
 
         if game is None:
             raise HTTPException(status_code=404, detail=f"Game {game_id} not found")
@@ -335,8 +340,8 @@ async def get_state_at_move(
     try:
         db = get_replay_db()
 
-        # Check game exists
-        meta = db.get_game_metadata(game_id)
+        # Check game exists - wrap blocking SQLite call
+        meta = await asyncio.to_thread(db.get_game_metadata, game_id)
         if meta is None:
             raise HTTPException(status_code=404, detail=f"Game {game_id} not found")
 
@@ -349,14 +354,14 @@ async def get_state_at_move(
                 detail=f"Move number {move_number} exceeds total moves {total_moves}",
             )
 
-        # Get state at move
+        # Get state at move - wrap blocking SQLite calls
         if move_number == 0:
-            state = db.get_initial_state(game_id)
+            state = await asyncio.to_thread(db.get_initial_state, game_id)
         else:
             if legacy:
-                state = db.get_state_at_move_legacy(game_id, move_number - 1)
+                state = await asyncio.to_thread(db.get_state_at_move_legacy, game_id, move_number - 1)
             else:
-                state = db.get_state_at_move(game_id, move_number - 1)
+                state = await asyncio.to_thread(db.get_state_at_move, game_id, move_number - 1)
 
         if state is None:
             raise HTTPException(
@@ -368,7 +373,9 @@ async def get_state_at_move(
         engine_eval = None
         engine_pv = None
         if move_number > 0:
-            move_records = db.get_move_records(game_id, start=move_number - 1, end=move_number)
+            move_records = await asyncio.to_thread(
+                db.get_move_records, game_id, start=move_number - 1, end=move_number
+            )
             if move_records:
                 engine_eval = move_records[0].get("engineEval")
                 engine_pv = move_records[0].get("enginePV")
@@ -402,16 +409,18 @@ async def get_moves(
     try:
         db = get_replay_db()
 
-        # Check game exists
-        meta = db.get_game_metadata(game_id)
+        # Check game exists - wrap blocking SQLite call
+        meta = await asyncio.to_thread(db.get_game_metadata, game_id)
         if meta is None:
             raise HTTPException(status_code=404, detail=f"Game {game_id} not found")
 
         # Compute effective end
         effective_end = end if end is not None else start + limit
 
-        # Fetch moves
-        move_records = db.get_move_records(game_id, start=start, end=effective_end)
+        # Fetch moves - wrap blocking SQLite call
+        move_records = await asyncio.to_thread(
+            db.get_move_records, game_id, start=start, end=effective_end
+        )
 
         # Determine if there are more
         has_more = effective_end < meta["total_moves"]
@@ -437,12 +446,13 @@ async def get_choices(
     try:
         db = get_replay_db()
 
-        # Check game exists
-        meta = db.get_game_metadata(game_id)
+        # Check game exists - wrap blocking SQLite call
+        meta = await asyncio.to_thread(db.get_game_metadata, game_id)
         if meta is None:
             raise HTTPException(status_code=404, detail=f"Game {game_id} not found")
 
-        choices = db.get_choices_at_move(game_id, move_number)
+        # Wrap blocking SQLite call
+        choices = await asyncio.to_thread(db.get_choices_at_move, game_id, move_number)
 
         choice_records = [
             ChoiceRecord(
@@ -469,7 +479,8 @@ async def get_stats():
     """Get database statistics."""
     try:
         db = get_replay_db()
-        stats = db.get_stats()
+        # Wrap blocking SQLite call
+        stats = await asyncio.to_thread(db.get_stats)
 
         return StatsResponse(
             totalGames=stats["total_games"],
@@ -561,8 +572,9 @@ async def store_game(request: StoreGameRequest):
             logger.warning(f"Game {game_id} rejected by quality gate: {error}")
             raise HTTPException(status_code=400, detail=f"Invalid game data: {error}")
 
-        # Store the game
-        db.store_game(
+        # Store the game - wrap blocking SQLite call
+        await asyncio.to_thread(
+            db.store_game,
             game_id=game_id,
             initial_state=initial_state,
             final_state=final_state,

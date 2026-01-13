@@ -67,7 +67,7 @@ HARNESS_COMPATIBILITY: dict[HarnessType, HarnessCompatibility] = {
     ),
     HarnessType.MINIMAX: HarnessCompatibility(
         harness_type=HarnessType.MINIMAX,
-        supports_nn=True,  # For move ordering via policy
+        supports_nn=False,  # Jan 2026: NNUE-only - uses alpha-beta with NNUE position eval
         supports_nnue=True,  # Primary use case
         requires_policy_head=False,
         optimal_for=["2_player_games", "fast_evaluation"],
@@ -76,7 +76,7 @@ HARNESS_COMPATIBILITY: dict[HarnessType, HarnessCompatibility] = {
     ),
     HarnessType.MAXN: HarnessCompatibility(
         harness_type=HarnessType.MAXN,
-        supports_nn=True,  # For evaluation
+        supports_nn=False,  # Jan 2026: NNUE-only - doesn't use NN value head properly
         supports_nnue=True,  # Dec 2025: Added NNUE support
         requires_policy_head=False,
         optimal_for=["multiplayer_games", "3_4_player"],
@@ -85,7 +85,7 @@ HARNESS_COMPATIBILITY: dict[HarnessType, HarnessCompatibility] = {
     ),
     HarnessType.BRS: HarnessCompatibility(
         harness_type=HarnessType.BRS,
-        supports_nn=True,
+        supports_nn=False,  # Jan 2026: NNUE-only - doesn't use NN value head properly
         supports_nnue=True,  # Dec 2025: Added NNUE support
         requires_policy_head=False,
         optimal_for=["fast_multiplayer", "3_4_player"],

@@ -430,3 +430,101 @@ def detect_model_version_from_channels(
     else:
         # Unknown channel count - could be custom history length
         return None
+
+
+class EncoderVersionError(ValueError):
+    """Raised when encoder version cannot be determined or is incompatible."""
+    pass
+
+
+def get_encoder_for_model(
+    checkpoint_path: "str | Path",
+    board_type: "BoardType | str | None" = None,
+) -> Any:
+    """Get the correct encoder for a model based on its stored metadata.
+
+    This is the canonical way to get an encoder for inference. It reads
+    the model's _versioning_metadata and returns a matching encoder instance.
+
+    Reads _versioning_metadata.config from checkpoint to determine:
+    - feature_version → encoder version (v2 or v3)
+    - board_type → HexStateEncoder vs SquareStateEncoder
+    - in_channels → validation that encoder matches
+
+    Falls back to weight shape inference for models without metadata.
+
+    Args:
+        checkpoint_path: Path to model checkpoint (.pth file)
+        board_type: Override board type (uses metadata if None)
+
+    Returns:
+        Configured encoder instance (HexStateEncoder, HexStateEncoderV3, or SquareStateEncoder)
+
+    Raises:
+        EncoderVersionError: If encoder cannot be determined
+
+    Example:
+        >>> encoder = get_encoder_for_model('models/hex8_2p_gen3.pth')
+        >>> features = encoder.encode_state(game_state)
+    """
+    import torch
+    from pathlib import Path
+
+    # Lazy imports to avoid circular dependencies
+    from app.training.encoding import get_encoder_for_board_type
+    from app.models import BoardType
+
+    checkpoint_path = Path(checkpoint_path)
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+
+    # Extract metadata
+    metadata = checkpoint.get("_versioning_metadata", {})
+    config = metadata.get("config", {})
+
+    # Determine board type
+    resolved_board_type: BoardType
+    if board_type is None:
+        board_type_str = config.get("board_type") or metadata.get("board_type", "")
+        if not board_type_str:
+            # Try to infer from checkpoint path
+            path_lower = str(checkpoint_path).lower()
+            if "hex8" in path_lower:
+                board_type_str = "hex8"
+            elif "hexagonal" in path_lower:
+                board_type_str = "hexagonal"
+            elif "square8" in path_lower:
+                board_type_str = "square8"
+            elif "square19" in path_lower:
+                board_type_str = "square19"
+            else:
+                board_type_str = "hex8"  # Default fallback
+        resolved_board_type = BoardType(board_type_str)
+    elif isinstance(board_type, str):
+        resolved_board_type = BoardType(board_type)
+    else:
+        resolved_board_type = board_type
+
+    # Determine encoder version from channel count
+    in_channels = config.get("in_channels") or config.get("total_in_channels")
+    feature_version = config.get("feature_version", 1)
+
+    # Infer version from channels if available
+    if in_channels:
+        version = detect_model_version_from_channels(in_channels) or "v2"
+    else:
+        # Fallback: check conv1 weight shape
+        state_dict = checkpoint.get("model_state_dict", checkpoint)
+        if "conv1.weight" in state_dict:
+            in_channels = state_dict["conv1.weight"].shape[1]
+            version = detect_model_version_from_channels(in_channels) or "v2"
+        else:
+            version = "v2"  # Default
+
+    encoder = get_encoder_for_board_type(resolved_board_type, version, feature_version)
+    if encoder is None:
+        raise EncoderVersionError(
+            f"No encoder for board_type={resolved_board_type}, version={version}. "
+            f"Model has in_channels={in_channels}, feature_version={feature_version}"
+        )
+
+    return encoder

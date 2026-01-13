@@ -1364,12 +1364,13 @@ class UnifiedHealthManager(HandlerBase):
         self._record_error(error)
 
         # Emit NODE_UNHEALTHY for each stalled node to trigger recovery
+        # Jan 2026: Migrated to event_router (app.coordination.data_events deprecated Q2 2026)
         try:
-            from app.distributed.data_events import DataEventType, get_event_bus
+            from app.coordination.event_router import DataEventType, get_router
 
-            bus = get_event_bus()
+            router = get_router()
             for node_id in stalled_nodes:
-                bus.emit(DataEventType.NODE_UNHEALTHY, {
+                router.emit(DataEventType.NODE_UNHEALTHY, {
                     "node_id": node_id,
                     "reason": "cluster_stall",
                     "stall_duration_seconds": stall_duration_seconds,

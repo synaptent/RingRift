@@ -395,11 +395,12 @@ async def sync_queued_events(
         return 0
 
     # Try to emit events via router
+    # Jan 2026: Migrated to event_router (app.coordination.data_events deprecated Q2 2026)
     synced_ids = []
     try:
-        from app.distributed.data_events import DataEventType, get_event_bus
+        from app.coordination.event_router import DataEventType, get_router
 
-        bus = get_event_bus()
+        router = get_router()
 
         for event in events:
             try:
@@ -418,7 +419,7 @@ async def sync_queued_events(
                         "synced_at": time.time(),
                         "original_source": event.get("source"),
                     }
-                    bus.emit(event_type, payload)
+                    router.emit(event_type, payload)
                     synced_ids.append(event["id"])
                 else:
                     logger.warning(f"Unknown event type: {event_type_str}")

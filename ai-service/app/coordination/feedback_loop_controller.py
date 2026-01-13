@@ -2836,12 +2836,12 @@ class FeedbackLoopController(FeedbackClusterHealthMixin, HandlerBase):
                 # Dec 2025: Emit CURRICULUM_REBALANCED event for SelfplayScheduler
                 # This closes the feedback loop from selfplay quality -> scheduler priorities
                 try:
-                    # Dec 29, 2025: Fixed import path (was app.coordination.data_events)
-                    from app.distributed.data_events import DataEventType, get_event_bus
+                    # Jan 2026: Migrated to event_router (app.coordination.data_events deprecated Q2 2026)
+                    from app.coordination.event_router import DataEventType, get_router
 
-                    bus = get_event_bus()
-                    # bus.emit() is synchronous - no task wrapper needed (Dec 28, 2025 fix)
-                    bus.emit(
+                    router = get_router()
+                    # router.emit() is synchronous - no task wrapper needed (Dec 28, 2025 fix)
+                    router.emit(
                         event_type=DataEventType.CURRICULUM_REBALANCED,
                         payload={
                             "config_key": config_key,

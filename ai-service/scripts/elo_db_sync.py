@@ -58,6 +58,20 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+# Jan 13, 2026: Import harness extraction for preserving harness_type in sync
+try:
+    from app.training.composite_participant import extract_harness_type
+except ImportError:
+    # Fallback if import fails (e.g., on minimal nodes)
+    def extract_harness_type(participant_id: str) -> str | None:
+        """Extract harness type from composite participant ID (model:harness:config)."""
+        if not participant_id or ":" not in participant_id:
+            return None
+        parts = participant_id.split(":")
+        if len(parts) >= 2:
+            return parts[1]
+        return None
+
 DEFAULT_DB_PATH = ROOT / "data" / "unified_elo.db"
 SYNC_STATE_FILE = ROOT / "data" / "elo_sync_state.json"
 HOSTS_CONFIG = ROOT / "config" / "distributed_hosts.yaml"
@@ -482,16 +496,21 @@ def merge_matches_into_db(db_path: Path, new_matches: list[dict]):
             if game_id and game_id in existing_game_ids:
                 continue
 
+            # Jan 13, 2026: Extract harness_type from participant_id or use provided value
+            harness_type = match.get('harness_type')
+            if not harness_type:
+                harness_type = extract_harness_type(match.get('participant_a', ''))
+
             cursor.execute("""
                 INSERT INTO match_history
                 (participant_a, participant_b, board_type, num_players, winner,
-                 game_length, duration_sec, timestamp, tournament_id, game_id, metadata, worker)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 game_length, duration_sec, timestamp, tournament_id, game_id, metadata, worker, harness_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 match['participant_a'], match['participant_b'], match['board_type'],
                 match['num_players'], match.get('winner'), match.get('game_length'),
                 match.get('duration_sec'), match['timestamp'], match.get('tournament_id'),
-                match.get('game_id'), match.get('metadata'), match.get('worker')
+                match.get('game_id'), match.get('metadata'), match.get('worker'), harness_type
             ))
 
             # Update Elo ratings

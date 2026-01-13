@@ -508,6 +508,51 @@ class UnifiedQueuePopulator:
                     self._targets[config_key].curriculum_weight = weight
             logger.debug("[QueuePopulator] Using default curriculum weights")
 
+    def _find_canonical_model(self, board_type: str, num_players: int) -> str | None:
+        """Find a canonical model for the given configuration.
+
+        Jan 13, 2026: Added to fix the 98% heuristic-only selfplay bug.
+        When no model has an Elo rating yet, this finds a canonical model
+        to enable neural network modes (gumbel-mcts, policy-only, etc.).
+
+        Args:
+            board_type: Board type (e.g., "hex8", "square8")
+            num_players: Number of players (2, 3, or 4)
+
+        Returns:
+            Path to canonical model if found, None otherwise.
+        """
+        from pathlib import Path
+
+        # Canonical model naming patterns to try (in priority order)
+        patterns = [
+            f"canonical_{board_type}_{num_players}p_v2.pth",  # Latest v2 architecture
+            f"canonical_{board_type}_{num_players}p.pth",     # Standard canonical
+            f"canonical_{board_type}_{num_players}p_new.pth", # New training run
+        ]
+
+        models_dir = Path("models")
+        if not models_dir.exists():
+            # Try ai-service relative path
+            models_dir = Path("ai-service/models")
+
+        for pattern in patterns:
+            model_path = models_dir / pattern
+            if model_path.exists():
+                return str(model_path)
+
+        # Try glob for any matching canonical model
+        try:
+            matches = list(models_dir.glob(f"canonical_{board_type}_{num_players}p*.pth"))
+            if matches:
+                # Return most recently modified
+                matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                return str(matches[0])
+        except (OSError, ValueError):
+            pass
+
+        return None
+
     def _load_game_counts(self) -> None:
         """Load actual game counts from canonical databases.
 
@@ -944,6 +989,10 @@ class UnifiedQueuePopulator:
         Jan 1, 2026: Added engine mode rotation for training data diversity.
         Cycles through available harness types (gumbel, heuristic, minimax, etc.)
         to ensure training data comes from varied play styles.
+
+        Jan 13, 2026: Added canonical model fallback to enable gumbel-mcts even
+        when no model has Elo rating yet. This fixes the bug where 98% of selfplay
+        was heuristic-only because best_model_id was None.
         """
         from app.coordination.work_queue import WorkItem, WorkType
 
@@ -953,6 +1002,15 @@ class UnifiedQueuePopulator:
         target = self._targets.get(key)
         best_model = target.best_model_id if target else None
         model_elo = target.current_best_elo if target else 1500.0
+
+        # Jan 13, 2026: Fallback to canonical model if no Elo-rated model found
+        # This enables gumbel-mcts mode even before first gauntlet evaluation
+        if not best_model:
+            best_model = self._find_canonical_model(board_type, num_players)
+            if best_model:
+                logger.debug(
+                    f"[QueuePopulator] Using canonical model fallback for {board_type}_{num_players}p: {best_model}"
+                )
 
         # Select engine mode with diversity rotation
         # Jan 1, 2026: Rotate through multiple engine modes instead of always using one

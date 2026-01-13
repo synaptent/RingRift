@@ -356,9 +356,9 @@ class SelfplayUploadDaemon(HandlerBase):
         error: str | None = None,
     ) -> None:
         """Emit upload completion event."""
+        # Jan 2026: Migrated to event_router (app.coordination.data_events deprecated Q2 2026)
         try:
-            from app.coordination.event_router import get_event_router
-            from app.coordination.data_events import DataEventType
+            from app.coordination.event_router import DataEventType, get_event_router
 
             router = get_event_router()
 

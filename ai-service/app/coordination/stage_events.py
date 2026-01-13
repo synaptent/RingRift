@@ -48,11 +48,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import warnings
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any
+
+# Jan 2026: Emit deprecation warning on import
+warnings.warn(
+    "app.coordination.stage_events is deprecated. "
+    "Use app.coordination.event_router.get_router() instead. "
+    "This module will be removed in Q2 2026.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 logger = logging.getLogger(__name__)
 

@@ -767,6 +767,9 @@ class GameReplayDB:
         # Track whether database has been closed
         self._closed = False
 
+        # Cache for games table column names (avoids PRAGMA calls on every query)
+        self._schema_columns: set[str] | None = None
+
         # Initialize schema
         self._init_schema()
 
@@ -923,6 +926,11 @@ class GameReplayDB:
                         f"Database schema version {current_version} is newer than "
                         f"supported version {SCHEMA_VERSION}. Please upgrade the application."
                     )
+
+            # Cache the games table column names to avoid PRAGMA calls on every query
+            # This is safe because schema only changes during initialization
+            cursor = conn.execute("PRAGMA table_info(games)")
+            self._schema_columns = {row[1] for row in cursor.fetchall()}
 
     def _get_schema_version(self, conn: sqlite3.Connection) -> int:
         """Get current schema version from database."""
@@ -2750,27 +2758,26 @@ class GameReplayDB:
 
         where_clause = " AND ".join(conditions) if conditions else "1=1"
 
-        with self._get_conn() as conn:
-            # Check if parity_status column exists and filter non-canonical games
-            if exclude_non_canonical:
-                cursor = conn.execute("PRAGMA table_info(games)")
-                columns = {row[1] for row in cursor.fetchall()}
-                if "parity_status" in columns:
-                    # Exclude games explicitly marked as non-canonical
-                    if where_clause == "1=1":
-                        where_clause = "COALESCE(parity_status, 'pending') != 'non_canonical_history'"
-                    else:
-                        where_clause += " AND COALESCE(parity_status, 'pending') != 'non_canonical_history'"
+        # Use cached schema columns instead of PRAGMA table_info() on every query
+        # This avoids SQLite table locks that cause 500 errors under concurrent load
+        schema_columns = self._schema_columns or set()
 
-            # Check if excluded_from_training column exists before using it
-            if exclude_training_excluded:
-                cursor = conn.execute("PRAGMA table_info(games)")
-                columns = {row[1] for row in cursor.fetchall()}
-                if "excluded_from_training" in columns:
-                    if where_clause == "1=1":
-                        where_clause = "COALESCE(excluded_from_training, 0) = 0"
-                    else:
-                        where_clause += " AND COALESCE(excluded_from_training, 0) = 0"
+        # Check if parity_status column exists and filter non-canonical games
+        if exclude_non_canonical and "parity_status" in schema_columns:
+            # Exclude games explicitly marked as non-canonical
+            if where_clause == "1=1":
+                where_clause = "COALESCE(parity_status, 'pending') != 'non_canonical_history'"
+            else:
+                where_clause += " AND COALESCE(parity_status, 'pending') != 'non_canonical_history'"
+
+        # Check if excluded_from_training column exists before using it
+        if exclude_training_excluded and "excluded_from_training" in schema_columns:
+            if where_clause == "1=1":
+                where_clause = "COALESCE(excluded_from_training, 0) = 0"
+            else:
+                where_clause += " AND COALESCE(excluded_from_training, 0) = 0"
+
+        with self._get_conn() as conn:
             rows = conn.execute(
                 f"""
                 SELECT * FROM games
@@ -2913,17 +2920,17 @@ class GameReplayDB:
 
         where_clause = " AND ".join(conditions) if conditions else "1=1"
 
-        with self._get_conn() as conn:
-            # Check if excluded_from_training column exists before using it
-            if exclude_training_excluded:
-                cursor = conn.execute("PRAGMA table_info(games)")
-                columns = {row[1] for row in cursor.fetchall()}
-                if "excluded_from_training" in columns:
-                    if where_clause == "1=1":
-                        where_clause = "COALESCE(excluded_from_training, 0) = 0"
-                    else:
-                        where_clause += " AND COALESCE(excluded_from_training, 0) = 0"
+        # Use cached schema columns instead of PRAGMA table_info() on every query
+        schema_columns = self._schema_columns or set()
 
+        # Check if excluded_from_training column exists before using it
+        if exclude_training_excluded and "excluded_from_training" in schema_columns:
+            if where_clause == "1=1":
+                where_clause = "COALESCE(excluded_from_training, 0) = 0"
+            else:
+                where_clause += " AND COALESCE(excluded_from_training, 0) = 0"
+
+        with self._get_conn() as conn:
             row = conn.execute(
                 f"SELECT COUNT(*) as count FROM games WHERE {where_clause}",
                 params,

@@ -178,6 +178,8 @@ class RingRiftNNAdapter(NeuralNetworkInterface):
         index_to_move: dict[int, Move],
         rules_engine: Any,
         fallback_evaluator: BaseAI | None = None,
+        model_path: str | None = None,
+        board_type: Any = None,
     ):
         """Initialize the adapter.
 
@@ -187,12 +189,17 @@ class RingRiftNNAdapter(NeuralNetworkInterface):
             index_to_move: Mapping from action indices back to moves
             rules_engine: Rules engine for fallback evaluation
             fallback_evaluator: Heuristic evaluator for when NN is unavailable
+            model_path: Path to model checkpoint (for encoder auto-detection)
+            board_type: Board type for encoder selection
         """
         self._model = model
         self._move_to_index = move_to_index
         self._index_to_move = index_to_move
         self._rules_engine = rules_engine
         self._fallback = fallback_evaluator
+        self._model_path = model_path
+        self._board_type = board_type
+        self._encoder = None  # Lazy-loaded encoder
 
     def evaluate(self, state: MCTSGameState) -> tuple[list[float], float]:
         """Evaluate state with neural network.
@@ -226,11 +233,24 @@ class RingRiftNNAdapter(NeuralNetworkInterface):
         """Evaluate using neural network."""
         import torch
 
-        # Encode state for neural network
-        from app.training.encoding import GameStateEncoder
+        # Lazy-load encoder based on model metadata (January 2026 fix)
+        if self._encoder is None:
+            if self._model_path:
+                from app.training.encoder_registry import get_encoder_for_model
+                self._encoder = get_encoder_for_model(
+                    self._model_path,
+                    board_type=self._board_type,
+                )
+            else:
+                # Fallback to board-type-based encoder if no model path
+                from app.training.encoding import get_encoder_for_board_type
+                self._encoder = get_encoder_for_board_type(
+                    self._board_type or "hex8",
+                    version="v2",
+                    feature_version=1,
+                )
 
-        encoder = GameStateEncoder()
-        features = encoder.encode(game_state)
+        features = self._encoder.encode_state(game_state)
 
         # Run inference
         with torch.no_grad():
@@ -337,6 +357,8 @@ class ImprovedMCTSAI(BaseAI):
         self._mcts: ImprovedMCTS | None = None
         self._nn_adapter: RingRiftNNAdapter | None = None
         self._fallback_evaluator: BaseAI | None = None
+        self._nn_model_path: str | None = None  # Path to loaded NN model
+        self._nn_board_type: Any = None  # Board type for encoder selection
 
         logger.info(
             f"ImprovedMCTSAI initialized: player={player_number}, "
@@ -387,13 +409,15 @@ class ImprovedMCTSAI(BaseAI):
         if self.config.use_neural_net:
             nn_model = self._load_neural_network()
 
-        # Create network adapter
+        # Create network adapter with encoder info (January 2026 fix)
         self._nn_adapter = RingRiftNNAdapter(
             model=nn_model,
             move_to_index=self._move_to_index,
             index_to_move=self._index_to_move,
             rules_engine=self.rules_engine,
             fallback_evaluator=self._fallback_evaluator,
+            model_path=self._nn_model_path,
+            board_type=self._nn_board_type,
         )
 
         self._mcts = ImprovedMCTS(self._nn_adapter, self._mcts_config)
@@ -440,6 +464,11 @@ class ImprovedMCTSAI(BaseAI):
                 )
                 model.load_state_dict(state_dict)
                 model.eval()
+
+                # Store model path and board type for encoder selection (January 2026 fix)
+                self._nn_model_path = model_path
+                self._nn_board_type = board_type
+
                 logger.info("Loaded NNUE policy model for ImprovedMCTSAI")
                 return model
 

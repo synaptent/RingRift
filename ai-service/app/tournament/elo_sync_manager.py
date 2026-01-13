@@ -41,6 +41,8 @@ from app.coordination.database_sync_manager import (
 )
 from app.coordination.sync_base import CircuitBreakerConfig
 from app.utils.checksum_utils import compute_string_checksum
+# Jan 13, 2026: Import harness extraction for preserving harness_type in sync
+from app.training.composite_participant import extract_harness_type
 
 logger = logging.getLogger(__name__)
 
@@ -803,12 +805,17 @@ class EloSyncManager(DatabaseSyncManager):
             game_id = match.get("game_id")
             if game_id and game_id in existing:
                 continue
+            # Jan 13, 2026: Extract harness_type from participant_id or use provided value
+            harness_type = match.get("harness_type")
+            if not harness_type:
+                # Try to extract from composite participant ID
+                harness_type = extract_harness_type(match.get("participant_a", ""))
             new_matches.append((
                 match["participant_a"], match["participant_b"], match["board_type"],
                 match["num_players"], match.get("winner"), match.get("game_length"),
                 match.get("duration_sec"), match.get("timestamp", time.time()),
                 match.get("tournament_id"), game_id, match.get("metadata"),
-                match.get("worker")
+                match.get("worker"), harness_type
             ))
 
         # Bulk insert using executemany (much faster than N individual INSERTs)
@@ -816,8 +823,8 @@ class EloSyncManager(DatabaseSyncManager):
             cursor.executemany("""
                 INSERT INTO match_history
                 (participant_a, participant_b, board_type, num_players, winner,
-                 game_length, duration_sec, timestamp, tournament_id, game_id, metadata, worker)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 game_length, duration_sec, timestamp, tournament_id, game_id, metadata, worker, harness_type)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, new_matches)
 
         conn.commit()
@@ -837,12 +844,23 @@ class EloSyncManager(DatabaseSyncManager):
 
         try:
             # Copy and merge on remote (December 29, 2025: optimized to use executemany)
+            # Jan 13, 2026: Added harness_type extraction and preservation
             result = await asyncio.create_subprocess_exec(
                 "ssh", "-o", "ConnectTimeout=10", host,
                 """python3 -c "
 import json
 import sqlite3
 import time
+import re
+
+def extract_harness_type(participant_id):
+    '''Extract harness type from composite participant ID (model:harness:config).'''
+    if not participant_id or ':' not in participant_id:
+        return None
+    parts = participant_id.split(':')
+    if len(parts) >= 2:
+        return parts[1]
+    return None
 
 matches = json.load(open('/dev/stdin'))
 db = sqlite3.connect('/root/ringrift/ai-service/data/unified_elo.db')
@@ -856,9 +874,13 @@ for m in matches:
     gid = m.get('game_id')
     if gid and gid in existing:
         continue
+    # Jan 13, 2026: Extract harness_type from participant_id or use provided value
+    harness_type = m.get('harness_type')
+    if not harness_type:
+        harness_type = extract_harness_type(m.get('participant_a', ''))
     new_matches.append((
         m['participant_a'], m['participant_b'], m['board_type'], m['num_players'],
-        m.get('winner'), m.get('timestamp', time.time()), gid
+        m.get('winner'), m.get('timestamp', time.time()), gid, harness_type
     ))
     if gid:
         existing.add(gid)
@@ -866,8 +888,8 @@ for m in matches:
 # Bulk insert using executemany
 if new_matches:
     cur.executemany('''INSERT INTO match_history
-        (participant_a, participant_b, board_type, num_players, winner, timestamp, game_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)''', new_matches)
+        (participant_a, participant_b, board_type, num_players, winner, timestamp, game_id, harness_type)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)''', new_matches)
 
 db.commit()
 print(f'Inserted {len(new_matches)} matches')

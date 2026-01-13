@@ -447,6 +447,7 @@ class MultiHarnessGauntlet:
             BaselineOpponent,
             GauntletGameResult,
             run_baseline_gauntlet,
+            _create_gauntlet_recording_config,
         )
         from app.models import AIType, BoardType as BT
 
@@ -505,6 +506,13 @@ class MultiHarnessGauntlet:
         # Run gauntlet with this harness (in thread pool to not block)
         # January 9, 2026 (Sprint 17.9): Pass harness_type for composite participant IDs
         # and save_games_for_training for capturing full training data (move_probs, search_stats)
+        # Jan 13, 2026: Create recording config to capture gauntlet games in database
+        recording_config = _create_gauntlet_recording_config(
+            board_type=board_type_enum,
+            num_players=num_players,
+            source=f"gauntlet_{harness.value}",
+        )
+
         def run_gauntlet() -> dict[str, GauntletGameResult]:
             return run_baseline_gauntlet(
                 model_path=str(model_path),
@@ -518,6 +526,7 @@ class MultiHarnessGauntlet:
                 game_count=game_count,  # Dec 30: Graduated thresholds
                 harness_type=harness.value,  # Jan 9, 2026: Composite participant ID
                 save_games_for_training=save_games,  # Jan 9, 2026: Save full training data
+                recording_config=recording_config,  # Jan 13, 2026: Record gauntlet games
             )
 
         results = await asyncio.to_thread(run_gauntlet)

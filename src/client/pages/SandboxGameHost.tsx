@@ -684,6 +684,9 @@ export const SandboxGameHost: React.FC = () => {
   // when setting elimination targets. Without this, the useEffect that handles ring_elimination
   // choices would call setValidTargets on every render, triggering itself via validTargets.length.
   const lastProcessedPendingChoiceIdRef = useRef<string | null>(null);
+  // RR-FIX-2026-01-12: Track chain capture initialization to prevent redundant effect runs.
+  // Key format: `${fromX}-${fromY}-${landingsCount}-${moveHistoryLength}` to detect state changes.
+  const lastChainCaptureInitRef = useRef<string | null>(null);
 
   // Sandbox-only visual cue: transient highlight of newly-collapsed line
   // segments, populated from the engine after automatic line processing.
@@ -1021,19 +1024,56 @@ export const SandboxGameHost: React.FC = () => {
   const isRegionOrderChoice =
     (sandboxCaptureChoice ?? sandboxPendingChoice)?.type === 'region_order';
 
+  // RR-FIX-2026-01-12: Memoized valid moves to avoid redundant expensive calls.
+  // Previously, getValidMoves() was called 11+ times per render cycle, each taking
+  // 500ms-2000ms on large boards. This single memoized call provides the base for
+  // all move-type filtering throughout the component.
+  const allValidMoves = React.useMemo(() => {
+    if (!sandboxEngine || !sandboxGameState || sandboxGameState.gameStatus !== 'active') {
+      return [];
+    }
+    return sandboxEngine.getValidMoves(sandboxGameState.currentPlayer);
+  }, [
+    sandboxEngine,
+    _sandboxStateVersion,
+    sandboxGameState?.currentPlayer,
+    sandboxGameState?.currentPhase,
+    sandboxGameState?.gameStatus,
+  ]);
+
+  // Derived memoized move lists - filter once, use everywhere
+  const chainContinueMoves = React.useMemo(
+    () => allValidMoves.filter((m) => m.type === 'continue_capture_segment'),
+    [allValidMoves]
+  );
+  const captureMoves = React.useMemo(
+    () => allValidMoves.filter((m) => m.type === 'overtaking_capture'),
+    [allValidMoves]
+  );
+  const skipCaptureMoves = React.useMemo(
+    () => allValidMoves.filter((m) => m.type === 'skip_capture'),
+    [allValidMoves]
+  );
+  const skipRecoveryMoves = React.useMemo(
+    () => allValidMoves.filter((m) => m.type === 'skip_recovery'),
+    [allValidMoves]
+  );
+  const eliminationMoves = React.useMemo(
+    () => allValidMoves.filter((m) => m.type === 'eliminate_rings_from_stack'),
+    [allValidMoves]
+  );
+  const territoryOptionMoves = React.useMemo(
+    () => allValidMoves.filter((m) => m.type === 'choose_territory_option'),
+    [allValidMoves]
+  );
+
   // When in chain_capture with available continuation segments, surface an
   // attention-style chip prompting the user to continue the chain. This mirrors
   // backend HUD semantics for mandatory chain continuation.
   const isChainCaptureContinuationStep = !!(
     sandboxGameState &&
     sandboxGameState.currentPhase === 'chain_capture' &&
-    sandboxEngine &&
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- duck-typing for optional engine method
-    typeof (sandboxEngine as any).getValidMoves === 'function' &&
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accessing internal engine method
-    (sandboxEngine as any)
-      .getValidMoves(sandboxGameState.currentPlayer)
-      .some((m: { type: string }) => m.type === 'continue_capture_segment')
+    chainContinueMoves.length > 0
   );
 
   // Extract chain capture path for visualization during chain_capture phase.
@@ -1153,54 +1193,65 @@ export const SandboxGameHost: React.FC = () => {
         // RR-FIX-2026-01-11: Compute and display elimination targets for decision phases.
         // After clearing old movement highlights, check if there are elimination moves
         // available and highlight their target positions so the player knows where to click.
-        if (sandboxEngine) {
-          const currentPlayer = sandboxGameState.currentPlayer;
-          const validMoves = sandboxEngine.getValidMoves(currentPlayer);
-          const eliminationMoves = validMoves.filter(
-            (m) => m.type === 'eliminate_rings_from_stack'
-          );
+        // RR-FIX-2026-01-12: Use memoized eliminationMoves instead of calling getValidMoves.
+        if (eliminationMoves.length > 0) {
+          const eliminationTargets = eliminationMoves
+            .map((m) => m.to)
+            .filter((pos): pos is Position => pos !== undefined);
 
-          if (eliminationMoves.length > 0) {
-            const eliminationTargets = eliminationMoves
-              .map((m) => m.to)
-              .filter((pos): pos is Position => pos !== undefined);
-
-            if (eliminationTargets.length > 0) {
-              // eslint-disable-next-line no-console
-              console.log('[SandboxPhaseDebug] Setting elimination targets:', {
-                phase: nextPhase,
-                targetCount: eliminationTargets.length,
-                targets: eliminationTargets.map((p) => positionToString(p)),
-              });
-              setValidTargets(eliminationTargets);
-            }
+          if (eliminationTargets.length > 0) {
+            // eslint-disable-next-line no-console
+            console.log('[SandboxPhaseDebug] Setting elimination targets:', {
+              phase: nextPhase,
+              targetCount: eliminationTargets.length,
+              targets: eliminationTargets.map((p) => positionToString(p)),
+            });
+            setValidTargets(eliminationTargets);
           }
         }
       }
 
       lastSandboxPhaseRef.current = nextPhase;
     }
-  }, [sandboxGameState, sandboxEngine, setSelected, setValidTargets]);
+  }, [sandboxGameState, sandboxEngine, setSelected, setValidTargets, eliminationMoves]);
 
   // Initialize chain capture valid targets when loading a game directly into chain_capture phase.
   // The normal interaction handlers only set valid targets when transitioning INTO chain_capture
   // via a move, but when loading a fixture/scenario that starts in chain_capture, targets need
   // to be initialized explicitly.
+  // RR-FIX-2026-01-12: Use ref tracking instead of validTargets.length to prevent effect cascade.
   useEffect(() => {
     if (
-      sandboxEngine &&
-      sandboxGameState &&
-      sandboxGameState.gameStatus === 'active' &&
-      sandboxGameState.currentPhase === 'chain_capture' &&
-      validTargets.length === 0
+      !sandboxEngine ||
+      !sandboxGameState ||
+      sandboxGameState.gameStatus !== 'active' ||
+      sandboxGameState.currentPhase !== 'chain_capture'
     ) {
-      const ctx = sandboxEngine.getChainCaptureContextForCurrentPlayer();
-      if (ctx && ctx.landings.length > 0) {
-        setSelected(ctx.from);
-        setValidTargets(ctx.landings);
-      }
+      // Reset ref when not in chain_capture phase
+      lastChainCaptureInitRef.current = null;
+      return;
     }
-  }, [sandboxEngine, sandboxGameState, validTargets.length, setSelected, setValidTargets]);
+
+    // Only initialize if validTargets is empty (user hasn't selected anything yet)
+    if (validTargets.length > 0) {
+      return;
+    }
+
+    const ctx = sandboxEngine.getChainCaptureContextForCurrentPlayer();
+    if (!ctx || ctx.landings.length === 0) {
+      return;
+    }
+
+    // Create a unique key for this chain capture context to prevent re-initialization
+    const ctxKey = `${ctx.from.x}-${ctx.from.y}-${ctx.landings.length}-${sandboxGameState.moveHistory.length}`;
+    if (lastChainCaptureInitRef.current === ctxKey) {
+      return; // Already initialized for this context
+    }
+
+    lastChainCaptureInitRef.current = ctxKey;
+    setSelected(ctx.from);
+    setValidTargets(ctx.landings);
+  }, [sandboxEngine, sandboxGameState, setSelected, setValidTargets, validTargets.length]);
 
   // RR-FIX-2026-01-11: Derive ring_elimination choice from game state when needed.
   // This handles the case where a game state is loaded (fixture, replay, etc.) and the
@@ -1332,105 +1383,109 @@ export const SandboxGameHost: React.FC = () => {
   // 3. When there are choose_territory_option moves - highlight the claimable territory spaces
   // 4. RR-FIX-2026-01-11: When a ring_elimination pending choice is set, override
   //    any stale targets (e.g., leftover territory claim targets) with elimination targets
+  // RR-FIX-2026-01-12: Use memoized moves instead of calling getValidMoves() in effect.
   useEffect(() => {
     if (
-      sandboxEngine &&
-      sandboxGameState &&
-      sandboxGameState.gameStatus === 'active' &&
-      (sandboxGameState.currentPhase === 'territory_processing' ||
-        sandboxGameState.currentPhase === 'line_processing')
+      !sandboxGameState ||
+      sandboxGameState.gameStatus !== 'active' ||
+      (sandboxGameState.currentPhase !== 'territory_processing' &&
+        sandboxGameState.currentPhase !== 'line_processing')
     ) {
-      const currentPlayer = sandboxGameState.currentPlayer;
-      const validMoves = sandboxEngine.getValidMoves(currentPlayer);
+      return;
+    }
 
-      // RR-FIX-2026-01-11: When a ring_elimination pending choice is active,
-      // force update targets from the choice options. This handles the case where
-      // territory claim targets are set, then the player claims a territory, and
-      // a ring_elimination choice is returned but the old targets remain.
-      // RR-FIX-2026-01-12: Only process each pending choice once to prevent infinite re-render.
-      if (sandboxPendingChoice?.type === 'ring_elimination') {
-        // Skip if we've already processed this pending choice
-        if (lastProcessedPendingChoiceIdRef.current === sandboxPendingChoice.id) {
-          return;
-        }
+    const currentPlayer = sandboxGameState.currentPlayer;
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accessing choice options
-        const options = (sandboxPendingChoice as any).options ?? [];
-        const eliminationTargets: Position[] = options
-          .map((opt: { stackPosition?: Position }) => opt.stackPosition)
-          .filter((pos: Position | undefined): pos is Position => pos !== undefined);
-
-        if (eliminationTargets.length > 0) {
-          // eslint-disable-next-line no-console
-          console.log('[SandboxGameHost] Setting elimination targets from pending choice:', {
-            phase: sandboxGameState.currentPhase,
-            choiceId: sandboxPendingChoice.id,
-            targetCount: eliminationTargets.length,
-            targets: eliminationTargets.map((p) => positionToString(p)),
-          });
-          lastProcessedPendingChoiceIdRef.current = sandboxPendingChoice.id;
-          setValidTargets(eliminationTargets);
-          return;
-        }
-      } else {
-        // Reset ref when there's no ring_elimination choice active
-        lastProcessedPendingChoiceIdRef.current = null;
-      }
-
-      // Only proceed with automatic target initialization if validTargets is empty
-      if (validTargets.length > 0) {
+    // RR-FIX-2026-01-11: When a ring_elimination pending choice is active,
+    // force update targets from the choice options. This handles the case where
+    // territory claim targets are set, then the player claims a territory, and
+    // a ring_elimination choice is returned but the old targets remain.
+    // RR-FIX-2026-01-12: Only process each pending choice once to prevent infinite re-render.
+    if (sandboxPendingChoice?.type === 'ring_elimination') {
+      // Skip if we've already processed this pending choice
+      if (lastProcessedPendingChoiceIdRef.current === sandboxPendingChoice.id) {
         return;
       }
 
-      // Check for elimination moves first
-      const eliminationMoves = validMoves.filter((m) => m.type === 'eliminate_rings_from_stack');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accessing choice options
+      const options = (sandboxPendingChoice as any).options ?? [];
+      const eliminationTargets: Position[] = options
+        .map((opt: { stackPosition?: Position }) => opt.stackPosition)
+        .filter((pos: Position | undefined): pos is Position => pos !== undefined);
 
-      if (eliminationMoves.length > 0) {
-        const eliminationTargets = eliminationMoves
-          .map((m) => m.to)
-          .filter((pos): pos is Position => pos !== undefined);
-
-        if (eliminationTargets.length > 0) {
-          // eslint-disable-next-line no-console
-          console.log('[SandboxGameHost] Initializing elimination targets:', {
-            phase: sandboxGameState.currentPhase,
-            targetCount: eliminationTargets.length,
-            targets: eliminationTargets.map((p) => positionToString(p)),
-          });
-          setValidTargets(eliminationTargets);
-          return;
-        }
+      if (eliminationTargets.length > 0) {
+        // eslint-disable-next-line no-console
+        console.log('[SandboxGameHost] Setting elimination targets from pending choice:', {
+          phase: sandboxGameState.currentPhase,
+          choiceId: sandboxPendingChoice.id,
+          targetCount: eliminationTargets.length,
+          targets: eliminationTargets.map((p) => positionToString(p)),
+        });
+        lastProcessedPendingChoiceIdRef.current = sandboxPendingChoice.id;
+        setValidTargets(eliminationTargets);
+        return;
       }
+    } else {
+      // Reset ref when there's no ring_elimination choice active
+      lastProcessedPendingChoiceIdRef.current = null;
+    }
 
-      // Check for choose_territory_option moves - highlight claimable territory spaces
-      const territoryOptionMoves = validMoves.filter((m) => m.type === 'choose_territory_option');
+    // Only proceed with automatic target initialization if validTargets is empty
+    if (validTargets.length > 0) {
+      return;
+    }
 
-      if (territoryOptionMoves.length > 0) {
-        // Collect all spaces from claimable territories owned by current player
-        const territories = sandboxGameState.board.territories;
-        const claimableSpaces: Position[] = [];
+    // Check for elimination moves first (using memoized eliminationMoves)
+    if (eliminationMoves.length > 0) {
+      const eliminationTargets = eliminationMoves
+        .map((m) => m.to)
+        .filter((pos): pos is Position => pos !== undefined);
 
-        for (const [, territory] of territories.entries()) {
-          // Only show territories owned by the current player
-          if (territory.controllingPlayer !== currentPlayer) continue;
-          if (!territory.isDisconnected) continue;
-
-          const spaces = territory.spaces ?? [];
-          claimableSpaces.push(...spaces);
-        }
-
-        if (claimableSpaces.length > 0) {
-          // eslint-disable-next-line no-console
-          console.log('[SandboxGameHost] Initializing territory claim targets:', {
-            phase: sandboxGameState.currentPhase,
-            targetCount: claimableSpaces.length,
-            territories: Array.from(territories.keys()),
-          });
-          setValidTargets(claimableSpaces);
-        }
+      if (eliminationTargets.length > 0) {
+        // eslint-disable-next-line no-console
+        console.log('[SandboxGameHost] Initializing elimination targets:', {
+          phase: sandboxGameState.currentPhase,
+          targetCount: eliminationTargets.length,
+          targets: eliminationTargets.map((p) => positionToString(p)),
+        });
+        setValidTargets(eliminationTargets);
+        return;
       }
     }
-  }, [sandboxEngine, sandboxGameState, sandboxPendingChoice, validTargets.length, setValidTargets]);
+
+    // Check for choose_territory_option moves - highlight claimable territory spaces (using memoized)
+    if (territoryOptionMoves.length > 0) {
+      // Collect all spaces from claimable territories owned by current player
+      const territories = sandboxGameState.board.territories;
+      const claimableSpaces: Position[] = [];
+
+      for (const [, territory] of territories.entries()) {
+        // Only show territories owned by the current player
+        if (territory.controllingPlayer !== currentPlayer) continue;
+        if (!territory.isDisconnected) continue;
+
+        const spaces = territory.spaces ?? [];
+        claimableSpaces.push(...spaces);
+      }
+
+      if (claimableSpaces.length > 0) {
+        // eslint-disable-next-line no-console
+        console.log('[SandboxGameHost] Initializing territory claim targets:', {
+          phase: sandboxGameState.currentPhase,
+          targetCount: claimableSpaces.length,
+          territories: Array.from(territories.keys()),
+        });
+        setValidTargets(claimableSpaces);
+      }
+    }
+  }, [
+    sandboxGameState,
+    sandboxPendingChoice,
+    validTargets.length,
+    setValidTargets,
+    eliminationMoves,
+    territoryOptionMoves,
+  ]);
 
   const humanSeatCount = sandboxPlayersList.filter((p) => p.type === 'human').length;
   const aiSeatCount = sandboxPlayersList.length - humanSeatCount;
@@ -1517,12 +1572,9 @@ export const SandboxGameHost: React.FC = () => {
     !decisionHighlights &&
     sandboxGameState &&
     sandboxGameState.gameStatus === 'active' &&
-    sandboxGameState.currentPhase === 'capture' &&
-    sandboxEngine
+    sandboxGameState.currentPhase === 'capture'
   ) {
-    const moves = sandboxEngine.getValidMoves(sandboxGameState.currentPlayer);
-    const captureMoves = moves.filter((m) => m.type === 'overtaking_capture');
-
+    // RR-FIX-2026-01-12: Use memoized captureMoves instead of calling getValidMoves
     if (captureMoves.length > 0) {
       type CaptureHighlight = { positionKey: string; intensity: 'primary' | 'secondary' };
       const highlights: CaptureHighlight[] = [];
@@ -1563,23 +1615,20 @@ export const SandboxGameHost: React.FC = () => {
   // Chain-capture visibility: when the sandbox is in chain_capture phase,
   // surface similar capture-direction highlights so landing cells and
   // overtaken stacks are visible.
+  // RR-FIX-2026-01-12: Use memoized chainContinueMoves instead of calling getValidMoves
   if (
     !decisionHighlights &&
     sandboxGameState &&
     sandboxGameState.gameStatus === 'active' &&
-    sandboxGameState.currentPhase === 'chain_capture' &&
-    sandboxEngine
+    sandboxGameState.currentPhase === 'chain_capture'
   ) {
-    const moves = sandboxEngine.getValidMoves(sandboxGameState.currentPlayer);
-    const chainMoves = moves.filter((m) => m.type === 'continue_capture_segment');
-
-    if (chainMoves.length > 0) {
+    if (chainContinueMoves.length > 0) {
       type CaptureHighlight = { positionKey: string; intensity: 'primary' | 'secondary' };
       const highlights: CaptureHighlight[] = [];
       const seenPrimary = new Set<string>();
       const seenAny = new Set<string>();
 
-      for (const move of chainMoves) {
+      for (const move of chainContinueMoves) {
         const target = move.captureTarget as Position | undefined;
         const landing = move.to as Position | undefined;
 
@@ -1712,17 +1761,16 @@ export const SandboxGameHost: React.FC = () => {
   // capture phase (with skip_capture as an option) but no explicit decision
   // choice is active, surface a bright attention chip so players do not miss
   // the opportunity.
+  // RR-FIX-2026-01-12: Use memoized captureMoves/skipCaptureMoves instead of getValidMoves
   if (
     sandboxHudVM &&
     !sandboxHudVM.decisionPhase &&
     sandboxGameState &&
     sandboxGameState.gameStatus === 'active' &&
-    sandboxGameState.currentPhase === 'capture' &&
-    sandboxEngine
+    sandboxGameState.currentPhase === 'capture'
   ) {
-    const moves = sandboxEngine.getValidMoves(sandboxGameState.currentPlayer);
-    const hasCaptureMove = moves.some((m) => m.type === 'overtaking_capture');
-    const hasSkipCaptureMove = moves.some((m) => m.type === 'skip_capture');
+    const hasCaptureMove = captureMoves.length > 0;
+    const hasSkipCaptureMove = skipCaptureMoves.length > 0;
 
     if (hasCaptureMove) {
       const actingPlayer =
@@ -1799,21 +1847,16 @@ export const SandboxGameHost: React.FC = () => {
     };
   })();
 
+  // RR-FIX-2026-01-12: Use memoized skipCaptureMoves/skipRecoveryMoves instead of getValidMoves
   const canSkipCaptureForTouch =
     !!sandboxGameState &&
     sandboxGameState.currentPhase === 'capture' &&
-    !!sandboxEngine &&
-    sandboxEngine
-      .getValidMoves(sandboxGameState.currentPlayer)
-      .some((m) => m.type === 'skip_capture');
+    skipCaptureMoves.length > 0;
 
   const canSkipRecoveryForTouch =
     !!sandboxGameState &&
     sandboxGameState.currentPhase === 'movement' &&
-    !!sandboxEngine &&
-    sandboxEngine
-      .getValidMoves(sandboxGameState.currentPlayer)
-      .some((m) => m.type === 'skip_recovery');
+    skipRecoveryMoves.length > 0;
 
   // Most global keyboard shortcuts are handled via useGlobalGameShortcuts.
   // Keep a narrow Escape handler here so the overlay closes even if it is
@@ -2173,10 +2216,10 @@ export const SandboxGameHost: React.FC = () => {
             onToggleLineOverlays={developerToolsEnabled ? setShowLineOverlays : undefined}
             onToggleTerritoryOverlays={developerToolsEnabled ? setShowTerritoryOverlays : undefined}
             onSkipCapture={
+              // RR-FIX-2026-01-12: Use memoized skipCaptureMoves instead of getValidMoves
               canSkipCaptureForTouch && sandboxEngine && sandboxGameState
                 ? async () => {
-                    const moves = sandboxEngine.getValidMoves(sandboxGameState.currentPlayer);
-                    const skipMove = moves.find((m) => m.type === 'skip_capture');
+                    const skipMove = skipCaptureMoves[0];
                     if (!skipMove) return;
                     await sandboxEngine.applyCanonicalMove(skipMove as Move);
                     setSandboxStateVersion((v) => v + 1);
@@ -2211,10 +2254,10 @@ export const SandboxGameHost: React.FC = () => {
               maybeRunSandboxAiIfNeeded();
             }}
             onSkipRecovery={
+              // RR-FIX-2026-01-12: Use memoized skipRecoveryMoves instead of getValidMoves
               canSkipRecoveryForTouch && sandboxEngine && sandboxGameState
                 ? async () => {
-                    const moves = sandboxEngine.getValidMoves(sandboxGameState.currentPlayer);
-                    const skipMove = moves.find((m) => m.type === 'skip_recovery');
+                    const skipMove = skipRecoveryMoves[0];
                     if (!skipMove) return;
                     await sandboxEngine.applyCanonicalMove(skipMove as Move);
                     setSandboxStateVersion((v) => v + 1);

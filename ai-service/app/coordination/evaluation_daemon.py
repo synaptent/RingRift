@@ -63,7 +63,12 @@ from app.coordination.unified_distribution_daemon import (
 from app.coordination.handler_base import BaseEventHandler, EventHandlerConfig
 
 # December 2025: Gauntlet evaluation
-from app.training.game_gauntlet import BaselineOpponent, run_baseline_gauntlet
+# Jan 13, 2026: Added _create_gauntlet_recording_config for gauntlet game recording
+from app.training.game_gauntlet import (
+    BaselineOpponent,
+    run_baseline_gauntlet,
+    _create_gauntlet_recording_config,
+)
 
 # January 6, 2026: Tournament for head-to-head model comparison
 from app.training.tournament import Tournament
@@ -1311,6 +1316,12 @@ class EvaluationDaemon(BaseEventHandler):
             )
 
         timeout = self.config.get_timeout_for_board(board_type, num_players)
+        # Jan 13, 2026: Create recording config to capture gauntlet games for training
+        recording_config = _create_gauntlet_recording_config(
+            board_type=board_type,
+            num_players=num_players,
+            source="gauntlet_eval",
+        )
         result = await asyncio.wait_for(
             asyncio.to_thread(
                 run_baseline_gauntlet,
@@ -1326,6 +1337,7 @@ class EvaluationDaemon(BaseEventHandler):
                 parallel_games=parallel_games,  # Jan 2026: Adaptive, reduced on OOM
                 game_count=game_count,  # Dec 30: Graduated thresholds
                 harness_type="gumbel_mcts",  # Jan 11, 2026: Track harness in Elo
+                recording_config=recording_config,  # Jan 13, 2026: Record gauntlet games
             ),
             timeout=timeout,
         )
@@ -2045,7 +2057,7 @@ class EvaluationDaemon(BaseEventHandler):
 
                         # Assume NN model type for canonical/ringrift_best models
                         compatible_harnesses = get_harnesses_for_model_and_players(
-                            model_type=ModelType.NN,
+                            model_type=ModelType.NEURAL_NET,
                             num_players=num_players,
                         )
                     except ImportError:

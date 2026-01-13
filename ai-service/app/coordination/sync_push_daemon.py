@@ -58,8 +58,9 @@ from app.distributed.cluster_manifest import (
 )
 
 # Dec 2025: Event emission for pipeline coordination
+# Jan 2026: Migrated to event_router (app.coordination.data_events deprecated Q2 2026)
 try:
-    from app.distributed.data_events import DataEventType, get_event_bus
+    from app.coordination.event_router import DataEventType, get_router
 
     HAS_EVENT_BUS = True
 except ImportError:
@@ -292,8 +293,8 @@ class SyncPushDaemon(HandlerBase):
             return
 
         try:
-            bus = get_event_bus()
-            await bus.publish(event_type, {
+            router = get_router()
+            await router.publish(event_type, {
                 **payload,
                 "source": self.name,
                 "node_id": self.node_id,
