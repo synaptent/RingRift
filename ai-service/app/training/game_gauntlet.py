@@ -91,6 +91,56 @@ except ImportError:
     HAS_MODEL_CACHE = False
     clear_model_cache = None  # type: ignore
 
+
+# ============================================
+# NNUE Model Auto-Discovery (Jan 13, 2026)
+# ============================================
+
+def _get_nnue_model_path(board_type: Any, num_players: int) -> str | None:
+    """Auto-discover NNUE model for the given config.
+
+    This function explicitly finds NNUE model paths to ensure NNUE baselines
+    actually load NNUE models instead of falling back to heuristic evaluation.
+
+    Args:
+        board_type: Board type (enum or string)
+        num_players: Number of players
+
+    Returns:
+        Path to NNUE model if found, None otherwise
+    """
+    import os
+
+    # Get board type value string
+    if hasattr(board_type, "value"):
+        board_str = board_type.value
+    else:
+        board_str = str(board_type).lower()
+
+    # Search paths for NNUE models
+    base_paths = [
+        "models/nnue",
+        "models",
+        "data/models/nnue",
+    ]
+
+    # Try various naming conventions
+    name_patterns = [
+        f"nnue_{board_str}_{num_players}p.pt",
+        f"nnue_{board_str}_{num_players}p.pth",
+        f"canonical_nnue_{board_str}_{num_players}p.pt",
+    ]
+
+    for base_path in base_paths:
+        for pattern in name_patterns:
+            full_path = os.path.join(base_path, pattern)
+            if os.path.exists(full_path):
+                logger.debug(f"[gauntlet] Found NNUE model at {full_path}")
+                return full_path
+
+    logger.debug(f"[gauntlet] No NNUE model found for {board_str}_{num_players}p")
+    return None
+
 # Lazy imports to avoid circular dependencies and heavy imports at module load
 # Note: TYPE_CHECKING imports removed - using Any for lazy-loaded modules
 _torch_loaded = False
@@ -574,6 +624,9 @@ class GauntletResult:
     passes_baseline_gating: bool = True
     failed_baselines: list[str] = field(default_factory=list)
 
+    # Per-baseline threshold tracking (January 2026)
+    thresholds_met: dict[str, bool] = field(default_factory=dict)
+
     # Elo estimate
     estimated_elo: float = 1500.0
 
@@ -748,11 +801,18 @@ def create_baseline_ai(
             difficulty=difficulty or 7,
             rngSeed=ai_rng_seed,
         )
+        # Jan 13, 2026: Explicitly find NNUE model to avoid silent fallback to heuristic
+        nnue_path = _get_nnue_model_path(board_type, num_players)
+        if nnue_path is None:
+            logger.warning(
+                f"[gauntlet] No NNUE model for {board_type}_{num_players}p, MaxN will use heuristic"
+            )
         ai = NNUEMaxNAI(
             player_number=player,
             config=config,
             board_type=board_type,
             num_players=num_players,
+            model_path=nnue_path,
         )
         return ai
 
@@ -775,11 +835,18 @@ def create_baseline_ai(
             difficulty=difficulty or 6,
             rngSeed=ai_rng_seed,
         )
+        # Jan 13, 2026: Explicitly find NNUE model to avoid silent fallback to heuristic
+        nnue_path = _get_nnue_model_path(board_type, num_players)
+        if nnue_path is None:
+            logger.warning(
+                f"[gauntlet] No NNUE model for {board_type}_{num_players}p, BRS will use heuristic"
+            )
         ai = NNUEBRSAI(
             player_number=player,
             config=config,
             board_type=board_type,
             num_players=num_players,
+            model_path=nnue_path,
         )
         return ai
 
@@ -1264,8 +1331,12 @@ def _play_single_gauntlet_game(
     num_players: int,
     model_getter: Callable[[], Any] | None,
     model_type: str,
+    recording_config: Any | None = None,  # Jan 2026: Add recording support for parallel games
 ) -> dict[str, Any]:
     """Play a single gauntlet game (for parallel execution).
+
+    Args:
+        recording_config: Optional RecordingConfig for saving game data (Jan 2026).
 
     Returns:
         Dict with: game_num, candidate_won, winner, move_count, victory_reason, error
@@ -1305,6 +1376,7 @@ def _play_single_gauntlet_game(
             candidate_player=candidate_player,
             opponent_ais=opponent_ais,
             max_moves=get_theoretical_max_moves(board_type, num_players),
+            recording_config=recording_config,  # Jan 2026: Pass through for game recording
         )
 
         return {
@@ -1399,6 +1471,7 @@ def _evaluate_single_opponent(
                         num_players,
                         model_getter,
                         model_type,
+                        recording_config,  # Jan 2026: Pass recording_config for game saving
                     ): g
                     for g in batch_games
                 }
@@ -1418,6 +1491,28 @@ def _evaluate_single_opponent(
                             result["losses"] += 1
                         else:
                             result["draws"] += 1
+
+                        # Jan 2026: Record Elo for parallel games (was missing, causing empty gauntlet DBs)
+                        try:
+                            from app.training.elo_recording import (
+                                record_gauntlet_match,
+                                HarnessType,
+                            )
+
+                            board_value = getattr(board_type, "value", str(board_type))
+                            harness_enum = HarnessType.from_string(harness_type) if harness_type else HarnessType.GUMBEL_MCTS
+
+                            record_gauntlet_match(
+                                model_id=effective_model_id,
+                                baseline=baseline_name,
+                                model_won=game_result["candidate_won"],
+                                board_type=board_value,
+                                num_players=num_players,
+                                harness_type=harness_enum,
+                                game_length=game_result["move_count"],
+                            )
+                        except ImportError:
+                            pass  # elo_recording facade not available
 
                         if verbose:
                             outcome = "WIN" if game_result["candidate_won"] else "LOSS"
@@ -1983,7 +2078,11 @@ def run_baseline_gauntlet(
                     min_required = MIN_WIN_RATES.get(baseline, 0.0)
                 threshold_type = f"{num_players}p thresholds"
 
-            if opponent_stats["win_rate"] < min_required:
+            # Populate thresholds_met for this baseline (January 2026 fix)
+            threshold_passed = opponent_stats["win_rate"] >= min_required
+            result.thresholds_met[baseline_name] = threshold_passed
+
+            if not threshold_passed:
                 result.passes_baseline_gating = False
                 result.failed_baselines.append(baseline_name)
                 logger.warning(
