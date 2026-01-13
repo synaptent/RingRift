@@ -126,17 +126,17 @@ def run_improvement_evaluation(
 
             # Create game state
             state = create_initial_state(board_type=board_type, num_players=num_players)
-            mutable = MutableGameState.from_game_state(state)
+            mutable = MutableGameState.from_immutable(state)
 
             max_moves = 500
             move_count = 0
 
             while not mutable.is_game_over() and move_count < max_moves:
-                current_player = mutable.current_player_index
+                current_player = mutable.current_player
                 ai = player_ais[current_player]
 
                 # Get AI move
-                game_state = mutable.to_game_state()
+                game_state = mutable.to_immutable()
                 action = ai.get_action(game_state, current_player)
 
                 if action is None:
@@ -146,7 +146,7 @@ def run_improvement_evaluation(
                 move_count += 1
 
             # Determine winner
-            final_state = mutable.to_game_state()
+            final_state = mutable.to_immutable()
             if final_state.status == GameStatus.COMPLETED:
                 winner = final_state.winner_player_number
                 if winner is not None:
