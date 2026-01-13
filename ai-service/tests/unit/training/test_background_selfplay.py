@@ -530,7 +530,7 @@ class TestEventEmission:
             num_players=2,
         )
 
-        with mock.patch("app.training.background_selfplay.emit_selfplay_completion") as mock_emit:
+        with mock.patch("app.coordination.selfplay_orchestrator.emit_selfplay_completion") as mock_emit:
             with mock.patch("asyncio.get_running_loop", side_effect=RuntimeError):
                 with mock.patch("asyncio.run") as mock_run:
                     manager._emit_selfplay_complete(task, success=True, games_generated=100)
