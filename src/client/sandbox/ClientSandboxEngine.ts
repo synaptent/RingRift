@@ -2966,15 +2966,20 @@ export class ClientSandboxEngine {
           prompt: 'Territory claimed – choose area to process',
           options: eligible.map((r, index) => {
             const representative = r.spaces[0];
+            // RR-FIX-2026-01-13: Use geometry-based stable regionId instead of array index.
+            // Array indices change after each region is processed, causing wrong region selection.
+            const stableRegionId = representative
+              ? `region-${representative.x}-${representative.y}-${r.spaces.length}`
+              : `region-fallback-${index}`;
             const regionKey = representative
               ? `${representative.x},${representative.y}`
               : `region-${index}`;
 
             return {
-              regionId: `region-${index}`,
+              regionId: stableRegionId,
               size: r.spaces.length,
               representativePosition: representative,
-              moveId: `process-region-${index}-${regionKey}`,
+              moveId: `process-region-${stableRegionId}-${regionKey}`,
               // RR-FIX-2026-01-12: Include full region geometry for highlighting.
               // This ensures successive territories are highlighted correctly
               // since deriveBoardDecisionHighlights uses these positions directly
@@ -2986,10 +2991,11 @@ export class ClientSandboxEngine {
 
         const response = await this.interactionHandler.requestChoice(choice);
         const selected = response.selectedOption;
-        // Extract the index from the `region-${index}` format
-        const indexMatch = selected.regionId.match(/^region-(\d+)$/);
-        const index = indexMatch ? parseInt(indexMatch[1], 10) : 0;
-        const selectedRegion = eligible[index] ?? eligible[0];
+        // RR-FIX-2026-01-13: Match by moveId for stable region identification instead of
+        // extracting index from regionId (which is now geometry-based, not index-based).
+        const matchingOption = choice.options.find((opt) => opt.moveId === selected.moveId);
+        const optionIndex = matchingOption ? choice.options.indexOf(matchingOption) : 0;
+        const selectedRegion = eligible[optionIndex] ?? eligible[0];
         regionSpaces = selectedRegion.spaces;
       }
 

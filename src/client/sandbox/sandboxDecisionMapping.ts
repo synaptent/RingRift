@@ -182,11 +182,17 @@ export function mapPendingDecisionToPlayerChoice(
           }
 
           const region = opt.disconnectedRegions?.[0];
+          const representative = region?.spaces?.[0];
+          // RR-FIX-2026-01-13: Use geometry-based stable regionId instead of array index.
+          const stableRegionId = representative
+            ? `region-${representative.x}-${representative.y}-${region?.spaces?.length ?? 0}`
+            : `region-fallback-${idx}`;
           return {
-            regionId: `region-${idx}`,
+            regionId: stableRegionId,
             size: region?.spaces?.length ?? 0,
-            representativePosition: region?.spaces?.[0] ?? { x: 0, y: 0 },
+            representativePosition: representative ?? { x: 0, y: 0 },
             moveId: opt.id || `move-${idx}`,
+            spaces: region?.spaces,
           };
         }),
       };
@@ -346,6 +352,15 @@ export function mapPlayerChoiceResponseToMove(
       }
     }
 
+    // RR-FIX-2026-01-13: Region order - use moveId matching for stable region identification.
+    // This avoids relying on index-based regionIds which become invalid after regions are processed.
+    if (response.choiceType === 'region_order' && selectedOpt.moveId) {
+      const byId = options.find((opt: Move) => opt.id === selectedOpt.moveId);
+      if (byId) {
+        return byId;
+      }
+    }
+
     // Match by position for capture direction
     const selected = options.filter(isCaptureMove).find((opt) => {
       if (selectedOpt.targetPosition && selectedOpt.landingPosition) {
@@ -406,15 +421,20 @@ export function buildRegionOrderChoice(
     options: regionMoves.map((opt, index) => {
       const region = opt.disconnectedRegions?.[0];
       const representative = region?.spaces?.[0];
+      // RR-FIX-2026-01-13: Use geometry-based stable regionId instead of array index.
+      const stableRegionId = representative
+        ? `region-${representative.x}-${representative.y}-${region?.spaces?.length ?? 0}`
+        : `region-fallback-${index}`;
       const regionKey = representative
         ? `${representative.x},${representative.y}`
         : `region-${index}`;
 
       return {
-        regionId: String(index),
+        regionId: stableRegionId,
         size: region?.spaces?.length ?? 0,
         representativePosition: representative ?? { x: 0, y: 0 },
-        moveId: opt.id || `process-region-${index}-${regionKey}`,
+        moveId: opt.id || `process-region-${stableRegionId}-${regionKey}`,
+        spaces: region?.spaces,
       };
     }),
   };

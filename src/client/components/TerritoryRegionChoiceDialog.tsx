@@ -8,6 +8,8 @@ export interface TerritoryRegionOption {
   size: number;
   representativePosition: Position;
   moveId: string;
+  // RR-FIX-2026-01-13: Include spaces for highlighting successive territories correctly.
+  spaces?: Position[];
 }
 
 export interface TerritoryRegionChoiceDialogProps {
