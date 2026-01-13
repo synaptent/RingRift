@@ -115,6 +115,21 @@ export const BOARD_PRESETS: BoardPreset[] = [
  * Default quick-start presets (5 per board type)
  */
 export const QUICK_START_PRESETS: QuickStartPreset[] = [
+  // ===== Special presets =====
+  {
+    id: 'learn-basics',
+    label: 'Learn the Basics',
+    description: 'Tutorial mode',
+    learnMoreText:
+      'Perfect for new players! Play against an AI on a compact board to learn movement, captures, and territory.',
+    icon: '🎓',
+    badge: 'New Player',
+    config: {
+      boardType: 'square8',
+      numPlayers: 2,
+      playerTypes: ['human', 'ai', 'human', 'human'],
+    },
+  },
   // ===== sq8 presets (5) =====
   {
     id: 'sq8-1h-1ai',
