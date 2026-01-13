@@ -228,6 +228,7 @@ export const QUICK_START_PRESETS: QuickStartPreset[] = [
     learnMoreText:
       'A smaller hex board for faster games. Same 6-way movement as full hex, but quicker.',
     icon: '🤖',
+    badge: 'Recommended',
     config: {
       boardType: 'hex8',
       numPlayers: 2,
