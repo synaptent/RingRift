@@ -1230,15 +1230,16 @@ export function applyProcessLineDecision(
   const boardType = state.board.type as BoardType;
   const numPlayers = state.players.length;
   const requiredLength = getEffectiveLineLengthThreshold(boardType, numPlayers, state.rulesOptions);
-  const minLineLength = BOARD_CONFIGS[boardType].lineLength;
 
-  // Python's GameEngine treats any detected line (>= base lineLength) as a
-  // valid PROCESS_LINE target, even when it is shorter than the effective
-  // reward threshold for the current player count (for example, 3-in-a-row on
-  // 2p square8 where requiredLength === 4). Such "mini" lines collapse to
-  // territory but do **not** grant a mandatory elimination reward.
-  if (line.length < minLineLength) {
-    // Not actually a complete line for this board; treat as no-op.
+  // Lines shorter than the effective threshold should not be processed.
+  // This check uses requiredLength (the player-count-aware threshold) rather
+  // than the base BOARD_CONFIGS lineLength because:
+  // - For hex8/square8 3-4 player: requiredLength=3, base=4 → 3-length lines are valid
+  // - For hex8/square8 2-player: requiredLength=4, base=3 → still consistent
+  // The line detection (findAllLines) already filters by requiredLength, so
+  // this check is primarily for robustness against malformed moves.
+  if (line.length < requiredLength) {
+    // Not a complete line for this configuration; treat as no-op.
     return {
       nextState: state,
       pendingLineRewardElimination: false,
