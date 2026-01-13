@@ -17189,6 +17189,7 @@ print(json.dumps(result))
                 num_players=num_players,
                 num_games=num_games,
                 preemptive=True,  # Mark as preemptive for tracking
+                engine_mode="mixed",  # Jan 12, 2026: Enable harness diversity
             )
 
             if result.get("success"):

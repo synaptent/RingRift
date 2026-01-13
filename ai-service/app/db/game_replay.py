@@ -1706,14 +1706,15 @@ class GameReplayDB:
         choices = choices or []
 
         with self._get_conn() as conn:
-            # First insert the games record (FK parent) before child records
-            self._finalize_game_conn(
+            # CRITICAL FIX (Jan 2026): Insert game with 'in_progress' status FIRST,
+            # then insert moves, then UPDATE to 'completed' status.
+            # This avoids the enforce_moves_on_insert trigger which fires AFTER INSERT
+            # and checks if moves exist (they don't yet because we insert them after).
+            # The trigger only fires for games with status='completed' or 'finished'.
+            self._create_game_placeholder_conn(
                 conn,
                 game_id=game_id,
                 initial_state=initial_state,
-                final_state=final_state,
-                total_moves=len(moves),
-                total_turns=0,  # Will be updated below
                 metadata=metadata,
             )
 
@@ -1838,10 +1839,17 @@ class GameReplayDB:
                 state=final_state,
             )
 
-            # Update games record with final turn count
-            conn.execute(
-                "UPDATE games SET total_turns = ? WHERE game_id = ?",
-                (turn_number + 1, game_id),
+            # CRITICAL FIX (Jan 2026): Now that moves are inserted, finalize the game
+            # by UPDATE-ing to 'completed' status. The UPDATE trigger only checks
+            # total_moves column value, not actual move count, so this will pass.
+            self._finalize_game_conn(
+                conn,
+                game_id=game_id,
+                initial_state=initial_state,
+                final_state=final_state,
+                total_moves=len(moves),
+                total_turns=turn_number + 1,
+                metadata=metadata,
             )
 
     def store_game_incremental(
@@ -3479,6 +3487,48 @@ class GameReplayDB:
             self._finalize_game_conn(
                 conn, game_id, initial_state, final_state, total_moves, total_turns, metadata
             )
+
+    def _create_game_placeholder_conn(
+        self,
+        conn: sqlite3.Connection,
+        game_id: str,
+        initial_state: GameState,
+        metadata: dict,
+    ) -> None:
+        """Create a game placeholder with 'in_progress' status.
+
+        CRITICAL (Jan 2026): This method inserts a game record with 'in_progress' status
+        BEFORE moves are inserted. This avoids the enforce_moves_on_insert trigger which
+        fires AFTER INSERT and rejects games with status='completed'/'finished' that have
+        no moves in the game_moves table yet.
+
+        After moves are inserted, call _finalize_game_conn() to UPDATE the status to
+        'completed'. The UPDATE trigger (enforce_moves_on_complete) only checks the
+        total_moves column value, not the actual count in game_moves table.
+        """
+        metadata = metadata or {}
+
+        conn.execute(
+            """
+            INSERT INTO games
+            (game_id, board_type, num_players, rng_seed, created_at,
+             game_status, total_moves, total_turns, source, schema_version, metadata_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                game_id,
+                initial_state.board_type.value,
+                len(initial_state.players),
+                initial_state.rng_seed,
+                initial_state.created_at.isoformat(),
+                "in_progress",  # CRITICAL: Not 'completed' to avoid trigger
+                0,  # Placeholder - will be updated by _finalize_game_conn
+                0,  # Placeholder - will be updated by _finalize_game_conn
+                metadata.get("source", "unknown"),
+                SCHEMA_VERSION,
+                json.dumps(metadata, sort_keys=True),
+            ),
+        )
 
     def _finalize_game_conn(
         self,

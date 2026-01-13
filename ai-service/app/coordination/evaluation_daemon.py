@@ -151,13 +151,20 @@ class EvaluationConfig:
     # Dec 31, 2025: Expanded from 2 to 6 baselines for better Elo resolution
     # Previous: ["random", "heuristic"] capped Elo measurement at ~1200
     # Now covers ~400-1600 Elo range for meaningful model ranking
+    # Jan 13, 2026: Added NNUE/MINIMAX/MAXN/BRS baselines for harness diversity
+    # Models should be evaluated under various search harnesses to get accurate Elo
     baselines: list[str] = field(default_factory=lambda: [
         "random",           # ~400 Elo (sanity check - model should crush this)
         "heuristic",        # ~1200 Elo (basic baseline)
         "heuristic_strong", # ~1400 Elo (tuned heuristic weights)
         "gumbel_b64",       # ~1400 Elo (search baseline with budget=64)
         "policy_only_nn",   # ~1350 Elo (NN without search, tests policy head)
-        "gumbel_b200",      # ~1600 Elo (high quality ceiling, 2p only)
+        "gumbel_b200",      # ~1600 Elo (high quality ceiling)
+        # Jan 13, 2026: Harness diversity - NNUE under different search algorithms
+        # These baselines test models against different opponent search strategies
+        "nnue_minimax_d4",  # ~1600 Elo (NNUE + alpha-beta depth 4, best for 2p)
+        "nnue_maxn_d3",     # ~1650 Elo (NNUE + MaxN depth 3, accurate for 3-4p)
+        "nnue_brs_d3",      # ~1550 Elo (NNUE + Best Reply Search depth 3, fast 3-4p)
     ])
 
     # Early stopping configuration
