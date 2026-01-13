@@ -223,7 +223,7 @@ class TestGumbelSearchEngineFactory:
         )
         assert engine.neural_net is mock_nn
         assert engine.mode == SearchMode.MULTI_GAME_PARALLEL
-        assert engine.config.simulation_budget == GUMBEL_BUDGET_THROUGHPUT
+        assert engine.config.simulation_budget == GUMBEL_BUDGET_QUALITY  # Jan 2026: selfplay uses quality budget
         assert engine.num_games == 128
         assert engine.device == "cuda"
 
