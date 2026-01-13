@@ -585,11 +585,13 @@ class JobManager(EventSubscriptionMixin):
         num_games: int,
         preemptive: bool = False,
         model_version: str | None = None,
+        engine_mode: str | None = None,
     ) -> dict[str, Any]:
         """Dispatch a selfplay job to a specific node.
 
         January 2026 Sprint 6: Used by PredictiveScalingLoop for preemptive job spawning.
         Session 17.22: Added model_version for architecture selection feedback loop.
+        Jan 12, 2026: Added engine_mode for harness diversity across cluster.
 
         Args:
             node_id: The target node identifier
@@ -600,6 +602,8 @@ class JobManager(EventSubscriptionMixin):
             preemptive: Whether this is a preemptive spawn (for tracking)
             model_version: Architecture version (e.g., "v5", "v2", "v5-heavy").
                           If None, uses default "v5".
+            engine_mode: Engine mode (e.g., "mixed", "gumbel-mcts", "nnue-guided").
+                        If None, uses default "mixed" for harness diversity.
 
         Returns:
             Dict with 'success' bool and optional 'error' message
@@ -632,6 +636,9 @@ class JobManager(EventSubscriptionMixin):
                     "model_version": effective_version,
                 }
 
+            # Jan 12, 2026: Default to "mixed" for harness diversity across cluster
+            effective_engine_mode = engine_mode or "mixed"
+
             config = {
                 "board_type": board_type,
                 "num_players": num_players,
@@ -642,6 +649,7 @@ class JobManager(EventSubscriptionMixin):
                 "reason": f"preemptive_spawn_{board_type}_{num_players}p",
                 "model_version": effective_version,
                 "model_path": model_path,
+                "engine_mode": effective_engine_mode,
             }
 
             # Use HTTP to dispatch to the node's selfplay endpoint

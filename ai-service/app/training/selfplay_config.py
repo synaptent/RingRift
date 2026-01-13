@@ -202,7 +202,10 @@ class SelfplayConfig:
     num_games: int = 1000
 
     # Engine settings
-    engine_mode: EngineMode = EngineMode.NNUE_GUIDED
+    # Jan 12, 2026: Changed default from NNUE_GUIDED to MIXED for harness diversity
+    # MIXED mode rotates between random, heuristic, mcts, minimax, policy_only
+    # This ensures diverse training data and proper Elo tracking per harness type
+    engine_mode: EngineMode = EngineMode.MIXED
     search_depth: int = 3
     mcts_simulations: int = 800
     simulation_budget: int = 800  # Gumbel MCTS budget (800 = quality, 64 = throughput)

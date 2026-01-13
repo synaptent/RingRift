@@ -174,6 +174,8 @@ class PromotionDecision:
     # Metadata
     evaluated_at: str = field(default_factory=lambda: datetime.now().isoformat())
     criteria_used: PromotionCriteria | None = None
+    # Jan 12, 2026: Added harness_type for multi-harness tracking
+    harness_type: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -193,6 +195,7 @@ class PromotionDecision:
             "target_met": self.target_met,
             "blocked_by_target": self.blocked_by_target,
             "evaluated_at": self.evaluated_at,
+            "harness_type": self.harness_type,
         }
 
 
@@ -382,6 +385,7 @@ class PromotionController:
         num_players: int = 2,
         promotion_type: PromotionType = PromotionType.PRODUCTION,
         baseline_model_id: str | None = None,
+        harness_type: str | None = None,
         **kwargs,
     ) -> PromotionDecision:
         """Evaluate whether a model should be promoted.
@@ -392,6 +396,7 @@ class PromotionController:
             num_players: Number of players
             promotion_type: Type of promotion to evaluate
             baseline_model_id: Model to compare against (for PRODUCTION/CHAMPION)
+            harness_type: AI harness used for evaluation (e.g., "gumbel_mcts", "minimax")
             **kwargs: Additional arguments for specific promotion types
 
         Returns:
@@ -541,6 +546,7 @@ class PromotionController:
             target_met=target_met,
             blocked_by_target=blocked_by_target,
             criteria_used=self.criteria,
+            harness_type=harness_type,
         )
 
         # Emit metrics

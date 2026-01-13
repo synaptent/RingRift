@@ -2249,6 +2249,8 @@ async def run_baseline_calibration(
                         num_players=num_players,
                         game_length=game_result.move_count,
                         tournament_id=f"baseline_calibration_{board_value}_{num_players}p",
+                        # Jan 12, 2026: Added harness_type for multi-harness tracking
+                        harness_type="heuristic",
                     )
                 except (RuntimeError, ValueError, OSError) as e:
                     logger.error(f"[calibration] Failed to record Elo: {e}")

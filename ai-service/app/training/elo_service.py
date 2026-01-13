@@ -616,6 +616,13 @@ class EloService:
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
+            # Migration: add harness_type column for multi-harness tracking (Jan 12, 2026)
+            # This enables tracking which AI harness (gumbel_mcts, minimax, etc.) was used
+            try:
+                conn.execute("ALTER TABLE match_history ADD COLUMN harness_type TEXT")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
+
             # Elo history for trend analysis
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS elo_history (
