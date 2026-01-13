@@ -64,7 +64,7 @@ def run_improvement_evaluation(
     start_time = time.time()
 
     try:
-        from app.ai.factory import create_ai
+        from app.ai.factory import AIFactory
         from app.models import AIConfig, AIType, BoardType, GameStatus
         from app.rules import MutableGameState
         from app.training.generate_data import create_initial_state
@@ -105,9 +105,9 @@ def run_improvement_evaluation(
             nn_model_id=baseline_model_path,
         )
 
-        # Create AI instances
-        new_ai = create_ai(new_model_config, board_type_enum)
-        baseline_ai = create_ai(baseline_config, board_type_enum)
+        # Create AI instances (player 1 and 2)
+        new_ai = AIFactory.create(ai_type_enum, 1, new_model_config)
+        baseline_ai = AIFactory.create(ai_type_enum, 2, baseline_config)
 
         results = {
             "new_model_wins": 0,
