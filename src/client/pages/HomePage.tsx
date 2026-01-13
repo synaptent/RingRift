@@ -24,12 +24,12 @@ export default function HomePage() {
             <h2 className="text-lg font-semibold text-white flex items-center gap-2">
               Enter Lobby
               <span className="inline-flex items-center justify-center rounded-full bg-emerald-900/70 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-200">
-                Backend
+                Online
               </span>
             </h2>
             <p className="text-sm text-emerald-50/90">
-              Create or join backend games, match with other players or AIs, and jump into a live
-              game at <code className="font-mono text-xs">/game/:gameId</code>.
+              Create or join online games, match with other players or AI opponents, and jump into
+              live multiplayer matches.
             </p>
           </div>
         </Link>
@@ -40,12 +40,11 @@ export default function HomePage() {
         >
           <h2 className="text-lg font-semibold text-slate-100">Open Local Sandbox</h2>
           <p className="mt-1 text-sm text-slate-300">
-            Run the full rules engine in your browser only. Ideal for testing movement, captures,
-            lines, and territory without touching the backend.
+            Play offline in your browser. Perfect for practicing movement, captures, lines, and
+            territory scoring.
           </p>
           <p className="mt-2 text-xs text-slate-500">
-            From the sandbox you can also attempt a backend-backed sandbox game via &nbsp;
-            <span className="font-mono">Launch Game</span>.
+            You can also start an online game from the sandbox using the Launch Game button.
           </p>
         </Link>
 
@@ -60,12 +59,8 @@ export default function HomePage() {
             </span>
           </div>
           <p className="mt-1 text-sm text-slate-300">
-            Jump straight into an 8×8 guided starter match. Great for first-time players who want to
+            Jump straight into a guided starter match. Great for first-time players who want to
             learn placement, movement, and captures quickly.
-          </p>
-          <p className="mt-2 text-xs text-slate-500">
-            Deep link:&nbsp;
-            <code className="font-mono">/sandbox?preset=learn-basics</code>
           </p>
         </Link>
 
@@ -85,70 +80,9 @@ export default function HomePage() {
         >
           <h2 className="text-lg font-semibold text-slate-100">Profile & Settings</h2>
           <p className="mt-1 text-sm text-slate-300">
-            View your account details and (as implemented) tweak preferences and inspect your game
-            history.
+            View your account details, game history, rating progress, and preferences.
           </p>
         </Link>
-
-        <Link
-          to="/sandbox"
-          className="group rounded-2xl border border-slate-800 bg-slate-950/60 px-5 py-6 hover:border-fuchsia-500/60 hover:bg-slate-950 hover:shadow-lg hover:scale-[1.01] transition-all duration-200 focus-visible:ring-2 focus-visible:ring-fuchsia-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
-        >
-          <h2 className="text-lg font-semibold text-slate-100">Rules & Diagnostics</h2>
-          <p className="mt-1 text-sm text-slate-300">
-            Combine <code className="font-mono text-xs">/sandbox</code> with the parity and scenario
-            tests in the repo to validate rules behaviour against the backend GameEngine.
-          </p>
-          <p className="mt-2 text-xs text-slate-500">
-            See <code className="font-mono">tests/scenarios</code> and &nbsp;
-            <code className="font-mono">tests/unit</code> for the full matrix.
-          </p>
-        </Link>
-      </section>
-
-      {/* Backend quick links */}
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wide">
-          Backend & API shortcuts
-        </h2>
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3 text-sm text-slate-300">
-          <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-3">
-            <p className="font-medium text-slate-100 mb-1">Health & routes</p>
-            <p className="text-xs text-slate-400 mb-1">
-              Backend HTTP API is served under <code className="font-mono">/api</code>.
-            </p>
-            <p className="text-xs text-slate-500">
-              Try <code className="font-mono">GET /api</code> or run the health tests in &nbsp;
-              <code className="font-mono">tests/unit/server.health-and-routes.test.ts</code>.
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-3">
-            <p className="font-medium text-slate-100 mb-1">Games API</p>
-            <p className="text-xs text-slate-400 mb-1">
-              Lobby and game creation use <code className="font-mono">/api/games</code>.
-            </p>
-            <p className="text-xs text-slate-500">
-              Creating or joining games here will route you to &nbsp;
-              <code className="font-mono">/game/:gameId</code> with WebSocket updates.
-            </p>
-          </div>
-
-          <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-3">
-            <p className="font-medium text-slate-100 mb-1">WebSockets</p>
-            <p className="text-xs text-slate-400 mb-1">
-              Live games use the WebSocket server on port 3001.
-            </p>
-            <p className="text-xs text-slate-500">
-              See <code className="font-mono">src/server/websocket/server.ts</code> and the
-              integration tests in &nbsp;
-              <code className="font-mono">
-                tests/unit/WebSocketServer.aiTurn.integration.test.ts
-              </code>
-              .
-            </p>
-          </div>
-        </div>
       </section>
     </div>
   );

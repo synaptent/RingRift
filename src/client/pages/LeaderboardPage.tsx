@@ -16,7 +16,7 @@ export default function LeaderboardPage() {
     try {
       setIsLoading(true);
       const response = await userApi.getLeaderboard({ limit: 50 });
-      setUsers(response.users);
+      setUsers(response.users ?? []);
     } catch (err) {
       console.error('Failed to fetch leaderboard:', err);
       setError('Failed to load leaderboard data');
@@ -61,8 +61,9 @@ export default function LeaderboardPage() {
             </thead>
             <tbody className="divide-y divide-slate-700">
               {users.map((user, index) => {
-                const winRate =
-                  user.gamesPlayed > 0 ? Math.round((user.gamesWon / user.gamesPlayed) * 100) : 0;
+                const gamesPlayed = user.gamesPlayed ?? 0;
+                const gamesWon = user.gamesWon ?? 0;
+                const winRate = gamesPlayed > 0 ? Math.round((gamesWon / gamesPlayed) * 100) : 0;
                 const rank = index + 1;
 
                 // Top 3 rank styling
@@ -92,10 +93,10 @@ export default function LeaderboardPage() {
                     <td className="px-6 py-4 text-center">{rankBadge}</td>
                     <td className="px-6 py-4 font-medium text-white">{user.username}</td>
                     <td className="px-6 py-4 text-right font-mono text-emerald-400 font-bold">
-                      {user.rating}
+                      {user.rating ?? 1500}
                     </td>
                     <td className="px-6 py-4 text-right text-slate-300">{winRate}%</td>
-                    <td className="px-6 py-4 text-right text-slate-300">{user.gamesPlayed}</td>
+                    <td className="px-6 py-4 text-right text-slate-300">{gamesPlayed}</td>
                   </tr>
                 );
               })}

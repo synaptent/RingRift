@@ -39,13 +39,13 @@ export default function ProfilePage() {
       setIsLoading(true);
       const [userData, gamesData, statsData] = await Promise.all([
         authApi.getProfile(),
-        gameApi.getGames({ limit: 5 }),
+        gameApi.getGames({ limit: 5 }).catch(() => ({ games: [] })),
         userApi.getStats().catch(() => ({ ratingHistory: [] })),
       ]);
       setProfile(userData);
-      setRecentGames(gamesData.games as RecentGame[]);
-      setRatingHistory(statsData.ratingHistory || []);
-      setEditForm({ username: userData.username });
+      setRecentGames((gamesData.games ?? []) as RecentGame[]);
+      setRatingHistory(statsData.ratingHistory ?? []);
+      setEditForm({ username: userData.username ?? '' });
     } catch (err) {
       console.error('Failed to fetch profile:', err);
       setError('Failed to load profile data');

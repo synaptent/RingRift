@@ -45,10 +45,17 @@ export default function RegisterPage() {
     } catch (err: unknown) {
       // Log the full error for debugging
       console.error('Registration error:', err);
-      const message = extractErrorMessage(
-        err,
-        'Registration failed. Please check your details and try again.'
-      );
+      let message: string;
+      try {
+        message = extractErrorMessage(
+          err,
+          'Registration failed. Please check your details and try again.'
+        );
+      } catch (extractErr) {
+        console.error('Error extracting message:', extractErr);
+        message = 'Registration failed. Please check your details and try again.';
+      }
+      console.log('Setting error message:', message);
       setError(message);
     } finally {
       setIsSubmitting(false);
