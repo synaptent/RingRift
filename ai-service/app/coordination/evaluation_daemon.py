@@ -1240,9 +1240,28 @@ class EvaluationDaemon(BaseEventHandler):
     ) -> dict[str, Any]:
         """Run baseline-only gauntlet (original behavior)."""
         # Map baseline names to enum values
+        # Jan 13, 2026: Complete mapping for all baselines including NNUE harness diversity
         baseline_map = {
             "random": BaselineOpponent.RANDOM,
             "heuristic": BaselineOpponent.HEURISTIC,
+            "heuristic_strong": BaselineOpponent.HEURISTIC_STRONG,
+            "weak_heuristic": BaselineOpponent.WEAK_HEURISTIC,
+            "mcts_light": BaselineOpponent.MCTS_LIGHT,
+            "mcts_medium": BaselineOpponent.MCTS_MEDIUM,
+            "mcts_strong": BaselineOpponent.MCTS_STRONG,
+            "mcts_master": BaselineOpponent.MCTS_MASTER,
+            "mcts_grandmaster": BaselineOpponent.MCTS_GRANDMASTER,
+            "gumbel_b64": BaselineOpponent.GUMBEL_B64,
+            "gumbel_b200": BaselineOpponent.GUMBEL_B200,
+            "gumbel_nnue": BaselineOpponent.GUMBEL_NNUE,
+            "policy_only_nn": BaselineOpponent.POLICY_ONLY_NN,
+            "policy_only_nnue": BaselineOpponent.POLICY_ONLY_NNUE,
+            "descent_nn": BaselineOpponent.DESCENT_NN,
+            "descent_nnue": BaselineOpponent.DESCENT_NNUE,
+            # NNUE baselines for harness diversity (Jan 13, 2026)
+            "nnue_minimax_d4": BaselineOpponent.NNUE_MINIMAX_D4,
+            "nnue_maxn_d3": BaselineOpponent.NNUE_MAXN_D3,
+            "nnue_brs_d3": BaselineOpponent.NNUE_BRS_D3,
         }
         opponents = [
             baseline_map[b]
