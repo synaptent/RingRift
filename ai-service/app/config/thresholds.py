@@ -2087,7 +2087,9 @@ CHECKPOINT_TIMEOUT = 120
 #   Trust early stopping instead of forcing minimum epochs.
 #
 # Minimum training epochs before early stopping can trigger
-MIN_TRAINING_EPOCHS = 15
+# Jan 13, 2026: Increased from 15 to 25 - allow more exploration before stopping
+# Note: Higher values (50+) can cause overfitting, so keep this moderate
+MIN_TRAINING_EPOCHS = 25
 
 # Validation patience - epochs without improvement before early stopping
 VALIDATION_PATIENCE = 22
@@ -2100,16 +2102,18 @@ LR_WARMUP_STEPS = 0  # Default: no warmup (set via CLI --warmup-steps)
 
 # Early stopping patience - epochs without validation improvement
 # Jan 12, 2026: Increased from 20 to 30 - models need longer to break plateaus
-EARLY_STOPPING_PATIENCE = 30
+# Jan 13, 2026: Increased from 30 to 50 - allow more exploration before stopping
+EARLY_STOPPING_PATIENCE = 50
 
 # December 29, 2025: Phase 9 - Board-specific base patience values
 # Weak models on hard boards stop too early with uniform patience
 # Jan 12, 2026: Doubled patience values - models stop too early at ~1400 Elo
+# Jan 13, 2026: Increased further to allow more exploration on all boards
 EARLY_STOPPING_PATIENCE_BY_BOARD = {
-    "hex8": 10,      # Smallest board, learns fastest
-    "square8": 10,   # Similar to hex8
-    "square19": 18,  # Large board needs more epochs
-    "hexagonal": 25, # Largest board, slowest to learn
+    "hex8": 20,      # Smallest board, learns fastest
+    "square8": 20,   # Similar to hex8
+    "square19": 30,  # Large board needs more epochs
+    "hexagonal": 40, # Largest board, slowest to learn
 }
 
 

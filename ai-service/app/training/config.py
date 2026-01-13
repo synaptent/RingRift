@@ -579,7 +579,9 @@ class TrainConfig:
     # here makes iterative retraining a first-class configuration parameter.
     iterations: int = 2
     learning_rate: float = 1e-3
-    batch_size: int = 32  # Will be auto-scaled in __post_init__ if GPU available
+    # Jan 13, 2026: Increased from 32 to 128 for stronger gradient signals
+    # Larger batches provide more stable gradients and faster convergence
+    batch_size: int = 128  # Will be auto-scaled in __post_init__ if GPU available
     weight_decay: float = 1e-4
     history_length: int = 3
     # Feature encoding version. v1 matches legacy encoders; v2 adds
@@ -757,7 +759,8 @@ def get_training_config_for_board(
         # Prefer the canonical v3-capacity defaults unless explicitly overridden.
         config.num_res_blocks = 12
         config.num_filters = 192
-        config.batch_size = 64  # Can use larger batches
+        # Jan 13, 2026: Increased from 64 to 128 for stronger gradient signals
+        config.batch_size = 128  # Larger batches for faster convergence
         config.learning_rate = 2e-3  # Slightly higher LR
         config.max_moves_per_game = 10000  # Allow games to complete naturally
         config.model_id = "ringrift_v5_sq8_2p_2xh100"
@@ -767,7 +770,8 @@ def get_training_config_for_board(
         config.policy_size = POLICY_SIZE_19x19  # 67,000
         config.num_res_blocks = 12
         config.num_filters = 192
-        config.batch_size = 24  # Smaller batch for larger action space
+        # Jan 13, 2026: Increased from 24 to 64 for stronger gradient signals
+        config.batch_size = 64  # Increased batch for better convergence
         config.learning_rate = 5e-4  # Lower LR for stability
         config.max_moves_per_game = 10000  # Allow games to complete naturally
         config.model_id = "ringrift_v4_sq19_2p"
@@ -777,7 +781,8 @@ def get_training_config_for_board(
         config.policy_size = POLICY_SIZE_HEX8  # 4,500
         config.num_res_blocks = 12
         config.num_filters = 192
-        config.batch_size = 64  # Similar to square8
+        # Jan 13, 2026: Increased from 64 to 128 for stronger gradient signals
+        config.batch_size = 128  # Larger batches for faster convergence
         config.learning_rate = 2e-3  # Slightly higher LR like square8
         config.max_moves_per_game = 10000  # Allow games to complete naturally
         config.model_id = "ringrift_v5_hex8_2p"
@@ -787,7 +792,8 @@ def get_training_config_for_board(
         config.policy_size = P_HEX  # 91,876
         config.num_res_blocks = 12
         config.num_filters = 192
-        config.batch_size = 20  # Smaller batch for largest action space
+        # Jan 13, 2026: Increased from 20 to 64 for stronger gradient signals
+        config.batch_size = 64  # Increased batch for better convergence
         config.learning_rate = 5e-4  # Lower LR for stability
         config.max_moves_per_game = 10000  # Allow games to complete naturally
         config.model_id = "ringrift_v4_hex_2p"
