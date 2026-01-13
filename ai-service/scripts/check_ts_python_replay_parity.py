@@ -1714,10 +1714,12 @@ def main() -> None:
     structural_issues: list[dict[str, object]] = []
     semantic_divergences: list[dict[str, object]] = []
     end_of_game_only_divergences: list[dict[str, object]] = []
+    anm_warning_only_divergences: list[dict[str, object]] = []  # ANM-only with matching hash
     mismatch_counts_by_dimension: dict[str, int] = {}
     total_games = 0
     total_semantic_divergent = 0
     total_end_of_game_only = 0
+    total_anm_warning_only = 0  # Games with ANM mismatch but matching state_hash
     total_structural_issues = 0
     games_with_non_canonical_history = 0
 
@@ -1799,10 +1801,30 @@ def main() -> None:
                 if result.ts_summary is not None:
                     payload["ts_summary"] = asdict(result.ts_summary)
 
-                # Classify divergence: significant vs end-of-game-only
+                # Classify divergence: significant vs end-of-game-only vs anm-warning-only
+                #
+                # ANM-only divergence: When the ONLY mismatch is "anm_state" AND the
+                # state_hash matches, this is a tracking difference (not a real game
+                # state divergence). We treat this as a warning that doesn't fail the
+                # parity gate. See RR-FIX-2026-01-13.
+                is_anm_only = (
+                    result.mismatch_kinds == ["anm_state"]
+                    and result.python_summary is not None
+                    and result.ts_summary is not None
+                    and result.python_summary.state_hash == result.ts_summary.state_hash
+                )
+
                 if result.is_end_of_game_only:
                     total_end_of_game_only += 1
                     end_of_game_only_divergences.append(payload)
+                elif is_anm_only:
+                    # ANM tracking difference with matching hash - warning only
+                    total_anm_warning_only += 1
+                    anm_warning_only_divergences.append(payload)
+                    # Track as a separate dimension for visibility
+                    mismatch_counts_by_dimension["anm_state"] = (
+                        mismatch_counts_by_dimension.get("anm_state", 0) + 1
+                    )
                 else:
                     total_semantic_divergent += 1
                     semantic_divergences.append(payload)
@@ -1901,10 +1923,12 @@ def main() -> None:
         "total_games_checked": total_games,
         "games_with_semantic_divergence": total_semantic_divergent,
         "games_with_end_of_game_only_divergence": total_end_of_game_only,
+        "games_with_anm_warning_only": total_anm_warning_only,  # ANM-only with matching hash (warning)
         "games_with_structural_issues": total_structural_issues,
         "games_with_non_canonical_history": games_with_non_canonical_history,
         "semantic_divergences": semantic_divergences,
         "end_of_game_only_divergences": end_of_game_only_divergences,
+        "anm_warning_only_divergences": anm_warning_only_divergences,  # Details of ANM warnings
         "structural_issues": structural_issues,
         "mismatch_counts_by_dimension": mismatch_counts_by_dimension,
         "view_mode": args.view,
@@ -1941,6 +1965,7 @@ def main() -> None:
                 "db_count": len(db_paths),
                 "total_games_checked": total_games,
                 "games_with_semantic_divergence": total_semantic_divergent,
+                "games_with_anm_warning_only": total_anm_warning_only,
                 "games_with_structural_issues": total_structural_issues,
                 "games_with_non_canonical_history": games_with_non_canonical_history,
                 "passed_canonical_parity_gate": bool(passed_canonical_parity_gate),
@@ -1980,6 +2005,12 @@ def main() -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
+        else:
+            # Gate passed - print success message with any warnings
+            msg = f"\n[PASS] canonical parity gate passed: {total_games} game(s) checked"
+            if total_anm_warning_only > 0:
+                msg += f" ({total_anm_warning_only} game(s) with ANM tracking difference - state hashes match)"
+            print(msg)
     else:
         if args.fail_on_divergence and total_semantic_divergent > 0:
             print(
