@@ -59,21 +59,24 @@ class PeerCleanupConfig:
     )
 
     # Tier 1: Mark as stale candidate (tracked in stats, not purged)
+    # Jan 12, 2026: Reduced from 1 hour to 20 min for faster dead node cleanup
     tier1_stale_seconds: float = field(
         default_factory=lambda: float(
-            os.environ.get("RINGRIFT_PEER_STALE_THRESHOLD", "3600")
+            os.environ.get("RINGRIFT_PEER_STALE_THRESHOLD", "1200")
         )
     )
 
     # Tier 2: Auto-purge from memory (definitively gone)
+    # Jan 12, 2026: Reduced from 6 hours to 1 hour to prevent dead node accumulation
     tier2_purge_seconds: float = field(
         default_factory=lambda: float(
-            os.environ.get("RINGRIFT_PEER_PURGE_THRESHOLD", "21600")
+            os.environ.get("RINGRIFT_PEER_PURGE_THRESHOLD", "3600")
         )
     )
 
     # Tier 3: Purge retired peers from all caches (permanently retired)
-    tier3_cache_purge_seconds: float = 86400.0  # 24 hours
+    # Jan 12, 2026: Reduced from 24 hours to 4 hours for more aggressive cleanup
+    tier3_cache_purge_seconds: float = 14400.0  # 4 hours
 
     # Maximum peers to purge per cycle (prevent thundering herd)
     max_purge_per_cycle: int = 20

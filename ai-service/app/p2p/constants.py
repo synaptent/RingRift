@@ -353,15 +353,16 @@ GOSSIP_MAX_PEER_ENDPOINTS = int(
 # Peer lifecycle
 # Dec 30, 2025: Increased from 300 (5 min) to 900 (15 min) for cloud maintenance tolerance.
 # Jan 5, 2026: Increased from 900 (15 min) to 1800 (30 min) for rolling restart tolerance.
-# 15 minutes was still too aggressive during coordinated restarts - nodes would permanently
-# retire before they could recover. 30 minutes gives ample time for restart cycles.
-# Use RINGRIFT_P2P_PEER_RETIRE_AFTER_SECONDS=900 for faster detection if needed.
-PEER_RETIRE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_RETIRE_AFTER_SECONDS", "1800") or 1800)
+# Jan 12, 2026: Reduced from 1800 (30 min) to 600 (10 min) to prevent dead node accumulation.
+# 80% of cluster nodes were offline because dead nodes weren't being retired fast enough.
+# Use RINGRIFT_P2P_PEER_RETIRE_AFTER_SECONDS=1800 for slower detection if needed.
+PEER_RETIRE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_RETIRE_AFTER_SECONDS", "600") or 600)
 # Renamed from RETRY_RETIRED_NODE_INTERVAL to PEER_RECOVERY_RETRY_INTERVAL for clarity
 PEER_RECOVERY_RETRY_INTERVAL = int(os.environ.get("RINGRIFT_P2P_PEER_RECOVERY_INTERVAL", "120") or 120)
 # Backward compat alias (deprecated - use PEER_RECOVERY_RETRY_INTERVAL)
 RETRY_RETIRED_NODE_INTERVAL = PEER_RECOVERY_RETRY_INTERVAL
-PEER_PURGE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_PURGE_AFTER_SECONDS", "21600") or 21600)
+# Jan 12, 2026: Reduced from 21600 (6 hr) to 3600 (1 hr) to purge dead nodes faster.
+PEER_PURGE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_PURGE_AFTER_SECONDS", "3600") or 3600)
 
 # Peer cache / reputation settings
 PEER_CACHE_TTL_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_CACHE_TTL_SECONDS", "604800") or 604800)

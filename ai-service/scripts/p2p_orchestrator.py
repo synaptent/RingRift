@@ -1635,6 +1635,10 @@ class P2POrchestrator(
         # Jan 12, 2026: Lock-free peer snapshot for read-heavy operations like /status
         # PeerSnapshot maintains an immutable copy that can be read without acquiring peers_lock
         self._peer_snapshot: PeerSnapshot[NodeInfo] = PeerSnapshot()
+        # Jan 12, 2026: Track recently-dead peers to prevent gossip from re-adding them.
+        # When a peer is retired, record its death timestamp. Gossip won't re-add peers
+        # that died within the last hour, preventing dead node accumulation.
+        self._dead_peer_timestamps: dict[str, float] = {}
         self.local_jobs: dict[str, ClusterJob] = {}
         self.active_jobs: dict[str, dict[str, Any]] = {}  # Track running jobs by type (selfplay, training, etc.)
 
@@ -1743,6 +1747,14 @@ class P2POrchestrator(
 
         # Webhook notifications for alerts
         self.notifier = WebhookNotifier()
+
+        # HTTP server components for graceful restart (Jan 2026)
+        # These are set in run() and used by restart_http_server()
+        self._http_app: "web.Application | None" = None
+        self._http_runner: "web.AppRunner | None" = None
+        self._http_sites: list["web.TCPSite"] = []
+        self._http_restart_lock = asyncio.Lock()
+        self._http_restart_count = 0
 
         # Diversity tracking metrics
         self.diversity_metrics = {
@@ -3522,11 +3534,15 @@ class P2POrchestrator(
             # HttpServerHealthLoop - January 7, 2026 (Zombie Detection)
             # Detects zombie state where HTTP server crashes but process continues.
             # Probes localhost:8770/health every 10s, terminates after 6 consecutive failures.
-            # systemd Restart=always will restart the process, reducing MTTR from 5+ min to ~90s.
+            # Jan 13, 2026: Now attempts graceful restart via restart_http_server callback
+            # before falling back to os._exit() for systemd restart.
             try:
-                http_health = HttpServerHealthLoop(port=self.port)
+                http_health = HttpServerHealthLoop(
+                    port=self.port,
+                    restart_callback=self.restart_http_server,
+                )
                 manager.register(http_health)
-                logger.info("[P2P] HttpServerHealthLoop registered (HTTP server zombie detection)")
+                logger.info("[P2P] HttpServerHealthLoop registered (with graceful restart support)")
             except (ImportError, TypeError) as e:
                 logger.debug(f"HttpServerHealthLoop: not available: {e}")
 
@@ -12052,6 +12068,8 @@ class P2POrchestrator(
                     # Mark as retired (NodeInfo equivalent of "left")
                     peer.retired = True
                     peer.retired_at = time.time()
+                    # Jan 12, 2026: Track death timestamp to prevent gossip re-add
+                    self._dead_peer_timestamps[node_name] = time.time()
 
         # C2 fix: Sync peer snapshot after Serf member leave updates
         if members:
@@ -12125,6 +12143,8 @@ class P2POrchestrator(
                 if isinstance(peer, NodeInfo):
                     peer.retired = True
                     peer.retired_at = time.time()
+                    # Jan 12, 2026: Track death timestamp to prevent gossip re-add
+                    self._dead_peer_timestamps[node_name] = time.time()
 
     async def _handle_serf_user_event(self, payload: dict) -> None:
         """Handle Serf user events (custom RingRift events).
@@ -20650,14 +20670,18 @@ print(json.dumps({{
                     if not getattr(info, "retired", False) and dead_for >= PEER_RETIRE_AFTER_SECONDS:
                         info.retired = True
                         info.retired_at = now
+                        # Jan 12, 2026: Track death timestamp to prevent gossip re-add
+                        self._dead_peer_timestamps[node_id] = now
                         logger.info(f"Retiring peer {node_id} (offline for {int(dead_for)}s)")
                         # Collect data for event emission outside lock
                         last_hb = getattr(info, "last_heartbeat", None)
                         retired_peers.append((node_id, last_hb, dead_for))
                 elif info.is_alive() and getattr(info, "retired", False):
-                    # Peer came back: clear retirement.
+                    # Peer came back: clear retirement and remove from dead tracking.
                     info.retired = False
                     info.retired_at = 0.0
+                    # Jan 12, 2026: Remove from dead peer tracking on recovery
+                    self._dead_peer_timestamps.pop(node_id, None)
                     # Collect data for event emission outside lock
                     caps = []
                     if hasattr(info, "gpu_type") and info.gpu_type:
@@ -20932,14 +20956,18 @@ print(json.dumps({{
                     if not getattr(info, "retired", False) and dead_for >= PEER_RETIRE_AFTER_SECONDS:
                         info.retired = True
                         info.retired_at = now
+                        # Jan 12, 2026: Track death timestamp to prevent gossip re-add
+                        self._dead_peer_timestamps[node_id] = now
                         logger.info(f"Retiring peer {node_id} (offline for {int(dead_for)}s)")
                         # Collect data for event emission outside lock
                         last_hb = getattr(info, "last_heartbeat", None)
                         retired_peers.append((node_id, last_hb, dead_for))
                 elif info.is_alive() and getattr(info, "retired", False):
-                    # Peer came back: clear retirement.
+                    # Peer came back: clear retirement and remove from dead tracking.
                     info.retired = False
                     info.retired_at = 0.0
+                    # Jan 12, 2026: Remove from dead peer tracking on recovery
+                    self._dead_peer_timestamps.pop(node_id, None)
                     # Collect data for event emission outside lock
                     caps = []
                     if hasattr(info, "gpu_type") and info.gpu_type:
@@ -22786,6 +22814,20 @@ print(json.dumps({{
             # Check if already connected
             if node_id in self.peers and self.peers[node_id].is_alive():
                 return
+
+            # Jan 12, 2026: Skip peers that died recently to prevent gossip re-adding dead nodes.
+            # Dead peer cooldown is 1 hour to allow time for nodes to actually come back up.
+            DEAD_PEER_COOLDOWN_SECONDS = 3600  # 1 hour
+            if node_id in self._dead_peer_timestamps:
+                dead_time = self._dead_peer_timestamps[node_id]
+                if time.time() - dead_time < DEAD_PEER_COOLDOWN_SECONDS:
+                    logger.debug(
+                        f"Skipping gossip-learned peer {node_id} - died {int(time.time() - dead_time)}s ago"
+                    )
+                    return
+                else:
+                    # Cooldown expired, allow reconnection attempt
+                    del self._dead_peer_timestamps[node_id]
 
             logger.info(f"Attempting connection to gossip-learned peer: {node_id} at {host}:{port}")
 
@@ -28460,6 +28502,76 @@ print(json.dumps({{
         health_thread.start()
         logger.info(f"Started isolated health server thread (port {health_port})")
 
+    async def restart_http_server(self) -> bool:
+        """Restart the HTTP server gracefully without terminating the process.
+
+        January 2026: Added to enable recovery from HTTP server failures without
+        requiring full process restart. Called by HttpServerHealthLoop when the
+        server becomes unresponsive.
+
+        Returns:
+            True if restart succeeded, False otherwise
+        """
+        async with self._http_restart_lock:
+            self._http_restart_count += 1
+            attempt = self._http_restart_count
+            logger.warning(f"[P2P] HTTP server restart attempt {attempt}")
+
+            try:
+                # Stop existing sites
+                for site in self._http_sites:
+                    try:
+                        await site.stop()
+                    except Exception as e:
+                        logger.debug(f"[P2P] Error stopping site: {e}")
+                self._http_sites.clear()
+
+                # Cleanup runner
+                if self._http_runner is not None:
+                    try:
+                        await self._http_runner.cleanup()
+                    except Exception as e:
+                        logger.debug(f"[P2P] Error cleaning up runner: {e}")
+
+                # Wait briefly for port to be released
+                await asyncio.sleep(1.0)
+
+                # Create new runner from existing app
+                if self._http_app is None:
+                    logger.error("[P2P] Cannot restart: HTTP app not initialized")
+                    return False
+
+                self._http_runner = web.AppRunner(self._http_app)
+                await self._http_runner.setup()
+
+                # Re-bind ports
+                site_v4 = web.TCPSite(
+                    self._http_runner, '0.0.0.0', self.port,
+                    reuse_address=True, backlog=1024
+                )
+                await site_v4.start()
+                self._http_sites.append(site_v4)
+                logger.info(f"[P2P] HTTP server restarted on 0.0.0.0:{self.port}")
+
+                # Try IPv6 as well
+                try:
+                    site_v6 = web.TCPSite(
+                        self._http_runner, '::', self.port,
+                        reuse_address=True, backlog=1024
+                    )
+                    await site_v6.start()
+                    self._http_sites.append(site_v6)
+                    logger.info(f"[P2P] HTTP server also listening on [::]:{self.port}")
+                except OSError:
+                    pass  # IPv6 optional
+
+                logger.info(f"[P2P] HTTP server restart {attempt} successful")
+                return True
+
+            except Exception as e:
+                logger.error(f"[P2P] HTTP server restart {attempt} failed: {e}")
+                return False
+
     async def run(self):
         """Main entry point - start the orchestrator."""
         if not HAS_AIOHTTP:
@@ -28486,6 +28598,8 @@ print(json.dumps({{
             middlewares=[auth_middleware],
             client_max_size=100 * 1024 * 1024,  # 100 MB
         )
+        # Store app for graceful restart (Jan 2026)
+        self._http_app = app
 
         # Register all routes from centralized route registry (December 2025)
         # Replaces 200+ individual route registrations with declarative registry
@@ -28790,6 +28904,8 @@ print(json.dumps({{
 
         runner = web.AppRunner(app)
         await runner.setup()
+        # Store runner for graceful restart (Jan 2026)
+        self._http_runner = runner
 
         # Verify NFS sync before starting (prevents import errors from stale code)
         try:
@@ -28865,12 +28981,14 @@ print(json.dumps({{
             # Bind to IPv4 first (always needed)
             site_v4 = web.TCPSite(runner, '0.0.0.0', self.port, reuse_address=True, backlog=1024)
             await _try_bind_port(site_v4, '0.0.0.0', self.port)
+            self._http_sites.append(site_v4)  # Store for graceful restart (Jan 2026)
             logger.info(f"HTTP server started on 0.0.0.0:{self.port} (IPv4, backlog=1024)")
 
             # Also try to bind to IPv6 (optional, for IPv6-only clients)
             try:
                 site_v6 = web.TCPSite(runner, '::', self.port, reuse_address=True, backlog=1024)
                 await site_v6.start()
+                self._http_sites.append(site_v6)  # Store for graceful restart (Jan 2026)
                 bind_host = "0.0.0.0 + [::]"
                 logger.info(f"HTTP server also listening on [::]:{self.port} (IPv6)")
             except OSError as v6_err:
@@ -28881,6 +28999,7 @@ print(json.dumps({{
             # Specific host requested - bind directly with retry
             site = web.TCPSite(runner, self.host, self.port, reuse_address=True, backlog=1024)
             await _try_bind_port(site, self.host, self.port)
+            self._http_sites.append(site)  # Store for graceful restart (Jan 2026)
             logger.info(f"HTTP server started on {self.host}:{self.port} (backlog=1024)")
 
         # Notify systemd that we're ready to serve

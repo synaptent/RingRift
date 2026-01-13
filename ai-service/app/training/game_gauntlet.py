@@ -1569,8 +1569,9 @@ def _evaluate_single_opponent(
                 )
             except ImportError:
                 pass  # EloService not available
-            except (OSError, RuntimeError, ValueError) as elo_err:
-                logger.error(f"[gauntlet] Failed to record Elo: {elo_err}")
+            except Exception as elo_err:
+                # Jan 12, 2026: Widened from (OSError, RuntimeError, ValueError) to catch all errors
+                logger.error(f"[gauntlet] Failed to record Elo: {type(elo_err).__name__}: {elo_err}")
 
             if verbose:
                 outcome = "WIN" if game_result.candidate_won else "LOSS"
@@ -2078,8 +2079,10 @@ def run_baseline_gauntlet(
                         },
                     )
                 logger.debug(f"[gauntlet] Stored results for {effective_model_id} in gauntlet_results.db")
-        except (OSError, RuntimeError, ValueError) as e:
-            logger.warning(f"[gauntlet] Failed to store results in DB: {e}")
+        except Exception as e:
+            # Jan 12, 2026: Widened from (OSError, RuntimeError, ValueError) to catch sqlite3 errors,
+            # TypeErrors, AttributeErrors, etc. that were silently dropped and caused empty gauntlet_results.
+            logger.warning(f"[gauntlet] Failed to store results in DB: {type(e).__name__}: {e}")
 
     # Clear model cache after gauntlet to release GPU/MPS memory (Dec 29, 2025)
     if HAS_MODEL_CACHE and clear_model_cache is not None:

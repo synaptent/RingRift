@@ -315,6 +315,12 @@ class DataEventType(Enum):
     HEALTH_ALERT = "health_alert"  # General health warning
     RESOURCE_CONSTRAINT = "resource_constraint"  # CPU/GPU/Memory/Disk pressure
     MEMORY_PRESSURE = "memory_pressure"  # Dec 29, 2025: GPU VRAM or process RSS critical - pause spawning
+    # Jan 12, 2026: Tier-specific memory pressure events for MemoryPressureController
+    MEMORY_PRESSURE_CAUTION = "memory_pressure_caution"  # 60-70% RAM - log warning, emit event
+    MEMORY_PRESSURE_WARNING = "memory_pressure_warning"  # 70-80% RAM - pause selfplay, reduce batch sizes
+    MEMORY_PRESSURE_CRITICAL = "memory_pressure_critical"  # 80-90% RAM - kill non-essential daemons, trigger GC
+    MEMORY_PRESSURE_EMERGENCY = "memory_pressure_emergency"  # 90%+ RAM - graceful shutdown, notify standby
+    MEMORY_PRESSURE_RECOVERED = "memory_pressure_recovered"  # RAM dropped below threshold - resume normal ops
     SOCKET_LEAK_DETECTED = "socket_leak_detected"  # Jan 2026: Socket/FD leak detected
     SOCKET_LEAK_RECOVERED = "socket_leak_recovered"  # Jan 2026: Socket/FD leak recovered
     P2P_CONNECTION_RESET_REQUESTED = "p2p_connection_reset_requested"  # Jan 2026: Request P2P reset
