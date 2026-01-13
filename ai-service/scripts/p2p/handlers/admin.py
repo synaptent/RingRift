@@ -683,3 +683,74 @@ class AdminHandlersMixin(BaseP2PHandler):
         except Exception as e:  # noqa: BLE001
             logger.error(f"Error in handle_admin_clear_nat_blocked: {e}")
             return web.json_response({"error": str(e)}, status=500)
+
+    @handler_timeout(HANDLER_TIMEOUT_ADMIN)
+    async def handle_admin_deduplicate(self, request: web.Request) -> web.Response:
+        """Trigger peer deduplication to remove duplicate node entries.
+
+        Jan 13, 2026: Added to clean up duplicate peer entries where the same
+        physical machine registered multiple times with different node_ids
+        (e.g., after hostname changes or P2P restarts).
+
+        Keeps the most recently active node per IP address (by last_heartbeat).
+
+        Query params:
+            dry_run: If "1", just report what would be removed without deleting
+
+        Returns:
+            JSON with deduplication results including removed peers.
+        """
+        try:
+            dry_run = request.query.get("dry_run", "0") == "1"
+
+            # Call the deduplication method
+            if hasattr(self, "_deduplicate_peers"):
+                if dry_run:
+                    # For dry run, simulate deduplication without actually removing
+                    from collections import defaultdict
+                    ip_to_nodes: dict[str, list[tuple[str, float]]] = defaultdict(list)
+
+                    with self.peers_lock:
+                        for node_id, peer in self.peers.items():
+                            if node_id == self.node_id:
+                                continue
+                            dedup_key = getattr(peer, "reported_host", None) or getattr(peer, "effective_host", None) or getattr(peer, "host", None)
+                            if dedup_key and dedup_key not in ("127.0.0.1", ""):
+                                freshness = getattr(peer, "last_heartbeat", 0) or getattr(peer, "last_seen", 0) or 0
+                                ip_to_nodes[dedup_key].append((node_id, freshness))
+
+                    duplicates = []
+                    for ip, nodes in ip_to_nodes.items():
+                        if len(nodes) > 1:
+                            nodes.sort(key=lambda x: x[1], reverse=True)
+                            keeper = nodes[0][0]
+                            stale = [n[0] for n in nodes[1:]]
+                            duplicates.append({
+                                "ip": ip,
+                                "keeping": keeper,
+                                "would_remove": stale,
+                            })
+
+                    return web.json_response({
+                        "success": True,
+                        "dry_run": True,
+                        "duplicate_groups": len(duplicates),
+                        "would_remove_count": sum(len(d["would_remove"]) for d in duplicates),
+                        "duplicates": duplicates,
+                    })
+                else:
+                    # Actually run deduplication
+                    removed_count = self._deduplicate_peers()
+                    return web.json_response({
+                        "success": True,
+                        "dry_run": False,
+                        "removed_count": removed_count,
+                    })
+            else:
+                return web.json_response({
+                    "error": "_deduplicate_peers method not found",
+                }, status=500)
+
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Error in handle_admin_deduplicate: {e}")
+            return web.json_response({"error": str(e)}, status=500)

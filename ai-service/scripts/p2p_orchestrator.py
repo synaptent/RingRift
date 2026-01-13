@@ -8469,6 +8469,49 @@ class P2POrchestrator(
         except Exception as e:
             logger.debug(f"[P2P] Failed to emit CLUSTER_CAPACITY_CHANGED (sync): {e}")
 
+    def _safe_emit_p2p_event(self, event_type: Any, payload: dict) -> None:
+        """Safely emit a P2P-related event via the event router.
+
+        This is a generic event emitter for P2P loops (QuorumCrisisDiscoveryLoop,
+        GossipStateCleanupLoop, etc.) that need to emit events without knowing
+        the specific event type at compile time.
+
+        January 12, 2026: Added to fix AttributeError in P2P loops that referenced
+        this method but it didn't exist. The loops pass emit_event=self._safe_emit_p2p_event
+        but this method was never implemented.
+
+        Args:
+            event_type: Event type (string or DataEventType enum)
+            payload: Event payload dictionary
+        """
+        try:
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import emit_event
+
+            # Handle both string and enum event types
+            event_value = None
+            if isinstance(event_type, str):
+                # Try to convert string to DataEventType
+                try:
+                    event_value = DataEventType(event_type).value
+                except ValueError:
+                    # Unknown event type - log and skip
+                    logger.debug(f"[P2P] Unknown event type: {event_type}, skipping emission")
+                    return
+            elif hasattr(event_type, "value"):
+                # It's an enum, get its value
+                event_value = event_type.value
+            else:
+                # Pass through as-is
+                event_value = str(event_type)
+
+            emit_event(event_value, payload)
+            logger.debug(f"[P2P] Emitted event: {event_value}")
+        except ImportError:
+            pass  # Event router not available
+        except Exception as e:
+            logger.debug(f"[P2P] Failed to emit event {event_type}: {e}")
+
     def _sync_peer_snapshot(self) -> None:
         """Synchronize PeerSnapshot with current peers dictionary.
 
@@ -20573,34 +20616,70 @@ print(json.dumps({{
         Dec 29, 2025: Scans for any duplicate entries that may have been
         created before deduplication was implemented, and merges them.
 
+        Jan 13, 2026: Now actually removes duplicates instead of just logging.
+        Keeps the most recently active node per IP (by last_heartbeat).
+
         Returns:
             Number of duplicates removed
         """
         removed = 0
         # This method is called periodically to clean up any legacy duplicates
         # Since we now key by node_id, duplicates shouldn't occur, but this
-        # handles edge cases from state file loading
+        # handles edge cases from state file loading and hostname changes
         with self.peers_lock:
             # Build IP -> node_id mapping to detect duplicates
+            # Use reported_host (Tailscale) as primary dedup key since it's most stable
             ip_to_nodes: dict[str, list[str]] = {}
             for node_id, peer in self.peers.items():
-                if peer.host:
-                    ip_to_nodes.setdefault(peer.host, []).append(node_id)
-                if peer.reported_host:
-                    ip_to_nodes.setdefault(peer.reported_host, []).append(node_id)
-                for alt_ip in (peer.alternate_ips or set()):
-                    ip_to_nodes.setdefault(alt_ip, []).append(node_id)
+                # Skip self
+                if node_id == self.node_id:
+                    continue
+                # Prefer reported_host (Tailscale IPv6) for dedup - most stable identifier
+                dedup_key = peer.reported_host or peer.effective_host or peer.host
+                if dedup_key and dedup_key not in ("127.0.0.1", ""):
+                    ip_to_nodes.setdefault(dedup_key, []).append(node_id)
 
-            # Find IPs shared by multiple node_ids (potential duplicates)
-            # This can happen if the same physical node registers with different
-            # node_ids (rare, but possible after hostname changes)
+            # Find IPs shared by multiple node_ids (duplicates)
+            # Keep the most recently active one, remove the rest
+            nodes_to_remove: set[str] = set()
             for ip, node_ids in ip_to_nodes.items():
-                if len(node_ids) > 1 and ip:
-                    # Multiple nodes claim the same IP - log for investigation
-                    logger.warning(
-                        f"Dedup: IP {ip} claimed by multiple nodes: {node_ids}. "
-                        f"Consider manual cleanup if these are the same physical host."
+                if len(node_ids) <= 1:
+                    continue
+
+                # Multiple nodes claim the same IP - keep the freshest one
+                # Sort by last_heartbeat descending (most recent first)
+                node_freshness = []
+                for nid in node_ids:
+                    peer = self.peers.get(nid)
+                    if peer:
+                        # Use last_heartbeat, fall back to last_seen
+                        freshness = getattr(peer, "last_heartbeat", 0) or getattr(peer, "last_seen", 0) or 0
+                        node_freshness.append((nid, freshness))
+
+                if not node_freshness:
+                    continue
+
+                # Sort by freshness (most recent first)
+                node_freshness.sort(key=lambda x: x[1], reverse=True)
+                keeper = node_freshness[0][0]
+                stale = [nid for nid, _ in node_freshness[1:]]
+
+                if stale:
+                    logger.info(
+                        f"[Dedup] IP {ip}: keeping {keeper} (freshest), "
+                        f"removing {len(stale)} stale entries: {stale}"
                     )
+                    nodes_to_remove.update(stale)
+
+            # Actually remove the duplicate nodes
+            for node_id in nodes_to_remove:
+                if node_id in self.peers:
+                    del self.peers[node_id]
+                    removed += 1
+                    logger.info(f"[Dedup] Removed duplicate peer: {node_id}")
+
+        if removed > 0:
+            logger.info(f"[Dedup] Removed {removed} duplicate peer entries")
 
         return removed
 
@@ -28795,6 +28874,7 @@ print(json.dumps({{
             app.router.add_post('/cleanup/files', self.handle_cleanup_files)   # File-specific cleanup
             app.router.add_get('/admin/purge_retired', self.handle_purge_retired_peers)  # Purge retired peers (GET for auth bypass)
             app.router.add_get('/admin/purge_stale', self.handle_purge_stale_peers)      # Purge stale peers by heartbeat age
+            app.router.add_get('/admin/deduplicate', self.handle_admin_deduplicate)      # Remove duplicate peer entries (Jan 13, 2026)
             app.router.add_post('/admin/unretire', self.handle_admin_unretire)           # Unretire specific node
             app.router.add_post('/admin/restart', self.handle_admin_restart)             # Force restart orchestrator
             app.router.add_post('/admin/reset_node_jobs', self.handle_admin_reset_node_jobs)  # Reset job counts for zombie nodes
