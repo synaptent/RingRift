@@ -90,17 +90,19 @@ def run_improvement_evaluation(
 
         # Create AI configs for both models
         new_model_config = AIConfig(
+            difficulty=5,  # Mid-level difficulty for evaluation
             ai_type=ai_type_enum,
-            think_time_ms=think_time_ms,
+            think_time=think_time_ms,
             randomness=0.0,
-            model_path=new_model_path,
+            nn_model_id=new_model_path,
         )
 
         baseline_config = AIConfig(
+            difficulty=5,  # Mid-level difficulty for evaluation
             ai_type=ai_type_enum,
-            think_time_ms=think_time_ms,
+            think_time=think_time_ms,
             randomness=0.0,
-            model_path=baseline_model_path,
+            nn_model_id=baseline_model_path,
         )
 
         # Create AI instances
