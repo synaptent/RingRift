@@ -670,6 +670,65 @@ class PeerSnapshot(Generic[T]):
         }
 
 
+class JobSnapshot:
+    """Lock-free job state access using copy-on-write pattern.
+
+    January 12, 2026: Added to eliminate lock contention for /status endpoint.
+    Jobs have to_dict() method, so we store pre-serialized dicts.
+
+    Simpler than PeerSnapshot - jobs are less frequently read but more
+    frequently updated, so we optimize for easy snapshot refresh.
+    """
+
+    def __init__(self):
+        """Initialize empty job snapshot."""
+        self._snapshot: dict[str, dict] = {}
+        self._version: int = 0
+        self._last_update: float = time.time()
+        self._lock = threading.RLock()
+
+    def get_snapshot(self) -> dict[str, dict]:
+        """Get current job state as an immutable snapshot.
+
+        Lock-free read - returns instantly without locking.
+
+        Returns:
+            Dictionary mapping job_id to serialized job dict
+        """
+        return self._snapshot
+
+    def update(self, jobs: dict) -> None:
+        """Refresh snapshot from job dictionary.
+
+        Call this after any job mutation (start, complete, cancel).
+
+        Args:
+            jobs: Dictionary of Job objects with to_dict() method
+        """
+        with self._lock:
+            # Create new snapshot with serialized job dicts
+            self._snapshot = {
+                job_id: (job.to_dict() if hasattr(job, "to_dict") else dict(job))
+                for job_id, job in jobs.items()
+            }
+            self._version += 1
+            self._last_update = time.time()
+
+    @property
+    def version(self) -> int:
+        """Get current snapshot version number."""
+        return self._version
+
+    def get_stats(self) -> dict[str, Any]:
+        """Get snapshot statistics for monitoring."""
+        return {
+            "job_count": len(self._snapshot),
+            "version": self._version,
+            "last_update": self._last_update,
+            "age_seconds": time.time() - self._last_update,
+        }
+
+
 def get_client_session(timeout: ClientTimeout = None) -> ClientSession:
     """Create an aiohttp ClientSession with optional SOCKS proxy support.
 

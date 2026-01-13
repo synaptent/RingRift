@@ -235,8 +235,9 @@ class TrainingDefaults:
 
     # Maximum total concurrent training jobs
     # Jan 5, 2026 (Phase 11.1): Increased from 3 to 5 for +40% training throughput
-    # With 30+ GPU nodes, 5 concurrent jobs allows better utilization of H100/GH200 nodes
-    MAX_CONCURRENT_TOTAL: int = _env_int("RINGRIFT_MAX_TRAINING_TOTAL", 5)
+    # Jan 12, 2026: Increased from 5 to 8 for +60% training throughput
+    # With 11 Lambda GH200 + 3 Nebius H100 nodes, 8 concurrent jobs matches capacity
+    MAX_CONCURRENT_TOTAL: int = _env_int("RINGRIFT_MAX_TRAINING_TOTAL", 8)
 
     # Training job timeout (hours)
     TIMEOUT_HOURS: float = _env_float("RINGRIFT_TRAINING_TIMEOUT_HOURS", 24.0)

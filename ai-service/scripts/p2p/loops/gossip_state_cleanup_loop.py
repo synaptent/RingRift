@@ -141,9 +141,10 @@ class GossipStateCleanupConfig:
     )
 
     # TTL for completed job states (seconds)
+    # Jan 12, 2026: Reduced from 6h to 1h to mitigate memory pressure
     job_states_ttl_seconds: float = field(
         default_factory=lambda: float(
-            os.environ.get("RINGRIFT_JOB_STATES_TTL", "21600")  # 6 hours
+            os.environ.get("RINGRIFT_JOB_STATES_TTL", "3600")  # 1 hour
         )
     )
 

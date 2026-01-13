@@ -257,6 +257,13 @@ class ClusterHealingLoop(BaseLoop):
             with open(self.config.hosts_yaml_path) as f:
                 config = yaml.safe_load(f)
 
+            # Jan 12, 2026: Defensive check - YAML can return None/str if malformed
+            if not isinstance(config, dict):
+                logger.warning(
+                    f"[ClusterHealing] YAML returned {type(config).__name__}, expected dict"
+                )
+                return self._hosts_cache or {}
+
             hosts = {}
             for host_data in config.get("hosts", []):
                 name = host_data.get("name", "")

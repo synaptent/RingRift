@@ -787,6 +787,7 @@ from scripts.p2p.models import (
 from scripts.p2p.p2p_mixin_base import SubscriptionRetryConfig
 from scripts.p2p.network import (
     AsyncLockWrapper,  # DEPRECATED - kept for compatibility
+    JobSnapshot,  # Jan 12, 2026: Lock-free job reads
     NonBlockingAsyncLockWrapper,
     PeerSnapshot,  # Jan 12, 2026: Lock-free peer reads
     TimeoutAsyncLockWrapper,
@@ -1863,6 +1864,10 @@ class P2POrchestrator(
         # during leader elections and state transitions. Protects self.leader_id
         # and self.role from concurrent modification in async contexts.
         self.leader_state_lock = threading.RLock()
+
+        # Jan 12, 2026: Lock-free job snapshot for /status endpoint
+        # Updates via _job_snapshot.update(self.local_jobs) after mutations
+        self._job_snapshot = JobSnapshot()
 
         # ============================================
         # Phase 5: SWIM + Raft Integration (Dec 26, 2025)
@@ -7735,6 +7740,12 @@ class P2POrchestrator(
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"[P2P] Failed to load peer health state: {e}")
 
+            # Jan 12, 2026: Initialize job snapshot with loaded jobs
+            try:
+                self._job_snapshot.update(self.local_jobs)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[P2P] Failed to initialize job snapshot: {e}")
+
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to load state: {e}")
 
@@ -7918,6 +7929,13 @@ class P2POrchestrator(
             except Exception as e:  # noqa: BLE001
                 if self.verbose:
                     logger.debug(f"[P2P] Error saving peer health state: {e}")
+
+            # Jan 12, 2026: Sync job snapshot for lock-free /status reads
+            try:
+                self._job_snapshot.update(self.local_jobs)
+            except Exception as e:  # noqa: BLE001
+                if self.verbose:
+                    logger.debug(f"[P2P] Error syncing job snapshot: {e}")
 
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to save state: {e}")
@@ -11651,37 +11669,10 @@ class P2POrchestrator(
             ]
         )
 
-        # Non-blocking jobs lock acquisition (December 30, 2025)
-        # CRITICAL: threading.RLock must be acquired AND released in the same thread
-        # Updated Jan 10, 2026: Increased timeout from 2.0s to 5.0s for large clusters
-        # Updated Jan 12, 2026: Try non-blocking first, then brief blocking for reduced latency
-        def _get_jobs_snapshot_with_lock() -> dict:
-            """Get jobs snapshot with lock - runs in thread pool."""
-            # Try non-blocking first - instant success if lock available
-            if self.jobs_lock.acquire(False):  # blocking=False
-                try:
-                    return {k: v.to_dict() for k, v in self.local_jobs.items()}
-                finally:
-                    self.jobs_lock.release()
-
-            # Lock contended - wait briefly (reduced from 5.0s)
-            if self.jobs_lock.acquire(True, 1.0):  # blocking=True, timeout=1.0s
-                try:
-                    return {k: v.to_dict() for k, v in self.local_jobs.items()}
-                finally:
-                    self.jobs_lock.release()
-
-            return {"error": "lock_timeout", "contended": True}
-
-        jobs: dict = {}
-        try:
-            jobs = await asyncio.wait_for(
-                asyncio.to_thread(_get_jobs_snapshot_with_lock),
-                timeout=6.0
-            )
-        except asyncio.TimeoutError:
-            logger.warning("handle_status: jobs_lock acquisition timed out")
-            jobs = {"error": "lock_timeout"}
+        # Jan 12, 2026: Lock-free job snapshot access
+        # Uses JobSnapshot copy-on-write pattern - no lock needed for reads.
+        # Previous lock-based code removed (was causing 6+ second timeouts).
+        jobs = self._job_snapshot.get_snapshot()
 
         # Get improvement cycle manager status
         improvement_status = None
