@@ -147,8 +147,8 @@ def run_improvement_evaluation(
 
             # Determine winner
             final_state = mutable.to_immutable()
-            if final_state.status == GameStatus.COMPLETED:
-                winner = final_state.winner_player_number
+            if final_state.game_status == GameStatus.COMPLETED:
+                winner = final_state.winner
                 if winner is not None:
                     winner_idx = winner - 1  # 1-indexed to 0-indexed
                     if winner_idx == new_is_player:
