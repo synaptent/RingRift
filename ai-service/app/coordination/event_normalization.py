@@ -271,6 +271,36 @@ CANONICAL_EVENT_NAMES: Final[dict[str, str]] = {
     # Canonical: ITERATION_COMPLETE
     "iteration_complete": "ITERATION_COMPLETE",
     "ITERATION_COMPLETE": "ITERATION_COMPLETE",  # Canonical
+
+    # =============================================================================
+    # Cluster/Node Events (January 2026)
+    # =============================================================================
+    # These events are used by ReactiveDispatcher and other handlers for
+    # event-driven cluster coordination.
+
+    # Canonical: NODE_RECOVERED
+    "node_recovered": "NODE_RECOVERED",
+    "NODE_RECOVERED": "NODE_RECOVERED",  # Canonical
+
+    # Canonical: HOST_ONLINE
+    "host_online": "HOST_ONLINE",
+    "HOST_ONLINE": "HOST_ONLINE",  # Canonical
+
+    # Canonical: HOST_OFFLINE
+    "host_offline": "HOST_OFFLINE",
+    "HOST_OFFLINE": "HOST_OFFLINE",  # Canonical
+
+    # Canonical: IDLE_RESOURCE_DETECTED
+    "idle_resource_detected": "IDLE_RESOURCE_DETECTED",
+    "IDLE_RESOURCE_DETECTED": "IDLE_RESOURCE_DETECTED",  # Canonical
+
+    # Canonical: BACKPRESSURE_RELEASED
+    "backpressure_released": "BACKPRESSURE_RELEASED",
+    "BACKPRESSURE_RELEASED": "BACKPRESSURE_RELEASED",  # Canonical
+
+    # Canonical: BACKPRESSURE_ACTIVATED
+    "backpressure_activated": "BACKPRESSURE_ACTIVATED",
+    "BACKPRESSURE_ACTIVATED": "BACKPRESSURE_ACTIVATED",  # Canonical
 }
 
 # =============================================================================
