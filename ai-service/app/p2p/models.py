@@ -183,6 +183,8 @@ class JobInfo:
     board_type: str = "square8"
     num_players: int = 2
     model_path: str | None = None
+    # January 2026: Explicit harness type for diversity tracking
+    harness_type: str = "gumbel_mcts"
 
     # Progress
     games_completed: int = 0
@@ -220,6 +222,7 @@ class JobInfo:
             "board_type": self.board_type,
             "num_players": self.num_players,
             "model_path": self.model_path,
+            "harness_type": self.harness_type,
             "games_completed": self.games_completed,
             "games_target": self.games_target,
             "progress_percent": self.progress_percent,

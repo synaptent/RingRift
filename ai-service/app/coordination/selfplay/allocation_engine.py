@@ -44,6 +44,11 @@ __all__ = [
     "AllocationContext",
     "AllocationEngine",
     "AllocationResult",
+    # Harness diversity (January 2026)
+    "HARNESS_DIVERSITY_TARGETS",
+    "HARNESSES_REQUIRING_POLICY",
+    "HARNESSES_MULTIPLAYER",
+    "get_harness_for_config",
 ]
 
 import logging
@@ -79,6 +84,83 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 MIN_GAMES_PER_ALLOCATION = SelfplayAllocationDefaults.MIN_GAMES_PER_ALLOCATION
+
+# January 2026: Harness diversity targets for balanced selfplay evaluation
+# These define the target distribution of games across different AI harness types.
+# Values should sum to 1.0.
+HARNESS_DIVERSITY_TARGETS: dict[str, float] = {
+    "gumbel_mcts": 0.50,     # Quality training data with policy head
+    "gpu_gumbel": 0.25,      # High throughput GPU selfplay
+    "policy_only": 0.10,     # Fast baseline using direct policy sampling
+    "heuristic": 0.10,       # Bootstrap and diversity via hand-crafted heuristics
+    "minimax": 0.05,         # 2-player only alpha-beta search
+}
+
+# Harnesses that require a neural network policy head
+HARNESSES_REQUIRING_POLICY = {"gumbel_mcts", "gpu_gumbel", "policy_only", "descent"}
+
+# Harnesses valid for multiplayer (3-4 players)
+HARNESSES_MULTIPLAYER = {"gumbel_mcts", "gpu_gumbel", "policy_only", "heuristic", "maxn", "brs"}
+
+
+def get_harness_for_config(
+    config_key: str,
+    harness_distribution: dict[str, int] | None = None,
+    has_policy_model: bool = True,
+) -> str:
+    """Select harness type for a config based on diversity targets.
+
+    Args:
+        config_key: Configuration key like "hex8_2p"
+        harness_distribution: Current distribution of harness allocations
+        has_policy_model: Whether a policy model is available
+
+    Returns:
+        Harness type string (e.g., "gumbel_mcts", "minimax")
+    """
+    # Parse player count from config key
+    num_players = 2
+    if "_" in config_key:
+        parts = config_key.rsplit("_", 1)
+        if len(parts) == 2 and parts[1].endswith("p"):
+            try:
+                num_players = int(parts[1][:-1])
+            except ValueError:
+                pass
+
+    # Filter harnesses by compatibility
+    valid_harnesses = set(HARNESS_DIVERSITY_TARGETS.keys())
+
+    # Remove minimax for multiplayer (3-4 players)
+    if num_players > 2:
+        valid_harnesses.discard("minimax")
+
+    # Remove policy-requiring harnesses if no policy model
+    if not has_policy_model:
+        valid_harnesses -= HARNESSES_REQUIRING_POLICY
+
+    if not valid_harnesses:
+        return "heuristic"  # Fallback
+
+    # Without distribution data, use default target proportions
+    if harness_distribution is None:
+        # Return most-needed harness (gumbel_mcts has highest target)
+        return "gumbel_mcts" if "gumbel_mcts" in valid_harnesses else list(valid_harnesses)[0]
+
+    # Select harness with greatest deficit from target
+    total = sum(harness_distribution.values()) or 1
+    best_harness = "gumbel_mcts"
+    best_deficit = -1.0
+
+    for harness in valid_harnesses:
+        target = HARNESS_DIVERSITY_TARGETS.get(harness, 0.05)
+        current = harness_distribution.get(harness, 0) / total
+        deficit = target - current
+        if deficit > best_deficit:
+            best_deficit = deficit
+            best_harness = harness
+
+    return best_harness
 
 
 # =============================================================================

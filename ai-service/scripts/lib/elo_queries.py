@@ -498,6 +498,219 @@ def get_models_by_tier(
     return tier_counts
 
 
+# =============================================================================
+# Harness-based Queries (January 2026)
+# =============================================================================
+
+
+def get_ratings_by_harness(
+    db_path: Path | None = None,
+    harness_type: str = "gumbel_mcts",
+    board_type: str | None = None,
+    num_players: int | None = None,
+    include_baselines: bool = False,
+) -> list[ModelRating]:
+    """Get all ratings for a specific harness type.
+
+    Args:
+        db_path: Path to ELO database (defaults to unified_elo.db)
+        harness_type: Harness type to filter by (e.g., "gumbel_mcts", "minimax")
+        board_type: Optional board type filter
+        num_players: Optional player count filter
+        include_baselines: Whether to include baseline models
+
+    Returns:
+        List of ModelRating objects for models with the specified harness type
+    """
+    conn = _get_connection(db_path)
+    if not conn:
+        return []
+
+    query = """
+        SELECT participant_id, rating, games_played, board_type, num_players
+        FROM elo_ratings
+        WHERE harness_type = ?
+    """
+    params: list[Any] = [harness_type]
+
+    if not include_baselines:
+        query += " AND participant_id NOT LIKE 'baseline_%'"
+
+    if board_type:
+        query += " AND board_type = ?"
+        params.append(board_type)
+
+    if num_players:
+        query += " AND num_players = ?"
+        params.append(num_players)
+
+    query += " ORDER BY rating DESC"
+
+    cursor = conn.execute(query, params)
+    results = [
+        ModelRating(
+            participant_id=row[0],
+            rating=row[1],
+            games_played=row[2],
+            board_type=row[3],
+            num_players=row[4],
+        )
+        for row in cursor.fetchall()
+    ]
+    conn.close()
+    return results
+
+
+def get_top_models_by_harness(
+    db_path: Path | None = None,
+    harness_type: str = "gumbel_mcts",
+    board_type: str = "hex8",
+    num_players: int = 2,
+    limit: int = 10,
+    include_baselines: bool = False,
+) -> list[ModelRating]:
+    """Get top-rated models for a specific harness type and config.
+
+    Args:
+        db_path: Path to ELO database
+        harness_type: Harness type to filter by
+        board_type: Board type to filter by
+        num_players: Player count to filter by
+        limit: Maximum number of models to return
+        include_baselines: Whether to include baseline models
+
+    Returns:
+        List of ModelRating objects sorted by rating DESC
+    """
+    conn = _get_connection(db_path)
+    if not conn:
+        return []
+
+    query = """
+        SELECT participant_id, rating, games_played, board_type, num_players
+        FROM elo_ratings
+        WHERE harness_type = ?
+          AND board_type = ?
+          AND num_players = ?
+    """
+    params: list[Any] = [harness_type, board_type, num_players]
+
+    if not include_baselines:
+        query += " AND participant_id NOT LIKE 'baseline_%'"
+
+    query += " ORDER BY rating DESC LIMIT ?"
+    params.append(limit)
+
+    cursor = conn.execute(query, params)
+    results = [
+        ModelRating(
+            participant_id=row[0],
+            rating=row[1],
+            games_played=row[2],
+            board_type=row[3],
+            num_players=row[4],
+        )
+        for row in cursor.fetchall()
+    ]
+    conn.close()
+    return results
+
+
+def get_harness_performance_comparison(
+    db_path: Path | None = None,
+    model_id: str = "",
+) -> dict[str, dict[str, Any]]:
+    """Compare a model's performance across different harness types.
+
+    Args:
+        db_path: Path to ELO database
+        model_id: Model identifier (e.g., "canonical_hex8_2p")
+
+    Returns:
+        Dict mapping harness_type to {rating, games_played, board_type, num_players}
+
+    Example:
+        >>> comparison = get_harness_performance_comparison(model_id="canonical_hex8_2p")
+        >>> comparison["gumbel_mcts"]
+        {'rating': 1750.0, 'games_played': 50, 'board_type': 'hex8', 'num_players': 2}
+        >>> comparison["minimax"]
+        {'rating': 1680.0, 'games_played': 30, 'board_type': 'hex8', 'num_players': 2}
+    """
+    conn = _get_connection(db_path)
+    if not conn:
+        return {}
+
+    query = """
+        SELECT harness_type, rating, games_played, board_type, num_players
+        FROM elo_ratings
+        WHERE participant_id = ?
+          AND harness_type IS NOT NULL
+        ORDER BY rating DESC
+    """
+
+    cursor = conn.execute(query, (model_id,))
+    results = {}
+    for row in cursor.fetchall():
+        harness = row[0] or "unknown"
+        results[harness] = {
+            "rating": row[1],
+            "games_played": row[2],
+            "board_type": row[3],
+            "num_players": row[4],
+        }
+
+    conn.close()
+    return results
+
+
+def get_harness_distribution(
+    db_path: Path | None = None,
+    board_type: str | None = None,
+    num_players: int | None = None,
+) -> dict[str, int]:
+    """Get count of rated models by harness type.
+
+    Args:
+        db_path: Path to ELO database
+        board_type: Optional board type filter
+        num_players: Optional player count filter
+
+    Returns:
+        Dict mapping harness_type to count of models
+
+    Example:
+        >>> dist = get_harness_distribution(board_type="hex8", num_players=2)
+        >>> dist
+        {'gumbel_mcts': 45, 'minimax': 12, 'policy_only': 8, 'heuristic': 5}
+    """
+    conn = _get_connection(db_path)
+    if not conn:
+        return {}
+
+    query = """
+        SELECT harness_type, COUNT(*) as count
+        FROM elo_ratings
+        WHERE harness_type IS NOT NULL
+    """
+    params: list[Any] = []
+
+    if board_type:
+        query += " AND board_type = ?"
+        params.append(board_type)
+
+    if num_players:
+        query += " AND num_players = ?"
+        params.append(num_players)
+
+    query += " GROUP BY harness_type ORDER BY count DESC"
+
+    cursor = conn.execute(query, params)
+    results = {row[0]: row[1] for row in cursor.fetchall()}
+
+    conn.close()
+    return results
+
+
 # Re-export thresholds for convenience
 __all__ = [
     # Query functions
@@ -510,6 +723,11 @@ __all__ = [
     "get_last_game_timestamp",
     "get_near_production",
     "get_models_by_tier",
+    # Harness-based queries (January 2026)
+    "get_ratings_by_harness",
+    "get_top_models_by_harness",
+    "get_harness_performance_comparison",
+    "get_harness_distribution",
     # Helper functions
     "get_tier_name",
     "get_tier_abbr",

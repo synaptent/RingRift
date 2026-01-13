@@ -2874,7 +2874,8 @@ def update_elo_after_match(
     game_length: int = 0,
     duration_sec: float = 0.0,
     # December 30, 2025: Multi-harness support
-    harness_type: str | None = None,
+    # January 13, 2026: Default to gumbel_mcts for consistency with record_match()
+    harness_type: str = "gumbel_mcts",
     is_multi_harness: bool = False,
 ) -> dict[str, Any]:
     """Update Elo ratings after a match (backwards compatible).
@@ -2888,7 +2889,7 @@ def update_elo_after_match(
         num_players: Number of players
         game_length: Number of moves in game
         duration_sec: Game duration in seconds
-        harness_type: AI harness type (e.g., "gumbel_mcts", "minimax")
+        harness_type: AI harness type (default: "gumbel_mcts")
         is_multi_harness: True if part of multi-harness evaluation
 
     Returns:
