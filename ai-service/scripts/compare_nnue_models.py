@@ -128,7 +128,7 @@ def play_game(
 
         for move in legal_moves:
             # Make move
-            mutable.make_move(move)
+            undo = mutable.make_move(move)
 
             # Evaluate position
             value = evaluator.evaluate(mutable)
@@ -137,7 +137,7 @@ def play_game(
             if mutable.current_player != current_player:
                 value = -value
 
-            mutable.unmake_move()
+            mutable.unmake_move(undo)
 
             if value > best_value:
                 best_value = value
@@ -146,7 +146,7 @@ def play_game(
         if best_move is None:
             best_move = legal_moves[0]
 
-        mutable.make_move(best_move)
+        mutable.make_move(best_move)  # Final move - no need to save undo
         moves += 1
 
     duration = time.time() - start_time
@@ -154,12 +154,7 @@ def play_game(
     # Determine winner
     winner = None
     if mutable.is_game_over():
-        scores = mutable.get_scores()
-        if scores:
-            max_score = max(scores)
-            winners = [i for i, s in enumerate(scores) if s == max_score]
-            if len(winners) == 1:
-                winner = winners[0]
+        winner = mutable.get_winner()
 
     return GameResult(
         winner=winner,
