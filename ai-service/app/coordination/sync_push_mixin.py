@@ -629,7 +629,8 @@ class SyncPushMixin(SyncMixinBase):
         logger.info("[AutoSyncDaemon] Starting broadcast sync cycle")
 
         # Clean up stale partial transfers periodically
-        if self._stats.total_syncs % 10 == 0:
+        # Jan 2026: Use _sync_stats (SyncStats) not _stats (HandlerStats)
+        if self._sync_stats.total_syncs % 10 == 0:
             try:
                 cleaned = await self.cleanup_stale_partials()
                 if cleaned > 0:
