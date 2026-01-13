@@ -67,13 +67,16 @@ class HarnessType(str, Enum):
     Each harness represents a different AI evaluation method with different
     strengths and use cases. The harness type MUST be recorded with each
     match to enable meaningful Elo comparisons.
+
+    Jan 2026: Aligned with canonical HarnessType in base_harness.py.
+    Removed MCTS (use GUMBEL_MCTS instead), added DESCENT.
     """
 
     # Neural network harnesses (require policy output)
     POLICY_ONLY = "policy_only"  # Raw policy network output, no search
     GUMBEL_MCTS = "gumbel_mcts"  # Gumbel-based MCTS (quality-focused)
     GPU_GUMBEL = "gpu_gumbel"  # GPU-accelerated Gumbel MCTS
-    MCTS = "mcts"  # Standard Monte Carlo Tree Search
+    DESCENT = "descent"  # Gradient descent search
 
     # NNUE harnesses (require NNUE model)
     MINIMAX = "minimax"  # Alpha-beta minimax (2-player only)
@@ -111,11 +114,13 @@ class ModelType(str, Enum):
 
     Distinguishes between different neural network architectures which
     may have different performance characteristics.
+
+    Jan 2026: Aligned with canonical ModelType in base_harness.py.
+    Renamed NN to NEURAL_NET, removed NNUE_MP (use NNUE for all player counts).
     """
 
-    NN = "nn"  # Full neural network (policy + value heads)
-    NNUE = "nnue"  # NNUE (Efficiently Updatable Neural Network) for 2-player
-    NNUE_MP = "nnue_mp"  # Multi-player NNUE variant
+    NEURAL_NET = "nn"  # Full neural network (policy + value heads)
+    NNUE = "nnue"  # NNUE (all player counts, harness selection per player count)
     NONE = "none"  # No model (baselines like random, heuristic)
 
     @classmethod
@@ -228,7 +233,7 @@ def detect_model_type(participant_id: str) -> ModelType:
 
     # Check for NNUE variants
     if "nnue_mp" in pid_lower or "nnue-mp" in pid_lower:
-        return ModelType.NNUE_MP
+        return ModelType.NNUE
     if "nnue" in pid_lower:
         return ModelType.NNUE
 
@@ -237,7 +242,7 @@ def detect_model_type(participant_id: str) -> ModelType:
         return _detect_from_path(participant_id)
 
     # Default to NN for neural network models
-    return ModelType.NN
+    return ModelType.NEURAL_NET
 
 
 def _detect_from_path(path: str) -> ModelType:
@@ -246,7 +251,7 @@ def _detect_from_path(path: str) -> ModelType:
 
     # Check filename patterns
     if "nnue_mp" in path_lower or "nnue-mp" in path_lower:
-        return ModelType.NNUE_MP
+        return ModelType.NNUE
     if "nnue" in path_lower:
         return ModelType.NNUE
 
@@ -258,7 +263,7 @@ def _detect_from_path(path: str) -> ModelType:
     except Exception:
         pass  # Fall through to default
 
-    return ModelType.NN
+    return ModelType.NEURAL_NET
 
 
 def _detect_from_checkpoint(checkpoint_path: Path) -> ModelType:
@@ -271,13 +276,13 @@ def _detect_from_checkpoint(checkpoint_path: Path) -> ModelType:
 
         checkpoint = safe_load_checkpoint(str(checkpoint_path))
         if checkpoint is None:
-            return ModelType.NN
+            return ModelType.NEURAL_NET
 
         # Check metadata
         metadata = checkpoint.get("metadata", {})
         model_type_str = metadata.get("model_type", "").lower()
         if "nnue_mp" in model_type_str:
-            return ModelType.NNUE_MP
+            return ModelType.NNUE
         if "nnue" in model_type_str:
             return ModelType.NNUE
 
@@ -289,7 +294,7 @@ def _detect_from_checkpoint(checkpoint_path: Path) -> ModelType:
     except Exception:
         pass
 
-    return ModelType.NN
+    return ModelType.NEURAL_NET
 
 
 # ============================================
@@ -319,8 +324,8 @@ def validate_harness_compatibility(
         if num_players > 4:
             errors.append(f"BRS supports max 4 players, got {num_players}")
 
-    # NN-required harnesses
-    nn_harnesses = {HarnessType.GUMBEL_MCTS, HarnessType.GPU_GUMBEL, HarnessType.MCTS}
+    # NN-required harnesses (Jan 2026: replaced MCTS with DESCENT)
+    nn_harnesses = {HarnessType.GUMBEL_MCTS, HarnessType.GPU_GUMBEL, HarnessType.DESCENT}
     if harness in nn_harnesses and model_type == ModelType.NONE:
         errors.append(f"{harness.value} requires a neural model, got {model_type.value}")
 
@@ -425,7 +430,7 @@ def safe_record_elo(spec: EloMatchSpec, *, use_dlq: bool = True) -> EloRecordRes
     # Validate harness compatibility
     validation_errors = validate_harness_compatibility(
         spec.harness_type,
-        spec.model_type_a or ModelType.NN,
+        spec.model_type_a or ModelType.NEURAL_NET,
         spec.num_players,
     )
     if spec.model_type_b and spec.model_type_b != ModelType.NONE:

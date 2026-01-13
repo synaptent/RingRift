@@ -388,7 +388,7 @@ def get_harnesses_for_model_and_players(
     by both model compatibility AND player count restrictions.
 
     Args:
-        model_type: The model type (NN, NNUE, NNUE_MP, HEURISTIC).
+        model_type: The model type (NEURAL_NET, NNUE, HEURISTIC).
         num_players: Number of players (2, 3, or 4).
 
     Returns:

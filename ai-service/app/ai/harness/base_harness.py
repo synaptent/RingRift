@@ -47,6 +47,27 @@ class HarnessType(Enum):
     HEURISTIC = "heuristic"
     RANDOM = "random"  # Jan 1, 2026: Added for baseline comparison and diversity
 
+    @classmethod
+    def _missing_(cls, value: object) -> "HarnessType | None":
+        """Handle deprecated enum values with warnings.
+
+        Jan 2026: Provides backward compatibility for:
+        - "MCTS" -> GUMBEL_MCTS (standard MCTS replaced by Gumbel variant)
+        """
+        import warnings
+
+        if isinstance(value, str):
+            value_upper = value.upper()
+            if value_upper == "MCTS":
+                warnings.warn(
+                    "HarnessType.MCTS is deprecated, use HarnessType.GUMBEL_MCTS instead. "
+                    "Standard MCTS has been replaced by quality-focused Gumbel MCTS.",
+                    DeprecationWarning,
+                    stacklevel=3,
+                )
+                return cls.GUMBEL_MCTS
+        return None
+
 
 class ModelType(Enum):
     """Types of models that can be used with harnesses."""
@@ -54,6 +75,35 @@ class ModelType(Enum):
     NEURAL_NET = "nn"          # Full neural network (NN v2-v6)
     NNUE = "nnue"              # NNUE (value-only or with policy)
     HEURISTIC = "heuristic"    # Hand-crafted heuristic evaluation
+
+    @classmethod
+    def _missing_(cls, value: object) -> "ModelType | None":
+        """Handle deprecated enum values with warnings.
+
+        Jan 2026: Provides backward compatibility for:
+        - "NN" -> NEURAL_NET (renamed for clarity)
+        - "NNUE_MP" -> NNUE (multiplayer NNUE uses same enum, harness determines behavior)
+        """
+        import warnings
+
+        if isinstance(value, str):
+            value_upper = value.upper()
+            if value_upper == "NN":
+                warnings.warn(
+                    "ModelType.NN is deprecated, use ModelType.NEURAL_NET instead",
+                    DeprecationWarning,
+                    stacklevel=3,
+                )
+                return cls.NEURAL_NET
+            if value_upper in ("NNUE_MP", "NNUE-MP"):
+                warnings.warn(
+                    "ModelType.NNUE_MP is deprecated, use ModelType.NNUE instead. "
+                    "Multiplayer NNUE behavior is determined by harness type (MAXN/BRS).",
+                    DeprecationWarning,
+                    stacklevel=3,
+                )
+                return cls.NNUE
+        return None
 
 
 @dataclass

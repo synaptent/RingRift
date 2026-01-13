@@ -58,29 +58,10 @@ if TYPE_CHECKING:
     from app.models import BoardType
 
 
-class ModelType(str, Enum):
-    """Model architecture types."""
-
-    NN = "nn"  # Full neural network (v2-v6)
-    NNUE = "nnue"  # NNUE (scalar output, 2-player)
-    NNUE_MP = "nnue_mp"  # Multi-player NNUE
-
-
-class HarnessType(str, Enum):
-    """AI algorithm harness types."""
-
-    POLICY_ONLY = "policy_only"
-    MCTS = "mcts"
-    GUMBEL_MCTS = "gumbel_mcts"
-    DESCENT = "descent"
-    MINIMAX = "minimax"
-    MAXN = "maxn"
-    BRS = "brs"
-
-
-# Import consolidated compatibility from harness_registry (Dec 2025)
-# These were previously defined locally but are now derived from the
-# canonical HARNESS_COMPATIBILITY in harness_registry.py
+# Import canonical types from harness_registry (Jan 2026 consolidation)
+# HarnessType and ModelType are now imported from base_harness.py
+# Previously this file had local enum definitions that have been removed
+from app.ai.harness.base_harness import HarnessType, ModelType
 from app.ai.harness.harness_registry import (
     get_harness_matrix,
     get_harness_player_range,
@@ -251,7 +232,7 @@ class MultiHarnessGauntlet:
 
         # Check for explicit type markers in filename
         if "nnue_mp" in name or "multiplayer_nnue" in name:
-            return ModelType.NNUE_MP
+            return ModelType.NNUE
         if "nnue" in name:
             return ModelType.NNUE
 
@@ -262,18 +243,18 @@ class MultiHarnessGauntlet:
             checkpoint = safe_load_checkpoint(str(path), map_location="cpu")
             if isinstance(checkpoint, dict):
                 if checkpoint.get("model_type") == "nnue_mp":
-                    return ModelType.NNUE_MP
+                    return ModelType.NNUE
                 if checkpoint.get("model_type") == "nnue":
                     return ModelType.NNUE
                 if "num_players" in checkpoint and checkpoint["num_players"] >= 3:
                     # Multi-player NNUE if num_players stored
                     if "nnue" in name:
-                        return ModelType.NNUE_MP
+                        return ModelType.NNUE
         except (FileNotFoundError, ValueError, RuntimeError):
             pass
 
         # Default to full NN
-        return ModelType.NN
+        return ModelType.NEURAL_NET
 
     async def evaluate_model(
         self,
@@ -455,10 +436,11 @@ class MultiHarnessGauntlet:
         board_type_enum = BT(board_type)
 
         # Map harness to AIType for gauntlet
+        # Jan 2026: Removed HarnessType.MCTS (use GUMBEL_MCTS or GPU_GUMBEL)
         harness_to_ai_type = {
             HarnessType.POLICY_ONLY: AIType.POLICY_ONLY,
-            HarnessType.MCTS: AIType.MCTS,
             HarnessType.GUMBEL_MCTS: AIType.GUMBEL_MCTS,
+            HarnessType.GPU_GUMBEL: AIType.GUMBEL_MCTS,  # GPU batch uses same AI type
             HarnessType.DESCENT: AIType.NN_DESCENT,
             HarnessType.MINIMAX: AIType.NNUE_MINIMAX,
             HarnessType.MAXN: AIType.MAXN,
@@ -604,7 +586,8 @@ class MultiHarnessGauntlet:
         )
 
         # Set harness-specific defaults
-        if harness in (HarnessType.MCTS, HarnessType.GUMBEL_MCTS):
+        # Jan 2026: MCTS removed; use GUMBEL_MCTS or GPU_GUMBEL
+        if harness in (HarnessType.GUMBEL_MCTS, HarnessType.GPU_GUMBEL):
             config.mcts_budget = 200
         elif harness in (HarnessType.MINIMAX, HarnessType.MAXN, HarnessType.BRS):
             config.search_depth = 4
@@ -1042,7 +1025,7 @@ async def evaluate_nnue_model(
     harness_configs = {h: profile.get_harness_config(h) for h in harnesses}
 
     # Determine model type based on player count
-    model_type = ModelType.NNUE if num_players == 2 else ModelType.NNUE_MP
+    model_type = ModelType.NNUE if num_players == 2 else ModelType.NNUE
 
     # Run evaluation
     gauntlet = MultiHarnessGauntlet(

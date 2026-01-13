@@ -274,32 +274,38 @@ class TestHarnessCompatibilityMatrix:
         assert compat["policy_required"] is True
 
     def test_minimax_compatibility(self):
-        """Minimax supports both NN and NNUE."""
+        """Minimax supports NNUE only (scalar value evaluation for alpha-beta)."""
         from app.training.multi_harness_gauntlet import HARNESS_COMPATIBILITY
 
         compat = HARNESS_COMPATIBILITY.get("minimax")
         assert compat is not None
-        assert compat["nn"] is True
+        # Jan 2026: MINIMAX only supports NNUE (scalar value output for alpha-beta).
+        # It doesn't need a policy head - it searches through game tree using value estimates.
+        assert compat["nn"] is False
         assert compat["nnue"] is True
         assert compat["policy_required"] is False
 
     def test_maxn_compatibility(self):
-        """MaxN supports both NN and NNUE, requires 3+ players."""
+        """MaxN supports NNUE only, requires 3+ players."""
         from app.training.multi_harness_gauntlet import HARNESS_COMPATIBILITY
 
         compat = HARNESS_COMPATIBILITY.get("maxn")
         assert compat is not None
-        assert compat["nn"] is True
+        # Jan 2026: MAXN only supports NNUE (per-player value estimates for n-player games).
+        # It doesn't need a policy head - it searches through game tree using value estimates.
+        assert compat["nn"] is False
         assert compat["nnue"] is True
         assert compat.get("min_players", 2) >= 3
 
     def test_brs_compatibility(self):
-        """BRS supports both NN and NNUE."""
+        """BRS supports NNUE only (Best Reply Search for multiplayer games)."""
         from app.training.multi_harness_gauntlet import HARNESS_COMPATIBILITY
 
         compat = HARNESS_COMPATIBILITY.get("brs")
         assert compat is not None
-        assert compat["nn"] is True
+        # Jan 2026: BRS only supports NNUE (scalar value output for best-reply search).
+        # It doesn't need a policy head - it searches through game tree using value estimates.
+        assert compat["nn"] is False
         assert compat["nnue"] is True
 
 
@@ -446,11 +452,12 @@ class TestIsHarnessCompatible:
 
         assert is_harness_compatible("gumbel_mcts", "nnue") is False
 
-    def test_minimax_compatible_with_both(self):
-        """Minimax is compatible with both NN and NNUE."""
+    def test_minimax_compatible_with_nnue_only(self):
+        """Minimax is compatible with NNUE only (uses scalar value for alpha-beta)."""
         from app.training.multi_harness_gauntlet import is_harness_compatible
 
-        assert is_harness_compatible("minimax", "nn") is True
+        # Jan 2026: MINIMAX only supports NNUE (scalar value output for alpha-beta).
+        assert is_harness_compatible("minimax", "nn") is False
         assert is_harness_compatible("minimax", "nnue") is True
 
 

@@ -272,32 +272,38 @@ class TestHarnessCompatibility:
         assert compat.requires_policy_head is True
 
     def test_minimax_compatibility(self):
-        """Test Minimax compatibility (supports both NN and NNUE)."""
+        """Test Minimax compatibility (NNUE only - uses scalar value for alpha-beta)."""
         from app.ai.harness.base_harness import HarnessType
         from app.ai.harness.harness_registry import HARNESS_COMPATIBILITY
 
         compat = HARNESS_COMPATIBILITY[HarnessType.MINIMAX]
-        assert compat.supports_nn is True
+        # Jan 2026: MINIMAX only supports NNUE (scalar value output for alpha-beta search).
+        # It doesn't need a policy head - it searches through game tree using value estimates.
+        assert compat.supports_nn is False
         assert compat.supports_nnue is True
         assert compat.requires_policy_head is False
 
     def test_maxn_compatibility(self):
-        """Test MaxN compatibility (supports both NN and NNUE)."""
+        """Test MaxN compatibility (NNUE only - uses value estimates for n-player search)."""
         from app.ai.harness.base_harness import HarnessType
         from app.ai.harness.harness_registry import HARNESS_COMPATIBILITY
 
         compat = HARNESS_COMPATIBILITY[HarnessType.MAXN]
-        assert compat.supports_nn is True
+        # Jan 2026: MAXN only supports NNUE (per-player value estimates for n-player games).
+        # It doesn't need a policy head - it searches through game tree using value estimates.
+        assert compat.supports_nn is False
         assert compat.supports_nnue is True
         assert compat.requires_policy_head is False
 
     def test_brs_compatibility(self):
-        """Test BRS (Best Reply Search) compatibility."""
+        """Test BRS (Best Reply Search) compatibility (NNUE only)."""
         from app.ai.harness.base_harness import HarnessType
         from app.ai.harness.harness_registry import HARNESS_COMPATIBILITY
 
         compat = HARNESS_COMPATIBILITY[HarnessType.BRS]
-        assert compat.supports_nn is True
+        # Jan 2026: BRS only supports NNUE (scalar value output for best-reply search).
+        # It doesn't need a policy head - it searches through game tree using value estimates.
+        assert compat.supports_nn is False
         assert compat.supports_nnue is True
         assert compat.requires_policy_head is False
 
@@ -326,12 +332,18 @@ class TestHarnessRegistryFunctions:
 
     def test_get_compatible_harnesses_nn(self):
         """Test getting harnesses compatible with NN."""
-        from app.ai.harness.base_harness import ModelType
+        from app.ai.harness.base_harness import HarnessType, ModelType
         from app.ai.harness.harness_registry import get_compatible_harnesses
 
         harnesses = get_compatible_harnesses(ModelType.NEURAL_NET)
-        # All harnesses should support NN
-        assert len(harnesses) >= 5
+        # Jan 2026: NN compatible harnesses are those that use policy head:
+        # GUMBEL_MCTS, GPU_GUMBEL, POLICY_ONLY, DESCENT
+        assert len(harnesses) >= 4
+        assert HarnessType.GUMBEL_MCTS in harnesses
+        assert HarnessType.GPU_GUMBEL in harnesses
+        assert HarnessType.POLICY_ONLY in harnesses
+        # MINIMAX, MAXN, BRS should NOT be in NN compatible (they use NNUE only)
+        assert HarnessType.MINIMAX not in harnesses
 
     def test_get_compatible_harnesses_nnue(self):
         """Test getting harnesses compatible with NNUE."""
