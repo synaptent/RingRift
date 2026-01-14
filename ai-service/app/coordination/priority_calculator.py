@@ -70,6 +70,7 @@ PRIORITY_OVERRIDE_MULTIPLIERS = {
 # VOI cost factors for large boards (square19: 9.0, hexagonal: 11.0) offset starvation boosts.
 # Adding explicit CRITICAL overrides to ensure adequate selfplay allocation.
 # Jan 12, 2026: Added CRITICAL overrides for ALL configs with 0 games to bootstrap selfplay.
+# Jan 14, 2026: Added hex8_4p CRITICAL override - only 77-873 games vs 16K+ for hex8_2p.
 CONFIG_PRIORITY_OVERRIDES: dict[str, int] = {
     # Large board configs (existing)
     "square19_4p": 0,   # CRITICAL - only 1,766 games
@@ -82,6 +83,8 @@ CONFIG_PRIORITY_OVERRIDES: dict[str, int] = {
     "square19_2p": 0,   # CRITICAL - 0 games (bootstrap needed)
     "hexagonal_2p": 0,  # CRITICAL - 0 games (bootstrap needed)
     "hexagonal_4p": 0,  # CRITICAL - 0 games (bootstrap needed)
+    # Jan 14, 2026: 4-player small board - severely underrepresented
+    "hex8_4p": 0,       # CRITICAL - only 77-873 games (vs 16K+ for hex8_2p)
 }
 
 # Player count allocation multipliers
