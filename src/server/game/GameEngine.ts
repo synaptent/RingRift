@@ -230,7 +230,8 @@ export class GameEngine {
         ...p,
         playerNumber: index + 1,
         timeRemaining: timeControl.initialTime * 1000, // Convert to milliseconds
-        isReady: p.type === 'ai', // AI players are always ready
+        // Preserve isReady from input (GameSession sets it), only default AI to ready if not set
+        isReady: p.isReady ?? p.type === 'ai',
       })),
       currentPhase: 'ring_placement',
       currentPlayer: 1,
