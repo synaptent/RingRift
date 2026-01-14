@@ -671,6 +671,53 @@ class WorkQueue:
         """
         return self._claim_rejection_stats.to_dict()
 
+    def get_claim_rejection_stats_dict(self) -> dict[str, Any]:
+        """Get enhanced claim rejection statistics for monitoring.
+
+        January 13, 2026: Added for /work_queue/claim_stats endpoint.
+        Includes computed fields like success_rate and top_rejection_reason.
+
+        Returns:
+            Dictionary with enhanced claim stats including:
+            - total_attempts, successful_claims, success_rate
+            - rejections breakdown by reason
+            - top_rejection_reason
+        """
+        stats = self._claim_rejection_stats
+        total = stats.total_claim_attempts or 1  # Avoid division by zero
+
+        # Build rejections breakdown
+        rejections = {
+            "circuit_breaker": stats.rejected_by_circuit_breaker,
+            "capability": stats.rejected_by_capability,
+            "exclusion": stats.rejected_by_exclusion,
+            "target_node": stats.rejected_by_target_node,
+            "target_node_expired": stats.rejected_by_target_node_expired,
+            "requires_gpu": stats.rejected_by_requires_gpu,
+            "policy": stats.rejected_by_policy,
+            "already_claimed": stats.rejected_by_already_claimed,
+        }
+
+        # Find top rejection reason
+        top_reason = "none"
+        top_count = 0
+        for reason, count in rejections.items():
+            if count > top_count:
+                top_reason = reason
+                top_count = count
+
+        return {
+            "total_attempts": stats.total_claim_attempts,
+            "successful_claims": stats.successful_claims,
+            "success_rate": stats.successful_claims / total,
+            "rejections": rejections,
+            "top_rejection_reason": top_reason,
+            "top_rejection_count": top_count,
+            "target_node_rejections": stats.target_node_rejections.copy(),
+            "elapsed_seconds": time.time() - stats.last_reset_at,
+            "last_reset_at": stats.last_reset_at,
+        }
+
     def reset_claim_rejection_stats(self) -> None:
         """Reset claim rejection statistics.
 

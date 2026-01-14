@@ -598,23 +598,63 @@ class LeaderElectionMixin(P2PMixinBase):
     _last_healthy_quorum_at: float | None = None  # Timestamp when quorum was last healthy
     _last_healthy_voter_list: list[str] | None = None  # Last known alive voters when healthy
 
+    def _calculate_dynamic_quorum(self, alive_voters: int) -> int:
+        """Calculate quorum dynamically based on alive voters.
+
+        January 13, 2026: Added for dynamic quorum that adjusts based on actual
+        alive voters rather than fixed constants. This allows the cluster to
+        make progress even when some voters are offline.
+
+        Args:
+            alive_voters: Number of currently alive voters
+
+        Returns:
+            Dynamic quorum requirement:
+            - 3+ alive: (alive // 2) + 1 (standard majority)
+            - 2 alive: 2 (need both)
+            - 1 alive: 1 (emergency single-node mode)
+            - 0 alive: 0 (handled by caller)
+
+        The dynamic quorum ensures:
+        - With 5 alive: need 3 (majority)
+        - With 4 alive: need 3 (majority)
+        - With 3 alive: need 2 (majority)
+        - With 2 alive: need 2 (both)
+        - With 1 alive: need 1 (emergency)
+        """
+        if alive_voters >= 3:
+            return (alive_voters // 2) + 1
+        elif alive_voters == 2:
+            return 2  # Need both
+        elif alive_voters == 1:
+            return 1  # Emergency single-node mode
+        else:
+            return 0  # No quorum possible
+
     def _has_voter_quorum(self) -> bool:
         """Return True if we currently see enough voter nodes alive.
 
-        SIMPLIFIED QUORUM: Uses fixed minimum of 3 voters instead of majority.
-        This makes leader election more resilient - as long as 3 voters agree,
-        leadership can be established regardless of total voter count.
+        January 13, 2026: Updated to use dynamic quorum based on alive voters.
+        Previously used fixed VOTER_MIN_QUORUM which could fail when many voters
+        were offline even if a majority of alive voters agreed.
         """
         voters = list(getattr(self, "voter_node_ids", []) or [])
         if not voters:
             return True
 
-        # Use fixed minimum quorum of 3 (or fewer if we have fewer voters)
-        quorum = min(VOTER_MIN_QUORUM, len(voters))
-
-        # Use base class helper for counting alive peers
+        # Count alive voters
         alive = self._count_alive_peers(voters)
-        return alive >= quorum
+
+        # Use dynamic quorum based on alive voters
+        # This allows progress when some voters are offline
+        # Fallback: also check against fixed minimum for safety
+        dynamic_quorum = self._calculate_dynamic_quorum(alive)
+        fixed_quorum = min(VOTER_MIN_QUORUM, len(voters))
+
+        # Use the more permissive of the two (dynamic is more adaptive)
+        effective_quorum = min(dynamic_quorum, fixed_quorum)
+
+        return alive >= effective_quorum
 
     def _check_quorum_health(self) -> QuorumHealthLevel:
         """Proactive quorum health check with early warning and single-node fallback.
@@ -644,8 +684,13 @@ class LeaderElectionMixin(P2PMixinBase):
             return QuorumHealthLevel.HEALTHY
 
         total = len(voters)
-        quorum = min(VOTER_MIN_QUORUM, total)
         alive = self._count_alive_peers(voters)
+
+        # January 13, 2026: Use dynamic quorum for more adaptive resilience
+        # Dynamic quorum adjusts based on alive voters (majority of alive, not total)
+        dynamic_quorum = self._calculate_dynamic_quorum(alive)
+        fixed_quorum = min(VOTER_MIN_QUORUM, total)
+        quorum = min(dynamic_quorum, fixed_quorum)  # Use more permissive
 
         # Get list of alive voters for tracking
         alive_voter_list = self._get_alive_peer_list(voters)

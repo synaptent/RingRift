@@ -678,3 +678,132 @@ class StatusHandlersMixin:
             })
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_work_queue_claim_stats(self, request: web.Request) -> web.Response:
+        """GET /work_queue/claim_stats - Get enhanced claim rejection statistics.
+
+        January 13, 2026: Added for infrastructure monitoring as part of the
+        resilience plan. Returns enhanced stats with:
+        - success_rate: Ratio of successful claims to total attempts
+        - top_rejection_reason: Most common rejection reason
+        - Detailed breakdown by rejection type
+
+        This endpoint helps diagnose why the work queue accumulates items
+        when circuit breakers block claims.
+        """
+        try:
+            from app.coordination.work_queue import get_work_queue
+
+            wq = get_work_queue()
+            if wq is None:
+                return web.json_response({
+                    "available": False,
+                    "message": "Work queue not initialized",
+                })
+
+            return web.json_response(wq.get_claim_rejection_stats_dict())
+        except Exception as e:  # noqa: BLE001
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def handle_data_summary(self, request: web.Request) -> web.Response:
+        """GET /data/summary - Get unified game data summary across all sources.
+
+        January 2026: Added as part of unified data discovery infrastructure.
+        Returns game counts from all sources (LOCAL, CLUSTER, S3, OWC) for
+        accurate data visibility across the cluster.
+
+        Query Parameters:
+            refresh: If "true", forces cache refresh
+            local_only: If "true", skips remote sources
+
+        Returns:
+            JSON with:
+            - timestamp: ISO timestamp
+            - sources: Per-source game counts by config
+            - totals: Total games per config across all sources
+            - cache_age_seconds: Age of cached data
+            - errors: List of any errors during aggregation
+        """
+        try:
+            # Parse query params
+            refresh = request.query.get("refresh", "").lower() == "true"
+            local_only = request.query.get("local_only", "").lower() == "true"
+
+            # Import aggregator
+            from app.utils.unified_game_aggregator import (
+                GameSourceConfig,
+                UnifiedGameAggregator,
+            )
+
+            # Configure source inclusion
+            if local_only:
+                config = GameSourceConfig.local_only()
+            else:
+                config = GameSourceConfig.all_sources()
+
+            aggregator = UnifiedGameAggregator(config)
+
+            # Clear cache if refresh requested
+            if refresh:
+                aggregator.clear_cache()
+
+            # Get all config counts
+            counts = await aggregator.get_all_configs_counts()
+
+            # Build response
+            sources: dict[str, dict[str, int]] = {
+                "local": {},
+                "cluster": {},
+                "s3": {},
+                "owc": {},
+            }
+            totals: dict[str, int] = {}
+            errors: list[dict] = []
+            cache_age = 0.0
+
+            for config_key, result in counts.items():
+                # Per-source breakdown
+                for source in ["local", "cluster", "s3", "owc"]:
+                    count = result.sources.get(source, 0)
+                    sources[source][config_key] = count
+
+                # Total
+                totals[config_key] = result.total_games
+
+                # Track cache age
+                if result.last_updated > 0:
+                    age = time.time() - result.last_updated
+                    if age > cache_age:
+                        cache_age = age
+
+                # Collect errors
+                for error in result.errors:
+                    errors.append({"config": config_key, "error": error})
+
+            return web.json_response({
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "sources": sources,
+                "totals": totals,
+                "grand_total": {
+                    "local": sum(sources["local"].values()),
+                    "cluster": sum(sources["cluster"].values()),
+                    "s3": sum(sources["s3"].values()),
+                    "owc": sum(sources["owc"].values()),
+                    "total": sum(totals.values()),
+                },
+                "cache_age_seconds": round(cache_age, 1),
+                "errors": errors[:20],  # Limit errors
+                "node_id": self.node_id,
+            })
+
+        except ImportError as e:
+            return web.json_response({
+                "error": f"UnifiedGameAggregator not available: {e}",
+                "node_id": self.node_id,
+            }, status=500)
+        except Exception as e:  # noqa: BLE001
+            logger.exception(f"[P2P] Failed to get data summary: {e}")
+            return web.json_response({
+                "error": str(e),
+                "node_id": self.node_id,
+            }, status=500)

@@ -412,6 +412,12 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
         # Injected backpressure monitor (breaks circular dep with backpressure.py)
         self._backpressure_monitor: Optional[IBackpressureMonitor] = backpressure_monitor
 
+        # January 13, 2026: Memory pressure constraint flag
+        # When memory is CRITICAL or EMERGENCY, pause selfplay allocation
+        # to prevent OOM and allow cleanup daemons time to free space.
+        self._memory_constrained: bool = False
+        self._memory_constraint_source: str = ""  # For logging which node/source triggered
+
         # Jan 5, 2026: Idle node work injection state
         # Tracks when each node became idle (first seen with current_jobs=0)
         # If node is idle for > IDLE_THRESHOLD_SECONDS, inject priority work
@@ -1596,6 +1602,15 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
         January 2026 Sprint 17.9: Delegates allocation logic to AllocationEngine for testability.
         January 2026 Session 17.35: Increased from 12 to 15 for +5-10% config coverage.
         """
+        # January 13, 2026: Check memory constraint before allocating
+        # Memory pressure events set this flag to prevent OOM during critical load
+        if self._memory_constrained:
+            logger.info(
+                f"[SelfplayScheduler] Skipping allocation due to memory constraint "
+                f"({self._memory_constraint_source})"
+            )
+            return {}
+
         # Check backpressure before allocating (Dec 2025)
         bp_signal = None
         try:
@@ -2327,6 +2342,9 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
             ("CROSS_CONFIG_TOURNAMENT_COMPLETED", self._on_cross_config_tournament_completed),
             # Dec 30, 2025: P2P restart resilience
             ("P2P_RESTARTED", self._on_p2p_restarted),
+            # Jan 13, 2026: Memory pressure handling - pause selfplay when memory critical
+            ("MEMORY_PRESSURE", self._on_memory_pressure),
+            ("RESOURCE_CONSTRAINT", self._on_resource_constraint),
         ]
 
         for event_name, handler in optional_events:
@@ -2730,6 +2748,85 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
         except Exception as e:
             logger.debug(f"[SelfplayScheduler] Error handling selfplay rate changed: {e}")
 
+    # =========================================================================
+    # Memory Pressure Event Handlers (January 13, 2026)
+    # =========================================================================
+
+    def _on_memory_pressure(self, event: Any) -> None:
+        """Handle MEMORY_PRESSURE event - pause selfplay when memory critical.
+
+        January 13, 2026: Added to prevent OOM and allow cleanup daemons time to
+        free disk space. When memory pressure is CRITICAL or EMERGENCY, we pause
+        selfplay allocation to reduce memory load.
+
+        Event payload:
+            tier: str - "CAUTION", "WARNING", "CRITICAL", or "EMERGENCY"
+            source: str - "coordinator", "gpu_vram", "system_ram", etc.
+            node_id: str - Which node is under pressure (optional)
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            tier = payload.get("tier", "").upper()
+            source = payload.get("source", "unknown")
+            node_id = payload.get("node_id", "")
+
+            if tier in ("CRITICAL", "EMERGENCY"):
+                if not self._memory_constrained:
+                    logger.warning(
+                        f"[SelfplayScheduler] Memory pressure {tier} ({source}), "
+                        f"pausing selfplay allocation"
+                    )
+                self._memory_constrained = True
+                self._memory_constraint_source = f"{source}:{node_id}" if node_id else source
+            elif tier in ("CAUTION", "WARNING"):
+                # Resume on lower pressure tiers
+                if self._memory_constrained:
+                    logger.info(
+                        f"[SelfplayScheduler] Memory pressure reduced to {tier}, "
+                        f"resuming selfplay allocation"
+                    )
+                self._memory_constrained = False
+                self._memory_constraint_source = ""
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling memory pressure: {e}")
+
+    def _on_resource_constraint(self, event: Any) -> None:
+        """Handle RESOURCE_CONSTRAINT event - general resource limits.
+
+        January 13, 2026: Handles general resource constraints (disk space, etc.)
+        that may require pausing selfplay to allow recovery.
+
+        Event payload:
+            resource_type: str - "disk", "memory", "gpu_vram", etc.
+            level: str - "warning", "critical", "emergency"
+            node_id: str - Which node is constrained (optional)
+        """
+        try:
+            payload = event.payload if hasattr(event, "payload") else event
+            level = payload.get("level", "").lower()
+            resource_type = payload.get("resource_type", "unknown")
+            node_id = payload.get("node_id", "")
+
+            if level in ("critical", "emergency"):
+                if not self._memory_constrained:
+                    logger.warning(
+                        f"[SelfplayScheduler] Resource constraint {level} "
+                        f"({resource_type}), pausing selfplay allocation"
+                    )
+                self._memory_constrained = True
+                self._memory_constraint_source = f"{resource_type}:{node_id}" if node_id else resource_type
+            elif level in ("normal", "ok", "released"):
+                if self._memory_constrained:
+                    logger.info(
+                        f"[SelfplayScheduler] Resource constraint released ({resource_type}), "
+                        f"resuming selfplay allocation"
+                    )
+                self._memory_constrained = False
+                self._memory_constraint_source = ""
+
+        except Exception as e:
+            logger.debug(f"[SelfplayScheduler] Error handling resource constraint: {e}")
 
     # =========================================================================
     # Velocity/Exploration Event Handlers - EXTRACTED to SelfplayVelocityMixin

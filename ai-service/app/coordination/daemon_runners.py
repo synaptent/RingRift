@@ -2395,7 +2395,24 @@ async def create_coordinator_disk_manager() -> None:
     - More aggressive cleanup thresholds (50% vs 60%)
     - Removes synced training/game files after 24 hours
     - Keeps canonical databases locally for quick access
+
+    January 13, 2026: Added coordinator check to prevent running on GPU nodes.
+    Only runs if RINGRIFT_IS_COORDINATOR=true environment variable is set.
     """
+    import os
+
+    is_coordinator = os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() in (
+        "true",
+        "1",
+        "yes",
+    )
+    if not is_coordinator:
+        logger.info(
+            "[CoordinatorDiskManager] Skipping - not a coordinator node "
+            "(set RINGRIFT_IS_COORDINATOR=true to enable)"
+        )
+        return
+
     try:
         from app.coordination.disk_space_manager_daemon import CoordinatorDiskManager
 

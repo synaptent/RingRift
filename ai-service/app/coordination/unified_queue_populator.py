@@ -1235,6 +1235,24 @@ class UnifiedQueuePopulator:
             logger.warning("No work queue set, cannot populate")
             return 0
 
+        # January 13, 2026: Check if any workers can claim work
+        # If all circuit breakers are open, skip population to prevent queue accumulation
+        claimable_workers = self._count_claimable_workers()
+        if claimable_workers == 0:
+            logger.warning(
+                "[QueuePopulator] No claimable workers (all circuit breakers open), "
+                "skipping population"
+            )
+            safe_emit_event(
+                "QUEUE_POPULATION_SKIPPED",
+                {
+                    "reason": "no_claimable_workers",
+                    "circuit_breaker_blocking_all": True,
+                    "dead_nodes_count": len(self._dead_nodes),
+                },
+            )
+            return 0
+
         if self.all_targets_met():
             # Phase 1.2: Even when all targets met, add exploration work for stale configs
             # This prevents cluster idling and maintains training data diversity
@@ -1673,6 +1691,40 @@ class UnifiedQueuePopulator:
             logger.debug(f"[QueuePopulator] Could not estimate worker capacity: {e}")
             # Fallback to config-based calculation
             return self.config.min_queue_depth
+
+    def _count_claimable_workers(self) -> int:
+        """Count workers with open circuits who could claim work.
+
+        January 13, 2026: Added to fix queue accumulation when circuit breaker
+        blocks all claims. Without this check, the populator would add items
+        even when no workers could claim them.
+
+        Returns:
+            Number of workers with CLOSED or HALF_OPEN circuits (can claim work).
+        """
+        try:
+            from app.coordination.node_circuit_breaker import get_node_circuit_breaker
+            from app.config.cluster_config import get_gpu_nodes
+
+            breaker = get_node_circuit_breaker()
+            gpu_nodes = get_gpu_nodes()
+
+            claimable = 0
+            for node in gpu_nodes:
+                if breaker.can_check(node.name):
+                    claimable += 1
+
+            return claimable
+
+        except ImportError as e:
+            logger.debug(f"[QueuePopulator] Could not check circuit breaker status: {e}")
+            # Fallback: assume all non-dead nodes can claim
+            active = self._get_active_node_count()
+            dead = len(self._dead_nodes)
+            return max(0, active - dead)
+        except Exception as e:
+            logger.warning(f"[QueuePopulator] Error counting claimable workers: {e}")
+            return self._get_active_node_count()  # Fallback: assume all can claim
 
     def _populate_trickle_items(self) -> int:
         """Add minimal items under extreme backpressure (Phase 15.1.2).

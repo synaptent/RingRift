@@ -873,6 +873,10 @@ class RemoteP2PRecoveryLoop(BaseLoop):
 
         Returns:
             True if P2P was started successfully
+
+        January 13, 2026: Added relay failover for NAT-blocked nodes. When a node
+        has force_relay_mode=true, we check which relays are healthy and use the
+        first available one via --relay-peers.
         """
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -904,9 +908,33 @@ class RemoteP2PRecoveryLoop(BaseLoop):
             tailscale_ip = node_info.get("tailscale_ip", "")
             advertise_arg = f"--advertise-host {tailscale_ip} " if tailscale_ip else ""
 
+            # January 13, 2026: Relay failover for NAT-blocked nodes
+            # Check relay health and use first available healthy relay
+            relay_arg = ""
+            if node_info.get("nat_blocked") or node_info.get("force_relay_mode"):
+                healthy_relays = self._get_healthy_relays_for_node(node_info)
+                configured_primary = node_info.get("relay_primary", "")
+
+                if healthy_relays:
+                    chosen_relay = healthy_relays[0]
+                    if chosen_relay != configured_primary:
+                        logger.info(
+                            f"[RemoteP2PRecovery] Relay FAILOVER for {node_id}: "
+                            f"{configured_primary} -> {chosen_relay}"
+                        )
+                    relay_arg = f"--relay-peers {chosen_relay} "
+                else:
+                    # No healthy relays - try with configured primary anyway
+                    if configured_primary:
+                        logger.warning(
+                            f"[RemoteP2PRecovery] No healthy relays for {node_id}, "
+                            f"using configured primary: {configured_primary}"
+                        )
+                        relay_arg = f"--relay-peers {configured_primary} "
+
             cmd = f"""cd {ringrift_path} && \
 git pull origin main 2>/dev/null || true && \
-PYTHONPATH=. nohup python3 scripts/p2p_orchestrator.py --node-id {node_id} --port 8770 {advertise_arg}> logs/p2p.log 2>&1 &"""
+PYTHONPATH=. nohup python3 scripts/p2p_orchestrator.py --node-id {node_id} --port 8770 {advertise_arg}{relay_arg}> logs/p2p.log 2>&1 &"""
 
             stdin, stdout, stderr = client.exec_command(cmd)
             stdout.channel.recv_exit_status()  # Wait for completion
@@ -988,6 +1016,123 @@ PYTHONPATH=. nohup python3 scripts/p2p_orchestrator.py --node-id {node_id} --por
                 "dry_run": self.config.dry_run,
             },
         }
+
+    # =========================================================================
+    # Relay Failover Support (January 13, 2026)
+    # =========================================================================
+
+    def _tcp_probe(self, host: str, port: int, timeout: float = 5.0) -> bool:
+        """TCP probe to check if a host:port is reachable.
+
+        January 13, 2026: Added for relay health checking. Uses a simple TCP
+        connect to verify the P2P port is listening.
+
+        Args:
+            host: Hostname or IP to probe
+            port: Port number to probe
+            timeout: Connection timeout in seconds
+
+        Returns:
+            True if connection succeeded, False otherwise
+        """
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            return result == 0
+        except socket.timeout:
+            return False
+        except socket.error:
+            return False
+        except Exception:
+            return False
+
+    def _get_relay_ip(self, relay_node_id: str) -> str | None:
+        """Get the best IP address for a relay node.
+
+        January 13, 2026: Added for relay failover support. Prefers Tailscale IP
+        since Lambda nodes are on the Tailscale mesh.
+
+        Args:
+            relay_node_id: Node ID of the relay
+
+        Returns:
+            IP address string or None if not found
+        """
+        configured_nodes = self._get_configured_nodes()
+        relay_info = configured_nodes.get(relay_node_id, {})
+
+        # Prefer Tailscale IP (works for mesh connections)
+        tailscale_ip = relay_info.get("tailscale_ip")
+        if tailscale_ip:
+            return tailscale_ip
+
+        # Fallback to public IP
+        public_ip = relay_info.get("ip")
+        if public_ip:
+            return public_ip
+
+        # Try SSH host
+        ssh_host = relay_info.get("ssh_host")
+        if ssh_host:
+            return ssh_host
+
+        return None
+
+    def _check_relay_health(self, relay_ids: list[str]) -> list[str]:
+        """Return list of healthy relay node IDs.
+
+        January 13, 2026: Added for relay failover in RemoteP2PRecoveryLoop.
+        Checks each configured relay to find which ones are reachable via TCP
+        probe to their P2P port (8770).
+
+        Args:
+            relay_ids: List of relay node IDs to check
+
+        Returns:
+            List of healthy relay node IDs (ordered by input order)
+        """
+        healthy = []
+        for relay_id in relay_ids:
+            if not relay_id:
+                continue
+
+            ip = self._get_relay_ip(relay_id)
+            if not ip:
+                logger.debug(f"[RemoteP2PRecovery] No IP found for relay {relay_id}")
+                continue
+
+            # Probe P2P port (8770)
+            if self._tcp_probe(ip, 8770, timeout=5.0):
+                logger.debug(f"[RemoteP2PRecovery] Relay {relay_id} ({ip}) is healthy")
+                healthy.append(relay_id)
+            else:
+                logger.debug(f"[RemoteP2PRecovery] Relay {relay_id} ({ip}) is unreachable")
+
+        return healthy
+
+    def _get_healthy_relays_for_node(self, node_info: dict) -> list[str]:
+        """Get ordered list of healthy relays for a NAT-blocked node.
+
+        January 13, 2026: Added for relay failover. Checks relay_primary,
+        relay_secondary, relay_tertiary, relay_quaternary in order and returns
+        those that are healthy.
+
+        Args:
+            node_info: Node configuration dict
+
+        Returns:
+            List of healthy relay node IDs (in priority order)
+        """
+        # Collect all configured relays in priority order
+        relay_keys = ["relay_primary", "relay_secondary", "relay_tertiary", "relay_quaternary"]
+        relays = [node_info.get(key) for key in relay_keys if node_info.get(key)]
+
+        if not relays:
+            return []
+
+        return self._check_relay_health(relays)
 
     def _get_node_capacity(self, node_id: str) -> dict[str, Any]:
         """Estimate node capacity for work queue pre-population.

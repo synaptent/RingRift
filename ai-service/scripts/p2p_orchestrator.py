@@ -1667,7 +1667,8 @@ class P2POrchestrator(
 
         # Phase 2: Distributed data sync state
         self.local_data_manifest: NodeDataManifest | None = None
-        self.cluster_data_manifest: ClusterDataManifest | None = None  # Leader-only
+        self.cluster_data_manifest: ClusterDataManifest | None = None  # Leader-only or received from broadcast
+        self._cluster_manifest_received_at: float = 0.0  # When broadcast was received (followers)
         self.manifest_collection_interval = 300.0  # Collect manifests every 5 minutes
         self.last_manifest_collection = 0.0
 
@@ -2507,6 +2508,7 @@ class P2POrchestrator(
             # ManifestCollectionLoop - periodic manifest collection for dashboard/training/sync
             # December 27, 2025: Migrated from inline _manifest_collection_loop
             # Jan 9, 2026: Now uses OrchestratorContext for get_role
+            # Jan 14, 2026: Added broadcast to followers for cluster-wide data visibility
             manifest_collection = ManifestCollectionLoop(
                 get_role=ctx.get_role,
                 collect_cluster_manifest=self._collect_cluster_manifest,
@@ -2514,6 +2516,9 @@ class P2POrchestrator(
                 update_manifest=self._update_manifest_from_loop,
                 update_improvement_cycle=self._update_improvement_cycle_from_loop,
                 record_stats_sample=self._record_selfplay_stats_sample,
+                get_alive_peers=self._get_alive_peers_for_broadcast,
+                get_http_session=lambda: self.http_session,
+                broadcast_enabled=True,
             )
             manager.register(manifest_collection)
 
@@ -3780,6 +3785,30 @@ class P2POrchestrator(
                     logger.debug(f"[ManifestUpdate] Fed {len(game_counts)} config game counts to SelfplayScheduler")
             except Exception as e:  # noqa: BLE001
                 logger.debug(f"[ManifestUpdate] Failed to update selfplay scheduler game counts: {e}")
+
+    def _get_alive_peers_for_broadcast(self) -> list[Any]:
+        """Get list of alive peers for manifest broadcast.
+
+        Jan 2026: Added for leader broadcast functionality.
+
+        Returns:
+            List of NodeInfo objects for alive, non-retired peers
+        """
+        with self.peers_lock:
+            alive_peers = []
+            for peer_id, peer in self.peers.items():
+                # Skip self
+                if peer_id == self.node_id:
+                    continue
+                # Check if peer is alive
+                is_alive = getattr(peer, 'is_alive', lambda: False)
+                if callable(is_alive):
+                    is_alive = is_alive()
+                # Check if peer is retired
+                is_retired = getattr(peer, 'retired', False)
+                if is_alive and not is_retired:
+                    alive_peers.append(peer)
+            return alive_peers
 
     def _update_improvement_cycle_from_loop(self, by_board_type: dict[str, Any]) -> None:
         """Update ImprovementCycleManager from ManifestCollectionLoop.
@@ -9702,11 +9731,319 @@ class P2POrchestrator(
             if nodes_without_file:
                 cluster_manifest.missing_from_nodes[file_path] = nodes_without_file
 
+        # Collect external storage metadata (OWC drive, S3 bucket)
+        # Jan 2026: Added for unified cluster data visibility
+        try:
+            external_storage = await self._collect_external_storage_metadata()
+            cluster_manifest.external_storage = external_storage
+        except Exception as e:
+            logger.debug(f"[ManifestCollection] External storage scan skipped: {e}")
+
         logger.info(f"Cluster manifest: {cluster_manifest.total_nodes} nodes, "
               f"{len(cluster_manifest.unique_files)} unique files, "
               f"{cluster_manifest.total_selfplay_games} total games")
 
         return cluster_manifest
+
+    async def _collect_external_storage_metadata(self) -> ExternalStorageManifest:
+        """Collect metadata from external storage sources (OWC drive, S3 bucket).
+
+        Jan 2026: Added for unified cluster data visibility.
+
+        Returns:
+            ExternalStorageManifest with OWC and S3 metadata.
+        """
+        from scripts.p2p.models import ExternalStorageManifest
+
+        external = ExternalStorageManifest(collected_at=time.time())
+
+        # Collect OWC drive metadata (if accessible)
+        try:
+            owc_metadata = await self._scan_owc_metadata()
+            if owc_metadata:
+                external.owc_available = True
+                external.owc_games_by_config = owc_metadata.get("games_by_config", {})
+                external.owc_total_games = owc_metadata.get("total_games", 0)
+                external.owc_total_size_bytes = owc_metadata.get("total_size_bytes", 0)
+                external.owc_last_scan = time.time()
+        except Exception as e:
+            logger.debug(f"[ExternalStorage] OWC scan skipped: {e}")
+
+        # Collect S3 bucket metadata (if configured)
+        try:
+            s3_metadata = await self._scan_s3_metadata()
+            if s3_metadata:
+                external.s3_available = True
+                external.s3_games_by_config = s3_metadata.get("games_by_config", {})
+                external.s3_total_games = s3_metadata.get("total_games", 0)
+                external.s3_total_size_bytes = s3_metadata.get("total_size_bytes", 0)
+                external.s3_bucket = s3_metadata.get("bucket", "")
+                external.s3_last_scan = time.time()
+        except Exception as e:
+            logger.debug(f"[ExternalStorage] S3 scan skipped: {e}")
+
+        return external
+
+    async def _scan_owc_metadata(self) -> dict | None:
+        """Scan OWC external drive for game data metadata.
+
+        Jan 2026: OWC drive is mounted on mac-studio at /Volumes/RingRift-Data.
+
+        Returns:
+            Dict with games_by_config, total_games, total_size_bytes, or None if unavailable.
+        """
+        import os
+        import socket
+
+        # OWC drive paths - check local first, then SSH to mac-studio
+        owc_paths = [
+            "/Volumes/RingRift-Data",
+            "/Volumes/OWC",
+        ]
+
+        # Check if running on mac-studio (OWC is local)
+        hostname = socket.gethostname().lower()
+        is_mac_studio = "mac-studio" in hostname or hostname == "mac-studio"
+
+        if is_mac_studio:
+            # Direct local access
+            for owc_path in owc_paths:
+                if os.path.exists(owc_path):
+                    return await asyncio.to_thread(
+                        self._scan_owc_local, owc_path
+                    )
+            return None
+
+        # Remote access via SSH to mac-studio
+        mac_studio_host = "mac-studio"
+        try:
+            return await self._scan_owc_remote(mac_studio_host, owc_paths[0])
+        except Exception as e:
+            logger.debug(f"[OWC] Remote scan failed: {e}")
+            return None
+
+    def _scan_owc_local(self, base_path: str) -> dict:
+        """Scan OWC drive locally for game databases.
+
+        Returns dict with games_by_config, total_games, total_size_bytes.
+        """
+        import os
+        import sqlite3
+        from pathlib import Path
+
+        games_by_config: dict[str, int] = {}
+        total_games = 0
+        total_size_bytes = 0
+
+        # Look for game databases in standard locations
+        data_paths = [
+            Path(base_path) / "data" / "games",
+            Path(base_path) / "games",
+            Path(base_path) / "selfplay",
+        ]
+
+        for data_path in data_paths:
+            if not data_path.exists():
+                continue
+
+            for db_file in data_path.glob("**/*.db"):
+                try:
+                    total_size_bytes += db_file.stat().st_size
+
+                    # Extract config from filename or query DB
+                    config_key = self._extract_config_from_path(db_file)
+                    if not config_key:
+                        continue
+
+                    # Quick game count query
+                    conn = sqlite3.connect(str(db_file), timeout=5.0)
+                    try:
+                        cursor = conn.execute(
+                            "SELECT COUNT(*) FROM games WHERE status = 'completed'"
+                        )
+                        count = cursor.fetchone()[0]
+                        games_by_config[config_key] = (
+                            games_by_config.get(config_key, 0) + count
+                        )
+                        total_games += count
+                    except sqlite3.OperationalError:
+                        # Table doesn't exist or different schema
+                        pass
+                    finally:
+                        conn.close()
+                except Exception:
+                    continue
+
+        return {
+            "games_by_config": games_by_config,
+            "total_games": total_games,
+            "total_size_bytes": total_size_bytes,
+        }
+
+    def _extract_config_from_path(self, db_path: Path) -> str | None:
+        """Extract board_type and num_players from database path.
+
+        Expected patterns:
+        - canonical_hex8_2p.db
+        - hex8_2p_selfplay.db
+        - games_square8_4p.db
+        """
+        import re
+
+        filename = db_path.stem.lower()
+
+        # Try common patterns
+        patterns = [
+            r"(hex8|hexagonal|square8|square19)_(\d)p",
+            r"canonical_(hex8|hexagonal|square8|square19)_(\d)p",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, filename)
+            if match:
+                board_type = match.group(1)
+                num_players = match.group(2)
+                return f"{board_type}_{num_players}p"
+
+        return None
+
+    async def _scan_owc_remote(self, host: str, owc_path: str) -> dict | None:
+        """Scan OWC drive via SSH to mac-studio.
+
+        Returns dict with games_by_config, total_games, total_size_bytes.
+        """
+        # Use a simple SSH command to get file listing and sizes
+        ssh_cmd = f"""
+        cd {owc_path} 2>/dev/null && find . -name "*.db" -type f -exec stat -f '%z %N' {{}} \\; 2>/dev/null | head -100
+        """
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes",
+                host, "bash", "-c", ssh_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=15.0)
+
+            if proc.returncode != 0:
+                return None
+
+            # Parse output: "size path"
+            games_by_config: dict[str, int] = {}
+            total_size_bytes = 0
+            total_games = 0
+
+            for line in stdout.decode().strip().split("\n"):
+                if not line:
+                    continue
+                parts = line.split(maxsplit=1)
+                if len(parts) != 2:
+                    continue
+                size_str, path = parts
+                try:
+                    total_size_bytes += int(size_str)
+                except ValueError:
+                    continue
+
+                # Extract config from path
+                from pathlib import Path
+                config_key = self._extract_config_from_path(Path(path))
+                if config_key:
+                    # Estimate 100 games per DB file as placeholder
+                    # (accurate count would require opening each DB)
+                    games_by_config[config_key] = games_by_config.get(config_key, 0) + 100
+                    total_games += 100
+
+            return {
+                "games_by_config": games_by_config,
+                "total_games": total_games,
+                "total_size_bytes": total_size_bytes,
+            }
+        except (asyncio.TimeoutError, OSError):
+            return None
+
+    async def _scan_s3_metadata(self) -> dict | None:
+        """Scan S3 bucket for game data metadata.
+
+        Jan 2026: Uses boto3 if available, with caching to avoid repeated API calls.
+
+        Returns:
+            Dict with games_by_config, total_games, total_size_bytes, bucket, or None.
+        """
+        import os
+
+        # Check if S3 is configured
+        s3_bucket = os.environ.get("RINGRIFT_S3_BUCKET", "")
+        if not s3_bucket:
+            return None
+
+        # Check for cached result (cache for 1 hour)
+        cache_key = "_s3_metadata_cache"
+        cache_time_key = "_s3_metadata_cache_time"
+
+        cached = getattr(self, cache_key, None)
+        cached_time = getattr(self, cache_time_key, 0.0)
+
+        if cached and (time.time() - cached_time) < 3600:  # 1 hour cache
+            return cached
+
+        try:
+            import boto3
+        except ImportError:
+            logger.debug("[S3] boto3 not available, skipping S3 scan")
+            return None
+
+        try:
+            s3 = boto3.client("s3")
+
+            games_by_config: dict[str, int] = {}
+            total_games = 0
+            total_size_bytes = 0
+
+            # List objects in bucket (limit to games/ prefix)
+            paginator = s3.get_paginator("list_objects_v2")
+            for prefix in ["data/games/", "games/", "selfplay/"]:
+                try:
+                    for page in paginator.paginate(Bucket=s3_bucket, Prefix=prefix):
+                        for obj in page.get("Contents", []):
+                            key = obj["Key"]
+                            size = obj["Size"]
+
+                            if not key.endswith(".db"):
+                                continue
+
+                            total_size_bytes += size
+
+                            # Extract config from key
+                            from pathlib import Path
+                            config_key = self._extract_config_from_path(Path(key))
+                            if config_key:
+                                # Estimate based on file size (rough: 1 game = 10KB)
+                                est_games = max(1, size // 10000)
+                                games_by_config[config_key] = (
+                                    games_by_config.get(config_key, 0) + est_games
+                                )
+                                total_games += est_games
+                except Exception:
+                    continue
+
+            result = {
+                "games_by_config": games_by_config,
+                "total_games": total_games,
+                "total_size_bytes": total_size_bytes,
+                "bucket": s3_bucket,
+            }
+
+            # Cache result
+            setattr(self, cache_key, result)
+            setattr(self, cache_time_key, time.time())
+
+            return result
+
+        except Exception as e:
+            logger.debug(f"[S3] Scan failed: {e}")
+            return None
 
     # ============================================
     # Phase 2: P2P Rsync Coordination Methods
@@ -12144,6 +12481,8 @@ class P2POrchestrator(
             "is_leader": self._is_leader(),  # Explicit field for quick checks
             # Jan 13, 2026: Config version for drift detection (P2P Cluster Stability Plan Phase 1)
             "config_version": self._get_config_version(),
+            # Jan 13, 2026: Unified data summary across all sources (LOCAL, CLUSTER, S3, OWC)
+            "data_summary": self._get_data_summary_cached(),
         })
 
     # -------------------------------------------------------------------------
@@ -24562,6 +24901,54 @@ print(json.dumps({{
 
         return result
 
+    def _get_data_summary_cached(self) -> dict[str, Any]:
+        """Get cached data summary for /status endpoint.
+
+        January 13, 2026: Added as part of unified data discovery infrastructure.
+        Returns game counts from local canonical databases for quick access.
+        For full multi-source data, use /data/summary endpoint.
+
+        Returns:
+            Dict with total game counts per config from local canonical DBs
+        """
+        try:
+            # Use cached game counts from selfplay scheduler if available
+            if hasattr(self, "selfplay_scheduler") and self.selfplay_scheduler:
+                counts = getattr(self.selfplay_scheduler, "_p2p_game_counts", None)
+                if counts:
+                    total = sum(counts.values())
+                    return {
+                        "total_games": total,
+                        "by_config": dict(counts),
+                        "source": "selfplay_scheduler_cache",
+                        "config_count": len(counts),
+                    }
+
+            # Fall back to local canonical DB scan
+            game_counts = self._seed_selfplay_scheduler_game_counts_sync()
+            if game_counts:
+                return {
+                    "total_games": sum(game_counts.values()),
+                    "by_config": game_counts,
+                    "source": "canonical_databases",
+                    "config_count": len(game_counts),
+                }
+
+            return {
+                "total_games": 0,
+                "by_config": {},
+                "source": "none",
+                "error": "No game data available",
+            }
+
+        except Exception as e:  # noqa: BLE001
+            return {
+                "total_games": 0,
+                "by_config": {},
+                "source": "error",
+                "error": str(e),
+            }
+
     def _get_fallback_status(self) -> dict[str, Any]:
         """Get fallback mechanism status for debugging partition issues.
 
@@ -29079,6 +29466,7 @@ print(json.dumps({{
             app.router.add_get('/cluster_data_manifest', self.handle_cluster_data_manifest)
             app.router.add_post('/refresh_manifest', self.handle_refresh_manifest)
             app.router.add_get('/data-inventory', self.handle_data_inventory)  # Dec 30, 2025: Quick game counts
+            app.router.add_post('/data/cluster_manifest_broadcast', self.handle_cluster_manifest_broadcast)  # Jan 2026: Leader broadcast
 
             # Model inventory routes (January 2026 - Comprehensive Model Evaluation Pipeline)
             # Used by ClusterModelEnumerator to discover models across the cluster
@@ -29231,6 +29619,7 @@ print(json.dumps({{
             app.router.add_post('/api/jobs/{job_id}/cancel', self.handle_api_job_cancel)
             app.router.add_get('/dashboard', self.handle_dashboard)
             app.router.add_get('/work_queue', self.handle_work_queue_dashboard)
+            app.router.add_get('/work_queue/claim_stats', self.handle_work_queue_claim_stats)
 
         runner = web.AppRunner(app)
         await runner.setup()
