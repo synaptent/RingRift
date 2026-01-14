@@ -57,10 +57,19 @@ export const connectRedis = async (): Promise<RedisClient> => {
     redisClient = client;
 
     // Initialize rate limiters with Redis client
-    // TEMPORARY FIX: Force memory rate limiter to avoid "this.client.rlflxIncr is not a function"
-    // error with rate-limiter-flexible and redis v4 during load tests.
-    // initializeRateLimiters(client);
-    initializeRateLimiters(null);
+    // Note: rate-limiter-flexible@9+ with redis@5+ requires the client to be connected
+    // and ready before passing. The Lua scripts are auto-registered on first use.
+    // If Redis rate limiting fails, the system falls back to memory-based limiting
+    // per the graceful degradation in rateLimiter.ts.
+    try {
+      initializeRateLimiters(client);
+    } catch (rateLimiterError) {
+      logger.warn('Failed to initialize Redis-backed rate limiters, falling back to memory', {
+        error:
+          rateLimiterError instanceof Error ? rateLimiterError.message : String(rateLimiterError),
+      });
+      initializeRateLimiters(null);
+    }
 
     return client;
   } catch (error) {
