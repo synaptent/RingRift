@@ -545,19 +545,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Type-safe access to optional captureTarget field
-      const moveWithCapture = partialMove as typeof partialMove & {
-        captureTarget?: Move['captureTarget'];
-      };
+      // Spread all fields from partialMove (includes placementCount, placedOnStack,
+      // captureTarget, recoveryOption, etc.) and override auto-generated fields
       const move: Move = {
+        ...partialMove,
         id: '',
-        type: partialMove.type,
-        player: partialMove.player,
-        ...(partialMove.from !== undefined ? { from: partialMove.from } : {}),
-        to: partialMove.to,
-        ...(moveWithCapture.captureTarget !== undefined
-          ? { captureTarget: moveWithCapture.captureTarget }
-          : {}),
         timestamp: new Date(),
         thinkTime: 0,
         moveNumber: (gameState?.moveHistory.length ?? 0) + 1,
