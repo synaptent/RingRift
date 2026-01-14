@@ -193,6 +193,11 @@ model RefreshToken {
   // chain has been compromised and should revoke the entire family.
   revokedAt DateTime?
 
+  // Whether this token was created with "Remember me" enabled.
+  // When true, the token expiry is extended to 30 days instead of 7 days.
+  // This flag is preserved during token rotation to maintain the user's preference.
+  rememberMe Boolean @default(false)
+
   @@index([familyId])
   @@map("refresh_tokens")
 }

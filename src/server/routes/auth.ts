@@ -420,6 +420,7 @@ router.post(
             userId: user.id,
             familyId,
             expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS),
+            rememberMe: false, // Registration doesn't have "Remember me" option
           },
         });
       } else {
@@ -668,6 +669,7 @@ router.post(
             userId: user.id,
             familyId,
             expiresAt: new Date(Date.now() + tokenExpiryMs),
+            rememberMe: !!rememberMe,
           },
         });
       } else {
@@ -931,6 +933,9 @@ router.post(
 
     const newHashedToken = hashRefreshToken(newRefreshToken);
 
+    // Determine expiry based on whether the original login used "Remember me"
+    const tokenExpiryMs = storedToken.rememberMe ? REMEMBER_ME_EXPIRY_MS : REFRESH_TOKEN_EXPIRY_MS;
+
     // Rotate the refresh token: mark old one as revoked, create new one
     // This allows us to detect reuse of the old token later.
     await prisma.$transaction([
@@ -939,19 +944,20 @@ router.post(
         where: { id: storedToken.id },
         data: { revokedAt: new Date() },
       }),
-      // Create the new token in the same family
+      // Create the new token in the same family, preserving rememberMe preference
       prisma.refreshToken.create({
         data: {
           token: newHashedToken,
           userId: storedToken.user.id,
           familyId: storedToken.familyId || generateFamilyId(),
-          expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRY_MS),
+          expiresAt: new Date(Date.now() + tokenExpiryMs),
+          rememberMe: storedToken.rememberMe,
         },
       }),
     ]);
 
-    // Set new refresh token as httpOnly cookie
-    res.cookie('refreshToken', newRefreshToken, getRefreshTokenCookieOptions());
+    // Set new refresh token as httpOnly cookie with appropriate expiry
+    res.cookie('refreshToken', newRefreshToken, getRefreshTokenCookieOptions(tokenExpiryMs));
 
     // Audit log the token refresh
     auditTokenRefresh(storedToken.user.id, req, { familyId: storedToken.familyId || undefined });
