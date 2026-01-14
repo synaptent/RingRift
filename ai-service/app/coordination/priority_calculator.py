@@ -205,6 +205,44 @@ def compute_data_deficit_factor(
     return min(1.0, deficit_ratio)
 
 
+def compute_cluster_deficit_boost(
+    local_game_count: int,
+    cluster_game_count: int,
+    low_cluster_threshold: int = 1000,
+    medium_cluster_threshold: int = 5000,
+    high_cluster_threshold: int = 10000,
+) -> float:
+    """Compute priority boost based on cluster-wide game availability.
+
+    Jan 2026: Part of Phase 2 of Cluster Manifest Training Integration.
+
+    Configs with low cluster-wide game counts get boosted priority to fill
+    the cluster data gap. This prevents duplicate selfplay generation when
+    sufficient data already exists across the cluster.
+
+    Args:
+        local_game_count: Games available locally on this node
+        cluster_game_count: Total games available across the entire cluster
+        low_cluster_threshold: Below this, apply 2x boost (default: 1000)
+        medium_cluster_threshold: Below this, apply 1.5x boost (default: 5000)
+        high_cluster_threshold: At or above this, no boost (default: 10000)
+
+    Returns:
+        Boost multiplier (1.0 = no boost, 2.0 = high priority for under-represented configs)
+    """
+    # Use cluster count for the determination, not local
+    total_games = cluster_game_count
+
+    if total_games < low_cluster_threshold:
+        return 2.0  # High priority for severely under-represented configs
+    elif total_games < medium_cluster_threshold:
+        return 1.5  # Medium priority for under-represented configs
+    elif total_games < high_cluster_threshold:
+        return 1.2  # Slight boost for moderately represented configs
+
+    return 1.0  # No boost for well-represented configs
+
+
 def compute_voi_score(
     elo_uncertainty: float,
     elo_gap: float,
@@ -337,6 +375,7 @@ class DynamicWeights:
     All weights are bounded to prevent any single factor from dominating.
 
     January 2026 Sprint 10: Added diversity weight for opponent variety maximization.
+    January 2026 Phase 2: Added cluster weight for cluster-wide data optimization.
     """
     staleness: float = 0.30
     velocity: float = 0.10
@@ -349,6 +388,8 @@ class DynamicWeights:
     voi: float = 0.02
     # January 2026 Sprint 10: Diversity weight for opponent variety
     diversity: float = 0.10
+    # January 2026 Phase 2: Cluster weight for cluster-wide data optimization
+    cluster: float = 0.15  # Prioritizes configs with low cluster-wide game counts
 
     # Cluster state that drove these weights (for debugging)
     idle_gpu_fraction: float = 0.0
@@ -369,6 +410,7 @@ class DynamicWeights:
             "quality": self.quality,
             "voi": self.voi,
             "diversity": self.diversity,
+            "cluster": self.cluster,  # January 2026 Phase 2
             "idle_gpu_fraction": self.idle_gpu_fraction,
             "training_queue_depth": self.training_queue_depth,
             "configs_at_target_fraction": self.configs_at_target_fraction,
@@ -494,6 +536,8 @@ class PriorityInputs:
     target_elo: float = 2000.0
     # January 2026 Sprint 10: Diversity score for opponent variety (0.0=low, 1.0=high)
     diversity_score: float = 1.0
+    # January 2026 Phase 2: Cluster-wide game count for deficit calculation
+    cluster_game_count: int = 0
 
 
 class PriorityCalculator:
@@ -589,8 +633,15 @@ class PriorityCalculator:
         diversity_factor = max(0.0, 1.0 - inputs.diversity_score)
         diversity = diversity_factor * w.diversity
 
+        # January 2026 Phase 2: Cluster deficit factor
+        # Prioritizes configs with low cluster-wide game counts to prevent duplicate generation
+        cluster_boost = compute_cluster_deficit_boost(
+            inputs.game_count, inputs.cluster_game_count
+        )
+        cluster = (cluster_boost - 1.0) * w.cluster  # Normalize around 1.0
+
         # Combine factors
-        score = staleness + velocity + training + exploration + curriculum + improvement + architecture + quality + data_deficit + voi + diversity
+        score = staleness + velocity + training + exploration + curriculum + improvement + architecture + quality + data_deficit + voi + diversity + cluster
 
         # Apply exploration boost as multiplier
         score *= inputs.exploration_boost

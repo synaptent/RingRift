@@ -30,7 +30,7 @@ from .base import BackoffConfig, BaseLoop
 from .loop_constants import LoopIntervals
 
 if TYPE_CHECKING:
-    pass
+    from aiohttp import ClientSession
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +73,13 @@ class ManifestCollectionLoop(BaseLoop):
         *,
         update_improvement_cycle: Callable[[dict[str, Any]], None] | None = None,
         record_stats_sample: Callable[[Any], None] | None = None,
+        get_alive_peers: Callable[[], list[Any]] | None = None,
+        get_http_session: Callable[[], ClientSession] | None = None,
         interval: float = DEFAULT_COLLECTION_INTERVAL,
         initial_delay: float = INITIAL_DELAY,
         backoff_config: BackoffConfig | None = None,
         enabled: bool = True,
+        broadcast_enabled: bool = True,
     ):
         """Initialize the manifest collection loop.
 
@@ -87,10 +90,13 @@ class ManifestCollectionLoop(BaseLoop):
             update_manifest: Callback to store manifest; args: (manifest, is_cluster)
             update_improvement_cycle: Optional callback to update ImprovementCycleManager
             record_stats_sample: Optional callback to record stats sample for dashboard
+            get_alive_peers: Optional callback to get list of alive peer nodes (for broadcast)
+            get_http_session: Optional callback to get aiohttp ClientSession (for broadcast)
             interval: Seconds between collection attempts (default: 300)
             initial_delay: Delay before first collection (default: 60s)
             backoff_config: Custom backoff configuration for errors
             enabled: Whether the loop is enabled
+            broadcast_enabled: Whether leader should broadcast manifest to followers
         """
         super().__init__(
             name="manifest_collection",
@@ -108,7 +114,10 @@ class ManifestCollectionLoop(BaseLoop):
         self._update_manifest = update_manifest
         self._update_improvement_cycle = update_improvement_cycle
         self._record_stats_sample = record_stats_sample
+        self._get_alive_peers = get_alive_peers
+        self._get_http_session = get_http_session
         self._initial_delay = initial_delay
+        self._broadcast_enabled = broadcast_enabled
 
         # Track collection stats
         self._first_run = True
@@ -116,6 +125,8 @@ class ManifestCollectionLoop(BaseLoop):
         self._cluster_collections = 0
         self._local_collections = 0
         self._last_collection_time = 0.0
+        self._broadcast_successes = 0
+        self._broadcast_failures = 0
 
     async def _on_start(self) -> None:
         """Wait for initial delay before starting collections."""
@@ -159,6 +170,13 @@ class ManifestCollectionLoop(BaseLoop):
                 except Exception as e:
                     logger.debug(f"[{self.name}] ImprovementCycleManager update error: {e}")
 
+            # Broadcast cluster manifest to all followers
+            if self._broadcast_enabled and self._get_alive_peers and self._get_http_session:
+                try:
+                    await self._broadcast_cluster_manifest(manifest)
+                except Exception as e:
+                    logger.warning(f"[{self.name}] Broadcast error: {e}")
+
             logger.debug(f"[{self.name}] Collected cluster manifest")
         else:
             # Non-leader collects local manifest only
@@ -185,8 +203,93 @@ class ManifestCollectionLoop(BaseLoop):
             "cluster_collections": self._cluster_collections,
             "local_collections": self._local_collections,
             "last_collection_time": self._last_collection_time,
+            "broadcast_successes": self._broadcast_successes,
+            "broadcast_failures": self._broadcast_failures,
         }
         status["role"] = role_str
         status["initial_delay"] = self._initial_delay
         status["first_run_completed"] = not self._first_run
+        status["broadcast_enabled"] = self._broadcast_enabled
         return status
+
+    async def _broadcast_cluster_manifest(self, manifest: Any) -> None:
+        """Broadcast cluster manifest to all follower nodes.
+
+        Jan 2026: Added to ensure all nodes have visibility into cluster-wide data.
+
+        Args:
+            manifest: ClusterDataManifest to broadcast
+        """
+        if not self._get_alive_peers or not self._get_http_session:
+            return
+
+        peers = self._get_alive_peers()
+        if not peers:
+            logger.debug(f"[{self.name}] No peers to broadcast to")
+            return
+
+        session = self._get_http_session()
+        manifest_dict = manifest.to_dict() if hasattr(manifest, "to_dict") else manifest
+
+        # Broadcast to all alive peers in parallel
+        tasks = []
+        for peer in peers:
+            # Get peer URL - handle different peer object structures
+            peer_url = None
+            if hasattr(peer, "http_url"):
+                peer_url = peer.http_url
+            elif hasattr(peer, "url"):
+                peer_url = peer.url
+            elif isinstance(peer, dict):
+                peer_url = peer.get("http_url") or peer.get("url")
+
+            if not peer_url:
+                continue
+
+            endpoint = f"{peer_url.rstrip('/')}/data/cluster_manifest_broadcast"
+            tasks.append(self._send_manifest_to_peer(session, endpoint, manifest_dict))
+
+        if not tasks:
+            return
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        successes = sum(1 for r in results if r is True)
+        failures = sum(1 for r in results if r is not True)
+
+        self._broadcast_successes += successes
+        self._broadcast_failures += failures
+
+        if failures > 0:
+            logger.debug(
+                f"[{self.name}] Broadcast: {successes} successes, {failures} failures"
+            )
+
+    async def _send_manifest_to_peer(
+        self,
+        session: ClientSession,
+        endpoint: str,
+        manifest_dict: dict,
+    ) -> bool:
+        """Send manifest to a single peer.
+
+        Returns True on success, False on failure.
+        """
+        try:
+            async with session.post(
+                endpoint,
+                json=manifest_dict,
+                timeout=30.0,
+            ) as response:
+                if response.status == 200:
+                    return True
+                logger.debug(
+                    f"[{self.name}] Broadcast to {endpoint} failed: {response.status}"
+                )
+                return False
+        except asyncio.TimeoutError:
+            logger.debug(f"[{self.name}] Broadcast timeout: {endpoint}")
+            return False
+        except Exception as e:
+            logger.debug(f"[{self.name}] Broadcast error to {endpoint}: {e}")
+            return False

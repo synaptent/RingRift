@@ -74,6 +74,25 @@ from app.coordination.event_emission_helpers import safe_emit_event
 # Use centralized regression severity (January 2026 - signal pipeline optimization)
 from app.training.regression_detector import RegressionSeverity
 
+# January 2026: Cluster manifest integration for data pre-positioning
+try:
+    from app.distributed.data_catalog import (
+        DataSourceInfo,
+        get_data_registry,
+    )
+    HAS_DATA_CATALOG = True
+except ImportError:
+    HAS_DATA_CATALOG = False
+    DataSourceInfo = None  # type: ignore
+    get_data_registry = None  # type: ignore
+
+try:
+    from app.coordination.sync_facade import get_sync_facade
+    HAS_SYNC_FACADE = True
+except ImportError:
+    HAS_SYNC_FACADE = False
+    get_sync_facade = None  # type: ignore
+
 # CoordinatorProtocol support (December 2025 - Phase 14)
 from app.coordination.protocols import (
     CoordinatorStatus,
@@ -1473,6 +1492,256 @@ class TrainingCoordinator:
                 "db_healthy": db_healthy,
             },
         )
+
+    # =========================================================================
+    # Data Pre-positioning Methods (January 2026 - Phase 4)
+    # =========================================================================
+
+    def _select_best_data_source(
+        self,
+        board_type: str,
+        num_players: int,
+        target_node: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Select the best data source for training.
+
+        Queries the cluster manifest to find optimal data sources,
+        scoring by locality (prefer target node), quality, and recency.
+
+        Args:
+            board_type: Board type (e.g., "hex8", "square8")
+            num_players: Number of players (2, 3, or 4)
+            target_node: Optional target training node for locality scoring
+
+        Returns:
+            Dictionary with source info (node_id, path, game_count, score),
+            or None if no data available.
+
+        January 2026: Phase 4 - TrainingCoordinator Data Pre-positioning.
+        """
+        if not HAS_DATA_CATALOG or get_data_registry is None:
+            logger.debug("[TrainingCoordinator] Data catalog not available")
+            return None
+
+        config_key = make_config_key(board_type, num_players)
+        target = target_node or self._node_name
+
+        try:
+            registry = get_data_registry()
+            sources = registry.get_data_sources(board_type, num_players)
+
+            if not sources:
+                logger.debug(f"[TrainingCoordinator] No data sources for {config_key}")
+                return None
+
+            # Score each source
+            scored_sources: list[dict[str, Any]] = []
+            for source in sources:
+                score = 0.0
+                node_id = source.get("node_id", "")
+                game_count = source.get("game_count", 0)
+
+                # Locality bonus: prefer data already at target node
+                if node_id == target:
+                    score += 100.0
+                    source["is_local"] = True
+                else:
+                    source["is_local"] = False
+
+                # Game count bonus: prefer sources with more data
+                if game_count >= 10000:
+                    score += 50.0
+                elif game_count >= 5000:
+                    score += 30.0
+                elif game_count >= 1000:
+                    score += 10.0
+
+                # Recency bonus (if last_updated available)
+                last_updated = source.get("last_updated", 0)
+                if last_updated:
+                    age_hours = (time.time() - last_updated) / 3600
+                    if age_hours < 1:
+                        score += 20.0
+                    elif age_hours < 6:
+                        score += 10.0
+
+                source["score"] = score
+                scored_sources.append(source)
+
+            if not scored_sources:
+                return None
+
+            # Return best source
+            best = max(scored_sources, key=lambda s: s.get("score", 0))
+            logger.debug(
+                f"[TrainingCoordinator] Best source for {config_key}: "
+                f"node={best.get('node_id')}, games={best.get('game_count')}, "
+                f"local={best.get('is_local')}, score={best.get('score')}"
+            )
+            return best
+
+        except (ImportError, RuntimeError, AttributeError) as e:
+            logger.debug(f"[TrainingCoordinator] Error finding data source: {e}")
+            return None
+
+    async def _ensure_data_at_node(
+        self,
+        board_type: str,
+        num_players: int,
+        target_node: str | None = None,
+        sync_timeout: float = 300.0,
+    ) -> bool:
+        """Ensure training data is available at the target node.
+
+        If the best data source is remote, triggers a priority sync
+        to pre-position data before training starts.
+
+        Args:
+            board_type: Board type
+            num_players: Number of players
+            target_node: Target training node (defaults to local node)
+            sync_timeout: Maximum time to wait for sync (seconds)
+
+        Returns:
+            True if data is available (local or synced), False otherwise.
+
+        January 2026: Phase 4 - TrainingCoordinator Data Pre-positioning.
+        """
+        import asyncio
+
+        config_key = make_config_key(board_type, num_players)
+        target = target_node or self._node_name
+
+        # Find best data source
+        best_source = self._select_best_data_source(
+            board_type, num_players, target
+        )
+
+        if not best_source:
+            logger.warning(
+                f"[TrainingCoordinator] No data sources found for {config_key}"
+            )
+            return False
+
+        # If data is already local, we're done
+        if best_source.get("is_local", False):
+            logger.info(
+                f"[TrainingCoordinator] Data for {config_key} already at {target} "
+                f"({best_source.get('game_count', 0)} games)"
+            )
+            return True
+
+        # Need to sync from remote source
+        if not HAS_SYNC_FACADE or get_sync_facade is None:
+            logger.warning(
+                f"[TrainingCoordinator] Sync facade not available, "
+                f"cannot pre-position data for {config_key}"
+            )
+            return False
+
+        source_node = best_source.get("node_id", "unknown")
+        logger.info(
+            f"[TrainingCoordinator] Pre-positioning data for {config_key}: "
+            f"{source_node} -> {target} ({best_source.get('game_count', 0)} games)"
+        )
+
+        try:
+            facade = get_sync_facade()
+            response = await facade.trigger_priority_sync(
+                reason=f"training_pre_positioning_{config_key}",
+                source_node=source_node,
+                config_key=config_key,
+                data_type="games",
+            )
+
+            if response.success:
+                logger.info(
+                    f"[TrainingCoordinator] Data pre-positioned for {config_key}: "
+                    f"synced {response.nodes_synced} nodes"
+                )
+                self._config_sync_times[config_key] = time.time()
+                return True
+            else:
+                logger.warning(
+                    f"[TrainingCoordinator] Pre-positioning sync failed for {config_key}: "
+                    f"{response.errors}"
+                )
+                return False
+
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"[TrainingCoordinator] Pre-positioning sync timed out for {config_key} "
+                f"after {sync_timeout}s"
+            )
+            return False
+        except (RuntimeError, OSError, ConnectionError) as e:
+            # Runtime/connection errors during sync
+            logger.warning(
+                f"[TrainingCoordinator] Pre-positioning sync error for {config_key}: {e}"
+            )
+            return False
+
+    async def prepare_training_data_async(
+        self,
+        board_type: str,
+        num_players: int,
+        target_node: str | None = None,
+    ) -> dict[str, Any]:
+        """Prepare training data before starting a training job.
+
+        This is the main entry point for data pre-positioning. Call this
+        before start_training() to ensure data is available.
+
+        Args:
+            board_type: Board type
+            num_players: Number of players
+            target_node: Target training node
+
+        Returns:
+            Dictionary with:
+            - ready: bool - whether data is ready for training
+            - source: dict - best data source info
+            - synced: bool - whether sync was performed
+            - games: int - number of games available
+
+        January 2026: Phase 4 - TrainingCoordinator Data Pre-positioning.
+        """
+        config_key = make_config_key(board_type, num_players)
+        target = target_node or self._node_name
+
+        result: dict[str, Any] = {
+            "ready": False,
+            "source": None,
+            "synced": False,
+            "games": 0,
+            "config_key": config_key,
+            "target_node": target,
+        }
+
+        # Find best source
+        best_source = self._select_best_data_source(board_type, num_players, target)
+        if best_source:
+            result["source"] = best_source
+            result["games"] = best_source.get("game_count", 0)
+
+        # Try to ensure data at node
+        data_ready = await self._ensure_data_at_node(
+            board_type, num_players, target
+        )
+        result["ready"] = data_ready
+
+        # Check if we synced
+        if config_key in self._config_sync_times:
+            sync_age = time.time() - self._config_sync_times[config_key]
+            if sync_age < 60:  # Synced within last minute
+                result["synced"] = True
+
+        logger.info(
+            f"[TrainingCoordinator] Data preparation for {config_key}: "
+            f"ready={result['ready']}, games={result['games']}, synced={result['synced']}"
+        )
+
+        return result
 
     def can_start_training(self, board_type: str, num_players: int) -> bool:
         """Check if training can be started for this config.

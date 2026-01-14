@@ -391,6 +391,49 @@ class GameDiscovery:
         )
         return sum(db.game_count for db in databases)
 
+    def get_unified_total(
+        self, board_type: str, num_players: int, include_external: bool = True
+    ) -> int:
+        """Get total games across ALL sources (local + cluster + OWC + S3).
+
+        Jan 2026: Added for unified cluster data visibility.
+
+        This method queries the UnifiedDataRegistry which aggregates:
+        - Local game databases (this node)
+        - Cluster-wide data (from P2P manifest broadcast)
+        - OWC external drive (mac-studio)
+        - AWS S3 bucket (archived data)
+
+        Args:
+            board_type: Board type (hex8, square8, etc.)
+            num_players: Number of players (2, 3, 4)
+            include_external: Include OWC and S3 sources (default: True)
+
+        Returns:
+            Total games across all sources. Falls back to local-only if
+            registry unavailable.
+        """
+        try:
+            from app.distributed.data_catalog import get_data_registry
+
+            registry = get_data_registry()
+            total = registry.get_total_games(board_type, num_players)
+
+            # If registry has data, return it
+            if total > 0:
+                return total
+
+            # Fall back to local-only if registry is empty
+            # (e.g., P2P not running, no manifest received)
+            return self.get_total_games(board_type, num_players)
+
+        except ImportError:
+            # Registry not available, fall back to local
+            return self.get_total_games(board_type, num_players)
+        except Exception as e:
+            logger.debug(f"Unified registry query failed, falling back to local: {e}")
+            return self.get_total_games(board_type, num_players)
+
     def clear_cache(self):
         """Clear the discovery cache."""
         self._cache.clear()

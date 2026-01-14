@@ -18,6 +18,7 @@ Inherits from PipelineMixinBase which provides:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from pathlib import Path
@@ -1215,6 +1216,7 @@ class PipelineEventHandlerMixin(PipelineMixinBase):
         """Handle TRAINING_THRESHOLD_REACHED - enough games for training.
 
         Triggers NPZ export and training when game threshold is met.
+        January 2026 Phase 3: Added predictive sync to pre-position data.
         Added: December 2025
         """
         from app.coordination.data_pipeline_orchestrator import PipelineStage
@@ -1228,6 +1230,10 @@ class PipelineEventHandlerMixin(PipelineMixinBase):
             f"{config} ({games} games)"
         )
 
+        # January 2026 Phase 3: Predictive sync to likely training node
+        # Pre-sync data before training starts to reduce startup latency
+        await self._trigger_predictive_sync_if_needed(config)
+
         # Auto-trigger export if enabled and we're in appropriate stage
         if self.auto_trigger and self.auto_trigger_export:
             if self._current_stage in [PipelineStage.IDLE, PipelineStage.DATA_SYNC]:
@@ -1237,6 +1243,126 @@ class PipelineEventHandlerMixin(PipelineMixinBase):
                     await self._auto_trigger_export(iteration)
                 else:
                     logger.warning(f"Failed to parse config {config}")
+
+    async def _trigger_predictive_sync_if_needed(self, config_key: str) -> None:
+        """Trigger predictive sync to likely training node.
+
+        January 2026 Phase 3: Part of Cluster Manifest Training Integration.
+        When training threshold is reached, pre-sync data to the predicted
+        training node to reduce startup latency by 30-60 seconds.
+
+        Args:
+            config_key: Config key like "hex8_2p"
+        """
+        try:
+            # Get predicted training node from work queue
+            training_node = await self._predict_training_node(config_key)
+
+            if not training_node:
+                logger.debug(
+                    f"[DataPipelineOrchestrator] No training node predicted for {config_key}"
+                )
+                return
+
+            # Get local node ID
+            try:
+                from app.config.env import env
+                local_node_id = env.node_id
+            except ImportError:
+                import socket
+                local_node_id = socket.gethostname()
+
+            # Only sync if predicted node is different from local
+            if training_node == local_node_id:
+                logger.debug(
+                    f"[DataPipelineOrchestrator] Training predicted for local node, "
+                    f"no predictive sync needed for {config_key}"
+                )
+                return
+
+            logger.info(
+                f"[DataPipelineOrchestrator] Predictive sync: {config_key} -> {training_node}"
+            )
+
+            # Trigger priority sync to training node
+            try:
+                from app.coordination.sync_facade import get_sync_facade
+
+                facade = get_sync_facade()
+                await facade.trigger_priority_sync(
+                    reason=f"predictive_sync_{config_key}",
+                    config_key=config_key,
+                    data_type="games",
+                )
+            except ImportError:
+                logger.debug(
+                    "[DataPipelineOrchestrator] SyncFacade not available for predictive sync"
+                )
+            except (RuntimeError, TimeoutError, asyncio.TimeoutError) as e:
+                logger.warning(
+                    f"[DataPipelineOrchestrator] Predictive sync failed for {config_key}: {e}"
+                )
+
+        except (RuntimeError, ValueError, TypeError, AttributeError) as e:
+            logger.debug(
+                f"[DataPipelineOrchestrator] Error in predictive sync for {config_key}: {e}"
+            )
+
+    async def _predict_training_node(self, config_key: str) -> str | None:
+        """Predict which node is likely to run training next.
+
+        January 2026 Phase 3: Part of Cluster Manifest Training Integration.
+        Uses work queue and node availability to predict training assignment.
+
+        Args:
+            config_key: Config key like "hex8_2p"
+
+        Returns:
+            Predicted node ID, or None if unpredictable
+        """
+        try:
+            from app.coordination.work_queue import get_work_queue
+
+            queue = get_work_queue()
+
+            # Check for pending training jobs for this config
+            pending_jobs = await asyncio.to_thread(
+                queue.get_pending_jobs,
+                job_type="training",
+                config_key=config_key,
+            )
+
+            if pending_jobs:
+                # Return target node of first pending training job
+                first_job = pending_jobs[0]
+                target = first_job.get("target_node")
+                if target:
+                    return target
+
+            # Fallback: Use work queue's node assignment logic
+            try:
+                # Get likely assignment from queue's selection algorithm
+                assignment = await asyncio.to_thread(
+                    queue.get_likely_training_assignment,
+                    config_key=config_key,
+                )
+                return assignment
+            except (AttributeError, NotImplementedError):
+                # Method may not exist on all queue implementations
+                pass
+
+            return None
+
+        except ImportError:
+            logger.debug(
+                "[DataPipelineOrchestrator] WorkQueue not available for training prediction"
+            )
+            return None
+        except (RuntimeError, ValueError, TypeError, AttributeError) as e:
+            logger.debug(
+                f"[DataPipelineOrchestrator] Error predicting training node: {e}"
+            )
+            return None
 
     async def _on_promotion_started(self, event) -> None:
         """Handle PROMOTION_STARTED - promotion process initiated.

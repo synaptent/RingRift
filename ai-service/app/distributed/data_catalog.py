@@ -1302,6 +1302,211 @@ class UnifiedDataRegistry:
         """Refresh both catalog and manifest data."""
         self._catalog.refresh()
 
+    # =========================================================================
+    # Cluster Manifest Integration (Jan 2026)
+    # Receives broadcast manifests from P2P leader for unified data visibility
+    # =========================================================================
+
+    _cluster_manifest: Any = None
+    _cluster_manifest_received_at: float = 0.0
+
+    def update_from_cluster_manifest(self, manifest: Any, received_at: float | None = None) -> None:
+        """Update registry with cluster manifest received from P2P leader broadcast.
+
+        Jan 2026: Added for unified cluster data visibility.
+
+        Args:
+            manifest: ClusterDataManifest from P2P broadcast
+            received_at: Timestamp when manifest was received
+        """
+        import time
+        self._cluster_manifest = manifest
+        self._cluster_manifest_received_at = received_at or time.time()
+        logger.debug(
+            f"[UnifiedDataRegistry] Updated cluster manifest: "
+            f"{getattr(manifest, 'total_nodes', 0)} nodes, "
+            f"{getattr(manifest, 'total_selfplay_games', 0)} games"
+        )
+
+    def get_cluster_manifest(self) -> Any:
+        """Get the current cluster manifest (if received from leader broadcast).
+
+        Returns:
+            ClusterDataManifest or None if not yet received.
+        """
+        return self._cluster_manifest
+
+    def get_cluster_status(self) -> dict[str, dict[str, int]]:
+        """Get game counts per config, per source (local/cluster/owc/s3).
+
+        Jan 2026: Added for unified cluster data visibility.
+
+        Returns:
+            Dict mapping config_key -> {local, cluster, owc, s3, total}
+        """
+        import time
+
+        result: dict[str, dict[str, int]] = {}
+
+        # Get local game counts from catalog
+        try:
+            local_sources = self._catalog.discover_data_sources(force=False)
+            for source in local_sources:
+                # DataSource has board_types (set) and player_counts (set)
+                board_types = getattr(source, "board_types", set())
+                player_counts = getattr(source, "player_counts", set())
+
+                # Create config keys for all combinations
+                for board_type in board_types:
+                    for num_players in player_counts:
+                        config_key = f"{board_type}_{num_players}p"
+                        if config_key not in result:
+                            result[config_key] = {"local": 0, "cluster": 0, "owc": 0, "s3": 0, "total": 0}
+                        # Distribute game count evenly across configs (approximation)
+                        # In practice, most DBs have one config
+                        game_share = source.game_count // max(1, len(board_types) * len(player_counts))
+                        result[config_key]["local"] += game_share
+        except Exception as e:
+            logger.debug(f"[UnifiedDataRegistry] Local source discovery failed: {e}")
+
+        # Add cluster manifest data
+        manifest = self._cluster_manifest
+        if manifest:
+            # Node manifests (cluster-wide data from other nodes)
+            by_board = getattr(manifest, "by_board_type", {})
+            for config_key, info in by_board.items():
+                if config_key not in result:
+                    result[config_key] = {"local": 0, "cluster": 0, "owc": 0, "s3": 0, "total": 0}
+                result[config_key]["cluster"] = info.get("total_games", 0)
+
+            # External storage (OWC + S3)
+            external = getattr(manifest, "external_storage", None)
+            if external:
+                # OWC drive
+                owc_by_config = getattr(external, "owc_games_by_config", {})
+                for config_key, count in owc_by_config.items():
+                    if config_key not in result:
+                        result[config_key] = {"local": 0, "cluster": 0, "owc": 0, "s3": 0, "total": 0}
+                    result[config_key]["owc"] = count
+
+                # S3 bucket
+                s3_by_config = getattr(external, "s3_games_by_config", {})
+                for config_key, count in s3_by_config.items():
+                    if config_key not in result:
+                        result[config_key] = {"local": 0, "cluster": 0, "owc": 0, "s3": 0, "total": 0}
+                    result[config_key]["s3"] = count
+
+        # Compute totals
+        for config_key in result:
+            result[config_key]["total"] = (
+                result[config_key]["local"]
+                + result[config_key]["cluster"]
+                + result[config_key]["owc"]
+                + result[config_key]["s3"]
+            )
+
+        return result
+
+    def get_total_games(self, board_type: str, num_players: int) -> int:
+        """Get total games across ALL sources (local + cluster + owc + s3).
+
+        Jan 2026: Added for unified cluster data visibility.
+
+        Args:
+            board_type: Board type (hex8, square8, etc.)
+            num_players: Number of players (2, 3, 4)
+
+        Returns:
+            Total games across all sources
+        """
+        config_key = f"{board_type}_{num_players}p"
+        status = self.get_cluster_status()
+        if config_key in status:
+            return status[config_key]["total"]
+        return 0
+
+    def get_data_sources(self, board_type: str, num_players: int) -> list[dict]:
+        """List all sources with data for this config.
+
+        Jan 2026: Added for unified cluster data visibility.
+
+        Args:
+            board_type: Board type
+            num_players: Number of players
+
+        Returns:
+            List of dicts with source info (type, location, game_count)
+        """
+        config_key = f"{board_type}_{num_players}p"
+        sources = []
+
+        # Local sources
+        try:
+            local_sources = self._catalog.discover_data_sources(force=False)
+            for source in local_sources:
+                # DataSource has board_types (set) and player_counts (set)
+                board_types = getattr(source, "board_types", set())
+                player_counts = getattr(source, "player_counts", set())
+
+                # Check if this source matches the config
+                for bt in board_types:
+                    for np in player_counts:
+                        if f"{bt}_{np}p" == config_key:
+                            sources.append({
+                                "type": "local",
+                                "location": str(source.path),
+                                "game_count": source.game_count,
+                            })
+                            break
+        except Exception:
+            pass
+
+        # Cluster sources from manifest
+        manifest = self._cluster_manifest
+        if manifest:
+            node_manifests = getattr(manifest, "node_manifests", {})
+            for node_id, node_manifest in node_manifests.items():
+                for f in getattr(node_manifest, "files", []):
+                    file_config = f"{getattr(f, 'board_type', '')}_{getattr(f, 'num_players', 0)}p"
+                    if file_config == config_key:
+                        sources.append({
+                            "type": "cluster",
+                            "location": f"{node_id}:{getattr(f, 'path', '')}",
+                            "game_count": getattr(f, "game_count", 0),
+                        })
+
+            # External storage
+            external = getattr(manifest, "external_storage", None)
+            if external:
+                owc_count = getattr(external, "owc_games_by_config", {}).get(config_key, 0)
+                if owc_count:
+                    sources.append({
+                        "type": "owc",
+                        "location": "mac-studio:/Volumes/RingRift-Data",
+                        "game_count": owc_count,
+                    })
+
+                s3_count = getattr(external, "s3_games_by_config", {}).get(config_key, 0)
+                if s3_count:
+                    sources.append({
+                        "type": "s3",
+                        "location": f"s3://{getattr(external, 's3_bucket', 'ringrift-data')}",
+                        "game_count": s3_count,
+                    })
+
+        return sources
+
+    def get_manifest_age_seconds(self) -> float:
+        """Get age of received cluster manifest in seconds.
+
+        Returns:
+            Seconds since manifest was received, or -1 if no manifest.
+        """
+        import time
+        if not self._cluster_manifest_received_at:
+            return -1
+        return time.time() - self._cluster_manifest_received_at
+
 
 # Singleton registry instance
 _registry_instance: UnifiedDataRegistry | None = None

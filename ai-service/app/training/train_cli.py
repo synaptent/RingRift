@@ -71,6 +71,134 @@ def _discover_best_npz_for_config(
         return fallback_path
 
 
+def _preflight_cluster_check(
+    board_type: str,
+    num_players: int,
+    sync_threshold: int = 5000,
+    sync_timeout: float = 300.0,
+) -> dict[str, int]:
+    """Check cluster-wide data availability, trigger sync if beneficial.
+
+    Jan 2026: Part of Phase 1 of Cluster Manifest Training Integration.
+
+    Args:
+        board_type: Board type (e.g., 'hex8', 'square8')
+        num_players: Number of players (2, 3, or 4)
+        sync_threshold: Minimum games required locally before training
+        sync_timeout: Maximum seconds to wait for sync (default: 300)
+
+    Returns:
+        Dict with local, cluster, total game counts and sync status
+    """
+    config_key = f"{board_type}_{num_players}p"
+
+    try:
+        from app.distributed.data_catalog import get_data_registry
+
+        registry = get_data_registry()
+        status = registry.get_cluster_status().get(config_key, {})
+
+        local_games = status.get("local", 0)
+        cluster_games = status.get("cluster", 0)
+        owc_games = status.get("owc", 0)
+        s3_games = status.get("s3", 0)
+        total_games = status.get("total", local_games)
+
+        result = {
+            "local": local_games,
+            "cluster": cluster_games,
+            "owc": owc_games,
+            "s3": s3_games,
+            "total": total_games,
+            "sync_triggered": False,
+            "sync_completed": False,
+        }
+
+        logger.info(
+            f"[Cluster Preflight] {config_key}: local={local_games:,}, "
+            f"cluster={cluster_games:,}, total={total_games:,}"
+        )
+
+        # Check if sync is beneficial
+        if local_games >= sync_threshold:
+            logger.info(
+                f"[Cluster Preflight] Local data sufficient "
+                f"({local_games:,} >= {sync_threshold:,}), skipping sync"
+            )
+            return result
+
+        # Only trigger sync if cluster has more data than local
+        remote_games = cluster_games + owc_games + s3_games
+        if remote_games <= local_games:
+            logger.info(
+                f"[Cluster Preflight] No additional data on cluster "
+                f"(remote={remote_games:,} <= local={local_games:,})"
+            )
+            return result
+
+        # Trigger priority sync
+        logger.info(
+            f"[Cluster Preflight] Triggering priority sync: "
+            f"local={local_games:,} < threshold={sync_threshold:,}, "
+            f"cluster has {remote_games:,} more games"
+        )
+
+        result["sync_triggered"] = True
+
+        try:
+            import asyncio
+            from app.coordination.sync_facade import get_sync_facade
+
+            async def _run_priority_sync() -> bool:
+                """Run priority sync in async context."""
+                facade = get_sync_facade()
+                response = await asyncio.wait_for(
+                    facade.trigger_priority_sync(
+                        reason="training_preflight",
+                        config_key=config_key,
+                        data_type="games",
+                    ),
+                    timeout=sync_timeout,
+                )
+                return response.success
+
+            # Run in event loop
+            loop = asyncio.new_event_loop()
+            try:
+                sync_success = loop.run_until_complete(_run_priority_sync())
+                result["sync_completed"] = sync_success
+            finally:
+                loop.close()
+
+            if sync_success:
+                # Refresh counts after sync
+                refreshed = registry.get_cluster_status().get(config_key, {})
+                result["local"] = refreshed.get("local", local_games)
+                logger.info(
+                    f"[Cluster Preflight] Sync completed, "
+                    f"local now={result['local']:,}"
+                )
+            else:
+                logger.warning(
+                    "[Cluster Preflight] Sync did not complete within timeout, "
+                    "proceeding with existing data"
+                )
+
+        except ImportError as e:
+            logger.warning(f"[Cluster Preflight] SyncFacade not available: {e}")
+        except (RuntimeError, TimeoutError, asyncio.TimeoutError) as e:
+            logger.warning(f"[Cluster Preflight] Sync failed: {e}")
+
+        return result
+
+    except ImportError as e:
+        logger.debug(f"[Cluster Preflight] DataRegistry not available: {e}")
+        return {"local": 0, "cluster": 0, "total": 0, "sync_triggered": False}
+    except (RuntimeError, ConnectionError, TimeoutError, OSError) as e:
+        logger.warning(f"[Cluster Preflight] Error during check: {e}")
+        return {"local": 0, "cluster": 0, "total": 0, "sync_triggered": False}
+
+
 def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     """Parse command line arguments.
 
@@ -568,6 +696,24 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     )
     # NOTE: --allow-stale-data and --max-data-age-hours already defined above (line ~390)
 
+    # Cluster data awareness (January 2026)
+    parser.add_argument(
+        '--use-cluster-data', action='store_true',
+        help='Enable cluster-wide data awareness. Before training, checks cluster '
+             'manifest for total available games and triggers sync if local data '
+             'is insufficient. Requires P2P orchestrator running.'
+    )
+    parser.add_argument(
+        '--cluster-sync-threshold', type=int, default=5000,
+        help='Minimum games required locally before training. If local < threshold '
+             'and cluster has more, triggers priority sync (default: 5000).'
+    )
+    parser.add_argument(
+        '--skip-cluster-preflight', action='store_true',
+        help='Skip cluster preflight check even with --use-cluster-data. '
+             'Use when you want cluster awareness for metrics but not auto-sync.'
+    )
+
     return parser.parse_args(args)
 
 
@@ -756,6 +902,40 @@ def main() -> None:
             num_players=args.num_players or 2,
             fallback_path=os.path.join(config.data_dir, "dataset.npz"),
         )
+
+    # ==========================================================================
+    # Cluster Data Preflight Check (January 2026)
+    # ==========================================================================
+    # Phase 1 of Cluster Manifest Training Integration: Check cluster-wide data
+    # availability before training and trigger sync if local data is insufficient.
+    if getattr(args, 'use_cluster_data', False) and not getattr(args, 'skip_cluster_preflight', False):
+        board_type_str = args.board_type or 'hex8'
+        num_players_val = args.num_players or 2
+        sync_threshold = getattr(args, 'cluster_sync_threshold', 5000)
+
+        logger.info(
+            f"[TrainCLI] Running cluster preflight check for {board_type_str}_{num_players_val}p "
+            f"(threshold={sync_threshold:,})"
+        )
+
+        preflight_result = _preflight_cluster_check(
+            board_type=board_type_str,
+            num_players=num_players_val,
+            sync_threshold=sync_threshold,
+            sync_timeout=300.0,
+        )
+
+        if preflight_result.get("sync_triggered"):
+            if preflight_result.get("sync_completed"):
+                logger.info(
+                    f"[TrainCLI] Cluster sync completed. Local games: {preflight_result['local']:,}"
+                )
+            else:
+                logger.warning(
+                    "[TrainCLI] Cluster sync was triggered but did not complete. "
+                    "Proceeding with existing data."
+                )
+
     # Board-aware default model version (centralized in config.py)
     # Auto-detects from data if data_path provided (Dec 2025)
     model_version = args.model_version

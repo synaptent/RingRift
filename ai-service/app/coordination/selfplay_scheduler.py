@@ -406,6 +406,12 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
             quality_provider=self._fetch_quality_from_daemon,
         )
 
+        # January 2026 Phase 2: Cluster-wide game count cache
+        # Caches cluster manifest data to avoid repeated lookups during priority calculation
+        self._cluster_game_counts: dict[str, int] = {}
+        self._cluster_game_counts_last_update: float = 0.0
+        self._cluster_game_counts_ttl: float = 60.0  # Refresh every 60 seconds
+
         # Lazy dependencies
         self._training_freshness = None
         self._cluster_manifest = None
@@ -932,6 +938,8 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
             target_elo=priority.target_elo,
             # January 2026 Sprint 10: Diversity score from opponent tracking
             diversity_score=priority.diversity_score,
+            # January 2026 Phase 2: Cluster-wide game count for deficit calculation
+            cluster_game_count=self._get_cluster_game_count(priority.config_key),
         )
 
     def _compute_priority_score(self, priority: ConfigPriority) -> float:
@@ -1412,6 +1420,65 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
             Number of entries invalidated
         """
         return self._quality_cache.invalidate(config)
+
+    def _get_cluster_game_counts(self) -> dict[str, int]:
+        """Get cluster-wide game counts from UnifiedDataRegistry.
+
+        Jan 2026 Phase 2: Cluster awareness for selfplay scheduling.
+        Returns total games available across the cluster (local + remote nodes)
+        for each config to prevent duplicate game generation.
+
+        Uses TTL caching to avoid repeated lookups during priority calculation.
+
+        Returns:
+            Dict mapping config_key to cluster-wide total game count
+        """
+        now = time.time()
+
+        # Check if cache is fresh
+        if now - self._cluster_game_counts_last_update < self._cluster_game_counts_ttl:
+            return self._cluster_game_counts
+
+        # Refresh from registry
+        try:
+            from app.distributed.data_catalog import get_data_registry
+
+            registry = get_data_registry()
+            status = registry.get_cluster_status()
+
+            # Update cache with total game counts
+            self._cluster_game_counts = {
+                config_key: config_data.get("total", 0)
+                for config_key, config_data in status.items()
+            }
+            self._cluster_game_counts_last_update = now
+
+            logger.debug(
+                f"[SelfplayScheduler] Refreshed cluster game counts: "
+                f"{sum(self._cluster_game_counts.values()):,} total games "
+                f"across {len(self._cluster_game_counts)} configs"
+            )
+
+        except ImportError:
+            logger.debug("[SelfplayScheduler] DataRegistry not available for cluster counts")
+        except (RuntimeError, ConnectionError, TimeoutError, OSError) as e:
+            logger.debug(f"[SelfplayScheduler] Error getting cluster counts: {e}")
+
+        return self._cluster_game_counts
+
+    def _get_cluster_game_count(self, config_key: str) -> int:
+        """Get cluster-wide game count for a specific config.
+
+        Jan 2026 Phase 2: Helper for priority calculation.
+
+        Args:
+            config_key: Config key like "hex8_2p"
+
+        Returns:
+            Total games available cluster-wide for this config (default: 0)
+        """
+        counts = self._get_cluster_game_counts()
+        return counts.get(config_key, 0)
 
     def _get_cascade_priority(self, config_key: str) -> float:
         """Get cascade training priority boost for a config.

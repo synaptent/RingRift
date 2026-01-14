@@ -907,6 +907,8 @@ class ClusterDataManifest:
     files_by_node: dict[str, int] = field(default_factory=dict)
     unique_files: set[str] = field(default_factory=set)
     missing_from_nodes: dict[str, list[str]] = field(default_factory=dict)  # file -> list of nodes missing it
+    # External storage metadata (OWC drive, S3 bucket) - Jan 2026
+    external_storage: ExternalStorageManifest | None = None
 
     @property
     def manifests_by_node(self) -> dict[str, NodeDataManifest]:
@@ -944,6 +946,7 @@ class ClusterDataManifest:
             'files_by_node': self.files_by_node,
             'unique_files': list(self.unique_files),
             'missing_from_nodes': self.missing_from_nodes,
+            'external_storage': self.external_storage.to_dict() if self.external_storage else None,
         }
         return d
 
@@ -952,6 +955,53 @@ class ClusterDataManifest:
         d = d.copy()
         d['node_manifests'] = {k: NodeDataManifest.from_dict(v) for k, v in d.get('node_manifests', {}).items()}
         d['unique_files'] = set(d.get('unique_files', []))
+        # Handle external_storage if present
+        if 'external_storage' in d and d['external_storage']:
+            d['external_storage'] = ExternalStorageManifest.from_dict(d['external_storage'])
+        return cls(**d)
+
+
+@dataclass
+class ExternalStorageManifest:
+    """Metadata about external storage sources (OWC drive, S3 bucket).
+
+    Jan 2026: Added for unified cluster data visibility.
+    """
+    collected_at: float = 0.0
+
+    # OWC external drive (mac-studio)
+    owc_available: bool = False
+    owc_games_by_config: dict[str, int] = field(default_factory=dict)
+    owc_total_games: int = 0
+    owc_total_size_bytes: int = 0
+    owc_last_scan: float = 0.0
+
+    # S3 bucket
+    s3_available: bool = False
+    s3_games_by_config: dict[str, int] = field(default_factory=dict)
+    s3_total_games: int = 0
+    s3_total_size_bytes: int = 0
+    s3_last_scan: float = 0.0
+    s3_bucket: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            'collected_at': self.collected_at,
+            'owc_available': self.owc_available,
+            'owc_games_by_config': self.owc_games_by_config,
+            'owc_total_games': self.owc_total_games,
+            'owc_total_size_bytes': self.owc_total_size_bytes,
+            'owc_last_scan': self.owc_last_scan,
+            's3_available': self.s3_available,
+            's3_games_by_config': self.s3_games_by_config,
+            's3_total_games': self.s3_total_games,
+            's3_total_size_bytes': self.s3_total_size_bytes,
+            's3_last_scan': self.s3_last_scan,
+            's3_bucket': self.s3_bucket,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> ExternalStorageManifest:
         return cls(**d)
 
 

@@ -74,6 +74,7 @@ class ManifestHandlersMixin(BaseP2PHandler):
     manifest_lock: object  # threading.Lock
     local_data_manifest: object | None
     cluster_data_manifest: object | None
+    _cluster_manifest_received_at: float  # When broadcast was received
 
     @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_data_manifest(self, request: web.Request) -> web.Response:
@@ -141,6 +142,68 @@ class ManifestHandlersMixin(BaseP2PHandler):
             })
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e)}, status=500)
+
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
+    async def handle_cluster_manifest_broadcast(self, request: web.Request) -> web.Response:
+        """Receive cluster manifest broadcast from leader.
+
+        Jan 2026: Added to enable followers to have cluster-wide data visibility.
+
+        This endpoint is called by the leader's ManifestCollectionLoop to push
+        the aggregated cluster manifest to all followers. The received manifest
+        is stored locally and can be queried via get_cluster_manifest().
+        """
+        import time
+        try:
+            data = await request.json()
+
+            # Import ClusterDataManifest for deserialization
+            from scripts.p2p.models import ClusterDataManifest
+
+            manifest = ClusterDataManifest.from_dict(data)
+
+            # Store in local cache (thread-safe)
+            with self.manifest_lock:
+                self.cluster_data_manifest = manifest
+                self._cluster_manifest_received_at = time.time()
+
+            # Update local unified registry if available
+            try:
+                await self._update_unified_registry_from_broadcast(manifest)
+            except Exception as e:
+                logger.debug(f"[ManifestHandlers] Registry update from broadcast failed: {e}")
+
+            logger.debug(
+                f"[ManifestHandlers] Received cluster manifest broadcast: "
+                f"{manifest.total_nodes} nodes, {manifest.total_selfplay_games} games"
+            )
+
+            return web.json_response({
+                "status": "ok",
+                "received_at": time.time(),
+                "total_nodes": manifest.total_nodes,
+                "total_games": manifest.total_selfplay_games,
+            })
+        except Exception as e:
+            logger.warning(f"[ManifestHandlers] Error receiving broadcast: {e}")
+            return web.json_response({"error": str(e)}, status=500)
+
+    async def _update_unified_registry_from_broadcast(self, manifest: object) -> None:
+        """Update local unified registry with received cluster manifest.
+
+        Jan 2026: Ensures local data queries reflect cluster-wide state.
+        """
+        try:
+            from app.distributed.data_catalog import get_data_registry
+
+            registry = get_data_registry()
+            # UnifiedDataRegistry.update_from_cluster_manifest is sync
+            registry.update_from_cluster_manifest(manifest)
+        except ImportError:
+            # Registry not available
+            logger.debug("[ManifestHandlers] Data registry not available for update")
+        except Exception as e:
+            logger.debug(f"[ManifestHandlers] Failed to update registry: {e}")
 
     @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_refresh_manifest(self, request: web.Request) -> web.Response:

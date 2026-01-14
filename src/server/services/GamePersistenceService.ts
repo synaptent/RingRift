@@ -389,8 +389,11 @@ export class GamePersistenceService {
       }
 
       if (result) {
-        const existingState = (existingGame?.gameState as string) || '{}';
-        updateData.gameState = JSON.stringify({ ...JSON.parse(existingState), result });
+        // gameState is a Prisma Json field - it's already deserialized to an object
+        const existingState = existingGame?.gameState;
+        const parsedState =
+          typeof existingState === 'string' ? JSON.parse(existingState) : existingState || {};
+        updateData.gameState = JSON.stringify({ ...parsedState, result });
       }
 
       await prisma.game.update({

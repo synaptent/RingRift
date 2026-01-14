@@ -1796,6 +1796,104 @@ class ClusterManifest:
             for source, locations in sources.items()
         }
 
+    async def refresh_external_storage_counts(
+        self,
+        configs: list[str] | None = None,
+    ) -> dict[str, dict[str, int]]:
+        """Refresh game counts from external storage (S3 and OWC).
+
+        January 2026: Added as part of unified data discovery infrastructure.
+        This method actively queries external storage and updates the manifest,
+        rather than relying on event-driven updates.
+
+        Args:
+            configs: List of config keys to refresh, or None for all 12 configs
+
+        Returns:
+            Dictionary mapping config_key -> {source -> count}
+        """
+        try:
+            from app.utils.unified_game_aggregator import (
+                GameSourceConfig,
+                UnifiedGameAggregator,
+            )
+
+            # Configure to only query external sources (skip local/cluster)
+            config = GameSourceConfig(
+                include_local=False,
+                include_remote=False,
+                include_s3=True,
+                include_owc=True,
+            )
+            aggregator = UnifiedGameAggregator(config)
+
+            # Default to all 12 configs
+            if configs is None:
+                configs = [
+                    f"{board}_{players}p"
+                    for board in ["hex8", "square8", "square19", "hexagonal"]
+                    for players in [2, 3, 4]
+                ]
+
+            results: dict[str, dict[str, int]] = {}
+
+            for config_key in configs:
+                try:
+                    parts = config_key.split("_")
+                    board_type = "_".join(parts[:-1])
+                    num_players = int(parts[-1].rstrip("p"))
+
+                    counts = await aggregator.get_total_games(board_type, num_players)
+
+                    results[config_key] = {
+                        "s3": counts.s3_count,
+                        "owc": counts.owc_count,
+                    }
+
+                    # Update manifest with discovered external storage
+                    if counts.s3_count > 0:
+                        # Get S3 details from source_details
+                        for detail in counts.source_details:
+                            if detail.source_name == "s3" and detail.details:
+                                s3_files = detail.details.get("files", 0)
+                                if s3_files > 0:
+                                    self.register_s3_location(
+                                        config_key=config_key,
+                                        s3_key=f"games/{config_key}/",
+                                        game_count=counts.s3_count,
+                                        file_size=detail.details.get("total_bytes", 0),
+                                        board_type=board_type,
+                                        num_players=num_players,
+                                    )
+
+                    if counts.owc_count > 0:
+                        # Get OWC details from source_details
+                        for detail in counts.source_details:
+                            if detail.source_name == "owc" and detail.details:
+                                owc_dbs = detail.details.get("databases", {})
+                                for owc_path, db_count in owc_dbs.items():
+                                    self.register_owc_location(
+                                        config_key=config_key,
+                                        owc_path=owc_path,
+                                        game_count=db_count,
+                                        board_type=board_type,
+                                        num_players=num_players,
+                                    )
+
+                except (ValueError, AttributeError) as e:
+                    logger.debug(f"[ClusterManifest] Failed to refresh {config_key}: {e}")
+                    results[config_key] = {"s3": 0, "owc": 0, "error": str(e)}
+
+            logger.info(
+                f"[ClusterManifest] Refreshed external storage counts for "
+                f"{len(results)} configs"
+            )
+            return results
+
+        except ImportError as e:
+            logger.warning(f"[ClusterManifest] UnifiedGameAggregator not available: {e}")
+            return {}
+
     # =========================================================================
     # Database Location Registry (delegated to DataLocationRegistry)
     # =========================================================================
