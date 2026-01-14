@@ -2,10 +2,12 @@ import React from 'react';
 import { GameHUD } from '../GameHUD';
 import { MobileGameHUD } from '../MobileGameHUD';
 import { ChoiceDialog } from '../ChoiceDialog';
+import { LineRewardPanel } from '../LineRewardPanel';
 import { MoveHistory } from '../MoveHistory';
 import { GameEventLog } from '../GameEventLog';
 import { GameHistoryPanel } from '../GameHistoryPanel';
 import { EvaluationPanel } from '../EvaluationPanel';
+import { AIThinkTimeProgress } from '../AIThinkTimeProgress';
 import { ResignButton } from '../ResignButton';
 import { Button } from '../ui/Button';
 import { formatPosition } from '../../../shared/engine/notation';
@@ -141,6 +143,49 @@ export interface BackendGameSidebarProps {
 
   // Handlers - Controls
   onShowBoardControls: () => void;
+
+  // Skip action state
+  /** Whether skip capture is available */
+  canSkipCapture?: boolean;
+  /** Whether skip territory processing is available */
+  canSkipTerritory?: boolean;
+  /** Whether skip recovery is available */
+  canSkipRecovery?: boolean;
+
+  // Handlers - Skip actions
+  onSkipCapture?: () => void;
+  onSkipTerritory?: () => void;
+  onSkipRecovery?: () => void;
+
+  // AI think time state
+  /** Whether an AI is currently thinking */
+  isAiThinking?: boolean;
+  /** When the AI started thinking (timestamp) */
+  aiThinkingStartedAt?: number | null;
+  /** AI difficulty level (1-10) */
+  aiDifficulty?: number;
+  /** AI player name for display */
+  aiPlayerName?: string;
+
+  // Board overlay state
+  /** Whether movement grid overlay is shown */
+  showMovementGrid?: boolean;
+  /** Handler to toggle movement grid */
+  onToggleMovementGrid?: () => void;
+
+  // Board display settings
+  /** Whether coordinate labels are shown */
+  showCoordinateLabels?: boolean;
+  /** Handler to toggle coordinate labels */
+  onToggleCoordinateLabels?: () => void;
+  /** Whether line overlays are shown (debug) */
+  showLineOverlays?: boolean;
+  /** Handler to toggle line overlays */
+  onToggleLineOverlays?: () => void;
+  /** Whether territory region overlays are shown (debug) */
+  showTerritoryRegionOverlays?: boolean;
+  /** Handler to toggle territory overlays */
+  onToggleTerritoryOverlays?: () => void;
 }
 
 /**
@@ -201,6 +246,24 @@ export const BackendGameSidebar: React.FC<BackendGameSidebarProps> = ({
   onChatInputChange,
   onChatSubmit,
   onShowBoardControls,
+  canSkipCapture,
+  canSkipTerritory,
+  canSkipRecovery,
+  onSkipCapture,
+  onSkipTerritory,
+  onSkipRecovery,
+  isAiThinking,
+  aiThinkingStartedAt,
+  aiDifficulty,
+  aiPlayerName,
+  showMovementGrid,
+  onToggleMovementGrid,
+  showCoordinateLabels,
+  onToggleCoordinateLabels,
+  showLineOverlays,
+  onToggleLineOverlays,
+  showTerritoryRegionOverlays,
+  onToggleTerritoryOverlays,
 }) => {
   return (
     <aside className="w-full max-w-md mx-auto lg:mx-0 lg:w-[256px] flex-shrink-0 space-y-2 text-xs text-slate-100">
@@ -223,9 +286,42 @@ export const BackendGameSidebar: React.FC<BackendGameSidebarProps> = ({
         />
       )}
 
+      {/* AI Think Time Progress - show when AI is thinking */}
+      {isAiThinking && aiThinkingStartedAt && aiDifficulty !== undefined && (
+        <AIThinkTimeProgress
+          isAiThinking={isAiThinking}
+          thinkingStartedAt={aiThinkingStartedAt}
+          aiDifficulty={aiDifficulty}
+          aiPlayerName={aiPlayerName}
+        />
+      )}
+
+      {/* LineRewardPanel for overlength line choices with segments */}
+      {isPlayer &&
+        pendingChoice &&
+        pendingChoice.type === 'line_reward_option' &&
+        pendingChoice.segments &&
+        pendingChoice.segments.length > 0 && (
+          <LineRewardPanel
+            choice={pendingChoice}
+            onSelect={(optionId) => {
+              onRespondToChoice(pendingChoice, { optionId });
+            }}
+          />
+        )}
+
+      {/* Generic ChoiceDialog for other choice types */}
       {isPlayer && (
         <ChoiceDialog
-          choice={pendingChoice}
+          choice={
+            // Hide generic dialog when showing LineRewardPanel
+            pendingChoice &&
+            pendingChoice.type === 'line_reward_option' &&
+            pendingChoice.segments &&
+            pendingChoice.segments.length > 0
+              ? null
+              : pendingChoice
+          }
           choiceViewModel={pendingChoiceView?.viewModel}
           deadline={choiceDeadline}
           timeRemainingMs={reconciledDecisionTimeRemainingMs}
@@ -265,6 +361,42 @@ export const BackendGameSidebar: React.FC<BackendGameSidebarProps> = ({
       {/* Move History - compact notation display */}
       <MoveHistory moves={moveHistory} boardType={boardType} currentMoveIndex={currentMoveIndex} />
 
+      {/* Skip action buttons - visible when skip is available but not the only option */}
+      {isPlayer && isMyTurn && (canSkipCapture || canSkipTerritory || canSkipRecovery) && (
+        <div className="flex flex-wrap gap-2 mt-2">
+          {canSkipCapture && onSkipCapture && (
+            <button
+              type="button"
+              onClick={onSkipCapture}
+              disabled={!isConnectionActive}
+              className="px-3 py-1.5 rounded-lg border border-sky-500/50 bg-sky-900/30 text-sky-200 text-xs font-medium hover:bg-sky-900/50 hover:border-sky-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              Skip Capture
+            </button>
+          )}
+          {canSkipTerritory && onSkipTerritory && (
+            <button
+              type="button"
+              onClick={onSkipTerritory}
+              disabled={!isConnectionActive}
+              className="px-3 py-1.5 rounded-lg border border-sky-500/50 bg-sky-900/30 text-sky-200 text-xs font-medium hover:bg-sky-900/50 hover:border-sky-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              Skip Territory
+            </button>
+          )}
+          {canSkipRecovery && onSkipRecovery && (
+            <button
+              type="button"
+              onClick={onSkipRecovery}
+              disabled={!isConnectionActive}
+              className="px-3 py-1.5 rounded-lg border border-sky-500/50 bg-sky-900/30 text-sky-200 text-xs font-medium hover:bg-sky-900/50 hover:border-sky-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              Skip Recovery
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Resign button - visible to players during active games */}
       {isPlayer && gameState.gameStatus === 'active' && (
         <div className="mt-2 flex justify-end">
@@ -302,6 +434,82 @@ export const BackendGameSidebar: React.FC<BackendGameSidebarProps> = ({
       {decisionAutoResolved && (
         <div className="mt-1 px-2 py-1 text-[11px] rounded-lg bg-emerald-900/30 border border-emerald-500/40 text-emerald-300">
           {describeDecisionAutoResolved(decisionAutoResolved)}
+        </div>
+      )}
+
+      {/* Board display settings */}
+      {(onToggleMovementGrid ||
+        onToggleCoordinateLabels ||
+        onToggleLineOverlays ||
+        onToggleTerritoryOverlays) && (
+        <div className="space-y-1 mt-1">
+          <div className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">
+            Board Display
+          </div>
+          {onToggleMovementGrid && (
+            <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <span>Movement grid</span>
+              <button
+                type="button"
+                onClick={onToggleMovementGrid}
+                className={`px-2 py-0.5 rounded border text-xs transition ${
+                  showMovementGrid
+                    ? 'border-emerald-500 bg-emerald-900/40 text-emerald-200'
+                    : 'border-slate-600 bg-slate-900/70 hover:border-emerald-400 hover:text-emerald-200'
+                }`}
+              >
+                {showMovementGrid ? 'On' : 'Off'}
+              </button>
+            </div>
+          )}
+          {onToggleCoordinateLabels && (
+            <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <span>Coordinates</span>
+              <button
+                type="button"
+                onClick={onToggleCoordinateLabels}
+                className={`px-2 py-0.5 rounded border text-xs transition ${
+                  showCoordinateLabels
+                    ? 'border-emerald-500 bg-emerald-900/40 text-emerald-200'
+                    : 'border-slate-600 bg-slate-900/70 hover:border-emerald-400 hover:text-emerald-200'
+                }`}
+              >
+                {showCoordinateLabels ? 'On' : 'Off'}
+              </button>
+            </div>
+          )}
+          {onToggleLineOverlays && (
+            <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <span>Line overlays</span>
+              <button
+                type="button"
+                onClick={onToggleLineOverlays}
+                className={`px-2 py-0.5 rounded border text-xs transition ${
+                  showLineOverlays
+                    ? 'border-sky-500 bg-sky-900/40 text-sky-200'
+                    : 'border-slate-600 bg-slate-900/70 hover:border-sky-400 hover:text-sky-200'
+                }`}
+              >
+                {showLineOverlays ? 'On' : 'Off'}
+              </button>
+            </div>
+          )}
+          {onToggleTerritoryOverlays && (
+            <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <span>Territory overlays</span>
+              <button
+                type="button"
+                onClick={onToggleTerritoryOverlays}
+                className={`px-2 py-0.5 rounded border text-xs transition ${
+                  showTerritoryRegionOverlays
+                    ? 'border-amber-500 bg-amber-900/40 text-amber-200'
+                    : 'border-slate-600 bg-slate-900/70 hover:border-amber-400 hover:text-amber-200'
+                }`}
+              >
+                {showTerritoryRegionOverlays ? 'On' : 'Off'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 

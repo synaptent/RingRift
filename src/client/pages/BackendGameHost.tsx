@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { VictoryModal, type RematchStatus } from '../components/VictoryModal';
 import { BoardControlsOverlay } from '../components/BoardControlsOverlay';
 import { RingPlacementCountDialog } from '../components/RingPlacementCountDialog';
+import { RecoveryLineChoiceDialog } from '../components/RecoveryLineChoiceDialog';
+import { TerritoryRegionChoiceDialog } from '../components/TerritoryRegionChoiceDialog';
 import { Button } from '../components/ui/Button';
 import { StatusBanner } from '../components/ui/StatusBanner';
 import { BackendBoardSection } from '../components/backend/BackendBoardSection';
@@ -56,6 +58,7 @@ import { useBackendTelemetry } from '../hooks/useBackendTelemetry';
 import { useBackendConnectionShell } from '../hooks/useBackendConnectionShell';
 import { useBackendDiagnosticsLog } from '../hooks/useBackendDiagnosticsLog';
 import { useBackendDecisionUI } from '../hooks/useBackendDecisionUI';
+import { useAutoAdvancePhases } from '../hooks/useAutoAdvancePhases';
 
 /**
  * Get friendly display name for AI difficulty level with description.
@@ -234,6 +237,27 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
   // Help / controls overlay
   const [showBoardControls, setShowBoardControls] = useState(false);
 
+  // Recovery choice dialog state for overlength recovery lines
+  const [recoveryChoiceDialogOpen, setRecoveryChoiceDialogOpen] = useState(false);
+  const recoveryChoiceResolverRef = useRef<((choice: 'option1' | 'option2' | null) => void) | null>(
+    null
+  );
+
+  const requestRecoveryChoice = useCallback(
+    () =>
+      new Promise<'option1' | 'option2' | null>((resolve) => {
+        recoveryChoiceResolverRef.current = resolve;
+        setRecoveryChoiceDialogOpen(true);
+      }),
+    []
+  );
+
+  const resolveRecoveryChoice = useCallback((choice: 'option1' | 'option2' | null) => {
+    recoveryChoiceResolverRef.current?.(choice);
+    recoveryChoiceResolverRef.current = null;
+    setRecoveryChoiceDialogOpen(false);
+  }, []);
+
   // Sidebar density: keep advanced diagnostics available without overwhelming
   // new players. Persist preference locally per browser.
   const backendAdvancedSidebarStorageKey = 'ringrift_backend_sidebar_show_advanced';
@@ -257,6 +281,110 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
       // Storage might be disabled; ignore.
     }
   }, [backendAdvancedSidebarStorageKey, showAdvancedSidebarPanels]);
+
+  // Movement grid overlay: visual aid showing movement paths from selected position
+  const backendMovementGridStorageKey = 'ringrift_backend_show_movement_grid';
+  const [showMovementGrid, setShowMovementGrid] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return localStorage.getItem(backendMovementGridStorageKey) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(backendMovementGridStorageKey, showMovementGrid ? 'true' : 'false');
+    } catch {
+      // Storage might be disabled; ignore.
+    }
+  }, [backendMovementGridStorageKey, showMovementGrid]);
+
+  const handleToggleMovementGrid = useCallback(() => {
+    setShowMovementGrid((prev) => !prev);
+  }, []);
+
+  // Coordinate labels: toggleable with localStorage persistence
+  const backendCoordLabelsStorageKey = 'ringrift_backend_show_coord_labels';
+  const [showCoordinateLabels, setShowCoordinateLabels] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true; // Default on
+    try {
+      const stored = localStorage.getItem(backendCoordLabelsStorageKey);
+      // Default to true if not set (better UX for new players)
+      return stored === null ? true : stored === 'true';
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(backendCoordLabelsStorageKey, showCoordinateLabels ? 'true' : 'false');
+    } catch {
+      // Storage might be disabled; ignore.
+    }
+  }, [showCoordinateLabels]);
+
+  const handleToggleCoordinateLabels = useCallback(() => {
+    setShowCoordinateLabels((prev) => !prev);
+  }, []);
+
+  // Line overlays (debug): toggleable with localStorage persistence
+  const backendLineOverlaysStorageKey = 'ringrift_backend_show_line_overlays';
+  const [showLineOverlays, setShowLineOverlays] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return localStorage.getItem(backendLineOverlaysStorageKey) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(backendLineOverlaysStorageKey, showLineOverlays ? 'true' : 'false');
+    } catch {
+      // Storage might be disabled; ignore.
+    }
+  }, [showLineOverlays]);
+
+  const handleToggleLineOverlays = useCallback(() => {
+    setShowLineOverlays((prev) => !prev);
+  }, []);
+
+  // Territory region overlays (debug): toggleable with localStorage persistence
+  const backendTerritoryOverlaysStorageKey = 'ringrift_backend_show_territory_overlays';
+  const [showTerritoryRegionOverlays, setShowTerritoryRegionOverlays] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return localStorage.getItem(backendTerritoryOverlaysStorageKey) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(
+        backendTerritoryOverlaysStorageKey,
+        showTerritoryRegionOverlays ? 'true' : 'false'
+      );
+    } catch {
+      // Storage might be disabled; ignore.
+    }
+  }, [showTerritoryRegionOverlays]);
+
+  const handleToggleTerritoryOverlays = useCallback(() => {
+    setShowTerritoryRegionOverlays((prev) => !prev);
+  }, []);
+
+  // Square rank from bottom: always true for square boards (not user-configurable)
+  const squareRankFromBottom = true;
 
   // Screen reader announcements for accessibility - using priority queue
   const { queue: announcementQueue, announce, removeAnnouncement } = useGameAnnouncements();
@@ -309,6 +437,37 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
   const myPlayer = gameState?.players.find((p) => p.id === user?.id);
   const isPlayer = !!myPlayer;
   const isMyTurn = currentPlayer?.id === user?.id;
+
+  // AI think time tracking - show progress when AI is thinking
+  const [aiThinkingStartedAt, setAiThinkingStartedAt] = useState<number | null>(null);
+
+  // Derive if current player is AI and game is active
+  const isAiThinking = useMemo(() => {
+    if (!gameState || gameState.gameStatus !== 'active') return false;
+    if (!currentPlayer) return false;
+    // Check if current player is AI type
+    if (currentPlayer.type !== 'ai') return false;
+    // Don't show think time during pending human decisions
+    if (pendingChoice) return false;
+    return true;
+  }, [gameState, currentPlayer, pendingChoice]);
+
+  // Get AI player info for display
+  const aiPlayerInfo = useMemo(() => {
+    if (!isAiThinking || !currentPlayer) return null;
+    const difficulty = currentPlayer.aiProfile?.difficulty ?? currentPlayer.aiDifficulty ?? 5;
+    const name = currentPlayer.username || `AI-${currentPlayer.playerNumber}`;
+    return { difficulty, name };
+  }, [isAiThinking, currentPlayer]);
+
+  // Track when AI turn begins - set timestamp when AI starts thinking
+  useEffect(() => {
+    if (isAiThinking && !aiThinkingStartedAt) {
+      setAiThinkingStartedAt(Date.now());
+    } else if (!isAiThinking && aiThinkingStartedAt) {
+      setAiThinkingStartedAt(null);
+    }
+  }, [isAiThinking, aiThinkingStartedAt]);
 
   // Sound effects for game events (phase changes, turns, moves, game end)
   useGameSoundEffects({
@@ -627,15 +786,24 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     isConnectionActive,
     isMyTurn,
     triggerInvalidMove,
+    requestRecoveryChoice,
+    pendingChoice,
+    onRespondToChoice: respondToChoice,
   });
   const {
     ringPlacementCountPrompt,
+    territoryRegionPrompt,
     handleCellClick: handleBackendCellClick,
     handleCellDoubleClick: handleBackendCellDoubleClick,
     handleCellContextMenu: handleBackendCellContextMenu,
     handleConfirmRingPlacementCount,
     closeRingPlacementPrompt,
+    handleConfirmTerritoryRegion,
+    closeTerritoryRegionPrompt,
   } = boardHandlers;
+
+  // Auto-advance through no-action phases (matching sandbox behavior)
+  useAutoAdvancePhases(gameState, validMoves, isMyTurn, submitMove);
 
   // Early-loading states
   if (isConnecting && !gameState) {
@@ -862,6 +1030,47 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
 
   const hudCurrentPlayer = hudViewModel.players.find((p) => p.isCurrentPlayer);
 
+  // Skip action availability - derive from validMoves when skip is available
+  // but not the only option (auto-advance handles single-option skips)
+  const canSkipCapture = useMemo(() => {
+    if (!Array.isArray(validMoves) || validMoves.length <= 1) return false;
+    if (gameState.currentPhase !== 'capture') return false;
+    const hasSkip = validMoves.some((m) => m.type === 'skip_capture');
+    const hasOther = validMoves.some((m) => m.type !== 'skip_capture');
+    return hasSkip && hasOther;
+  }, [validMoves, gameState.currentPhase]);
+
+  const canSkipRecovery = useMemo(() => {
+    if (!Array.isArray(validMoves) || validMoves.length <= 1) return false;
+    // Recovery skip can be available during movement phase when recovery slide is an option
+    if (gameState.currentPhase !== 'movement' && gameState.currentPhase !== 'recovery')
+      return false;
+    const hasSkip = validMoves.some((m) => m.type === 'skip_recovery');
+    const hasOther = validMoves.some((m) => m.type !== 'skip_recovery');
+    return hasSkip && hasOther;
+  }, [validMoves, gameState.currentPhase]);
+
+  const canSkipTerritory = useMemo(() => {
+    if (!Array.isArray(validMoves) || validMoves.length <= 1) return false;
+    if (gameState.currentPhase !== 'territory_processing') return false;
+    const hasSkip = validMoves.some((m) => m.type === 'skip_territory_processing');
+    const hasOther = validMoves.some((m) => m.type !== 'skip_territory_processing');
+    return hasSkip && hasOther;
+  }, [validMoves, gameState.currentPhase]);
+
+  // Skip action handlers
+  const handleSkipCapture = useCallback(() => {
+    submitMove({ type: 'skip_capture', to: { x: 0, y: 0 } } as PartialMove);
+  }, [submitMove]);
+
+  const handleSkipRecovery = useCallback(() => {
+    submitMove({ type: 'skip_recovery', to: { x: 0, y: 0 } } as PartialMove);
+  }, [submitMove]);
+
+  const handleSkipTerritory = useCallback(() => {
+    submitMove({ type: 'skip_territory_processing', to: { x: 0, y: 0 } } as PartialMove);
+  }, [submitMove]);
+
   const backendSelectedStackDetails = (() => {
     if (!backendBoardViewModel || !selected) return null;
     const key = positionToString(selected);
@@ -1025,6 +1234,11 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
             pendingAnimation={pendingAnimation ?? undefined}
             chainCapturePath={chainCapturePath}
             shakingCellKey={shakingCellKey}
+            showMovementGrid={showMovementGrid}
+            showCoordinateLabels={showCoordinateLabels}
+            squareRankFromBottom={squareRankFromBottom}
+            showLineOverlays={showLineOverlays}
+            showTerritoryRegionOverlays={showTerritoryRegionOverlays}
             phaseLabel={hudViewModel.phase.label}
             players={hudViewModel.players.map((p) => ({
               playerNumber: p.playerNumber,
@@ -1106,6 +1320,24 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
             onChatInputChange={setChatInput}
             onChatSubmit={handleChatSubmit}
             onShowBoardControls={() => setShowBoardControls(true)}
+            canSkipCapture={canSkipCapture}
+            canSkipTerritory={canSkipTerritory}
+            canSkipRecovery={canSkipRecovery}
+            onSkipCapture={handleSkipCapture}
+            onSkipTerritory={handleSkipTerritory}
+            onSkipRecovery={handleSkipRecovery}
+            isAiThinking={isAiThinking}
+            aiThinkingStartedAt={aiThinkingStartedAt}
+            aiDifficulty={aiPlayerInfo?.difficulty}
+            aiPlayerName={aiPlayerInfo?.name}
+            showMovementGrid={showMovementGrid}
+            onToggleMovementGrid={handleToggleMovementGrid}
+            showCoordinateLabels={showCoordinateLabels}
+            onToggleCoordinateLabels={handleToggleCoordinateLabels}
+            showLineOverlays={showLineOverlays}
+            onToggleLineOverlays={handleToggleLineOverlays}
+            showTerritoryRegionOverlays={showTerritoryRegionOverlays}
+            onToggleTerritoryOverlays={handleToggleTerritoryOverlays}
           />
         </main>
 
@@ -1120,6 +1352,20 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
           isStackPlacement={ringPlacementCountPrompt?.hasStack ?? false}
           onClose={closeRingPlacementPrompt}
           onConfirm={handleConfirmRingPlacementCount}
+        />
+
+        <RecoveryLineChoiceDialog
+          isOpen={recoveryChoiceDialogOpen}
+          onChooseOption1={() => resolveRecoveryChoice('option1')}
+          onChooseOption2={() => resolveRecoveryChoice('option2')}
+          onClose={() => resolveRecoveryChoice(null)}
+        />
+
+        <TerritoryRegionChoiceDialog
+          isOpen={!!territoryRegionPrompt}
+          options={territoryRegionPrompt?.options ?? []}
+          onClose={closeTerritoryRegionPrompt}
+          onConfirm={handleConfirmTerritoryRegion}
         />
 
         {showBoardControls && (

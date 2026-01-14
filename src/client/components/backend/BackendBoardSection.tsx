@@ -22,6 +22,16 @@ export interface BackendBoardSectionProps {
   chainCapturePath: Position[] | undefined;
   /** Position key of cell currently shaking (invalid move feedback) */
   shakingCellKey: string | null;
+  /** Whether to show movement grid overlay */
+  showMovementGrid?: boolean;
+  /** Whether to show coordinate labels (A-H, 1-8 for square boards) */
+  showCoordinateLabels?: boolean;
+  /** Whether to render square board ranks from bottom (1 at bottom) */
+  squareRankFromBottom?: boolean;
+  /** Whether to show line overlay visualization (debug) */
+  showLineOverlays?: boolean;
+  /** Whether to show territory region overlays (debug) */
+  showTerritoryRegionOverlays?: boolean;
 
   // Game state for info panel
   /** Current phase label */
@@ -69,6 +79,11 @@ export const BackendBoardSection: React.FC<BackendBoardSectionProps> = ({
   pendingAnimation,
   chainCapturePath,
   shakingCellKey,
+  showMovementGrid = false,
+  showCoordinateLabels = false,
+  squareRankFromBottom = false,
+  showLineOverlays = false,
+  showTerritoryRegionOverlays = false,
   phaseLabel,
   players,
   currentPlayerNumber,
@@ -115,6 +130,11 @@ export const BackendBoardSection: React.FC<BackendBoardSectionProps> = ({
           onAnimationComplete={onAnimationComplete}
           chainCapturePath={chainCapturePath}
           shakingCellKey={shakingCellKey}
+          showMovementGrid={showMovementGrid}
+          showCoordinateLabels={showCoordinateLabels}
+          squareRankFromBottom={squareRankFromBottom}
+          showLineOverlays={showLineOverlays}
+          showTerritoryRegionOverlays={showTerritoryRegionOverlays}
           onShowKeyboardHelp={onShowBoardControls}
         />
 

@@ -201,44 +201,79 @@ export function useBackendBoardHandlers(
   // Pending movement target for skip_placement + movement shortcut
   // When user clicks a valid landing during placement phase, we submit skip_placement
   // and store the intended movement here. After phase changes to movement, we auto-submit.
-  const pendingMovementRef = useRef<{ from: Position; to: Position } | null>(null);
+  const pendingMovementRef = useRef<{ from: Position; to: Position; timestamp: number } | null>(
+    null
+  );
   const prevPhaseRef = useRef<string | null>(null);
+  const pendingMovementRetryCount = useRef<number>(0);
 
   // Effect to handle pending movement after skip_placement
+  // Includes retry logic for when validMoves might be stale after phase change
   useEffect(() => {
     const currentPhase = gameState?.currentPhase;
     const prevPhase = prevPhaseRef.current;
     prevPhaseRef.current = currentPhase ?? null;
 
-    // If phase changed from ring_placement to movement and we have a pending target
-    if (
-      prevPhase === 'ring_placement' &&
-      currentPhase === 'movement' &&
-      pendingMovementRef.current &&
-      validMoves
-    ) {
-      const pending = pendingMovementRef.current;
-      pendingMovementRef.current = null;
-
-      // Find the matching move_stack move
-      const moveStackMove = validMoves.find(
-        (m) =>
-          m.type === 'move_stack' &&
-          m.from &&
-          positionsEqual(m.from, pending.from) &&
-          m.to &&
-          positionsEqual(m.to, pending.to)
-      );
-
-      if (moveStackMove) {
-        submitMove({
-          type: moveStackMove.type,
-          from: moveStackMove.from,
-          to: moveStackMove.to,
-        } as PartialMove);
-        setSelected(undefined);
-        setValidTargets([]);
+    // Clear stale pending movements (older than 5 seconds)
+    if (pendingMovementRef.current) {
+      const age = Date.now() - pendingMovementRef.current.timestamp;
+      if (age > 5000) {
+        console.warn('[PendingMovement] Clearing stale pending movement after 5s timeout');
+        pendingMovementRef.current = null;
+        pendingMovementRetryCount.current = 0;
+        return;
       }
+    }
+
+    // If phase changed to movement and we have a pending target
+    const shouldTryPendingMovement =
+      currentPhase === 'movement' && pendingMovementRef.current && validMoves;
+
+    if (!shouldTryPendingMovement) {
+      // Reset retry count if we're no longer in movement phase or no pending movement
+      if (currentPhase !== 'movement' || !pendingMovementRef.current) {
+        pendingMovementRetryCount.current = 0;
+      }
+      return;
+    }
+
+    const pending = pendingMovementRef.current!;
+
+    // Find the matching move_stack move
+    const moveStackMove = validMoves.find(
+      (m) =>
+        m.type === 'move_stack' &&
+        m.from &&
+        positionsEqual(m.from, pending.from) &&
+        m.to &&
+        positionsEqual(m.to, pending.to)
+    );
+
+    if (moveStackMove) {
+      // Success! Submit the move and clear pending state
+      pendingMovementRef.current = null;
+      pendingMovementRetryCount.current = 0;
+      submitMove({
+        type: moveStackMove.type,
+        from: moveStackMove.from,
+        to: moveStackMove.to,
+      } as PartialMove);
+      setSelected(undefined);
+      setValidTargets([]);
+    } else if (pendingMovementRetryCount.current < 3) {
+      // Move not found in validMoves - this may be because validMoves is stale
+      // Schedule a retry after a brief delay to allow state to settle
+      pendingMovementRetryCount.current += 1;
+      console.log(
+        '[PendingMovement] Move not found, scheduling retry',
+        pendingMovementRetryCount.current
+      );
+      // The effect will re-run when validMoves updates
+    } else {
+      // Max retries reached, clear the pending movement
+      console.warn('[PendingMovement] Max retries reached, clearing pending movement');
+      pendingMovementRef.current = null;
+      pendingMovementRetryCount.current = 0;
     }
   }, [gameState?.currentPhase, validMoves, submitMove, setSelected, setValidTargets]);
 
@@ -387,7 +422,7 @@ export function useBackendBoardHandlers(
 
             if (skipPlacementMove && isValidLanding) {
               // Store the pending movement and submit skip_placement
-              pendingMovementRef.current = { from: selected, to: pos };
+              pendingMovementRef.current = { from: selected, to: pos, timestamp: Date.now() };
 
               submitMove({
                 type: 'skip_placement',
