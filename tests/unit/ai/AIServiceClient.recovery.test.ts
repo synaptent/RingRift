@@ -34,6 +34,9 @@ jest.mock('axios', () => {
     get: mockGet,
     delete: jest.fn(),
     interceptors: {
+      request: {
+        use: jest.fn(),
+      },
       response: {
         use: jest.fn(),
       },

@@ -27,6 +27,9 @@ jest.mock('axios', () => {
     get: jest.fn(),
     delete: jest.fn(),
     interceptors: {
+      request: {
+        use: jest.fn(),
+      },
       response: {
         // AIServiceClient registers an interceptor; we only need a stub here.
         use: jest.fn(),

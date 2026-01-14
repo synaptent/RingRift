@@ -32,6 +32,9 @@ jest.mock('axios', () => {
     get: mockGet,
     delete: jest.fn(),
     interceptors: {
+      request: {
+        use: jest.fn(),
+      },
       response: {
         use: jest.fn((onFulfilled, onRejected) => {
           // Store the error handler so we can test error categorization
