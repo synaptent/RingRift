@@ -186,6 +186,7 @@ jest.mock('../../src/client/components/BoardView', () => ({
 jest.mock('../../src/client/components/GameHUD', () => ({
   __esModule: true,
   GameHUD: () => null,
+  VictoryConditionsPanel: () => null,
 }));
 
 jest.mock('../../src/client/components/MobileGameHUD', () => ({

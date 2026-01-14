@@ -61,9 +61,14 @@ jest.mock('../../src/client/components/GameHUD', () => {
       )
     );
 
+  // VictoryConditionsPanel is also imported from GameHUD by BackendBoardSection
+  const VictoryConditionsPanelMock = () =>
+    React.createElement('div', { 'data-testid': 'victory-conditions-mock' }, 'VictoryConditions');
+
   return {
     __esModule: true,
     GameHUD: GameHUDMock,
+    VictoryConditionsPanel: VictoryConditionsPanelMock,
   };
 });
 
