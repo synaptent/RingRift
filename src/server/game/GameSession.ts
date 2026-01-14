@@ -793,12 +793,19 @@ export class GameSession {
 
     let from: Position | undefined;
     let to: Position | undefined;
+    let placementCount: number | undefined;
+    let placedOnStack: boolean | undefined;
 
     if (typeof moveData.position === 'string') {
       try {
         const parsed = JSON.parse(moveData.position);
         from = parsed.from as Position | undefined;
         to = (parsed.to as Position | undefined) ?? (parsed as Position);
+        // Extract placement-specific fields for ring placement moves
+        placementCount =
+          typeof parsed.placementCount === 'number' ? parsed.placementCount : undefined;
+        placedOnStack =
+          typeof parsed.placedOnStack === 'boolean' ? parsed.placedOnStack : undefined;
       } catch (err) {
         logger.warn('Failed to parse move.position payload', {
           gameId: this.gameId,
@@ -808,11 +815,20 @@ export class GameSession {
         throw new Error('Invalid move position payload');
       }
     } else if (moveData.position && typeof moveData.position === 'object') {
-      const parsed = moveData.position as { from?: Position; to?: Position } | Position;
+      const parsed = moveData.position as
+        | { from?: Position; to?: Position; placementCount?: number; placedOnStack?: boolean }
+        | Position;
       if ('from' in parsed || 'to' in parsed) {
-        const posObj = parsed as { from?: Position; to?: Position };
+        const posObj = parsed as {
+          from?: Position;
+          to?: Position;
+          placementCount?: number;
+          placedOnStack?: boolean;
+        };
         from = posObj.from;
         to = (posObj.to as Position | undefined) ?? (posObj as unknown as Position | undefined);
+        placementCount = posObj.placementCount;
+        placedOnStack = posObj.placedOnStack;
       } else {
         to = parsed as Position;
       }
@@ -825,6 +841,8 @@ export class GameSession {
       type: moveData.moveType as Move['type'],
       from,
       to,
+      placementCount,
+      placedOnStack,
       thinkTime: 0,
     } as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>;
 

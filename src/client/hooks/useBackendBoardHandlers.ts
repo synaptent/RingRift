@@ -1015,7 +1015,7 @@ export function useBackendBoardHandlers(
     ]
   );
 
-  // Handle double-click: place 2 rings on empty cells, 1 ring on stacks
+  // Handle double-click: confirm pending placement with accumulated count, or place 2 rings on empty cells
   const handleCellDoubleClick = useCallback(
     (pos: Position, board: BoardState) => {
       if (!gameState) return;
@@ -1029,13 +1029,31 @@ export function useBackendBoardHandlers(
         return;
       }
 
-      // Double-click: place 2 rings on empty cell, or 1 ring on stack
+      const posKey = positionToString(pos);
+
+      // If there's a pending placement at this position, confirm it with accumulated count
+      if (pendingRingPlacement && pendingRingPlacement.positionKey === posKey) {
+        const chosen = pendingRingPlacement.placeMovesAtPos[0];
+        if (chosen) {
+          submitMove({
+            type: 'place_ring',
+            to: chosen.to,
+            placementCount: pendingRingPlacement.currentCount,
+            placedOnStack: chosen.placedOnStack,
+          } as PartialMove);
+          setPendingRingPlacement(null);
+          setSelected(undefined);
+          setValidTargets([]);
+        }
+        return;
+      }
+
+      // No pending placement - use default double-click behavior (place 2 rings on empty cell)
       if (!Array.isArray(validMoves) || validMoves.length === 0) {
         return;
       }
 
-      const key = positionToString(pos);
-      const hasStack = !!board.stacks.get(key);
+      const hasStack = !!board.stacks.get(posKey);
 
       const placeMovesAtPos = validMoves.filter(
         (m) => m.type === 'place_ring' && positionsEqual(m.to, pos)
@@ -1044,16 +1062,17 @@ export function useBackendBoardHandlers(
         return;
       }
 
-      let chosen: Move | undefined;
+      // Compute max count based on game rules (same logic as click handler)
+      const currentPlayer = gameState.players.find(
+        (p) => p.playerNumber === gameState.currentPlayer
+      );
+      const ringsInHand = currentPlayer?.ringsInHand ?? 0;
+      const maxCount = hasStack ? 1 : Math.min(3, ringsInHand);
 
-      if (!hasStack) {
-        const twoRing = placeMovesAtPos.find((m) => (m.placementCount ?? 1) === 2);
-        const oneRing = placeMovesAtPos.find((m) => (m.placementCount ?? 1) === 1);
-        chosen = twoRing || oneRing || placeMovesAtPos[0];
-      } else {
-        chosen = placeMovesAtPos.find((m) => (m.placementCount ?? 1) === 1) || placeMovesAtPos[0];
-      }
+      // Default double-click places 2 rings (or max available)
+      const placementCount = Math.min(2, maxCount);
 
+      const chosen = placeMovesAtPos[0];
       if (!chosen) {
         return;
       }
@@ -1061,14 +1080,25 @@ export function useBackendBoardHandlers(
       submitMove({
         type: 'place_ring',
         to: chosen.to,
-        placementCount: chosen.placementCount,
-        placedOnStack: chosen.placedOnStack,
+        placementCount,
+        placedOnStack: hasStack,
       } as PartialMove);
 
+      setPendingRingPlacement(null);
       setSelected(undefined);
       setValidTargets([]);
     },
-    [gameState, validMoves, isPlayer, isConnectionActive, submitMove, setSelected, setValidTargets]
+    [
+      gameState,
+      validMoves,
+      isPlayer,
+      isConnectionActive,
+      submitMove,
+      setSelected,
+      setValidTargets,
+      pendingRingPlacement,
+      setPendingRingPlacement,
+    ]
   );
 
   // Handle context-menu for ring placement count selection

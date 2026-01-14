@@ -219,7 +219,13 @@ export class SocketGameConnection implements GameConnection {
       gameId: this._gameId,
       move: {
         moveNumber: move.moveNumber ?? 0,
-        position: JSON.stringify({ from: move.from, to: move.to }),
+        position: JSON.stringify({
+          from: move.from,
+          to: move.to,
+          // Include placement-specific fields for ring placement moves
+          placementCount: move.placementCount,
+          placedOnStack: move.placedOnStack,
+        }),
         moveType: move.type as PlayerMovePayload['move']['moveType'],
       },
     };
