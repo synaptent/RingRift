@@ -178,6 +178,10 @@ export class GameSession {
   // Default AI request timeout (can be overridden via config)
   private readonly aiRequestTimeoutMs: number;
 
+  // AI watchdog timer to detect stalled turns
+  private aiWatchdogHandle: NodeJS.Timeout | null = null;
+  private lastAITurnCheck = 0;
+
   // Lock callback for protecting concurrent state modifications (provided by GameSessionManager)
   private readonly withLock: <T>(operation: () => Promise<T>) => Promise<T>;
 
@@ -375,6 +379,17 @@ export class GameSession {
     const needsInitialization =
       game.status === 'waiting' || (game.status === 'active' && hasAIPlayers);
 
+    // Diagnostic: log auto-start decision factors
+    logger.info('Auto-start check', {
+      gameId: this.gameId,
+      dbStatus: game.status,
+      hasAIPlayers,
+      needsInitialization,
+      playerCount: players.length,
+      maxPlayers: game.maxPlayers,
+      playerTypes: players.map((p) => ({ num: p.playerNumber, type: p.type })),
+    });
+
     if (needsInitialization && players.length >= (game.maxPlayers ?? 2)) {
       const allReady = players.every((p) => p.isReady);
       if (allReady) {
@@ -389,7 +404,15 @@ export class GameSession {
               },
             });
           }
-          this.gameEngine.startGame();
+          const startGameResult = this.gameEngine.startGame();
+          const afterStartState = this.gameEngine.getGameState();
+          logger.info('Game started during init', {
+            gameId: this.gameId,
+            startGameResult,
+            gameStatus: afterStartState.gameStatus,
+            currentPlayer: afterStartState.currentPlayer,
+            currentPhase: afterStartState.currentPhase,
+          });
 
           // Trigger AI turn if the first player is AI
           await this.maybePerformAITurn();
@@ -410,6 +433,9 @@ export class GameSession {
     // decision phase – including test fixtures – get appropriate timeout
     // handling even before any new moves are made.
     this.scheduleDecisionPhaseTimeout(this.gameEngine.getGameState());
+
+    // Start AI watchdog to detect and recover from stalled AI turns
+    this.startAIWatchdog();
 
     logger.info('GameSession initialized', {
       gameId: this.gameId,
@@ -2049,5 +2075,79 @@ export class GameSession {
 
     // After an auto-resolved human move, AI may need to act next.
     await this.maybePerformAITurn();
+  }
+
+  /**
+   * Start the AI watchdog timer that periodically checks for stalled AI turns.
+   * This helps recover from cases where the AI turn logic silently fails.
+   */
+  private startAIWatchdog(): void {
+    // Clear any existing watchdog
+    if (this.aiWatchdogHandle) {
+      clearInterval(this.aiWatchdogHandle);
+    }
+
+    // Check every 10 seconds for stalled AI turns
+    this.aiWatchdogHandle = setInterval(() => {
+      void this.checkAIWatchdog();
+    }, 10000);
+
+    this.lastAITurnCheck = Date.now();
+  }
+
+  /**
+   * Check if an AI turn appears to be stalled and trigger recovery if needed.
+   */
+  private async checkAIWatchdog(): Promise<void> {
+    try {
+      const state = this.gameEngine.getGameState();
+      if (state.gameStatus !== 'active') {
+        return;
+      }
+
+      const currentPlayer = state.players.find((p) => p.playerNumber === state.currentPlayer);
+      if (!currentPlayer || currentPlayer.type !== 'ai') {
+        // Not an AI turn - reset the check timer
+        this.lastAITurnCheck = Date.now();
+        return;
+      }
+
+      // Check if AI turn has been going for too long (15+ seconds without activity)
+      const now = Date.now();
+
+      // Get request age from the aiRequestState if available
+      let aiRequestAge: number;
+      if (
+        this.aiRequestState &&
+        this.aiRequestState.kind !== 'idle' &&
+        'requestedAt' in this.aiRequestState
+      ) {
+        aiRequestAge = now - this.aiRequestState.requestedAt;
+      } else {
+        aiRequestAge = now - this.lastAITurnCheck;
+      }
+
+      // If no AI request is in progress and it's been >15s, something may be stuck
+      const isStalled =
+        (!this.aiRequestState || this.aiRequestState.kind === 'idle') && aiRequestAge > 15000;
+
+      if (isStalled) {
+        logger.warn('[AI Watchdog] AI turn appears stalled, triggering maybePerformAITurn', {
+          gameId: this.gameId,
+          playerNumber: state.currentPlayer,
+          phase: state.currentPhase,
+          aiRequestAge,
+          aiRequestKind: this.aiRequestState?.kind,
+        });
+
+        this.lastAITurnCheck = now;
+        await this.maybePerformAITurn();
+      }
+    } catch (err) {
+      logger.error('[AI Watchdog] Error checking AI turn status', {
+        gameId: this.gameId,
+        error: (err as Error).message,
+      });
+    }
   }
 }
