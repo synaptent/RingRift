@@ -1990,6 +1990,14 @@ class GossipProtocolMixin(P2PMixinBase):
             # Jan 2026: Narrowed exception types for better debugging
             self._log_debug(f"Config version not available for gossip: {type(e).__name__}: {e}")
 
+        # Jan 13, 2026: Include voter config version for drift detection (P2P Cluster Stability Plan Phase 3)
+        try:
+            from scripts.p2p.managers.voter_config_manager import get_voter_config_manager
+            voter_manager = get_voter_config_manager()
+            local_state["voter_config"] = voter_manager.get_config_for_gossip()
+        except (ImportError, AttributeError, TypeError, ValueError) as e:
+            self._log_debug(f"Voter config version not available for gossip: {type(e).__name__}: {e}")
+
         # Jan 3, 2026: Include circuit breaker states for cluster-wide failure awareness
         # This allows nodes to preemptively avoid targets that other nodes have found to be failing
         cb_state = self._get_circuit_breaker_gossip_state()
@@ -2420,6 +2428,10 @@ class GossipProtocolMixin(P2PMixinBase):
                 self._check_config_freshness(sender_id, sender_state["config"])
             )
 
+        # Jan 13, 2026: Check voter config drift (P2P Cluster Stability Plan Phase 3)
+        if sender_id and sender_state.get("voter_config"):
+            self._check_voter_config_drift(sender_id, sender_state["voter_config"])
+
         # Jan 3, 2026: Process circuit breaker states for cluster-wide failure awareness
         if sender_state.get("circuit_breakers"):
             self._process_circuit_breaker_states(
@@ -2539,6 +2551,54 @@ class GossipProtocolMixin(P2PMixinBase):
         except (ImportError, OSError, subprocess.SubprocessError, AttributeError, KeyError) as e:
             # Jan 2026: Narrowed exception types for better debugging
             self._log_debug(f"[ConfigSync] Sync from {source_node} failed: {e}")
+
+    def _check_voter_config_drift(
+        self, peer_id: str, peer_voter_config: dict[str, Any]
+    ) -> None:
+        """Check for voter config drift and trigger sync if needed.
+
+        Jan 13, 2026: Phase 3 of P2P Cluster Stability Plan
+        Compares peer's voter config version to ours via gossip.
+        If peer has newer config, triggers voter config reload.
+
+        Args:
+            peer_id: Node ID of the peer
+            peer_voter_config: Voter config gossip data from peer
+        """
+        try:
+            from scripts.p2p.managers.voter_config_manager import get_voter_config_manager
+
+            manager = get_voter_config_manager()
+
+            # Check if we should pull from this peer
+            if manager.should_pull_config(peer_voter_config):
+                peer_version = peer_voter_config.get("version", 0)
+                peer_hash = peer_voter_config.get("hash", "")[:16]
+
+                self._log_info(
+                    f"[VoterConfig] Peer {peer_id} has newer voter config "
+                    f"(v{peer_version}, hash={peer_hash}), triggering reload"
+                )
+
+                # Reload voter config from YAML
+                # This will pick up any changes synced via the main config sync
+                new_config = manager.load_from_yaml()
+                if new_config:
+                    self._log_info(
+                        f"[VoterConfig] Reloaded voter config: "
+                        f"v{new_config.version}, {len(new_config.voters)} voters"
+                    )
+
+                    # Emit event for monitoring
+                    self._safe_emit_event("VOTER_CONFIG_UPDATED", {
+                        "source_peer": peer_id,
+                        "version": new_config.version,
+                        "voter_count": len(new_config.voters),
+                        "hash": new_config.sha256_hash[:16],
+                    })
+
+        except (ImportError, AttributeError, TypeError, ValueError) as e:
+            self._log_debug(f"[VoterConfig] Drift check error: {type(e).__name__}: {e}")
 
     def _is_swim_peer_id(self, peer_id: str) -> bool:
         """Check if peer_id is a SWIM protocol entry (IP:7947 format).

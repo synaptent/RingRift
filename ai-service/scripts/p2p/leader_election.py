@@ -42,6 +42,20 @@ from typing import TYPE_CHECKING, Any
 
 from scripts.p2p.p2p_mixin_base import P2PMixinBase
 
+# Jan 13, 2026: Voter config management for strict quorum enforcement
+try:
+    from app.coordination.voter_config_types import QuorumHealth, QuorumResult
+    from scripts.p2p.managers.voter_config_manager import (
+        get_voter_config_manager,
+        STRICT_QUORUM_ENABLED,
+    )
+    HAS_VOTER_CONFIG_MANAGER = True
+except ImportError:
+    HAS_VOTER_CONFIG_MANAGER = False
+    QuorumResult = None  # type: ignore
+    QuorumHealth = None  # type: ignore
+    STRICT_QUORUM_ENABLED = False
+
 
 # Jan 3, 2026: Quorum health levels for proactive monitoring
 class QuorumHealthLevel(str, Enum):
@@ -2090,3 +2104,99 @@ def check_quorum(
         if peer and hasattr(peer, "is_alive") and peer.is_alive():
             alive += 1
     return alive >= quorum
+
+
+def check_quorum_strict(
+    voters: list[str],
+    alive_peers: dict[str, Any],
+    self_node_id: str,
+) -> tuple[bool, str]:
+    """Strict quorum check with detailed result.
+
+    Jan 13, 2026: Phase 2 of P2P Cluster Stability Plan
+    This function provides strict quorum enforcement when enabled.
+
+    When RINGRIFT_STRICT_QUORUM_ENFORCEMENT=true:
+    - Elections CANNOT proceed without proper quorum
+    - Returns detailed reason for any failures
+    - Uses VoterConfigManager for versioned config
+
+    When strict mode is disabled (default):
+    - Falls back to permissive check_quorum() behavior
+    - Still provides detailed logging for monitoring
+
+    Args:
+        voters: List of voter node IDs
+        alive_peers: Dict of alive peer NodeInfo objects
+        self_node_id: This node's ID
+
+    Returns:
+        Tuple of (quorum_ok: bool, reason: str)
+        - If quorum_ok is True, reason is "OK"
+        - If quorum_ok is False, reason explains the failure
+    """
+    # Try to use VoterConfigManager for strict enforcement
+    if HAS_VOTER_CONFIG_MANAGER:
+        try:
+            manager = get_voter_config_manager()
+
+            # Build list of alive voter IDs
+            alive_voter_ids = []
+            for node_id in voters:
+                if node_id == self_node_id:
+                    alive_voter_ids.append(node_id)
+                    continue
+                peer = alive_peers.get(node_id)
+                if peer and hasattr(peer, "is_alive") and peer.is_alive():
+                    alive_voter_ids.append(node_id)
+
+            # Use strict quorum check
+            result, reason = manager.check_quorum_strict(alive_voter_ids)
+
+            if result == QuorumResult.OK:
+                return True, "OK"
+
+            # Strict mode blocks elections on any non-OK result
+            if STRICT_QUORUM_ENABLED:
+                logger.warning(f"[STRICT QUORUM] Election blocked: {result.value} - {reason}")
+                return False, reason
+
+            # Permissive mode: log but allow
+            logger.debug(f"[QUORUM] {result.value}: {reason} (strict mode disabled)")
+
+        except Exception as e:
+            logger.warning(f"[QUORUM] VoterConfigManager error: {e}, using fallback")
+
+    # Fall back to simple quorum check
+    has_quorum = check_quorum(voters, alive_peers, self_node_id)
+
+    if has_quorum:
+        return True, "OK"
+    else:
+        alive_count = sum(
+            1 for v in voters
+            if v == self_node_id or (alive_peers.get(v) and alive_peers[v].is_alive())
+        )
+        return False, f"Quorum lost: {alive_count}/{len(voters)} voters alive"
+
+
+def should_block_election(
+    voters: list[str],
+    alive_peers: dict[str, Any],
+    self_node_id: str,
+) -> tuple[bool, str]:
+    """Check if an election should be blocked due to quorum issues.
+
+    This is the primary election gating function. It returns True
+    if the election should NOT proceed.
+
+    Args:
+        voters: List of voter node IDs
+        alive_peers: Dict of alive peer NodeInfo objects
+        self_node_id: This node's ID
+
+    Returns:
+        Tuple of (should_block: bool, reason: str)
+    """
+    quorum_ok, reason = check_quorum_strict(voters, alive_peers, self_node_id)
+    return (not quorum_ok, reason)

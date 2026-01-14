@@ -21424,8 +21424,9 @@ print(json.dumps({{
         # NAT-blocked nodes cannot act as a leader because peers can't reach them.
         if getattr(self.self_info, "nat_blocked", False):
             return
-        # Optional quorum gating: only configured voters may lead, and only when
-        # a majority of voters are currently visible.
+
+        # Jan 13, 2026: Strict quorum enforcement (P2P Cluster Stability Plan Phase 2)
+        # Check quorum BEFORE proceeding with election
         voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
         if voter_node_ids:
             if self.node_id not in voter_node_ids:
@@ -21433,8 +21434,30 @@ print(json.dumps({{
                 # instead of just returning silently
                 await self._request_election_from_voters("non_voter_detected_leaderless")
                 return
-            if not self._has_voter_quorum():
-                return
+
+            # Jan 13, 2026: Use strict quorum check when available
+            try:
+                from scripts.p2p.leader_election import should_block_election
+                # Jan 12, 2026: Use lock-free PeerSnapshot for read-only access
+                snapshot = self._peer_snapshot.get_snapshot()
+                should_block, reason = should_block_election(
+                    voter_node_ids,
+                    snapshot,
+                    self.node_id,
+                )
+                if should_block:
+                    logger.warning(f"[Election] Blocked: {reason}")
+                    self._safe_emit_event("ELECTION_BLOCKED", {
+                        "node_id": self.node_id,
+                        "reason": reason,
+                        "voter_count": len(voter_node_ids),
+                        "timestamp": time.time(),
+                    })
+                    return
+            except ImportError:
+                # Fall back to legacy quorum check
+                if not self._has_voter_quorum():
+                    return
 
         # Jan 12, 2026: Use lock-free PeerSnapshot for read-only access
         snapshot = self._peer_snapshot.get_snapshot()

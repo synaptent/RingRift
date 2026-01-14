@@ -27,12 +27,26 @@ January 9, 2026 - Config Sync:
 
     Problem: distributed_hosts.yaml is gitignored, so git pull doesn't update it.
     Solution: Explicitly sync config files via SCP when --sync-config is set.
+
+January 13, 2026 - Atomic Config Deployment:
+    Added --sync-config-atomic flag for two-phase commit (2PC) config deployment.
+    This ensures either ALL nodes get the new config or NONE do.
+
+    How it works:
+    1. PREPARE phase: Send config hash to all targets, get ACKs
+    2. Quorum check: Need ACKs from >= half of targets
+    3. COMMIT phase: Push full config, verify hash matches on all nodes
+    4. ROLLBACK: If any node fails verification, rollback all
+
+    Use this for critical config changes (like p2p_voters) that require
+    cluster-wide consistency.
 """
 from __future__ import annotations
 
 
 import argparse
 import asyncio
+import hashlib
 import logging
 import sys
 import warnings
@@ -903,6 +917,13 @@ Examples:
         help='Validate p2p_voters against Tailscale before sync (use with --sync-config)'
     )
 
+    # January 13, 2026: Atomic config deployment (two-phase commit)
+    parser.add_argument(
+        '--sync-config-atomic',
+        action='store_true',
+        help='Use atomic two-phase commit for config sync (ensures all nodes get same config)'
+    )
+
     # January 12, 2026: Automated SSH key distribution
     parser.add_argument(
         '--distribute-ssh-key',
@@ -952,6 +973,99 @@ Examples:
             logger.error(f"Voter validation error: {e}")
             if not args.dry_run:
                 sys.exit(1)
+
+    # January 13, 2026: Atomic config deployment with two-phase commit
+    if args.sync_config_atomic:
+        logger.info("ATOMIC CONFIG DEPLOYMENT MODE (Two-Phase Commit)")
+
+        try:
+            from app.coordination.config_deployment import (
+                AtomicConfigDeployer,
+                DeployResult,
+                DeployPhase,
+                NodeAckStatus,
+            )
+        except ImportError as e:
+            logger.error(f"Failed to import AtomicConfigDeployer: {e}")
+            logger.error("Please ensure app/coordination/config_deployment.py exists")
+            sys.exit(1)
+
+        # Read local config file
+        config_path = Path(__file__).parent.parent / 'config' / 'distributed_hosts.yaml'
+        if not config_path.exists():
+            logger.error(f"Config file not found: {config_path}")
+            sys.exit(1)
+
+        with open(config_path) as f:
+            config_content = f.read()
+
+        # Load hosts from config
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+
+        hosts = config.get('hosts', {})
+
+        # Filter to ready nodes only, excluding local-mac
+        targets = [
+            name for name, cfg in hosts.items()
+            if cfg.get('status') == 'ready' and name != 'local-mac'
+        ]
+
+        if not targets:
+            logger.error("No target nodes found for atomic deployment")
+            sys.exit(1)
+
+        logger.info(f"Target nodes: {len(targets)}")
+        logger.info(f"Config file: {config_path}")
+
+        if args.dry_run:
+            logger.info("DRY-RUN: Would deploy config atomically to:")
+            for target in targets:
+                logger.info(f"  - {target}")
+            logger.info(f"\nConfig hash: {hashlib.sha256(config_content.encode()).hexdigest()[:16]}")
+            sys.exit(0)
+
+        # Run atomic deployment
+        deployer = AtomicConfigDeployer()
+        result = asyncio.run(deployer.deploy(config_content, targets))
+
+        # Print summary
+        print("\n" + "=" * 80)
+        print("ATOMIC CONFIG DEPLOYMENT SUMMARY")
+        print("=" * 80)
+
+        if result.success:
+            print(f"\n✅ Deployment SUCCESSFUL")
+            print(f"   Config hash: {result.config_hash[:16]}")
+            print(f"   Nodes updated: {len(result.nodes_updated)}")
+            print(f"   Duration: {result.duration_ms:.0f}ms")
+            print(f"\n   Updated nodes:")
+            for node in result.nodes_updated:
+                print(f"     - {node}")
+        else:
+            print(f"\n❌ Deployment FAILED")
+            print(f"   Phase: {result.phase.value}")
+            print(f"   Reason: {result.reason}")
+            if result.nodes_failed:
+                print(f"\n   Failed nodes:")
+                for node in result.nodes_failed:
+                    print(f"     - {node}")
+            if result.nodes_updated:
+                print(f"\n   Rollback performed on: {len(result.nodes_updated)} nodes")
+
+        # Detailed node results
+        if result.node_results:
+            print(f"\n   Node details:")
+            for nr in result.node_results:
+                status_emoji = "✓" if nr.status == NodeAckStatus.ACK else "✗"
+                msg = nr.error if nr.error else f"{nr.duration_ms:.0f}ms"
+                print(f"     {status_emoji} {nr.node_id}: {nr.status.value} ({msg})")
+
+        print("=" * 80 + "\n")
+
+        if not result.success:
+            sys.exit(1)
+        sys.exit(0)
 
     # January 12, 2026: Automated SSH key distribution
     if args.distribute_ssh_key:
