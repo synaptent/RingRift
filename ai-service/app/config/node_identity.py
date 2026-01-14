@@ -181,15 +181,23 @@ class NodeIdentity:
                 )
 
         # Priority 1: Explicit env var
+        # When explicitly set, always use it (user intent is clear)
         env_id = os.environ.get("RINGRIFT_NODE_ID")
         if env_id:
             if env_id in hosts:
                 return cls._from_config(env_id, hosts, "env_var")
 
-            # Env var set but not in config - this is a configuration error
+            # Env var set but not in config - use it anyway (user explicitly set it)
+            # January 2026: Changed to respect explicit env var over hostname matching
+            ts_ip = get_tailscale_ip()
             logger.warning(
-                f"RINGRIFT_NODE_ID={env_id} not in config, "
-                "trying other resolution methods"
+                f"RINGRIFT_NODE_ID={env_id} not in config, using it anyway"
+            )
+            return cls(
+                canonical_id=env_id,
+                tailscale_ip=ts_ip,
+                hostname=hostname,
+                resolution_method="env_var_unverified",
             )
 
         # Priority 2: Legacy P2P config file
@@ -218,20 +226,8 @@ class NodeIdentity:
                     if node_cfg.get("tailscale_ip") == ts_ip:
                         return cls._from_config(node_id, hosts, "tailscale")
 
-        # Priority 5: If we have an env var that's not in config, use it anyway
-        # This allows new nodes to join before config is updated
-        if env_id:
-            logger.warning(
-                f"Using RINGRIFT_NODE_ID={env_id} despite not being in config"
-            )
-            return cls(
-                canonical_id=env_id,
-                tailscale_ip=ts_ip,
-                hostname=hostname,
-                resolution_method="env_var_unverified",
-            )
-
         # Cannot resolve - fail fast with helpful message
+        # Note: If RINGRIFT_NODE_ID was set, we would have returned earlier at Priority 1
         node_ids = list(hosts.keys()) if hosts else []
         raise IdentityError(
             f"Cannot resolve node identity.\n"
