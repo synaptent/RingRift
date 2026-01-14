@@ -491,10 +491,32 @@ class AutonomousQueuePopulationLoop(BaseLoop):
         """Create a work item for local queue.
 
         Returns a selfplay work item for a config that needs more games.
+
+        January 2026: Added starvation override to ensure data-starved configs
+        (especially 3p and 4p) get allocation even when they aren't highest priority.
+        This fixes the issue where square19_4p and hexagonal_4p had only 61-161 games
+        while 2p configs had thousands.
         """
+        import random
+
         try:
             # Try to get config priorities from selfplay scheduler
             scheduler = getattr(self._orchestrator, "selfplay_scheduler", None)
+
+            # January 2026: Starvation override for 3p/4p configs
+            # Get game counts if available to find starved configs
+            starved_configs = self._get_starved_configs(scheduler)
+            if starved_configs:
+                # 70% chance to force allocation to a starved config
+                # This aggressively rebalances data while still allowing some
+                # priority-based allocation
+                if random.random() < 0.7:
+                    config_key = random.choice(starved_configs)
+                    logger.debug(
+                        f"[AutonomousQueue] Starvation override: allocating to {config_key}"
+                    )
+                    return self._make_selfplay_work_item(config_key)
+
             if scheduler and hasattr(scheduler, "get_config_priorities"):
                 priorities = scheduler.get_config_priorities()
                 if priorities:
@@ -516,6 +538,64 @@ class AutonomousQueuePopulationLoop(BaseLoop):
         except Exception as e:
             logger.debug(f"[AutonomousQueue] Failed to create work item: {e}")
             return None
+
+    def _get_starved_configs(self, scheduler: Any) -> list[str]:
+        """Get list of data-starved configs that need urgent allocation.
+
+        January 2026: Identifies configs with critically low game counts.
+
+        Returns configs with:
+        - 4p configs with < 500 games (critical starvation)
+        - 3p configs with < 1000 games (moderate starvation)
+
+        Args:
+            scheduler: SelfplayScheduler instance (may be None)
+
+        Returns:
+            List of config keys that are starved, prioritizing 4p configs.
+        """
+        starved = []
+
+        # Try to get game counts from scheduler
+        game_counts: dict[str, int] = {}
+        if scheduler:
+            # Try multiple possible attributes for game counts
+            for attr in ["_game_counts", "game_counts", "_config_game_counts"]:
+                counts = getattr(scheduler, attr, None)
+                if counts and isinstance(counts, dict):
+                    game_counts = counts
+                    break
+
+        # If no game counts from scheduler, use fallback estimation
+        if not game_counts:
+            try:
+                from app.coordination.selfplay_priority_types import get_config_game_counts
+                game_counts = get_config_game_counts()
+            except ImportError:
+                pass
+
+        # Define starvation thresholds
+        # 4p configs have been severely underallocated - use aggressive threshold
+        STARVATION_4P = 500   # 4p configs with < 500 games are critical
+        STARVATION_3P = 1000  # 3p configs with < 1000 games are starved
+
+        # All canonical configs for reference
+        all_4p = ["hex8_4p", "square8_4p", "square19_4p", "hexagonal_4p"]
+        all_3p = ["hex8_3p", "square8_3p", "square19_3p", "hexagonal_3p"]
+
+        # First prioritize 4p configs (most underserved)
+        for cfg in all_4p:
+            count = game_counts.get(cfg, 0)
+            if count < STARVATION_4P:
+                starved.append(cfg)
+
+        # Then add starved 3p configs
+        for cfg in all_3p:
+            count = game_counts.get(cfg, 0)
+            if count < STARVATION_3P:
+                starved.append(cfg)
+
+        return starved
 
     def _make_selfplay_work_item(self, config_key: str) -> dict[str, Any]:
         """Create a selfplay work item for the given config."""

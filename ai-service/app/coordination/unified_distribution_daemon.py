@@ -1123,6 +1123,8 @@ class UnifiedDistributionDaemon(HandlerBase):
                 True, True, time.time() - start_time, "bittorrent"
             )
             self._record_circuit_breaker_success(node_id)
+            # January 2026: Register model in manifest after successful distribution
+            self._register_model_in_manifest(file_path, node_id, data_type)
             return True
 
         # Try HTTP
@@ -1141,6 +1143,8 @@ class UnifiedDistributionDaemon(HandlerBase):
                     True, checksum_ok, time.time() - start_time, "http"
                 )
                 self._record_circuit_breaker_success(node_id)
+                # January 2026: Register model in manifest after successful distribution
+                self._register_model_in_manifest(file_path, node_id, data_type)
                 return True
 
         # Fallback to rsync
@@ -1158,6 +1162,8 @@ class UnifiedDistributionDaemon(HandlerBase):
                     True, checksum_ok, time.time() - start_time, "rsync"
                 )
                 self._record_circuit_breaker_success(node_id)
+                # January 2026: Register model in manifest after successful distribution
+                self._register_model_in_manifest(file_path, node_id, data_type)
                 return True
 
         # All methods failed
@@ -1176,6 +1182,75 @@ class UnifiedDistributionDaemon(HandlerBase):
                 logger.debug(f"Circuit breaker failure recording failed: {cb_err}")
 
         return False
+
+    def _register_model_in_manifest(
+        self,
+        file_path: Path,
+        node_id: str,
+        data_type: DataType,
+    ) -> None:
+        """Register distributed model in ClusterManifest after successful transfer.
+
+        January 2026: Added to fix model distribution feedback loop - models were
+        transferred to nodes but never registered in ClusterManifest, causing
+        verify_distribution() to return 0 nodes and blocking evaluation.
+
+        Args:
+            file_path: Path to the model file
+            node_id: ID of the node where model was distributed
+            data_type: Type of data (only registers for MODEL)
+        """
+        # Only register models, not NPZ files
+        if data_type != DataType.MODEL:
+            return
+
+        try:
+            from app.distributed.cluster_manifest import get_cluster_manifest
+
+            manifest = get_cluster_manifest()
+            model_name = file_path.name
+
+            # Parse board_type and num_players from model filename
+            # Expected patterns: canonical_hex8_2p.pth, ringrift_best_square8_4p.pth
+            board_type, num_players = self._parse_model_config(model_name)
+
+            if board_type and num_players:
+                file_size = file_path.stat().st_size if file_path.exists() else 0
+                manifest.register_model(
+                    model_path=str(file_path),
+                    node_id=node_id,
+                    board_type=board_type,
+                    num_players=num_players,
+                    file_size=file_size,
+                )
+                logger.info(
+                    f"[Distribution] Registered model {model_name} at {node_id} in ClusterManifest"
+                )
+            else:
+                logger.debug(
+                    f"[Distribution] Could not parse config from model name: {model_name}"
+                )
+        except ImportError:
+            logger.debug("[Distribution] ClusterManifest not available")
+        except Exception as e:
+            logger.warning(f"[Distribution] Failed to register model in manifest: {e}")
+
+    def _parse_model_config(self, model_name: str) -> tuple[str | None, int | None]:
+        """Extract board_type and num_players from model filename.
+
+        Args:
+            model_name: Model filename (e.g., "canonical_hex8_2p.pth")
+
+        Returns:
+            Tuple of (board_type, num_players) or (None, None) if not parseable.
+        """
+        import re
+
+        # Match patterns like: hex8_2p, square8_4p, hexagonal_3p, square19_2p
+        match = re.search(r'(hex8|hexagonal|square8|square19)_(\d)p', model_name)
+        if match:
+            return match.group(1), int(match.group(2))
+        return None, None
 
     # =========================================================================
     # Transport Methods

@@ -382,7 +382,8 @@ class JobManager(EventSubscriptionMixin):
         "maxn", "brs", "mcts", "mcts-only",
         "gumbel-mcts", "gumbel-mcts-only", "gumbel", "gpu-gumbel",
         "policy-only", "nn-descent", "descent-only", "nn-minimax",
-        "diverse", "mixed",  # These resolve to GPU modes
+        "diverse",  # These resolve to GPU modes
+        # Note: "mixed" removed - now has dedicated path using MixedOpponentSelfplayRunner
     }
 
     # GPU-required engine modes (require CUDA or MPS) - December 2025
@@ -2066,7 +2067,31 @@ class JobManager(EventSubscriptionMixin):
                 )
                 effective_mode = "maxn"  # High-quality CPU mode
 
-        if effective_mode in self.SEARCH_ENGINE_MODES:
+        # January 2026: Mixed opponent mode uses scripts/selfplay.py with --engine mixed
+        # This provides actual diverse opponents (random, heuristic, mcts, minimax, etc.)
+        # to break weak-vs-weak training cycles for starved configs
+        if effective_mode in ("mixed", "mixed-opponents"):
+            script_path = self._get_script_path("selfplay.py")
+            if not os.path.exists(script_path):
+                logger.warning(f"Selfplay script not found: {script_path}")
+                return
+
+            cmd = [
+                sys.executable,
+                script_path,
+                "--board", board_norm,
+                "--num-players", str(num_players),
+                "--num-games", str(num_games),
+                "--engine", "mixed",  # Use MixedOpponentSelfplayRunner
+                "--output", str(output_dir / "games.db"),
+                "--seed", str(int(time.time() * 1000) % 2**31),
+            ]
+            logger.info(
+                f"Using mixed opponent selfplay for {board_type}_{num_players}p "
+                f"(job {job_id}) - diverse opponents for better training signal"
+            )
+
+        elif effective_mode in self.SEARCH_ENGINE_MODES:
             # December 29, 2025: Use generate_gumbel_selfplay.py for search-based modes
             # (run_hybrid_selfplay.py was archived, generate_gumbel_selfplay.py is the active replacement)
             script_path = self._get_script_path("generate_gumbel_selfplay.py")

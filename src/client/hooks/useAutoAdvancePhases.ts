@@ -24,6 +24,7 @@ const NO_ACTION_MOVE_TYPES = [
   'no_line_action',
   'no_territory_action',
   'skip_capture',
+  'skip_recovery',
 ] as const;
 
 /**

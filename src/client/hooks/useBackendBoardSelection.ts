@@ -92,10 +92,22 @@ export function useBackendBoardSelection(
     setValidTargets([]);
   }, []);
 
-  // Approximate must-move stack highlighting: if all movement/capture moves
-  // originate from the same stack, treat that as the forced origin.
+  // Must-move stack highlighting: prioritize server-provided mustMoveFromStackKey
+  // (set after ring placement), otherwise infer from validMoves when all moves
+  // originate from the same stack.
   const mustMoveFrom: Position | undefined = useMemo(() => {
-    if (!Array.isArray(validMoves) || !gameState) return undefined;
+    if (!gameState) return undefined;
+
+    // Priority 1: Use server-provided mustMoveFromStackKey (set after ring placement)
+    if (gameState.mustMoveFromStackKey) {
+      const [x, y] = gameState.mustMoveFromStackKey.split(',').map(Number);
+      if (!isNaN(x) && !isNaN(y)) {
+        return { x, y };
+      }
+    }
+
+    // Priority 2: Infer from validMoves (all moves from same origin)
+    if (!Array.isArray(validMoves)) return undefined;
     if (gameState.currentPhase !== 'movement' && gameState.currentPhase !== 'capture') {
       return undefined;
     }
@@ -151,24 +163,64 @@ export function useBackendBoardSelection(
   }, [gameState]);
 
   // Auto-highlight valid placement targets during ring_placement
+  // Extract currentPhase to avoid optional chaining in dependency array
+  const currentPhase = gameState?.currentPhase;
+
   useEffect(() => {
-    if (!gameState) return;
+    if (!gameState || currentPhase !== 'ring_placement') return;
 
-    if (gameState.currentPhase === 'ring_placement') {
-      if (Array.isArray(validMoves) && validMoves.length > 0) {
-        const placementTargets = validMoves.filter((m) => m.type === 'place_ring').map((m) => m.to);
+    if (Array.isArray(validMoves) && validMoves.length > 0) {
+      const placementTargets = validMoves.filter((m) => m.type === 'place_ring').map((m) => m.to);
 
-        setValidTargets((prev) => {
-          if (prev.length !== placementTargets.length) return placementTargets;
-          const allMatch = prev.every((p) => placementTargets.some((pt) => positionsEqual(p, pt)));
-          return allMatch ? prev : placementTargets;
-        });
-      } else {
-        // Only clear if not already empty, avoiding unnecessary re-renders
-        setValidTargets((prev) => (prev.length === 0 ? prev : []));
-      }
+      setValidTargets((prev) => {
+        if (prev.length !== placementTargets.length) return placementTargets;
+        const allMatch = prev.every((p) => placementTargets.some((pt) => positionsEqual(p, pt)));
+        return allMatch ? prev : placementTargets;
+      });
+    } else {
+      // Only clear if not already empty, avoiding unnecessary re-renders
+      setValidTargets((prev) => (prev.length === 0 ? prev : []));
     }
-  }, [gameState?.currentPhase, validMoves, gameState]);
+  }, [currentPhase, validMoves, gameState]);
+
+  // Auto-select mustMoveFrom stack and highlight valid targets during movement phase.
+  // This provides the same UX as the sandbox where the player can immediately
+  // click a landing position after ring placement.
+  const isMovementPhase = currentPhase === 'movement';
+  const hasMustMoveFrom = !!mustMoveFrom;
+
+  useEffect(() => {
+    // Only auto-select during movement phase when mustMoveFrom is set
+    if (!isMovementPhase || !hasMustMoveFrom || !mustMoveFrom) return;
+    if (!Array.isArray(validMoves) || validMoves.length === 0) return;
+
+    // Auto-select the mustMoveFrom position
+    setSelected((prev) => {
+      if (prev && positionsEqual(prev, mustMoveFrom)) return prev;
+      return mustMoveFrom;
+    });
+
+    // Compute and highlight valid landing positions for this stack
+    const landings = validMoves
+      .filter(
+        (m) =>
+          (m.type === 'move_stack' || m.type === 'overtaking_capture') &&
+          m.from &&
+          positionsEqual(m.from, mustMoveFrom)
+      )
+      .map((m) => m.to)
+      .filter((t): t is Position => t !== undefined);
+
+    setValidTargets((prev) => {
+      if (
+        prev.length === landings.length &&
+        prev.every((p) => landings.some((l) => positionsEqual(p, l)))
+      ) {
+        return prev;
+      }
+      return landings;
+    });
+  }, [isMovementPhase, hasMustMoveFrom, mustMoveFrom, validMoves]);
 
   return {
     selected,

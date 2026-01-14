@@ -97,6 +97,69 @@ class EloProgressTracker:
     def __init__(self, db_path: Path | None = None):
         self.db_path = db_path or ELO_PROGRESS_DB
         self._init_db()
+        self._subscribe_to_events()
+
+    def _subscribe_to_events(self) -> None:
+        """Subscribe to EVALUATION_COMPLETED events to capture win rates."""
+        try:
+            from app.coordination.event_router import get_router
+            from app.coordination.data_events import DataEventType
+
+            router = get_router()
+            router.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
+            logger.info("[EloProgress] Subscribed to EVALUATION_COMPLETED events")
+        except ImportError as e:
+            logger.debug(f"[EloProgress] Event router not available: {e}")
+        except Exception as e:
+            logger.warning(f"[EloProgress] Failed to subscribe to events: {e}")
+
+    def _on_evaluation_completed(self, event) -> None:
+        """Record Elo snapshot immediately after evaluation with win rate breakdown.
+
+        This method extracts win rates from EVALUATION_COMPLETED events and
+        persists them to the elo_progress table for tracking improvement over time.
+
+        January 2026: Added to fix training feedback loop - win rates were not
+        being recorded because EloProgressTracker wasn't subscribed to events.
+        """
+        # Extract payload from RouterEvent objects
+        payload = getattr(event, "payload", event) if hasattr(event, "payload") else event
+        if not isinstance(payload, dict):
+            return
+
+        # Get config key - event may use 'config_key' or 'config'
+        config_key = payload.get("config_key") or payload.get("config")
+        if not config_key:
+            return
+
+        # Extract optional model_id and Elo rating
+        model_id = payload.get("model_id") or payload.get("model_path", "")
+        elo = payload.get("elo", 0.0)
+        games_played = payload.get("games_played", 0)
+
+        # Extract win rates - these were previously never recorded
+        vs_random_rate = payload.get("vs_random_rate")
+        vs_heuristic_rate = payload.get("vs_heuristic_rate")
+
+        # Only record if we have meaningful data
+        if not model_id and not elo:
+            logger.debug(f"[EloProgress] Skipping event with no model_id or elo: {config_key}")
+            return
+
+        # Record the snapshot with win rate breakdown
+        self.record_snapshot(
+            config_key=config_key,
+            best_model_id=str(model_id),
+            best_elo=float(elo) if elo else 0.0,
+            games_played=int(games_played) if games_played else 0,
+            vs_random_win_rate=float(vs_random_rate) if vs_random_rate is not None else None,
+            vs_heuristic_win_rate=float(vs_heuristic_rate) if vs_heuristic_rate is not None else None,
+        )
+
+        logger.debug(
+            f"[EloProgress] Recorded from event: {config_key} @ {elo:.1f} Elo "
+            f"(vs_random={vs_random_rate}, vs_heuristic={vs_heuristic_rate})"
+        )
 
     @classmethod
     def get_instance(cls) -> EloProgressTracker:

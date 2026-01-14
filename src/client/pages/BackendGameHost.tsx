@@ -285,11 +285,13 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
   // Movement grid overlay: visual aid showing movement paths from selected position
   const backendMovementGridStorageKey = 'ringrift_backend_show_movement_grid';
   const [showMovementGrid, setShowMovementGrid] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
+    if (typeof window === 'undefined') return true; // Default on
     try {
-      return localStorage.getItem(backendMovementGridStorageKey) === 'true';
+      const stored = localStorage.getItem(backendMovementGridStorageKey);
+      // Default to true if not set
+      return stored === null ? true : stored === 'true';
     } catch {
-      return false;
+      return true;
     }
   });
 
@@ -332,14 +334,16 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     setShowCoordinateLabels((prev) => !prev);
   }, []);
 
-  // Line overlays (debug): toggleable with localStorage persistence
+  // Line overlays: toggleable with localStorage persistence
   const backendLineOverlaysStorageKey = 'ringrift_backend_show_line_overlays';
   const [showLineOverlays, setShowLineOverlays] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
+    if (typeof window === 'undefined') return true; // Default on
     try {
-      return localStorage.getItem(backendLineOverlaysStorageKey) === 'true';
+      const stored = localStorage.getItem(backendLineOverlaysStorageKey);
+      // Default to true if not set
+      return stored === null ? true : stored === 'true';
     } catch {
-      return false;
+      return true;
     }
   });
 
@@ -356,14 +360,16 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     setShowLineOverlays((prev) => !prev);
   }, []);
 
-  // Territory region overlays (debug): toggleable with localStorage persistence
+  // Territory region overlays: toggleable with localStorage persistence
   const backendTerritoryOverlaysStorageKey = 'ringrift_backend_show_territory_overlays';
   const [showTerritoryRegionOverlays, setShowTerritoryRegionOverlays] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
+    if (typeof window === 'undefined') return true; // Default on
     try {
-      return localStorage.getItem(backendTerritoryOverlaysStorageKey) === 'true';
+      const stored = localStorage.getItem(backendTerritoryOverlaysStorageKey);
+      // Default to true if not set
+      return stored === null ? true : stored === 'true';
     } catch {
-      return false;
+      return true;
     }
   });
 
@@ -805,6 +811,50 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
   // Auto-advance through no-action phases (matching sandbox behavior)
   useAutoAdvancePhases(gameState, validMoves, isMyTurn, submitMove);
 
+  // ================== Skip Action Memos (must be before early returns) ==================
+  // Extract currentPhase to avoid optional chaining in dependency arrays
+  const currentPhase = gameState?.currentPhase;
+
+  // Skip action availability - derive from validMoves when skip is available
+  // but not the only option (auto-advance handles single-option skips)
+  const canSkipCapture = useMemo(() => {
+    if (!Array.isArray(validMoves) || validMoves.length <= 1) return false;
+    if (currentPhase !== 'capture') return false;
+    const hasSkip = validMoves.some((m) => m.type === 'skip_capture');
+    const hasOther = validMoves.some((m) => m.type !== 'skip_capture');
+    return hasSkip && hasOther;
+  }, [validMoves, currentPhase]);
+
+  const canSkipRecovery = useMemo(() => {
+    if (!Array.isArray(validMoves) || validMoves.length <= 1) return false;
+    // Recovery skip can be available during movement phase when recovery slide is an option
+    if (currentPhase !== 'movement' && currentPhase !== 'recovery') return false;
+    const hasSkip = validMoves.some((m) => m.type === 'skip_recovery');
+    const hasOther = validMoves.some((m) => m.type !== 'skip_recovery');
+    return hasSkip && hasOther;
+  }, [validMoves, currentPhase]);
+
+  const canSkipTerritory = useMemo(() => {
+    if (!Array.isArray(validMoves) || validMoves.length <= 1) return false;
+    if (currentPhase !== 'territory_processing') return false;
+    const hasSkip = validMoves.some((m) => m.type === 'skip_territory_processing');
+    const hasOther = validMoves.some((m) => m.type !== 'skip_territory_processing');
+    return hasSkip && hasOther;
+  }, [validMoves, currentPhase]);
+
+  // Skip action handlers
+  const handleSkipCapture = useCallback(() => {
+    submitMove({ type: 'skip_capture', to: { x: 0, y: 0 } } as PartialMove);
+  }, [submitMove]);
+
+  const handleSkipRecovery = useCallback(() => {
+    submitMove({ type: 'skip_recovery', to: { x: 0, y: 0 } } as PartialMove);
+  }, [submitMove]);
+
+  const handleSkipTerritory = useCallback(() => {
+    submitMove({ type: 'skip_territory_processing', to: { x: 0, y: 0 } } as PartialMove);
+  }, [submitMove]);
+
   // Early-loading states
   if (isConnecting && !gameState) {
     return (
@@ -942,6 +992,23 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     }
   }
 
+  // Decision phase status indicators - matching sandbox host behavior
+  const isRingEliminationChoice = pendingChoice?.type === 'ring_elimination';
+  const isRegionOrderChoice = pendingChoice?.type === 'region_order';
+  const isChainCaptureContinuationStep = !!(
+    gameState &&
+    gameState.gameStatus === 'active' &&
+    gameState.currentPhase === 'chain_capture' &&
+    Array.isArray(validMoves) &&
+    validMoves.length > 0 &&
+    validMoves.some((m) => m.type === 'overtaking_capture' || m.type === 'continue_capture_segment')
+  );
+
+  // Board display subtitle - shows turn and game status
+  const boardDisplaySubtitle = `Turn ${gameState.turnNumber} • ${
+    gameState.gameStatus === 'active' ? 'Active' : gameState.gameStatus
+  }`;
+
   const backendBoardViewModel = toBoardViewModel(board, {
     selectedPosition: selected || backendMustMoveFrom,
     validTargets,
@@ -1029,47 +1096,6 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
   });
 
   const hudCurrentPlayer = hudViewModel.players.find((p) => p.isCurrentPlayer);
-
-  // Skip action availability - derive from validMoves when skip is available
-  // but not the only option (auto-advance handles single-option skips)
-  const canSkipCapture = useMemo(() => {
-    if (!Array.isArray(validMoves) || validMoves.length <= 1) return false;
-    if (gameState.currentPhase !== 'capture') return false;
-    const hasSkip = validMoves.some((m) => m.type === 'skip_capture');
-    const hasOther = validMoves.some((m) => m.type !== 'skip_capture');
-    return hasSkip && hasOther;
-  }, [validMoves, gameState.currentPhase]);
-
-  const canSkipRecovery = useMemo(() => {
-    if (!Array.isArray(validMoves) || validMoves.length <= 1) return false;
-    // Recovery skip can be available during movement phase when recovery slide is an option
-    if (gameState.currentPhase !== 'movement' && gameState.currentPhase !== 'recovery')
-      return false;
-    const hasSkip = validMoves.some((m) => m.type === 'skip_recovery');
-    const hasOther = validMoves.some((m) => m.type !== 'skip_recovery');
-    return hasSkip && hasOther;
-  }, [validMoves, gameState.currentPhase]);
-
-  const canSkipTerritory = useMemo(() => {
-    if (!Array.isArray(validMoves) || validMoves.length <= 1) return false;
-    if (gameState.currentPhase !== 'territory_processing') return false;
-    const hasSkip = validMoves.some((m) => m.type === 'skip_territory_processing');
-    const hasOther = validMoves.some((m) => m.type !== 'skip_territory_processing');
-    return hasSkip && hasOther;
-  }, [validMoves, gameState.currentPhase]);
-
-  // Skip action handlers
-  const handleSkipCapture = useCallback(() => {
-    submitMove({ type: 'skip_capture', to: { x: 0, y: 0 } } as PartialMove);
-  }, [submitMove]);
-
-  const handleSkipRecovery = useCallback(() => {
-    submitMove({ type: 'skip_recovery', to: { x: 0, y: 0 } } as PartialMove);
-  }, [submitMove]);
-
-  const handleSkipTerritory = useCallback(() => {
-    submitMove({ type: 'skip_territory_processing', to: { x: 0, y: 0 } } as PartialMove);
-  }, [submitMove]);
 
   const backendSelectedStackDetails = (() => {
     if (!backendBoardViewModel || !selected) return null;
@@ -1239,6 +1265,11 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
             squareRankFromBottom={squareRankFromBottom}
             showLineOverlays={showLineOverlays}
             showTerritoryRegionOverlays={showTerritoryRegionOverlays}
+            decisionHighlights={decisionHighlights}
+            isRingEliminationChoice={isRingEliminationChoice}
+            isRegionOrderChoice={isRegionOrderChoice}
+            isChainCaptureContinuationStep={isChainCaptureContinuationStep}
+            boardDisplaySubtitle={boardDisplaySubtitle}
             phaseLabel={hudViewModel.phase.label}
             players={hudViewModel.players.map((p) => ({
               playerNumber: p.playerNumber,

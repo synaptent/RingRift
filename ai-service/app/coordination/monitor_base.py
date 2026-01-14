@@ -311,15 +311,24 @@ class MonitorBase(BaseDaemon[MonitorConfigT], Generic[MonitorConfigT]):
         """Check if event is a duplicate based on content hash.
 
         Args:
-            event: Event dictionary to check
+            event: Event dictionary or RouterEvent to check
             key_fields: Optional list of fields to use for hashing.
-                       If None, uses entire event.
+                       If None, uses entire event payload.
 
         Returns:
             True if this event has been seen recently.
         """
         if not self.config.dedup_enabled:
             return False
+
+        # January 2026: Extract payload from RouterEvent objects
+        # Event may be a RouterEvent object or a dict
+        if hasattr(event, 'payload'):
+            payload = event.payload if isinstance(event.payload, dict) else {}
+        elif isinstance(event, dict):
+            payload = event
+        else:
+            payload = {}
 
         # Clean up old entries
         now = time.time()
@@ -337,9 +346,9 @@ class MonitorBase(BaseDaemon[MonitorConfigT], Generic[MonitorConfigT]):
 
         # Compute hash
         if key_fields:
-            hash_data = {k: event.get(k) for k in key_fields}
+            hash_data = {k: payload.get(k) for k in key_fields}
         else:
-            hash_data = event
+            hash_data = payload
 
         try:
             event_hash = hashlib.sha256(

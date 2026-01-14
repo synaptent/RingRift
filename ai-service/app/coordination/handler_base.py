@@ -1018,7 +1018,7 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
         """Check if event is a duplicate based on content hash.
 
         Args:
-            event: Event payload
+            event: Event payload or RouterEvent object
             key_fields: Optional list of fields to include in hash (default: all)
 
         Returns:
@@ -1027,11 +1027,20 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
         if not self._dedup_enabled:
             return False
 
+        # January 2026: Extract payload from RouterEvent objects
+        # Event may be a RouterEvent object or a dict
+        if hasattr(event, 'payload'):
+            payload = event.payload if isinstance(event.payload, dict) else {}
+        elif isinstance(event, dict):
+            payload = event
+        else:
+            payload = {}
+
         # Compute hash
         if key_fields:
-            hash_data = {k: event.get(k) for k in key_fields}
+            hash_data = {k: payload.get(k) for k in key_fields}
         else:
-            hash_data = event
+            hash_data = payload
 
         try:
             event_hash = hashlib.sha256(

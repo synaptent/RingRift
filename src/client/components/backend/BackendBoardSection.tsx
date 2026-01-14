@@ -1,7 +1,11 @@
 import React from 'react';
 import { BoardView, type MoveAnimationData } from '../BoardView';
+import { VictoryConditionsPanel } from '../GameHUD';
 import type { BoardState, BoardType, Position } from '../../../shared/types/game';
-import type { BoardViewModel } from '../../adapters/gameViewModels';
+import type {
+  BoardViewModel,
+  BoardDecisionHighlightsViewModel,
+} from '../../adapters/gameViewModels';
 
 export interface BackendBoardSectionProps {
   /** Board type for rendering */
@@ -32,6 +36,18 @@ export interface BackendBoardSectionProps {
   showLineOverlays?: boolean;
   /** Whether to show territory region overlays (debug) */
   showTerritoryRegionOverlays?: boolean;
+  /** Decision phase highlights (ring elimination, territory regions, capture direction, etc.) */
+  decisionHighlights?: BoardDecisionHighlightsViewModel;
+
+  // Decision phase status indicators
+  /** Whether ring elimination choice is pending */
+  isRingEliminationChoice?: boolean;
+  /** Whether region order choice is pending */
+  isRegionOrderChoice?: boolean;
+  /** Whether chain capture continuation is active */
+  isChainCaptureContinuationStep?: boolean;
+  /** Board display subtitle (e.g., "Turn 5 • Active") */
+  boardDisplaySubtitle?: string;
 
   // Game state for info panel
   /** Current phase label */
@@ -84,6 +100,11 @@ export const BackendBoardSection: React.FC<BackendBoardSectionProps> = ({
   squareRankFromBottom = false,
   showLineOverlays = false,
   showTerritoryRegionOverlays = false,
+  decisionHighlights,
+  isRingEliminationChoice = false,
+  isRegionOrderChoice = false,
+  isChainCaptureContinuationStep = false,
+  boardDisplaySubtitle,
   phaseLabel,
   players,
   currentPlayerNumber,
@@ -98,7 +119,7 @@ export const BackendBoardSection: React.FC<BackendBoardSectionProps> = ({
       {/* Grid layout: board determines column width, panels constrained to match */}
       <div className="grid gap-2" style={{ gridTemplateColumns: 'min-content' }}>
         {/* Board header with phase and help */}
-        <div className="flex items-center justify-between p-2 sm:p-2.5 rounded-xl border border-slate-700 bg-slate-900/70">
+        <div className="flex items-center justify-between p-2 sm:p-2.5 rounded-xl border border-slate-700 bg-slate-900/70 shadow-lg overflow-x-auto">
           <div className="flex items-center gap-3">
             <span className="text-xs text-slate-400">Phase:</span>
             <span className="px-2 py-1 text-xs font-medium rounded-lg bg-slate-800/80 border border-slate-600 text-slate-200">
@@ -135,12 +156,45 @@ export const BackendBoardSection: React.FC<BackendBoardSectionProps> = ({
           squareRankFromBottom={squareRankFromBottom}
           showLineOverlays={showLineOverlays}
           showTerritoryRegionOverlays={showTerritoryRegionOverlays}
+          decisionHighlights={decisionHighlights}
           onShowKeyboardHelp={onShowBoardControls}
         />
 
-        {/* Board info panel with player chips */}
-        <div className="p-3 rounded-2xl border border-slate-700 bg-slate-900/70 text-xs">
-          <div className="flex flex-wrap gap-1.5">
+        {/* Board info panel with status chips and player chips */}
+        <section className="p-3 rounded-2xl border border-slate-700 bg-slate-900/70 shadow-lg flex flex-col gap-2 text-xs text-slate-200 overflow-x-auto">
+          {/* Status chips row */}
+          <div className="flex flex-wrap items-center gap-2">
+            {(() => {
+              let primarySubtitleText = boardDisplaySubtitle || `Phase: ${phaseLabel}`;
+              let primarySubtitleClass =
+                'px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600';
+
+              if (isRingEliminationChoice) {
+                primarySubtitleText =
+                  '⚠️ SELF-ELIMINATION REQUIRED – Select stack cap to eliminate';
+                primarySubtitleClass =
+                  'px-2 py-1 rounded-full bg-amber-500 text-slate-950 font-semibold border border-amber-300 shadow-lg shadow-amber-500/50 animate-pulse';
+              } else if (isRegionOrderChoice) {
+                primarySubtitleText = 'Territory claimed – choose region to process';
+                primarySubtitleClass =
+                  'px-2 py-1 rounded-full bg-amber-500 text-slate-950 font-semibold border border-amber-300 shadow-sm shadow-amber-500/40';
+              } else if (isChainCaptureContinuationStep) {
+                primarySubtitleText = 'Continue Chain Capture';
+                primarySubtitleClass =
+                  'px-2 py-1 rounded-full bg-amber-500 text-slate-950 font-semibold border border-amber-300 shadow-sm shadow-amber-500/40';
+              }
+
+              return <span className={primarySubtitleClass}>{primarySubtitleText}</span>;
+            })()}
+            <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600">
+              Players: {players.length}
+            </span>
+            <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600 min-w-[10rem] inline-flex justify-center text-center">
+              Phase: {phaseLabel}
+            </span>
+          </div>
+          {/* Player chips row */}
+          <div className="flex flex-wrap gap-2">
             {players.map((player) => {
               const isCurrent = player.playerNumber === currentPlayerNumber;
               const typeStyle = PLAYER_TYPE_STYLES[player.type];
@@ -159,7 +213,10 @@ export const BackendBoardSection: React.FC<BackendBoardSectionProps> = ({
               );
             })}
           </div>
-        </div>
+        </section>
+
+        {/* Victory Conditions - placed below game info panel */}
+        <VictoryConditionsPanel className="" />
       </div>
     </section>
   );

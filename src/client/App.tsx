@@ -1,5 +1,5 @@
-import { Suspense, lazy } from 'react';
-import { Routes, Route, Navigate, useParams } from 'react-router-dom';
+import { Suspense, lazy, useEffect, useState, useRef } from 'react';
+import { Routes, Route, Navigate, useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { useAuth } from './contexts/AuthContext';
 import { AccessibilityProvider } from './contexts/AccessibilityContext';
@@ -47,6 +47,58 @@ function BackendGameHostRoute() {
   return <BackendGameHost gameId={gameId} />;
 }
 
+/**
+ * ProtectedRoute wrapper that handles auth transitions gracefully.
+ *
+ * Instead of immediately switching from Layout to Navigate (which can cause
+ * React hooks ordering issues when auth state changes mid-render), this
+ * component defers the redirect to a useEffect, ensuring clean unmounting.
+ */
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Track whether user was authenticated when component mounted.
+  // This prevents redirect loops and handles the transition gracefully.
+  const wasAuthenticatedRef = useRef(!!user);
+  const [shouldRender, setShouldRender] = useState(!!user);
+
+  useEffect(() => {
+    if (!user) {
+      // User became unauthenticated - redirect after a tick to ensure
+      // clean unmounting of child components
+      const timer = setTimeout(() => {
+        navigate('/login', {
+          replace: true,
+          state: { from: location.pathname },
+        });
+      }, 0);
+      return () => clearTimeout(timer);
+    } else {
+      wasAuthenticatedRef.current = true;
+      setShouldRender(true);
+    }
+  }, [user, navigate, location.pathname]);
+
+  // If user just became null, render nothing for one frame to allow
+  // clean unmounting before the redirect
+  if (!user && wasAuthenticatedRef.current) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <LoadingSpinner size="lg" />
+      </div>
+    );
+  }
+
+  // If never authenticated, don't render protected content
+  if (!user) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
+
+  return <>{children}</>;
+}
+
 function App() {
   const { user, isLoading } = useAuth();
 
@@ -83,8 +135,15 @@ function App() {
             {/* Public spectator route (read-only, backend host) */}
             <Route path="/spectate/:gameId" element={<BackendGameHostRoute />} />
 
-            {/* Protected routes */}
-            <Route path="/" element={user ? <Layout /> : <Navigate to="/login" />}>
+            {/* Protected routes - wrapped in ProtectedRoute for graceful auth transition */}
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <Layout />
+                </ProtectedRoute>
+              }
+            >
               <Route index element={<HomePage />} />
               <Route path="lobby" element={<LobbyPage />} />
               <Route path="game/:gameId" element={<BackendGameHostRoute />} />
