@@ -3306,6 +3306,97 @@ class DataPipelineOrchestrator(
             logger.debug(f"Could not emit SYNC_REQUEST: {e}")
 
 
+# =============================================================================
+# HandlerBase Integration (January 2026)
+# =============================================================================
+
+try:
+    from app.coordination.handler_base import HandlerBase
+    from app.coordination.contracts import HealthCheckResult as HBHealthCheckResult
+
+    HAS_HANDLER_BASE = True
+except ImportError:
+    HAS_HANDLER_BASE = False
+
+if HAS_HANDLER_BASE:
+
+    class DataPipelineHandler(HandlerBase):
+        """HandlerBase wrapper for DataPipelineOrchestrator.
+
+        January 2026: Added for unified daemon lifecycle management.
+        Runs pipeline stage checks and auto-triggers on a periodic cycle.
+        """
+
+        # Default cycle interval (60 seconds for pipeline monitoring)
+        DEFAULT_CYCLE_INTERVAL = 60.0
+
+        def __init__(
+            self,
+            auto_trigger: bool = True,
+            cycle_interval: float = DEFAULT_CYCLE_INTERVAL,
+        ):
+            super().__init__(
+                name="data_pipeline",
+                cycle_interval=cycle_interval,
+            )
+            self._orchestrator = DataPipelineOrchestrator(auto_trigger=auto_trigger)
+            self._orchestrator.subscribe_to_events()
+            self._orchestrator.subscribe_to_data_events()
+
+        async def _run_cycle(self) -> None:
+            """Run one pipeline monitoring cycle."""
+            try:
+                # Check pipeline health and log status
+                status = self._orchestrator.get_status()
+                current_stage = status.get("current_stage", "unknown")
+                pending = status.get("stages_pending", [])
+
+                logger.debug(
+                    f"[DataPipelineHandler] Cycle: stage={current_stage}, "
+                    f"pending={len(pending)}"
+                )
+
+                # Trigger any pending stages if auto-trigger is enabled
+                if self._orchestrator.auto_trigger and pending:
+                    for stage_name in pending[:1]:  # Process one at a time
+                        try:
+                            stage = PipelineStage(stage_name)
+                            await self._orchestrator._trigger_stage(stage)
+                        except (ValueError, Exception) as e:
+                            logger.debug(f"Could not trigger {stage_name}: {e}")
+
+            except Exception as e:
+                logger.error(f"[DataPipelineHandler] Cycle error: {e}")
+
+        def _get_event_subscriptions(self) -> dict:
+            """Get event subscriptions.
+
+            Note: The orchestrator handles its own subscriptions internally.
+            This provides additional handler-level hooks.
+            """
+            return {
+                "PIPELINE_FORCE_ADVANCE": self._on_force_advance,
+            }
+
+        async def _on_force_advance(self, event: dict) -> None:
+            """Handle force advance request."""
+            target_stage = event.get("target_stage")
+            if target_stage:
+                logger.info(f"[DataPipelineHandler] Force advance to {target_stage}")
+
+        def health_check(self) -> HBHealthCheckResult:
+            """Health check for DaemonManager integration."""
+            from app.coordination.protocols import CoordinatorStatus
+
+            health = self._orchestrator.health_check()
+            is_healthy = health.get("healthy", False)
+
+            return HBHealthCheckResult(
+                healthy=is_healthy,
+                status=CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.DEGRADED,
+                message=f"DataPipelineHandler: {health.get('current_stage', 'unknown')}",
+                details=health,
+            )
 
 
 
