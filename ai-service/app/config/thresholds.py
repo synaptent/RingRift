@@ -133,26 +133,44 @@ MIN_GAMES_FOR_EXPORT_2P = 50    # 2-player baseline (was 200, originally 500)
 MIN_GAMES_FOR_EXPORT_3P = 75    # 3-player (was 300, originally 600)
 MIN_GAMES_FOR_EXPORT_4P = 100   # 4-player (was 400, originally 800)
 
+# Jan 14, 2026: Bootstrap mode thresholds for initial model training
+# Lower thresholds allow training to start sooner for configs that don't have
+# a canonical model yet. Once a model exists, use normal thresholds.
+BOOTSTRAP_MIN_GAMES_FOR_EXPORT_2P = 20   # Bootstrap: lower threshold for initial model
+BOOTSTRAP_MIN_GAMES_FOR_EXPORT_3P = 30   # Bootstrap: 3-player
+BOOTSTRAP_MIN_GAMES_FOR_EXPORT_4P = 40   # Bootstrap: 4-player
 
-def get_min_games_for_export(num_players: int = 2) -> int:
+
+def get_min_games_for_export(num_players: int = 2, bootstrap_mode: bool = False) -> int:
     """Get minimum games needed for export based on player count.
 
     Higher player counts have higher variance (multiple winners possible,
     more complex game states), requiring more training data.
 
     Dec 29, 2025: Added as part of Phase 2 training loop improvements.
+    Jan 14, 2026: Added bootstrap_mode for initial model training.
 
     Args:
         num_players: Number of players (2, 3, or 4)
+        bootstrap_mode: If True, use lower thresholds for initial training.
+            This allows configs without a canonical model to start training
+            sooner with less data.
 
     Returns:
         Minimum number of games before triggering export
     """
-    if num_players >= 4:
-        return MIN_GAMES_FOR_EXPORT_4P
-    if num_players == 3:
-        return MIN_GAMES_FOR_EXPORT_3P
-    return MIN_GAMES_FOR_EXPORT_2P
+    if bootstrap_mode:
+        if num_players >= 4:
+            return BOOTSTRAP_MIN_GAMES_FOR_EXPORT_4P
+        if num_players == 3:
+            return BOOTSTRAP_MIN_GAMES_FOR_EXPORT_3P
+        return BOOTSTRAP_MIN_GAMES_FOR_EXPORT_2P
+    else:
+        if num_players >= 4:
+            return MIN_GAMES_FOR_EXPORT_4P
+        if num_players == 3:
+            return MIN_GAMES_FOR_EXPORT_3P
+        return MIN_GAMES_FOR_EXPORT_2P
 
 
 # Cooldown between promotion attempts (seconds)

@@ -73,20 +73,22 @@ PRIORITY_OVERRIDE_MULTIPLIERS = {
 # Jan 14, 2026: Added hex8_4p CRITICAL override - only 77-873 games vs 16K+ for hex8_2p.
 # Jan 14, 2026: Added hex8_3p CRITICAL, upgraded square19_3p HIGH→CRITICAL for slow 3p configs.
 CONFIG_PRIORITY_OVERRIDES: dict[str, int] = {
-    # Large board configs (existing)
-    "square19_4p": 0,   # CRITICAL - only 1,766 games
-    "hexagonal_3p": 0,  # CRITICAL - only 1,936 games
-    "square19_3p": 0,   # CRITICAL - upgraded from HIGH, only 50 games/week
-    "square8_4p": 1,    # HIGH - 4,321 games
-    # Jan 12, 2026: Add CRITICAL priority for configs with 0 games
-    "square8_2p": 0,    # CRITICAL - 0 games (bootstrap needed)
-    "square8_3p": 0,    # CRITICAL - 0 games (bootstrap needed)
-    "square19_2p": 0,   # CRITICAL - 0 games (bootstrap needed)
-    "hexagonal_2p": 0,  # CRITICAL - 0 games (bootstrap needed)
-    "hexagonal_4p": 0,  # CRITICAL - 0 games (bootstrap needed)
-    # Jan 14, 2026: Small board configs with slow generation or Elo issues
-    "hex8_4p": 0,       # CRITICAL - only 77-873 games (vs 16K+ for hex8_2p)
-    "hex8_3p": 0,       # CRITICAL - only 21 games/day, stalled at 1262 Elo
+    # Updated Jan 14, 2026 - Current match counts from unified_elo.db
+    # CRITICAL (0): Large board configs with fewest matches, slowest generation
+    "hexagonal_3p": 0,  # CRITICAL - 130 matches, only ~5 games/day
+    "hexagonal_4p": 0,  # CRITICAL - 35 matches
+    "square19_3p": 0,   # CRITICAL - 50 matches
+    "square19_4p": 0,   # CRITICAL - 63 matches
+    # HIGH (1): Medium deficit, need more data
+    "square19_2p": 1,   # HIGH - 36 matches
+    "hexagonal_2p": 1,  # HIGH - 77 matches
+    "square8_2p": 1,    # HIGH - 83 matches (upgraded from CRITICAL, now has data)
+    # MEDIUM (2): Sufficient data but below target Elo (1600)
+    "hex8_3p": 2,       # MEDIUM - 175 matches, Elo 1292
+    "hex8_4p": 2,       # MEDIUM - 187 matches, Elo 1545
+    "square8_3p": 2,    # MEDIUM - 377 matches
+    "square8_4p": 2,    # MEDIUM - 488 matches, Elo 1137
+    # hex8_2p: No override - 810 matches, uses default priority calculation
 }
 
 # Player count allocation multipliers

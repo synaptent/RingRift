@@ -119,8 +119,12 @@ class PipelineTrigger:
 
         December 2025: Now enforces min_games_for_export threshold to prevent
         triggering exports on databases with too few games for meaningful training.
+
+        January 2026: Added bootstrap mode - uses lower thresholds when no
+        canonical model exists yet, allowing initial training to start sooner.
         """
         try:
+            from app.config.thresholds import get_min_games_for_export
             from app.utils.game_discovery import GameDiscovery
 
             discovery = GameDiscovery()
@@ -135,19 +139,28 @@ class PipelineTrigger:
 
             total_games = sum(db.game_count for db in databases)
 
-            # December 2025: Enforce minimum game threshold
-            if total_games < self.config.min_games_for_export:
+            # January 2026: Use bootstrap mode (lower thresholds) when no canonical model exists
+            config_key = f"{board_type}_{num_players}p"
+            model_path = self.config.ai_service_root / "models" / f"canonical_{config_key}.pth"
+            bootstrap_mode = not model_path.exists()
+
+            # Get threshold from centralized config (supports graduated thresholds by player count)
+            min_games = get_min_games_for_export(num_players, bootstrap_mode=bootstrap_mode)
+
+            if total_games < min_games:
                 return PrerequisiteResult(
                     passed=False,
                     message=(
                         f"Insufficient games for export: {total_games:,} < "
-                        f"{self.config.min_games_for_export:,} minimum required"
+                        f"{min_games:,} minimum required"
+                        f"{' (bootstrap mode)' if bootstrap_mode else ''}"
                     ),
                     details={
                         "databases_found": len(databases),
                         "total_games": total_games,
-                        "min_required": self.config.min_games_for_export,
-                        "games_needed": self.config.min_games_for_export - total_games,
+                        "min_required": min_games,
+                        "games_needed": min_games - total_games,
+                        "bootstrap_mode": bootstrap_mode,
                     },
                 )
 
@@ -158,6 +171,7 @@ class PipelineTrigger:
                     "databases_found": len(databases),
                     "total_games": total_games,
                     "database_paths": [str(db.path) for db in databases],
+                    "bootstrap_mode": bootstrap_mode,
                 },
             )
         except Exception as e:

@@ -1326,23 +1326,56 @@ class UnifiedQueuePopulator:
 
     # Jan 1, 2026: Engine modes for diversity in selfplay
     # Cycle through different harness types to ensure diverse training data
-    # Format: (engine_mode, requires_model, player_restriction)
+    # Format: (engine_mode, requires_model, player_restriction, requires_nnue)
     # player_restriction: None = all, 2 = 2p only, (3,4) = 3-4p only
+    # requires_nnue: True if mode needs NNUE model (minimax, maxn, brs)
     _ENGINE_MODES_2P = [
-        ("gumbel", True, None),       # High-quality MCTS with NN
-        ("heuristic-only", False, None),  # Fast bootstrap
-        # ("minimax", True, 2),       # DISABLED Jan 14 2026: Requires NNUE models (supports_nn=False)
-        ("policy-only", True, None),  # Policy network only
-        ("descent", True, None),      # Gradient descent search
+        ("gumbel", True, None, False),        # High-quality MCTS with NN
+        ("heuristic-only", False, None, False),  # Fast bootstrap
+        ("minimax", False, 2, True),          # Jan 14 2026: Re-enabled with NNUE check
+        ("policy-only", True, None, False),   # Policy network only
+        ("descent", True, None, False),       # Gradient descent search
     ]
     _ENGINE_MODES_MP = [
-        ("gumbel", True, None),       # High-quality MCTS with NN
-        ("heuristic-only", False, None),  # Fast bootstrap
-        # ("maxn", True, (3, 4)),     # DISABLED Jan 14 2026: Requires NNUE models (supports_nn=False)
-        # ("brs", True, (3, 4)),      # DISABLED Jan 14 2026: Requires NNUE models (supports_nn=False)
-        ("policy-only", True, None),  # Policy network only
+        ("gumbel", True, None, False),        # High-quality MCTS with NN
+        ("heuristic-only", False, None, False),  # Fast bootstrap
+        ("maxn", False, (3, 4), True),        # Jan 14 2026: Re-enabled with NNUE check
+        ("brs", False, (3, 4), True),         # Jan 14 2026: Re-enabled with NNUE check
+        ("policy-only", True, None, False),   # Policy network only
     ]
     _engine_mode_counter = 0
+    # Jan 14, 2026: Cache for NNUE model availability to avoid repeated filesystem checks
+    _nnue_cache: dict[str, bool] = {}
+
+    @classmethod
+    def _has_nnue_model(cls, board_type: str, num_players: int) -> bool:
+        """Check if an NNUE model exists for the given configuration.
+
+        Jan 14, 2026: Added for NNUE harness availability checks.
+        Uses caching to avoid repeated filesystem checks.
+        """
+        cache_key = f"{board_type}_{num_players}p"
+        if cache_key in cls._nnue_cache:
+            return cls._nnue_cache[cache_key]
+
+        # Check for NNUE model in standard locations
+        from pathlib import Path
+
+        nnue_paths = [
+            Path(f"models/nnue/nnue_canonical_{board_type}_{num_players}p.pt"),
+            Path(f"models/nnue/nnue_{board_type}_{num_players}p.pt"),
+        ]
+
+        exists = any(p.exists() for p in nnue_paths)
+        cls._nnue_cache[cache_key] = exists
+
+        if not exists:
+            logger.debug(
+                f"[QueuePopulator] No NNUE model found for {cache_key}, "
+                f"NNUE harnesses will be skipped"
+            )
+
+        return exists
 
     def _create_selfplay_item(
         self, board_type: str, num_players: int
@@ -1388,8 +1421,9 @@ class UnifiedQueuePopulator:
             modes = self._ENGINE_MODES_2P if num_players == 2 else self._ENGINE_MODES_MP
 
             # Find valid modes for this configuration
+            # Jan 14, 2026: Added requires_nnue check to enable NNUE harness diversity
             valid_modes = []
-            for mode, requires_model, player_restrict in modes:
+            for mode, requires_model, player_restrict, requires_nnue in modes:
                 # Check player restriction
                 if player_restrict is not None:
                     if isinstance(player_restrict, int) and num_players != player_restrict:
@@ -1398,6 +1432,9 @@ class UnifiedQueuePopulator:
                         continue
                 # Check model requirement
                 if requires_model and not best_model:
+                    continue
+                # Check NNUE requirement (Jan 14, 2026: for minimax/maxn/brs)
+                if requires_nnue and not self._has_nnue_model(board_type, num_players):
                     continue
                 valid_modes.append(mode)
 

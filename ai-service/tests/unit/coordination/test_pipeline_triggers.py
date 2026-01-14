@@ -288,14 +288,26 @@ class TestDatabaseChecks:
     """Additional tests for database checking."""
 
     @pytest.mark.asyncio
-    async def test_check_databases_insufficient_games(self, monkeypatch):
+    async def test_check_databases_insufficient_games(self, monkeypatch, tmp_path):
         class FakeDiscovery:
             def find_databases_for_config(self, _board_type, _num_players):
                 return [SimpleNamespace(game_count=10, path=Path("/fake/db.db"))]
 
         monkeypatch.setattr("app.utils.game_discovery.GameDiscovery", FakeDiscovery)
 
-        config = TriggerConfig(min_games_for_export=100)
+        # Jan 2026: Mock get_min_games_for_export to return 100 (test threshold)
+        # NOTE: Must patch at source location since import happens inside method
+        monkeypatch.setattr(
+            "app.config.thresholds.get_min_games_for_export",
+            lambda num_players, bootstrap_mode=False: 100,
+        )
+
+        # Create a fake model so bootstrap_mode=False
+        model_dir = tmp_path / "models"
+        model_dir.mkdir(parents=True)
+        (model_dir / "canonical_square8_2p.pth").touch()
+
+        config = TriggerConfig(ai_service_root=tmp_path)
         trigger = PipelineTrigger(config)
         result = await trigger.check_databases_exist("square8", 2)
 
@@ -520,8 +532,14 @@ async def test_check_databases_exist_counts_games(monkeypatch, tmp_path) -> None
 
     monkeypatch.setattr("app.utils.game_discovery.GameDiscovery", FakeDiscovery)
 
-    # Use custom config with low threshold (default is 50)
-    config = TriggerConfig(min_games_for_export=1)
+    # Jan 2026: Mock get_min_games_for_export to return 1 (low threshold for test)
+    # NOTE: Must patch at source location since import happens inside method
+    monkeypatch.setattr(
+        "app.config.thresholds.get_min_games_for_export",
+        lambda num_players, bootstrap_mode=False: 1,
+    )
+
+    config = TriggerConfig(ai_service_root=tmp_path)
     trigger = PipelineTrigger(config)
     result = await trigger.check_databases_exist("square8", 2)
 
