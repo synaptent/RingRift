@@ -471,6 +471,148 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     };
   }, [showBoardControls]);
 
+  // ================== Memoized values (must be before early returns) ==================
+  // Game end explanation - builds explanation from victory state
+  const gameEndExplanation: GameEndExplanation | null = useMemo(() => {
+    if (!victoryState || !gameState) {
+      return null;
+    }
+
+    const mapOutcomeType = (reason: GameResult['reason']) => {
+      switch (reason) {
+        case 'ring_elimination':
+          return 'ring_elimination' as const;
+        case 'territory_control':
+          return 'territory_control' as const;
+        case 'last_player_standing':
+          return 'last_player_standing' as const;
+        case 'game_completed':
+          return 'structural_stalemate' as const;
+        case 'timeout':
+          return 'timeout' as const;
+        case 'resignation':
+          return 'resignation' as const;
+        case 'abandonment':
+          return 'abandonment' as const;
+        default:
+          return null;
+      }
+    };
+
+    const mapVictoryReasonCode = (reason: GameResult['reason']) => {
+      switch (reason) {
+        case 'ring_elimination':
+          return 'victory_ring_majority' as const;
+        case 'territory_control':
+          return 'victory_territory_majority' as const;
+        case 'last_player_standing':
+          return 'victory_last_player_standing' as const;
+        case 'game_completed':
+          return 'victory_structural_stalemate_tiebreak' as const;
+        case 'timeout':
+          return 'victory_timeout' as const;
+        case 'resignation':
+          return 'victory_resignation' as const;
+        case 'abandonment':
+          return 'victory_abandonment' as const;
+        default:
+          return null;
+      }
+    };
+
+    const outcomeType = mapOutcomeType(victoryState.reason);
+    const victoryReasonCode = mapVictoryReasonCode(victoryState.reason);
+    if (!outcomeType || !victoryReasonCode) {
+      return null;
+    }
+
+    // Map numeric winner → player id (or null for draws/abandonment).
+    const winnerPlayerId =
+      victoryState.winner !== undefined
+        ? (gameState.players.find((p) => p.playerNumber === victoryState.winner)?.id ?? null)
+        : null;
+
+    // Build per-player score breakdown from finalScore + board markers.
+    const markersByPlayerNumber: Record<number, number> = {};
+    for (const marker of gameState.board.markers.values()) {
+      const key = marker.player;
+      markersByPlayerNumber[key] = (markersByPlayerNumber[key] ?? 0) + 1;
+    }
+
+    const scoreBreakdown: Record<string, GameEndPlayerScoreBreakdown> = {};
+    for (const player of gameState.players) {
+      const num = player.playerNumber;
+      const playerId = player.id;
+      scoreBreakdown[playerId] = {
+        playerId,
+        eliminatedRings: victoryState.finalScore.ringsEliminated[num] ?? 0,
+        territorySpaces: victoryState.finalScore.territorySpaces[num] ?? 0,
+        markers: markersByPlayerNumber[num] ?? 0,
+      };
+    }
+
+    // Derive weird-state context and rules-context tags using shared helpers.
+    const weirdInfo = getWeirdStateReasonForGameResult(victoryState);
+    let weirdStateContext: GameEndWeirdStateContext | undefined;
+    let telemetryTags: GameEndRulesContextTag[] | undefined;
+
+    if (weirdInfo) {
+      weirdStateContext = {
+        reasonCodes: [weirdInfo.reasonCode],
+        primaryReasonCode: weirdInfo.reasonCode,
+        rulesContextTags: [weirdInfo.rulesContext],
+      };
+      telemetryTags = [weirdInfo.rulesContext];
+    }
+
+    const engineView: GameEndEngineView = {
+      gameId,
+      boardType: gameState.boardType,
+      numPlayers: gameState.players.length,
+      winnerPlayerId,
+      outcomeType,
+      victoryReasonCode,
+      scoreBreakdown,
+    };
+
+    if (weirdStateContext) {
+      engineView.weirdStateContext = weirdStateContext;
+    }
+
+    return buildGameEndExplanationFromEngineView(engineView, {
+      teaching: undefined,
+      telemetryTags,
+      uxCopy: {
+        shortSummaryKey: `game_end.${victoryState.reason}.short`,
+        detailedSummaryKey: undefined,
+      },
+    });
+  }, [victoryState, gameState, gameId]);
+
+  // Rematch status - derives status from pending request or last status
+  const rematchStatus: RematchStatus | undefined = useMemo(() => {
+    if (pendingRematchRequest) {
+      const isRequester = user?.id === pendingRematchRequest.requesterId;
+      return {
+        isPending: true,
+        requestId: pendingRematchRequest.id,
+        requesterUsername: pendingRematchRequest.requesterUsername,
+        isRequester,
+        expiresAt: pendingRematchRequest.expiresAt,
+        status: 'pending',
+      };
+    }
+
+    if (rematchLastStatus) {
+      return {
+        isPending: false,
+        status: rematchLastStatus,
+      };
+    }
+
+    return undefined;
+  }, [pendingRematchRequest, rematchLastStatus, user?.id]);
+
   // ================== Extracted Hook: Board Handlers ==================
   const boardHandlers = useBackendBoardHandlers({
     gameState,
@@ -711,151 +853,12 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     }
   }
 
-  const gameEndExplanation: GameEndExplanation | null = useMemo(() => {
-    if (!victoryState || !gameState) {
-      return null;
-    }
-
-    const mapOutcomeType = (reason: GameResult['reason']) => {
-      switch (reason) {
-        case 'ring_elimination':
-          return 'ring_elimination' as const;
-        case 'territory_control':
-          return 'territory_control' as const;
-        case 'last_player_standing':
-          return 'last_player_standing' as const;
-        case 'game_completed':
-          return 'structural_stalemate' as const;
-        case 'timeout':
-          return 'timeout' as const;
-        case 'resignation':
-          return 'resignation' as const;
-        case 'abandonment':
-          return 'abandonment' as const;
-        default:
-          return null;
-      }
-    };
-
-    const mapVictoryReasonCode = (reason: GameResult['reason']) => {
-      switch (reason) {
-        case 'ring_elimination':
-          return 'victory_ring_majority' as const;
-        case 'territory_control':
-          return 'victory_territory_majority' as const;
-        case 'last_player_standing':
-          return 'victory_last_player_standing' as const;
-        case 'game_completed':
-          return 'victory_structural_stalemate_tiebreak' as const;
-        case 'timeout':
-          return 'victory_timeout' as const;
-        case 'resignation':
-          return 'victory_resignation' as const;
-        case 'abandonment':
-          return 'victory_abandonment' as const;
-        default:
-          return null;
-      }
-    };
-
-    const outcomeType = mapOutcomeType(victoryState.reason);
-    const victoryReasonCode = mapVictoryReasonCode(victoryState.reason);
-    if (!outcomeType || !victoryReasonCode) {
-      return null;
-    }
-
-    // Map numeric winner → player id (or null for draws/abandonment).
-    const winnerPlayerId =
-      victoryState.winner !== undefined
-        ? (gameState.players.find((p) => p.playerNumber === victoryState.winner)?.id ?? null)
-        : null;
-
-    // Build per-player score breakdown from finalScore + board markers.
-    const markersByPlayerNumber: Record<number, number> = {};
-    for (const marker of gameState.board.markers.values()) {
-      const key = marker.player;
-      markersByPlayerNumber[key] = (markersByPlayerNumber[key] ?? 0) + 1;
-    }
-
-    const scoreBreakdown: Record<string, GameEndPlayerScoreBreakdown> = {};
-    for (const player of gameState.players) {
-      const num = player.playerNumber;
-      const playerId = player.id;
-      scoreBreakdown[playerId] = {
-        playerId,
-        eliminatedRings: victoryState.finalScore.ringsEliminated[num] ?? 0,
-        territorySpaces: victoryState.finalScore.territorySpaces[num] ?? 0,
-        markers: markersByPlayerNumber[num] ?? 0,
-      };
-    }
-
-    // Derive weird-state context and rules-context tags using shared helpers.
-    const weirdInfo = getWeirdStateReasonForGameResult(victoryState);
-    let weirdStateContext: GameEndWeirdStateContext | undefined;
-    let telemetryTags: GameEndRulesContextTag[] | undefined;
-
-    if (weirdInfo) {
-      weirdStateContext = {
-        reasonCodes: [weirdInfo.reasonCode],
-        primaryReasonCode: weirdInfo.reasonCode,
-        rulesContextTags: [weirdInfo.rulesContext],
-      };
-      telemetryTags = [weirdInfo.rulesContext];
-    }
-
-    const engineView: GameEndEngineView = {
-      gameId,
-      boardType: gameState.boardType,
-      numPlayers: gameState.players.length,
-      winnerPlayerId,
-      outcomeType,
-      victoryReasonCode,
-      scoreBreakdown,
-    };
-
-    if (weirdStateContext) {
-      engineView.weirdStateContext = weirdStateContext;
-    }
-
-    return buildGameEndExplanationFromEngineView(engineView, {
-      teaching: undefined,
-      telemetryTags,
-      uxCopy: {
-        shortSummaryKey: `game_end.${victoryState.reason}.short`,
-        detailedSummaryKey: undefined,
-      },
-    });
-  }, [victoryState, gameState, gameId]);
-
   const victoryViewModel = toVictoryViewModel(victoryState, gameState.players, gameState, {
     currentUserId: user?.id,
     isDismissed: isVictoryModalDismissed,
     colorVisionMode,
     gameEndExplanation,
   });
-
-  const rematchStatus: RematchStatus | undefined = useMemo(() => {
-    if (pendingRematchRequest) {
-      const isRequester = user?.id === pendingRematchRequest.requesterId;
-      return {
-        isPending: true,
-        requestId: pendingRematchRequest.id,
-        requesterUsername: pendingRematchRequest.requesterUsername,
-        isRequester,
-        expiresAt: pendingRematchRequest.expiresAt,
-        status: 'pending',
-      };
-    }
-
-    if (rematchLastStatus) {
-      return {
-        isPending: false,
-        status: rematchLastStatus,
-      };
-    }
-
-    return undefined;
-  }, [pendingRematchRequest, rematchLastStatus, user?.id]);
 
   const hudCurrentPlayer = hudViewModel.players.find((p) => p.isCurrentPlayer);
 
