@@ -422,6 +422,7 @@ export const initializeRateLimiters = (redis: RedisClientType | null) => {
     if (redis) {
       rateLimiters[key] = new RateLimiterRedis({
         storeClient: redis,
+        useRedisPackage: true, // Required for node-redis v5 compatibility
         keyPrefix: config.keyPrefix,
         points: config.points,
         duration: config.duration,
@@ -814,6 +815,7 @@ export const customRateLimiter = (points: number, duration: number, blockDuratio
     const limiter = redisClient
       ? new RateLimiterRedis({
           storeClient: redisClient,
+          useRedisPackage: true, // Required for node-redis v5 compatibility
           keyPrefix: 'custom_limit',
           points,
           duration,

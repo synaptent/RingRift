@@ -32,8 +32,8 @@ jest.mock('../../src/client/hooks/useFirstTimePlayer', () => ({
     shouldShowWelcome: false,
     markWelcomeSeen: jest.fn(),
     markGameCompleted: jest.fn(),
-    // isFirstTimePlayer: true ensures advanced options start hidden
-    isFirstTimePlayer: true,
+    // isFirstTimePlayer: false ensures advanced options start expanded for testing
+    isFirstTimePlayer: false,
     state: {
       seenTutorialPhases: [],
       tutorialHintsEnabled: false,
@@ -64,8 +64,8 @@ describe('SandboxGameHost', () => {
       shouldShowWelcome: false,
       markWelcomeSeen: jest.fn(),
       markGameCompleted: jest.fn(),
-      // isFirstTimePlayer: true ensures advanced options start hidden
-      isFirstTimePlayer: true,
+      // isFirstTimePlayer: false ensures advanced options start expanded for testing
+      isFirstTimePlayer: false,
       state: {
         seenTutorialPhases: [],
         tutorialHintsEnabled: false,
@@ -137,7 +137,7 @@ describe('SandboxGameHost', () => {
 
     // New UI shows game mode selection buttons (may appear multiple times)
     expect(screen.getAllByText(/Human vs AI/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Full Board vs AI/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Learn the Basics/i).length).toBeGreaterThan(0);
   });
 
   it('attempts to create backend game when Launch Game is clicked', async () => {
