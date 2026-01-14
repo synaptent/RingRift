@@ -99,13 +99,40 @@ python scripts/update_all_nodes.py --safe-mode --restart-p2p
 
 ### AI Components
 
-| Module                           | Purpose                                     |
-| -------------------------------- | ------------------------------------------- |
-| `app/ai/gpu_parallel_games.py`   | Vectorized GPU selfplay (6-57x speedup)     |
-| `app/ai/gumbel_search_engine.py` | Unified MCTS entry point                    |
-| `app/ai/gumbel_common.py`        | Shared Gumbel data structures, budget tiers |
-| `app/ai/harness/`                | Harness abstraction layer                   |
-| `app/ai/nnue.py`                 | NNUE evaluation network (~256 hidden)       |
+| Module                                       | Purpose                                           |
+| -------------------------------------------- | ------------------------------------------------- |
+| `app/ai/gpu_parallel_games.py`               | Vectorized GPU selfplay (6-57x speedup)           |
+| `app/ai/gumbel_search_engine.py`             | Unified MCTS entry point                          |
+| `app/ai/gumbel_common.py`                    | Shared Gumbel data structures, budget tiers       |
+| `app/ai/harness/`                            | Harness abstraction layer                         |
+| `app/ai/nnue.py`                             | NNUE evaluation network (~256 hidden)             |
+| `app/ai/neural_net/architecture_registry.py` | Encoder/model channel mapping (v2/v3/v4/v5-heavy) |
+
+**Architecture Registry** (`app/ai/neural_net/architecture_registry.py`):
+
+Single source of truth for mapping neural net architectures to their encoders:
+
+| Channels | Architecture | Encoder               | Description                      |
+| -------- | ------------ | --------------------- | -------------------------------- |
+| 40       | v2           | HexStateEncoder       | 10 base × 4 frames (standard)    |
+| 64       | v3/v4        | HexStateEncoderV3     | 16 base × 4 frames (enhanced)    |
+| 56       | v5-heavy     | HexStateEncoderV5     | 14 base × 4 frames (heuristics)  |
+| 36       | v2-lite      | HexStateEncoder       | 12 base × 3 frames (lightweight) |
+| 44       | v3-lite      | HexStateEncoderV3Lite | 12 base × 3 frames + 8 extras    |
+
+```python
+from app.ai.neural_net.architecture_registry import (
+    get_encoder_for_model,        # Auto-detect encoder from model weights
+    get_encoder_class_for_channels,  # Get encoder class by channel count
+    validate_encoder_model_match,    # Verify encoder/model compatibility
+)
+
+# Auto-detect correct encoder for a loaded model
+encoder = get_encoder_for_model(loaded_model)
+
+# Manual validation
+is_valid, error = validate_encoder_model_match(encoder, model)
+```
 
 **Harness Types** (for model evaluation):
 
@@ -334,13 +361,13 @@ python -m app.training.train \
 
 Critical fixes for NN training quality:
 
-| Fix | File | Change |
-|-----|------|--------|
-| Simulation budget | `gumbel_search_engine.py:394` | `for_throughput()` → `for_selfplay()` (64→800 sims) |
-| Default budget | `selfplay_config.py:207` | `simulation_budget: int = 800` (was None) |
-| Opponent diversity | `train_loop.py` | 50% heuristic, 30% descent, 20% weak |
-| Curriculum stages | `train_loop.py` | Progressive difficulty based on games played |
-| Loss monitoring | `train.py` | `LossMonitor` class for stall detection |
+| Fix                | File                          | Change                                              |
+| ------------------ | ----------------------------- | --------------------------------------------------- |
+| Simulation budget  | `gumbel_search_engine.py:394` | `for_throughput()` → `for_selfplay()` (64→800 sims) |
+| Default budget     | `selfplay_config.py:207`      | `simulation_budget: int = 800` (was None)           |
+| Opponent diversity | `train_loop.py`               | 50% heuristic, 30% descent, 20% weak                |
+| Curriculum stages  | `train_loop.py`               | Progressive difficulty based on games played        |
+| Loss monitoring    | `train.py`                    | `LossMonitor` class for stall detection             |
 
 **Root cause**: Selfplay was using 64 simulations (throughput mode) instead of 800 (quality mode), producing garbage training data. Combined with no opponent diversity, the NNs were stuck in a weak-vs-weak cycle.
 

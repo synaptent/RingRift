@@ -346,9 +346,23 @@ export class WebSocketServer {
     // Authentication middleware
     this.io.use(async (socket: AuthenticatedSocket, next) => {
       try {
+        // SECURITY: Reject tokens in query string to prevent leakage via logs,
+        // browser history, and referrer headers. Tokens must be sent via auth object.
+        if (socket.handshake.query.token) {
+          logger.warn('WebSocket connection rejected: token in query string', {
+            socketId: socket.id,
+          });
+          const payload: WebSocketErrorPayload = {
+            type: 'error',
+            code: 'ACCESS_DENIED',
+            message: 'Tokens must not be sent in query string. Use auth object instead.',
+          };
+          socket.emit('error', payload);
+          return next(new Error('Token in query string is not allowed'));
+        }
+
         const rawToken =
-          (socket.handshake.auth && (socket.handshake.auth as Record<string, unknown>).token) ||
-          socket.handshake.query.token;
+          socket.handshake.auth && (socket.handshake.auth as Record<string, unknown>).token;
 
         if (!rawToken || typeof rawToken !== 'string') {
           const payload: WebSocketErrorPayload = {

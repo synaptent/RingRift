@@ -6,6 +6,7 @@ import {
   GameStatus as PrismaGameStatus,
   BoardType as PrismaBoardType,
 } from '@prisma/client';
+import { z } from 'zod';
 import { getDatabaseClient } from '../database/connection';
 import { logger } from '../utils/logger';
 import {
@@ -792,28 +793,83 @@ export class GamePersistenceService {
   }
 
   /**
-   * Deserialize GameState from storage
+   * Zod schema for validating deserialized game state structure.
+   * Uses passthrough() to allow additional fields for forward compatibility.
+   */
+  private static readonly GameStateSchema = z
+    .object({
+      id: z.string(),
+      boardType: z.string(),
+      numPlayers: z.number(),
+      currentPlayer: z.number(),
+      currentPhase: z.string(),
+      turnNumber: z.number(),
+      gameStatus: z.string(),
+      board: z
+        .object({
+          type: z.string(),
+          // stacks, markers, collapsedSpaces, territories are arrays (serialized Maps)
+          stacks: z.array(z.tuple([z.string(), z.any()])).optional(),
+          markers: z.array(z.tuple([z.string(), z.any()])).optional(),
+          collapsedSpaces: z.array(z.tuple([z.string(), z.any()])).optional(),
+          territories: z.array(z.tuple([z.string(), z.any()])).optional(),
+        })
+        .passthrough(),
+      players: z.array(z.any()),
+    })
+    .passthrough();
+
+  /**
+   * Deserialize GameState from storage with validation.
+   * @throws Error if JSON is invalid or doesn't match expected schema
    */
   static deserializeGameState(json: string): GameState {
-    const parsed = JSON.parse(json);
-
-    // Reconstruct Maps
-    if (parsed.board) {
-      if (Array.isArray(parsed.board.stacks)) {
-        parsed.board.stacks = new Map(parsed.board.stacks);
-      }
-      if (Array.isArray(parsed.board.markers)) {
-        parsed.board.markers = new Map(parsed.board.markers);
-      }
-      if (Array.isArray(parsed.board.collapsedSpaces)) {
-        parsed.board.collapsedSpaces = new Map(parsed.board.collapsedSpaces);
-      }
-      if (Array.isArray(parsed.board.territories)) {
-        parsed.board.territories = new Map(parsed.board.territories);
-      }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(json);
+    } catch (parseError) {
+      const message = parseError instanceof Error ? parseError.message : String(parseError);
+      logger.error('Failed to parse game state JSON', { error: message, jsonLength: json.length });
+      throw new Error(`Invalid game state JSON: ${message}`);
     }
 
-    return parsed as GameState;
+    // Validate basic structure
+    const validationResult = this.GameStateSchema.safeParse(parsed);
+    if (!validationResult.success) {
+      const issues = validationResult.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`);
+      logger.error('Game state validation failed', {
+        errors: issues,
+        parsedKeys: parsed && typeof parsed === 'object' ? Object.keys(parsed) : [],
+      });
+      throw new Error(`Game state validation failed: ${issues.join(', ')}`);
+    }
+
+    const validated = validationResult.data;
+
+    // Reconstruct Maps from serialized arrays.
+    // We create a new board object since Zod's types are strict about array vs Map.
+    const reconstructedBoard = {
+      ...validated.board,
+      stacks: Array.isArray(validated.board.stacks)
+        ? new Map(validated.board.stacks)
+        : validated.board.stacks,
+      markers: Array.isArray(validated.board.markers)
+        ? new Map(validated.board.markers)
+        : validated.board.markers,
+      collapsedSpaces: Array.isArray(validated.board.collapsedSpaces)
+        ? new Map(validated.board.collapsedSpaces)
+        : validated.board.collapsedSpaces,
+      territories: Array.isArray(validated.board.territories)
+        ? new Map(validated.board.territories)
+        : validated.board.territories,
+    };
+
+    // Cast through unknown since passthrough() preserves additional GameState fields
+    // that aren't in our validation schema
+    return {
+      ...validated,
+      board: reconstructedBoard,
+    } as unknown as GameState;
   }
 }
 

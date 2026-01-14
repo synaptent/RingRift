@@ -101,6 +101,10 @@ model Game {
   chatMessages    ChatMessage[]
   rematchRequests RematchRequest[]
 
+  // Indexes for efficient querying of game lists
+  @@index([status])
+  @@index([createdAt])
+  @@index([status, createdAt])
   @@map("games")
 }
 
