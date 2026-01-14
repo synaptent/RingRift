@@ -299,7 +299,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             type: 'game_socket_error',
             code: typeof asRecord?.code === 'string' ? asRecord.code : undefined,
             event: typeof asRecord?.event === 'string' ? asRecord.event : undefined,
-            gameId,
+            gameId: gameIdRef.current,
             message,
           });
         }
@@ -310,7 +310,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         if (reason !== 'io client disconnect' && isErrorReportingEnabled()) {
           void reportClientError(new Error(`Socket disconnected: ${reason}`), {
             type: 'socket_disconnect',
-            gameId,
+            gameId: gameIdRef.current,
             reason,
           });
         }
@@ -440,7 +440,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const connection = new SocketGameConnection(handlers);
     connectionRef.current = connection;
     return connection;
-  }, [gameId]);
+  }, []);
 
   const disconnect = useCallback(() => {
     if (connectionRef.current) {
