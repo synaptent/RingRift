@@ -22,15 +22,16 @@
  * @see docs/rules/SSOT_BANNER_GUIDE.md
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { toast } from 'react-hot-toast';
-import type { Position, GameState, Move, BoardState } from '../../shared/types/game';
+import type { Position, GameState, Move, BoardState, PlayerChoice } from '../../shared/types/game';
 import { positionToString, positionsEqual } from '../../shared/types/game';
 import type { PartialMove } from './useGameActions';
 import {
   analyzeInvalidMove as analyzeInvalid,
   type InvalidMoveReason,
 } from './useInvalidMoveFeedback';
+import type { TerritoryRegionOption } from '../components/TerritoryRegionChoiceDialog';
 
 /**
  * Ring placement prompt state for the context-menu dialog.
@@ -69,6 +70,23 @@ export interface UseBackendBoardHandlersDeps {
   isMyTurn: boolean;
   /** Function to trigger invalid move feedback */
   triggerInvalidMove: (pos: Position, reason: InvalidMoveReason) => void;
+  /** Function to request a recovery choice from the user (for overlength recovery lines) */
+  requestRecoveryChoice?: () => Promise<'option1' | 'option2' | null>;
+  /** Pending player choice from server (for territory region selection, etc.) */
+  pendingChoice?: PlayerChoice | null;
+  /** Function to respond to a player choice */
+  onRespondToChoice?: <TChoice extends PlayerChoice>(
+    choice: TChoice,
+    option: TChoice['options'][number]
+  ) => void;
+}
+
+/**
+ * Territory region prompt state for disambiguation dialog.
+ */
+export interface TerritoryRegionPromptState {
+  options: TerritoryRegionOption[];
+  clickedPosition: Position;
 }
 
 /**
@@ -77,6 +95,8 @@ export interface UseBackendBoardHandlersDeps {
 export interface UseBackendBoardHandlersReturn {
   /** Current ring placement count prompt state */
   ringPlacementCountPrompt: RingPlacementPrompt | null;
+  /** Current territory region prompt state (for disambiguation) */
+  territoryRegionPrompt: TerritoryRegionPromptState | null;
   /** Handle cell click */
   handleCellClick: (pos: Position, board: BoardState) => void;
   /** Handle cell double-click */
@@ -87,6 +107,10 @@ export interface UseBackendBoardHandlersReturn {
   handleConfirmRingPlacementCount: (count: number) => void;
   /** Close the ring placement prompt dialog */
   closeRingPlacementPrompt: () => void;
+  /** Handle confirming territory region selection from dialog */
+  handleConfirmTerritoryRegion: (option: TerritoryRegionOption) => void;
+  /** Close the territory region prompt dialog */
+  closeTerritoryRegionPrompt: () => void;
 }
 
 /**
@@ -118,16 +142,86 @@ export function useBackendBoardHandlers(
     isConnectionActive,
     isMyTurn,
     triggerInvalidMove,
+    requestRecoveryChoice,
+    pendingChoice,
+    onRespondToChoice,
   } = deps;
 
   // Ring placement count prompt state
   const [ringPlacementCountPrompt, setRingPlacementCountPrompt] =
     useState<RingPlacementPrompt | null>(null);
 
+  // Territory region prompt state (for disambiguation when multiple regions overlap)
+  const [territoryRegionPrompt, setTerritoryRegionPrompt] =
+    useState<TerritoryRegionPromptState | null>(null);
+
+  // Pending movement target for skip_placement + movement shortcut
+  // When user clicks a valid landing during placement phase, we submit skip_placement
+  // and store the intended movement here. After phase changes to movement, we auto-submit.
+  const pendingMovementRef = useRef<{ from: Position; to: Position } | null>(null);
+  const prevPhaseRef = useRef<string | null>(null);
+
+  // Effect to handle pending movement after skip_placement
+  useEffect(() => {
+    const currentPhase = gameState?.currentPhase;
+    const prevPhase = prevPhaseRef.current;
+    prevPhaseRef.current = currentPhase ?? null;
+
+    // If phase changed from ring_placement to movement and we have a pending target
+    if (
+      prevPhase === 'ring_placement' &&
+      currentPhase === 'movement' &&
+      pendingMovementRef.current &&
+      validMoves
+    ) {
+      const pending = pendingMovementRef.current;
+      pendingMovementRef.current = null;
+
+      // Find the matching move_stack move
+      const moveStackMove = validMoves.find(
+        (m) =>
+          m.type === 'move_stack' &&
+          m.from &&
+          positionsEqual(m.from, pending.from) &&
+          m.to &&
+          positionsEqual(m.to, pending.to)
+      );
+
+      if (moveStackMove) {
+        submitMove({
+          type: moveStackMove.type,
+          from: moveStackMove.from,
+          to: moveStackMove.to,
+        } as PartialMove);
+        setSelected(undefined);
+        setValidTargets([]);
+      }
+    }
+  }, [gameState?.currentPhase, validMoves, submitMove, setSelected, setValidTargets]);
+
   // Close the ring placement prompt
   const closeRingPlacementPrompt = useCallback(() => {
     setRingPlacementCountPrompt(null);
   }, []);
+
+  // Close the territory region prompt
+  const closeTerritoryRegionPrompt = useCallback(() => {
+    setTerritoryRegionPrompt(null);
+  }, []);
+
+  // Handle confirming territory region selection from dialog
+  const handleConfirmTerritoryRegion = useCallback(
+    (selectedOption: TerritoryRegionOption) => {
+      if (!pendingChoice || pendingChoice.type !== 'region_order' || !onRespondToChoice) {
+        setTerritoryRegionPrompt(null);
+        return;
+      }
+
+      onRespondToChoice(pendingChoice, selectedOption);
+      setTerritoryRegionPrompt(null);
+    },
+    [pendingChoice, onRespondToChoice]
+  );
 
   // Handle cell click
   const handleCellClick = useCallback(
@@ -145,6 +239,80 @@ export function useBackendBoardHandlers(
         return;
       }
 
+      // Handle pending player choice (region_order, ring_elimination, line_reward_option)
+      if (pendingChoice && onRespondToChoice) {
+        // Handle region_order choice (territory region selection)
+        if (pendingChoice.type === 'region_order') {
+          const options = (pendingChoice.options ?? []) as TerritoryRegionOption[];
+          if (options.length === 0) {
+            // No options - let other handlers try
+          } else {
+            // Find which options contain the clicked position using spaces
+            const optionsWithSpaces = options.filter((opt) => opt.spaces && opt.spaces.length > 0);
+            if (optionsWithSpaces.length > 0) {
+              const matchingBySpaces = optionsWithSpaces.filter((opt) =>
+                opt.spaces!.some((space) => positionsEqual(space, pos))
+              );
+
+              if (matchingBySpaces.length === 1) {
+                // Single match - respond directly
+                onRespondToChoice(pendingChoice, matchingBySpaces[0]);
+                return;
+              } else if (matchingBySpaces.length > 1) {
+                // Multiple regions overlap - show disambiguation dialog
+                setTerritoryRegionPrompt({
+                  options: matchingBySpaces,
+                  clickedPosition: pos,
+                });
+                return;
+              }
+            }
+
+            // Fallback: check representative positions
+            const matchingByRepresentative = options.find((opt) =>
+              positionsEqual(opt.representativePosition, pos)
+            );
+            if (matchingByRepresentative) {
+              onRespondToChoice(pendingChoice, matchingByRepresentative);
+              return;
+            }
+
+            // Click was not on any region - don't block other handlers
+          }
+        }
+
+        // Handle ring_elimination choice
+        if (pendingChoice.type === 'ring_elimination') {
+          const options = (pendingChoice.options ?? []) as Array<{ stackPosition: Position }>;
+          const matching = options.find((opt) => positionsEqual(opt.stackPosition, pos));
+          if (matching) {
+            onRespondToChoice(pendingChoice, matching);
+            return;
+          }
+          // If valid options exist, block fall-through (must click a valid target)
+          if (options.length > 0) {
+            return;
+          }
+        }
+
+        // Handle line_reward_option choice with segments
+        if (
+          pendingChoice.type === 'line_reward_option' &&
+          pendingChoice.segments &&
+          pendingChoice.segments.length > 0
+        ) {
+          const segments = pendingChoice.segments;
+          const clickedSegment = segments.find((segment) =>
+            segment.positions.some((p) => positionsEqual(p, pos))
+          );
+          if (clickedSegment) {
+            onRespondToChoice(pendingChoice, { optionId: clickedSegment.optionId });
+            return;
+          }
+          // Click was not on a highlighted segment - don't block other handlers
+        }
+      }
+
       // Ring placement phase: attempt canonical 1-ring placement on empties
       if (gameState.currentPhase === 'ring_placement') {
         if (!Array.isArray(validMoves) || validMoves.length === 0) {
@@ -152,6 +320,42 @@ export function useBackendBoardHandlers(
         }
 
         const hasStack = !!board.stacks.get(posKey);
+
+        // Skip placement + movement shortcut: if user has selected a stack they control
+        // and clicks on a valid landing position, chain skip_placement + move_stack
+        if (selected && !positionsEqual(selected, pos)) {
+          const selectedKey = positionToString(selected);
+          const selectedStack = board.stacks.get(selectedKey);
+
+          if (selectedStack && selectedStack.controllingPlayer === gameState.currentPlayer) {
+            // Check if there's a skip_placement move available
+            const skipPlacementMove = validMoves.find((m) => m.type === 'skip_placement');
+
+            // Check if clicked position would be a valid landing for movement
+            // We look for move_stack moves that exist in the movement phase
+            // Since we're in placement phase, we need to infer valid landings
+            // A position is a valid landing if it's empty or has a stack we could land on
+            const clickedStack = board.stacks.get(posKey);
+            const isEmptyOrValidLanding =
+              !clickedStack || clickedStack.controllingPlayer !== gameState.currentPlayer;
+
+            // Calculate if this would be a valid movement target based on distance/direction
+            // For now, we check if the position is on a valid movement line from selected
+            // This is a heuristic - the actual validation happens server-side after skip_placement
+            if (skipPlacementMove && isEmptyOrValidLanding && !hasStack) {
+              // Store the pending movement and submit skip_placement
+              pendingMovementRef.current = { from: selected, to: pos };
+
+              submitMove({
+                type: 'skip_placement',
+                to: { x: 0, y: 0 }, // skip_placement doesn't use 'to' meaningfully
+              } as PartialMove);
+
+              // Keep selection for the movement phase
+              return;
+            }
+          }
+        }
 
         if (!hasStack) {
           const placeMovesAtPos = validMoves.filter(
@@ -189,6 +393,91 @@ export function useBackendBoardHandlers(
         // Clicking stacks in placement phase just selects them.
         setSelected(pos);
         setValidTargets([]);
+        return;
+      }
+
+      // Chain capture phase: clicking valid landing positions continues the chain
+      if (gameState.currentPhase === 'chain_capture') {
+        if (!Array.isArray(validMoves) || validMoves.length === 0) {
+          return;
+        }
+
+        // Look for continue_capture_segment or overtaking_capture moves to this position
+        const chainMoves = validMoves.filter(
+          (m) =>
+            (m.type === 'continue_capture_segment' || m.type === 'overtaking_capture') &&
+            m.to &&
+            positionsEqual(m.to, pos)
+        );
+
+        if (chainMoves.length > 0) {
+          const chainMove = chainMoves[0];
+          submitMove({
+            type: chainMove.type,
+            from: chainMove.from,
+            to: chainMove.to,
+          } as PartialMove);
+          // Don't clear selection - let the auto-selection effect handle the next capture
+          return;
+        }
+
+        // Also check for skip_capture move if clicking outside valid targets
+        const skipMove = validMoves.find((m) => m.type === 'skip_capture');
+        if (skipMove) {
+          // Let user click elsewhere to potentially skip (or just don't submit)
+          // For now, show feedback that this isn't a valid chain capture target
+          const reason = analyzeInvalid(gameState, pos, {
+            isPlayer,
+            isMyTurn,
+            isConnected: isConnectionActive,
+            selectedPosition: selected,
+            validMoves: validMoves ?? undefined,
+            mustMoveFrom,
+          });
+          triggerInvalidMove(pos, reason);
+          return;
+        }
+        return;
+      }
+
+      // Elimination phases: clicking valid elimination targets submits the elimination
+      if (
+        gameState.currentPhase === 'forced_elimination' ||
+        gameState.currentPhase === 'line_processing' ||
+        gameState.currentPhase === 'territory_processing'
+      ) {
+        if (!Array.isArray(validMoves) || validMoves.length === 0) {
+          return;
+        }
+
+        // Check for eliminate_rings_from_stack moves targeting this position
+        const elimMoves = validMoves.filter(
+          (m) => m.type === 'eliminate_rings_from_stack' && m.to && positionsEqual(m.to, pos)
+        );
+
+        if (elimMoves.length > 0) {
+          const elimMove = elimMoves[0];
+          submitMove({
+            type: elimMove.type,
+            to: elimMove.to,
+            eliminationCount: elimMove.eliminationCount,
+            targetPlayer: elimMove.targetPlayer,
+          } as PartialMove);
+          setSelected(undefined);
+          setValidTargets([]);
+          return;
+        }
+
+        // If clicking elsewhere during elimination, show feedback
+        const reason = analyzeInvalid(gameState, pos, {
+          isPlayer,
+          isMyTurn,
+          isConnected: isConnectionActive,
+          selectedPosition: selected,
+          validMoves: validMoves ?? undefined,
+          mustMoveFrom,
+        });
+        triggerInvalidMove(pos, reason);
         return;
       }
 
@@ -232,6 +521,63 @@ export function useBackendBoardHandlers(
         setSelected(undefined);
         setValidTargets([]);
         return;
+      }
+
+      // Check for recovery_slide moves first (may need disambiguation)
+      if (Array.isArray(validMoves) && validMoves.length > 0) {
+        const recoveryMoves = validMoves.filter(
+          (m) =>
+            m.type === 'recovery_slide' &&
+            m.from &&
+            positionsEqual(m.from, selected) &&
+            m.to &&
+            positionsEqual(m.to, pos)
+        );
+
+        if (recoveryMoves.length > 0) {
+          // Check if we have multiple recovery options (option1 vs option2)
+          const option1Move = recoveryMoves.find((m) => m.recoveryOption === 1);
+          const option2Move = recoveryMoves.find((m) => m.recoveryOption === 2);
+
+          if (option1Move && option2Move && requestRecoveryChoice) {
+            // Multiple options - request choice from user
+            void requestRecoveryChoice().then((choice) => {
+              if (choice === 'option1') {
+                submitMove({
+                  type: option1Move.type,
+                  from: option1Move.from,
+                  to: option1Move.to,
+                  recoveryOption: option1Move.recoveryOption,
+                } as PartialMove);
+              } else if (choice === 'option2') {
+                submitMove({
+                  type: option2Move.type,
+                  from: option2Move.from,
+                  to: option2Move.to,
+                  recoveryOption: option2Move.recoveryOption,
+                } as PartialMove);
+              }
+              // If null (cancelled), do nothing - keep selection
+              if (choice !== null) {
+                setSelected(undefined);
+                setValidTargets([]);
+              }
+            });
+            return;
+          }
+
+          // Single option or no requestRecoveryChoice - submit directly
+          const selectedMove = recoveryMoves[0];
+          submitMove({
+            type: selectedMove.type,
+            from: selectedMove.from,
+            to: selectedMove.to,
+            recoveryOption: selectedMove.recoveryOption,
+          } as PartialMove);
+          setSelected(undefined);
+          setValidTargets([]);
+          return;
+        }
       }
 
       // If highlighted and a matching move exists, submit.
@@ -294,6 +640,9 @@ export function useBackendBoardHandlers(
       isConnectionActive,
       isMyTurn,
       triggerInvalidMove,
+      requestRecoveryChoice,
+      pendingChoice,
+      onRespondToChoice,
     ]
   );
 
@@ -437,11 +786,14 @@ export function useBackendBoardHandlers(
 
   return {
     ringPlacementCountPrompt,
+    territoryRegionPrompt,
     handleCellClick,
     handleCellDoubleClick,
     handleCellContextMenu,
     handleConfirmRingPlacementCount,
     closeRingPlacementPrompt,
+    handleConfirmTerritoryRegion,
+    closeTerritoryRegionPrompt,
   };
 }
 

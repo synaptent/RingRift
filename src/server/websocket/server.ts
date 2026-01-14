@@ -1245,6 +1245,12 @@ export class WebSocketServer {
         timestamp: new Date().toISOString(),
       });
 
+      // Trigger AI turn if the current player is AI (handles case where human joins
+      // an active game where it's already AI's turn)
+      if (gameState.gameStatus === 'active') {
+        await session.maybePerformAITurn();
+      }
+
       // Send chat history for this game
       try {
         const chatService = getChatPersistenceService();

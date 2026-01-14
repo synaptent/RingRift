@@ -382,6 +382,9 @@ export class GameSession {
             },
           });
           this.gameEngine.startGame();
+
+          // Trigger AI turn if the first player is AI
+          await this.maybePerformAITurn();
         } catch (err) {
           logger.error('Failed to auto-start game', {
             gameId: this.gameId,
@@ -1402,6 +1405,8 @@ export class GameSession {
 
   /**
    * Handle fatal AI failure (both service and fallback failed)
+   *
+   * As a last resort, tries to apply any valid move to prevent the game from stalling.
    */
   private async handleAIFatalFailure(playerNumber: number, reason: string): Promise<void> {
     this.aiRequestState = markFailed(
@@ -1425,6 +1430,44 @@ export class GameSession {
 
     // Update diagnostics
     this.updateDiagnostics(playerNumber);
+
+    // Last resort recovery: pick the first valid move and apply it
+    // This prevents the game from stalling indefinitely when AI fails
+    try {
+      const validMoves = this.gameEngine.getValidMoves(playerNumber);
+      if (validMoves.length > 0) {
+        const emergencyMove = validMoves[0];
+        logger.warn('AI fatal failure recovery: applying first valid move', {
+          gameId: this.gameId,
+          playerNumber,
+          moveType: emergencyMove.type,
+        });
+
+        const result = await this.rulesFacade.applyMove(emergencyMove);
+        if (result.success) {
+          await this.persistAIMove(playerNumber, emergencyMove.type, result);
+          await this.broadcastUpdate(result);
+          await this.maybePerformAITurn();
+        } else {
+          logger.error('AI fatal failure recovery move rejected', {
+            gameId: this.gameId,
+            playerNumber,
+            error: result.error,
+          });
+        }
+      } else {
+        logger.error('AI fatal failure: no valid moves available for recovery', {
+          gameId: this.gameId,
+          playerNumber,
+        });
+      }
+    } catch (recoveryError) {
+      logger.error('AI fatal failure recovery failed', {
+        gameId: this.gameId,
+        playerNumber,
+        error: recoveryError instanceof Error ? recoveryError.message : String(recoveryError),
+      });
+    }
   }
 
   /**
