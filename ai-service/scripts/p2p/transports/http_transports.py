@@ -4,6 +4,10 @@ HTTP-based transport implementations.
 Tier 1: DirectHTTPTransport - Direct HTTP to public IP
 Tier 2: TailscaleHTTPTransport - HTTP over Tailscale mesh
 Tier 3: CloudflareHTTPTransport - HTTPS via Cloudflare tunnel
+
+Jan 13, 2026: Updated to use session_factory.py for proper connection lifecycle
+management. This fixes CLOSE_WAIT connection leaks caused by bare ClientSession
+instances without TCPConnector configuration.
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ except ImportError:
     ClientTimeout = None  # type: ignore
 
 from ..transport_cascade import BaseTransport, TransportResult, TransportTier
+from .session_factory import ReusableSessionManager, close_session
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +39,9 @@ class DirectHTTPTransport(BaseTransport):
     Direct HTTP transport to public IP addresses.
 
     Tier 1 (FAST): Lowest latency when public connectivity available.
+
+    Jan 13, 2026: Now uses ReusableSessionManager for proper connection
+    lifecycle management (keepalive, cleanup, connection pooling).
     """
 
     name = "http_direct"
@@ -42,14 +50,18 @@ class DirectHTTPTransport(BaseTransport):
     def __init__(self, port: int = DEFAULT_P2P_PORT, timeout: float = 5.0):
         self._port = port
         self._timeout = timeout
-        self._session: aiohttp.ClientSession | None = None
+        # Use centralized session manager for proper lifecycle management
+        self._session_manager = ReusableSessionManager(
+            timeout=timeout,
+            connect_timeout=min(timeout, 5.0),
+            keepalive_timeout=30,
+            limit=50,
+            enable_keepalive=True,
+        )
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create aiohttp session."""
-        if self._session is None or self._session.closed:
-            timeout = ClientTimeout(total=self._timeout)
-            self._session = aiohttp.ClientSession(timeout=timeout)
-        return self._session
+        """Get or create aiohttp session with proper lifecycle management."""
+        return await self._session_manager.get_session()
 
     async def send(self, target: str, payload: bytes) -> TransportResult:
         """Send payload via direct HTTP POST."""
@@ -141,8 +153,7 @@ class DirectHTTPTransport(BaseTransport):
 
     async def close(self) -> None:
         """Close the HTTP session."""
-        if self._session and not self._session.closed:
-            await self._session.close()
+        await self._session_manager.close()
 
 
 class TailscaleHTTPTransport(BaseTransport):
@@ -150,6 +161,9 @@ class TailscaleHTTPTransport(BaseTransport):
     HTTP transport over Tailscale mesh network.
 
     Tier 2 (RELIABLE): Works through NAT via Tailscale overlay.
+
+    Jan 13, 2026: Now uses ReusableSessionManager for proper connection
+    lifecycle management (keepalive, cleanup, connection pooling).
     """
 
     name = "tailscale"
@@ -158,16 +172,20 @@ class TailscaleHTTPTransport(BaseTransport):
     def __init__(self, port: int = DEFAULT_P2P_PORT, timeout: float = 10.0):
         self._port = port
         self._timeout = timeout
-        self._session: aiohttp.ClientSession | None = None
+        # Use centralized session manager for proper lifecycle management
+        self._session_manager = ReusableSessionManager(
+            timeout=timeout,
+            connect_timeout=min(timeout, 5.0),
+            keepalive_timeout=30,
+            limit=50,
+            enable_keepalive=True,
+        )
         # Cache of node_id -> tailscale_ip
         self._tailscale_ips: dict[str, str] = {}
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create aiohttp session."""
-        if self._session is None or self._session.closed:
-            timeout = ClientTimeout(total=self._timeout)
-            self._session = aiohttp.ClientSession(timeout=timeout)
-        return self._session
+        """Get or create aiohttp session with proper lifecycle management."""
+        return await self._session_manager.get_session()
 
     async def send(self, target: str, payload: bytes) -> TransportResult:
         """Send payload via Tailscale HTTP."""
@@ -291,8 +309,7 @@ class TailscaleHTTPTransport(BaseTransport):
 
     async def close(self) -> None:
         """Close the HTTP session."""
-        if self._session and not self._session.closed:
-            await self._session.close()
+        await self._session_manager.close()
 
 
 class CloudflareHTTPTransport(BaseTransport):
@@ -300,6 +317,9 @@ class CloudflareHTTPTransport(BaseTransport):
     HTTPS transport via Cloudflare Zero Trust tunnel.
 
     Tier 3 (TUNNELED): Works through any firewall via Cloudflare.
+
+    Jan 13, 2026: Now uses ReusableSessionManager for proper connection
+    lifecycle management (keepalive, cleanup, connection pooling).
     """
 
     name = "cloudflare_tunnel"
@@ -307,16 +327,20 @@ class CloudflareHTTPTransport(BaseTransport):
 
     def __init__(self, timeout: float = 15.0):
         self._timeout = timeout
-        self._session: aiohttp.ClientSession | None = None
+        # Use centralized session manager for proper lifecycle management
+        self._session_manager = ReusableSessionManager(
+            timeout=timeout,
+            connect_timeout=min(timeout, 10.0),
+            keepalive_timeout=30,
+            limit=50,
+            enable_keepalive=True,
+        )
         # node_id -> tunnel hostname
         self._tunnel_hostnames: dict[str, str] = {}
 
     async def _get_session(self) -> aiohttp.ClientSession:
-        """Get or create aiohttp session."""
-        if self._session is None or self._session.closed:
-            timeout = ClientTimeout(total=self._timeout)
-            self._session = aiohttp.ClientSession(timeout=timeout)
-        return self._session
+        """Get or create aiohttp session with proper lifecycle management."""
+        return await self._session_manager.get_session()
 
     def configure_tunnel(self, node_id: str, tunnel_hostname: str) -> None:
         """Configure Cloudflare tunnel for a node."""
@@ -377,5 +401,4 @@ class CloudflareHTTPTransport(BaseTransport):
 
     async def close(self) -> None:
         """Close the HTTP session."""
-        if self._session and not self._session.closed:
-            await self._session.close()
+        await self._session_manager.close()
