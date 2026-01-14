@@ -46,7 +46,10 @@ export class GameSessionManager {
     }, GameSessionManager.CLEANUP_INTERVAL_MS);
 
     // Don't keep the process alive just for cleanup
-    this.cleanupIntervalHandle.unref();
+    // Guard against Jest fake timers which don't support unref()
+    if (this.cleanupIntervalHandle.unref) {
+      this.cleanupIntervalHandle.unref();
+    }
 
     logger.info('GameSessionManager cleanup interval started', {
       intervalMs: GameSessionManager.CLEANUP_INTERVAL_MS,

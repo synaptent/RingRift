@@ -191,6 +191,12 @@ describe('WebSocket Server - Error Paths', () => {
       currentPlayer: 1,
       gameStatus: 'active',
       isRated: false,
+      board: {
+        stacks: new Map(),
+        markers: new Map(),
+        collapsedSpaces: new Map(),
+        territories: new Map(),
+      },
     };
 
     mockSession = {
@@ -200,6 +206,7 @@ describe('WebSocket Server - Error Paths', () => {
       handleAbandonmentForDisconnectedPlayer: jest.fn(),
       handlePlayerMove: jest.fn(),
       handlePlayerMoveById: jest.fn(),
+      maybePerformAITurn: jest.fn(),
     };
 
     mockGetOrCreateSession.mockResolvedValue(mockSession);
@@ -1112,6 +1119,12 @@ describe('WebSocket Server - Server-Initiated Close Scenarios', () => {
       currentPlayer: 1,
       gameStatus: 'active',
       isRated: false,
+      board: {
+        stacks: new Map(),
+        markers: new Map(),
+        collapsedSpaces: new Map(),
+        territories: new Map(),
+      },
     };
 
     const mockSession = {
@@ -1121,6 +1134,7 @@ describe('WebSocket Server - Server-Initiated Close Scenarios', () => {
         cancelAllChoicesForPlayer: jest.fn(),
       })),
       handleAbandonmentForDisconnectedPlayer: jest.fn(),
+      maybePerformAITurn: jest.fn(),
     };
 
     mockGetOrCreateSession.mockResolvedValue(mockSession);
@@ -1232,6 +1246,12 @@ describe('WebSocket Server - Concurrent Event Handling', () => {
       currentPlayer: 1,
       gameStatus: 'active',
       isRated: false,
+      board: {
+        stacks: new Map(),
+        markers: new Map(),
+        collapsedSpaces: new Map(),
+        territories: new Map(),
+      },
     };
 
     mockSession = {
@@ -1239,6 +1259,7 @@ describe('WebSocket Server - Concurrent Event Handling', () => {
       getValidMoves: jest.fn(() => []),
       getInteractionHandler: jest.fn(() => interactionHandler),
       handleAbandonmentForDisconnectedPlayer: jest.fn(),
+      maybePerformAITurn: jest.fn(),
     };
 
     mockGetOrCreateSession.mockResolvedValue(mockSession);

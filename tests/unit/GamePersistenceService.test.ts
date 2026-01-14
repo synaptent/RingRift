@@ -659,7 +659,18 @@ describe('GamePersistenceService', () => {
     it('should reconstruct Maps from serialized arrays', () => {
       const serialized = JSON.stringify({
         id: 'game-123',
+        boardType: 'square8',
+        numPlayers: 2,
+        currentPlayer: 0,
+        currentPhase: 'placement',
+        turnNumber: 1,
+        gameStatus: 'active',
+        players: [
+          { id: 'p1', color: 0 },
+          { id: 'p2', color: 1 },
+        ],
         board: {
+          type: 'square8',
           stacks: [['0,0', { position: { x: 0, y: 0 }, rings: [1], stackHeight: 1 }]],
           markers: [['1,1', { player: 1, position: { x: 1, y: 1 } }]],
           collapsedSpaces: [['2,2', 1]],
@@ -674,10 +685,21 @@ describe('GamePersistenceService', () => {
       expect(result.board.collapsedSpaces).toBeInstanceOf(Map);
     });
 
-    it('should handle state with non-array board properties', () => {
+    it('should reject state with non-array board properties', () => {
       const serialized = JSON.stringify({
         id: 'game-123',
+        boardType: 'square8',
+        numPlayers: 2,
+        currentPlayer: 0,
+        currentPhase: 'placement',
+        turnNumber: 1,
+        gameStatus: 'active',
+        players: [
+          { id: 'p1', color: 0 },
+          { id: 'p2', color: 1 },
+        ],
         board: {
+          type: 'square8',
           stacks: {},
           markers: {},
           collapsedSpaces: {},
@@ -685,22 +707,21 @@ describe('GamePersistenceService', () => {
         },
       });
 
-      const result = GamePersistenceService.deserializeGameState(serialized);
-
-      // Should pass through non-array values unchanged
-      expect(result.board.stacks).not.toBeInstanceOf(Map);
+      // Schema requires arrays for Map reconstruction
+      expect(() => GamePersistenceService.deserializeGameState(serialized)).toThrow(
+        'Game state validation failed'
+      );
     });
 
-    it('should handle state without board property', () => {
+    it('should reject state without required properties', () => {
       const serialized = JSON.stringify({
         id: 'game-123',
         turnNumber: 5,
       });
 
-      const result = GamePersistenceService.deserializeGameState(serialized);
-
-      expect(result.id).toBe('game-123');
-      expect(result.turnNumber).toBe(5);
+      expect(() => GamePersistenceService.deserializeGameState(serialized)).toThrow(
+        'Game state validation failed'
+      );
     });
   });
 

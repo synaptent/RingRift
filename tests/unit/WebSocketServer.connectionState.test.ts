@@ -83,6 +83,7 @@ describe('WebSocketServer PlayerConnectionState diagnostics', () => {
     jest.resetModules();
 
     // Minimal GameState stub – we only care about players[] and spectators[]
+    // Include minimal board structure for serializeBoardState() compatibility
     const gameState: any = {
       id: gameId,
       players: [
@@ -96,6 +97,12 @@ describe('WebSocketServer PlayerConnectionState diagnostics', () => {
       spectators: [],
       currentPhase: 'ring_placement',
       currentPlayer: playerNumber,
+      board: {
+        stacks: new Map(),
+        markers: new Map(),
+        collapsedSpaces: new Map(),
+        territories: new Map(),
+      },
     };
 
     const interactionHandler = {
@@ -107,6 +114,7 @@ describe('WebSocketServer PlayerConnectionState diagnostics', () => {
       getValidMoves: jest.fn(() => []),
       getInteractionHandler: jest.fn(() => interactionHandler),
       handleAbandonmentForDisconnectedPlayer: jest.fn(),
+      maybePerformAITurn: jest.fn(),
     };
 
     mockGetOrCreateSession.mockResolvedValue(mockSession);
@@ -287,6 +295,12 @@ describe('WebSocketServer PlayerConnectionState diagnostics', () => {
         currentPlayer: playerNumber,
         gameStatus: 'active',
         isRated: true,
+        board: {
+          stacks: new Map(),
+          markers: new Map(),
+          collapsedSpaces: new Map(),
+          territories: new Map(),
+        },
       };
 
       mockSession.getGameState.mockReturnValue(ratedState);
@@ -358,6 +372,12 @@ describe('WebSocketServer PlayerConnectionState diagnostics', () => {
       currentPlayer: playerNumber,
       gameStatus: 'active',
       isRated: false,
+      board: {
+        stacks: new Map(),
+        markers: new Map(),
+        collapsedSpaces: new Map(),
+        territories: new Map(),
+      },
     };
 
     mockSession.getGameState.mockReturnValue(spectatorGameState);
@@ -411,6 +431,12 @@ describe('WebSocketServer PlayerConnectionState diagnostics', () => {
       currentPlayer: playerNumber,
       gameStatus: 'active',
       isRated: false,
+      board: {
+        stacks: new Map(),
+        markers: new Map(),
+        collapsedSpaces: new Map(),
+        territories: new Map(),
+      },
     };
 
     mockSession.getGameState.mockReturnValue(ratedState);
@@ -451,6 +477,12 @@ describe('WebSocketServer PlayerConnectionState diagnostics', () => {
       currentPlayer: 1,
       gameStatus: 'active',
       isRated: true,
+      board: {
+        stacks: new Map(),
+        markers: new Map(),
+        collapsedSpaces: new Map(),
+        territories: new Map(),
+      },
     };
 
     mockSession.getGameState.mockReturnValue(ratedState);
@@ -500,6 +532,12 @@ describe('WebSocketServer PlayerConnectionState diagnostics', () => {
       currentPlayer: 1,
       gameStatus: 'active',
       isRated: true,
+      board: {
+        stacks: new Map(),
+        markers: new Map(),
+        collapsedSpaces: new Map(),
+        territories: new Map(),
+      },
     };
 
     mockSession.getGameState.mockReturnValue(ratedState);

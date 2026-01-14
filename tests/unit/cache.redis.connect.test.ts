@@ -86,9 +86,9 @@ describe('redis connection lifecycle', () => {
       expect.arrayContaining(['error', 'connect', 'ready', 'end', 'reconnecting'])
     );
 
-    // Rate limiters are initialized in memory mode (null client).
+    // Rate limiters are initialized with the Redis client (falls back to null only on error).
     const { initializeRateLimiters } = require('../../src/server/middleware/rateLimiter');
-    expect(initializeRateLimiters).toHaveBeenCalledWith(null);
+    expect(initializeRateLimiters).toHaveBeenCalledWith(client);
 
     // getRedisClient should return the same instance.
     expect(getRedisClient()).toBe(client);
