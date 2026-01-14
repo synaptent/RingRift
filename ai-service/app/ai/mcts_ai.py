@@ -859,27 +859,70 @@ class MCTSAI(HeuristicAI):
         # Optional hex-specific encoder and network (used for hex boards).
         self.hex_encoder: ActionEncoderHex | None = None
         self.hex_model: HexNeuralNet_v2 | None = None
+        # Track expected channels for encoder selection (Jan 2026 fix)
+        self._hex_encoder_channels: int = 40  # Default to V2
         if self.neural_net is not None:
             try:
                 # Lazy imports for hex-specific components
                 from .neural_net import (
                     ActionEncoderHex,
                     HexNeuralNet_v2,
-                    get_memory_tier,
+                    HexNeuralNet_v2_Lite,
                 )
-                # V2 models use larger input channels for richer features.
+                from .neural_net.architecture_registry import get_expected_channels_from_model
+
                 self.hex_encoder = ActionEncoderHex()
-                memory_tier = get_memory_tier()
-                if memory_tier == "low":
-                    from .neural_net import HexNeuralNet_v2_Lite
-                    self.hex_model = HexNeuralNet_v2_Lite(
-                        in_channels=12,
-                        global_features=20,
-                    )
+
+                # Use the loaded model from neural_net if available
+                # Architecture-agnostic: detect expected channels from model weights
+                nn_model = getattr(self.neural_net, 'model', None)
+                if nn_model is not None:
+                    # Detect expected channels from the model's conv1 weight
+                    expected_channels = get_expected_channels_from_model(nn_model)
+                    if expected_channels is not None:
+                        self._hex_encoder_channels = expected_channels
+                        self.hex_model = nn_model
+                        logger.debug(
+                            "MCTS using loaded hex model (in_channels=%d, detected from weights)",
+                            expected_channels
+                        )
+                    else:
+                        # Fallback to attribute or isinstance check
+                        if hasattr(nn_model, 'in_channels'):
+                            self._hex_encoder_channels = nn_model.in_channels
+                            self.hex_model = nn_model
+                            logger.debug(
+                                "MCTS using loaded hex model (in_channels=%d, from attribute)",
+                                nn_model.in_channels
+                            )
+                        elif isinstance(nn_model, (HexNeuralNet_v2, HexNeuralNet_v2_Lite)):
+                            self._hex_encoder_channels = 40
+                            self.hex_model = nn_model
+                            logger.debug("MCTS using V2 hex model (40 channels)")
+                        else:
+                            # Unknown model type - try to use it anyway
+                            self.hex_model = nn_model
+                            logger.warning(
+                                "MCTS: Could not detect model channels, using default 40"
+                            )
                 else:
-                    self.hex_model = HexNeuralNet_v2(
-                        in_channels=14,
-                        global_features=20,
+                    # No model loaded - create fresh default model
+                    from .neural_net import get_memory_tier
+                    memory_tier = get_memory_tier()
+                    if memory_tier == "low":
+                        self.hex_model = HexNeuralNet_v2_Lite(
+                            in_channels=40,
+                            global_features=20,
+                        )
+                    else:
+                        self.hex_model = HexNeuralNet_v2(
+                            in_channels=40,
+                            global_features=20,
+                        )
+                    self._hex_encoder_channels = 40
+                    logger.warning(
+                        "MCTS created fresh hex model (not loaded from checkpoint). "
+                        "This may result in weak neural evaluation."
                     )
             except (ImportError, ModuleNotFoundError):
                 self.hex_encoder = None
@@ -2083,19 +2126,57 @@ class MCTSAI(HeuristicAI):
     def _evaluate_hex_batch(
         self, states: list[GameState]
     ) -> tuple[list[float], list[Any]]:
-        """Evaluate a batch of hex board states."""
+        """Evaluate a batch of hex board states.
+
+        Uses the correct encoder based on self._hex_encoder_channels to match
+        the loaded model's expected input format (Jan 2026 fix).
+        """
         import torch  # Lazy import
 
         from .neural_net import HexNeuralNet_v2  # Lazy import for cast
+        from .neural_net.architecture_registry import get_encoder_class_for_channels
+
+        # Select encoder based on model's expected channels
+        expected_channels = getattr(self, '_hex_encoder_channels', 40)
+        encoder_class = get_encoder_class_for_channels(expected_channels)
 
         feature_batches = []
         globals_batches = []
-        nn = self.neural_net  # type assertion for Pylance
-        assert nn is not None
-        for s in states:
-            feats, globs = nn._extract_features(s)
-            feature_batches.append(feats)
-            globals_batches.append(globs)
+
+        if encoder_class is not None:
+            # Use the architecture-appropriate encoder
+            try:
+                # Get board parameters from first state
+                if states:
+                    first_state = states[0]
+                    board_size = first_state.board.size if hasattr(first_state.board, 'size') else 25
+                    num_players = first_state.num_players if hasattr(first_state, 'num_players') else 4
+                    encoder = encoder_class(board_size=board_size, num_players=num_players)
+
+                    for s in states:
+                        # encode() should return (features, global_features)
+                        encoded = encoder.encode(s)
+                        if isinstance(encoded, tuple) and len(encoded) == 2:
+                            feats, globs = encoded
+                        else:
+                            # Single tensor output - need to extract global features separately
+                            feats = encoded
+                            globs = self._extract_global_features(s) if self.neural_net else np.zeros(20)
+                        feature_batches.append(feats)
+                        globals_batches.append(globs)
+            except Exception as e:
+                logger.debug(f"Encoder {encoder_class.__name__} failed: {e}, falling back")
+                encoder_class = None
+
+        # Fallback to neural_net._extract_features if encoder failed or unavailable
+        if not feature_batches:
+            nn = self.neural_net
+            assert nn is not None
+            for s in states:
+                # with_frame_stacking=True to produce model-expected channel count
+                feats, globs = nn._extract_features(s, with_frame_stacking=True)
+                feature_batches.append(feats)
+                globals_batches.append(globs)
 
         tensor_input = torch.FloatTensor(np.array(feature_batches))
         globals_input = torch.FloatTensor(np.array(globals_batches))
@@ -2115,6 +2196,22 @@ class MCTSAI(HeuristicAI):
         eval_policies = policy_probs.cpu().numpy()
 
         return eval_values, list(eval_policies)
+
+    def _extract_global_features(self, state: GameState) -> np.ndarray:
+        """Extract global features from game state (fallback when encoder doesn't provide them)."""
+        # Basic global features (20 dimensions)
+        features = np.zeros(20, dtype=np.float32)
+        try:
+            num_players = state.num_players if hasattr(state, 'num_players') else 4
+            # Rings in hand per player
+            for i in range(min(num_players, 4)):
+                if hasattr(state, 'rings_in_hand') and i < len(state.rings_in_hand):
+                    features[i] = state.rings_in_hand[i] / 10.0
+            # Current player indicator
+            features[16] = state.current_player / (num_players - 1) if num_players > 1 else 0
+        except Exception:
+            pass
+        return features
 
     def _update_node_policy_legacy(
         self,

@@ -186,6 +186,10 @@ export interface BackendGameSidebarProps {
   showTerritoryRegionOverlays?: boolean;
   /** Handler to toggle territory overlays */
   onToggleTerritoryOverlays?: () => void;
+
+  // Decision phase status indicators
+  /** Whether ring elimination choice is pending */
+  isRingEliminationChoice?: boolean;
 }
 
 /**
@@ -264,6 +268,7 @@ export const BackendGameSidebar: React.FC<BackendGameSidebarProps> = ({
   onToggleLineOverlays,
   showTerritoryRegionOverlays,
   onToggleTerritoryOverlays,
+  isRingEliminationChoice = false,
 }) => {
   return (
     <aside className="w-full max-w-md mx-auto lg:mx-0 lg:w-[256px] flex-shrink-0 space-y-2 text-xs text-slate-100">
@@ -294,6 +299,31 @@ export const BackendGameSidebar: React.FC<BackendGameSidebarProps> = ({
           aiDifficulty={aiDifficulty}
           aiPlayerName={aiPlayerName}
         />
+      )}
+
+      {/* Self-elimination pending alert - matching sandbox pattern */}
+      {isRingEliminationChoice && (
+        <div className="p-3 border-2 border-amber-400 rounded-2xl bg-amber-900/60 text-xs animate-pulse shadow-lg shadow-amber-500/30">
+          <div className="font-semibold text-amber-200 mb-1">⚠️ Self-Elimination Required</div>
+          <p className="text-amber-100/90">
+            Your ring formed a line – select one of your stacks to eliminate.
+          </p>
+        </div>
+      )}
+
+      {/* Phase Guide - educational panel showing current phase info */}
+      {hudViewModel?.phase && (
+        <div className="p-3 rounded-2xl border border-slate-700 bg-slate-900/70">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="text-slate-400">Current Phase:</span>
+            <span className="font-medium text-white">{hudViewModel.phase.label}</span>
+          </div>
+          {hudViewModel.phase.description && (
+            <p className="text-slate-300 text-[11px] leading-relaxed">
+              {hudViewModel.phase.description}
+            </p>
+          )}
+        </div>
       )}
 
       {/* LineRewardPanel for overlength line choices with segments */}

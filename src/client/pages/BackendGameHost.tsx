@@ -1009,6 +1009,17 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
     gameState.gameStatus === 'active' ? 'Active' : gameState.gameStatus
   }`;
 
+  // Board display label - human-readable board type name
+  const boardDisplayLabel = (() => {
+    const typeLabels: Record<string, string> = {
+      square8: '8×8 Square',
+      square19: '19×19 Square',
+      hex8: 'Small Hex',
+      hexagonal: 'Large Hex',
+    };
+    return typeLabels[boardType] ?? boardType;
+  })();
+
   const backendBoardViewModel = toBoardViewModel(board, {
     selectedPosition: selected || backendMustMoveFrom,
     validTargets,
@@ -1270,6 +1281,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
             isRegionOrderChoice={isRegionOrderChoice}
             isChainCaptureContinuationStep={isChainCaptureContinuationStep}
             boardDisplaySubtitle={boardDisplaySubtitle}
+            boardDisplayLabel={boardDisplayLabel}
             phaseLabel={hudViewModel.phase.label}
             players={hudViewModel.players.map((p) => ({
               playerNumber: p.playerNumber,
@@ -1369,6 +1381,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
             onToggleLineOverlays={handleToggleLineOverlays}
             showTerritoryRegionOverlays={showTerritoryRegionOverlays}
             onToggleTerritoryOverlays={handleToggleTerritoryOverlays}
+            isRingEliminationChoice={isRingEliminationChoice}
           />
         </main>
 

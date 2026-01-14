@@ -4681,6 +4681,26 @@ class NeuralNetAI(BaseAI):
                             return
                         raise RuntimeError(msg)
 
+                # Guard: Encoder/model channel match (Jan 2026 fix)
+                # Check that checkpoint's conv1 input channels match model
+                conv1_weight = state_dict.get("conv1.weight")
+                if conv1_weight is None:
+                    conv1_weight = state_dict.get("initial_conv.weight")
+                if conv1_weight is not None and hasattr(self.model, "in_channels"):
+                    expected_in_ch = int(getattr(self.model, "in_channels", 0))
+                    actual_in_ch = int(conv1_weight.shape[1])
+                    if expected_in_ch and actual_in_ch != expected_in_ch:
+                        msg = (
+                            f"Model checkpoint incompatible with current encoder version "
+                            f"(conv1 in_channels: checkpoint={actual_in_ch}, expected={expected_in_ch}). "
+                            f"This indicates encoder/model version mismatch. "
+                            f"Checkpoint may be V2 (40ch), V3 (64ch), or V5-heavy (56ch)."
+                        )
+                        if allow_fresh:
+                            logger.warning("%s; using fresh weights (allow_fresh_weights=True).", msg)
+                            return
+                        raise RuntimeError(msg)
+
                 self.model.load_state_dict(state_dict)
                 self.model.eval()
                 logger.info(f"Loaded versioned model from {model_path} " f"(version: {metadata.architecture_version})")
@@ -5615,23 +5635,36 @@ class NeuralNetAI(BaseAI):
     def _extract_features(
         self,
         game_state: GameState,
+        with_frame_stacking: bool = False,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Convert game state to feature tensor for CNN and global features.
+
+        Args:
+            game_state: The game state to encode
+            with_frame_stacking: If True, return frame-stacked features (40 or 64 channels).
+                               If False, return raw features (10 or 16 channels).
 
         Returns:
             (board_features, global_features)
 
         The board_features tensor has shape:
-        - Hex boards (with _hex_encoder): (16, board_size, board_size)
-        - Square boards: (14, board_size, board_size)
+        - Hex boards without stacking: (10, board_size, board_size) for v2 or (16, board_size, board_size) for v3
+        - Hex boards with stacking: (40, board_size, board_size) for v2 or (64, board_size, board_size) for v3
+        - Square boards without stacking: (14, board_size, board_size)
+        - Square boards with stacking: (56, board_size, board_size) = 14 base × 4 frames
 
         Board size is derived from the logical board via _infer_board_size so
         that this encoder works for 8×8, 19×19, and hexagonal boards.
         """
-        # Use hex encoder for hex boards (produces 10 or 16 channels depending on version)
+        # Use hex encoder for hex boards
         if self._hex_encoder is not None:
-            board_features, global_features = self._hex_encoder.encode_state(game_state)
+            if with_frame_stacking:
+                # encode() does frame stacking (replicates current frame 4 times)
+                board_features, global_features = self._hex_encoder.encode(game_state)
+            else:
+                # encode_state() returns raw single-frame features
+                board_features, global_features = self._hex_encoder.encode_state(game_state)
             # Update board_size hint for external callers
             self.board_size = self._hex_encoder.board_size
             return board_features, global_features
@@ -5925,6 +5958,11 @@ class NeuralNetAI(BaseAI):
 
         # Is it my turn? (always yes for current_player perspective)
         globals[9] = 1.0
+
+        # Apply frame stacking if requested (replicates current frame 4 times)
+        if with_frame_stacking:
+            # Stack current frame 4 times to match training format (history_length=3)
+            features = np.concatenate([features] * 4, axis=0)
 
         return features, globals
 

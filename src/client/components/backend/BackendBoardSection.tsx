@@ -48,6 +48,8 @@ export interface BackendBoardSectionProps {
   isChainCaptureContinuationStep?: boolean;
   /** Board display subtitle (e.g., "Turn 5 • Active") */
   boardDisplaySubtitle?: string;
+  /** Board display label (e.g., "8×8 Square") */
+  boardDisplayLabel?: string;
 
   // Game state for info panel
   /** Current phase label */
@@ -105,6 +107,7 @@ export const BackendBoardSection: React.FC<BackendBoardSectionProps> = ({
   isRegionOrderChoice = false,
   isChainCaptureContinuationStep = false,
   boardDisplaySubtitle,
+  boardDisplayLabel,
   phaseLabel,
   players,
   currentPlayerNumber,
@@ -118,22 +121,29 @@ export const BackendBoardSection: React.FC<BackendBoardSectionProps> = ({
     <section className="flex-shrink-0">
       {/* Grid layout: board determines column width, panels constrained to match */}
       <div className="grid gap-2" style={{ gridTemplateColumns: 'min-content' }}>
-        {/* Board header with phase and help */}
-        <div className="flex items-center justify-between p-2 sm:p-2.5 rounded-xl border border-slate-700 bg-slate-900/70 shadow-lg overflow-x-auto">
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-slate-400">Phase:</span>
-            <span className="px-2 py-1 text-xs font-medium rounded-lg bg-slate-800/80 border border-slate-600 text-slate-200">
-              {phaseLabel}
-            </span>
+        {/* Board header with title, phase, and help */}
+        <div className="p-2 sm:p-2.5 rounded-xl border border-slate-700 bg-slate-900/70 shadow-lg overflow-x-auto">
+          <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2">
+            <h1 className="text-sm sm:text-base font-bold text-white">
+              <span className="text-slate-400 font-medium">Game</span>
+              <span className="mx-2 text-slate-600">–</span>
+              {boardDisplayLabel}
+            </h1>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-400">Phase:</span>
+              <span className="px-2 py-1 text-xs font-medium rounded-lg bg-slate-800/80 border border-slate-600 text-slate-200">
+                {phaseLabel}
+              </span>
+              <button
+                type="button"
+                onClick={onShowBoardControls}
+                className="h-8 w-8 rounded-full border border-slate-600 text-[11px] leading-none text-slate-200 hover:bg-slate-800/80 transition"
+                title="Keyboard shortcuts"
+              >
+                ?
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={onShowBoardControls}
-            className="h-8 w-8 rounded-full border border-slate-600 text-[11px] leading-none text-slate-200 hover:bg-slate-800/80 transition"
-            title="Keyboard shortcuts"
-          >
-            ?
-          </button>
         </div>
 
         {/* Board view */}
@@ -158,6 +168,7 @@ export const BackendBoardSection: React.FC<BackendBoardSectionProps> = ({
           showTerritoryRegionOverlays={showTerritoryRegionOverlays}
           decisionHighlights={decisionHighlights}
           onShowKeyboardHelp={onShowBoardControls}
+          scaleAdjustment={boardType === 'square8' ? 0.9 : 1.0}
         />
 
         {/* Board info panel with status chips and player chips */}
@@ -186,9 +197,15 @@ export const BackendBoardSection: React.FC<BackendBoardSectionProps> = ({
 
               return <span className={primarySubtitleClass}>{primarySubtitleText}</span>;
             })()}
-            <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600">
-              Players: {players.length}
-            </span>
+            {(() => {
+              const humanCount = players.filter((p) => p.type === 'human').length;
+              const aiCount = players.filter((p) => p.type === 'ai').length;
+              return (
+                <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600">
+                  Players: {players.length} ({humanCount} human, {aiCount} AI)
+                </span>
+              );
+            })()}
             <span className="px-2 py-1 rounded-full bg-slate-800/80 border border-slate-600 min-w-[10rem] inline-flex justify-center text-center">
               Phase: {phaseLabel}
             </span>

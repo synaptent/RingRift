@@ -175,6 +175,12 @@ export interface BoardViewProps {
    * RR-FIX-2026-01-11: Added to fix visual feedback for elimination targets.
    */
   decisionHighlights?: BoardDecisionHighlightsViewModel;
+  /**
+   * Optional scale adjustment factor applied after the auto-scaling calculation.
+   * Defaults to 1.0 (no adjustment). Use values like 0.9 for 10% smaller boards.
+   * This allows different hosts (sandbox vs backend) to have different board sizes.
+   */
+  scaleAdjustment?: number;
 }
 
 // Tailwind-friendly, fixed color classes per player number to avoid
@@ -643,6 +649,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
   shakingCellKey,
   squareRankFromBottom = false,
   decisionHighlights: decisionHighlightsProp,
+  scaleAdjustment = 1.0,
 }) => {
   // Animation state tracking
   const [animations, setAnimations] = useState<AnimationState[]>([]);
@@ -1137,15 +1144,15 @@ export const BoardView: React.FC<BoardViewProps> = ({
       const adjustedScale = fitScale * multiplier;
       const containerScale = Math.max(0.5, Math.min(adjustedScale, 1.3));
 
-      // Final scale for rendering
-      const finalScale = containerScale;
+      // Final scale for rendering - apply optional scale adjustment from props
+      const finalScale = containerScale * scaleAdjustment;
 
       setBoardScale(finalScale);
 
       // Container dimensions - always use scaled dimensions to match board transform
       // This ensures container matches the visual size of the transformed board
-      const scaledWidth = Math.ceil(naturalWidth * containerScale);
-      const scaledHeight = Math.ceil(naturalHeight * containerScale);
+      const scaledWidth = Math.ceil(naturalWidth * finalScale);
+      const scaledHeight = Math.ceil(naturalHeight * finalScale);
       setScaledDimensions({ width: scaledWidth, height: scaledHeight });
 
       // Top offset to shift board down within wrapper (more top gap, less bottom gap)
@@ -1160,7 +1167,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
     // Recalculate on resize
     window.addEventListener('resize', calculateScale);
     return () => window.removeEventListener('resize', calculateScale);
-  }, [effectiveBoardType]);
+  }, [effectiveBoardType, scaleAdjustment]);
 
   // Register cell ref for keyboard navigation
   const registerCellRef = useCallback((key: string, ref: HTMLButtonElement | null) => {

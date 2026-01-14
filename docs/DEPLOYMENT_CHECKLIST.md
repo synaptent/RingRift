@@ -62,29 +62,47 @@ RINGRIFT_LOG_LEVEL=INFO
 
 ## Deployment Steps
 
-### Step 1: SSH to Production
+### Option A: Use Deploy Script (Recommended)
+
+The deploy script handles git pull, npm install, Prisma, build, and PM2 restart automatically.
+
+```bash
+ssh -i ~/.ssh/ringrift-staging-key.pem ubuntu@54.198.219.106
+./deploy.sh
+```
+
+Options:
+
+- `./deploy.sh --skip-pull` - Skip git pull (use when deploying local changes)
+- `./deploy.sh --skip-install` - Skip npm install (faster when deps unchanged)
+
+### Option B: Manual Deployment
+
+#### Step 1: SSH to Production
 
 ```bash
 ssh -i ~/.ssh/ringrift-staging-key.pem ubuntu@54.198.219.106
 ```
 
-### Step 2: Pull Latest Code
+#### Step 2: Pull Latest Code
 
 ```bash
-cd ~/RingRift
+cd ~/ringrift
 git fetch origin main
 git status  # Check for local changes
 git pull origin main
 ```
 
-### Step 3: Install Dependencies
+**Note:** The EC2 directory is lowercase `ringrift`, not `RingRift`.
+
+#### Step 3: Install Dependencies
 
 ```bash
 npm ci --production
 cd ai-service && pip install -r requirements.txt
 ```
 
-### Step 4: Build Client
+#### Step 4: Build Client
 
 ```bash
 npm run build
@@ -92,13 +110,13 @@ npm run build
 ls -la dist/client/
 ```
 
-### Step 5: Run Migrations (if needed)
+#### Step 5: Run Migrations (if needed)
 
 ```bash
 npm run migration:run
 ```
 
-### Step 6: Restart Services
+#### Step 6: Restart Services
 
 ```bash
 pm2 restart ringrift-server --update-env
@@ -106,7 +124,7 @@ pm2 restart ringrift-ai --update-env
 pm2 status
 ```
 
-### Step 7: Verify Deployment
+#### Step 7: Verify Deployment
 
 ```bash
 # Check services are running
@@ -146,7 +164,7 @@ curl -s http://localhost:8000/health
 
 ```bash
 ssh -i ~/.ssh/ringrift-staging-key.pem ubuntu@54.198.219.106
-cd ~/RingRift
+cd ~/ringrift
 git checkout <previous-commit>
 npm ci --production
 npm run build
