@@ -68,18 +68,19 @@ class MixedOpponentSelfplayRunner(SelfplayRunner):
     maximum training diversity across different search strategies.
     """
 
-    # Default mix for all player counts (unified Dec 31, 2025, updated Jan 13, 2026)
-    # Jan 13, 2026: Increased heuristic to 50% for stronger training signal.
-    # Target: ~50% heuristic, ~30% NN-based, ~20% search diversity
+    # Default mix for all player counts (unified Dec 31, 2025, updated Jan 14, 2026)
+    # Jan 14, 2026: Reduced heuristic from 50% to 25% - skill ceiling fix.
+    # 50% heuristic created a ceiling where models couldn't surpass heuristic AI.
+    # Target: ~25% heuristic, ~45% NN-based, ~30% search diversity
     DEFAULT_MIX = {
         "random": 0.05,       # Pure exploration (baseline)
-        "heuristic": 0.50,    # Strong tactical signal - dominates training
-        "mcts": 0.15,         # Strong strategic play (Gumbel MCTS) - NN-based
+        "heuristic": 0.25,    # Reduced from 0.50 - prevents skill ceiling
+        "mcts": 0.30,         # Increased from 0.15 - more NN training signal
         "minimax": 0.05,      # Alpha-beta/Paranoid search
         "maxn": 0.05,         # Max-N score vectors
         "brs": 0.05,          # Fast best-reply search
-        "policy_only": 0.10,  # Direct neural network policy - NN-based
-        "descent": 0.05,      # Gradient-based exploration - NN-based
+        "policy_only": 0.15,  # Increased from 0.10 - direct NN policy
+        "descent": 0.10,      # Increased from 0.05 - gradient-based
     }
 
     # Legacy aliases for backward compatibility

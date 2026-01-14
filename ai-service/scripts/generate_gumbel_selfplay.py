@@ -154,7 +154,7 @@ class GumbelSelfplayConfig:
     board_type: str = "square8"
     num_players: int = 2
     num_games: int = 100
-    simulation_budget: int = 150  # Gumbel simulations per move
+    simulation_budget: int = 800  # Increased from 150 for quality data (AlphaZero minimum)
     think_time_ms: int = 0  # 0 = use simulation budget, >0 = time limit
     temperature: float = 1.0  # Policy temperature for exploration
     temperature_threshold: int = 30  # Move after which to use greedy (temp=0)
