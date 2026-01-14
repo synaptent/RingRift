@@ -264,6 +264,226 @@ class ClusterHealth:
     errors: list[str] = field(default_factory=list)
 
 
+@dataclass
+class QueuePopulatorWatchdogConfig:
+    """Configuration for QueuePopulatorWatchdog (January 14, 2026)."""
+    # Thresholds for detecting stuck populator
+    stuck_threshold_seconds: float = 300.0  # 5 minutes without progress
+    zero_drain_threshold_seconds: float = 360.0  # 6 minutes with no completions
+
+    # Check interval
+    check_interval_seconds: float = 60.0
+
+    # Recovery actions
+    max_recovery_attempts: int = 3
+    recovery_cooldown_seconds: float = 120.0
+
+
+class QueuePopulatorWatchdog:
+    """Watchdog to detect and recover from stuck queue populator (January 14, 2026).
+
+    Monitors the queue populator for signs of being stuck:
+    1. High backpressure duration without recovery
+    2. Zero drain rate indicating cluster partition
+    3. Stuck in backoff loop for too long
+
+    When detected, triggers recovery actions:
+    1. Emit QUEUE_POPULATOR_STUCK event
+    2. Force reset of backoff state
+    3. Trigger P2P health check
+    """
+
+    def __init__(self, config: QueuePopulatorWatchdogConfig | None = None):
+        self.config = config or QueuePopulatorWatchdogConfig()
+
+        # State tracking
+        self._last_check_time: float = 0.0
+        self._last_successful_populate: float = time.time()
+        self._last_drain_activity: float = time.time()
+        self._recovery_attempts: int = 0
+        self._last_recovery_time: float = 0.0
+
+        # Previous metrics for comparison
+        self._prev_queue_depth: int = 0
+        self._prev_items_added: int = 0
+
+    def check(self, populator: Any) -> dict[str, Any]:
+        """Check queue populator health and trigger recovery if needed.
+
+        Args:
+            populator: UnifiedQueuePopulator instance
+
+        Returns:
+            Health check result dict
+        """
+        now = time.time()
+
+        # Rate limit checks
+        if now - self._last_check_time < self.config.check_interval_seconds:
+            return {"status": "skipped", "reason": "interval_not_elapsed"}
+
+        self._last_check_time = now
+
+        # Get health metrics from populator
+        try:
+            metrics = populator.get_health_metrics()
+        except AttributeError:
+            return {"status": "error", "reason": "populator_no_health_metrics"}
+
+        result = {
+            "status": "healthy",
+            "metrics": metrics,
+            "stuck_detected": False,
+            "recovery_triggered": False,
+        }
+
+        # Check for stuck conditions
+        is_stuck = False
+        stuck_reason = None
+
+        # Condition 1: High backpressure with no drain
+        if metrics.get("partition_detected", False):
+            partition_duration = metrics.get("partition_duration_seconds", 0)
+            if partition_duration > self.config.zero_drain_threshold_seconds:
+                is_stuck = True
+                stuck_reason = f"partition_detected_for_{partition_duration:.0f}s"
+
+        # Condition 2: Stuck in backoff for too long
+        if metrics.get("backoff_active", False):
+            consecutive_hits = metrics.get("consecutive_hard_limit_hits", 0)
+            if consecutive_hits > 10:  # Arbitrary high threshold
+                is_stuck = True
+                stuck_reason = f"stuck_in_backoff_{consecutive_hits}_hits"
+
+        # Condition 3: Circuit breaker stuck open
+        circuit_state = metrics.get("circuit_state", "closed")
+        if circuit_state == "open":
+            # Check how long it's been open
+            failure_count = metrics.get("circuit_failure_count", 0)
+            if failure_count > 15:  # Many failures
+                is_stuck = True
+                stuck_reason = f"circuit_breaker_stuck_{failure_count}_failures"
+
+        # Condition 4: Zero drain rate with high queue depth
+        drain_rate = metrics.get("drain_rate_per_minute", 0)
+        queue_depth = metrics.get("queue_depth", 0)
+        if drain_rate == 0 and queue_depth > 100:
+            # Check if this has persisted
+            if now - self._last_drain_activity > self.config.zero_drain_threshold_seconds:
+                is_stuck = True
+                stuck_reason = f"zero_drain_with_queue_{queue_depth}"
+        else:
+            self._last_drain_activity = now
+
+        result["stuck_detected"] = is_stuck
+        if stuck_reason:
+            result["stuck_reason"] = stuck_reason
+
+        # Trigger recovery if stuck
+        if is_stuck:
+            result["recovery_triggered"] = self._maybe_trigger_recovery(
+                populator, stuck_reason, metrics
+            )
+
+        return result
+
+    def _maybe_trigger_recovery(
+        self, populator: Any, reason: str, metrics: dict[str, Any]
+    ) -> bool:
+        """Maybe trigger recovery based on cooldown and attempt limits.
+
+        Returns:
+            True if recovery was triggered
+        """
+        now = time.time()
+
+        # Check cooldown
+        if now - self._last_recovery_time < self.config.recovery_cooldown_seconds:
+            logger.warning(
+                f"[QueuePopulatorWatchdog] Stuck detected ({reason}) but in cooldown"
+            )
+            return False
+
+        # Check attempt limit
+        if self._recovery_attempts >= self.config.max_recovery_attempts:
+            logger.error(
+                f"[QueuePopulatorWatchdog] Max recovery attempts reached "
+                f"({self._recovery_attempts}/{self.config.max_recovery_attempts})"
+            )
+            return False
+
+        # Trigger recovery
+        self._recovery_attempts += 1
+        self._last_recovery_time = now
+
+        logger.error(
+            f"[QueuePopulatorWatchdog] STUCK DETECTED: {reason}. "
+            f"Triggering recovery (attempt {self._recovery_attempts})"
+        )
+
+        # Emit event
+        try:
+            from app.coordination.event_emission_helpers import safe_emit_event
+            safe_emit_event(
+                event_type="QUEUE_POPULATOR_STUCK",
+                payload={
+                    "reason": reason,
+                    "metrics": metrics,
+                    "recovery_attempt": self._recovery_attempts,
+                },
+                log_before=True,
+                log_level=logging.ERROR,
+                context="queue_populator_watchdog",
+            )
+        except ImportError:
+            pass
+
+        # Reset backoff state
+        try:
+            populator._reset_backoff()
+            logger.info("[QueuePopulatorWatchdog] Reset backoff state")
+        except AttributeError:
+            pass
+
+        # Reset circuit breaker if stuck open
+        try:
+            if hasattr(populator, '_circuit_state') and hasattr(populator, '_CircuitState'):
+                populator._circuit_state = populator._CircuitState.HALF_OPEN
+                populator._circuit_half_open_successes = 0
+                logger.info("[QueuePopulatorWatchdog] Reset circuit breaker to HALF_OPEN")
+        except AttributeError:
+            pass
+
+        return True
+
+    def record_successful_populate(self, items_added: int) -> None:
+        """Record a successful populate call.
+
+        Args:
+            items_added: Number of items added to queue
+        """
+        self._last_successful_populate = time.time()
+        self._prev_items_added = items_added
+
+        # Reset recovery attempts on success
+        if items_added > 0:
+            self._recovery_attempts = 0
+
+    def get_status(self) -> dict[str, Any]:
+        """Get watchdog status for monitoring."""
+        now = time.time()
+        return {
+            "last_check_time": self._last_check_time,
+            "last_successful_populate": self._last_successful_populate,
+            "seconds_since_success": now - self._last_successful_populate,
+            "last_drain_activity": self._last_drain_activity,
+            "seconds_since_drain": now - self._last_drain_activity,
+            "recovery_attempts": self._recovery_attempts,
+            "max_recovery_attempts": self.config.max_recovery_attempts,
+            "last_recovery_time": self._last_recovery_time,
+        }
+
+
 class MasterLoopController:
     """Single daemon managing all automation.
 
@@ -308,6 +528,10 @@ class MasterLoopController:
         self._resource_manager = None
         self._feedback_controller = None
         self._pipeline_orchestrator = None
+
+        # Queue populator watchdog (January 14, 2026)
+        self._queue_populator_watchdog = QueuePopulatorWatchdog()
+        self._queue_populator = None  # Lazy-loaded
 
         # State persistence (Gap 3 fix: Dec 2025)
         self._db_path = STATE_DB_PATH
@@ -359,6 +583,17 @@ class MasterLoopController:
             from app.coordination.data_pipeline_orchestrator import get_pipeline_orchestrator
             self._pipeline_orchestrator = get_pipeline_orchestrator()
         return self._pipeline_orchestrator
+
+    @property
+    def queue_populator(self):
+        """Get UnifiedQueuePopulator (lazy load) for watchdog integration."""
+        if self._queue_populator is None:
+            try:
+                from app.coordination.unified_queue_populator import get_queue_populator
+                self._queue_populator = get_queue_populator()
+            except ImportError:
+                pass
+        return self._queue_populator
 
     # =========================================================================
     # State Persistence (Gap 3 fix: Dec 2025)
@@ -1132,6 +1367,15 @@ class MasterLoopController:
                         logger.warning("[MasterLoop] Voter quorum unhealthy - triggering immediate P2P recovery")
                         await self._run_cluster_p2p_recovery()
                         self._last_cluster_p2p_recovery = now
+
+                    # 11. Queue populator watchdog check (January 14, 2026)
+                    # Detect and recover from stuck queue populator
+                    if self.queue_populator is not None:
+                        watchdog_result = self._queue_populator_watchdog.check(self.queue_populator)
+                        if watchdog_result.get("stuck_detected"):
+                            logger.warning(
+                                f"[MasterLoop] Queue populator stuck: {watchdog_result.get('stuck_reason')}"
+                            )
 
                 except asyncio.CancelledError:
                     # Allow cancellation to propagate for clean shutdown
@@ -2494,9 +2738,35 @@ class MasterLoopController:
                     f"intensity={state.training_intensity}"
                 )
 
+        # January 14, 2026: Log queue populator health metrics
+        if self.queue_populator is not None:
+            try:
+                queue_metrics = self.queue_populator.get_health_metrics()
+                watchdog_status = self._queue_populator_watchdog.get_status()
+
+                logger.info(
+                    f"[MasterLoop] Queue: "
+                    f"depth={queue_metrics.get('queue_depth', 'N/A')}, "
+                    f"bp={queue_metrics.get('backpressure_level', 'N/A')}, "
+                    f"drain={queue_metrics.get('drain_rate_per_minute', 0):.1f}/min, "
+                    f"circuit={queue_metrics.get('circuit_state', 'N/A')}, "
+                    f"partition={queue_metrics.get('partition_detected', False)}, "
+                    f"backoff={queue_metrics.get('backoff_active', False)}"
+                )
+
+                # Log watchdog status if there are concerns
+                if watchdog_status.get("recovery_attempts", 0) > 0:
+                    logger.warning(
+                        f"[MasterLoop] Watchdog: "
+                        f"recovery_attempts={watchdog_status['recovery_attempts']}, "
+                        f"seconds_since_drain={watchdog_status.get('seconds_since_drain', 0):.0f}"
+                    )
+            except Exception as e:
+                logger.debug(f"[MasterLoop] Failed to get queue metrics: {e}")
+
     def get_status(self) -> dict[str, Any]:
         """Get current status as dict."""
-        return {
+        status = {
             "running": self._running,
             "active_configs": self.active_configs,
             "dry_run": self.dry_run,
@@ -2511,6 +2781,16 @@ class MasterLoopController:
                 for cfg, state in self._states.items()
             },
         }
+
+        # January 14, 2026: Add queue health metrics
+        if self.queue_populator is not None:
+            try:
+                status["queue_health"] = self.queue_populator.get_health_metrics()
+                status["queue_watchdog"] = self._queue_populator_watchdog.get_status()
+            except Exception:
+                pass
+
+        return status
 
 
 # =============================================================================

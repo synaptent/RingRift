@@ -184,6 +184,33 @@ class QueuePopulatorConfig:
     trickle_dynamic_scaling: bool = True  # Scale trickle count based on active nodes
     trickle_max_items: int = 100  # Maximum items even for very large clusters
 
+    # === Backoff Settings (January 14, 2026) ===
+    # Exponential backoff when queue is at hard limit prevents tight loops
+    backoff_enabled: bool = True
+    backoff_initial_seconds: float = 1.0  # Initial backoff duration
+    backoff_max_seconds: float = 60.0  # Maximum backoff duration
+    backoff_multiplier: float = 2.0  # Exponential growth factor
+    backoff_jitter: float = 0.1  # Random jitter factor (0.1 = ±10%)
+
+    # === Health Logging Settings (January 14, 2026) ===
+    # Periodic health logging during backpressure to maintain visibility
+    health_log_interval_seconds: float = 30.0  # Log health every N seconds during backpressure
+    health_log_always: bool = False  # Log health even during normal operation
+
+    # === Partition Detection Settings (January 14, 2026) ===
+    # Detect cluster partition when queue drain rate drops to zero
+    partition_detection_enabled: bool = True
+    partition_drain_window_seconds: float = 120.0  # Time window to measure drain rate
+    partition_min_completions: int = 1  # Minimum completions in window to be "healthy"
+    partition_alert_threshold: int = 3  # Consecutive windows with no drain = partition alert
+
+    # === Circuit Breaker Settings (January 14, 2026) ===
+    # Circuit breaker to prevent overwhelming a failing queue
+    circuit_breaker_enabled: bool = True
+    circuit_breaker_failure_threshold: int = 5  # Failures before opening circuit
+    circuit_breaker_reset_timeout_seconds: float = 30.0  # Time before half-open state
+    circuit_breaker_half_open_successes: int = 2  # Successes to close circuit
+
 
 # =============================================================================
 # State Tracking
@@ -388,6 +415,36 @@ class UnifiedQueuePopulator:
         # Queue exhaustion event tracking (January 2026 - Phase 3 Task 4)
         # Tracks if queue was previously exhausted for hysteresis-based event emission
         self._was_queue_exhausted: bool = False
+
+        # === Backoff State (January 14, 2026) ===
+        # Exponential backoff to prevent tight loops when queue is at hard limit
+        self._backoff_current_seconds: float = 0.0
+        self._backoff_until: float = 0.0  # Unix timestamp when backoff expires
+        self._consecutive_hard_limit_hits: int = 0
+
+        # === Health Logging State (January 14, 2026) ===
+        self._last_health_log_time: float = 0.0
+        self._backpressure_start_time: float = 0.0
+        self._total_backpressure_duration: float = 0.0
+
+        # === Partition Detection State (January 14, 2026) ===
+        # Track queue drain rate to detect cluster partitions
+        self._completion_timestamps: list[float] = []
+        self._consecutive_zero_drain_windows: int = 0
+        self._partition_detected: bool = False
+        self._partition_detected_at: float = 0.0
+
+        # === Circuit Breaker State (January 14, 2026) ===
+        from enum import Enum as PyEnum
+        class _CircuitState(PyEnum):
+            CLOSED = "closed"  # Normal operation
+            OPEN = "open"  # Failing, reject operations
+            HALF_OPEN = "half_open"  # Testing if recovered
+        self._CircuitState = _CircuitState
+        self._circuit_state: _CircuitState = _CircuitState.CLOSED
+        self._circuit_failure_count: int = 0
+        self._circuit_opened_at: float = 0.0
+        self._circuit_half_open_successes: int = 0
 
     def _scale_queue_depth_to_cluster(self) -> None:
         """Scale min_queue_depth based on cluster size."""
@@ -901,6 +958,312 @@ class UnifiedQueuePopulator:
         # Update state for next check
         self._was_queue_exhausted = is_exhausted
 
+    # =========================================================================
+    # Backoff, Health, Partition Detection, and Circuit Breaker (Jan 14, 2026)
+    # =========================================================================
+
+    def _calculate_backoff(self) -> float:
+        """Calculate next backoff duration with exponential growth and jitter.
+
+        Returns:
+            Next backoff duration in seconds.
+        """
+        import random
+
+        if not self.config.backoff_enabled:
+            return 0.0
+
+        if self._backoff_current_seconds == 0.0:
+            self._backoff_current_seconds = self.config.backoff_initial_seconds
+        else:
+            self._backoff_current_seconds = min(
+                self._backoff_current_seconds * self.config.backoff_multiplier,
+                self.config.backoff_max_seconds,
+            )
+
+        # Apply jitter: ±jitter% randomization
+        jitter_range = self._backoff_current_seconds * self.config.backoff_jitter
+        jitter = random.uniform(-jitter_range, jitter_range)
+
+        return self._backoff_current_seconds + jitter
+
+    def _apply_backoff(self) -> None:
+        """Apply exponential backoff after hitting queue hard limit."""
+        backoff_duration = self._calculate_backoff()
+        self._backoff_until = time.time() + backoff_duration
+        self._consecutive_hard_limit_hits += 1
+
+        logger.warning(
+            f"[QueuePopulator] Backing off for {backoff_duration:.1f}s "
+            f"(consecutive hard limit hits: {self._consecutive_hard_limit_hits}, "
+            f"current backoff: {self._backoff_current_seconds:.1f}s)"
+        )
+
+        # Emit event for monitoring
+        safe_emit_event(
+            event_type="QUEUE_POPULATOR_BACKOFF",
+            payload={
+                "backoff_seconds": backoff_duration,
+                "consecutive_hits": self._consecutive_hard_limit_hits,
+                "backoff_level": self._backoff_current_seconds,
+            },
+            log_before=False,
+            context="queue_populator_backoff",
+        )
+
+    def _reset_backoff(self) -> None:
+        """Reset backoff state after successful operation."""
+        if self._backoff_current_seconds > 0.0:
+            logger.info(
+                f"[QueuePopulator] Backoff reset after {self._consecutive_hard_limit_hits} "
+                f"consecutive hard limit hits"
+            )
+        self._backoff_current_seconds = 0.0
+        self._backoff_until = 0.0
+        self._consecutive_hard_limit_hits = 0
+
+    def _is_backing_off(self) -> bool:
+        """Check if currently in backoff period."""
+        if not self.config.backoff_enabled:
+            return False
+        return time.time() < self._backoff_until
+
+    def _log_health_status(self, force: bool = False) -> None:
+        """Log health status periodically during backpressure.
+
+        Args:
+            force: If True, log regardless of interval.
+        """
+        now = time.time()
+        interval = self.config.health_log_interval_seconds
+
+        if not force and (now - self._last_health_log_time) < interval:
+            return
+
+        self._last_health_log_time = now
+
+        # Calculate backpressure duration
+        bp_duration = 0.0
+        if self._backpressure_start_time > 0:
+            bp_duration = now - self._backpressure_start_time
+
+        queue_depth = self.get_current_queue_depth()
+        bp_level, _ = self._check_backpressure()
+
+        # Get drain rate
+        drain_rate = self._calculate_drain_rate()
+
+        logger.info(
+            f"[QueuePopulator] HEALTH: queue_depth={queue_depth}, "
+            f"backpressure={bp_level.value}, bp_duration={bp_duration:.1f}s, "
+            f"drain_rate={drain_rate:.2f}/min, "
+            f"partition_detected={self._partition_detected}, "
+            f"circuit_state={self._circuit_state.value if hasattr(self, '_circuit_state') else 'unknown'}, "
+            f"backoff_until={self._backoff_until:.1f}, "
+            f"consecutive_hard_hits={self._consecutive_hard_limit_hits}"
+        )
+
+    def record_completion(self, timestamp: float | None = None) -> None:
+        """Record a work item completion for drain rate calculation.
+
+        Args:
+            timestamp: Unix timestamp of completion. Uses current time if None.
+        """
+        ts = timestamp or time.time()
+        self._completion_timestamps.append(ts)
+
+        # Prune old timestamps (keep last 5 minutes for analysis)
+        cutoff = ts - 300.0
+        self._completion_timestamps = [t for t in self._completion_timestamps if t > cutoff]
+
+    def _calculate_drain_rate(self) -> float:
+        """Calculate queue drain rate (completions per minute).
+
+        Returns:
+            Drain rate in completions per minute.
+        """
+        if not self._completion_timestamps:
+            return 0.0
+
+        now = time.time()
+        window = self.config.partition_drain_window_seconds
+        cutoff = now - window
+
+        completions_in_window = sum(1 for t in self._completion_timestamps if t > cutoff)
+        # Convert to per-minute rate
+        return (completions_in_window / window) * 60.0
+
+    def _check_partition(self) -> bool:
+        """Check for cluster partition based on queue drain rate.
+
+        Returns:
+            True if partition is detected.
+        """
+        if not self.config.partition_detection_enabled:
+            return False
+
+        now = time.time()
+        window = self.config.partition_drain_window_seconds
+        cutoff = now - window
+
+        completions_in_window = sum(1 for t in self._completion_timestamps if t > cutoff)
+
+        if completions_in_window < self.config.partition_min_completions:
+            self._consecutive_zero_drain_windows += 1
+        else:
+            self._consecutive_zero_drain_windows = 0
+            if self._partition_detected:
+                # Partition recovered
+                partition_duration = now - self._partition_detected_at
+                logger.info(
+                    f"[QueuePopulator] Partition RECOVERED after {partition_duration:.1f}s "
+                    f"(drain rate: {self._calculate_drain_rate():.2f}/min)"
+                )
+                safe_emit_event(
+                    event_type="CLUSTER_PARTITION_RECOVERED",
+                    payload={
+                        "partition_duration_seconds": partition_duration,
+                        "drain_rate": self._calculate_drain_rate(),
+                    },
+                    log_before=False,
+                    context="queue_populator_partition",
+                )
+            self._partition_detected = False
+            self._partition_detected_at = 0.0
+
+        if self._consecutive_zero_drain_windows >= self.config.partition_alert_threshold:
+            if not self._partition_detected:
+                # New partition detected
+                self._partition_detected = True
+                self._partition_detected_at = now
+                logger.error(
+                    f"[QueuePopulator] CLUSTER PARTITION DETECTED: "
+                    f"No queue drain for {self._consecutive_zero_drain_windows} consecutive windows "
+                    f"({window * self._consecutive_zero_drain_windows:.0f}s). "
+                    f"Workers may be unreachable."
+                )
+                safe_emit_event(
+                    event_type="CLUSTER_PARTITION_DETECTED",
+                    payload={
+                        "consecutive_zero_windows": self._consecutive_zero_drain_windows,
+                        "window_seconds": window,
+                        "queue_depth": self.get_current_queue_depth(),
+                    },
+                    log_before=True,
+                    log_level=logging.ERROR,
+                    context="queue_populator_partition",
+                )
+
+        return self._partition_detected
+
+    def _circuit_breaker_allow(self) -> bool:
+        """Check if circuit breaker allows operation.
+
+        Returns:
+            True if operation is allowed.
+        """
+        if not self.config.circuit_breaker_enabled:
+            return True
+
+        now = time.time()
+
+        if self._circuit_state == self._CircuitState.CLOSED:
+            return True
+
+        if self._circuit_state == self._CircuitState.OPEN:
+            # Check if reset timeout has elapsed
+            if now - self._circuit_opened_at >= self.config.circuit_breaker_reset_timeout_seconds:
+                self._circuit_state = self._CircuitState.HALF_OPEN
+                self._circuit_half_open_successes = 0
+                logger.info("[QueuePopulator] Circuit breaker entering HALF_OPEN state")
+                return True
+            return False
+
+        if self._circuit_state == self._CircuitState.HALF_OPEN:
+            return True
+
+        return True
+
+    def _circuit_breaker_record_success(self) -> None:
+        """Record a successful operation for circuit breaker."""
+        if not self.config.circuit_breaker_enabled:
+            return
+
+        if self._circuit_state == self._CircuitState.HALF_OPEN:
+            self._circuit_half_open_successes += 1
+            if self._circuit_half_open_successes >= self.config.circuit_breaker_half_open_successes:
+                self._circuit_state = self._CircuitState.CLOSED
+                self._circuit_failure_count = 0
+                logger.info("[QueuePopulator] Circuit breaker CLOSED after recovery")
+                safe_emit_event(
+                    event_type="CIRCUIT_BREAKER_CLOSED",
+                    payload={"component": "queue_populator"},
+                    log_before=False,
+                    context="queue_populator_circuit",
+                )
+        elif self._circuit_state == self._CircuitState.CLOSED:
+            # Decay failure count on success
+            if self._circuit_failure_count > 0:
+                self._circuit_failure_count -= 1
+
+    def _circuit_breaker_record_failure(self) -> None:
+        """Record a failed operation for circuit breaker."""
+        if not self.config.circuit_breaker_enabled:
+            return
+
+        self._circuit_failure_count += 1
+
+        if self._circuit_state == self._CircuitState.HALF_OPEN:
+            # Immediate return to OPEN on failure during half-open
+            self._circuit_state = self._CircuitState.OPEN
+            self._circuit_opened_at = time.time()
+            logger.warning("[QueuePopulator] Circuit breaker REOPENED after half-open failure")
+
+        elif self._circuit_failure_count >= self.config.circuit_breaker_failure_threshold:
+            self._circuit_state = self._CircuitState.OPEN
+            self._circuit_opened_at = time.time()
+            logger.error(
+                f"[QueuePopulator] Circuit breaker OPENED after "
+                f"{self._circuit_failure_count} failures"
+            )
+            safe_emit_event(
+                event_type="CIRCUIT_BREAKER_OPENED",
+                payload={
+                    "component": "queue_populator",
+                    "failure_count": self._circuit_failure_count,
+                },
+                log_before=True,
+                log_level=logging.ERROR,
+                context="queue_populator_circuit",
+            )
+
+    def get_health_metrics(self) -> dict[str, Any]:
+        """Get current health metrics for monitoring.
+
+        Returns:
+            Dictionary with health metrics.
+        """
+        now = time.time()
+        bp_level, reduction_factor = self._check_backpressure()
+
+        return {
+            "queue_depth": self.get_current_queue_depth(),
+            "backpressure_level": bp_level.value,
+            "backpressure_reduction_factor": reduction_factor,
+            "backoff_active": self._is_backing_off(),
+            "backoff_current_seconds": self._backoff_current_seconds,
+            "backoff_remaining_seconds": max(0, self._backoff_until - now),
+            "consecutive_hard_limit_hits": self._consecutive_hard_limit_hits,
+            "drain_rate_per_minute": self._calculate_drain_rate(),
+            "partition_detected": self._partition_detected,
+            "partition_duration_seconds": (now - self._partition_detected_at) if self._partition_detected else 0,
+            "consecutive_zero_drain_windows": self._consecutive_zero_drain_windows,
+            "circuit_state": self._circuit_state.value if hasattr(self, '_circuit_state') else "unknown",
+            "circuit_failure_count": self._circuit_failure_count,
+            "cluster_health_factor": self._cluster_health_factor,
+            "dead_nodes_count": len(self._dead_nodes),
+        }
+
     def _get_scheduler_priorities(self) -> dict[str, float]:
         """Get priority scores from the SelfplayScheduler."""
         if self._selfplay_scheduler is None:
@@ -1235,6 +1598,22 @@ class UnifiedQueuePopulator:
             logger.warning("No work queue set, cannot populate")
             return 0
 
+        # === January 14, 2026: Backoff check ===
+        # If we're in a backoff period, skip population
+        if self._is_backing_off():
+            remaining = self._backoff_until - time.time()
+            logger.debug(
+                f"[QueuePopulator] In backoff period, {remaining:.1f}s remaining"
+            )
+            self._log_health_status()  # Log health during backoff
+            return 0
+
+        # === January 14, 2026: Circuit breaker check ===
+        if not self._circuit_breaker_allow():
+            logger.warning("[QueuePopulator] Circuit breaker OPEN, skipping population")
+            self._log_health_status()
+            return 0
+
         # January 13, 2026: Check if any workers can claim work
         # If all circuit breakers are open, skip population to prevent queue accumulation
         claimable_workers = self._count_claimable_workers()
@@ -1371,6 +1750,14 @@ class UnifiedQueuePopulator:
                 self._queued_work_ids.add(item.work_id)
                 target.pending_selfplay_count += 1
                 added += 1
+            except RuntimeError as e:
+                # January 14, 2026: Detect hard limit hit and apply backoff
+                if "hard limit" in str(e).lower() or "BACKPRESSURE" in str(e):
+                    self._apply_backoff()
+                    self._circuit_breaker_record_failure()
+                    logger.warning(f"[QueuePopulator] Queue hard limit hit, entering backoff: {e}")
+                    break  # Stop trying to add more items
+                logger.error(f"Failed to add selfplay item: {e}")
             except Exception as e:
                 logger.error(f"Failed to add selfplay item: {e}")
 
@@ -1407,6 +1794,12 @@ class UnifiedQueuePopulator:
                         self._queued_work_ids.add(selfplay_item.work_id)
                         target.pending_selfplay_count += 1
                         added += 1
+                    except RuntimeError as sp_err:
+                        if "hard limit" in str(sp_err).lower() or "BACKPRESSURE" in str(sp_err):
+                            self._apply_backoff()
+                            self._circuit_breaker_record_failure()
+                            break
+                        logger.error(f"Failed to add replacement selfplay item: {sp_err}")
                     except Exception as sp_err:
                         logger.error(f"Failed to add replacement selfplay item: {sp_err}")
                     continue
@@ -1420,6 +1813,12 @@ class UnifiedQueuePopulator:
                 self._queued_work_ids.add(item.work_id)
                 added += 1
                 training_added += 1
+            except RuntimeError as e:
+                if "hard limit" in str(e).lower() or "BACKPRESSURE" in str(e):
+                    self._apply_backoff()
+                    self._circuit_breaker_record_failure()
+                    break
+                logger.error(f"Failed to add training item: {e}")
             except Exception as e:
                 logger.error(f"Failed to add training item: {e}")
 
@@ -1441,6 +1840,12 @@ class UnifiedQueuePopulator:
                 self._work_queue.add_work(item)
                 self._queued_work_ids.add(item.work_id)
                 added += 1
+            except RuntimeError as e:
+                if "hard limit" in str(e).lower() or "BACKPRESSURE" in str(e):
+                    self._apply_backoff()
+                    self._circuit_breaker_record_failure()
+                    break
+                logger.error(f"Failed to add tournament item: {e}")
             except Exception as e:
                 logger.error(f"Failed to add tournament item: {e}")
 
@@ -1462,6 +1867,12 @@ class UnifiedQueuePopulator:
                         added += 1
                         sweep_added += 1
                         break
+                    except RuntimeError as e:
+                        if "hard limit" in str(e).lower() or "BACKPRESSURE" in str(e):
+                            self._apply_backoff()
+                            self._circuit_breaker_record_failure()
+                            break
+                        logger.error(f"Failed to add sweep item: {e}")
                     except Exception as e:
                         logger.error(f"Failed to add sweep item: {e}")
 
@@ -1482,6 +1893,18 @@ class UnifiedQueuePopulator:
         # January 2026 - Phase 3 Task 4: Check if queue is exhausted after population
         # This triggers UnderutilizationRecoveryHandler if the queue is empty
         self._maybe_emit_queue_exhausted_event()
+
+        # === January 14, 2026: Post-populate checks ===
+        # Record success with circuit breaker
+        if added > 0:
+            self._circuit_breaker_record_success()
+            self._reset_backoff()  # Reset backoff on successful population
+
+        # Check for cluster partition (queue not draining)
+        self._check_partition()
+
+        # Log health status periodically
+        self._log_health_status()
 
         return added
 
