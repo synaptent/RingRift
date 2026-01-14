@@ -92,10 +92,22 @@ export function useBackendBoardSelection(
     setValidTargets([]);
   }, []);
 
-  // Approximate must-move stack highlighting: if all movement/capture moves
-  // originate from the same stack, treat that as the forced origin.
+  // Must-move stack highlighting: prioritize server-provided mustMoveFromStackKey
+  // (set after ring placement), otherwise infer from validMoves when all moves
+  // originate from the same stack.
   const mustMoveFrom: Position | undefined = useMemo(() => {
-    if (!Array.isArray(validMoves) || !gameState) return undefined;
+    if (!gameState) return undefined;
+
+    // Priority 1: Use server-provided mustMoveFromStackKey (set after ring placement)
+    if (gameState.mustMoveFromStackKey) {
+      const [x, y] = gameState.mustMoveFromStackKey.split(',').map(Number);
+      if (!isNaN(x) && !isNaN(y)) {
+        return { x, y };
+      }
+    }
+
+    // Priority 2: Infer from validMoves (all moves from same origin)
+    if (!Array.isArray(validMoves)) return undefined;
     if (gameState.currentPhase !== 'movement' && gameState.currentPhase !== 'capture') {
       return undefined;
     }
@@ -168,6 +180,104 @@ export function useBackendBoardSelection(
         setValidTargets((prev) => (prev.length === 0 ? prev : []));
       }
     }
+  }, [gameState?.currentPhase, validMoves, gameState]);
+
+  // Auto-populate selection when entering chain_capture phase.
+  // This ensures the player sees the next capture source and valid targets
+  // highlighted automatically, matching sandbox behavior.
+  useEffect(() => {
+    if (!gameState || gameState.currentPhase !== 'chain_capture') return;
+    if (!Array.isArray(validMoves) || validMoves.length === 0) return;
+
+    // Derive chain capture context from validMoves
+    const chainMoves = validMoves.filter(
+      (m) => m.type === 'continue_capture_segment' || m.type === 'overtaking_capture'
+    );
+    if (chainMoves.length === 0) return;
+
+    // Set the capture source as selected
+    const from = chainMoves[0]?.from;
+    if (from) {
+      setSelected((prev) => {
+        if (prev && positionsEqual(prev, from)) return prev;
+        return from;
+      });
+    }
+
+    // Set valid landings as targets
+    const landings = chainMoves.map((m) => m.to).filter((t): t is Position => t !== undefined);
+    setValidTargets((prev) => {
+      if (
+        prev.length === landings.length &&
+        prev.every((p) => landings.some((l) => positionsEqual(p, l)))
+      ) {
+        return prev;
+      }
+      return landings;
+    });
+  }, [gameState?.currentPhase, validMoves, gameState]);
+
+  // Auto-select mustMoveFrom stack during movement phase (e.g., after ring placement).
+  // This enables click-to-move: user places ring, stack is auto-selected, user clicks target.
+  useEffect(() => {
+    if (!gameState || gameState.currentPhase !== 'movement') return;
+    if (!mustMoveFrom) return;
+    if (!Array.isArray(validMoves) || validMoves.length === 0) return;
+
+    // Auto-select the mustMoveFrom position
+    setSelected((prev) => {
+      if (prev && positionsEqual(prev, mustMoveFrom)) return prev;
+      return mustMoveFrom;
+    });
+
+    // Highlight valid landing positions for this stack
+    const landings = validMoves
+      .filter(
+        (m) =>
+          (m.type === 'move_stack' || m.type === 'overtaking_capture') &&
+          m.from &&
+          positionsEqual(m.from, mustMoveFrom)
+      )
+      .map((m) => m.to)
+      .filter((t): t is Position => t !== undefined);
+
+    setValidTargets((prev) => {
+      if (
+        prev.length === landings.length &&
+        prev.every((p) => landings.some((l) => positionsEqual(p, l)))
+      ) {
+        return prev;
+      }
+      return landings;
+    });
+  }, [gameState?.currentPhase, validMoves, mustMoveFrom, gameState]);
+
+  // Auto-highlight elimination targets during elimination phases.
+  // This ensures players see which stacks they can click to eliminate rings from.
+  useEffect(() => {
+    if (!gameState) return;
+
+    const eliminationPhases = ['forced_elimination', 'line_processing', 'territory_processing'];
+    if (!eliminationPhases.includes(gameState.currentPhase)) return;
+    if (!Array.isArray(validMoves) || validMoves.length === 0) return;
+
+    // Find elimination moves and highlight their target positions
+    const elimMoves = validMoves.filter((m) => m.type === 'eliminate_rings_from_stack' && m.to);
+    if (elimMoves.length === 0) return;
+
+    const targets = elimMoves.map((m) => m.to).filter((t): t is Position => t !== undefined);
+    setValidTargets((prev) => {
+      if (
+        prev.length === targets.length &&
+        prev.every((p) => targets.some((t) => positionsEqual(p, t)))
+      ) {
+        return prev;
+      }
+      return targets;
+    });
+
+    // Clear selection since elimination is target-only (no source selection needed)
+    setSelected(undefined);
   }, [gameState?.currentPhase, validMoves, gameState]);
 
   return {
