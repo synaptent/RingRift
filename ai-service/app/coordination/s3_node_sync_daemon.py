@@ -1098,6 +1098,68 @@ class S3ConsolidationDaemon:
         return True
 
 
+# =============================================================================
+# HandlerBase wrapper for S3ConsolidationDaemon (January 2026)
+# =============================================================================
+
+
+class S3ConsolidationHandler(HandlerBase):
+    """HandlerBase wrapper for S3ConsolidationDaemon.
+
+    January 2026: Added for unified daemon lifecycle management.
+    Runs S3 consolidation on the coordinator node.
+    """
+
+    # Default cycle interval (1 hour for consolidation)
+    DEFAULT_CYCLE_INTERVAL = 3600.0
+
+    def __init__(
+        self,
+        config: S3NodeSyncConfig | None = None,
+        cycle_interval: float = DEFAULT_CYCLE_INTERVAL,
+    ):
+        super().__init__(
+            name="s3_consolidation",
+            cycle_interval=cycle_interval,
+        )
+        self._daemon = S3ConsolidationDaemon(config)
+
+    async def _run_cycle(self) -> None:
+        """Run one consolidation cycle."""
+        try:
+            await self._daemon._run_consolidation()
+            self._daemon._last_consolidation_time = time.time()
+            logger.debug(
+                f"[S3ConsolidationHandler] Cycle complete: "
+                f"{self._daemon._nodes_consolidated} nodes, "
+                f"{self._daemon._models_consolidated} models"
+            )
+        except Exception as e:
+            logger.error(f"[S3ConsolidationHandler] Consolidation error: {e}")
+            self._daemon._consolidation_errors += 1
+
+    def _get_event_subscriptions(self) -> dict:
+        """Get event subscriptions for consolidation."""
+        return {
+            "MODEL_PROMOTED": self._on_model_promoted,
+            "TRAINING_COMPLETED": self._on_training_completed,
+        }
+
+    async def _on_model_promoted(self, event: dict) -> None:
+        """Handle model promotion - trigger consolidation."""
+        logger.info("[S3ConsolidationHandler] Model promoted, scheduling consolidation")
+        # Just log - next cycle will pick it up
+
+    async def _on_training_completed(self, event: dict) -> None:
+        """Handle training completion."""
+        config_key = event.get("config_key", "unknown")
+        logger.info(f"[S3ConsolidationHandler] Training completed for {config_key}")
+
+    def health_check(self) -> "HealthCheckResult":
+        """Health check delegating to wrapped daemon."""
+        return self._daemon.health_check()
+
+
 # Convenience functions for use in training scripts
 
 async def ensure_training_data_from_s3(config_key: str) -> bool:

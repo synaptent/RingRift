@@ -977,6 +977,70 @@ class DLQRetryDaemon:
         )
 
 
+# =============================================================================
+# HandlerBase Integration (January 2026)
+# =============================================================================
+
+try:
+    from app.coordination.handler_base import HandlerBase
+    from app.coordination.contracts import HealthCheckResult as HBHealthCheckResult
+
+    HAS_HANDLER_BASE = True
+except ImportError:
+    HAS_HANDLER_BASE = False
+
+if HAS_HANDLER_BASE:
+
+    class DLQRetryHandler(HandlerBase):
+        """HandlerBase wrapper for DLQRetryDaemon.
+
+        January 2026: Added for unified daemon lifecycle management.
+        Handles dead letter queue retry with exponential backoff.
+        """
+
+        def __init__(
+            self,
+            dlq: "DeadLetterQueue | None" = None,
+            cycle_interval: float = 60.0,
+            max_events_per_cycle: int = 10,
+            max_attempts: int = 5,
+            max_stale_hours: float = 168.0,
+        ):
+            super().__init__(
+                name="dlq_retry",
+                cycle_interval=cycle_interval,
+            )
+            self._daemon = DLQRetryDaemon(
+                dlq=dlq,
+                interval_seconds=cycle_interval,
+                max_events_per_cycle=max_events_per_cycle,
+                max_attempts=max_attempts,
+                max_stale_hours=max_stale_hours,
+            )
+
+        async def _run_cycle(self) -> None:
+            """Run one DLQ retry cycle."""
+            try:
+                await self._daemon._process_cycle()
+            except Exception as e:
+                logger.error(f"[DLQRetryHandler] Cycle error: {e}")
+
+        def _get_event_subscriptions(self) -> dict:
+            """Get event subscriptions for DLQ handler."""
+            return {
+                "EVENT_DELIVERY_FAILED": self._on_delivery_failed,
+            }
+
+        async def _on_delivery_failed(self, event: dict) -> None:
+            """Handle event delivery failure - logged for awareness."""
+            event_type = event.get("event_type", "unknown")
+            logger.debug(f"[DLQRetryHandler] Delivery failed for {event_type}")
+
+        def health_check(self) -> HBHealthCheckResult:
+            """Health check delegating to wrapped daemon."""
+            return self._daemon.health_check()
+
+
 # Daemon factory for DaemonManager integration
 def create_dlq_retry_daemon(
     interval_seconds: float = 60.0,

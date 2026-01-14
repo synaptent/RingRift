@@ -1128,6 +1128,129 @@ class ClusterMonitor:
         )
 
 
+# =============================================================================
+# HandlerBase Integration (January 2026)
+# =============================================================================
+
+try:
+    from app.coordination.handler_base import HandlerBase
+    from app.coordination.contracts import HealthCheckResult as HBHealthCheckResult
+
+    HAS_HANDLER_BASE = True
+except ImportError:
+    HAS_HANDLER_BASE = False
+
+if HAS_HANDLER_BASE:
+
+    class ClusterMonitorHandler(HandlerBase):
+        """HandlerBase wrapper for ClusterMonitor.
+
+        January 2026: Added for unified daemon lifecycle management.
+        Runs cluster status checks on a periodic cycle and emits events
+        for stalled nodes or degraded cluster health.
+        """
+
+        # Default check interval (60 seconds for cluster-wide status)
+        DEFAULT_CYCLE_INTERVAL = 60.0
+
+        def __init__(
+            self,
+            cycle_interval: float = DEFAULT_CYCLE_INTERVAL,
+            ssh_timeout: int = 15,
+        ):
+            super().__init__(
+                name="cluster_monitor",
+                cycle_interval=cycle_interval,
+            )
+            self._monitor = ClusterMonitor(ssh_timeout=ssh_timeout)
+            self._last_status: ClusterStatus | None = None
+
+        async def _run_cycle(self) -> None:
+            """Run one cluster status check cycle."""
+            try:
+                # Get cluster status (runs synchronously, wrap in thread)
+                status = await asyncio.to_thread(
+                    self._monitor.get_cluster_status,
+                    include_game_counts=True,
+                    include_training_status=True,
+                    include_disk_usage=True,
+                )
+                self._last_status = status
+
+                # Check for stalls and emit events
+                stalled_nodes = self._monitor._check_for_stalls(status)
+                if stalled_nodes:
+                    safe_emit_event(
+                        "CLUSTER_STALL_DETECTED",
+                        {
+                            "stalled_nodes": stalled_nodes,
+                            "active_nodes": status.active_nodes,
+                            "total_nodes": status.total_nodes,
+                        },
+                    )
+
+                # Emit health summary event
+                health_ratio = status.active_nodes / max(status.total_nodes, 1)
+                if health_ratio < 0.5:
+                    safe_emit_event(
+                        "CLUSTER_HEALTH_DEGRADED",
+                        {
+                            "health_ratio": health_ratio,
+                            "active_nodes": status.active_nodes,
+                            "total_nodes": status.total_nodes,
+                        },
+                    )
+
+                logger.debug(
+                    f"[ClusterMonitorHandler] Cycle complete: "
+                    f"{status.active_nodes}/{status.total_nodes} nodes active"
+                )
+
+            except Exception as e:
+                logger.error(f"[ClusterMonitorHandler] Cycle error: {e}")
+
+        def _get_event_subscriptions(self) -> dict:
+            """Get event subscriptions for cluster monitor."""
+            return {
+                "NODE_FAILED": self._on_node_failed,
+                "NODE_RECOVERED": self._on_node_recovered,
+            }
+
+        async def _on_node_failed(self, event: dict) -> None:
+            """Handle node failure - trigger immediate status check."""
+            node_id = event.get("node_id", "unknown")
+            logger.info(f"[ClusterMonitorHandler] Node {node_id} failed, scheduling check")
+            # Schedule immediate cycle
+            await self._run_cycle()
+
+        async def _on_node_recovered(self, event: dict) -> None:
+            """Handle node recovery - update status."""
+            node_id = event.get("node_id", "unknown")
+            logger.info(f"[ClusterMonitorHandler] Node {node_id} recovered")
+
+        def health_check(self) -> HBHealthCheckResult:
+            """Health check for DaemonManager integration."""
+            from app.coordination.protocols import CoordinatorStatus
+
+            is_healthy = self._last_status is not None
+            details = {
+                "has_status": self._last_status is not None,
+                "cycle_interval": self._cycle_interval,
+            }
+
+            if self._last_status:
+                details["active_nodes"] = self._last_status.active_nodes
+                details["total_nodes"] = self._last_status.total_nodes
+                details["total_games"] = self._last_status.total_games
+
+            return HBHealthCheckResult(
+                healthy=is_healthy,
+                status=CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.STARTING,
+                message=f"ClusterMonitorHandler: {'OK' if is_healthy else 'No status yet'}",
+                details=details,
+            )
+
+
 def main():
     """CLI entry point."""
     import argparse

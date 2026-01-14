@@ -1176,6 +1176,103 @@ class UnifiedFeedbackOrchestrator:
 
 
 # =============================================================================
+# HandlerBase Integration (January 2026)
+# =============================================================================
+
+try:
+    from app.coordination.handler_base import HandlerBase
+    from app.coordination.contracts import HealthCheckResult as HBHealthCheckResult
+
+    HAS_HANDLER_BASE = True
+except ImportError:
+    HAS_HANDLER_BASE = False
+
+if HAS_HANDLER_BASE:
+
+    class UnifiedFeedbackHandler(HandlerBase):
+        """HandlerBase wrapper for UnifiedFeedbackOrchestrator.
+
+        January 2026: Added for unified daemon lifecycle management.
+        The handler wraps the orchestrator and delegates to its event-driven logic.
+        """
+
+        # Default cycle interval (30 seconds for feedback signal updates)
+        DEFAULT_CYCLE_INTERVAL = 30.0
+
+        def __init__(
+            self,
+            config: FeedbackConfig | None = None,
+            cycle_interval: float = DEFAULT_CYCLE_INTERVAL,
+        ):
+            super().__init__(
+                name="unified_feedback",
+                cycle_interval=cycle_interval,
+            )
+            self._orchestrator = UnifiedFeedbackOrchestrator(config)
+
+        async def _run_cycle(self) -> None:
+            """Run one feedback check cycle.
+
+            The orchestrator is event-driven, so the cycle just ensures
+            it's running and does periodic health logging.
+            """
+            if not self._orchestrator._running:
+                await self._orchestrator.start()
+
+            # Log summary stats
+            stats = self._orchestrator.get_status()
+            logger.debug(
+                f"[UnifiedFeedbackHandler] Cycle: {stats.get('configs_tracked', 0)} configs, "
+                f"{stats.get('total_adjustments', 0)} total adjustments"
+            )
+
+        def _get_event_subscriptions(self) -> dict:
+            """Get event subscriptions.
+
+            Note: The orchestrator handles its own subscriptions internally.
+            This method provides additional handler-level hooks if needed.
+            """
+            return {
+                "ORCHESTRATOR_RESTART_REQUESTED": self._on_restart_requested,
+            }
+
+        async def _on_restart_requested(self, event: dict) -> None:
+            """Handle restart request - restart the orchestrator."""
+            logger.info("[UnifiedFeedbackHandler] Restart requested")
+            await self._orchestrator.stop()
+            await self._orchestrator.start()
+
+        def health_check(self) -> HBHealthCheckResult:
+            """Health check for DaemonManager integration."""
+            from app.coordination.protocols import CoordinatorStatus
+
+            is_healthy = self._orchestrator._running and self._orchestrator._subscribed
+            stats = self._orchestrator.get_status()
+
+            return HBHealthCheckResult(
+                healthy=is_healthy,
+                status=CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.STARTING,
+                message=f"UnifiedFeedbackHandler: {stats.get('configs_tracked', 0)} configs",
+                details={
+                    "running": self._orchestrator._running,
+                    "subscribed": self._orchestrator._subscribed,
+                    "configs_tracked": stats.get("configs_tracked", 0),
+                    "total_adjustments": stats.get("total_adjustments", 0),
+                },
+            )
+
+        async def start(self) -> None:
+            """Start both handler and orchestrator."""
+            await self._orchestrator.start()
+            await super().start()
+
+        async def stop(self) -> None:
+            """Stop both handler and orchestrator."""
+            await super().stop()
+            await self._orchestrator.stop()
+
+
+# =============================================================================
 # Singleton
 # =============================================================================
 
@@ -1219,3 +1316,7 @@ __all__ = [
     "get_unified_feedback",
     "reset_unified_feedback",
 ]
+
+# Add HandlerBase wrapper to exports if available
+if HAS_HANDLER_BASE:
+    __all__.append("UnifiedFeedbackHandler")
