@@ -46,16 +46,18 @@ logger = logging.getLogger(__name__)
 # Default configuration constants
 # Jan 5, 2026: Reduced thresholds for faster fallback during leader transitions
 # Previously: 5 min no-leader, 2 min starvation, 60s stable leader
-# Now: 60s no-leader, 30s starvation, 10s stable leader
-# This enables faster recovery during leader elections (typically 5-30 seconds)
-DEFAULT_NO_LEADER_THRESHOLD_SECONDS = 60.0  # 1 minute without leader (was 5 min)
+# Jan 13, 2026: Further reduced for aggressive GPU utilization
+# Previously: 60s no-leader, 30s starvation - GPU nodes sat idle too long
+# Now: 15s no-leader, 10s starvation - ensures GPUs start working within 25s
+# This eliminates extended idle periods during leader elections or queue drains
+DEFAULT_NO_LEADER_THRESHOLD_SECONDS = 15.0  # 15s without leader (was 60s)
 DEFAULT_QUEUE_STARVATION_THRESHOLD = 10  # Queue depth below which is "starved"
-DEFAULT_QUEUE_STARVATION_DURATION_SECONDS = 30.0  # 30 seconds of starvation (was 2 min)
+DEFAULT_QUEUE_STARVATION_DURATION_SECONDS = 10.0  # 10s of starvation (was 30s)
 DEFAULT_HEALTHY_QUEUE_DEPTH = 50  # Queue depth above which is "healthy"
-DEFAULT_LEADER_STABLE_DURATION_SECONDS = 10.0  # Leader stable for 10s to deactivate (was 60s)
+DEFAULT_LEADER_STABLE_DURATION_SECONDS = 5.0  # Leader stable for 5s to deactivate (was 10s)
 DEFAULT_LOCAL_QUEUE_TARGET = 20  # Target local queue size when activated
-DEFAULT_CHECK_INTERVAL_SECONDS = 30.0  # How often to check conditions
-DEFAULT_POPULATION_BATCH_SIZE = 5  # How many items to add per cycle
+DEFAULT_CHECK_INTERVAL_SECONDS = 15.0  # Check every 15s (was 30s)
+DEFAULT_POPULATION_BATCH_SIZE = 10  # Add more items per cycle (was 5)
 
 
 @dataclass
@@ -380,9 +382,11 @@ class AutonomousQueuePopulationLoop(BaseLoop):
 
         Jan 4, 2026: Refactored from _run_loop to match BaseLoop interface.
         Jan 5, 2026: Added selfplay_enabled check to prevent OOM on coordinator nodes.
+        Jan 13, 2026: Reduced grace period from 60s to 10s for faster GPU utilization.
         """
         # Grace period at startup to allow normal initialization
-        grace_period = 60.0  # 1 minute grace period
+        # 10 seconds is enough for P2P to connect and discover leader
+        grace_period = 10.0  # 10 seconds (was 60s - too long for GPU nodes)
         if not self._grace_period_complete:
             if time.time() - self._startup_time < grace_period:
                 return  # Skip this iteration during grace period

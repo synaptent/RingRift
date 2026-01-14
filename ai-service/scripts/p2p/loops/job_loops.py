@@ -306,11 +306,16 @@ class JobReaperLoop(BaseLoop):
 
 @dataclass
 class IdleDetectionConfig:
-    """Configuration for idle detection loop."""
+    """Configuration for idle detection loop.
+
+    Jan 13, 2026: Reduced idle_duration and check_interval for faster GPU utilization.
+    Previously: 60s threshold, 30s interval - nodes sat idle for up to 90s
+    Now: 15s threshold, 10s interval - nodes get work within 25s
+    """
 
     gpu_idle_threshold_percent: float = 10.0  # GPU utilization below this = idle
-    idle_duration_threshold_seconds: float = 60.0  # 1 minute (reduced from 15 min for faster dispatch)
-    check_interval_seconds: float = 30.0  # Check every 30 seconds
+    idle_duration_threshold_seconds: float = 15.0  # 15 seconds (was 60s - too slow)
+    check_interval_seconds: float = 10.0  # Check every 10 seconds (was 30s)
     min_nodes_to_keep: int = 2  # Never flag last N nodes as idle
 
     # Zombie detection: nodes with jobs but 0% GPU (stuck processes)
