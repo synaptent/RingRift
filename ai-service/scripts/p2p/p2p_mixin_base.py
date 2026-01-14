@@ -9,6 +9,7 @@ Shared Functionality:
 - Peer alive counting
 - Event emission with error handling
 - Configuration constant loading
+- Transport-aware peer requests with fallback (January 2026)
 
 Usage:
     class MyMixin(P2PMixinBase):
@@ -35,6 +36,7 @@ Consolidates patterns from: peer_manager.py, membership_mixin.py, leader_electio
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import importlib
 import logging
@@ -685,6 +687,219 @@ class P2PMixinBase:
                 alive.append(nid)
 
         return alive
+
+    # =========================================================================
+    # Transport-Aware Peer Requests (January 2026)
+    # =========================================================================
+    #
+    # These methods integrate the TransportAwareCircuitBreaker for peer
+    # communication, providing automatic transport fallback (Tailscale -> SSH
+    # -> HTTP -> Relay) when one transport fails.
+
+    def _get_transport_circuit_breaker(self) -> Any:
+        """Get the singleton transport circuit breaker.
+
+        Lazy import to avoid circular dependencies.
+
+        Returns:
+            TransportAwareCircuitBreaker instance, or None if unavailable
+        """
+        try:
+            from app.coordination.transport_circuit_breaker import (
+                get_transport_circuit_breaker,
+            )
+            return get_transport_circuit_breaker()
+        except ImportError:
+            return None
+
+    def _get_peer_transports(self, node_id: str) -> list[tuple[str, str]]:
+        """Get available transport addresses for a peer.
+
+        Args:
+            node_id: Target peer node ID
+
+        Returns:
+            List of (transport_type, address) tuples in priority order.
+            Example: [("tailscale", "100.71.89.91:8770"), ("ssh", "192.168.1.10:8770")]
+        """
+        transports = []
+
+        # Get peer IP mapping
+        ringrift_path = getattr(self, "ringrift_path", None)
+        if not ringrift_path:
+            return transports
+
+        rp = Path(ringrift_path)
+        if rp.name == "ai-service":
+            cfg_path = rp / "config" / "distributed_hosts.yaml"
+        else:
+            cfg_path = rp / "ai-service" / "config" / "distributed_hosts.yaml"
+
+        if not cfg_path.exists():
+            return transports
+
+        try:
+            import yaml
+            with open(cfg_path) as f:
+                config = yaml.safe_load(f) or {}
+
+            hosts = config.get("hosts", {})
+            host_config = hosts.get(node_id, {})
+
+            default_port = getattr(self, "port", 8770)
+
+            # Priority order: Tailscale, SSH, HTTP
+            ts_ip = host_config.get("tailscale_ip")
+            if ts_ip:
+                transports.append(("tailscale", f"{ts_ip}:{default_port}"))
+
+            ssh_host = host_config.get("ssh_host")
+            if ssh_host:
+                # Handle host:port format
+                if ":" in ssh_host and not ssh_host.count(":") > 1:  # Not IPv6
+                    transports.append(("ssh", f"http://{ssh_host}"))
+                else:
+                    transports.append(("ssh", f"http://{ssh_host}:{default_port}"))
+
+            # Fallback: check peers dict for advertised address
+            peers = getattr(self, "peers", {})
+            peer = peers.get(node_id)
+            if peer and hasattr(peer, "address"):
+                addr = peer.address
+                if addr and addr not in [t[1] for t in transports]:
+                    transports.append(("http", addr))
+
+        except Exception as e:
+            self._log_debug(f"Failed to get transports for {node_id}: {e}")
+
+        return transports
+
+    async def _request_peer_with_fallback(
+        self,
+        node_id: str,
+        endpoint: str,
+        method: str = "GET",
+        json_data: dict[str, Any] | None = None,
+        timeout: float = 10.0,
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        """Make HTTP request to peer with transport fallback.
+
+        Uses the TransportAwareCircuitBreaker to try transports in priority
+        order and record success/failure for adaptive routing.
+
+        Args:
+            node_id: Target peer node ID
+            endpoint: HTTP endpoint path (e.g., "/status", "/health")
+            method: HTTP method ("GET" or "POST")
+            json_data: JSON payload for POST requests
+            timeout: Request timeout in seconds
+
+        Returns:
+            Tuple of (response_dict, error_message).
+            On success: (response_dict, None)
+            On failure: (None, error_message)
+
+        Example:
+            # GET request
+            data, error = await self._request_peer_with_fallback(
+                "lambda-gh200-1", "/status"
+            )
+            if data:
+                print(f"Peer status: {data}")
+
+            # POST request
+            data, error = await self._request_peer_with_fallback(
+                "lambda-gh200-1", "/work/add",
+                method="POST",
+                json_data={"work_type": "selfplay", "priority": 100}
+            )
+        """
+        import aiohttp
+
+        breaker = self._get_transport_circuit_breaker()
+        transports = self._get_peer_transports(node_id)
+
+        if not transports:
+            return None, f"No transports available for {node_id}"
+
+        errors = []
+
+        for transport_type, base_url in transports:
+            # Check circuit breaker
+            if breaker and not breaker.can_use_transport(node_id, transport_type):
+                self._log_debug(f"Transport {transport_type} circuit open for {node_id}")
+                continue
+
+            # Build URL
+            if base_url.startswith("http"):
+                url = f"{base_url}{endpoint}"
+            else:
+                url = f"http://{base_url}{endpoint}"
+
+            try:
+                async with aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=timeout)
+                ) as session:
+                    if method.upper() == "POST":
+                        async with session.post(url, json=json_data) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                if breaker:
+                                    breaker.record_success(node_id, transport_type)
+                                return data, None
+                            else:
+                                error = f"HTTP {resp.status}"
+                    else:
+                        async with session.get(url) as resp:
+                            if resp.status == 200:
+                                data = await resp.json()
+                                if breaker:
+                                    breaker.record_success(node_id, transport_type)
+                                return data, None
+                            else:
+                                error = f"HTTP {resp.status}"
+
+                # Non-200 response
+                if breaker:
+                    breaker.record_failure(node_id, transport_type)
+                errors.append(f"{transport_type}: {error}")
+
+            except aiohttp.ClientError as e:
+                if breaker:
+                    breaker.record_failure(node_id, transport_type)
+                errors.append(f"{transport_type}: {type(e).__name__}")
+                self._log_debug(f"Transport {transport_type} failed for {node_id}: {e}")
+
+            except asyncio.TimeoutError:
+                if breaker:
+                    breaker.record_failure(node_id, transport_type)
+                errors.append(f"{transport_type}: timeout")
+                self._log_debug(f"Transport {transport_type} timed out for {node_id}")
+
+            except Exception as e:
+                if breaker:
+                    breaker.record_failure(node_id, transport_type)
+                errors.append(f"{transport_type}: {e}")
+                self._log_debug(f"Transport {transport_type} error for {node_id}: {e}")
+
+        # All transports failed
+        error_msg = f"All transports failed for {node_id}: {'; '.join(errors)}"
+        return None, error_msg
+
+    def _get_peer_transport_status(self, node_id: str) -> dict[str, Any]:
+        """Get transport circuit breaker status for a peer.
+
+        Args:
+            node_id: Target peer node ID
+
+        Returns:
+            Dict with transport status information
+        """
+        breaker = self._get_transport_circuit_breaker()
+        if not breaker:
+            return {"available": False, "reason": "circuit_breaker_unavailable"}
+
+        return breaker.get_node_status(node_id)
 
     # =========================================================================
     # Event Emission Helpers
