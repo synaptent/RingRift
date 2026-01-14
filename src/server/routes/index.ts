@@ -44,6 +44,36 @@ export const setupRoutes = (wsServer: WebSocketServer): Router => {
     res.send(swaggerSpec);
   });
 
+  /**
+   * @openapi
+   * /health:
+   *   get:
+   *     summary: Simple health check
+   *     description: |
+   *       Returns a simple health status. For detailed health checks, use /api/internal/health/live
+   *       or /api/internal/health/ready.
+   *     responses:
+   *       200:
+   *         description: Service is healthy
+   *         content:
+   *           application/json:
+   *             schema:
+   *               type: object
+   *               properties:
+   *                 status:
+   *                   type: string
+   *                   example: ok
+   *                 timestamp:
+   *                   type: string
+   *                   format: date-time
+   */
+  router.get('/health', (_req, res) => {
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   // Public routes
   router.use('/auth', authRoutes);
   router.use('/selfplay', selfplayRoutes); // Read-only access to recorded self-play games
