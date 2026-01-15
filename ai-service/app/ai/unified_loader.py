@@ -136,6 +136,7 @@ class ModelArchitecture(Enum):
     HEX_V2_LITE = auto()  # HexNeuralNet_v2_Lite
     HEX_V3 = auto()  # HexNeuralNet_v3 - hex spatial policy
     HEX_V3_LITE = auto()  # HexNeuralNet_v3_Lite
+    HEX_V4 = auto()  # HexNeuralNet_v4 - NAS with attention for hex (Jan 2026)
     HEX_V5_HEAVY = auto()  # HexNeuralNet_v5_Heavy - SE+Attention+FiLM heuristics
     UNKNOWN = auto()  # Fallback for future/experimental architectures
 
@@ -278,7 +279,7 @@ def detect_architecture(
                 return ModelArchitecture.CNN_V5_HEAVY
             elif "v4" in model_name_lower:
                 if "hex" in model_name_lower:
-                    return ModelArchitecture.HEX_V3  # Hex doesn't have V4 yet
+                    return ModelArchitecture.HEX_V4  # Added Jan 2026
                 return ModelArchitecture.CNN_V4
             elif "v3" in model_name_lower:
                 if "lite" in model_name_lower:
@@ -322,8 +323,13 @@ def detect_architecture(
             # Refine hex vs square detection
             if arch in (ModelArchitecture.CNN_V2, ModelArchitecture.HEX_V2):
                 if has_prefix("hex_mask"):
-                    # Detect V3 vs V2 hex: V3 has spatial policy heads (placement_conv, movement_conv)
-                    if has_prefix("placement_conv.") and has_prefix("movement_conv."):
+                    # Detect V4 vs V3 vs V2 hex:
+                    # - V4 has attention blocks (attention_gate, attention_out)
+                    # - V3 has spatial policy heads (placement_conv, movement_conv)
+                    # - V2 has neither
+                    if any("attention_gate" in k or "attention_out" in k for k in keys):
+                        arch = ModelArchitecture.HEX_V4  # Added Jan 2026
+                    elif has_prefix("placement_conv.") and has_prefix("movement_conv."):
                         arch = ModelArchitecture.HEX_V3
                     else:
                         arch = ModelArchitecture.HEX_V2
@@ -410,6 +416,20 @@ def infer_config_from_checkpoint(
         if key in state_dict:
             config.policy_size = state_dict[key].shape[0]
             break
+
+    # V4/spatial policy heads: infer policy_size from max index in idx tensors
+    # These models use placement_idx/movement_idx to scatter logits into policy output
+    # Note: special actions are computed at special_base = placement_span + movement_span
+    # which is AFTER the last movement index, so we need +2 (for the special action slot)
+    if config.policy_size == 4672:  # Still default, try spatial heads
+        max_policy_idx = -1
+        for idx_key in ["placement_idx", "movement_idx"]:
+            if idx_key in state_dict:
+                idx_tensor = state_dict[idx_key]
+                max_policy_idx = max(max_policy_idx, int(idx_tensor.max().item()))
+        if max_policy_idx > 0:
+            # +2: one for 0-indexing, one for special action at the end
+            config.policy_size = max_policy_idx + 2
 
     # Infer board type from policy size
     if config.policy_size in POLICY_SIZE_TO_BOARD:
@@ -763,6 +783,7 @@ class UnifiedModelLoader:
             ModelArchitecture.HEX_V2_LITE,
             ModelArchitecture.HEX_V3,
             ModelArchitecture.HEX_V3_LITE,
+            ModelArchitecture.HEX_V4,
             ModelArchitecture.HEX_V5_HEAVY,
         }
 
@@ -919,6 +940,24 @@ class UnifiedModelLoader:
                 hex_radius=config.hex_radius,
                 in_channels=total_in_channels,
                 global_features=config.global_features,
+                num_res_blocks=config.num_res_blocks,
+                num_filters=config.num_filters,
+                num_players=config.num_players,
+                policy_size=config.policy_size,
+            )
+
+        elif architecture == ModelArchitecture.HEX_V4:
+            # HEX_V4: NAS-optimized attention architecture for hex boards (Jan 2026)
+            from app.ai.neural_net.hex_architectures import HexNeuralNet_v4
+
+            hex_board_size = 2 * config.hex_radius + 1
+            # V4 uses 64-channel encoder (v3 encoder)
+            total_in_channels = config.input_channels
+            if config.history_length > 0:
+                total_in_channels = config.input_channels * (config.history_length + 1)
+            return HexNeuralNet_v4(
+                board_size=hex_board_size,
+                in_channels=total_in_channels,
                 num_res_blocks=config.num_res_blocks,
                 num_filters=config.num_filters,
                 num_players=config.num_players,

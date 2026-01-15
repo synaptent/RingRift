@@ -213,8 +213,9 @@ describe('GameEventLog', () => {
           }),
         }),
       ];
+      // Default boardType is square8 with squareRankFromBottom: d4 = (x:3, y:4)
       render(<GameEventLog history={history} />);
-      expect(screen.getByText(/P1 placed 1 ring at \(3, 4\)/)).toBeInTheDocument();
+      expect(screen.getByText(/P1 placed 1 ring at d4/)).toBeInTheDocument();
     });
 
     it('formats multiple ring placements correctly', () => {
@@ -243,8 +244,9 @@ describe('GameEventLog', () => {
           }),
         }),
       ];
+      // With squareRankFromBottom (default for square8): a8 = (0,0), d5 = (3,3)
       render(<GameEventLog history={history} />);
-      expect(screen.getByText(/P2 moved from \(0, 0\) to \(3, 3\)/)).toBeInTheDocument();
+      expect(screen.getByText(/P2 moved from a8 to d5/)).toBeInTheDocument();
     });
 
     it('formats overtaking_capture moves correctly', () => {
@@ -260,10 +262,9 @@ describe('GameEventLog', () => {
           }),
         }),
       ];
+      // With squareRankFromBottom: a8 = (0,0), b7 = (1,1), c6 = (2,2)
       render(<GameEventLog history={history} />);
-      expect(
-        screen.getByText(/P1 capture from \(0, 0\) over \(1, 1\) to \(2, 2\) x2/)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/P1 capture from a8 over b7 to c6 x2/)).toBeInTheDocument();
     });
 
     it('formats continue_capture_segment moves correctly', () => {
@@ -279,10 +280,9 @@ describe('GameEventLog', () => {
           }),
         }),
       ];
+      // With squareRankFromBottom: d5 = (3,3), e4 = (4,4)
       render(<GameEventLog history={history} />);
-      expect(
-        screen.getByText(/P1 continued capture over \(3, 3\) to \(4, 4\) x1/)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/P1 continued capture over d5 to e4 x1/)).toBeInTheDocument();
     });
 
     it('formats skip_placement moves correctly', () => {
@@ -307,8 +307,9 @@ describe('GameEventLog', () => {
           }),
         }),
       ];
+      // With squareRankFromBottom: d5 = (3,3)
       render(<GameEventLog history={history} />);
-      expect(screen.getByText(/#1 — P1 built stack at \(3, 3\) \(Δ=2\)/)).toBeInTheDocument();
+      expect(screen.getByText(/#1 — P1 built stack at d5/)).toBeInTheDocument();
     });
 
     it('formats process_line moves correctly', () => {
@@ -347,20 +348,23 @@ describe('GameEventLog', () => {
   });
 
   describe('hexagonal position formatting', () => {
-    it('displays z-coordinate for hex positions', () => {
+    it('displays hex positions in algebraic notation for hex boards', () => {
       const history = [
         createHistoryEntry({
           action: createMove({
             type: 'move_stack',
             player: 1,
-            from: { x: 1, y: 2, z: -3 },
-            to: { x: 4, y: 5, z: -9 },
+            // Hex coordinates within hex8 board (radius 4, size 9)
+            from: { x: 0, y: 0, z: 0 },
+            to: { x: 1, y: -1, z: 0 },
           }),
         }),
       ];
-      render(<GameEventLog history={history} />);
-      expect(screen.getByText(/\(1, 2, -3\)/)).toBeInTheDocument();
-      expect(screen.getByText(/\(4, 5, -9\)/)).toBeInTheDocument();
+      // Pass boardType: 'hex8' to enable hex coordinate formatting
+      render(<GameEventLog history={history} boardType="hex8" />);
+      // Hex boards use algebraic-like notation (file+rank mapped from q,r)
+      // For hex8 (radius 4): q=0 -> rank 5, r=0 -> file 'e'
+      expect(screen.getByText(/e5/)).toBeInTheDocument();
     });
   });
 
