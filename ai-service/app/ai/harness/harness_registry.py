@@ -329,6 +329,96 @@ def _generate_model_id(
     return stem
 
 
+def create_harness_with_difficulty(
+    harness_type: HarnessType,
+    difficulty: float,
+    model_path: str | Path | None = None,
+    model_id: str = "",
+    board_type: BoardType | None = None,
+    num_players: int = 2,
+    model_type: ModelType | None = None,
+    extra: dict[str, Any] | None = None,
+) -> AIHarness:
+    """Create a harness with difficulty-scaled parameters.
+
+    Maps a 0.0-1.0 difficulty level to appropriate simulation counts
+    or search depths based on harness type.
+
+    Difficulty mapping:
+    - MCTS variants (GUMBEL_MCTS, GPU_GUMBEL): simulations 100-1600
+    - MINIMAX/MAXN/BRS: depth 2-8
+    - POLICY_ONLY/DESCENT: no scaling (use network directly)
+    - HEURISTIC: difficulty level 1-10
+    - RANDOM: no scaling
+
+    Args:
+        harness_type: Type of harness to create.
+        difficulty: Difficulty level 0.0-1.0.
+        model_path: Path to model checkpoint.
+        model_id: Identifier for Elo tracking.
+        board_type: Board type for model compatibility.
+        num_players: Number of players (2, 3, or 4).
+        model_type: Explicit model type (auto-detected if None).
+        extra: Additional harness-specific options.
+
+    Returns:
+        Configured AIHarness instance with difficulty-scaled parameters.
+
+    Example:
+        # Create MCTS harness at half strength (350 simulations)
+        harness = create_harness_with_difficulty(
+            HarnessType.GUMBEL_MCTS,
+            difficulty=0.5,
+            model_path="models/canonical_hex8_2p.pth",
+        )
+
+        # Create minimax at max depth (depth 8)
+        harness = create_harness_with_difficulty(
+            HarnessType.MINIMAX,
+            difficulty=1.0,
+            num_players=2,
+        )
+    """
+    # Clamp difficulty to valid range
+    difficulty = max(0.0, min(1.0, difficulty))
+
+    # Calculate harness-specific parameters
+    simulations = 200  # Default
+    depth = 3  # Default
+    int_difficulty = 5  # Default integer difficulty for heuristic
+
+    if harness_type in (HarnessType.GUMBEL_MCTS, HarnessType.GPU_GUMBEL):
+        # MCTS: scale simulations 100-1600
+        simulations = int(100 + difficulty * 1500)
+        int_difficulty = max(1, min(10, int(difficulty * 10)))
+    elif harness_type in (HarnessType.MINIMAX, HarnessType.MAXN, HarnessType.BRS):
+        # Minimax variants: scale depth 2-8
+        depth = int(2 + difficulty * 6)
+        int_difficulty = max(1, min(10, int(difficulty * 10)))
+    elif harness_type == HarnessType.HEURISTIC:
+        # Pure heuristic: scale difficulty 1-10
+        int_difficulty = max(1, min(10, int(1 + difficulty * 9)))
+    elif harness_type == HarnessType.RANDOM:
+        # Random: no scaling needed
+        int_difficulty = 1
+    else:
+        # POLICY_ONLY, DESCENT: use defaults
+        int_difficulty = max(1, min(10, int(difficulty * 10)))
+
+    return create_harness(
+        harness_type=harness_type,
+        model_path=model_path,
+        model_id=model_id,
+        board_type=board_type,
+        num_players=num_players,
+        difficulty=int_difficulty,
+        simulations=simulations,
+        depth=depth,
+        model_type=model_type,
+        extra=extra,
+    )
+
+
 # =============================================================================
 # Player Restrictions (Dec 2025 consolidation)
 # =============================================================================
@@ -342,9 +432,9 @@ HARNESS_PLAYER_RESTRICTIONS: dict[HarnessType, tuple[int, int]] = {
     HarnessType.POLICY_ONLY: (2, 4),
     HarnessType.DESCENT: (2, 4),
     HarnessType.HEURISTIC: (2, 4),
-    HarnessType.MINIMAX: (2, 2),  # Only 2-player (alpha-beta)
-    HarnessType.MAXN: (3, 4),  # 3-4 player only (multiplayer search)
-    HarnessType.BRS: (3, 4),  # 3-4 player only (best-reply search)
+    HarnessType.MINIMAX: (2, 4),  # Paranoid minimax works for 2-4 players
+    HarnessType.MAXN: (2, 4),  # Max-N works for 2-4 players (optimizes own score)
+    HarnessType.BRS: (2, 4),  # Best-Reply Search works for 2-4 players
     HarnessType.RANDOM: (2, 4),  # Jan 1, 2026: Random for baseline and diversity
 }
 

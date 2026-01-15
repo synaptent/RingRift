@@ -172,59 +172,104 @@ class QuorumManager:
         2. cluster_config.get_p2p_voters()
         3. Direct YAML load from distributed_hosts.yaml
 
+        Jan 15, 2026 (Phase 5 P2P Resilience): Voters with status: offline
+        in the hosts config are filtered out with a warning.
+
         Returns:
             List of voter node IDs (sorted, deduplicated).
         """
+        voters: list[str] = []
+
         # Priority 1: Environment variable override (highest priority)
         env = (os.environ.get("RINGRIFT_P2P_VOTERS") or "").strip()
         if env:
             self._voter_config_source = "env"
             voters = [t.strip() for t in env.split(",") if t.strip()]
-            with self._state_lock:
-                self._voter_node_ids = sorted(set(voters))
-            return self._voter_node_ids
+        else:
+            # Priority 2: Use cluster_config for YAML-based voter loading
+            try:
+                from app.config.cluster_config import get_p2p_voters
 
-        # Priority 2: Use cluster_config for YAML-based voter loading
-        try:
-            from app.config.cluster_config import get_p2p_voters
+                config_voters = get_p2p_voters()
+                if config_voters:
+                    self._voter_config_source = "config"
+                    voters = config_voters
+            except ImportError:
+                logger.debug("[QuorumManager] cluster_config not available, falling back to direct YAML load")
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"[QuorumManager] Failed to load voters via cluster_config: {e}")
 
-            voters = get_p2p_voters()
-            if voters:
-                self._voter_config_source = "config"
-                with self._state_lock:
-                    self._voter_node_ids = voters
-                return voters
-        except ImportError:
-            logger.debug("[QuorumManager] cluster_config not available, falling back to direct YAML load")
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"[QuorumManager] Failed to load voters via cluster_config: {e}")
+            # Priority 3: Fallback - direct YAML load for legacy compatibility
+            if not voters:
+                cfg_path = self._config.config_path
+                if cfg_path and cfg_path.exists():
+                    try:
+                        import yaml
 
-        # Priority 3: Fallback - direct YAML load for legacy compatibility
-        cfg_path = self._config.config_path
-        if not cfg_path or not cfg_path.exists():
+                        data = yaml.safe_load(cfg_path.read_text()) or {}
+                        p2p_voters_list = data.get("p2p_voters", []) or []
+                        if p2p_voters_list and isinstance(p2p_voters_list, list):
+                            voters = sorted({str(v).strip() for v in p2p_voters_list if str(v).strip()})
+                            if voters:
+                                self._voter_config_source = "config"
+                    except (OSError, ValueError, KeyError) as e:
+                        logger.debug(f"[QuorumManager] Failed to load voter config from file: {e}")
+                    except Exception as e:  # noqa: BLE001
+                        # YAML errors
+                        logger.debug(f"[QuorumManager] Failed to parse voter config: {e}")
+
+        if not voters:
             self._voter_config_source = "none"
             return []
+
+        # Jan 15, 2026: Filter out offline voters (Phase 5 P2P Resilience)
+        active_voters = self._filter_offline_voters(voters)
+
+        with self._state_lock:
+            self._voter_node_ids = sorted(set(active_voters))
+        return self._voter_node_ids
+
+    def _filter_offline_voters(self, voters: list[str]) -> list[str]:
+        """Filter out voters with status: offline in hosts config.
+
+        Jan 15, 2026: Phase 5 of P2P Resilience Plan.
+
+        Args:
+            voters: List of voter node IDs
+
+        Returns:
+            List of voter IDs that are not marked offline
+        """
+        cfg_path = self._config.config_path
+        if not cfg_path or not cfg_path.exists():
+            return voters  # Can't check, keep all
 
         try:
             import yaml
 
             data = yaml.safe_load(cfg_path.read_text()) or {}
-            p2p_voters_list = data.get("p2p_voters", []) or []
-            if p2p_voters_list and isinstance(p2p_voters_list, list):
-                voters = sorted({str(v).strip() for v in p2p_voters_list if str(v).strip()})
-                if voters:
-                    self._voter_config_source = "config"
-                    with self._state_lock:
-                        self._voter_node_ids = voters
-                    return voters
-        except (OSError, ValueError, KeyError) as e:
-            logger.debug(f"[QuorumManager] Failed to load voter config from file: {e}")
+            hosts = data.get("hosts", {}) or {}
         except Exception as e:  # noqa: BLE001
-            # YAML errors
-            logger.debug(f"[QuorumManager] Failed to parse voter config: {e}")
+            logger.debug(f"[QuorumManager] Could not load hosts for offline filter: {e}")
+            return voters
 
-        self._voter_config_source = "none"
-        return []
+        active_voters = []
+        offline_voters = []
+
+        for voter_id in voters:
+            host_cfg = hosts.get(voter_id, {})
+            if host_cfg.get("status") == "offline":
+                offline_voters.append(voter_id)
+            else:
+                active_voters.append(voter_id)
+
+        if offline_voters:
+            logger.warning(
+                f"[QuorumManager] Filtered {len(offline_voters)} offline voter(s): "
+                f"{', '.join(offline_voters)}"
+            )
+
+        return active_voters
 
     def build_voter_ip_mapping(self) -> dict[str, set[str]]:
         """Build a mapping from voter node_ids to their known IPs.

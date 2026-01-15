@@ -211,11 +211,6 @@ def get_health_manager():
     return _health_manager
 
 
-# Backward compatibility alias (deprecated)
-def get_recovery_manager():
-    """DEPRECATED: Use get_health_manager() instead."""
-    return get_health_manager()
-
 # Job Reaper Daemon (leader-only, kills stuck jobs and reassigns work)
 _job_reaper = None
 def get_job_reaper(work_queue=None, ssh_config=None):
@@ -786,7 +781,6 @@ from scripts.p2p.models import (
 )
 from scripts.p2p.p2p_mixin_base import SubscriptionRetryConfig
 from scripts.p2p.network import (
-    AsyncLockWrapper,  # DEPRECATED - kept for compatibility
     JobSnapshot,  # Jan 12, 2026: Lock-free job reads
     NonBlockingAsyncLockWrapper,
     PeerSnapshot,  # Jan 12, 2026: Lock-free peer reads
@@ -3087,6 +3081,77 @@ class P2POrchestrator(
                 logger.info("[LoopManager] LeaderProbeLoop registered (fast leader recovery)")
             except (ImportError, TypeError) as e:
                 logger.debug(f"LeaderProbeLoop: not available: {e}")
+
+            # RelayHealthLoop - January 15, 2026
+            # Phase 3 of P2P Resilience Plan: Proactive relay health monitoring
+            # Probes relay nodes every 30s, triggers failover after 5 consecutive failures
+            try:
+                from scripts.p2p.loops import RelayHealthLoop
+
+                def _get_relay_nodes_for_loop() -> list[str]:
+                    """Get list of active relay nodes from config."""
+                    relay_nodes = []
+                    try:
+                        hosts = self.cluster_config.get("hosts", {})
+                        for node_id, config in hosts.items():
+                            if config.get("relay_capable", False) and config.get("status") == "active":
+                                relay_nodes.append(node_id)
+                    except Exception:
+                        pass
+                    return relay_nodes or ["hetzner-cpu1", "hetzner-cpu2", "hetzner-cpu3"]
+
+                def _get_node_info_for_relay(node_id: str) -> dict[str, Any] | None:
+                    """Get node info for relay health probing."""
+                    try:
+                        hosts = self.cluster_config.get("hosts", {})
+                        return hosts.get(node_id)
+                    except Exception:
+                        return None
+
+                def _get_nat_blocked_peers_for_relay() -> dict[str, str]:
+                    """Get NAT-blocked peers and their primary relays."""
+                    result: dict[str, str] = {}
+                    try:
+                        hosts = self.cluster_config.get("hosts", {})
+                        for node_id, config in hosts.items():
+                            relay_primary = config.get("relay_primary")
+                            if relay_primary and config.get("status") == "active":
+                                result[node_id] = relay_primary
+                    except Exception:
+                        pass
+                    return result
+
+                async def _trigger_relay_failover_for_loop(
+                    peer_id: str, old_relay: str, new_relay: str
+                ) -> bool:
+                    """Trigger relay failover for a NAT-blocked peer.
+
+                    Note: This is a notification mechanism. Actual relay updates
+                    require config changes or dynamic relay selection by the peer.
+                    """
+                    logger.info(
+                        f"[RelayHealth] Failover recommended: {peer_id} "
+                        f"should switch from {old_relay} to {new_relay}"
+                    )
+                    # Emit event for monitoring/alerting
+                    self._safe_emit_event("RELAY_FAILOVER_RECOMMENDED", {
+                        "peer_id": peer_id,
+                        "old_relay": old_relay,
+                        "new_relay": new_relay,
+                    })
+                    return True
+
+                relay_health = RelayHealthLoop(
+                    get_relay_nodes=_get_relay_nodes_for_loop,
+                    get_node_info=_get_node_info_for_relay,
+                    get_nat_blocked_peers=_get_nat_blocked_peers_for_relay,
+                    trigger_relay_failover=_trigger_relay_failover_for_loop,
+                    emit_event=self._safe_emit_event,
+                )
+                manager.register(relay_health)
+                logger.info("[LoopManager] RelayHealthLoop registered (NAT relay monitoring)")
+            except (ImportError, TypeError) as e:
+                logger.debug(f"RelayHealthLoop: not available: {e}")
 
             # PredictiveMonitoringLoop - December 28, 2025
             # Migrated from inline _predictive_monitoring_loop (~98 LOC removed)
@@ -29885,8 +29950,41 @@ print(json.dumps({{
 
         # Best-effort bootstrap from seed peers before running elections. This
         # helps newly started cloud nodes quickly learn about the full cluster.
-        with contextlib.suppress(Exception):
-            await self._bootstrap_from_known_peers()
+        # Jan 15, 2026 (Phase 6 P2P Resilience): Add retry logic with exponential backoff
+        bootstrap_success = False
+        bootstrap_attempts = 0
+        max_bootstrap_attempts = 3
+        bootstrap_backoff = [2, 5, 10]  # Exponential backoff in seconds
+
+        while bootstrap_attempts < max_bootstrap_attempts and not bootstrap_success:
+            try:
+                bootstrap_success = await self._bootstrap_from_known_peers()
+                if bootstrap_success:
+                    logger.info(
+                        f"[Bootstrap] Successfully bootstrapped from peers "
+                        f"(attempt {bootstrap_attempts + 1}/{max_bootstrap_attempts})"
+                    )
+                    break
+            except Exception as e:
+                logger.warning(f"[Bootstrap] Attempt {bootstrap_attempts + 1} failed: {e}")
+
+            bootstrap_attempts += 1
+            if bootstrap_attempts < max_bootstrap_attempts:
+                wait_time = bootstrap_backoff[bootstrap_attempts - 1]
+                logger.info(f"[Bootstrap] Retrying in {wait_time}s...")
+                await asyncio.sleep(wait_time)
+
+        if not bootstrap_success:
+            logger.warning(
+                f"[Bootstrap] Failed to bootstrap after {max_bootstrap_attempts} attempts"
+            )
+            # Emit bootstrap failure event for monitoring
+            self._safe_emit_event("BOOTSTRAP_FAILED", {
+                "node_id": self.node_id,
+                "attempts": bootstrap_attempts,
+                "seed_count": len(self.known_peers or []),
+                "message": "Failed to bootstrap from any seed peer",
+            })
 
         # December 30, 2025: Immediate Tailscale discovery when no --peers provided
         # This fixes the bootstrap problem where nodes started without --peers
@@ -30357,6 +30455,83 @@ def _release_singleton_lock() -> None:
         _P2P_LOCK = None
 
 
+def _check_and_kill_zombie_p2p(port: int = 8770, timeout: float = 5.0) -> bool:
+    """Check for zombie P2P process and kill it if found.
+
+    A zombie P2P process is one that is bound to the port but not responding
+    to HTTP requests. This can happen when the process is stuck in a bad state.
+
+    Args:
+        port: The P2P HTTP port to check (default 8770)
+        timeout: HTTP request timeout in seconds
+
+    Returns:
+        True if a zombie was found and killed, False otherwise
+    """
+    import urllib.request
+    import urllib.error
+
+    # Step 1: Check if anything is listening on the port
+    try:
+        result = subprocess.run(
+            ["lsof", "-ti", f":{port}"],
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            # Nothing listening on the port
+            return False
+        pids = [int(p) for p in result.stdout.strip().split("\n") if p.strip()]
+        if not pids:
+            return False
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, ValueError):
+        # lsof failed or timed out, assume no zombie
+        return False
+
+    # Step 2: Try to hit the /status endpoint
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/status",
+            headers={"User-Agent": "zombie-detector"},
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            if resp.status == 200:
+                # Process is responding, not a zombie
+                return False
+    except urllib.error.URLError as e:
+        # Connection refused means nothing is really listening (lsof race)
+        if "Connection refused" in str(e):
+            return False
+        # Other errors (timeout, etc.) mean zombie detected
+        logger.warning(f"[P2P] Port {port} occupied but unresponsive: {e}")
+    except Exception as e:
+        # Timeout or other error - this is a zombie
+        logger.warning(f"[P2P] Port {port} occupied but unresponsive: {e}")
+
+    # Step 3: Kill the zombie process(es)
+    logger.warning(f"[P2P] Detected zombie P2P process on port {port}, killing PIDs: {pids}")
+    killed = False
+    for pid in pids:
+        # Skip ourselves
+        if pid == os.getpid():
+            continue
+        try:
+            if kill_process(pid, wait=True, timeout=5.0):
+                logger.info(f"[P2P] Killed zombie process PID {pid}")
+                killed = True
+            else:
+                logger.warning(f"[P2P] Failed to kill zombie PID {pid}")
+        except Exception as e:
+            logger.error(f"[P2P] Error killing zombie PID {pid}: {e}")
+
+    if killed:
+        # Give the port time to be released
+        time.sleep(0.5)
+
+    return killed
+
+
 def main():
     # ==========================================================================
     # PRE-FLIGHT VALIDATION (January 2026)
@@ -30375,6 +30550,16 @@ def main():
     import sys
     kill_duplicates = "--kill-duplicates" in sys.argv
     force_takeover = "--force-takeover" in sys.argv
+    skip_zombie_check = "--no-zombie-check" in sys.argv
+
+    # ==========================================================================
+    # ZOMBIE DETECTION (January 2026)
+    # ==========================================================================
+    # Check for zombie P2P processes that are bound to the port but unresponsive.
+    # This happens when the P2P process gets stuck in a bad state (e.g., 100% CPU).
+    if not skip_zombie_check:
+        if _check_and_kill_zombie_p2p():
+            print("[P2P] Killed zombie P2P process, proceeding with startup")
 
     # Acquire singleton lock (December 2025: improved atomic locking with stale cleanup)
     if not _acquire_singleton_lock(
@@ -30413,6 +30598,8 @@ def main():
                         help="Kill any existing P2P orchestrator processes before starting")
     parser.add_argument("--force-takeover", action="store_true",
                         help="Force acquire lock even if held by another process (use when PID was recycled after crash)")
+    parser.add_argument("--no-zombie-check", action="store_true",
+                        help="Skip automatic zombie P2P detection (zombies are processes bound to port but not responding)")
 
     args = parser.parse_args()
 

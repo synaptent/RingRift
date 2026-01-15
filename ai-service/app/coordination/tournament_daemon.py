@@ -52,6 +52,12 @@ from app.coordination.event_emission_helpers import safe_emit_event
 from app.training.composite_participant import extract_harness_type
 from app.coordination.handler_base import HandlerBase
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+from app.ai.harness.base_harness import HarnessType, ModelType
+from app.ai.harness.harness_registry import (
+    HARNESS_PLAYER_RESTRICTIONS,
+    is_harness_valid_for_player_count,
+    get_harnesses_for_model_and_players,
+)
 
 # December 30, 2025: Game count for graduated thresholds
 from app.utils.game_discovery import get_game_counts_summary
@@ -60,6 +66,10 @@ __all__ = [
     "TournamentDaemon",
     "TournamentDaemonConfig",
     "TournamentStats",
+    "OpponentSpec",
+    "OpponentDiversityMatrix",
+    "GenerationTournamentScheduler",
+    "TournamentTypeSelector",
     "get_tournament_daemon",
     "reset_tournament_daemon",
 ]
@@ -211,6 +221,489 @@ class TournamentStats(EvaluationDaemonStats):
         """Record an event trigger."""
         self.event_triggers += 1
         self.evaluations_triggered += 1
+
+
+# =============================================================================
+# Opponent Diversity Matrix (January 2026)
+# =============================================================================
+
+@dataclass
+class OpponentSpec:
+    """Specification for a tournament opponent.
+
+    Defines a specific opponent configuration including the model type,
+    harness type (search algorithm), and difficulty level. Used to create
+    diverse opponent pools for comprehensive model evaluation.
+
+    Attributes:
+        model_type: Type of model (NEURAL_NET, NNUE, HEURISTIC).
+        harness_type: Search algorithm to use (GUMBEL_MCTS, MINIMAX, etc.).
+        difficulty: Difficulty level 0.0-1.0 (maps to simulations/depth).
+        model_id: Optional model identifier for NN/NNUE models.
+        name_override: Optional custom name for this opponent.
+    """
+
+    model_type: ModelType
+    harness_type: HarnessType
+    difficulty: float = 1.0
+    model_id: str | None = None
+    name_override: str | None = None
+
+    @property
+    def name(self) -> str:
+        """Generate a descriptive name for this opponent."""
+        if self.name_override:
+            return self.name_override
+        difficulty_str = f"d{self.difficulty:.1f}" if self.difficulty != 1.0 else ""
+        return f"{self.model_type.value}_{self.harness_type.value}{difficulty_str}"
+
+    def is_valid_for_players(self, num_players: int) -> bool:
+        """Check if this opponent is valid for the given player count."""
+        return is_harness_valid_for_player_count(self.harness_type, num_players)
+
+
+class OpponentDiversityMatrix:
+    """Generates diverse opponent combinations for comprehensive evaluation.
+
+    Creates opponent lists that cover:
+    - All model types (NN, NNUE, heuristic)
+    - All compatible harness types for each model type
+    - Multiple difficulty levels for Elo calibration
+    - Player-count restrictions (MINIMAX 2p only, MAXN/BRS 3-4p only)
+
+    Usage:
+        matrix = OpponentDiversityMatrix()
+        opponents = matrix.get_opponents_for_config("hex8", 2, "standard")
+        for opp in opponents:
+            result = run_game(model, opp)
+    """
+
+    # Diversity levels determine how many opponents to generate
+    DIVERSITY_LEVELS = {
+        "minimal": 5,       # Quick sanity check
+        "standard": 12,     # Balanced coverage
+        "comprehensive": 25,  # Full matrix
+    }
+
+    # Difficulty levels for Elo calibration (maps to simulations/depth)
+    DIFFICULTY_LEVELS = [0.25, 0.5, 0.75, 1.0]
+
+    def __init__(self):
+        """Initialize the diversity matrix."""
+        self._logger = logging.getLogger(f"{__name__}.OpponentDiversityMatrix")
+
+    def get_opponents_for_config(
+        self,
+        board_type: str,
+        num_players: int,
+        diversity_level: str = "standard",
+        canonical_model_path: str | None = None,
+    ) -> list[OpponentSpec]:
+        """Generate diverse opponent list for a board configuration.
+
+        Args:
+            board_type: Board type (hex8, square8, etc.).
+            num_players: Number of players (2, 3, or 4).
+            diversity_level: One of "minimal", "standard", "comprehensive".
+            canonical_model_path: Path to canonical NN model for this config.
+
+        Returns:
+            List of OpponentSpec objects for tournament evaluation.
+        """
+        max_opponents = self.DIVERSITY_LEVELS.get(diversity_level, 12)
+        opponents: list[OpponentSpec] = []
+
+        # 1. Baseline anchors (always included)
+        opponents.extend(self._get_baseline_opponents())
+
+        # 2. NN opponents (if model available)
+        if canonical_model_path:
+            opponents.extend(
+                self._get_nn_opponents(num_players, canonical_model_path)
+            )
+
+        # 3. NNUE opponents (player-count aware)
+        opponents.extend(self._get_nnue_opponents(num_players))
+
+        # 4. Heuristic opponents at various difficulties
+        opponents.extend(self._get_heuristic_opponents())
+
+        # Filter by player count validity
+        valid_opponents = [
+            opp for opp in opponents
+            if opp.is_valid_for_players(num_players)
+        ]
+
+        # Trim to diversity level limit
+        if len(valid_opponents) > max_opponents:
+            valid_opponents = valid_opponents[:max_opponents]
+
+        self._logger.info(
+            f"Generated {len(valid_opponents)} opponents for {board_type}_{num_players}p "
+            f"(diversity={diversity_level})"
+        )
+
+        return valid_opponents
+
+    def _get_baseline_opponents(self) -> list[OpponentSpec]:
+        """Get baseline anchor opponents (RANDOM, HEURISTIC)."""
+        return [
+            OpponentSpec(
+                model_type=ModelType.HEURISTIC,
+                harness_type=HarnessType.RANDOM,
+                difficulty=1.0,
+                name_override="random_baseline",
+            ),
+            OpponentSpec(
+                model_type=ModelType.HEURISTIC,
+                harness_type=HarnessType.HEURISTIC,
+                difficulty=0.5,
+                name_override="heuristic_weak",
+            ),
+            OpponentSpec(
+                model_type=ModelType.HEURISTIC,
+                harness_type=HarnessType.HEURISTIC,
+                difficulty=1.0,
+                name_override="heuristic_strong",
+            ),
+        ]
+
+    def _get_nn_opponents(
+        self,
+        num_players: int,
+        model_path: str,
+    ) -> list[OpponentSpec]:
+        """Get neural network opponents with various harnesses."""
+        opponents = []
+
+        # NN with Gumbel MCTS at different simulation budgets
+        for difficulty in [0.5, 1.0]:
+            opponents.append(OpponentSpec(
+                model_type=ModelType.NEURAL_NET,
+                harness_type=HarnessType.GUMBEL_MCTS,
+                difficulty=difficulty,
+                model_id=model_path,
+            ))
+
+        # GPU Gumbel (high throughput variant)
+        opponents.append(OpponentSpec(
+            model_type=ModelType.NEURAL_NET,
+            harness_type=HarnessType.GPU_GUMBEL,
+            difficulty=1.0,
+            model_id=model_path,
+        ))
+
+        # Policy-only (no search, pure network)
+        opponents.append(OpponentSpec(
+            model_type=ModelType.NEURAL_NET,
+            harness_type=HarnessType.POLICY_ONLY,
+            difficulty=1.0,
+            model_id=model_path,
+        ))
+
+        # Descent (gradient-based move selection)
+        opponents.append(OpponentSpec(
+            model_type=ModelType.NEURAL_NET,
+            harness_type=HarnessType.DESCENT,
+            difficulty=1.0,
+            model_id=model_path,
+        ))
+
+        return opponents
+
+    def _get_nnue_opponents(self, num_players: int) -> list[OpponentSpec]:
+        """Get NNUE opponents with all compatible harnesses.
+
+        All three NNUE-compatible harnesses (MINIMAX, MAXN, BRS) work for
+        2-4 players. They differ in search strategy:
+        - MINIMAX (paranoid): Assumes opponents cooperate against us
+        - MAXN: Each player maximizes their own score
+        - BRS: Best-Reply Search - greedy multiplayer approximation
+        """
+        opponents = []
+        nnue_harnesses = [HarnessType.MINIMAX, HarnessType.MAXN, HarnessType.BRS]
+
+        for harness in nnue_harnesses:
+            for difficulty in [0.5, 1.0]:
+                harness_name = harness.value.lower()
+                opponents.append(OpponentSpec(
+                    model_type=ModelType.NNUE,
+                    harness_type=harness,
+                    difficulty=difficulty,
+                    name_override=f"nnue_{harness_name}_d{difficulty:.1f}",
+                ))
+
+        return opponents
+
+    def _get_heuristic_opponents(self) -> list[OpponentSpec]:
+        """Get pure heuristic opponents at various difficulties."""
+        opponents = []
+
+        for difficulty in self.DIFFICULTY_LEVELS:
+            opponents.append(OpponentSpec(
+                model_type=ModelType.HEURISTIC,
+                harness_type=HarnessType.HEURISTIC,
+                difficulty=difficulty,
+            ))
+
+        return opponents
+
+    def get_standard_matrix(self, num_players: int) -> list[OpponentSpec]:
+        """Get the standard diversity matrix for any player count.
+
+        This is the recommended opponent set for regular evaluation.
+
+        Args:
+            num_players: Number of players (2, 3, or 4).
+
+        Returns:
+            List of OpponentSpec for standard evaluation.
+        """
+        return self.get_opponents_for_config(
+            board_type="generic",
+            num_players=num_players,
+            diversity_level="standard",
+        )
+
+
+# =============================================================================
+# Generation Tournament Scheduler (January 2026)
+# =============================================================================
+
+class GenerationTournamentScheduler:
+    """Schedules head-to-head tournaments between model generations.
+
+    Finds parent-child generation pairs that haven't been compared
+    and schedules tournaments to validate training improvement.
+
+    Usage:
+        from app.coordination.generation_tracker import get_generation_tracker
+        tracker = get_generation_tracker()
+        scheduler = GenerationTournamentScheduler(tracker)
+        pairs = scheduler.get_untested_pairs()
+        for parent, child in pairs:
+            result = scheduler.run_generation_tournament(parent, child)
+    """
+
+    def __init__(self, generation_tracker: Any | None = None):
+        """Initialize the scheduler.
+
+        Args:
+            generation_tracker: Optional GenerationTracker instance.
+                If not provided, will be lazily loaded when needed.
+        """
+        self._tracker = generation_tracker
+        self._logger = logging.getLogger(f"{__name__}.GenerationTournamentScheduler")
+
+    @property
+    def tracker(self) -> Any:
+        """Lazy-load the generation tracker if not provided."""
+        if self._tracker is None:
+            from app.coordination.generation_tracker import get_generation_tracker
+            self._tracker = get_generation_tracker()
+        return self._tracker
+
+    def get_untested_pairs(
+        self,
+        board_type: str | None = None,
+        num_players: int | None = None,
+    ) -> list[tuple[Any, Any]]:
+        """Find parent-child pairs without tournament results.
+
+        Args:
+            board_type: Optional filter by board type.
+            num_players: Optional filter by player count.
+
+        Returns:
+            List of (parent_gen, child_gen) tuples that need tournaments.
+        """
+        try:
+            all_gens = self.tracker.get_all_generations(
+                board_type=board_type,
+                num_players=num_players,
+            )
+        except Exception as e:
+            self._logger.error(f"Failed to get generations: {e}")
+            return []
+
+        # Build lookup by generation_id
+        gen_by_id = {g.generation_id: g for g in all_gens}
+        untested: list[tuple[Any, Any]] = []
+
+        for gen in all_gens:
+            if gen.parent_generation is None:
+                continue
+
+            parent = gen_by_id.get(gen.parent_generation)
+            if parent is None:
+                continue
+
+            # Check if both model files exist
+            parent_exists = parent.model_path and Path(parent.model_path).exists()
+            child_exists = gen.model_path and Path(gen.model_path).exists()
+
+            if not parent_exists or not child_exists:
+                continue
+
+            # Check if tournament already exists
+            try:
+                tournaments = self.tracker.get_tournaments_for_generation(
+                    gen.generation_id
+                )
+                has_parent_match = any(
+                    (t.gen_a == gen.generation_id and t.gen_b == parent.generation_id) or
+                    (t.gen_b == gen.generation_id and t.gen_a == parent.generation_id)
+                    for t in tournaments
+                )
+                if not has_parent_match:
+                    untested.append((parent, gen))
+            except Exception as e:
+                self._logger.warning(
+                    f"Error checking tournaments for gen {gen.generation_id}: {e}"
+                )
+
+        self._logger.info(f"Found {len(untested)} untested generation pairs")
+        return untested
+
+    def get_tournament_priority(
+        self,
+        parent: Any,
+        child: Any,
+    ) -> float:
+        """Calculate priority score for a generation pair tournament.
+
+        Higher priority for:
+        - More recent generations (newer training)
+        - Larger training sample counts
+        - Configs with less tournament coverage
+
+        Args:
+            parent: Parent generation info.
+            child: Child generation info.
+
+        Returns:
+            Priority score (higher = more important).
+        """
+        priority = 0.0
+
+        # Recency bonus (newer = higher priority)
+        priority += child.generation_id * 0.1
+
+        # Training data bonus
+        if child.training_samples:
+            priority += min(child.training_samples / 100000, 1.0) * 0.3
+
+        # Version bump bonus (v2 vs v1 is interesting)
+        if child.version > parent.version:
+            priority += 0.5
+
+        return priority
+
+
+# =============================================================================
+# Tournament Type Selector (January 2026)
+# =============================================================================
+
+class TournamentTypeSelector:
+    """Selects tournament type based on current evaluation needs.
+
+    Uses weighted random selection with dynamic priority adjustments
+    based on system state (untested generations, model coverage, etc.).
+
+    Tournament types:
+    - generation_head_to_head: Validate training improvement
+    - multi_harness_eval: Test robustness across harnesses
+    - baseline_gauntlet: Standard baseline evaluation
+    - calibration: Elo gap validation
+    - stale_reevaluation: Refresh old ratings
+
+    Usage:
+        selector = TournamentTypeSelector()
+        context = {"untested_generation_pairs": 5}
+        tournament_type = selector.select_type(context)
+    """
+
+    DEFAULT_WEIGHTS = {
+        "generation_head_to_head": 0.30,  # Validate training progress
+        "multi_harness_eval": 0.25,       # Harness robustness
+        "baseline_gauntlet": 0.20,        # Standard evaluation
+        "calibration": 0.15,              # Elo gap validation
+        "stale_reevaluation": 0.10,       # Refresh old evaluations
+    }
+
+    def __init__(self, weights: dict[str, float] | None = None):
+        """Initialize the selector.
+
+        Args:
+            weights: Optional custom weights. Uses DEFAULT_WEIGHTS if not provided.
+        """
+        self._weights = weights or self.DEFAULT_WEIGHTS.copy()
+        self._logger = logging.getLogger(f"{__name__}.TournamentTypeSelector")
+
+    def select_type(self, context: dict[str, Any] | None = None) -> str:
+        """Select a tournament type based on context.
+
+        Args:
+            context: Optional context dict with keys:
+                - untested_generation_pairs: Count of pairs without tournaments
+                - models_lacking_harness_coverage: Models needing multi-harness
+                - stale_model_count: Models with old ratings
+                - calibration_needed: Whether Elo calibration is needed
+
+        Returns:
+            Selected tournament type string.
+        """
+        import random
+
+        weights = self._weights.copy()
+
+        if context:
+            # Boost generation tournaments when untested pairs exist
+            if context.get("untested_generation_pairs", 0) > 0:
+                weights["generation_head_to_head"] += 0.2
+
+            # Boost multi-harness when models lack coverage
+            if context.get("models_lacking_harness_coverage", 0) > 0:
+                weights["multi_harness_eval"] += 0.15
+
+            # Boost stale reevaluation when many old ratings
+            if context.get("stale_model_count", 0) > 5:
+                weights["stale_reevaluation"] += 0.15
+
+            # Boost calibration when explicitly needed
+            if context.get("calibration_needed", False):
+                weights["calibration"] += 0.20
+
+        # Normalize weights
+        total = sum(weights.values())
+        if total > 0:
+            weights = {k: v / total for k, v in weights.items()}
+
+        # Weighted random selection
+        types = list(weights.keys())
+        probs = [weights[t] for t in types]
+        selected = random.choices(types, weights=probs, k=1)[0]
+
+        self._logger.debug(
+            f"Selected tournament type: {selected} "
+            f"(weights: {weights}, context: {context})"
+        )
+
+        return selected
+
+    def get_weights(self) -> dict[str, float]:
+        """Get current weights (copy)."""
+        return self._weights.copy()
+
+    def set_weight(self, tournament_type: str, weight: float) -> None:
+        """Set weight for a tournament type.
+
+        Args:
+            tournament_type: Tournament type name.
+            weight: New weight (0.0-1.0).
+        """
+        if tournament_type in self._weights:
+            self._weights[tournament_type] = max(0.0, min(1.0, weight))
 
 
 class TournamentDaemon(HandlerBase):

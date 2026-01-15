@@ -86,6 +86,11 @@ class TournamentResult:
     gen_a_elo: float | None
     gen_b_elo: float | None
     timestamp: float
+    # January 2026: Extended tournament metadata
+    harness_type: str = "gumbel_mcts"
+    difficulty: float = 1.0
+    ci_lower: float | None = None
+    ci_upper: float | None = None
 
 
 @dataclass
@@ -150,10 +155,17 @@ class GenerationTracker(SingletonMixin):
                     gen_a_elo REAL,
                     gen_b_elo REAL,
                     timestamp REAL DEFAULT (strftime('%s', 'now')),
+                    harness_type TEXT DEFAULT 'gumbel_mcts',
+                    difficulty REAL DEFAULT 1.0,
+                    ci_lower REAL,
+                    ci_upper REAL,
                     FOREIGN KEY (gen_a) REFERENCES model_generations(generation_id),
                     FOREIGN KEY (gen_b) REFERENCES model_generations(generation_id)
                 )
             """)
+
+            # January 2026: Migrate existing tables to add new columns
+            self._migrate_tournament_schema(cursor)
 
             # elo_progression table
             cursor.execute("""
@@ -168,6 +180,53 @@ class GenerationTracker(SingletonMixin):
             """)
 
             conn.commit()
+
+    def _migrate_tournament_schema(self, cursor: sqlite3.Cursor) -> None:
+        """Migrate existing generation_tournaments table to add new columns.
+
+        January 2026: Adds harness_type, difficulty, ci_lower, ci_upper columns
+        for enhanced tournament metadata tracking.
+        """
+        # Get existing columns
+        cursor.execute("PRAGMA table_info(generation_tournaments)")
+        columns = {row[1] for row in cursor.fetchall()}
+
+        # Add missing columns
+        if "harness_type" not in columns:
+            try:
+                cursor.execute(
+                    "ALTER TABLE generation_tournaments ADD COLUMN harness_type TEXT DEFAULT 'gumbel_mcts'"
+                )
+                logger.info("Added harness_type column to generation_tournaments")
+            except sqlite3.OperationalError:
+                pass  # Column might already exist
+
+        if "difficulty" not in columns:
+            try:
+                cursor.execute(
+                    "ALTER TABLE generation_tournaments ADD COLUMN difficulty REAL DEFAULT 1.0"
+                )
+                logger.info("Added difficulty column to generation_tournaments")
+            except sqlite3.OperationalError:
+                pass
+
+        if "ci_lower" not in columns:
+            try:
+                cursor.execute(
+                    "ALTER TABLE generation_tournaments ADD COLUMN ci_lower REAL"
+                )
+                logger.info("Added ci_lower column to generation_tournaments")
+            except sqlite3.OperationalError:
+                pass
+
+        if "ci_upper" not in columns:
+            try:
+                cursor.execute(
+                    "ALTER TABLE generation_tournaments ADD COLUMN ci_upper REAL"
+                )
+                logger.info("Added ci_upper column to generation_tournaments")
+            except sqlite3.OperationalError:
+                pass
 
     def record_generation(
         self,
@@ -219,6 +278,10 @@ class GenerationTracker(SingletonMixin):
         draws: int = 0,
         gen_a_elo: float | None = None,
         gen_b_elo: float | None = None,
+        harness_type: str = "gumbel_mcts",
+        difficulty: float = 1.0,
+        ci_lower: float | None = None,
+        ci_upper: float | None = None,
     ) -> int:
         """Record a tournament result between two generations.
 
@@ -230,6 +293,10 @@ class GenerationTracker(SingletonMixin):
             draws: Number of draws
             gen_a_elo: Elo rating of generation A after tournament
             gen_b_elo: Elo rating of generation B after tournament
+            harness_type: Harness used for tournament (January 2026)
+            difficulty: Difficulty level used (January 2026)
+            ci_lower: Wilson CI lower bound (January 2026)
+            ci_upper: Wilson CI upper bound (January 2026)
 
         Returns:
             The tournament record ID.
@@ -240,16 +307,18 @@ class GenerationTracker(SingletonMixin):
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO generation_tournaments
-                (gen_a, gen_b, gen_a_wins, gen_b_wins, draws, total_games, gen_a_elo, gen_b_elo)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, (gen_a, gen_b, gen_a_wins, gen_b_wins, draws, total_games, gen_a_elo, gen_b_elo))
+                (gen_a, gen_b, gen_a_wins, gen_b_wins, draws, total_games,
+                 gen_a_elo, gen_b_elo, harness_type, difficulty, ci_lower, ci_upper)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (gen_a, gen_b, gen_a_wins, gen_b_wins, draws, total_games,
+                  gen_a_elo, gen_b_elo, harness_type, difficulty, ci_lower, ci_upper))
 
             record_id = cursor.lastrowid
             conn.commit()
 
         logger.info(
             f"Recorded tournament: gen {gen_a} vs gen {gen_b} - "
-            f"{gen_a_wins}:{gen_b_wins} ({draws} draws)"
+            f"{gen_a_wins}:{gen_b_wins} ({draws} draws), harness={harness_type}"
         )
         return record_id
 
@@ -365,7 +434,10 @@ class GenerationTracker(SingletonMixin):
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT gen_a, gen_b, gen_a_wins, gen_b_wins, draws,
-                       total_games, gen_a_elo, gen_b_elo, timestamp
+                       total_games, gen_a_elo, gen_b_elo, timestamp,
+                       COALESCE(harness_type, 'gumbel_mcts'),
+                       COALESCE(difficulty, 1.0),
+                       ci_lower, ci_upper
                 FROM generation_tournaments
                 WHERE gen_a = ? OR gen_b = ?
                 ORDER BY timestamp DESC

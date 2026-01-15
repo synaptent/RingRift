@@ -97,11 +97,10 @@ from app.config.unified_config import get_config
 from app.coordination.coordination_bootstrap import bootstrap_coordination
 from app.config.coordination_defaults import DataFreshnessDefaults
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-logger = logging.getLogger(__name__)
+# January 2026: Use rotating file logger for long-running operation
+# This provides automatic rotation at 500 MB with 5 backups (2.5 GB max)
+from app.core.logging_config import script_logger
+logger = script_logger("master_loop", log_dir="logs/master_loop")
 
 
 # =============================================================================

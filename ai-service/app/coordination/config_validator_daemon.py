@@ -250,6 +250,12 @@ class ConfigValidatorDaemon(HandlerBase):
                 for issue in runpod_issues:
                     result.add_issue(issue)
 
+            # Jan 15, 2026: Validate relay configuration
+            # Phase 4 of P2P Resilience Plan - checks relay node availability
+            relay_issues = self._validate_relay_config(hosts)
+            for issue in relay_issues:
+                result.add_issue(issue)
+
             # Count valid nodes
             result.nodes_valid = (
                 result.nodes_checked - result.nodes_error - result.nodes_warning
@@ -761,6 +767,125 @@ class ConfigValidatorDaemon(HandlerBase):
         except Exception as e:
             logger.debug(f"[ConfigValidator] RunPod fetch error: {e}")
             return []
+
+    def _validate_relay_config(
+        self, hosts: dict[str, dict]
+    ) -> list[ValidationIssue]:
+        """Validate relay configuration for NAT-blocked nodes.
+
+        Jan 15, 2026: Phase 4 of P2P Resilience Plan.
+
+        Checks:
+        1. Relay nodes exist in config
+        2. Relay nodes have relay_capable: true
+        3. Relay nodes are not status: offline
+        4. Warn if node has < 2 configured relays
+
+        Args:
+            hosts: Dict of node_id -> host config
+
+        Returns:
+            List of validation issues
+        """
+        issues: list[ValidationIssue] = []
+
+        # Build set of relay-capable, online nodes
+        relay_capable_nodes: set[str] = set()
+        for node_id, cfg in hosts.items():
+            if cfg.get("relay_capable", False) and cfg.get("status") == "active":
+                relay_capable_nodes.add(node_id)
+
+        # Check each host's relay configuration
+        for node_id, cfg in hosts.items():
+            # Skip offline nodes
+            if cfg.get("status") == "offline":
+                continue
+
+            # Check each relay level
+            relay_fields = [
+                "relay_primary",
+                "relay_secondary",
+                "relay_tertiary",
+                "relay_quaternary",
+            ]
+
+            configured_relays = 0
+            valid_relays = 0
+
+            for relay_field in relay_fields:
+                relay_node = cfg.get(relay_field)
+                if not relay_node:
+                    continue
+
+                configured_relays += 1
+
+                # Check relay node exists
+                if relay_node not in hosts:
+                    issues.append(
+                        ValidationIssue(
+                            node_id=node_id,
+                            provider="relay",
+                            severity=ValidationSeverity.ERROR,
+                            message=f"{relay_field} '{relay_node}' not found in config",
+                            details={"field": relay_field, "relay_node": relay_node},
+                        )
+                    )
+                    continue
+
+                relay_cfg = hosts[relay_node]
+
+                # Check relay_capable flag
+                if not relay_cfg.get("relay_capable", False):
+                    issues.append(
+                        ValidationIssue(
+                            node_id=node_id,
+                            provider="relay",
+                            severity=ValidationSeverity.WARNING,
+                            message=f"{relay_field} '{relay_node}' not relay_capable",
+                            details={"field": relay_field, "relay_node": relay_node},
+                        )
+                    )
+                    continue
+
+                # Check relay status
+                if relay_cfg.get("status") == "offline":
+                    issues.append(
+                        ValidationIssue(
+                            node_id=node_id,
+                            provider="relay",
+                            severity=ValidationSeverity.ERROR,
+                            message=f"{relay_field} '{relay_node}' is offline",
+                            details={"field": relay_field, "relay_node": relay_node},
+                        )
+                    )
+                    continue
+
+                valid_relays += 1
+
+            # Warn if fewer than 2 valid relays for a NAT-blocked node
+            if configured_relays > 0 and valid_relays < 2:
+                issues.append(
+                    ValidationIssue(
+                        node_id=node_id,
+                        provider="relay",
+                        severity=ValidationSeverity.WARNING,
+                        message=f"Only {valid_relays} valid relay(s) configured (recommend 2+)",
+                        details={
+                            "configured_relays": configured_relays,
+                            "valid_relays": valid_relays,
+                        },
+                    )
+                )
+
+        # Summary log
+        if issues:
+            error_count = sum(1 for i in issues if i.severity == ValidationSeverity.ERROR)
+            warn_count = sum(1 for i in issues if i.severity == ValidationSeverity.WARNING)
+            logger.info(
+                f"[ConfigValidator] Relay validation: {error_count} errors, {warn_count} warnings"
+            )
+
+        return issues
 
     async def _emit_validation_events(self, result: ValidationResult) -> None:
         """Emit events based on validation result.
