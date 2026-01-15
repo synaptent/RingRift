@@ -8,7 +8,6 @@ import type {
   ChatHistoryPayload,
   JoinGamePayload,
   PlayerMovePayload,
-  PlayerMoveByIdPayload,
   PlayerChoiceResponsePayload,
   ChatMessagePayload,
   WebSocketErrorPayload,
@@ -245,29 +244,11 @@ export class SocketGameConnection implements GameConnection {
       return;
     }
 
-    let moveId: string | undefined;
-
-    if (
-      choice.type === 'line_order' ||
-      choice.type === 'region_order' ||
-      choice.type === 'ring_elimination'
-    ) {
-      const optionWithMoveId = selectedOption as { moveId?: string } | undefined;
-      moveId =
-        optionWithMoveId && typeof optionWithMoveId.moveId === 'string'
-          ? optionWithMoveId.moveId
-          : undefined;
-    } else if (choice.type === 'line_reward_option') {
-      const optionKey = selectedOption as string;
-      moveId = choice.moveIds?.[optionKey as keyof typeof choice.moveIds];
-    }
-
-    if (moveId) {
-      const payload: PlayerMoveByIdPayload = { gameId: this._gameId, moveId };
-      this.socket.emit('player_move_by_id', payload);
-      return;
-    }
-
+    // RR-FIX-2026-01-15: Always use player_choice_response instead of player_move_by_id.
+    // The player_move_by_id path causes lock contention when the server is awaiting
+    // a choice response (the game lock is held during requestChoice, so player_move_by_id
+    // cannot acquire it). player_choice_response doesn't need the lock - it just
+    // resolves the pending Promise.
     const response: PlayerChoiceResponsePayload = {
       choiceId: choice.id,
       playerNumber: choice.playerNumber,

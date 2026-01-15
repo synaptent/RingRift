@@ -70,10 +70,20 @@ export default [
       '@typescript-eslint/no-non-null-assertion': 'warn',
       'react/react-in-jsx-scope': 'off',
       'react/prop-types': 'off',
-      'no-console': ['warn', { allow: ['warn', 'error'] }],
+      // Stricter console rule: error to block commits with console.log
+      // Allow: debug (for guarded diagnostics), warn, error
+      'no-console': ['error', { allow: ['debug', 'warn', 'error'] }],
       'no-constant-condition': ['error', { checkLoops: false }],
       'no-case-declarations': 'off',
       'prefer-const': 'warn',
+    },
+  },
+
+  // Debug utility override - allow console statements in debug tools
+  {
+    files: ['src/client/utils/freezeDebugger.ts'],
+    rules: {
+      'no-console': 'off',
     },
   },
 

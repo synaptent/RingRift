@@ -23,6 +23,7 @@ import { useState, useRef, useCallback } from 'react';
 import type { Position, PlayerChoice, PlayerChoiceResponseFor } from '../../shared/types/game';
 import { positionsEqual } from '../../shared/types/game';
 import { useSandbox } from '../contexts/SandboxContext';
+import type { TerritoryRegionOption } from '../components/TerritoryRegionChoiceDialog';
 
 export interface UseSandboxDecisionHandlersOptions {
   choiceResolverRef: React.MutableRefObject<
@@ -173,10 +174,13 @@ export function useSandboxDecisionHandlers({
 
         // RR-FIX-2026-01-12: First try to match using option.spaces directly.
         // This is more reliable than looking up from territories map which may be stale.
-        const optionsWithSpaces = options.filter((opt) => opt.spaces && opt.spaces.length > 0);
+        const optionsWithSpaces = options.filter(
+          (opt): opt is TerritoryRegionOption & { spaces: Position[] } =>
+            opt.spaces != null && opt.spaces.length > 0
+        );
         if (optionsWithSpaces.length > 0) {
           const matchingBySpaces = optionsWithSpaces.filter((opt) =>
-            opt.spaces!.some((space) => positionsEqual(space, pos))
+            opt.spaces.some((space) => positionsEqual(space, pos))
           );
 
           if (matchingBySpaces.length === 1) {

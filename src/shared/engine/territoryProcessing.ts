@@ -121,9 +121,6 @@ export function canProcessTerritoryRegion(
   const regionKeySet = new Set(region.spaces.map((p) => positionToString(p)));
   const eliminationContext = ctx.eliminationContext ?? 'territory';
 
-  let eligibleStackCount = 0;
-  let playerStacksOutsideRegion = 0;
-
   for (const [key, stack] of board.stacks.entries()) {
     if (!regionKeySet.has(key)) {
       if (eliminationContext === 'recovery') {
@@ -132,7 +129,6 @@ export function canProcessTerritoryRegion(
         // ctx.player that can be extracted.
         const eligibility = isStackEligibleForElimination(stack, 'recovery', ctx.player);
         if (eligibility.eligible) {
-          eligibleStackCount++;
           return true;
         }
         continue;
@@ -143,24 +139,12 @@ export function canProcessTerritoryRegion(
       if (stack.controllingPlayer !== ctx.player) {
         continue;
       }
-      playerStacksOutsideRegion++;
       const eligibility = isStackEligibleForElimination(stack, 'territory', ctx.player);
       if (eligibility.eligible) {
-        eligibleStackCount++;
         return true;
       }
     }
   }
-
-  // RR-DEBUG-2026-01-14: Log when region is filtered out due to no eligible targets
-  console.log('[canProcessTerritoryRegion] No eligible targets:', {
-    player: ctx.player,
-    eliminationContext,
-    regionSpacesCount: region.spaces.length,
-    regionControllingPlayer: region.controllingPlayer,
-    playerStacksOutsideRegion,
-    eligibleStackCount,
-  });
 
   // No eligible self-elimination targets for this player outside the region.
   return false;
@@ -208,22 +192,6 @@ export function getProcessableTerritoryRegions(
 ): Territory[] {
   const allRegions = findDisconnectedRegionsShared(board);
   const processableRegions = filterProcessableTerritoryRegions(board, allRegions, ctx);
-
-  // RR-DEBUG-2026-01-14: Diagnostic logging for territory detection issues
-  if (allRegions.length > 0 || processableRegions.length > 0) {
-    console.log('[getProcessableTerritoryRegions] Territory detection:', {
-      player: ctx.player,
-      eliminationContext: ctx.eliminationContext,
-      allRegionsCount: allRegions.length,
-      allRegions: allRegions.map((r) => ({
-        controllingPlayer: r.controllingPlayer,
-        spacesCount: r.spaces.length,
-        isDisconnected: r.isDisconnected,
-      })),
-      processableCount: processableRegions.length,
-    });
-  }
-
   return processableRegions;
 }
 

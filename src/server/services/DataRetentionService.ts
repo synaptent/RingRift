@@ -79,15 +79,10 @@ export const DEFAULT_RETENTION: RetentionConfig = {
  * console.log(`Cleaned up ${report.hardDeletedUsers} users`);
  * ```
  *
- * @example Integration with cron job
+ * @example Integration with server startup (implemented in src/server/index.ts)
  * ```typescript
- * // TODO: Schedule via cron job or node-cron
- * // Example: Run daily at 3 AM UTC
- * // import cron from 'node-cron';
- * // cron.schedule('0 3 * * *', async () => {
- * //   const report = await retentionService.runRetentionTasks();
- * //   logger.info('Daily retention cleanup completed', { report });
- * // });
+ * // Scheduling is implemented via setTimeout in scheduleDataRetentionTask()
+ * // Runs daily at 3 AM UTC for GDPR compliance
  * ```
  */
 export class DataRetentionService {

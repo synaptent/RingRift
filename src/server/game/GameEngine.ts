@@ -50,6 +50,7 @@ import type {
   LineOrderChoice,
   LineRewardChoice,
   RingEliminationChoice,
+  RegionOrderChoice,
   PlayerChoiceResponseFor,
 } from '../../shared/types/game';
 import { BoardManager } from './BoardManager';
@@ -619,6 +620,76 @@ export class GameEngine {
           }
         }
 
+        // RR-FIX-2026-01-15: Route region_order decisions through the interaction
+        // manager so human players can explicitly choose which territory to claim.
+        // Without this, territory decisions were auto-selected even during chain
+        // captures, causing ring_elimination to surface at the wrong time.
+        if (decision.type === 'region_order' && this.interactionManager) {
+          const interaction = this.requireInteractionManager();
+
+          // Extract choose_territory_option moves (skip skip_territory_processing for now)
+          const territoryMoves = decision.options.filter(
+            (m) => m.type === 'choose_territory_option' && m.disconnectedRegions?.length
+          );
+
+          if (territoryMoves.length > 0) {
+            const choice: RegionOrderChoice = {
+              id: generateUUID(),
+              gameId: this.gameState.id,
+              playerNumber: decision.player,
+              type: 'region_order',
+              prompt:
+                territoryMoves.length > 1
+                  ? `Choose which territory region to claim (${territoryMoves.length} available). Each region costs your entire cap from a stack outside.`
+                  : 'Claim this territory region? It will cost your entire cap from a stack outside.',
+              options: territoryMoves.map((move, index) => {
+                const region = move.disconnectedRegions?.[0];
+                const representative = move.to as Position;
+                const option: RegionOrderChoice['options'][number] = {
+                  regionId: move.id || `region-${index}`,
+                  size: region?.spaces?.length ?? 0,
+                  representativePosition: representative,
+                  moveId: move.id,
+                };
+                // Only include spaces if defined (exactOptionalPropertyTypes)
+                if (region?.spaces) {
+                  option.spaces = region.spaces;
+                }
+                return option;
+              }),
+            };
+
+            const response: PlayerChoiceResponseFor<RegionOrderChoice> =
+              await interaction.requestChoice(choice);
+            const selectedMoveId = response.selectedOption.moveId;
+
+            const chosen =
+              territoryMoves.find((m) => m.id === selectedMoveId) ??
+              territoryMoves.find((m) => {
+                const to = m.to as Position | undefined;
+                return (
+                  to &&
+                  to.x === response.selectedOption.representativePosition.x &&
+                  to.y === response.selectedOption.representativePosition.y
+                );
+              }) ??
+              territoryMoves[0];
+
+            debugLog(
+              TRACE_DEBUG_ENABLED,
+              '[GameEngine.DecisionHandler] resolved region_order via choice',
+              {
+                player: decision.player,
+                optionCount: territoryMoves.length,
+                selectedMoveId,
+              }
+            );
+
+            return chosen;
+          }
+          // If no territory moves (only skip option), fall through to auto-resolve
+        }
+
         // For core move-driven decision types where the backend should behave
         // like an AI host in the absence of a real PlayerInteractionManager,
         // auto-select the first available option. This mirrors the
@@ -630,7 +701,7 @@ export class GameEngine {
         const autoResolvableTypes: string[] = [
           'elimination_target',
           'line_order',
-          'region_order',
+          'region_order', // Kept for fallback when no interaction manager / no territory moves
           'line_elimination_required',
         ];
 

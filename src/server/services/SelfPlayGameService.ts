@@ -17,6 +17,7 @@ import { gameRecordRepository } from './GameRecordRepository';
 import { getOrCreateAIUser } from './AIUserService';
 import type { BoardType as DomainBoardType, GameState, Move } from '../../shared/types/game';
 import type { FinalScore, GameOutcome, RecordSource } from '../../shared/types/gameRecord';
+import { processTurn } from '../../shared/engine/orchestration/turnOrchestrator';
 
 // Types for game data
 export interface SelfPlayGameSummary {
@@ -355,9 +356,9 @@ export class SelfPlayGameService {
 
   /**
    * Get game state at a specific move number.
-   * Uses snapshots if available, otherwise reconstructs from initial state.
+   * Uses snapshots if available, otherwise reconstructs from initial state by replaying moves.
    */
-  getStateAtMove(dbPath: string, gameId: string, moveNumber: number): unknown | null {
+  getStateAtMove(dbPath: string, gameId: string, moveNumber: number): GameState | null {
     const db = this.getDb(dbPath);
 
     // Try to find a snapshot at or before the target move
@@ -379,24 +380,68 @@ export class SelfPlayGameService {
         }
       | undefined;
 
+    let baseState: GameState;
+    let startMoveNumber: number;
+
     if (snapshot) {
       let stateJson = snapshot.state_json;
       if (snapshot.compressed && Buffer.isBuffer(stateJson)) {
         stateJson = gunzipSync(stateJson).toString('utf-8');
       }
-      // TODO: If snapshot is before target move, apply remaining moves
-      // For now, just return the snapshot
-      return JSON.parse(typeof stateJson === 'string' ? stateJson : stateJson.toString());
-    }
+      baseState = JSON.parse(
+        typeof stateJson === 'string' ? stateJson : stateJson.toString()
+      ) as GameState;
+      startMoveNumber = snapshot.move_number;
 
-    // Fall back to initial state if no snapshot and move is 0
-    if (moveNumber === 0) {
+      // If snapshot is at exact target move, return it directly
+      if (startMoveNumber === moveNumber) {
+        return baseState;
+      }
+    } else {
+      // No snapshot - start from initial state
       const game = this.getGame(dbPath, gameId);
-      return game?.initialState ?? null;
+      if (!game?.initialState) {
+        return null;
+      }
+      baseState = game.initialState as GameState;
+      startMoveNumber = 0;
     }
 
-    // TODO: Reconstruct state by applying moves from initial state
-    return null;
+    // Return initial state directly if target is move 0
+    if (moveNumber === 0) {
+      return baseState;
+    }
+
+    // Get moves from startMoveNumber + 1 to moveNumber
+    const moves = db
+      .prepare(
+        `
+      SELECT move_json
+      FROM game_moves
+      WHERE game_id = ? AND move_number > ? AND move_number <= ?
+      ORDER BY move_number
+    `
+      )
+      .all(gameId, startMoveNumber, moveNumber) as Array<{ move_json: string }>;
+
+    // Apply each move to reconstruct state
+    let currentState = baseState;
+    for (const row of moves) {
+      const move = JSON.parse(row.move_json) as Move;
+      try {
+        const result = processTurn(currentState, move, { replayCompatibility: true });
+        currentState = result.nextState;
+      } catch (error) {
+        logger.warn('Failed to apply move during state reconstruction', {
+          gameId,
+          moveNumber,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return null;
+      }
+    }
+
+    return currentState;
   }
 
   /**

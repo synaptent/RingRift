@@ -46,8 +46,6 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { useGameSoundEffects } from '../hooks/useGameSoundEffects';
 import { useGlobalGameShortcuts } from '../hooks/useKeyboardNavigation';
 import { useSoundOptional } from '../contexts/SoundContext';
-import type { PlayerChoice } from '../../shared/types/game';
-import type { DecisionAutoResolvedMeta } from '../../shared/types/websocket';
 
 // Import extracted hooks
 import { useBackendBoardSelection } from '../hooks/useBackendBoardSelection';

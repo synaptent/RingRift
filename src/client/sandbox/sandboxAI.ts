@@ -1616,7 +1616,7 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
               } as Move;
 
               if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
-                console.log(
+                console.debug(
                   '[Sandbox AI Debug] territory_processing fallback: applying eliminate_rings_from_stack',
                   {
                     position: eligibleStack.position,
@@ -1655,7 +1655,7 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
           } as Move;
 
           if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
-            console.log(
+            console.debug(
               '[Sandbox AI Debug] territory_processing fallback: applying no_territory_action'
             );
           }
@@ -1698,7 +1698,7 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
               } as Move;
 
               if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
-                console.log(
+                console.debug(
                   '[Sandbox AI Debug] line_processing fallback: applying eliminate_rings_from_stack',
                   {
                     position: eligibleStack.position,
@@ -1737,7 +1737,7 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
           } as Move;
 
           if (SANDBOX_AI_STALL_DIAGNOSTICS_ENABLED && !sandboxStallLoggingSuppressed) {
-            console.log('[Sandbox AI Debug] line_processing fallback: applying no_line_action');
+            console.debug('[Sandbox AI Debug] line_processing fallback: applying no_line_action');
           }
 
           try {

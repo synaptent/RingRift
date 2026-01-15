@@ -394,7 +394,10 @@ export function useBackendBoardHandlers(
       return;
     }
 
-    const pending = pendingMovementRef.current!;
+    const pending = pendingMovementRef.current;
+    if (!pending) {
+      return;
+    }
 
     // Find the matching move_stack or overtaking_capture move
     // (capture targets use overtaking_capture type, not move_stack)
@@ -560,10 +563,13 @@ export function useBackendBoardHandlers(
             // No options - let other handlers try
           } else {
             // Find which options contain the clicked position using spaces
-            const optionsWithSpaces = options.filter((opt) => opt.spaces && opt.spaces.length > 0);
+            const optionsWithSpaces = options.filter(
+              (opt): opt is TerritoryRegionOption & { spaces: Position[] } =>
+                opt.spaces != null && opt.spaces.length > 0
+            );
             if (optionsWithSpaces.length > 0) {
               const matchingBySpaces = optionsWithSpaces.filter((opt) =>
-                opt.spaces!.some((space) => positionsEqual(space, pos))
+                opt.spaces.some((space) => positionsEqual(space, pos))
               );
 
               if (matchingBySpaces.length === 1) {

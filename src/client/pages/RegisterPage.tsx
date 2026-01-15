@@ -55,7 +55,6 @@ export default function RegisterPage() {
         console.error('Error extracting message:', extractErr);
         message = 'Registration failed. Please check your details and try again.';
       }
-      console.log('Setting error message:', message);
       setError(message);
     } finally {
       setIsSubmitting(false);
