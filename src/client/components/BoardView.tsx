@@ -1738,8 +1738,12 @@ export const BoardView: React.FC<BoardViewProps> = ({
     const skipI = effectiveBoardType === 'square19';
     const files = generateFileLabels(size, skipI);
     const ranks = generateRankLabels(size, squareRankFromBottom ?? false);
+    // RR-FIX-2026-01-14: Adjusted offsets to bring coordinates closer to board
+    // Bottom and right labels now have smaller gaps for tighter layout
     const topOffset = effectiveBoardType === 'square19' ? 28 : 22;
-    const sideOffset = effectiveBoardType === 'square19' ? 28 : 24;
+    const bottomOffset = effectiveBoardType === 'square19' ? 22 : 14;
+    const leftOffset = effectiveBoardType === 'square19' ? 28 : 24;
+    const rightOffset = effectiveBoardType === 'square19' ? 22 : 14;
     const labelClass =
       'pointer-events-none absolute text-[10px] md:text-[11px] font-semibold tracking-wide text-slate-400 uppercase';
 
@@ -1759,7 +1763,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
             </span>
           ))}
         </div>
-        <div className="pointer-events-none absolute left-0 right-0" style={{ bottom: -topOffset }}>
+        <div
+          className="pointer-events-none absolute left-0 right-0"
+          style={{ bottom: -bottomOffset }}
+        >
           {files.map((file, idx) => (
             <span
               key={`file-bottom-${file}`}
@@ -1773,7 +1780,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
             </span>
           ))}
         </div>
-        <div className="pointer-events-none absolute top-0 bottom-0" style={{ left: -sideOffset }}>
+        <div className="pointer-events-none absolute top-0 bottom-0" style={{ left: -leftOffset }}>
           {ranks.map((rank, idx) => (
             <span
               key={`rank-left-${rank}`}
@@ -1787,7 +1794,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
             </span>
           ))}
         </div>
-        <div className="pointer-events-none absolute top-0 bottom-0" style={{ right: -sideOffset }}>
+        <div
+          className="pointer-events-none absolute top-0 bottom-0"
+          style={{ right: -rightOffset }}
+        >
           {ranks.map((rank, idx) => (
             <span
               key={`rank-right-${rank}`}

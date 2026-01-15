@@ -54,12 +54,13 @@ export function TutorialHintBanner({
 
   return (
     <div
-      className={`mx-2 sm:mx-4 mb-3 transition-all duration-250 ${
+      className={`transition-all duration-250 ${
         isDismissing
           ? 'animate-out slide-out-to-top fade-out duration-250'
           : 'animate-in slide-in-from-top duration-300'
       }`}
     >
+      {/* RR-FIX-2026-01-14: Removed mx margins to let parent control width */}
       <div className="rounded-xl border border-emerald-500/30 bg-slate-800/90 backdrop-blur-sm shadow-lg overflow-hidden">
         <div className="p-3 sm:p-4">
           <div className="flex items-start gap-3">

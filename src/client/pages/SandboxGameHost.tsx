@@ -2099,10 +2099,11 @@ export const SandboxGameHost: React.FC = () => {
           }}
         />
 
-        <main className="flex flex-col lg:flex-row lg:gap-2 gap-4">
+        <main className="flex flex-col lg:flex-row lg:gap-4 gap-4">
           {/* Tutorial Hint Banner - shown in "Learn the Basics" mode */}
+          {/* RR-FIX-2026-01-14: Restructured to prevent overlap with board */}
           {currentHint && isLearnBasicsMode && (
-            <div className="w-full lg:col-span-full">
+            <aside className="flex-shrink-0 w-full lg:w-64 xl:w-72">
               <TutorialHintBanner
                 hint={currentHint}
                 onDismiss={() => {
@@ -2121,7 +2122,7 @@ export const SandboxGameHost: React.FC = () => {
                   dismissHint();
                 }}
               />
-            </div>
+            </aside>
           )}
 
           {/* Board Section - extracted component */}
