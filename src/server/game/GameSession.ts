@@ -795,6 +795,7 @@ export class GameSession {
     let to: Position | undefined;
     let placementCount: number | undefined;
     let placedOnStack: boolean | undefined;
+    let captureTarget: Position | undefined;
 
     if (typeof moveData.position === 'string') {
       try {
@@ -806,6 +807,8 @@ export class GameSession {
           typeof parsed.placementCount === 'number' ? parsed.placementCount : undefined;
         placedOnStack =
           typeof parsed.placedOnStack === 'boolean' ? parsed.placedOnStack : undefined;
+        // Extract capture-specific fields for capture moves
+        captureTarget = parsed.captureTarget as Position | undefined;
       } catch (err) {
         logger.warn('Failed to parse move.position payload', {
           gameId: this.gameId,
@@ -816,7 +819,13 @@ export class GameSession {
       }
     } else if (moveData.position && typeof moveData.position === 'object') {
       const parsed = moveData.position as
-        | { from?: Position; to?: Position; placementCount?: number; placedOnStack?: boolean }
+        | {
+            from?: Position;
+            to?: Position;
+            placementCount?: number;
+            placedOnStack?: boolean;
+            captureTarget?: Position;
+          }
         | Position;
       if ('from' in parsed || 'to' in parsed) {
         const posObj = parsed as {
@@ -824,11 +833,13 @@ export class GameSession {
           to?: Position;
           placementCount?: number;
           placedOnStack?: boolean;
+          captureTarget?: Position;
         };
         from = posObj.from;
         to = (posObj.to as Position | undefined) ?? (posObj as unknown as Position | undefined);
         placementCount = posObj.placementCount;
         placedOnStack = posObj.placedOnStack;
+        captureTarget = posObj.captureTarget;
       } else {
         to = parsed as Position;
       }
@@ -843,6 +854,7 @@ export class GameSession {
       to,
       placementCount,
       placedOnStack,
+      captureTarget,
       thinkTime: 0,
     } as Omit<Move, 'id' | 'timestamp' | 'moveNumber'>;
 

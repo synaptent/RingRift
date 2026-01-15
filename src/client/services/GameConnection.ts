@@ -215,6 +215,10 @@ export class SocketGameConnection implements GameConnection {
       return;
     }
 
+    // Extract captureTarget for capture moves (may be on move object)
+    const captureTarget =
+      'captureTarget' in move ? (move as { captureTarget?: unknown }).captureTarget : undefined;
+
     const payload: PlayerMovePayload = {
       gameId: this._gameId,
       move: {
@@ -225,6 +229,8 @@ export class SocketGameConnection implements GameConnection {
           // Include placement-specific fields for ring placement moves
           placementCount: move.placementCount,
           placedOnStack: move.placedOnStack,
+          // Include capture-specific fields for capture moves
+          captureTarget,
         }),
         moveType: move.type as PlayerMovePayload['move']['moveType'],
       },

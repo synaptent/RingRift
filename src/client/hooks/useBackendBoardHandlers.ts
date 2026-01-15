@@ -443,10 +443,16 @@ export function useBackendBoardHandlers(
 
     if (pendingMove) {
       // Success! Submit the move and clear pending state
+      // For capture moves, include captureTarget from the server's move
+      const captureTarget =
+        'captureTarget' in pendingMove
+          ? (pendingMove as { captureTarget?: Position }).captureTarget
+          : undefined;
       console.log('[PendingMovement] Found matching move, submitting:', {
         type: pendingMove.type,
         from: pendingMove.from ? positionToString(pendingMove.from) : 'none',
         to: pendingMove.to ? positionToString(pendingMove.to) : 'none',
+        captureTarget: captureTarget ? positionToString(captureTarget) : 'none',
       });
       pendingMovementRef.current = null;
       pendingMovementRetryCount.current = 0;
@@ -454,6 +460,7 @@ export function useBackendBoardHandlers(
         type: pendingMove.type,
         from: pendingMove.from,
         to: pendingMove.to,
+        captureTarget,
       } as PartialMove);
       setSelected(undefined);
       setValidTargets([]);
