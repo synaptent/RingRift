@@ -301,14 +301,27 @@ export function useGamePlayViewModels(
   ]);
 
   // Event log view model
+  const eventLogBoardType = facade?.gameState?.boardType ?? 'square8';
+  const eventLogSquareRankFromBottom =
+    eventLogBoardType === 'square8' || eventLogBoardType === 'square19';
   const eventLogViewModel = useMemo<EventLogViewModel>(() => {
     return toEventLogViewModel(
       facade?.gameState?.history ?? [],
       additionalEventLogEntries,
       facade?.victoryState ?? null,
-      { maxEntries: 40 }
+      {
+        maxEntries: 40,
+        boardType: eventLogBoardType,
+        squareRankFromBottom: eventLogSquareRankFromBottom,
+      }
     );
-  }, [facade?.gameState?.history, additionalEventLogEntries, facade?.victoryState]);
+  }, [
+    facade?.gameState?.history,
+    additionalEventLogEntries,
+    facade?.victoryState,
+    eventLogBoardType,
+    eventLogSquareRankFromBottom,
+  ]);
 
   return {
     boardViewModel,

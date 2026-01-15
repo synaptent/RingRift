@@ -462,10 +462,20 @@ export function useBackendBoardHandlers(
 
       if (captureMoves.length > 0 && captureMoves[0].from) {
         const from = captureMoves[0].from as Position;
+        const fromKey = positionToString(from);
+
+        // RR-FIX-2026-01-15: Filter to only moves from the expected position.
+        // During chain_capture, all moves MUST come from the chain capture position.
+        // This defensive check ensures we don't highlight wrong landing positions
+        // if the server ever returns moves from multiple stacks.
+        const movesFromPosition = captureMoves.filter(
+          (m) => m.from && positionToString(m.from) === fromKey
+        );
+
         // Deduplicate landing positions
         const landingSet = new Set<string>();
         const landings: Position[] = [];
-        for (const m of captureMoves) {
+        for (const m of movesFromPosition) {
           if (m.to) {
             const key = positionToString(m.to);
             if (!landingSet.has(key)) {

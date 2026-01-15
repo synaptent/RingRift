@@ -34,6 +34,10 @@ import type {
   PlayerChoiceType,
 } from '../../shared/types/game';
 import { positionToString, positionsEqual } from '../../shared/types/game';
+import {
+  formatPosition as sharedFormatPosition,
+  type MoveNotationOptions,
+} from '../../shared/engine/notation';
 import type { ConnectionStatus } from '../domain/GameAPI';
 import { PLAYER_THEMES, type ColorVisionMode } from '../utils/playerTheme';
 import { getChoiceViewModel, getChoiceViewModelForType } from './choiceViewModels';
@@ -1278,12 +1282,9 @@ export function deriveBoardDecisionHighlights(
 // Event Log Transformer
 // ═══════════════════════════════════════════════════════════════════════════
 
-function formatPosition(pos?: Position): string {
+function formatPosition(pos?: Position, notationOptions?: MoveNotationOptions): string {
   if (!pos) return '';
-  if (typeof pos.z === 'number') {
-    return `(${pos.x}, ${pos.y}, ${pos.z})`;
-  }
-  return `(${pos.x}, ${pos.y})`;
+  return sharedFormatPosition(pos, notationOptions);
 }
 
 function mapMoveTypeToChoiceType(actionType: Move['type']): PlayerChoiceType | undefined {
@@ -1310,7 +1311,10 @@ function getDecisionTagForMove(action: Move): string | null {
   return `[${vm.copy.shortLabel}] `;
 }
 
-function describeHistoryEntry(entry: GameHistoryEntry): string {
+function describeHistoryEntry(
+  entry: GameHistoryEntry,
+  notationOptions?: MoveNotationOptions
+): string {
   const { action } = entry;
   const moveLabel = `#${entry.moveNumber}`;
   const playerLabel = `P${action.player}`;
@@ -1322,24 +1326,24 @@ function describeHistoryEntry(entry: GameHistoryEntry): string {
     }
     case 'place_ring': {
       const count = action.placementCount ?? 1;
-      return `${moveLabel} — ${playerLabel} placed ${count} ring${count === 1 ? '' : 's'} at ${formatPosition(action.to)}`;
+      return `${moveLabel} — ${playerLabel} placed ${count} ring${count === 1 ? '' : 's'} at ${formatPosition(action.to, notationOptions)}`;
     }
     case 'move_ring':
     case 'move_stack': {
-      return `${moveLabel} — ${playerLabel} moved from ${formatPosition(action.from)} to ${formatPosition(action.to)}`;
+      return `${moveLabel} — ${playerLabel} moved from ${formatPosition(action.from, notationOptions)} to ${formatPosition(action.to, notationOptions)}`;
     }
     case 'build_stack': {
-      return `${moveLabel} — ${playerLabel} built stack at ${formatPosition(action.to)} (Δ=${action.buildAmount ?? 1})`;
+      return `${moveLabel} — ${playerLabel} built stack at ${formatPosition(action.to, notationOptions)} (Δ=${action.buildAmount ?? 1})`;
     }
     case 'overtaking_capture': {
       const capturedCount = action.overtakenRings?.length ?? 0;
       const captureSuffix = capturedCount > 0 ? ` x${capturedCount}` : '';
-      return `${moveLabel} — ${playerLabel} capture from ${formatPosition(action.from)} over ${formatPosition(action.captureTarget)} to ${formatPosition(action.to)}${captureSuffix}`;
+      return `${moveLabel} — ${playerLabel} capture from ${formatPosition(action.from, notationOptions)} over ${formatPosition(action.captureTarget, notationOptions)} to ${formatPosition(action.to, notationOptions)}${captureSuffix}`;
     }
     case 'continue_capture_segment': {
       const capturedCount = action.overtakenRings?.length ?? 0;
       const captureSuffix = capturedCount > 0 ? ` x${capturedCount}` : '';
-      return `${moveLabel} — ${playerLabel} continued capture over ${formatPosition(action.captureTarget)} to ${formatPosition(action.to)}${captureSuffix}`;
+      return `${moveLabel} — ${playerLabel} continued capture over ${formatPosition(action.captureTarget, notationOptions)} to ${formatPosition(action.to, notationOptions)}${captureSuffix}`;
     }
     case 'process_line':
     case 'choose_line_reward': {
@@ -1427,6 +1431,10 @@ function describeVictory(victory?: GameResult | null): string | null {
 
 export interface ToEventLogViewModelOptions {
   maxEntries?: number;
+  /** Board type for position formatting (defaults to square8) */
+  boardType?: BoardType;
+  /** When true, square board ranks are computed from the bottom (chess style) */
+  squareRankFromBottom?: boolean;
 }
 
 /**
@@ -1438,7 +1446,13 @@ export function toEventLogViewModel(
   victoryState: GameResult | null | undefined,
   options: ToEventLogViewModelOptions = {}
 ): EventLogViewModel {
-  const { maxEntries = 40 } = options;
+  const { maxEntries = 40, boardType, squareRankFromBottom } = options;
+
+  // Build notation options for position formatting
+  const notationOptions: MoveNotationOptions = {
+    boardType: boardType ?? 'square8',
+    squareRankFromBottom: squareRankFromBottom ?? false,
+  };
 
   const entries: EventLogItemViewModel[] = [];
 
@@ -1457,7 +1471,7 @@ export function toEventLogViewModel(
   for (const entry of recentMoves) {
     entries.push({
       key: `move-${entry.moveNumber}`,
-      text: describeHistoryEntry(entry),
+      text: describeHistoryEntry(entry, notationOptions),
       type: 'move',
       moveNumber: entry.moveNumber,
     });
@@ -1502,6 +1516,17 @@ export function toBoardViewModel(
   const { selectedPosition, validTargets = [] } = options;
 
   const cells: CellViewModel[] = [];
+
+  // RR-FIX-2026-01-15: Log and guard against invalid board.size for square boards.
+  // If size is 0 or missing, the loop won't generate any cells, causing blank display.
+  if ((board.type === 'square8' || board.type === 'square19') && (!board.size || board.size < 1)) {
+    console.error('[toBoardViewModel] Invalid board.size for square board:', {
+      boardType: board.type,
+      size: board.size,
+      stacksCount: board.stacks?.size ?? 0,
+      markersCount: board.markers?.size ?? 0,
+    });
+  }
 
   // Generate all positions based on board type
   if (board.type === 'square8' || board.type === 'square19') {

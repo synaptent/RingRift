@@ -558,7 +558,7 @@ export class GameEngine {
             }
 
             const choice: RingEliminationChoice = {
-              id: generateUUID(),
+              id: generateUUID('ring_elimination', this.gameState.id, decision.player, Date.now()),
               gameId: this.gameState.id,
               playerNumber: decision.player,
               type: 'ring_elimination',
@@ -634,7 +634,7 @@ export class GameEngine {
 
           if (territoryMoves.length > 0) {
             const choice: RegionOrderChoice = {
-              id: generateUUID(),
+              id: generateUUID('region_order', this.gameState.id, decision.player, Date.now()),
               gameId: this.gameState.id,
               playerNumber: decision.player,
               type: 'region_order',

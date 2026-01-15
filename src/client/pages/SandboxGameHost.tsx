@@ -1853,11 +1853,12 @@ export const SandboxGameHost: React.FC = () => {
     !!sandboxPendingChoice &&
     sandboxPendingChoice.type === 'region_order';
 
+  const sandboxSquareRankFromBottom = boardTypeValue === 'square8' || boardTypeValue === 'square19';
   const sandboxEventLogViewModel = toEventLogViewModel(
     sandboxGameState?.history ?? [],
     [],
     sandboxVictoryResult,
-    { maxEntries: 40 }
+    { maxEntries: 40, boardType: boardTypeValue, squareRankFromBottom: sandboxSquareRankFromBottom }
   );
 
   const selectedStackDetails = (() => {

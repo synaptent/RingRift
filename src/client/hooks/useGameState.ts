@@ -87,6 +87,10 @@ export interface UseVictoryViewModelOptions {
 export interface UseEventLogViewModelOptions {
   systemEvents?: string[];
   maxEntries?: number;
+  /** Override board type for position formatting (defaults to gameState.boardType) */
+  boardType?: import('../../shared/types/game').BoardType;
+  /** When true, square board ranks are computed from the bottom (chess style) */
+  squareRankFromBottom?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -232,12 +236,29 @@ export function useBoardViewModel(options: ToBoardViewModelOptions = {}): BoardV
  */
 export function useEventLogViewModel(options: UseEventLogViewModelOptions = {}): EventLogViewModel {
   const { gameState, victoryState } = useGame();
-  const { systemEvents = [], maxEntries = 40 } = options;
+  const { systemEvents = [], maxEntries = 40, boardType, squareRankFromBottom } = options;
+
+  // Default to gameState.boardType if not explicitly provided
+  const effectiveBoardType = boardType ?? gameState?.boardType ?? 'square8';
+  // Default squareRankFromBottom based on board type if not explicitly provided
+  const effectiveSquareRankFromBottom =
+    squareRankFromBottom ?? (effectiveBoardType === 'square8' || effectiveBoardType === 'square19');
 
   return useMemo(() => {
     const history = gameState?.history ?? [];
-    return toEventLogViewModel(history, systemEvents, victoryState, { maxEntries });
-  }, [gameState?.history, victoryState, systemEvents, maxEntries]);
+    return toEventLogViewModel(history, systemEvents, victoryState, {
+      maxEntries,
+      boardType: effectiveBoardType,
+      squareRankFromBottom: effectiveSquareRankFromBottom,
+    });
+  }, [
+    gameState?.history,
+    victoryState,
+    systemEvents,
+    maxEntries,
+    effectiveBoardType,
+    effectiveSquareRankFromBottom,
+  ]);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

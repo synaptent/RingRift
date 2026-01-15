@@ -1,4 +1,4 @@
-import type { GameHistoryEntry, GameResult } from '../../shared/types/game';
+import type { GameHistoryEntry, GameResult, BoardType } from '../../shared/types/game';
 import { toEventLogViewModel, type EventLogViewModel } from '../adapters/gameViewModels';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -18,6 +18,10 @@ export interface GameEventLogLegacyProps {
   systemEvents?: string[];
   victoryState?: GameResult | null;
   maxEntries?: number;
+  /** Board type for position formatting (defaults to square8) */
+  boardType?: BoardType;
+  /** When true, square board ranks are computed from the bottom (chess style) */
+  squareRankFromBottom?: boolean;
 }
 
 /**
@@ -55,10 +59,24 @@ const DEFAULT_MAX_ENTRIES = 40;
  * backend and sandbox hosts share identical event formatting.
  */
 function toLegacyViewModel(props: GameEventLogLegacyProps): EventLogViewModel {
-  const { history, systemEvents = [], victoryState, maxEntries } = props;
+  const {
+    history,
+    systemEvents = [],
+    victoryState,
+    maxEntries,
+    boardType,
+    squareRankFromBottom,
+  } = props;
+
+  // Default squareRankFromBottom based on board type if not explicitly provided
+  const effectiveBoardType = boardType ?? 'square8';
+  const effectiveSquareRankFromBottom =
+    squareRankFromBottom ?? (effectiveBoardType === 'square8' || effectiveBoardType === 'square19');
 
   return toEventLogViewModel(history, systemEvents, victoryState ?? null, {
     maxEntries: maxEntries ?? DEFAULT_MAX_ENTRIES,
+    boardType: effectiveBoardType,
+    squareRankFromBottom: effectiveSquareRankFromBottom,
   });
 }
 
