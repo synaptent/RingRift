@@ -496,23 +496,28 @@ export function useBackendBoardHandlers(
     }
   }, [gameState?.currentPhase, pendingRingPlacement]);
 
-  // Effect to auto-select chain capture position when entering chain_capture phase
-  // Mirrors sandbox's automatic handling via getChainCaptureContextForCurrentPlayer()
+  // Effect to auto-select capture source when entering capture or chain_capture phase
+  // Mirrors sandbox's direct landing click pattern - user only needs to click the target
   useEffect(() => {
+    const phase = gameState?.currentPhase;
     if (
-      gameState?.currentPhase === 'chain_capture' &&
+      (phase === 'chain_capture' || phase === 'capture') &&
       Array.isArray(validMoves) &&
       validMoves.length > 0
     ) {
-      const chainMoves = validMoves.filter(
-        (m) => m.type === 'continue_capture_segment' || m.type === 'overtaking_capture'
+      // Filter for capture moves based on phase
+      const captureMoves = validMoves.filter((m) =>
+        phase === 'chain_capture'
+          ? m.type === 'continue_capture_segment' || m.type === 'overtaking_capture'
+          : m.type === 'overtaking_capture'
       );
-      if (chainMoves.length > 0 && chainMoves[0].from) {
-        const from = chainMoves[0].from as Position;
+
+      if (captureMoves.length > 0 && captureMoves[0].from) {
+        const from = captureMoves[0].from as Position;
         // Deduplicate landing positions
         const landingSet = new Set<string>();
         const landings: Position[] = [];
-        for (const m of chainMoves) {
+        for (const m of captureMoves) {
           if (m.to) {
             const key = positionToString(m.to);
             if (!landingSet.has(key)) {
@@ -521,7 +526,7 @@ export function useBackendBoardHandlers(
             }
           }
         }
-        console.log('[ChainCapture] Auto-selecting chain capture source:', {
+        console.log(`[${phase}] Auto-selecting capture source:`, {
           from: positionToString(from),
           validLandings: landings.map(positionToString),
         });
@@ -628,7 +633,63 @@ export function useBackendBoardHandlers(
               }
             }
 
-            // Fallback: check representative positions
+            // 2nd tier fallback: Look up from territories map (may have stale regionIds)
+            // This mirrors the sandbox's more robust territory matching pattern
+            const territories = board.territories;
+            if (territories && territories.size > 0) {
+              // Identify which territory region(s) contain the clicked cell
+              const clickedRegionIds: string[] = [];
+              territories.forEach((territory, regionId) => {
+                const spaces = territory.spaces ?? [];
+                if (spaces.some((space) => positionsEqual(space, pos))) {
+                  clickedRegionIds.push(regionId);
+                }
+              });
+
+              // Find all options whose regions contain the clicked cell
+              const matchingByRegion = options.filter((opt) =>
+                clickedRegionIds.includes(opt.regionId)
+              );
+
+              if (matchingByRegion.length === 1) {
+                onRespondToChoice(pendingChoice, matchingByRegion[0]);
+                return;
+              } else if (matchingByRegion.length > 1) {
+                // Multiple regions overlap at this cell - show disambiguation dialog
+                setTerritoryRegionPrompt({
+                  options: matchingByRegion,
+                  clickedPosition: pos,
+                });
+                return;
+              }
+
+              // 3rd tier: Representative position heuristic from territories
+              let matchedOption: TerritoryRegionOption | undefined;
+              territories.forEach((territory, regionId) => {
+                if (matchedOption) return;
+                const spaces = territory.spaces ?? [];
+                const containsClick = spaces.some((space) => positionsEqual(space, pos));
+                if (!containsClick) return;
+
+                const hasRepresentative = spaces.some((space) =>
+                  options.some((opt) => positionsEqual(opt.representativePosition, space))
+                );
+                if (hasRepresentative) {
+                  matchedOption = options.find((opt) =>
+                    spaces.some((space) => positionsEqual(space, opt.representativePosition))
+                  );
+                } else {
+                  matchedOption = options.find((opt) => opt.regionId === regionId);
+                }
+              });
+
+              if (matchedOption) {
+                onRespondToChoice(pendingChoice, matchedOption);
+                return;
+              }
+            }
+
+            // Final fallback: check direct representative position match
             const matchingByRepresentative = options.find((opt) =>
               positionsEqual(opt.representativePosition, pos)
             );
@@ -960,6 +1021,49 @@ export function useBackendBoardHandlers(
           triggerInvalidMove(pos, reason);
           return;
         }
+        return;
+      }
+
+      // Capture phase: direct landing click support (like sandbox)
+      // The auto-selection effect already sets selected and validTargets
+      if (gameState.currentPhase === 'capture') {
+        if (!Array.isArray(validMoves) || validMoves.length === 0) {
+          return;
+        }
+
+        // Look for overtaking_capture moves to this position (direct landing click)
+        const captureMoves = validMoves.filter(
+          (m) => m.type === 'overtaking_capture' && m.to && positionsEqual(m.to, pos)
+        );
+
+        if (captureMoves.length > 0) {
+          const captureMove = captureMoves[0];
+          const captureTarget = extractCaptureTarget(captureMove);
+          console.log('[Capture] Direct landing click, submitting capture:', {
+            from: captureMove.from ? positionToString(captureMove.from) : 'none',
+            to: captureMove.to ? positionToString(captureMove.to) : 'none',
+            captureTarget: captureTarget ? positionToString(captureTarget) : 'none',
+          });
+          submitMove({
+            type: captureMove.type,
+            from: captureMove.from,
+            to: captureMove.to,
+            captureTarget,
+          } as PartialMove);
+          // Don't clear selection - let the auto-selection effect handle the next state
+          return;
+        }
+
+        // Clicking elsewhere during capture phase - show feedback
+        const reason = analyzeInvalid(gameState, pos, {
+          isPlayer,
+          isMyTurn,
+          isConnected: isConnectionActive,
+          selectedPosition: selected,
+          validMoves: validMoves ?? undefined,
+          mustMoveFrom,
+        });
+        triggerInvalidMove(pos, reason);
         return;
       }
 
