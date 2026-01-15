@@ -421,8 +421,9 @@ describe('SandboxGameHost (React host behaviour)', () => {
 
     // Use the primary quick-start preset ("Learn the Basics") to kick off
     // backend sandbox creation, matching the main UX entry point.
-    const quickStartButton = screen.getByRole('button', { name: /Learn the Basics/i });
-    fireEvent.click(quickStartButton);
+    // Multiple buttons may match (mobile/desktop views) - use first one
+    const quickStartButtons = screen.getAllByRole('button', { name: /Learn the Basics/i });
+    fireEvent.click(quickStartButtons[0]);
 
     await waitFor(() => {
       expect(gameApi.createGame).toHaveBeenCalledTimes(1);
@@ -469,8 +470,9 @@ describe('SandboxGameHost (React host behaviour)', () => {
 
     render(<SandboxGameHost />);
 
-    const quickStartButton = screen.getByRole('button', { name: /Learn the Basics/i });
-    fireEvent.click(quickStartButton);
+    // Multiple buttons may match (mobile/desktop views) - use first one
+    const quickStartButtons = screen.getAllByRole('button', { name: /Learn the Basics/i });
+    fireEvent.click(quickStartButtons[0]);
 
     await waitFor(() => {
       expect(mockSandboxValue.initLocalSandboxEngine).toHaveBeenCalledTimes(1);

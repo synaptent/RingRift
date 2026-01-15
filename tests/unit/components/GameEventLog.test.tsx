@@ -420,7 +420,8 @@ describe('GameEventLog', () => {
     it('applies correct border and background styling', () => {
       render(<GameEventLog history={[]} />);
       const container = screen.getByTestId('game-event-log');
-      expect(container).toHaveClass('border', 'border-slate-700', 'bg-slate-900/50');
+      // Updated to match current component styling (bg-slate-900/70, with rounded-xl)
+      expect(container).toHaveClass('border', 'border-slate-700', 'bg-slate-900/70', 'rounded-xl');
     });
 
     it('renders moves in a list', () => {

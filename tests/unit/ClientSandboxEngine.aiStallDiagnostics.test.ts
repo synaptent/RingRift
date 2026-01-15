@@ -28,7 +28,10 @@ describe('ClientSandboxEngine sandbox AI stall diagnostics', () => {
     };
 
     // Provide a minimal window shim so sandboxAI can attach its trace buffer.
-    (global as any).window = {};
+    // Include setTimeout since sandboxAI uses window.setTimeout for yielding.
+    (global as any).window = {
+      setTimeout: globalThis.setTimeout,
+    };
 
     // Ensure we get a fresh copy of sandboxAI with the updated env applied.
     jest.resetModules();
