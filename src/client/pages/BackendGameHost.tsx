@@ -1366,7 +1366,7 @@ export const BackendGameHost: React.FC<BackendGameHostProps> = ({ gameId: routeG
               gameState.history,
               showSystemEventsInLog ? eventLog : [],
               victoryState,
-              { maxEntries: 40 }
+              { maxEntries: 40, boardType, squareRankFromBottom }
             )}
             showSystemEventsInLog={showSystemEventsInLog}
             isResigning={isResigning}

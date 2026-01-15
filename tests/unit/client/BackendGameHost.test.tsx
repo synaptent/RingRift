@@ -1300,7 +1300,11 @@ describe('BackendGameHost (React host behaviour)', () => {
     mockGameState = state;
     mockPlayers = state.players;
     mockCurrentPlayer = mockPlayers[0];
-    mockValidMoves = [];
+    // Include skip_territory_processing in valid moves so canSkipTerritory is true
+    mockValidMoves = [
+      { type: 'skip_territory_processing', to: { x: 0, y: 0 } } as Move,
+      { type: 'process_territory', to: regionSpaces[0] } as Move,
+    ];
 
     mockPendingChoice = {
       id: 'territory-choice-skip',
@@ -1334,22 +1338,17 @@ describe('BackendGameHost (React host behaviour)', () => {
     expect(skipHint).toBeInTheDocument();
     expect(skipHint).toHaveTextContent('Skip available');
 
-    // ChoiceDialog should render a dedicated skip option label.
-    const skipButton = screen.getByText('Skip territory processing for this turn');
+    // Skip button appears in sidebar (not ChoiceDialog, which is hidden for region_order)
+    const skipButton = screen.getByRole('button', { name: 'Skip Territory' });
     expect(skipButton).toBeInTheDocument();
 
-    // Selecting skip should route the underlying RegionOrderChoice option
-    // through the pending-choice responder so the server receives the
-    // canonical skip_territory_processing Move via moveId.
+    // Clicking skip button submits the skip_territory_processing move
     fireEvent.click(skipButton);
 
-    expect(mockRespondToChoice).toHaveBeenCalledTimes(1);
-    const selected = mockRespondToChoice.mock.calls[0][0];
-    expect(selected).toMatchObject({
-      regionId: 'skip',
-      size: 0,
-      moveId: 'skip-territory-processing',
-    });
+    expect(mockSubmitMove).toHaveBeenCalledTimes(1);
+    expect(mockSubmitMove).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'skip_territory_processing' })
+    );
   });
 
   it('applies hex-board elimination pulses for ring_elimination choices on data-z cells', () => {

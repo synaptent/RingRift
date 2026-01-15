@@ -130,6 +130,10 @@ const GameContext = createContext<GameContextType | null>(null);
 // serialized to plain objects.
 function hydrateBoardState(rawBoard: Record<string, unknown> | null | undefined): BoardState {
   if (!rawBoard) {
+    // RR-FIX-2026-01-15: Log when returning empty fallback board - this can cause blank board display.
+    console.error(
+      '[GameContext] hydrateBoardState received null/undefined rawBoard, returning empty fallback'
+    );
     // Fallback empty board; callers should guard against this.
     return {
       stacks: new Map(),
@@ -152,6 +156,19 @@ function hydrateBoardState(rawBoard: Record<string, unknown> | null | undefined)
   const markers = new Map<string, MarkerInfo>(Object.entries(rawMarkers));
   const collapsedSpaces = new Map<string, number>(Object.entries(rawCollapsed));
   const territories = new Map<string, Territory>(Object.entries(rawTerritories));
+
+  // RR-DEBUG-2026-01-15: Log hydration details to diagnose blank board issues
+  const boardSize = rawBoard.size as number;
+  if (!boardSize || boardSize < 1) {
+    console.error('[GameContext] hydrateBoardState: Invalid board size after hydration:', {
+      size: boardSize,
+      type: rawBoard.type,
+      stacksCount: stacks.size,
+      markersCount: markers.size,
+      collapsedCount: collapsedSpaces.size,
+      rawBoardKeys: Object.keys(rawBoard),
+    });
+  }
 
   return {
     stacks,

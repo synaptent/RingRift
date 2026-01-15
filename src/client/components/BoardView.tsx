@@ -757,28 +757,6 @@ export const BoardView: React.FC<BoardViewProps> = ({
   const isRingEliminationDecisionContext = decisionChoiceKind === 'ring_elimination';
   const isTerritoryRegionDecisionContext = decisionChoiceKind === 'territory_region_order';
 
-  // RR-DEBUG-2026-01-11: Log decision highlight context in BoardView
-  React.useEffect(() => {
-    if (isRingEliminationDecisionContext || highlightByKey.size > 0) {
-      // eslint-disable-next-line no-console
-      console.log('[BoardView] Decision highlight state:', {
-        decisionChoiceKind,
-        isRingEliminationDecisionContext,
-        highlightByKeySize: highlightByKey.size,
-        highlightKeys: Array.from(highlightByKey.keys()),
-        hasDecisionHighlightsProp: !!decisionHighlightsProp,
-        hasViewModelHighlights: !!viewModel?.decisionHighlights,
-        effectiveHighlightsCount: effectiveDecisionHighlights?.highlights?.length ?? 0,
-      });
-    }
-  }, [
-    decisionChoiceKind,
-    isRingEliminationDecisionContext,
-    highlightByKey,
-    decisionHighlightsProp,
-    viewModel,
-    effectiveDecisionHighlights,
-  ]);
   const territoryRegionIdsInDisplayOrder =
     effectiveDecisionHighlights?.territoryRegions?.regionIdsInDisplayOrder ?? [];
 
@@ -1816,6 +1794,21 @@ export const BoardView: React.FC<BoardViewProps> = ({
   };
 
   const renderSquareBoard = (size: number) => {
+    // RR-FIX-2026-01-15: Guard against invalid size causing blank board.
+    if (!size || size < 1) {
+      console.error('[BoardView] Invalid size for square board, cannot render cells:', {
+        size,
+        boardSize: board.size,
+        boardType: board.type,
+      });
+      return (
+        <div className="p-8 text-center text-red-500 bg-red-100 border border-red-300 rounded">
+          <p className="font-bold">Board rendering error</p>
+          <p className="text-sm">Board size is invalid. Please refresh the page.</p>
+        </div>
+      );
+    }
+
     const rows: React.ReactNode[] = [];
     // Cell sizing: mobile-first responsive sizing for 375px-768px viewports.
     // Square8: 44px cells fit 8 columns in 375px (8×44 + 7×2 gaps = 366px)
@@ -2285,6 +2278,22 @@ export const BoardView: React.FC<BoardViewProps> = ({
     //   s = -q - r
     // We render each q as a row and then wrap all rows in a flex column
     // with slight negative spacing to reduce vertical gaps.
+
+    // RR-FIX-2026-01-15: Guard against invalid board.size causing blank board.
+    // If size is 0 or missing, log error and show fallback message.
+    if (!board.size || board.size < 1) {
+      console.error('[BoardView] Invalid board.size for hex board, cannot render cells:', {
+        size: board.size,
+        boardType: board.type,
+        stacksCount: board.stacks?.size ?? 0,
+      });
+      return (
+        <div className="p-8 text-center text-red-500 bg-red-100 border border-red-300 rounded">
+          <p className="font-bold">Board rendering error</p>
+          <p className="text-sm">Board size is invalid. Please refresh the page.</p>
+        </div>
+      );
+    }
 
     // Hex board size is bounding box (2*radius + 1), so radius = (size - 1) / 2
     // e.g. hex8: size=9 => radius=4, hexagonal: size=25 => radius=12
