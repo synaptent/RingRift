@@ -511,17 +511,12 @@ class MultiHarnessGauntlet:
 
         results = await asyncio.to_thread(run_gauntlet)
 
-        # Aggregate results across baselines
-        total_wins = 0
-        total_losses = 0
-        total_draws = 0
-        total_games = 0
-
-        for baseline_result in results.values():
-            total_wins += baseline_result.wins
-            total_losses += baseline_result.losses
-            total_draws += baseline_result.draws
-            total_games += baseline_result.games_played
+        # Use the GauntletResult's aggregated stats directly
+        # The opponent_results dict has per-opponent stats, but we use totals from GauntletResult
+        total_wins = results.total_wins
+        total_losses = results.total_losses
+        total_draws = results.total_draws
+        total_games = results.total_games
 
         # Calculate win rate and estimate Elo
         if total_games == 0:
