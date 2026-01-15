@@ -411,24 +411,25 @@ export function useBackendBoardHandlers(
 
     const pending = pendingMovementRef.current!;
 
-    // Find the matching move_stack move
-    const moveStackMove = validMoves.find(
+    // Find the matching move_stack or overtaking_capture move
+    // (capture targets use overtaking_capture type, not move_stack)
+    const pendingMove = validMoves.find(
       (m) =>
-        m.type === 'move_stack' &&
+        (m.type === 'move_stack' || m.type === 'overtaking_capture') &&
         m.from &&
         positionsEqual(m.from, pending.from) &&
         m.to &&
         positionsEqual(m.to, pending.to)
     );
 
-    if (moveStackMove) {
+    if (pendingMove) {
       // Success! Submit the move and clear pending state
       pendingMovementRef.current = null;
       pendingMovementRetryCount.current = 0;
       submitMove({
-        type: moveStackMove.type,
-        from: moveStackMove.from,
-        to: moveStackMove.to,
+        type: pendingMove.type,
+        from: pendingMove.from,
+        to: pendingMove.to,
       } as PartialMove);
       setSelected(undefined);
       setValidTargets([]);
