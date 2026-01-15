@@ -48,6 +48,17 @@ import {
 import type { TerritoryRegionOption } from '../components/TerritoryRegionChoiceDialog';
 
 /**
+ * Extract captureTarget from a move object if it's a capture move.
+ * Mirrors how sandbox naturally gets captureTarget from aggregates.
+ */
+function extractCaptureTarget(move: Move | PartialMove): Position | undefined {
+  if ('captureTarget' in move && move.captureTarget) {
+    return move.captureTarget as Position;
+  }
+  return undefined;
+}
+
+/**
  * Create a MovementBoardView adapter from a BoardState for computing valid landing positions.
  * Used by skip_placement shortcut to validate targets before sending to server.
  */
@@ -386,11 +397,11 @@ export function useBackendBoardHandlers(
     const prevPhase = prevPhaseRef.current;
     prevPhaseRef.current = currentPhase ?? null;
 
-    // Clear stale pending movements (older than 5 seconds)
+    // Clear stale pending movements (older than 10 seconds, forgiving of slow networks)
     if (pendingMovementRef.current) {
       const age = Date.now() - pendingMovementRef.current.timestamp;
-      if (age > 5000) {
-        console.warn('[PendingMovement] Clearing stale pending movement after 5s timeout');
+      if (age > 10000) {
+        console.warn('[PendingMovement] Clearing stale pending movement after 10s timeout');
         pendingMovementRef.current = null;
         pendingMovementRetryCount.current = 0;
         return;
@@ -444,10 +455,7 @@ export function useBackendBoardHandlers(
     if (pendingMove) {
       // Success! Submit the move and clear pending state
       // For capture moves, include captureTarget from the server's move
-      const captureTarget =
-        'captureTarget' in pendingMove
-          ? (pendingMove as { captureTarget?: Position }).captureTarget
-          : undefined;
+      const captureTarget = extractCaptureTarget(pendingMove);
       console.log('[PendingMovement] Found matching move, submitting:', {
         type: pendingMove.type,
         from: pendingMove.from ? positionToString(pendingMove.from) : 'none',
@@ -464,7 +472,7 @@ export function useBackendBoardHandlers(
       } as PartialMove);
       setSelected(undefined);
       setValidTargets([]);
-    } else if (pendingMovementRetryCount.current < 3) {
+    } else if (pendingMovementRetryCount.current < 5) {
       // Move not found in validMoves - this may be because validMoves is stale
       // Schedule a retry after a brief delay to allow state to settle
       pendingMovementRetryCount.current += 1;
@@ -487,6 +495,41 @@ export function useBackendBoardHandlers(
       setPendingRingPlacement(null);
     }
   }, [gameState?.currentPhase, pendingRingPlacement]);
+
+  // Effect to auto-select chain capture position when entering chain_capture phase
+  // Mirrors sandbox's automatic handling via getChainCaptureContextForCurrentPlayer()
+  useEffect(() => {
+    if (
+      gameState?.currentPhase === 'chain_capture' &&
+      Array.isArray(validMoves) &&
+      validMoves.length > 0
+    ) {
+      const chainMoves = validMoves.filter(
+        (m) => m.type === 'continue_capture_segment' || m.type === 'overtaking_capture'
+      );
+      if (chainMoves.length > 0 && chainMoves[0].from) {
+        const from = chainMoves[0].from as Position;
+        // Deduplicate landing positions
+        const landingSet = new Set<string>();
+        const landings: Position[] = [];
+        for (const m of chainMoves) {
+          if (m.to) {
+            const key = positionToString(m.to);
+            if (!landingSet.has(key)) {
+              landingSet.add(key);
+              landings.push(m.to);
+            }
+          }
+        }
+        console.log('[ChainCapture] Auto-selecting chain capture source:', {
+          from: positionToString(from),
+          validLandings: landings.map(positionToString),
+        });
+        setSelected(from);
+        setValidTargets(landings);
+      }
+    }
+  }, [gameState?.currentPhase, validMoves, setSelected, setValidTargets]);
 
   // Confirm the pending ring placement
   const confirmPendingRingPlacement = useCallback(() => {
@@ -890,10 +933,7 @@ export function useBackendBoardHandlers(
         if (chainMoves.length > 0) {
           const chainMove = chainMoves[0];
           // Include captureTarget for capture moves
-          const captureTarget =
-            'captureTarget' in chainMove
-              ? (chainMove as { captureTarget?: Position }).captureTarget
-              : undefined;
+          const captureTarget = extractCaptureTarget(chainMove);
           submitMove({
             type: chainMove.type,
             from: chainMove.from,
@@ -1071,10 +1111,7 @@ export function useBackendBoardHandlers(
 
         if (matching) {
           // Include captureTarget for capture moves
-          const captureTarget =
-            'captureTarget' in matching
-              ? (matching as { captureTarget?: Position }).captureTarget
-              : undefined;
+          const captureTarget = extractCaptureTarget(matching);
           submitMove({
             type: matching.type,
             from: matching.from,
