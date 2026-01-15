@@ -758,12 +758,9 @@ def run_selfplay(config: GumbelSelfplayConfig) -> list[GameResult]:
                 )
 
         except Exception as e:
-            # Jan 14, 2026: Improved error logging with traceback for debugging
-            import traceback
-            logger.error(
-                f"Game {game_idx} failed with {type(e).__name__}: {e}\n"
-                f"Traceback: {traceback.format_exc()}"
-            )
+            # Jan 15, 2026: Use logger.exception() for safe exception logging
+            # (avoids RingRiftError.__str__() crash when error code is misconfigured)
+            logger.exception(f"Game {game_idx} failed with {type(e).__name__}")
             continue
 
     # Summary

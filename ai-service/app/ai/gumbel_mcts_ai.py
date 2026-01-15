@@ -46,6 +46,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from ..errors import ModelVersioningError
 from ..models import AIConfig, BoardType, GameState, Move
 from ..rules.mutable_state import MoveUndo, MutableGameState
 from .base import BaseAI
@@ -658,10 +659,9 @@ class GumbelMCTSAI(BaseAI):
         if self._use_gpu_tree:
             try:
                 return self._gumbel_mcts_search_gpu_tree(game_state, valid_moves)
-            except (RuntimeError, ValueError, AttributeError) as e:
-                logger.warning(
-                    f"GPU tree search failed, falling back to CPU: {e}"
-                )
+            except (RuntimeError, ValueError, AttributeError, ModelVersioningError):
+                # Use logger.exception() for safe exception logging (avoids __str__ crash)
+                logger.exception("GPU tree search failed, falling back to CPU")
                 # Fall through to CPU implementation
 
         # Get policy logits from neural network

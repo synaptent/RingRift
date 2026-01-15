@@ -122,14 +122,25 @@ class ChecksumMismatchError(ModelVersioningError):
         self.actual = actual
         self.checkpoint_path = checkpoint_path
 
+        # Truncate checksums in message for readability
+        expected_short = expected[:16] + "..." if len(expected) > 16 else expected
+        actual_short = actual[:16] + "..." if len(actual) > 16 else actual
+
         message = (
             f"Checkpoint integrity check failed!\n"
-            f"  Expected checksum: {expected}\n"
-            f"  Actual checksum: {actual}\n"
+            f"  Expected checksum: {expected_short}\n"
+            f"  Actual checksum: {actual_short}\n"
             f"  Checkpoint path: {checkpoint_path}\n"
             f"  The checkpoint file may be corrupted."
         )
-        super().__init__(message)
+        super().__init__(
+            message,
+            details={
+                "expected": expected,
+                "actual": actual,
+                "checkpoint_path": checkpoint_path,
+            },
+        )
 
 
 class LegacyCheckpointError(ModelVersioningError):

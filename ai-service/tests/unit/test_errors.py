@@ -431,7 +431,7 @@ class TestTrainingErrors:
     def test_training_error_defaults(self):
         """Test TrainingError default attributes."""
         error = TrainingError("Training failed")
-        assert error.code == ErrorCode.TRAINING_INTERRUPTED
+        assert error.code == ErrorCode.TRAINING_ERROR
         assert error.retryable is False
 
     def test_data_quality_error_defaults(self):
@@ -461,7 +461,7 @@ class TestTrainingErrors:
     def test_model_versioning_error_defaults(self):
         """Test ModelVersioningError default attributes."""
         error = ModelVersioningError("Version mismatch")
-        assert error.code == ErrorCode.MODEL_LOAD_FAILED
+        assert error.code == ErrorCode.MODEL_VERSIONING_ERROR
         assert isinstance(error, TrainingError)
 
 

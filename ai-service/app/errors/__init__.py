@@ -86,6 +86,12 @@ class ErrorCode(Enum):
     CONVERGENCE_FAILED = 402
     CHECKPOINT_CORRUPT = 403
     TRAINING_INTERRUPTED = 404
+    TRAINING_ERROR = 405
+    CHECKPOINT_ERROR = 406
+    MODEL_VERSIONING_ERROR = 407
+    DATA_LOAD_ERROR = 408
+    EVALUATION_ERROR = 409
+    SELFPLAY_ERROR = 410
 
     # Daemon errors (5xx)
     DAEMON_START_FAILED = 500
@@ -149,27 +155,45 @@ class RingRiftError(Exception):
 
     def __str__(self) -> str:
         parts = [self.message]
-        if self.code != ErrorCode.UNKNOWN:
-            # Handle both string and enum codes
-            code_name = self.code.name if isinstance(self.code, ErrorCode) else str(self.code)
-            parts.append(f"[{code_name}]")
+        if self.code is not None:
+            try:
+                if isinstance(self.code, ErrorCode):
+                    if self.code != ErrorCode.UNKNOWN:
+                        parts.append(f"[{self.code.name}]")
+                else:
+                    # Defensive: handle string codes gracefully
+                    parts.append(f"[{self.code}]")
+            except (AttributeError, ValueError, TypeError):
+                # Ultimate fallback: just skip the code
+                pass
         if self.details:
-            detail_str = ", ".join(f"{k}={v}" for k, v in self.details.items())
-            parts.append(f"({detail_str})")
+            try:
+                detail_str = ", ".join(f"{k}={v}" for k, v in self.details.items())
+                parts.append(f"({detail_str})")
+            except (AttributeError, TypeError):
+                pass
         return " ".join(parts)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        # Handle both string and enum codes
-        code_value = self.code.value if isinstance(self.code, ErrorCode) else self.code
-        code_name = self.code.name if isinstance(self.code, ErrorCode) else str(self.code)
+        try:
+            if isinstance(self.code, ErrorCode):
+                code_value = self.code.value
+                code_name = self.code.name
+            else:
+                code_value = self.code
+                code_name = str(self.code)
+        except (AttributeError, ValueError, TypeError):
+            code_value = "UNKNOWN"
+            code_name = "UNKNOWN"
+
         return {
             "error": self.__class__.__name__,
             "message": self.message,
             "code": code_value,
             "code_name": code_name,
             "retryable": self.retryable,
-            "details": self.details,
+            "details": self.details or {},
         }
 
 
@@ -361,7 +385,7 @@ class TrainingError(RingRiftError):
     - Model convergence problems
     - Checkpoint loading errors
     """
-    code: str = "TRAINING_ERROR"
+    code = ErrorCode.TRAINING_ERROR
     retryable = False  # Usually need intervention
 
 
@@ -416,27 +440,27 @@ class ConvergenceError(TrainingError):
 
 class CheckpointError(TrainingError):
     """Error during checkpoint save/load operations."""
-    code: str = "CHECKPOINT_ERROR"
+    code = ErrorCode.CHECKPOINT_ERROR
 
 
 class ModelVersioningError(CheckpointError):
     """Error in model versioning or compatibility."""
-    code: str = "MODEL_VERSIONING_ERROR"
+    code = ErrorCode.MODEL_VERSIONING_ERROR
 
 
 class DataLoadError(TrainingError):
     """Error loading training data."""
-    code: str = "DATA_LOAD_ERROR"
+    code = ErrorCode.DATA_LOAD_ERROR
 
 
 class EvaluationError(TrainingError):
     """Error during model evaluation."""
-    code: str = "EVALUATION_ERROR"
+    code = ErrorCode.EVALUATION_ERROR
 
 
 class SelfplayError(TrainingError):
     """Error during self-play data generation."""
-    code: str = "SELFPLAY_ERROR"
+    code = ErrorCode.SELFPLAY_ERROR
 
 
 # =============================================================================
