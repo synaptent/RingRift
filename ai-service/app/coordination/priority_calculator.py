@@ -85,9 +85,10 @@ CONFIG_PRIORITY_OVERRIDES: dict[str, int] = {
     "square8_2p": 1,    # HIGH - 83 matches (upgraded from CRITICAL, now has data)
     # MEDIUM (2): Sufficient data but below target Elo (1600)
     "hex8_3p": 2,       # MEDIUM - 175 matches, Elo 1292
-    "hex8_4p": 2,       # MEDIUM - 187 matches, Elo 1545
     "square8_3p": 2,    # MEDIUM - 377 matches
-    "square8_4p": 2,    # MEDIUM - 488 matches, Elo 1137
+    # CRITICAL (0): Data quality crisis - need gumbel selfplay data (Jan 15, 2026)
+    "square8_4p": 0,    # CRITICAL - Elo 529 after training, needs more quality gumbel data
+    "hex8_4p": 0,       # CRITICAL - underserved 4p config, needs quality gumbel data
     # hex8_2p: No override - 810 matches, uses default priority calculation
 }
 
