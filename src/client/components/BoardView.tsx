@@ -1742,7 +1742,7 @@ export const BoardView: React.FC<BoardViewProps> = ({
     // All labels now have minimal gaps for tight, uniform layout
     const topOffset = effectiveBoardType === 'square19' ? 24 : 18;
     const bottomOffset = effectiveBoardType === 'square19' ? 16 : 4;
-    const leftOffset = effectiveBoardType === 'square19' ? 18 : 6;
+    const leftOffset = effectiveBoardType === 'square19' ? 18 : 12;
     const rightOffset = effectiveBoardType === 'square19' ? 16 : 4;
     const labelClass =
       'pointer-events-none absolute text-[10px] md:text-[11px] font-semibold tracking-wide text-slate-400 uppercase';
