@@ -375,11 +375,15 @@ export const SandboxGameHost: React.FC = () => {
               choiceType: choice.type,
               choiceId: choice.id,
               playerNumber: choice.playerNumber,
-              optionsCount: (choice as any).options?.length ?? 0,
-              options: (choice as any).options?.map((opt: any) => ({
-                stackPosition: opt.stackPosition,
-                regionId: opt.regionId,
-              })),
+              optionsCount:
+                'options' in choice && Array.isArray(choice.options) ? choice.options.length : 0,
+              options:
+                'options' in choice && Array.isArray(choice.options)
+                  ? choice.options.map((opt: { stackPosition?: unknown; regionId?: unknown }) => ({
+                      stackPosition: opt.stackPosition,
+                      regionId: opt.regionId,
+                    }))
+                  : undefined,
             });
             // RR-FIX-2026-01-10: Clear any stale capture choice to ensure activePendingChoice
             // uses sandboxPendingChoice. This prevents a leftover sandboxCaptureChoice from
@@ -1558,7 +1562,12 @@ export const SandboxGameHost: React.FC = () => {
         hasGameState: !!sandboxGameState,
         activePendingChoiceType: activePendingChoice?.type,
         activePendingChoiceId: activePendingChoice?.id,
-        optionsCount: (activePendingChoice as any)?.options?.length ?? 0,
+        optionsCount:
+          activePendingChoice &&
+          'options' in activePendingChoice &&
+          Array.isArray(activePendingChoice.options)
+            ? activePendingChoice.options.length
+            : 0,
         baseDecisionHighlightsChoiceKind: baseDecisionHighlights?.choiceKind,
         baseDecisionHighlightsCount: baseDecisionHighlights?.highlights?.length ?? 0,
         highlightPositions: baseDecisionHighlights?.highlights?.map((h) => h.positionKey),

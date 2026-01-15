@@ -67,7 +67,7 @@ class FreezeDebuggerClass {
     // Auto-enable in development
     if (typeof window !== 'undefined') {
       // Expose globally for console access
-      (window as any).__FREEZE_DEBUGGER__ = this;
+      (window as unknown as { __FREEZE_DEBUGGER__: FreezeDebugger }).__FREEZE_DEBUGGER__ = this;
 
       // Try to open IndexedDB
       this.initIndexedDB();
@@ -291,7 +291,9 @@ class FreezeDebuggerClass {
   private saveToLocalStorage(state: FreezeDebugState): void {
     try {
       // Don't include rawState in localStorage (too large)
-      const { rawState, ...stateWithoutRaw } = state as FreezeDebugState & { rawState?: GameState };
+      const { rawState: _rawState, ...stateWithoutRaw } = state as FreezeDebugState & {
+        rawState?: GameState;
+      };
       localStorage.setItem(LOCALSTORAGE_KEY, JSON.stringify(stateWithoutRaw));
     } catch (err) {
       // localStorage might be full
@@ -302,11 +304,11 @@ class FreezeDebuggerClass {
   private saveHistoryToLocalStorage(): void {
     try {
       const historyData: FreezeDebugHistory = {
-        states: this.history.map(({ rawState, ...rest }) => rest),
+        states: this.history.map(({ rawState: _rawState, ...rest }) => rest),
         lastUpdated: new Date().toISOString(),
       };
       localStorage.setItem(LOCALSTORAGE_HISTORY_KEY, JSON.stringify(historyData));
-    } catch (err) {
+    } catch (_err) {
       // localStorage might be full - trim history
       if (this.history.length > 5) {
         this.history = this.history.slice(-5);
@@ -364,7 +366,7 @@ class FreezeDebuggerClass {
           };
         }
       };
-    } catch (err) {
+    } catch (_err) {
       // Ignore IndexedDB errors - localStorage is the primary backup
     }
   }

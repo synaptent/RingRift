@@ -1479,18 +1479,21 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
           );
 
           // Remove the failed candidate
+          // Capture moveToApply in a const for type safety inside the filter callback
+          const failedMove = moveToApply;
+          if (!failedMove) continue; // Should never happen, but satisfies type checker
           remainingCandidates = remainingCandidates.filter((c) => {
-            if (c.type !== moveToApply!.type) return true;
-            if (c.type === 'place_ring' && moveToApply!.type === 'place_ring') {
+            if (c.type !== failedMove.type) return true;
+            if (c.type === 'place_ring' && failedMove.type === 'place_ring') {
               // Remove candidates at the same position with same or higher count
               // since they're likely to fail too
               const samePos =
                 c.to &&
-                moveToApply!.to &&
-                c.to.x === moveToApply!.to.x &&
-                c.to.y === moveToApply!.to.y &&
-                (c.to.z === undefined || c.to.z === moveToApply!.to.z);
-              if (samePos && (c.placementCount ?? 1) >= (moveToApply!.placementCount ?? 1)) {
+                failedMove.to &&
+                c.to.x === failedMove.to.x &&
+                c.to.y === failedMove.to.y &&
+                (c.to.z === undefined || c.to.z === failedMove.to.z);
+              if (samePos && (c.placementCount ?? 1) >= (failedMove.placementCount ?? 1)) {
                 return false;
               }
             }

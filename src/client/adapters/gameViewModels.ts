@@ -32,6 +32,7 @@ import type {
   BoardType,
   PlayerChoice,
   PlayerChoiceType,
+  RegionOrderChoice,
 } from '../../shared/types/game';
 import { positionToString, positionsEqual } from '../../shared/types/game';
 import {
@@ -937,9 +938,9 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
       // skip_territory_processing Move is selected via moveId.
       canSkip:
         vm.kind === 'territory_region_order' &&
-        Array.isArray((pendingChoice as any).options) &&
-        (pendingChoice as any).options.some(
-          (opt: { regionId?: string; size?: number } | null | undefined) =>
+        Array.isArray((pendingChoice as RegionOrderChoice).options) &&
+        (pendingChoice as RegionOrderChoice).options.some(
+          (opt) =>
             !!opt && (opt.regionId === 'skip' || (typeof opt.size === 'number' && opt.size <= 0))
         ),
     };

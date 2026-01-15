@@ -239,7 +239,7 @@ api.interceptors.response.use(
             originalRequest.headers.Authorization = `Bearer ${newToken}`;
             return api(originalRequest);
           }
-        } catch (refreshError) {
+        } catch (_refreshError) {
           isRefreshing = false;
           refreshSubscribers = [];
           // Refresh failed - proceed with 401 handling below
