@@ -46,6 +46,7 @@ import {
   type InvalidMoveReason,
 } from './useInvalidMoveFeedback';
 import type { TerritoryRegionOption } from '../components/TerritoryRegionChoiceDialog';
+import { usePendingMovement } from './usePendingMovement';
 
 /**
  * Extract captureTarget from a move object if it's a capture move.
@@ -345,14 +346,16 @@ export function useBackendBoardHandlers(
     null
   );
 
-  // Pending movement target for skip_placement + movement shortcut
+  // Pending movement handler for skip_placement + movement shortcut
   // When user clicks a valid landing during placement phase, we submit skip_placement
-  // and store the intended movement here. After phase changes to movement, we auto-submit.
-  const pendingMovementRef = useRef<{ from: Position; to: Position; timestamp: number } | null>(
-    null
-  );
-  const prevPhaseRef = useRef<string | null>(null);
-  const pendingMovementRetryCount = useRef<number>(0);
+  // and store the intended movement here. After phase changes to movement, the hook auto-submits.
+  const pendingMovementRef = usePendingMovement({
+    currentPhase: gameState?.currentPhase,
+    validMoves,
+    submitMove,
+    setSelected,
+    setValidTargets,
+  });
 
   // Refs for pendingChoice and onRespondToChoice to avoid stale closure issues
   // The handleCellClick callback can capture stale values; refs always have current values
@@ -363,79 +366,6 @@ export function useBackendBoardHandlers(
     pendingChoiceRef.current = pendingChoice;
     onRespondToChoiceRef.current = onRespondToChoice;
   }, [pendingChoice, onRespondToChoice]);
-
-  // Effect to handle pending movement after skip_placement
-  // Includes retry logic for when validMoves might be stale after phase change
-  useEffect(() => {
-    const currentPhase = gameState?.currentPhase;
-    const _prevPhase = prevPhaseRef.current;
-    prevPhaseRef.current = currentPhase ?? null;
-
-    // Clear stale pending movements (older than 10 seconds, forgiving of slow networks)
-    if (pendingMovementRef.current) {
-      const age = Date.now() - pendingMovementRef.current.timestamp;
-      if (age > 10000) {
-        console.warn('[PendingMovement] Clearing stale pending movement after 10s timeout');
-        pendingMovementRef.current = null;
-        pendingMovementRetryCount.current = 0;
-        return;
-      }
-    }
-
-    // If phase changed to movement and we have a pending target
-    const shouldTryPendingMovement =
-      currentPhase === 'movement' && pendingMovementRef.current && validMoves;
-
-    if (!shouldTryPendingMovement) {
-      // Reset retry count if we're no longer in movement phase or no pending movement
-      if (currentPhase !== 'movement' || !pendingMovementRef.current) {
-        pendingMovementRetryCount.current = 0;
-      }
-      return;
-    }
-
-    const pending = pendingMovementRef.current;
-    if (!pending) {
-      return;
-    }
-
-    // Find the matching move_stack or overtaking_capture move
-    // (capture targets use overtaking_capture type, not move_stack)
-    const pendingMove = validMoves.find(
-      (m) =>
-        (m.type === 'move_stack' || m.type === 'overtaking_capture') &&
-        m.from &&
-        positionsEqual(m.from, pending.from) &&
-        m.to &&
-        positionsEqual(m.to, pending.to)
-    );
-
-    if (pendingMove) {
-      // Success! Submit the move and clear pending state
-      // For capture moves, include captureTarget from the server's move
-      const captureTarget = extractCaptureTarget(pendingMove);
-      pendingMovementRef.current = null;
-      pendingMovementRetryCount.current = 0;
-      submitMove({
-        type: pendingMove.type,
-        from: pendingMove.from,
-        to: pendingMove.to,
-        captureTarget,
-      } as PartialMove);
-      setSelected(undefined);
-      setValidTargets([]);
-    } else if (pendingMovementRetryCount.current < 5) {
-      // Move not found in validMoves - this may be because validMoves is stale
-      // Schedule a retry after a brief delay to allow state to settle
-      pendingMovementRetryCount.current += 1;
-      // The effect will re-run when validMoves updates
-    } else {
-      // Max retries reached, clear the pending movement
-      console.warn('[PendingMovement] Max retries reached, clearing pending movement');
-      pendingMovementRef.current = null;
-      pendingMovementRetryCount.current = 0;
-    }
-  }, [gameState?.currentPhase, validMoves, submitMove, setSelected, setValidTargets]);
 
   // Effect to clear pending ring placement when phase changes away from ring_placement
   useEffect(() => {

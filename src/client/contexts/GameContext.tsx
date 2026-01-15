@@ -282,8 +282,15 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         setChoiceDeadline(deadline);
       },
       onChoiceCanceled: (choiceId: string) => {
-        setPendingChoice((current) => (current && current.id === choiceId ? null : current));
-        setChoiceDeadline((current) => (current ? null : current));
+        // Only clear deadline if we're actually clearing the matching pending choice
+        setPendingChoice((current) => {
+          if (current && current.id === choiceId) {
+            // Choice matches - clear it and also clear the deadline
+            setChoiceDeadline(null);
+            return null;
+          }
+          return current;
+        });
       },
       onChatMessage: (payload: ChatMessageServerPayload) => {
         setChatMessages((prev) => [...prev, { sender: payload.sender, text: payload.text }]);
