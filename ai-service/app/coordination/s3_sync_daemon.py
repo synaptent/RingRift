@@ -126,6 +126,10 @@ class S3SyncStats:
     events_processed: int = 0
     last_sync_time: float = 0.0
     last_error: str | None = None
+    # Phase 1: Track event-driven vs periodic pushes (Jan 2026)
+    event_driven_pushes: int = 0
+    periodic_pushes: int = 0
+    last_event_driven_push_time: float = 0.0
 
 
 class S3SyncDaemon(HandlerBase):
@@ -187,6 +191,8 @@ class S3SyncDaemon(HandlerBase):
             "DATA_SYNC_COMPLETED": self._on_data_sync_completed,
             "NPZ_EXPORT_COMPLETE": self._on_npz_export_complete,
             "SELFPLAY_COMPLETE": self._on_selfplay_complete,
+            # Phase 1: Event-driven S3 push for new games (Jan 2026)
+            "NEW_GAMES_AVAILABLE": self._on_new_games_available,
         }
 
     async def _on_model_promoted(self, event: dict[str, Any]) -> None:
@@ -247,6 +253,57 @@ class S3SyncDaemon(HandlerBase):
             db_path = Path(db_path_str)
             if db_path.exists():
                 await self._push_file(db_path, self._get_s3_key(db_path, "games"))
+        self._stats.events_processed += 1
+
+    async def _on_new_games_available(self, event: Any) -> None:
+        """Handle NEW_GAMES_AVAILABLE - immediate S3 push for new games.
+
+        Phase 1 of S3-as-primary-storage: Push games to S3 immediately on
+        completion, not just on 10-minute interval.
+
+        January 2026: Added as part of S3 first-class storage tier upgrade.
+        """
+        # Jan 2026: Fix RouterEvent handling - extract payload first
+        payload = getattr(event, "payload", {}) or (event if isinstance(event, dict) else {})
+        config_key = payload.get("config") or payload.get("config_key")
+        new_games = payload.get("new_games", 0)
+
+        logger.info(
+            f"[S3SyncDaemon] NEW_GAMES_AVAILABLE: {config_key} ({new_games} games)"
+        )
+
+        if config_key:
+            # Push the canonical database for this config
+            db_name = f"canonical_{config_key}.db"
+            db_path = self._base_path / "data" / "games" / db_name
+            pushed = False
+            if db_path.exists():
+                success = await self._push_file(db_path, self._get_s3_key(db_path, "games"))
+                if success:
+                    pushed = True
+                    logger.info(
+                        f"[S3SyncDaemon] Pushed {db_name} to S3 (event-driven)"
+                    )
+            else:
+                # Try alternate naming patterns
+                for pattern in [
+                    f"{config_key}_selfplay.db",
+                    f"{config_key}.db",
+                ]:
+                    alt_path = self._base_path / "data" / "games" / pattern
+                    if alt_path.exists():
+                        success = await self._push_file(alt_path, self._get_s3_key(alt_path, "games"))
+                        if success:
+                            pushed = True
+                        break
+
+            # Track event-driven push stats
+            if pushed:
+                self._stats.event_driven_pushes += 1
+                self._stats.last_event_driven_push_time = time.time()
+                # Emit S3_PUSH_COMPLETED event for monitoring
+                await self._emit_s3_push_completed(config_key, "games")
+
         self._stats.events_processed += 1
 
     # =========================================================================
@@ -477,6 +534,32 @@ class S3SyncDaemon(HandlerBase):
         except Exception as e:
             logger.warning(f"[S3SyncDaemon] Failed to emit backup complete event: {e}")
 
+    async def _emit_s3_push_completed(self, config_key: str, data_type: str) -> None:
+        """Emit S3_PUSH_COMPLETED event for monitoring S3 replication lag.
+
+        Phase 1 of S3-as-primary-storage: Enables health monitoring to track
+        how quickly data reaches S3 after selfplay completion.
+
+        January 2026: Added as part of S3 first-class storage tier upgrade.
+        """
+        try:
+            from app.coordination.event_router import emit
+
+            await emit(
+                event_type="S3_PUSH_COMPLETED",
+                data={
+                    "config_key": config_key,
+                    "data_type": data_type,
+                    "bucket": self.config.s3_bucket,
+                    "node_id": self.node_id,
+                    "push_type": "event_driven",
+                    "timestamp": time.time(),
+                },
+            )
+            logger.debug(f"[S3SyncDaemon] Emitted S3_PUSH_COMPLETED for {config_key}")
+        except Exception as e:
+            logger.warning(f"[S3SyncDaemon] Failed to emit S3_PUSH_COMPLETED: {e}")
+
     # =========================================================================
     # Health Check
     # =========================================================================
@@ -530,6 +613,10 @@ class S3SyncDaemon(HandlerBase):
                     "events_processed": self._stats.events_processed,
                     "error_rate": round(error_rate, 3),
                     "tracked_files": len(self._last_push_times),
+                    # Phase 1: Event-driven vs periodic push stats (Jan 2026)
+                    "event_driven_pushes": self._stats.event_driven_pushes,
+                    "periodic_pushes": self._stats.periodic_pushes,
+                    "last_event_driven_push_time": self._stats.last_event_driven_push_time,
                 },
                 "last_sync_time": self._stats.last_sync_time,
                 "last_error": self._stats.last_error,
@@ -548,6 +635,10 @@ class S3SyncDaemon(HandlerBase):
             "last_sync_time": self._stats.last_sync_time,
             "last_error": self._stats.last_error,
             "tracked_files": len(self._last_push_times),
+            # Phase 1: Event-driven vs periodic push stats (Jan 2026)
+            "event_driven_pushes": self._stats.event_driven_pushes,
+            "periodic_pushes": self._stats.periodic_pushes,
+            "last_event_driven_push_time": self._stats.last_event_driven_push_time,
         }
 
 

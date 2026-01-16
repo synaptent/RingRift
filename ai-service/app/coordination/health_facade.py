@@ -30,6 +30,11 @@ Usage:
         ClusterHealthStatus,
         get_cluster_health_dashboard,
 
+        # S3 health (January 2026 - Phase 3)
+        get_s3_health,
+        is_s3_healthy,
+        get_s3_replication_lag,
+
         # Managers (for advanced use)
         get_health_manager,
         get_health_orchestrator,
@@ -262,6 +267,106 @@ def get_cluster_health_summary() -> dict[str, Any]:
         "pipeline_paused": should_pause,
         "pause_reasons": pause_reasons,
     }
+
+
+# =============================================================================
+# Phase 3 (Jan 2026): S3 Health Monitoring
+# =============================================================================
+
+
+def get_s3_health() -> dict[str, Any]:
+    """Get S3 storage tier health status.
+
+    Phase 3 of S3-as-primary-storage: Monitor S3 replication lag and health.
+
+    January 2026: Added as part of S3 first-class storage tier upgrade.
+
+    Returns:
+        Dict with S3 health metrics including:
+        - enabled: Whether S3 is configured
+        - healthy: Whether S3 is reachable
+        - replication_lag_seconds: Seconds since last successful push
+        - bucket: S3 bucket name
+        - last_push_time: Timestamp of last successful push
+    """
+    try:
+        from app.coordination.sync_router import get_sync_router
+        from app.coordination.s3_sync_daemon import get_s3_sync_daemon
+
+        router = get_sync_router()
+        s3_config = router.get_s3_config()
+
+        if not s3_config.enabled:
+            return {
+                "enabled": False,
+                "healthy": None,
+                "replication_lag_seconds": None,
+                "bucket": None,
+                "last_push_time": None,
+            }
+
+        # Get S3 daemon stats
+        try:
+            daemon = get_s3_sync_daemon()
+            stats = daemon.get_stats()
+            last_push_time = stats.get("last_event_driven_push_time", 0) or stats.get("last_sync_time", 0)
+            event_driven_pushes = stats.get("event_driven_pushes", 0)
+            total_files_pushed = stats.get("total_files_pushed", 0)
+        except (ImportError, AttributeError, RuntimeError) as e:
+            logger.debug(f"Could not get S3 daemon stats: {e}")
+            last_push_time = 0
+            event_driven_pushes = 0
+            total_files_pushed = 0
+
+        # Calculate replication lag
+        replication_lag = int(time.time() - last_push_time) if last_push_time > 0 else None
+
+        # Check S3 health via router
+        s3_healthy = router._check_s3_health()
+
+        return {
+            "enabled": True,
+            "healthy": s3_healthy,
+            "replication_lag_seconds": replication_lag,
+            "bucket": s3_config.bucket,
+            "last_push_time": last_push_time,
+            "event_driven_pushes": event_driven_pushes,
+            "total_files_pushed": total_files_pushed,
+            "primary_for_games": s3_config.primary_for_games,
+            # Alert if lag > 15 minutes (900 seconds)
+            "lag_alert": replication_lag is not None and replication_lag > 900,
+        }
+
+    except (ImportError, AttributeError, RuntimeError) as e:
+        logger.warning(f"Could not get S3 health: {e}")
+        return {
+            "enabled": None,
+            "healthy": False,
+            "replication_lag_seconds": None,
+            "bucket": None,
+            "last_push_time": None,
+            "error": str(e),
+        }
+
+
+def is_s3_healthy() -> bool:
+    """Check if S3 storage tier is healthy.
+
+    Returns:
+        True if S3 is enabled and reachable
+    """
+    health = get_s3_health()
+    return health.get("enabled", False) and health.get("healthy", False)
+
+
+def get_s3_replication_lag() -> int | None:
+    """Get S3 replication lag in seconds.
+
+    Returns:
+        Seconds since last push, or None if unknown
+    """
+    health = get_s3_health()
+    return health.get("replication_lag_seconds")
 
 
 # =============================================================================

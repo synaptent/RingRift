@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import socket
+import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -47,12 +48,34 @@ __all__ = [
     # Data classes
     "SyncRoute",
     "NodeSyncCapability",
+    "S3SyncConfig",  # Phase 2: S3 as first-class sync target (Jan 2026)
     # Main class
     "SyncRouter",
     # Singleton accessors
     "get_sync_router",
     "reset_sync_router",
 ]
+
+
+@dataclass
+class S3SyncConfig:
+    """Configuration for S3 as a sync target (Phase 2 - Jan 2026).
+
+    Enables S3 to be a first-class storage tier alongside OWC drives.
+    """
+    enabled: bool = True
+    bucket: str = "ringrift-models-20251214"
+    region: str = "us-east-1"
+    prefix: str = "consolidated"
+    pull_games: bool = True
+    pull_training_npz: bool = True
+    pull_models: bool = True
+    push_enabled_hosts: list[str] = field(default_factory=list)
+    sync_interval: int = 300
+    # Phase 2: S3 as primary target (Jan 2026)
+    primary_for_games: bool = True  # Prefer S3 over OWC for game storage
+    primary_for_models: bool = True
+    primary_for_npz: bool = True
 
 
 @dataclass
@@ -134,13 +157,22 @@ class SyncRouter:
         self._node_capabilities: dict[str, NodeSyncCapability] = {}
         self._load_config(config_path)
 
+        # Phase 2 (Jan 2026): S3 as first-class sync target
+        self._s3_config: S3SyncConfig = self._load_s3_config()
+        self._s3_healthy: bool = True
+        self._s3_last_health_check: float = 0.0
+        self._s3_health_check_interval: float = 60.0  # Check S3 health every 60s
+
         # P2.3 Dec 2025: Capacity refresh tracking
         self._last_capacity_refresh = 0.0
 
         # Dec 2025: Load persisted sync timestamps
         self._load_sync_timestamps()
 
-        logger.info(f"SyncRouter initialized: {len(self._node_capabilities)} nodes")
+        logger.info(
+            f"SyncRouter initialized: {len(self._node_capabilities)} nodes, "
+            f"S3 enabled={self._s3_config.enabled}"
+        )
 
     def _load_config(self, config_path: Path | None = None) -> None:
         """Load configuration from distributed_hosts.yaml using cluster_config.
@@ -247,6 +279,143 @@ class SyncRouter:
             )
 
             self._node_capabilities[host_name] = cap
+
+    def _load_s3_config(self) -> S3SyncConfig:
+        """Load S3 configuration from sync_routing section.
+
+        Phase 2 (Jan 2026): S3 as first-class sync target.
+        """
+        s3_cfg = self._sync_routing.get("s3", {})
+        if not s3_cfg:
+            return S3SyncConfig(enabled=False)
+
+        return S3SyncConfig(
+            enabled=s3_cfg.get("enabled", True),
+            bucket=s3_cfg.get("bucket", "ringrift-models-20251214"),
+            region=s3_cfg.get("region", "us-east-1"),
+            prefix=s3_cfg.get("prefix", "consolidated"),
+            pull_games=s3_cfg.get("pull_games", True),
+            pull_training_npz=s3_cfg.get("pull_training_npz", True),
+            pull_models=s3_cfg.get("pull_models", True),
+            push_enabled_hosts=s3_cfg.get("push_enabled_hosts", []),
+            sync_interval=s3_cfg.get("sync_interval", 300),
+            # Phase 2: S3 as primary (Jan 2026)
+            primary_for_games=s3_cfg.get("primary_for_games", True),
+            primary_for_models=s3_cfg.get("primary_for_models", True),
+            primary_for_npz=s3_cfg.get("primary_for_npz", True),
+        )
+
+    # =========================================================================
+    # Phase 2 (Jan 2026): S3 as First-Class Sync Target
+    # =========================================================================
+
+    def is_s3_primary_for(self, data_type: str | DataType) -> bool:
+        """Check if S3 should be the primary sync target for a data type.
+
+        Phase 2: S3 as first-class storage tier.
+
+        Args:
+            data_type: Type of data ("game", "model", "npz")
+
+        Returns:
+            True if S3 should be preferred over local storage
+        """
+        if not self._s3_config.enabled:
+            return False
+
+        if not self._check_s3_health():
+            return False
+
+        if isinstance(data_type, str):
+            data_type = DataType(data_type)
+
+        if data_type == DataType.GAME:
+            return self._s3_config.primary_for_games
+        elif data_type == DataType.MODEL:
+            return self._s3_config.primary_for_models
+        elif data_type == DataType.NPZ:
+            return self._s3_config.primary_for_npz
+        return False
+
+    def get_s3_uri(self, data_type: str | DataType, filename: str) -> str:
+        """Get S3 URI for a file.
+
+        Args:
+            data_type: Type of data ("game", "model", "npz")
+            filename: Filename
+
+        Returns:
+            Full S3 URI (s3://bucket/prefix/type/filename)
+        """
+        if isinstance(data_type, DataType):
+            type_str = data_type.value
+        else:
+            type_str = data_type
+
+        # Map data types to S3 subdirectories
+        type_to_subdir = {
+            "game": "games",
+            "games": "games",
+            "model": "models",
+            "models": "models",
+            "npz": "training",
+            "training": "training",
+        }
+        subdir = type_to_subdir.get(type_str, type_str)
+
+        return f"s3://{self._s3_config.bucket}/{self._s3_config.prefix}/{subdir}/{filename}"
+
+    def _check_s3_health(self) -> bool:
+        """Check S3 health (cached for performance).
+
+        Returns:
+            True if S3 is healthy
+        """
+        now = time.time()
+        if now - self._s3_last_health_check < self._s3_health_check_interval:
+            return self._s3_healthy
+
+        # Check S3 health via aws s3 ls (fast operation)
+        try:
+            result = subprocess.run(
+                ["aws", "s3", "ls", f"s3://{self._s3_config.bucket}/", "--max-items", "1"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            self._s3_healthy = result.returncode == 0
+            self._s3_last_health_check = now
+            if not self._s3_healthy:
+                logger.warning(f"[SyncRouter] S3 health check failed: {result.stderr}")
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+            self._s3_healthy = False
+            self._s3_last_health_check = now
+            logger.warning(f"[SyncRouter] S3 health check error: {e}")
+
+        return self._s3_healthy
+
+    def should_push_to_s3(self, data_type: str | DataType) -> bool:
+        """Check if this node should push data to S3.
+
+        Args:
+            data_type: Type of data
+
+        Returns:
+            True if this node should push to S3
+        """
+        if not self._s3_config.enabled:
+            return False
+
+        # Check if this node is in the push_enabled_hosts list
+        if self._s3_config.push_enabled_hosts:
+            if self.node_id not in self._s3_config.push_enabled_hosts:
+                return False
+
+        return self.is_s3_primary_for(data_type)
+
+    def get_s3_config(self) -> S3SyncConfig:
+        """Get the S3 sync configuration."""
+        return self._s3_config
 
     def get_external_storage_path(self, host: str, data_type: str) -> str | None:
         """Get the external storage path for a host and data type.
@@ -1068,6 +1237,9 @@ class SyncRouter:
             coordinator_status = CoordinatorStatus.DEGRADED
             message = "All nodes have sync disabled"
 
+        # Phase 2 (Jan 2026): Check S3 health
+        s3_healthy = self._check_s3_health() if self._s3_config.enabled else None
+
         healthy = coordinator_status == CoordinatorStatus.RUNNING
         return HealthCheckResult(
             healthy=healthy,
@@ -1085,6 +1257,11 @@ class SyncRouter:
                 "priority_nodes": sum(
                     1 for c in self._node_capabilities.values() if c.is_priority_node
                 ),
+                # Phase 2: S3 status (Jan 2026)
+                "s3_enabled": self._s3_config.enabled,
+                "s3_healthy": s3_healthy,
+                "s3_bucket": self._s3_config.bucket if self._s3_config.enabled else None,
+                "s3_primary_for_games": self._s3_config.primary_for_games,
             },
         )
 
