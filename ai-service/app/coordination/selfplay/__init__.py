@@ -60,6 +60,14 @@ from app.coordination.selfplay.allocation_engine import (
     AllocationResult,
 )
 
+# January 2026: Priority boost multipliers extraction
+from app.coordination.selfplay.priority_boosts import (
+    get_cascade_priority,
+    get_improvement_boosts,
+    get_momentum_multipliers,
+    get_architecture_boosts,
+)
+
 # Lazy import for SelfplayScheduler to avoid circular imports
 # When quality_signal_handler.py imports from this package, the scheduler
 # hasn't been fully loaded yet
@@ -115,4 +123,9 @@ __all__ = [
     "AllocationContext",
     "AllocationEngine",
     "AllocationResult",
+    # Priority boosts (Jan 2026)
+    "get_cascade_priority",
+    "get_improvement_boosts",
+    "get_momentum_multipliers",
+    "get_architecture_boosts",
 ]
