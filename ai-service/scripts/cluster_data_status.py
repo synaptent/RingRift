@@ -11,13 +11,17 @@ Displays game counts from:
 
 Usage:
     python scripts/cluster_data_status.py
+    python scripts/cluster_data_status.py --refresh
     python scripts/cluster_data_status.py --format table
     python scripts/cluster_data_status.py --format json
     python scripts/cluster_data_status.py --config hex8_2p
 
 Examples:
-    # Default table format
+    # Default table format (auto-refreshes if manifest stale)
     python scripts/cluster_data_status.py
+
+    # Force refresh from P2P leader
+    python scripts/cluster_data_status.py --refresh
 
     # JSON output (for scripting)
     python scripts/cluster_data_status.py --format json
@@ -29,6 +33,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -173,6 +178,47 @@ def print_json(data: dict) -> None:
     print(json.dumps(data, indent=2))
 
 
+async def refresh_manifest(verbose: bool = True) -> bool:
+    """Refresh cluster manifest from P2P leader.
+
+    Args:
+        verbose: If True, print progress messages.
+
+    Returns:
+        True if refresh succeeded, False otherwise.
+    """
+    from app.distributed.data_catalog import get_data_registry
+
+    registry = get_data_registry()
+
+    if verbose:
+        print("Refreshing cluster data from leader...", end=" ", flush=True)
+
+    try:
+        success = await registry.refresh_cluster_manifest()
+        if verbose:
+            if success:
+                print("done")
+            else:
+                print("failed (leader may not have manifest)")
+        return success
+    except Exception as e:
+        if verbose:
+            print(f"error: {e}")
+        return False
+
+
+def should_auto_refresh(registry) -> bool:
+    """Check if manifest should be auto-refreshed.
+
+    Returns True if:
+    - No manifest received yet (age == -1)
+    - Manifest is stale (age > 600 seconds)
+    """
+    age = registry.get_manifest_age_seconds()
+    return age < 0 or age > 600
+
+
 def main() -> int:
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -191,10 +237,33 @@ def main() -> int:
         type=str,
         help="Filter to specific config (e.g., hex8_2p)",
     )
+    parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="Force refresh cluster data from P2P leader",
+    )
+    parser.add_argument(
+        "--no-auto-refresh",
+        action="store_true",
+        help="Disable automatic refresh when manifest is stale",
+    )
 
     args = parser.parse_args()
 
     try:
+        from app.distributed.data_catalog import get_data_registry
+
+        registry = get_data_registry()
+
+        # Determine if we need to refresh
+        needs_refresh = args.refresh or (
+            not args.no_auto_refresh and should_auto_refresh(registry)
+        )
+
+        if needs_refresh:
+            # Run async refresh
+            asyncio.run(refresh_manifest(verbose=args.format == "table"))
+
         data = get_cluster_data_status(config_filter=args.config)
 
         if args.format == "json":

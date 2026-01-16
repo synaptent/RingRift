@@ -224,6 +224,64 @@ class ManifestHandlersMixin(BaseP2PHandler):
             return web.json_response({"error": str(e)}, status=500)
 
     @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
+    async def handle_request_manifest(self, request: web.Request) -> web.Response:
+        """Return cluster manifest regardless of node role.
+
+        Jan 16, 2026: Added to enable on-demand cluster data queries from any node.
+
+        Unlike /data/cluster_manifest (leader-only), this endpoint:
+        - Returns cached cluster manifest if available (from broadcast)
+        - If no manifest cached, returns leader info for redirect
+        - Works on any node (leader, follower, voter)
+
+        This enables tools like cluster_data_status.py to get cluster-wide
+        data without waiting for the 5-minute broadcast cycle.
+
+        Returns:
+            - If manifest available: {cluster_manifest: {...}, age_seconds: float}
+            - If no manifest: {error: "no_manifest", leader_id: str, leader_url: str}
+        """
+        import time
+        try:
+            with self.manifest_lock:
+                cached_manifest = self.cluster_data_manifest
+                received_at = getattr(self, '_cluster_manifest_received_at', 0)
+
+            if cached_manifest:
+                age_seconds = time.time() - received_at if received_at else -1
+                manifest_dict = (
+                    cached_manifest.to_dict()
+                    if hasattr(cached_manifest, 'to_dict')
+                    else cached_manifest
+                )
+                return web.json_response({
+                    "cluster_manifest": manifest_dict,
+                    "age_seconds": age_seconds,
+                    "node_id": self.node_id,
+                    "is_leader": self.role == NodeRole.LEADER,
+                })
+
+            # No manifest cached - provide leader info for redirect
+            leader_url = None
+            if self.leader_id:
+                # Try to get leader's URL from peers
+                leader_peer = getattr(self, 'peers', {}).get(self.leader_id)
+                if leader_peer:
+                    leader_url = getattr(leader_peer, 'http_url', None) or getattr(leader_peer, 'url', None)
+
+            return web.json_response({
+                "error": "no_manifest",
+                "message": "No cluster manifest cached. Query leader directly or wait for broadcast.",
+                "leader_id": self.leader_id,
+                "leader_url": leader_url,
+                "node_id": self.node_id,
+            }, status=404)
+
+        except Exception as e:  # noqa: BLE001
+            logger.exception("[ManifestHandlers] Error in handle_request_manifest")
+            return web.json_response({"error": str(e)}, status=500)
+
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_data_inventory(self, request: web.Request) -> web.Response:
         """Return cluster-wide game inventory with counts by config and node.
 

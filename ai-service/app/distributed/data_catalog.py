@@ -43,6 +43,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import socket
 import sqlite3
@@ -1506,6 +1507,118 @@ class UnifiedDataRegistry:
         if not self._cluster_manifest_received_at:
             return -1
         return time.time() - self._cluster_manifest_received_at
+
+    async def refresh_cluster_manifest(self, leader_url: str | None = None) -> bool:
+        """Query leader for fresh cluster manifest.
+
+        Jan 16, 2026: Added for on-demand cluster data queries.
+
+        This method queries the P2P leader's /data/request_manifest endpoint
+        to get fresh cluster-wide game counts without waiting for the periodic
+        broadcast (which runs every 300s).
+
+        Args:
+            leader_url: URL of P2P leader (e.g., "http://192.168.1.10:8770").
+                       If not provided, attempts to discover via local P2P node.
+
+        Returns:
+            True if refresh succeeded, False otherwise.
+        """
+        import time
+
+        try:
+            import aiohttp
+        except ImportError:
+            logger.warning("[UnifiedDataRegistry] aiohttp not available for manifest refresh")
+            return False
+
+        # Discover leader URL if not provided
+        if not leader_url:
+            leader_url = await self._discover_leader_url()
+            if not leader_url:
+                logger.debug("[UnifiedDataRegistry] Could not discover leader URL")
+                return False
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"{leader_url.rstrip('/')}/data/request_manifest"
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        manifest = data.get("cluster_manifest")
+                        if manifest:
+                            self._cluster_manifest = manifest
+                            self._cluster_manifest_received_at = time.time()
+                            logger.info(
+                                f"[UnifiedDataRegistry] Refreshed cluster manifest from {leader_url}: "
+                                f"{len(manifest.get('by_board_type', {}))} configs"
+                            )
+                            return True
+                        logger.debug("[UnifiedDataRegistry] Leader returned empty manifest")
+                        return False
+                    elif resp.status == 404:
+                        # Leader may redirect to another node
+                        data = await resp.json()
+                        if "leader_url" in data and data["leader_url"]:
+                            logger.debug(
+                                f"[UnifiedDataRegistry] Redirecting to leader: {data['leader_url']}"
+                            )
+                            return await self.refresh_cluster_manifest(data["leader_url"])
+                        logger.debug("[UnifiedDataRegistry] Leader has no manifest yet")
+                        return False
+                    else:
+                        logger.warning(
+                            f"[UnifiedDataRegistry] Failed to refresh manifest: HTTP {resp.status}"
+                        )
+                        return False
+        except asyncio.TimeoutError:
+            logger.warning(f"[UnifiedDataRegistry] Manifest refresh timeout from {leader_url}")
+            return False
+        except aiohttp.ClientError as e:
+            logger.warning(f"[UnifiedDataRegistry] Manifest refresh failed: {e}")
+            return False
+        except Exception as e:
+            logger.debug(f"[UnifiedDataRegistry] Unexpected error refreshing manifest: {e}")
+            return False
+
+    async def _discover_leader_url(self) -> str | None:
+        """Discover P2P leader URL from local node status.
+
+        Returns:
+            Leader URL (e.g., "http://192.168.1.10:8770") or None.
+        """
+        try:
+            import aiohttp
+        except ImportError:
+            return None
+
+        # Try local P2P node first
+        local_p2p_url = "http://localhost:8770"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{local_p2p_url}/status",
+                    timeout=aiohttp.ClientTimeout(total=5)
+                ) as resp:
+                    if resp.status == 200:
+                        status = await resp.json()
+                        leader_id = status.get("leader_id")
+                        # Check if we are the leader
+                        if leader_id == status.get("node_id"):
+                            return local_p2p_url
+                        # Get leader URL from peers
+                        peers = status.get("peers", {})
+                        leader_peer = peers.get(leader_id, {})
+                        leader_url = leader_peer.get("http_url") or leader_peer.get("url")
+                        if leader_url:
+                            return leader_url
+                        # Fallback: construct from leader_id if it looks like an IP
+                        if leader_id and "." in leader_id:
+                            return f"http://{leader_id}:8770"
+        except Exception as e:
+            logger.debug(f"[UnifiedDataRegistry] Failed to discover leader from local P2P: {e}")
+
+        return None
 
     def is_cluster_data_available(self) -> tuple[bool, str]:
         """Check if cluster-wide data is available for progress measurement.
