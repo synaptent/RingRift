@@ -221,3 +221,35 @@ def get_policy_size_for_board(board_type: BoardType) -> int:
 def get_spatial_size_for_board(board_type: BoardType) -> int:
     """Get the spatial (H, W) size for a board type."""
     return BOARD_SPATIAL_SIZES.get(board_type, 19)
+
+
+def compute_hex_policy_size(
+    board_size: int,
+    num_ring_counts: int = 3,
+    num_directions: int = 6,
+) -> int:
+    """Compute the policy size for a hex board of given size.
+
+    This is the canonical formula used by V3/V4 spatial policy heads:
+    - Placement span: board_size * board_size * num_ring_counts
+    - Movement span: board_size * board_size * num_directions * (board_size - 1)
+    - Special actions: 1 (skip_placement)
+
+    Args:
+        board_size: Bounding box size (9 for hex8, 25 for hexagonal)
+        num_ring_counts: Number of ring placement options (default: 3)
+        num_directions: Number of hex directions (default: 6)
+
+    Returns:
+        Total policy vector size
+
+    Examples:
+        >>> compute_hex_policy_size(9)   # hex8
+        4132
+        >>> compute_hex_policy_size(25)  # hexagonal
+        91876
+    """
+    max_distance = board_size - 1
+    placement_span = board_size * board_size * num_ring_counts
+    movement_span = board_size * board_size * num_directions * max_distance
+    return placement_span + movement_span + 1

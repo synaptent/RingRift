@@ -1832,12 +1832,13 @@ class EloService:
                 ))
 
                 # Jan 13, 2026: Handle missing row by inserting if UPDATE affected 0 rows
+                # Jan 16, 2026: Added INSERT result checking and retry with REPLACE
                 if cursor.rowcount == 0:
                     logger.warning(
                         f"[EloService] UPDATE affected 0 rows for {pid}, "
                         f"inserting new row (board={board_type}, players={num_players})"
                     )
-                    conn.execute("""
+                    insert_cursor = conn.execute("""
                         INSERT OR IGNORE INTO elo_ratings
                         (participant_id, board_type, num_players, rating, last_update,
                          games_played, wins, losses, draws, peak_rating)
@@ -1847,6 +1848,23 @@ class EloService:
                         new_rating, time.time(),
                         1, win_inc, loss_inc, draw_inc, new_rating
                     ))
+                    # Check if INSERT succeeded, retry with REPLACE if ignored
+                    if insert_cursor.rowcount == 0:
+                        logger.warning(
+                            f"[EloService] INSERT OR IGNORE affected 0 rows for {pid}, "
+                            f"using REPLACE to force upsert"
+                        )
+                        conn.execute("""
+                            INSERT OR REPLACE INTO elo_ratings
+                            (participant_id, board_type, num_players, rating, last_update,
+                             games_played, wins, losses, draws, peak_rating)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            pid, board_type, num_players,
+                            new_rating, time.time(),
+                            1, win_inc, loss_inc, draw_inc, new_rating
+                        ))
+                        logger.info(f"[EloService] REPLACE succeeded for {pid}")
 
             # Record match with optional metadata (e.g., weight profiles used)
             # Note: id is INTEGER PRIMARY KEY AUTOINCREMENT, so we use game_id for UUID

@@ -1602,8 +1602,10 @@ def _evaluate_single_opponent(
                                 harness_type=harness_enum,
                                 game_length=game_result["move_count"],
                             )
-                        except ImportError:
-                            pass  # elo_recording facade not available
+                        except ImportError as e:
+                            logger.warning(f"[gauntlet] Failed to import elo_recording: {e}")
+                        except Exception as e:
+                            logger.error(f"[gauntlet] Failed to record gauntlet Elo: {e}")
 
                         if verbose:
                             outcome = "WIN" if game_result["candidate_won"] else "LOSS"
@@ -1727,8 +1729,10 @@ def _evaluate_single_opponent(
                     harness_type=harness_enum,
                     game_length=game_result.move_count,
                 )
-            except ImportError:
-                pass  # elo_recording facade not available
+            except ImportError as e:
+                logger.warning(f"[gauntlet] Failed to import elo_recording: {e}")
+            except Exception as e:
+                logger.error(f"[gauntlet] Failed to record gauntlet Elo: {e}")
 
             if verbose:
                 outcome = "WIN" if game_result.candidate_won else "LOSS"
@@ -2188,6 +2192,19 @@ def run_baseline_gauntlet(
 
     # Estimate Elo from win rates
     result.estimated_elo = _estimate_elo_from_results(result.opponent_results)
+
+    # Log comprehensive summary (January 2026)
+    logger.info("=" * 60)
+    logger.info(f"GAUNTLET SUMMARY: {effective_model_id}")
+    logger.info("=" * 60)
+    for opp_name, opp_stats in result.opponent_results.items():
+        wins = opp_stats.get("wins", 0)
+        total = opp_stats.get("games", 0)
+        pct = (wins / total * 100) if total > 0 else 0.0
+        logger.info(f"  {opp_name}: {wins}/{total} ({pct:.1f}%)")
+    logger.info(f"  Overall: {result.total_wins}/{result.total_games} ({result.win_rate*100:.1f}%)")
+    logger.info(f"  Estimated Elo: {result.estimated_elo:.0f}")
+    logger.info("=" * 60)
 
     # Emit EVALUATION_COMPLETED event for curriculum feedback (December 2025)
     # This closes the eval→curriculum feedback loop

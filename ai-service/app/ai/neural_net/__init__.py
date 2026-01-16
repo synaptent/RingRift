@@ -166,6 +166,10 @@ from app.ai.canonical_move_encoding import (
     get_encoder_for_board,
 )
 
+# Unified neural net factory for tournament daemon
+# Renamed from neural_net.py to unified_factory.py to avoid package name conflict
+from app.ai.unified_factory import UnifiedNeuralNetFactory
+
 # Classes and functions still in legacy module (to be migrated in later phases)
 # NOTE: Moved to archive/ December 2025 - scheduled for removal Q1 2026
 # Symlinked at app/ai/_neural_net_legacy.py for compatibility
@@ -280,4 +284,5 @@ __all__ = [
     "rank_distribution_loss",
     "ranks_from_game_result",
     "transform_policy_index_square",
+    "UnifiedNeuralNetFactory",
 ]

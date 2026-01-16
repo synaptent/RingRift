@@ -97,7 +97,7 @@ TIER_VALIDATION_GAMES_PER_BOARD = 100
 # Games per opponent for gauntlet evaluation (increased from 20 for better precision)
 # At 50 games: ~14% confidence interval on win rate
 # At 100 games: ~10% confidence interval on win rate
-GAUNTLET_GAMES_PER_OPPONENT = 50
+GAUNTLET_GAMES_PER_OPPONENT = 100
 
 # Dec 29, 2025: Multiplayer gauntlet games (higher due to variance)
 # 3p/4p games have higher variance (33%/25% random baseline vs 50%)

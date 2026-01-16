@@ -242,6 +242,9 @@ TOURNAMENT_ROUTES = [
     Route("POST", "/tournament/ssh_start", "handle_ssh_tournament_start"),
     Route("GET", "/tournament/ssh_status", "handle_ssh_tournament_status"),
     Route("POST", "/tournament/ssh_cancel", "handle_ssh_tournament_cancel"),
+    # January 2026: Generation and diverse tournament endpoints
+    Route("POST", "/tournament/generation", "handle_generation_tournament"),
+    Route("POST", "/tournament/diverse", "handle_diverse_tournament"),
 ]
 
 # ===========================================================================

@@ -2567,6 +2567,9 @@ def train_model(
     elif use_hex_v4:
         # HexNeuralNet_v4 for hexagonal boards with NAS-optimized attention
         # V4 uses 16 base channels * (history_length + 1) frames = 64 channels
+        # NOTE: Pass policy_size=None so V4 computes it dynamically from board_size.
+        # This ensures correct policy_size for any hex board (hex8=4132, hexagonal=91876).
+        # Passing explicit policy_size=4500 would cause -1e9 logits outside scatter range.
         model = HexNeuralNet_v4(
             in_channels=hex_in_channels,
             global_features=20,  # V4 encoder provides 20 global features
@@ -2574,7 +2577,7 @@ def train_model(
             num_filters=effective_filters,
             board_size=board_size,
             hex_radius=hex_radius,
-            policy_size=policy_size,
+            policy_size=None,  # Computed dynamically from board_size
             num_players=hex_num_players,
         )
     elif use_hex_v3:

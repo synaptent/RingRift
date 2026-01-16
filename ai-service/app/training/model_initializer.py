@@ -528,10 +528,13 @@ class ModelInitializer:
             return metadata.inferred_policy_size
 
         # Default fallback based on board type
+        # Use canonical constants from neural_net module
+        from app.ai.neural_net.constants import POLICY_SIZE_HEX8, P_HEX
+
         if is_hex_model:
             if board_size == HEX8_BOARD_SIZE:
-                return 61 * 62  # hex8 default
-            return 469 * 470  # hexagonal default
+                return POLICY_SIZE_HEX8  # 4500
+            return P_HEX  # 91876
         else:
             return board_size * board_size * 2  # square board default
 
@@ -681,8 +684,9 @@ class ModelInitializer:
             return model
 
         elif version == "v4":
-            from app.ai.neural_net.hex_v4 import HexNeuralNet_v4
+            from app.ai.neural_net.hex_architectures import HexNeuralNet_v4
 
+            # V4 computes policy_size dynamically from board_size when None
             return HexNeuralNet_v4(
                 in_channels=hex_in_channels,
                 global_features=20,
@@ -690,7 +694,7 @@ class ModelInitializer:
                 num_filters=effective_filters,
                 board_size=board_size,
                 hex_radius=hex_radius,
-                policy_size=policy_size,
+                policy_size=None,  # Computed dynamically from board_size
                 num_players=hex_num_players,
             )
 

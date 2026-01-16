@@ -1084,14 +1084,14 @@ class HexNeuralNet_v4(nn.Module):
         num_res_blocks: int = 13,  # NAS optimal
         num_filters: int = 128,  # NAS optimal
         board_size: int = HEX_BOARD_SIZE,
-        policy_size: int = P_HEX,
+        policy_size: int | None = None,  # Compute dynamically if not provided
         value_intermediate: int = 256,  # NAS optimal
         value_hidden: int = 256,  # NAS: deeper value head
         num_players: int = 4,
         num_attention_heads: int = 4,  # NAS optimal
         dropout: float = 0.08,  # NAS optimal
         initial_kernel_size: int = 5,  # NAS optimal
-        hex_radius: int = 12,
+        hex_radius: int | None = None,  # Infer from board_size if not provided
         num_ring_counts: int = 3,  # Ring count options (1, 2, 3)
         num_directions: int = NUM_HEX_DIRS,  # 6 hex directions
         max_distance: int | None = None,  # Auto-detect based on board_size
@@ -1102,9 +1102,12 @@ class HexNeuralNet_v4(nn.Module):
         self.num_res_blocks = num_res_blocks
         self.num_filters = num_filters
         self.board_size = board_size
-        self.policy_size = policy_size
         self.num_players = num_players
         self.dropout_rate = dropout
+
+        # Auto-detect hex_radius from board_size if not provided
+        if hex_radius is None:
+            hex_radius = (board_size - 1) // 2
 
         # Auto-detect max_distance based on board size:
         # - hex8 (board_size=9): max_distance = 8
@@ -1117,6 +1120,27 @@ class HexNeuralNet_v4(nn.Module):
         self.num_ring_counts = num_ring_counts
         self.num_directions = num_directions
         self.movement_channels = num_directions * max_distance
+
+        # Compute policy layout spans dynamically (like V3)
+        # This ensures correct policy_size for any board_size
+        self.placement_span = board_size * board_size * num_ring_counts
+        self.movement_span = board_size * board_size * num_directions * max_distance
+        self.special_base = self.placement_span + self.movement_span
+
+        # Compute policy_size dynamically if not provided
+        if policy_size is None:
+            policy_size = self.special_base + 1
+        self.policy_size = policy_size
+
+        # Validate policy_size is sufficient for computed spans
+        required_policy_size = self.special_base + 1
+        if self.policy_size < required_policy_size:
+            raise ValueError(
+                f"policy_size={self.policy_size} too small for board_size={board_size}. "
+                f"Required: {required_policy_size} (placement={self.placement_span}, "
+                f"movement={self.movement_span}, special=1). "
+                f"This indicates a mismatch between board_size and policy_size parameters."
+            )
 
         # Pre-compute hex validity mask
         self.register_buffer("hex_mask", create_hex_mask(hex_radius, board_size))
@@ -1254,22 +1278,18 @@ class HexNeuralNet_v4(nn.Module):
         # Scatter placement logits: [B, 3, H, W] → [B, placement_span]
         # NOTE: We scatter ALL indices (including padding cells) to ensure v3-encoded
         # targets always have valid logits. The training loss will mask invalid moves.
-        # Filtering only valid_cells caused -1e9 logits for padding cell indices,
-        # breaking training with v3-encoded data (see hex8_2p v4 policy loss issue).
-        pl_flat = placement_logits.view(B, self.num_ring_counts, -1)  # [B, 3, H*W]
-        pl_idx = self.placement_idx.view(self.num_ring_counts, -1)  # [3, H*W]
-
-        for r in range(self.num_ring_counts):
-            for b in range(B):
-                policy[b].scatter_(0, pl_idx[r], pl_flat[b, r])
+        # VECTORIZED: Single scatter call instead of B*3 Python loop iterations
+        pl_values = placement_logits.view(B, -1)  # [B, 3*H*W]
+        pl_idx_flat = self.placement_idx.reshape(-1)  # [3*H*W]
+        pl_idx_expanded = pl_idx_flat.unsqueeze(0).expand(B, -1)  # [B, 3*H*W]
+        policy.scatter_(1, pl_idx_expanded, pl_values)
 
         # Scatter movement logits: [B, movement_channels, H, W] → [B, movement_span]
-        mv_flat = movement_logits.view(B, self.movement_channels, -1)  # [B, C, H*W]
-        mv_idx = self.movement_idx.view(self.movement_channels, -1)  # [C, H*W]
-
-        for c in range(self.movement_channels):
-            for b in range(B):
-                policy[b].scatter_(0, mv_idx[c], mv_flat[b, c])
+        # VECTORIZED: Single scatter call instead of B*movement_channels Python loop iterations
+        mv_values = movement_logits.view(B, -1)  # [B, C*H*W]
+        mv_idx_flat = self.movement_idx.reshape(-1)  # [C*H*W]
+        mv_idx_expanded = mv_idx_flat.unsqueeze(0).expand(B, -1)  # [B, C*H*W]
+        policy.scatter_(1, mv_idx_expanded, mv_values)
 
         # Add special action logit at the computed special_base index
         policy[:, self.special_base] = special_logits.squeeze(-1)
