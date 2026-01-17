@@ -27941,6 +27941,7 @@ print(json.dumps({{
                 # - nn-only: Uses NNUE/neural network evaluation
                 # - best-vs-pool: Tournament-style with varied opponents
                 # - mcts-only/descent-only/minimax-only: Single AI method
+                # Jan 17, 2026: Added nnue-guided, brs, maxn, paranoid for harness diversity
                 supported_engine_modes = {
                     "descent-only",
                     "mixed",
@@ -27954,6 +27955,14 @@ print(json.dumps({{
                     "gumbel",
                     "gumbel-mcts",
                     "gumbel-mcts-only",
+                    # NNUE-guided search (fast + strong)
+                    "nnue-guided",
+                    "nnue",
+                    # Multiplayer-optimized engines
+                    "maxn",             # MaxN search for 3-4 player
+                    "brs",              # Best Response Search
+                    "paranoid",         # Paranoid minimax (assumes opponents cooperate)
+                    "policy-only",      # Neural policy only (no search)
                     # Cross-AI asymmetric matches for variety
                     "nn-vs-mcts",
                     "nn-vs-minimax",

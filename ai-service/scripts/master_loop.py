@@ -2652,12 +2652,13 @@ class MasterLoopController:
 
             # Select engine using multi-armed bandit (December 2025)
             # The bandit learns which engine produces best Elo improvement per config
+            # Jan 17, 2026: Now passes num_players for better engine filtering
             config_key = f"{board_type}_{num_players}p"
             try:
                 from app.coordination.selfplay_engine_bandit import get_selfplay_engine_bandit
 
                 bandit = get_selfplay_engine_bandit()
-                engine_mode = bandit.select_engine(config_key)
+                engine_mode = bandit.select_engine(config_key, num_players=num_players)
                 logger.debug(
                     f"[MasterLoop] Bandit selected engine '{engine_mode}' for {config_key}"
                 )
@@ -2668,16 +2669,19 @@ class MasterLoopController:
                     self._states[config_key].last_selfplay_games += num_games
 
             except (ImportError, AttributeError) as e:
-                # Fallback to heuristic-based selection if bandit unavailable
+                # Fallback to diverse engine selection if bandit unavailable
+                # Jan 17, 2026: Updated fallback with more diverse engines
                 logger.debug(f"[MasterLoop] Bandit unavailable ({e}), using fallback")
-                if board_type in ("square19", "hexagonal"):
-                    import random
-                    if num_players >= 3:
-                        engine_mode = random.choice(["heuristic-only", "brs", "maxn"])
-                    else:
-                        engine_mode = random.choice(["heuristic-only", "policy-only"])
+                import random
+                if num_players >= 3:
+                    # Multiplayer: prefer engines designed for 3-4 player games
+                    engine_mode = random.choice(["maxn", "brs", "paranoid", "gumbel-mcts", "heuristic-only"])
+                elif board_type in ("square19", "hexagonal"):
+                    # Large boards: mix of search and fast engines
+                    engine_mode = random.choice(["gumbel-mcts", "nnue-guided", "descent-only", "heuristic-only"])
                 else:
-                    engine_mode = "gumbel-mcts"
+                    # Small 2-player boards: full diversity
+                    engine_mode = random.choice(["gumbel-mcts", "nnue-guided", "descent-only", "policy-only", "brs"])
 
             result = await dispatch_selfplay_direct(
                 target_node=node_id,

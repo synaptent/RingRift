@@ -51,19 +51,33 @@ logger = logging.getLogger(__name__)
 # Jan 1, 2026: Re-enabled gumbel-mcts - now uses per-node config to decide GPU tree mode
 # Nodes with disable_gpu_tree: true in distributed_hosts.yaml will use --no-gpu-tree
 # Other nodes (GH200, H100, etc.) will use GPU tree for 170x speedup
+# Jan 17, 2026: Added diverse harnesses for NN/NNUE training variety
 AVAILABLE_ENGINES: list[str] = [
-    "heuristic-only",
-    "policy-only",
-    "gumbel-mcts",  # Re-enabled: uses per-node GPU tree config
-    "mixed",
+    # Basic engines
+    "heuristic-only",   # Fast baseline, no GPU required
+    "policy-only",      # Neural policy network only (no search)
+    "mixed",            # Mixed opponent pool for variety
+    # Search-based engines (high quality)
+    "gumbel-mcts",      # Full Gumbel MCTS search (highest quality, GPU-accelerated)
+    "nnue-guided",      # NNUE evaluation with search (fast + strong)
+    "descent-only",     # Gradient descent on position (fast)
+    "brs",              # Best Response Search (good for multiplayer)
+    # Multiplayer-specific engines
+    "maxn",             # MaxN search for multiplayer (3-4 player)
+    "paranoid",         # Paranoid minimax (assumes all opponents cooperate against us)
 ]
 
 # Legacy list including all engines (for reference)
 ALL_ENGINES: list[str] = [
     "heuristic-only",
     "policy-only",
-    "gumbel-mcts",  # Re-enabled Jan 1, 2026
-    "mcts",         # Still disabled: use gumbel-mcts instead
+    "gumbel-mcts",      # Re-enabled Jan 1, 2026
+    "nnue-guided",      # Added Jan 17, 2026
+    "descent-only",     # Added Jan 17, 2026
+    "brs",              # Added Jan 17, 2026
+    "maxn",             # Added Jan 17, 2026
+    "paranoid",         # Added Jan 17, 2026
+    "mcts",             # Still disabled: use gumbel-mcts instead
     "mixed",
 ]
 
@@ -191,6 +205,7 @@ class SelfplayEngineBandit:
         state_path: str | Path | None = None,
         exploration_bonus: float = 0.1,
         decay_rate: float = 0.001,
+        forced_diversity_prob: float = 0.15,
     ):
         """Initialize the bandit.
 
@@ -198,6 +213,7 @@ class SelfplayEngineBandit:
             state_path: Path to persist state (default: coordination_state/engine_bandit.json)
             exploration_bonus: Bonus to UCB for exploration (default: 0.1)
             decay_rate: Decay rate for old observations (default: 0.001 per hour)
+            forced_diversity_prob: Probability of forcing a random underused engine (default: 0.15)
         """
         self._lock = threading.Lock()
 
@@ -211,6 +227,7 @@ class SelfplayEngineBandit:
         # Configuration
         self._exploration_bonus = exploration_bonus
         self._decay_rate = decay_rate
+        self._forced_diversity_prob = forced_diversity_prob
 
         # Per-config per-engine statistics
         self._stats: dict[str, dict[str, EngineStats]] = {}
@@ -220,7 +237,8 @@ class SelfplayEngineBandit:
 
         logger.info(
             f"[EngineBandit] Initialized with {len(self._stats)} configs, "
-            f"exploration_bonus={exploration_bonus}"
+            f"exploration_bonus={exploration_bonus}, "
+            f"forced_diversity_prob={forced_diversity_prob}"
         )
 
     def _load_state(self) -> None:
@@ -278,18 +296,51 @@ class SelfplayEngineBandit:
         self,
         config_key: str,
         available_engines: list[str] | None = None,
+        num_players: int = 2,
     ) -> str:
         """Select the best engine for a config using Thompson Sampling.
 
         Args:
             config_key: The config key (e.g., "hex8_2p")
             available_engines: Optional list of available engines (filters AVAILABLE_ENGINES)
+            num_players: Number of players (affects which engines are suitable)
 
         Returns:
             Selected engine mode string
         """
         with self._lock:
             engines = available_engines or AVAILABLE_ENGINES
+
+            # Filter engines by player count suitability
+            # Jan 17, 2026: maxn/brs/paranoid are best for 3-4 player games
+            if num_players >= 3:
+                # Prefer multiplayer-optimized engines
+                multiplayer_engines = {"maxn", "brs", "paranoid", "gumbel-mcts", "mixed"}
+                suitable_engines = [e for e in engines if e in multiplayer_engines or e in {"heuristic-only", "policy-only", "descent-only"}]
+                if suitable_engines:
+                    engines = suitable_engines
+            else:
+                # For 2-player, avoid pure multiplayer engines
+                two_player_engines = [e for e in engines if e not in {"maxn", "paranoid"}]
+                if two_player_engines:
+                    engines = two_player_engines
+
+            # Jan 17, 2026: Forced diversity - randomly select underused engine
+            # This ensures all engines get explored, even if Thompson Sampling
+            # would otherwise always pick the same engine
+            if random.random() < self._forced_diversity_prob:
+                # Find engines with fewer than MIN_GAMES_FOR_EXPLOITATION games
+                underused = [
+                    e for e in engines
+                    if self._get_or_create_stats(config_key, e).total_games < MIN_GAMES_FOR_EXPLOITATION
+                ]
+                if underused:
+                    forced_engine = random.choice(underused)
+                    logger.info(
+                        f"[EngineBandit] {config_key}: Forced diversity -> {forced_engine} "
+                        f"(underused engines: {len(underused)})"
+                    )
+                    return forced_engine
 
             # Get Thompson samples for each engine
             samples: dict[str, float] = {}
