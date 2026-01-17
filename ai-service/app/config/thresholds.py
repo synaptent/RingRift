@@ -125,6 +125,39 @@ def get_gauntlet_games_per_opponent(num_players: int = 2) -> int:
     return GAUNTLET_GAMES_PER_OPPONENT
 
 
+# Jan 17, 2026: Gauntlet simulation budget by player count
+# Multiplayer games have more complex decision trees requiring deeper search
+# to achieve reliable evaluation. Scale simulations proportionally:
+# 2p: 200 (baseline), 3p: 400 (2x), 4p: 600 (3x)
+GAUNTLET_SIMULATIONS_2P = 200   # 2-player baseline
+GAUNTLET_SIMULATIONS_3P = 400   # 3-player: 2x budget for complexity
+GAUNTLET_SIMULATIONS_4P = 600   # 4-player: 3x budget for complexity
+
+
+def get_gauntlet_simulations(num_players: int = 2) -> int:
+    """Get recommended simulation budget for gauntlet evaluation.
+
+    Multiplayer games (3p, 4p) have higher branching factor and more
+    complex decision trees, requiring more simulations for accurate
+    evaluation and stable Elo measurement.
+
+    Jan 17, 2026: Added to fix Elo regression in multiplayer configs.
+    The fixed 200-simulation budget was insufficient for 3p/4p games,
+    causing noisy evaluations and Elo artifacts.
+
+    Args:
+        num_players: Number of players (2, 3, or 4)
+
+    Returns:
+        Recommended simulation budget for gauntlet evaluation
+    """
+    if num_players >= 4:
+        return GAUNTLET_SIMULATIONS_4P
+    if num_players == 3:
+        return GAUNTLET_SIMULATIONS_3P
+    return GAUNTLET_SIMULATIONS_2P
+
+
 # Dec 29, 2025: Minimum games for export by player count
 # Higher player counts have higher variance and need more data
 # December 29, 2025: Aggressive thresholds for faster pipeline iteration

@@ -1020,13 +1020,17 @@ def create_baseline_ai(
             device = "cpu"
 
         # Create GPU Gumbel harness which wraps GPUGumbelMCTS
+        # Jan 17, 2026: Scale simulation budget for multiplayer (3p/4p need more sims)
+        from app.config.thresholds import get_gauntlet_simulations
+        sim_budget = get_gauntlet_simulations(num_players)
+
         harness = create_harness(
             harness_type=HarnessType.GPU_GUMBEL,
             model_path=model_path,  # Uses canonical model if provided
             board_type=board_type,
             num_players=num_players,
             difficulty=difficulty or 7,
-            simulations=200,  # Balanced budget for evaluation
+            simulations=sim_budget,  # Scaled: 2p=200, 3p=400, 4p=600
             extra={
                 "num_sampled_actions": 16,
                 "device": device,
@@ -2565,15 +2569,19 @@ def run_model_vs_model(
         logger.info(f"Loading model B: {model_b_path}")
 
     # Create AI instances with the models
+    # Jan 17, 2026: Scale simulation budget for multiplayer (3p/4p need more sims)
+    from app.config.thresholds import get_gauntlet_simulations
+    sim_budget = get_gauntlet_simulations(num_players)
+
     ai_a = MCTSAI(
         str(model_a_path),
-        simulations=200,
+        simulations=sim_budget,
         board_type=board_type,
         num_players=num_players,
     )
     ai_b = MCTSAI(
         str(model_b_path),
-        simulations=200,
+        simulations=sim_budget,
         board_type=board_type,
         num_players=num_players,
     )
