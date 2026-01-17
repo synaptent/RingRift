@@ -148,6 +148,9 @@ from app.coordination.scheduler_metrics import SchedulerMetricsCollector
 # Import interfaces for type hints (no circular dependency)
 from app.coordination.interfaces import IBackpressureMonitor
 
+# January 2026: Cluster config for selfplay_enabled check
+from app.config.cluster_config import get_cluster_nodes
+
 # January 5, 2026 (Phase 7.4): Node circuit breaker for work allocation filtering
 from app.coordination.node_circuit_breaker import get_node_circuit_registry
 
@@ -1969,6 +1972,29 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
 
         return stolen_total
 
+    def _is_selfplay_enabled(self, node_id: str) -> bool:
+        """Check if selfplay is enabled for a node.
+
+        January 2026: Added to support training-only nodes that should not
+        receive selfplay jobs (prevents OOM from training + selfplay conflicts).
+
+        Args:
+            node_id: The node ID to check.
+
+        Returns:
+            True if selfplay is allowed on this node, False otherwise.
+        """
+        try:
+            cluster_nodes = get_cluster_nodes()
+            if node_id in cluster_nodes:
+                return cluster_nodes[node_id].selfplay_enabled
+            # If node not in config, default to enabled
+            return True
+        except Exception as e:
+            # Graceful fallback: if config unavailable, allow selfplay
+            logger.debug(f"[SelfplayScheduler] Could not check selfplay_enabled for {node_id}: {e}")
+            return True
+
     def _allocate_to_nodes(
         self,
         config_key: str,
@@ -2022,6 +2048,17 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
             )
             total_games = adjusted_games
 
+        # January 2026: Build set of training-only nodes (selfplay_enabled=False)
+        training_only_nodes: set[str] = set()
+        for node_id in self._node_capabilities.keys():
+            if not self._is_selfplay_enabled(node_id):
+                training_only_nodes.add(node_id)
+        if training_only_nodes:
+            logger.debug(
+                f"[SelfplayScheduler] Excluding {len(training_only_nodes)} "
+                f"training-only nodes: {training_only_nodes}"
+            )
+
         # Get available nodes sorted by capacity, excluding unhealthy and circuit-broken nodes
         available_nodes = sorted(
             [
@@ -2029,6 +2066,7 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
                 if n.available_capacity > 0.1
                 and n.node_id not in unhealthy_nodes  # Exclude unhealthy nodes
                 and n.node_id not in circuit_broken_nodes  # Phase 7.4: Exclude CB nodes
+                and n.node_id not in training_only_nodes  # Jan 2026: Exclude training-only nodes
             ],
             key=lambda n: (-n.available_capacity, n.data_lag_seconds),
         )

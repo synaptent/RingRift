@@ -128,6 +128,23 @@ def _is_selfplay_enabled_for_node() -> bool:
         return True
 
 
+def set_selfplay_disabled_override(disabled: bool = True) -> None:
+    """Set a runtime override to disable selfplay for this node.
+
+    January 2026: Added to support --training-only flag in P2P orchestrator.
+    This allows runtime disabling of selfplay without modifying YAML config.
+
+    Args:
+        disabled: If True, selfplay will be disabled for this node.
+    """
+    global _selfplay_enabled_checked, _selfplay_enabled
+    _selfplay_enabled_checked = True
+    _selfplay_enabled = not disabled
+    logger.info(
+        f"[WorkDiscovery] Selfplay override set: selfplay_enabled={not disabled}"
+    )
+
+
 class DiscoveryChannel(Enum):
     """Work discovery channels in priority order."""
 

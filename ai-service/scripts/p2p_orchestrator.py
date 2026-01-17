@@ -816,6 +816,7 @@ from scripts.p2p.managers import (
 from scripts.p2p.managers.state_manager import PersistedLeaderState
 from scripts.p2p.managers.work_discovery_manager import (
     _is_selfplay_enabled_for_node,
+    set_selfplay_disabled_override,
 )
 from scripts.p2p.metrics_manager import MetricsManager
 from scripts.p2p.resource_detector import ResourceDetector, ResourceDetectorMixin
@@ -30692,8 +30693,15 @@ def main():
                         help="Force acquire lock even if held by another process (use when PID was recycled after crash)")
     parser.add_argument("--no-zombie-check", action="store_true",
                         help="Skip automatic zombie P2P detection (zombies are processes bound to port but not responding)")
+    parser.add_argument("--training-only", action="store_true",
+                        help="Run as training-only node (no selfplay dispatch). Prevents OOM from training + selfplay conflicts.")
 
     args = parser.parse_args()
+
+    # Jan 2026: Set training-only mode if flag is set
+    if args.training_only:
+        set_selfplay_disabled_override(disabled=True)
+        logger.info("[P2P] Running in training-only mode - selfplay disabled")
 
     # Jan 2, 2026: Auto-detect node_id if not provided
     if not args.node_id:
