@@ -127,6 +127,14 @@ interface PendingDecisionBase {
 
   /** Context for UI rendering */
   context: DecisionContext;
+
+  /**
+   * Intermediate game state at the point when this decision was surfaced.
+   * This allows decision handlers to broadcast the state with the triggering
+   * move already applied, so the UI shows the board update while the player
+   * is deciding (e.g., territory regions are visible after the move).
+   */
+  intermediateState?: GameState;
 }
 
 /**

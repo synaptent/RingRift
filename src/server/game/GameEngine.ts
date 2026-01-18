@@ -642,6 +642,8 @@ export class GameEngine {
                 territoryMoves.length > 1
                   ? `Choose which territory region to claim (${territoryMoves.length} available). Each region costs your entire cap from a stack outside.`
                   : 'Claim this territory region? It will cost your entire cap from a stack outside.',
+              // RR-FIX-2026-01-18: Pass intermediate state for UI broadcast (only if defined)
+              ...(decision.intermediateState && { intermediateState: decision.intermediateState }),
               options: territoryMoves.map((move, index) => {
                 const region = move.disconnectedRegions?.[0];
                 const representative = move.to as Position;

@@ -3470,6 +3470,11 @@ export async function processTurnAsync(
       payload: { decision },
     });
 
+    // RR-FIX-2026-01-18: Attach the intermediate state to the decision so that
+    // decision handlers can broadcast it for UI updates (e.g., showing the board
+    // with the triggering move applied while the player is choosing territory).
+    decision.intermediateState = result.nextState;
+
     // Resolve the decision
     const chosenMove = await delegates.resolveDecision(decision);
 

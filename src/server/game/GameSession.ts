@@ -335,14 +335,60 @@ export class GameSession {
     // This ensures the board updates visually (e.g., piece moved) while the player
     // is deciding (e.g., which territory to claim).
     this.wsHandler.onBeforeChoice = async (choice) => {
-      if (this.gameEngine) {
-        logger.info('Broadcasting intermediate state before choice', {
+      // Use the intermediate state from the choice if available, otherwise fall back
+      // to the current engine state (which may be stale during decision processing)
+      const intermediateState = choice.intermediateState ?? this.gameEngine?.getGameState();
+      if (!intermediateState) {
+        logger.warn('No intermediate state available for choice broadcast', {
           gameId: this.gameId,
           choiceType: choice.type,
-          playerNumber: choice.playerNumber,
         });
-        // Pass a minimal RulesResult with no gameResult to trigger the state broadcast path
-        await this.broadcastUpdate({ success: true });
+        return;
+      }
+
+      logger.info('Broadcasting intermediate state before choice', {
+        gameId: this.gameId,
+        choiceType: choice.type,
+        playerNumber: choice.playerNumber,
+        hasIntermediateState: !!choice.intermediateState,
+        moveCount: intermediateState.moveHistory?.length,
+      });
+
+      // Broadcast the intermediate state to all clients in the room
+      const room = this.io.sockets.adapter.rooms.get(this.gameId);
+      if (room) {
+        for (const socketId of room) {
+          const socket = this.io.sockets.sockets.get(socketId) as AuthenticatedSocket | undefined;
+          if (!socket) continue;
+
+          const isPlayer = intermediateState.players.some((p) => p.id === socket.userId);
+          const isActivePlayer =
+            isPlayer &&
+            intermediateState.players.find((p) => p.id === socket.userId)?.playerNumber ===
+              intermediateState.currentPlayer;
+          // For intermediate state, don't send valid moves since we're awaiting a decision
+          const validMoves =
+            isActivePlayer && this.gameEngine
+              ? this.gameEngine.getValidMoves(intermediateState.currentPlayer)
+              : [];
+
+          const transportState = {
+            ...intermediateState,
+            board: serializeBoardState(intermediateState.board),
+          };
+
+          const payload = {
+            type: 'game_update' as const,
+            data: {
+              gameId: this.gameId,
+              gameState: transportState as unknown as GameState,
+              validMoves,
+            },
+            timestamp: new Date().toISOString(),
+          };
+
+          socket.emit('game_state', payload);
+        }
       }
     };
 

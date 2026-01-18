@@ -1041,6 +1041,14 @@ export interface PlayerChoiceBase {
   type: PlayerChoiceType;
   prompt: string;
   timeoutMs?: number;
+  /**
+   * Intermediate game state at the point when this choice was surfaced.
+   * This allows choice handlers to broadcast the state with the triggering
+   * move already applied, so the UI shows the board update while the player
+   * is deciding (e.g., territory regions are visible after the move).
+   * RR-FIX-2026-01-18
+   */
+  intermediateState?: GameState;
 }
 
 export interface LineOrderChoice extends PlayerChoiceBase {
