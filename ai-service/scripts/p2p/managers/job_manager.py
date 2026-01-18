@@ -2068,6 +2068,7 @@ class JobManager(EventSubscriptionMixin):
         engine_mode: str,
         engine_extra_args: dict[str, Any] | None = None,
         model_version: str = "v5",
+        cuda_device: int | None = None,
     ) -> None:
         """Run selfplay job with appropriate script based on engine mode.
 
@@ -2081,6 +2082,7 @@ class JobManager(EventSubscriptionMixin):
             num_games: Number of games to play
             engine_mode: Engine mode (heuristic-only, gumbel-mcts, etc.)
             engine_extra_args: Extra engine arguments (e.g., {"budget": 64} for gumbel-mcts)
+            cuda_device: Optional GPU device index for multi-GPU nodes (sets CUDA_VISIBLE_DEVICES)
         """
         board_norm = board_type.replace("hexagonal", "hex")
         # Session 17.35: Use _get_data_path() to avoid doubled ai-service/ path
@@ -2261,6 +2263,12 @@ class JobManager(EventSubscriptionMixin):
 
         # December 29, 2025: Use helper for consistent env setup (includes RINGRIFT_ALLOW_PENDING_GATE)
         env = self._get_subprocess_env()
+
+        # Jan 18, 2026: Set CUDA_VISIBLE_DEVICES for multi-GPU nodes
+        # This routes the subprocess to a specific GPU when running parallel workers
+        if cuda_device is not None:
+            env["CUDA_VISIBLE_DEVICES"] = str(cuda_device)
+            logger.info(f"[Multi-GPU] Job {job_id} routed to GPU {cuda_device}")
 
         # December 28, 2025: Initialize proc before try block for proper cleanup in except handlers
         proc: asyncio.subprocess.Process | None = None
