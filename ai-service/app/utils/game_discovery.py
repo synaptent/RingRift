@@ -637,16 +637,26 @@ class GameDiscovery:
                 return False
 
             # Check if game_moves table exists with required columns
-            # This is critical for export - databases without move_json will fail
+            # Accept two schema formats:
+            # 1. New format: move_json column (JSON-serialized move data)
+            # 2. Legacy format: move_type + position_q + position_r columns
             cursor = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='game_moves'"
             )
             if cursor.fetchone():
-                # game_moves table exists - verify it has move_json column
                 cursor = conn.execute("PRAGMA table_info(game_moves)")
                 move_columns = {row[1] for row in cursor.fetchall()}
-                if "move_json" not in move_columns:
-                    logger.debug("game_moves table exists but lacks move_json column")
+                # Accept either new (move_json) or legacy (move_type + positions) schema
+                has_new_schema = "move_json" in move_columns
+                has_legacy_schema = {"move_type", "position_q", "position_r"}.issubset(
+                    move_columns
+                )
+                if not (has_new_schema or has_legacy_schema):
+                    logger.debug(
+                        f"game_moves table lacks required columns: "
+                        f"need move_json or (move_type, position_q, position_r), "
+                        f"found: {move_columns}"
+                    )
                     return False
 
             return True
