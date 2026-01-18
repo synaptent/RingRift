@@ -1513,6 +1513,7 @@ def _evaluate_single_opponent(
     parallel_games: int | None = None,  # Jan 2026: Default to parallel (get_parallel_games_default())
     recording_config: Any | None = None,
     harness_type: str = "",  # Jan 2026: Harness type for composite Elo tracking
+    _from_parallel_context: bool = False,  # Jan 2026: Prevents nested ThreadPool deadlock
 ) -> dict[str, Any]:
     """Evaluate a model against a single baseline opponent.
 
@@ -1528,6 +1529,12 @@ def _evaluate_single_opponent(
     # Jan 2026: Default to parallel execution if not specified
     if parallel_games is None:
         parallel_games = get_parallel_games_default()
+
+    # Jan 2026: Disable nested parallelism to prevent ThreadPool deadlock
+    # When called from parallel opponent evaluation, inner parallelism causes deadlock
+    if _from_parallel_context and parallel_games > 1:
+        logger.debug("[gauntlet] Disabling nested parallelism to prevent ThreadPool deadlock")
+        parallel_games = 1
 
     baseline_name = baseline.value
 
@@ -2078,6 +2085,7 @@ def run_baseline_gauntlet(
                     parallel_games,
                     recording_config,
                     harness_type,  # Jan 2026: Pass harness type for Elo tracking
+                    True,  # _from_parallel_context: prevents nested ThreadPool deadlock
                 ): baseline
                 for baseline in opponents
             }
