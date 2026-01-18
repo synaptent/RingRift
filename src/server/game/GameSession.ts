@@ -361,16 +361,13 @@ export class GameSession {
           const socket = this.io.sockets.sockets.get(socketId) as AuthenticatedSocket | undefined;
           if (!socket) continue;
 
-          const isPlayer = intermediateState.players.some((p) => p.id === socket.userId);
-          const isActivePlayer =
-            isPlayer &&
-            intermediateState.players.find((p) => p.id === socket.userId)?.playerNumber ===
-              intermediateState.currentPlayer;
-          // For intermediate state, don't send valid moves since we're awaiting a decision
-          const validMoves =
-            isActivePlayer && this.gameEngine
-              ? this.gameEngine.getValidMoves(intermediateState.currentPlayer)
-              : [];
+          // RR-FIX-2026-01-18: During intermediate state broadcast (before a choice),
+          // we should NOT send valid moves because:
+          // 1. The player is about to be prompted for a decision, not a game move
+          // 2. The engine's internal state (mustMoveFromStackKey) may not match the
+          //    intermediate state, causing incorrect valid moves to be calculated
+          // Send empty array to prevent stale/incorrect moves from being displayed.
+          const validMoves: Move[] = [];
 
           const transportState = {
             ...intermediateState,
