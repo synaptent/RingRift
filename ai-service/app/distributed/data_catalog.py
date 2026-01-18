@@ -71,6 +71,10 @@ DEFAULT_SYNC_DIR = GAMES_DIR / "synced"
 DEFAULT_OWC_IMPORTS_DIR = GAMES_DIR / "owc_imports"  # Dec 30, 2025
 DEFAULT_MANIFEST_PATH = DATA_DIR / "data_manifest.db"
 
+# Jan 18, 2026: OWC external drive path on mac-studio
+# This is the actual mount point, not just imported data
+OWC_EXTERNAL_DRIVE_PATH = Path("/Volumes/RingRift-Data/ai-service/data/games")
+
 # Try to import unified manifest
 try:
     from app.distributed.unified_manifest import (
@@ -325,6 +329,15 @@ class DataCatalog:
                         host_origin=host_dir.name,
                     )
 
+        # Jan 18, 2026: Discover OWC external drive directly on mac-studio
+        if OWC_EXTERNAL_DRIVE_PATH.exists():
+            logger.info(f"[DataCatalog] Discovering OWC external drive at {OWC_EXTERNAL_DRIVE_PATH}")
+            self._discover_directory(
+                OWC_EXTERNAL_DRIVE_PATH,
+                source_type="owc",
+                host_origin="mac-studio",
+            )
+
     def _discover_manually(self) -> None:
         """Fallback manual discovery when GameDiscovery is not available."""
         local_source_type = "nfs" if self._provider and self._provider.has_shared_storage else "local"
@@ -347,6 +360,16 @@ class DataCatalog:
             self._discover_directory(
                 owc_imports_dir,
                 source_type="owc_import",
+                host_origin="mac-studio",
+            )
+
+        # Jan 18, 2026: Discover OWC external drive directly on mac-studio
+        # The external drive at /Volumes/RingRift-Data contains the canonical databases
+        if OWC_EXTERNAL_DRIVE_PATH.exists():
+            logger.info(f"[DataCatalog] Discovering OWC external drive at {OWC_EXTERNAL_DRIVE_PATH}")
+            self._discover_directory(
+                OWC_EXTERNAL_DRIVE_PATH,
+                source_type="owc",
                 host_origin="mac-studio",
             )
 
@@ -1357,6 +1380,16 @@ class UnifiedDataRegistry:
                 board_types = getattr(source, "board_types", set())
                 player_counts = getattr(source, "player_counts", set())
 
+                # Jan 18, 2026: Determine which bucket to use based on source_type
+                # OWC sources should be counted separately from local
+                source_type = getattr(source, "source_type", "local")
+                if source_type in ("owc", "owc_import"):
+                    bucket = "owc"
+                elif source_type == "synced":
+                    bucket = "cluster"  # Synced data counts as cluster data
+                else:
+                    bucket = "local"
+
                 # Create config keys for all combinations
                 for board_type in board_types:
                     for num_players in player_counts:
@@ -1366,7 +1399,7 @@ class UnifiedDataRegistry:
                         # Distribute game count evenly across configs (approximation)
                         # In practice, most DBs have one config
                         game_share = source.game_count // max(1, len(board_types) * len(player_counts))
-                        result[config_key]["local"] += game_share
+                        result[config_key][bucket] += game_share
         except Exception as e:
             logger.debug(f"[UnifiedDataRegistry] Local source discovery failed: {e}")
 
