@@ -400,6 +400,17 @@ class JobManager(EventSubscriptionMixin):
         "descent-only", "maxn", "brs",
     }
 
+    # Weak GPU models that should prefer CPU selfplay over Gumbel MCTS
+    # Jan 18, 2026: These GPUs have limited VRAM (<12GB) and slower compute,
+    # making Gumbel MCTS (800 simulations) too slow for efficient selfplay.
+    # Route these to heuristic/CPU selfplay instead.
+    WEAK_GPU_MODELS = {
+        "3060", "3060 ti", "3060ti", "rtx 3060",  # 12GB VRAM, slow
+        "4060", "4060 ti", "4060ti", "rtx 4060",  # 8GB VRAM, slow
+        "2060", "2070", "2080",  # Older Turing, limited VRAM
+        "1080", "1080 ti", "1070", "1660",  # Pascal/Turing consumer
+    }
+
     # Mixin type identifier (required by EventSubscriptionMixin)
     MIXIN_TYPE = "job_manager"
 
@@ -638,7 +649,11 @@ class JobManager(EventSubscriptionMixin):
                 }
 
             # Jan 12, 2026: Default to "mixed" for harness diversity across cluster
-            effective_engine_mode = engine_mode or "mixed"
+            # Jan 18, 2026: Route weak GPUs to heuristic selfplay instead of Gumbel
+            requested_engine_mode = engine_mode or "mixed"
+            effective_engine_mode = self._get_effective_engine_mode(
+                requested_engine_mode, peer
+            )
 
             config = {
                 "board_type": board_type,
@@ -988,6 +1003,73 @@ class JobManager(EventSubscriptionMixin):
         # Fallback: assume no GPU if we can't determine
         logger.debug(f"Cannot determine GPU capability for worker: {worker}")
         return False
+
+    def _is_weak_gpu(self, worker: Any) -> bool:
+        """Check if a worker has a weak GPU that should prefer CPU selfplay.
+
+        Weak GPUs (3060Ti, 4060Ti, etc.) have limited VRAM and slower compute,
+        making Gumbel MCTS (800 simulations) too slow for efficient selfplay.
+        These nodes should be routed to heuristic/CPU selfplay instead.
+
+        Args:
+            worker: Worker node info object (NodeInfo or similar)
+
+        Returns:
+            True if the worker has a weak GPU that should use CPU selfplay.
+
+        Jan 18, 2026: Added to route weak GPUs to CPU selfplay for better throughput.
+        """
+        # Get GPU name from various possible attributes
+        gpu_name = ""
+        if hasattr(worker, "gpu"):
+            gpu_name = str(getattr(worker, "gpu", "") or "")
+        elif hasattr(worker, "gpu_info"):
+            gpu_info = worker.gpu_info
+            if gpu_info:
+                gpu_name = str(getattr(gpu_info, "name", "") or "")
+        elif hasattr(worker, "capabilities"):
+            caps = worker.capabilities or {}
+            gpu_name = str(caps.get("gpu_name", "") or caps.get("gpu", "") or "")
+
+        if not gpu_name:
+            return False
+
+        # Check if GPU model is in weak GPU list
+        gpu_lower = gpu_name.lower()
+        for weak_model in self.WEAK_GPU_MODELS:
+            if weak_model in gpu_lower:
+                logger.debug(f"Weak GPU detected: {gpu_name} on worker {worker}")
+                return True
+
+        return False
+
+    def _get_effective_engine_mode(
+        self, engine_mode: str, worker: Any
+    ) -> str:
+        """Get effective engine mode based on worker GPU capability.
+
+        Routes weak GPU nodes to CPU selfplay (heuristic) instead of
+        GPU-intensive modes like Gumbel MCTS.
+
+        Args:
+            engine_mode: Requested engine mode (e.g., "gumbel-mcts", "mixed")
+            worker: Worker node info object
+
+        Returns:
+            Effective engine mode - may be changed to "heuristic" for weak GPUs.
+
+        Jan 18, 2026: Added to improve cluster efficiency by routing weak GPUs
+        to faster CPU selfplay instead of slow Gumbel MCTS.
+        """
+        # If requested mode requires GPU and worker has weak GPU, use heuristic
+        if self._engine_mode_requires_gpu(engine_mode) and self._is_weak_gpu(worker):
+            logger.info(
+                f"Routing weak GPU worker to heuristic selfplay "
+                f"(requested: {engine_mode})"
+            )
+            return "heuristic"
+
+        return engine_mode
 
     # =========================================================================
     # Phase 15: Fair Node Selection (Session 17.33, Jan 5, 2026)
@@ -2933,6 +3015,10 @@ class JobManager(EventSubscriptionMixin):
                         pass  # Non-critical, allow dispatch if tracker fails
 
                 # Phase 15.1.7: Build payload for retry-enabled dispatch
+                # Jan 18, 2026: Apply weak GPU routing per worker
+                worker_engine_mode = self._get_effective_engine_mode(
+                    effective_engine_mode, worker
+                )
                 payload = {
                     "job_id": f"{job_id}_{worker_id}",
                     "parent_job_id": job_id,
@@ -2941,7 +3027,7 @@ class JobManager(EventSubscriptionMixin):
                     "num_games": games,
                     "model_path": model_path,
                     "output_dir": output_dir,
-                    "engine_mode": effective_engine_mode,
+                    "engine_mode": worker_engine_mode,
                 }
                 # Jan 2026: Include engine extra args (e.g., budget for gumbel-mcts)
                 if engine_extra_args:
