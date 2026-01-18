@@ -9832,8 +9832,11 @@ class P2POrchestrator(
                 external.owc_total_games = owc_metadata.get("total_games", 0)
                 external.owc_total_size_bytes = owc_metadata.get("total_size_bytes", 0)
                 external.owc_last_scan = time.time()
+            else:
+                external.owc_scan_error = "OWC scan returned no data"
         except Exception as e:
-            logger.debug(f"[ExternalStorage] OWC scan skipped: {e}")
+            external.owc_scan_error = str(e)
+            logger.warning(f"[ExternalStorage] OWC scan failed: {e}")
 
         # Collect S3 bucket metadata (if configured)
         try:
@@ -9845,8 +9848,11 @@ class P2POrchestrator(
                 external.s3_total_size_bytes = s3_metadata.get("total_size_bytes", 0)
                 external.s3_bucket = s3_metadata.get("bucket", "")
                 external.s3_last_scan = time.time()
+            else:
+                external.s3_scan_error = "S3 scan returned no data (check boto3 and credentials)"
         except Exception as e:
-            logger.debug(f"[ExternalStorage] S3 scan skipped: {e}")
+            external.s3_scan_error = str(e)
+            logger.warning(f"[ExternalStorage] S3 scan failed: {e}")
 
         return external
 
@@ -9861,11 +9867,24 @@ class P2POrchestrator(
         import os
         import socket
 
-        # OWC drive paths - check local first, then SSH to mac-studio
-        owc_paths = [
-            "/Volumes/RingRift-Data",
-            "/Volumes/OWC",
-        ]
+        # Load OWC paths from config if available, otherwise use defaults
+        owc_paths = []
+        try:
+            from app.config.cluster_config import load_cluster_config
+            config = load_cluster_config()
+            sync_cfg = config.get_raw_section("sync_routing")
+            for storage in sync_cfg.get("allowed_external_storage", []):
+                if storage.get("host") == "mac-studio":
+                    owc_paths.append(storage.get("path"))
+        except Exception:
+            pass
+
+        # Fallback to hardcoded paths if config unavailable
+        if not owc_paths:
+            owc_paths = [
+                "/Volumes/RingRift-Data",
+                "/Volumes/OWC",
+            ]
 
         # Check if running on mac-studio (OWC is local)
         hostname = socket.gethostname().lower()
@@ -9880,12 +9899,25 @@ class P2POrchestrator(
                     )
             return None
 
-        # Remote access via SSH to mac-studio
-        mac_studio_host = "mac-studio"
+        # Remote access via SSH to mac-studio (get IP from config)
+        mac_studio_host = "mac-studio"  # Default hostname
+        try:
+            from app.config.cluster_config import load_cluster_config
+            config = load_cluster_config()
+            mac_studio_cfg = config.hosts_raw.get("mac-studio", {})
+            # Prefer Tailscale IP for reliability
+            mac_studio_host = (
+                mac_studio_cfg.get("tailscale_ip")
+                or mac_studio_cfg.get("ssh_host")
+                or "mac-studio"
+            )
+        except Exception:
+            pass  # Fall back to hostname
+
         try:
             return await self._scan_owc_remote(mac_studio_host, owc_paths[0])
         except Exception as e:
-            logger.debug(f"[OWC] Remote scan failed: {e}")
+            logger.warning(f"[OWC] Remote scan failed to {mac_studio_host}: {e}")
             return None
 
     def _scan_owc_local(self, base_path: str) -> dict:
@@ -10029,6 +10061,41 @@ class P2POrchestrator(
         except (asyncio.TimeoutError, OSError):
             return None
 
+    def _get_s3_bucket_from_config(self) -> str | None:
+        """Get S3 bucket name from config or environment.
+
+        Priority:
+        1. RINGRIFT_S3_BUCKET environment variable (backward compat)
+        2. sync_routing.s3.bucket from distributed_hosts.yaml
+        3. Default: ringrift-models-20251214
+
+        Returns:
+            S3 bucket name or None if S3 is disabled.
+        """
+        import os
+
+        # Priority 1: Environment variable
+        s3_bucket = os.environ.get("RINGRIFT_S3_BUCKET")
+        if s3_bucket:
+            return s3_bucket
+
+        # Priority 2: Load from YAML config
+        try:
+            from app.config.cluster_config import load_cluster_config
+            config = load_cluster_config()
+            s3_cfg = config.get_raw_section("sync_routing").get("s3", {})
+            if not s3_cfg.get("enabled", True):
+                logger.info("[S3] S3 disabled in config")
+                return None
+            bucket = s3_cfg.get("bucket")
+            if bucket:
+                return bucket
+        except Exception as e:
+            logger.debug(f"[S3] Could not load config from YAML: {e}")
+
+        # Priority 3: Default bucket
+        return "ringrift-models-20251214"
+
     async def _scan_s3_metadata(self) -> dict | None:
         """Scan S3 bucket for game data metadata.
 
@@ -10037,11 +10104,10 @@ class P2POrchestrator(
         Returns:
             Dict with games_by_config, total_games, total_size_bytes, bucket, or None.
         """
-        import os
-
-        # Check if S3 is configured
-        s3_bucket = os.environ.get("RINGRIFT_S3_BUCKET", "")
+        # Get S3 bucket from config (env var or YAML)
+        s3_bucket = self._get_s3_bucket_from_config()
         if not s3_bucket:
+            logger.info("[S3] S3 scanning disabled - no bucket configured")
             return None
 
         # Check for cached result (cache for 1 hour)
@@ -10057,7 +10123,7 @@ class P2POrchestrator(
         try:
             import boto3
         except ImportError:
-            logger.debug("[S3] boto3 not available, skipping S3 scan")
+            logger.warning("[S3] boto3 not installed. Install with: pip install boto3")
             return None
 
         try:
@@ -10108,7 +10174,7 @@ class P2POrchestrator(
             return result
 
         except Exception as e:
-            logger.debug(f"[S3] Scan failed: {e}")
+            logger.warning(f"[S3] Scan failed: {e}")
             return None
 
     # ============================================

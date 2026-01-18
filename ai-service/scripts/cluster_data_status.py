@@ -100,10 +100,12 @@ def get_cluster_data_status(config_filter: str | None = None) -> dict:
                 "owc_available": getattr(external, "owc_available", False),
                 "owc_total_games": getattr(external, "owc_total_games", 0),
                 "owc_total_size": getattr(external, "owc_total_size_bytes", 0),
+                "owc_scan_error": getattr(external, "owc_scan_error", ""),
                 "s3_available": getattr(external, "s3_available", False),
                 "s3_bucket": getattr(external, "s3_bucket", ""),
                 "s3_total_games": getattr(external, "s3_total_games", 0),
                 "s3_total_size": getattr(external, "s3_total_size_bytes", 0),
+                "s3_scan_error": getattr(external, "s3_scan_error", ""),
             }
 
     return {
@@ -139,9 +141,18 @@ def print_table(data: dict) -> None:
         if external.get("owc_available"):
             owc_size = format_size(external.get("owc_total_size", 0))
             print(f"OWC Drive: {format_number(external.get('owc_total_games', 0))} games ({owc_size})")
+        elif external.get("owc_scan_error"):
+            print(f"OWC Drive: SCAN ERROR - {external.get('owc_scan_error')}")
+        else:
+            print("OWC Drive: Not scanned (no data)")
+
         if external.get("s3_available"):
             s3_size = format_size(external.get("s3_total_size", 0))
             print(f"S3 Bucket: {external.get('s3_bucket', 'N/A')} - {format_number(external.get('s3_total_games', 0))} games ({s3_size})")
+        elif external.get("s3_scan_error"):
+            print(f"S3 Bucket: SCAN ERROR - {external.get('s3_scan_error')}")
+        else:
+            print("S3 Bucket: Not scanned (no data)")
 
     print()
 

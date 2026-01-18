@@ -984,6 +984,10 @@ class ExternalStorageManifest:
     s3_last_scan: float = 0.0
     s3_bucket: str = ""
 
+    # Scan error tracking (Jan 2026: for debugging manifest issues)
+    owc_scan_error: str = ""
+    s3_scan_error: str = ""
+
     def to_dict(self) -> dict:
         return {
             'collected_at': self.collected_at,
@@ -992,12 +996,14 @@ class ExternalStorageManifest:
             'owc_total_games': self.owc_total_games,
             'owc_total_size_bytes': self.owc_total_size_bytes,
             'owc_last_scan': self.owc_last_scan,
+            'owc_scan_error': self.owc_scan_error,
             's3_available': self.s3_available,
             's3_games_by_config': self.s3_games_by_config,
             's3_total_games': self.s3_total_games,
             's3_total_size_bytes': self.s3_total_size_bytes,
             's3_last_scan': self.s3_last_scan,
             's3_bucket': self.s3_bucket,
+            's3_scan_error': self.s3_scan_error,
         }
 
     @classmethod
