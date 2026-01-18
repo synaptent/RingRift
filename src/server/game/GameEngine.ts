@@ -992,6 +992,10 @@ export class GameEngine {
       spectators: [...state.spectators],
       // Include LPS tracking summary for client display (RR-CANON-R172)
       lpsTracking: this.getLpsTrackingSummary(),
+      // RR-CANON-R093: Include must-move constraint for AI move generation
+      // and client display. This ensures captures are only allowed from the
+      // stack that just moved/was placed upon.
+      mustMoveFromStackKey: this.mustMoveFromStackKey,
     };
   }
 

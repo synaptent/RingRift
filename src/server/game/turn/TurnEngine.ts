@@ -76,11 +76,11 @@ export function updatePerTurnStateAfterMove(turnState: PerTurnState, move: Move)
     return { hasPlacedThisTurn, mustMoveFromStackKey };
   }
 
-  // For movement/capture moves originating from the must-move stack,
-  // advance the tracked key to the new landing position so that any
-  // subsequent phase (e.g. capture / chain_capture) references the same stack.
+  // For movement/capture moves, track the landing position so subsequent
+  // captures in this turn are restricted to originate from that stack.
+  // RR-CANON-R093: "you may choose to initiate an Overtaking capture only
+  // from the stack that just moved"
   if (
-    mustMoveFromStackKey &&
     move.from &&
     move.to &&
     (move.type === 'move_stack' ||
@@ -88,7 +88,10 @@ export function updatePerTurnStateAfterMove(turnState: PerTurnState, move: Move)
       move.type === 'continue_capture_segment')
   ) {
     const fromKey = positionToStringLocal(move.from);
-    if (fromKey === mustMoveFromStackKey) {
+    // If mustMoveFromStackKey was set (from placement), only update if
+    // this move originates from that stack. Otherwise, always set it to
+    // the landing position to enforce capture eligibility per RR-CANON-R093.
+    if (!mustMoveFromStackKey || fromKey === mustMoveFromStackKey) {
       mustMoveFromStackKey = positionToStringLocal(move.to);
     }
   }

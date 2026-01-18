@@ -713,6 +713,18 @@ export class ClientSandboxEngine {
       canonicalType === 'overtaking_capture' ||
       canonicalType === 'continue_capture_segment'
     ) {
+      // RR-CANON-R093: Track the landing position so subsequent captures in this
+      // turn are restricted to originate from the stack that just moved.
+      if (move.to) {
+        const toKey = positionToString(move.to);
+        const fromKey = move.from ? positionToString(move.from) : undefined;
+        // If mustMoveFromStackKey was set (from placement), only update if
+        // this move originates from that stack. Otherwise, always set it to
+        // the landing position to enforce capture eligibility.
+        if (!this._mustMoveFromStackKey || fromKey === this._mustMoveFromStackKey) {
+          this._mustMoveFromStackKey = toKey;
+        }
+      }
       this._selectedStackKey = undefined;
     }
 
