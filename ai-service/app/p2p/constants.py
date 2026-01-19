@@ -434,9 +434,25 @@ RECENT_LEADER_WINDOW = int(
 )
 
 # Bootstrap seeds - initial peers to contact for mesh join
-# Empty by default; loaded from distributed_hosts.yaml or CLI args
+# Jan 19, 2026: Added hardcoded essential seeds for reliable bootstrap discovery.
+# These are stable, always-online nodes that new peers can connect to.
+# Environment variable overrides take precedence if set.
 _bootstrap_seeds_env = os.environ.get("RINGRIFT_P2P_BOOTSTRAP_SEEDS", "").strip()
-BOOTSTRAP_SEEDS: list[str] = [s.strip() for s in _bootstrap_seeds_env.split(",") if s.strip()] if _bootstrap_seeds_env else []
+if _bootstrap_seeds_env:
+    # Environment variable takes precedence
+    BOOTSTRAP_SEEDS: list[str] = [s.strip() for s in _bootstrap_seeds_env.split(",") if s.strip()]
+else:
+    # Hardcoded essential seeds - stable nodes that are always online
+    # Priority: Hetzner CPU (always on, relay-capable) > Vultr > Lambda GH200 (NAT-blocked but via relay)
+    BOOTSTRAP_SEEDS: list[str] = [
+        "100.94.174.19:8770",    # hetzner-cpu1 (always online, relay-capable)
+        "100.67.131.72:8770",    # hetzner-cpu2 (always online, relay-capable)
+        "100.126.21.102:8770",   # hetzner-cpu3 (always online, relay-capable)
+        "100.94.201.92:8770",    # vultr-a100-20gb (stable, relay-capable)
+        "100.107.168.125:8770",  # mac-studio (coordinator)
+        "100.71.89.91:8770",     # lambda-gh200-1 (reachable via relay)
+        "100.121.230.110:8770",  # lambda-gh200-8 (direct connection)
+    ]
 
 # Minimum number of bootstrap attempts per seed before moving on
 MIN_BOOTSTRAP_ATTEMPTS = int(os.environ.get("RINGRIFT_P2P_MIN_BOOTSTRAP_ATTEMPTS", "3") or 3)
