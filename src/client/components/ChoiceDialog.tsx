@@ -174,10 +174,14 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
           role="option"
           aria-selected={focusedOptionIndex === 0}
         >
-          <div className="font-semibold text-emerald-300">Full Collapse + Elimination Bonus</div>
-          <div className="text-gray-300">
-            Convert entire line to territory and eliminate 1 of your rings (progress toward
-            victory!)
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-emerald-300">Full Collapse + Elimination</span>
+            <span className="ml-2 px-2 py-0.5 text-[10px] font-semibold rounded bg-red-900/60 text-red-300 border border-red-700/50">
+              -1 RING
+            </span>
+          </div>
+          <div className="text-gray-300 mt-1">
+            Convert entire line to territory. Progress toward victory!
           </div>
         </button>
         <button
@@ -194,8 +198,13 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
           role="option"
           aria-selected={focusedOptionIndex === 1}
         >
-          <div className="font-semibold text-sky-300">Minimum Collapse</div>
-          <div className="text-gray-300">
+          <div className="flex items-center justify-between">
+            <span className="font-semibold text-sky-300">Minimum Collapse</span>
+            <span className="ml-2 px-2 py-0.5 text-[10px] font-semibold rounded bg-slate-700/60 text-slate-300 border border-slate-600/50">
+              NO COST
+            </span>
+          </div>
+          <div className="text-gray-300 mt-1">
             Convert minimum markers to territory, keep extra markers on board
           </div>
         </button>
@@ -270,16 +279,26 @@ export const ChoiceDialog: React.FC<ChoiceDialogProps> = ({
             aria-selected={index === focusedOptionIndex}
           >
             {opt.regionId === 'skip' || opt.size <= 0 ? (
-              <>Skip territory processing for this turn</>
+              <div className="flex items-center justify-between">
+                <span>Skip territory processing for this turn</span>
+                <span className="ml-2 px-2 py-0.5 text-[10px] font-semibold rounded bg-slate-700/60 text-slate-300 border border-slate-600/50">
+                  NO COST
+                </span>
+              </div>
             ) : (
-              <>
-                Region {opt.regionId} {opt.size} spaces, sample ({opt.representativePosition.x},{' '}
-                {opt.representativePosition.y}
-                {opt.representativePosition.z !== undefined
-                  ? `, ${opt.representativePosition.z}`
-                  : ''}
-                )
-              </>
+              <div className="flex items-center justify-between">
+                <span>
+                  Region {opt.size} spaces at ({opt.representativePosition.x},{' '}
+                  {opt.representativePosition.y}
+                  {opt.representativePosition.z !== undefined
+                    ? `, ${opt.representativePosition.z}`
+                    : ''}
+                  )
+                </span>
+                <span className="ml-2 px-2 py-0.5 text-[10px] font-semibold rounded bg-amber-900/60 text-amber-300 border border-amber-700/50 whitespace-nowrap">
+                  FULL CAP
+                </span>
+              </div>
             )}
           </button>
         ))}
