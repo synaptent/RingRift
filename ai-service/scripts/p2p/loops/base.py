@@ -164,6 +164,7 @@ class BaseLoop(ABC):
         metrics_manager: MetricsManager | None = None,
         enabled: bool = True,
         depends_on: list[str] | None = None,
+        executor_category: str | None = None,
     ):
         """Initialize the base loop.
 
@@ -174,6 +175,9 @@ class BaseLoop(ABC):
             metrics_manager: Optional MetricsManager for recording metrics
             enabled: Whether the loop is enabled (can be toggled at runtime)
             depends_on: List of loop names that must start before this loop (Dec 2025)
+            executor_category: Thread pool category for heavy operations (Jan 2026)
+                Categories: network, sync, jobs, health, compute
+                If None, uses default asyncio.to_thread()
         """
         self.name = name
         self.interval = interval
@@ -181,6 +185,7 @@ class BaseLoop(ABC):
         self.metrics_manager = metrics_manager
         self.enabled = enabled
         self.depends_on = depends_on or []
+        self.executor_category = executor_category
 
         # Lifecycle state
         self._running = False
@@ -686,6 +691,58 @@ class BaseLoop(ABC):
             error: The exception that was raised
         """
         pass
+
+    # Jan 2026: Phase 2 - Thread pool helper for heavy operations
+
+    async def run_in_executor(
+        self, func: Callable[..., Any], *args: Any, **kwargs: Any
+    ) -> Any:
+        """Run a blocking function in the appropriate thread pool.
+
+        Jan 2026: Phase 2 multi-core parallelization. This method routes
+        blocking operations to the loop's configured executor category,
+        or falls back to asyncio.to_thread() if no category is set.
+
+        Args:
+            func: Blocking function to run
+            *args: Positional arguments for func
+            **kwargs: Keyword arguments for func
+
+        Returns:
+            Result of func
+
+        Example:
+            class MySyncLoop(BaseLoop):
+                def __init__(self):
+                    super().__init__(
+                        name="my_sync_loop",
+                        interval=60.0,
+                        executor_category="sync",  # Use sync pool
+                    )
+
+                async def _run_once(self):
+                    # Heavy blocking operation runs in sync pool
+                    result = await self.run_in_executor(
+                        self._heavy_sync_operation
+                    )
+        """
+        if self.executor_category:
+            try:
+                from scripts.p2p.loop_executors import LoopExecutors
+
+                return await LoopExecutors.run_in_pool(
+                    self.executor_category, func, *args, **kwargs
+                )
+            except ImportError:
+                # Fall back to asyncio.to_thread if executor module not available
+                pass
+
+        # Default: use asyncio.to_thread
+        if kwargs:
+            # asyncio.to_thread doesn't support kwargs directly
+            import functools
+            func = functools.partial(func, **kwargs)
+        return await asyncio.to_thread(func, *args)
 
 
 class LoopManager:

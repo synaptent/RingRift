@@ -30396,6 +30396,16 @@ print(json.dumps({{
                     logger.info(f"LoopManager: stopped {stopped}/{len(results)} loops")
                 except Exception as e:  # noqa: BLE001
                     logger.warning(f"LoopManager: stop failed: {e}")
+
+            # Jan 2026: Shutdown loop executor thread pools (Phase 2)
+            try:
+                from scripts.p2p.loop_executors import LoopExecutors
+                LoopExecutors.shutdown_all(wait=True)
+            except ImportError:
+                pass  # Module not available
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"LoopExecutors shutdown failed: {e}")
+
             try:
                 await asyncio.wait_for(runner.cleanup(), timeout=30)
             except asyncio.TimeoutError:
