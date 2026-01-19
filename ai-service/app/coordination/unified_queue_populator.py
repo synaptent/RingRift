@@ -1377,6 +1377,40 @@ class UnifiedQueuePopulator:
 
         return exists
 
+    def _should_force_queue_add(self, config_key: str) -> bool:
+        """Determine if we should bypass backpressure for this config.
+
+        January 2026: 4-player configs were being starved because the queue
+        filled with 2-player jobs. When backpressure is hit, use force=True
+        for underrepresented configs so they can still enter the queue.
+
+        Force-add criteria:
+        - 3p/4p configs with < 10,000 games (training data poverty)
+        - Configs with < 1,000 games (severe data poverty)
+        """
+        target = self._targets.get(config_key)
+        if not target:
+            return False
+
+        game_count = target.game_count
+
+        # Severe data poverty - force add regardless of player count
+        if game_count < 1000:
+            logger.debug(
+                f"[QueuePopulator] Force-add {config_key}: severe data poverty ({game_count} games)"
+            )
+            return True
+
+        # 3p/4p configs are underrepresented - force add if < 10,000 games
+        if config_key.endswith("_3p") or config_key.endswith("_4p"):
+            if game_count < 10000:
+                logger.debug(
+                    f"[QueuePopulator] Force-add {config_key}: multiplayer data poverty ({game_count} games)"
+                )
+                return True
+
+        return False
+
     def _create_selfplay_item(
         self, board_type: str, num_players: int
     ) -> "WorkItem":
@@ -1790,7 +1824,9 @@ class UnifiedQueuePopulator:
                     item.priority = self._compute_work_priority(
                         item.priority, target.config_key, scheduler_priorities
                     )
-                self._work_queue.add_work(item)
+                # January 2026: Force-add for starved configs to bypass backpressure
+                force_add = self._should_force_queue_add(target.config_key)
+                self._work_queue.add_work(item, force=force_add)
                 self._queued_work_ids.add(item.work_id)
                 target.pending_selfplay_count += 1
                 added += 1
@@ -1834,7 +1870,9 @@ class UnifiedQueuePopulator:
                             selfplay_item.priority = self._compute_work_priority(
                                 selfplay_item.priority, target.config_key, scheduler_priorities
                             )
-                        self._work_queue.add_work(selfplay_item)
+                        # January 2026: Force-add for starved configs to bypass backpressure
+                        force_add = self._should_force_queue_add(target.config_key)
+                        self._work_queue.add_work(selfplay_item, force=force_add)
                         self._queued_work_ids.add(selfplay_item.work_id)
                         target.pending_selfplay_count += 1
                         added += 1
@@ -1853,7 +1891,9 @@ class UnifiedQueuePopulator:
                     item.priority = self._compute_work_priority(
                         item.priority, target.config_key, scheduler_priorities
                     )
-                self._work_queue.add_work(item)
+                # January 2026: Force-add for starved configs to bypass backpressure
+                force_add = self._should_force_queue_add(target.config_key)
+                self._work_queue.add_work(item, force=force_add)
                 self._queued_work_ids.add(item.work_id)
                 added += 1
                 training_added += 1
@@ -1881,7 +1921,9 @@ class UnifiedQueuePopulator:
                     item.priority = self._compute_work_priority(
                         item.priority, target.config_key, scheduler_priorities
                     )
-                self._work_queue.add_work(item)
+                # January 2026: Force-add for starved configs to bypass backpressure
+                force_add = self._should_force_queue_add(target.config_key)
+                self._work_queue.add_work(item, force=force_add)
                 self._queued_work_ids.add(item.work_id)
                 added += 1
             except RuntimeError as e:
@@ -1906,7 +1948,9 @@ class UnifiedQueuePopulator:
                             target.best_model_id,
                             target.current_best_elo,
                         )
-                        self._work_queue.add_work(item)
+                        # January 2026: Force-add for starved configs to bypass backpressure
+                        force_add = self._should_force_queue_add(target.config_key)
+                        self._work_queue.add_work(item, force=force_add)
                         self._queued_work_ids.add(item.work_id)
                         added += 1
                         sweep_added += 1
@@ -1986,7 +2030,9 @@ class UnifiedQueuePopulator:
                 item = self._create_selfplay_item(target.board_type, target.num_players)
                 # Slightly boost priority for exploration items
                 item.priority = self.config.selfplay_priority + 10
-                self._work_queue.add_work(item)
+                # January 2026: Force-add for starved configs to bypass backpressure
+                force_add = self._should_force_queue_add(target.config_key)
+                self._work_queue.add_work(item, force=force_add)
                 self._queued_work_ids.add(item.work_id)
                 target.pending_selfplay_count += 1
                 added += 1
@@ -2037,7 +2083,9 @@ class UnifiedQueuePopulator:
                 item = self._create_selfplay_item(target.board_type, target.num_players)
                 # Use slightly lower priority to not compete with normal work
                 item.priority = max(10, self.config.selfplay_priority - 10)
-                self._work_queue.add_work(item)
+                # January 2026: Force-add for starved configs to bypass backpressure
+                force_add = self._should_force_queue_add(target.config_key)
+                self._work_queue.add_work(item, force=force_add)
                 self._queued_work_ids.add(item.work_id)
                 target.pending_selfplay_count += 1
                 added += 1
@@ -2234,7 +2282,9 @@ class UnifiedQueuePopulator:
                 item = self._create_selfplay_item(target.board_type, target.num_players)
                 # Boost priority for trickle items to ensure they get processed
                 item.priority = self.config.selfplay_priority + 50
-                self._work_queue.add_work(item)
+                # January 2026: Force-add for starved configs to bypass backpressure
+                force_add = self._should_force_queue_add(target.config_key)
+                self._work_queue.add_work(item, force=force_add)
                 self._queued_work_ids.add(item.work_id)
                 added += 1
             except Exception as e:
@@ -2582,7 +2632,9 @@ class UnifiedQueuePopulatorDaemon:
                     try:
                         item = self._populator._create_selfplay_item(board_type, num_players)
                         item.priority = self._populator.config.selfplay_priority + 30
-                        self._populator._work_queue.add_work(item)
+                        # January 2026: Force-add for starved configs to bypass backpressure
+                        force_add = self._populator._should_force_queue_add(config_key)
+                        self._populator._work_queue.add_work(item, force=force_add)
                         self._populator._queued_work_ids.add(item.work_id)
                         added += 1
                     except (ValueError, KeyError, AttributeError) as e:

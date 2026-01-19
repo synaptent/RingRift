@@ -105,6 +105,10 @@ class TrainingDataEntry:
         ref_time = self.newest_game_time or self.modified_time
         if not ref_time:
             return None
+        # Ensure ref_time is timezone-aware (fix for "can't subtract offset-naive
+        # and offset-aware datetimes" error when deserializing old timestamps)
+        if ref_time.tzinfo is None:
+            ref_time = ref_time.replace(tzinfo=timezone.utc)
         return (datetime.now(tz=timezone.utc) - ref_time).total_seconds() / 3600
 
     def to_dict(self) -> dict[str, Any]:
@@ -768,8 +772,12 @@ async def get_training_data_manifest(
 
         # Check if refresh needed
         if _manifest_instance.last_refresh:
+            last_refresh = _manifest_instance.last_refresh
+            # Ensure last_refresh is timezone-aware
+            if last_refresh.tzinfo is None:
+                last_refresh = last_refresh.replace(tzinfo=timezone.utc)
             age_hours = (
-                datetime.now(tz=timezone.utc) - _manifest_instance.last_refresh
+                datetime.now(tz=timezone.utc) - last_refresh
             ).total_seconds() / 3600
             if age_hours > refresh_if_stale_hours:
                 logger.info(
