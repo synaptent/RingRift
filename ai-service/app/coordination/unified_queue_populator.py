@@ -1392,7 +1392,7 @@ class UnifiedQueuePopulator:
         if not target:
             return False
 
-        game_count = target.game_count
+        game_count = target.games_played
 
         # Severe data poverty - force add regardless of player count
         if game_count < 1000:
