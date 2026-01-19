@@ -139,15 +139,51 @@ class _PoolWrapper:
         self.stats = PoolStats(name=config.name, max_workers=config.max_workers)
         self._pool: ThreadPoolExecutor | None = None
         self._lock = threading.Lock()
+        self._pinned_cores: list[int] | None = None
+
+    def _thread_initializer(self) -> None:
+        """Initialize worker threads with CPU affinity (Phase 4)."""
+        if self._pinned_cores is None:
+            return
+        try:
+            from scripts.p2p.cpu_affinity import set_thread_affinity
+            set_thread_affinity(self._pinned_cores)
+        except ImportError:
+            pass
+        except Exception:
+            pass  # Non-critical, ignore failures
 
     def _get_or_create_pool(self) -> ThreadPoolExecutor:
         """Get or lazily create the thread pool."""
         if self._pool is None:
             with self._lock:
                 if self._pool is None:
+                    # Try to allocate CPU cores for this pool (Phase 4)
+                    initializer = None
+                    try:
+                        from scripts.p2p.cpu_affinity import get_affinity_manager
+                        manager = get_affinity_manager()
+                        if manager.is_enabled:
+                            cores = manager.allocate_cores(
+                                self.config.name,
+                                num_cores=self.config.max_workers,
+                                category=self.config.name,
+                            )
+                            self._pinned_cores = cores
+                            initializer = self._thread_initializer
+                            logger.debug(
+                                f"[LoopExecutors] Pool '{self.config.name}' "
+                                f"allocated cores {cores}"
+                            )
+                    except ImportError:
+                        pass
+                    except Exception as e:
+                        logger.debug(f"[LoopExecutors] CPU affinity setup failed: {e}")
+
                     self._pool = ThreadPoolExecutor(
                         max_workers=self.config.max_workers,
                         thread_name_prefix=self.config.thread_name_prefix,
+                        initializer=initializer,
                     )
                     logger.info(
                         f"[LoopExecutors] Created pool '{self.config.name}' "

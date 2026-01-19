@@ -150,6 +150,8 @@ class ThreadedLoopRunner(Generic[T]):
         *,
         command_queue_size: int = 100,
         result_queue_size: int = 100,
+        executor_category: str | None = None,
+        pin_to_cores: bool = True,
     ) -> None:
         """Initialize the threaded loop runner.
 
@@ -159,9 +161,13 @@ class ThreadedLoopRunner(Generic[T]):
             name: Name for logging and metrics
             command_queue_size: Max pending commands (default 100)
             result_queue_size: Max pending results (default 100)
+            executor_category: Pool category for CPU affinity (network, sync, etc.)
+            pin_to_cores: Whether to pin thread to CPU cores (default True)
         """
         self.loop_factory = loop_factory
         self.name = name
+        self.executor_category = executor_category or name
+        self.pin_to_cores = pin_to_cores
 
         # Thread-safe queues for communication
         self._command_queue: queue.Queue[Command | None] = queue.Queue(maxsize=command_queue_size)
@@ -172,6 +178,7 @@ class ThreadedLoopRunner(Generic[T]):
         self._event_loop: asyncio.AbstractEventLoop | None = None
         self._loop_instance: T | None = None
         self._state_lock = threading.Lock()
+        self._pinned_cores: list[int] | None = None
 
         # Statistics
         self._stats = RunnerStats(name=name)
@@ -335,6 +342,29 @@ class ThreadedLoopRunner(Generic[T]):
     def _run_in_thread(self) -> None:
         """Thread entry point - creates event loop and runs the loop."""
         try:
+            # Set CPU affinity if enabled (Phase 4)
+            if self.pin_to_cores:
+                try:
+                    from scripts.p2p.cpu_affinity import (
+                        get_affinity_manager,
+                        set_thread_affinity,
+                    )
+                    manager = get_affinity_manager()
+                    if manager.is_enabled:
+                        # Allocate 1 core for dedicated thread
+                        cores = manager.allocate_cores(
+                            self.name,
+                            num_cores=1,
+                            category=self.executor_category,
+                        )
+                        if set_thread_affinity(cores):
+                            self._pinned_cores = cores
+                            logger.debug(f"[{self.name}] Pinned to cores {cores}")
+                except ImportError:
+                    pass  # CPU affinity module not available
+                except Exception as e:
+                    logger.debug(f"[{self.name}] CPU affinity setup failed: {e}")
+
             # Create dedicated event loop for this thread
             self._event_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(self._event_loop)
