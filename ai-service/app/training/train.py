@@ -4900,8 +4900,9 @@ def train_model(
                         entropy_bonus = -config.entropy_weight * policy_entropy
 
                     # Collect individual losses for gradient surgery
+                    # Jan 2026: Apply value_weight to balance value vs policy learning
                     task_losses: dict[str, torch.Tensor] = {
-                        "value": value_loss,
+                        "value": config.value_weight * value_loss,
                         "policy": config.policy_weight * policy_loss + entropy_bonus,
                     }
 
@@ -5408,7 +5409,8 @@ def train_model(
                         p_loss = masked_policy_kl(
                             policy_log_probs, policy_targets
                         )
-                        loss = v_loss + (config.policy_weight * p_loss)
+                        # Jan 2026: Apply value_weight for consistency with training
+                        loss = (config.value_weight * v_loss) + (config.policy_weight * p_loss)
 
                         # Rank distribution loss (V3+ multi-player head)
                         if (

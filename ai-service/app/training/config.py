@@ -593,6 +593,10 @@ class TrainConfig:
     max_moves_per_game: int = 10000
     k_elo: int = 32
     policy_weight: float = 1.0
+    # Jan 2026: Value loss weight to balance value vs policy learning.
+    # Value loss often dominates in magnitude, so weighting it down improves policy.
+    # Recommended: 0.4-0.5 for better policy learning, 1.0 for backward compatibility.
+    value_weight: float = 1.0
     rank_dist_weight: float = 0.2
 
     # Entropy regularization to prevent policy collapse

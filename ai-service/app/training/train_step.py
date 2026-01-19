@@ -83,6 +83,7 @@ class TrainStepConfig:
 
     # Loss weights
     policy_weight: float = 1.0
+    value_weight: float = 1.0  # Jan 2026: Balance value vs policy learning
     rank_dist_weight: float = 0.1
     entropy_weight: float = 0.0
 
@@ -782,8 +783,9 @@ def run_training_step(
         )
 
         # Build loss components
+        # Jan 2026: Apply value_weight to balance value vs policy learning
         losses = LossComponents(
-            value_loss=value_loss,
+            value_loss=config.value_weight * value_loss,
             policy_loss=policy_loss + entropy_bonus,
         )
 
