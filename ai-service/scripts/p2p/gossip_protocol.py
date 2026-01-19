@@ -1824,11 +1824,36 @@ class GossipProtocolMixin(P2PMixinBase):
         if voter_peer_ids:
             selected_ids.append(random.choice(voter_peer_ids))
 
-        # Fill remaining fanout with other peers
+        # Jan 2026: Provider-diverse peer selection for better cross-provider visibility
+        # Group non-voter peers by provider prefix and select one from each provider first
+        def _get_provider(node_id: str) -> str:
+            """Extract provider prefix from node_id (e.g., 'lambda' from 'lambda-gh200-1')."""
+            parts = node_id.split("-")
+            return parts[0] if parts else "unknown"
+
+        peers_by_provider: dict[str, list[str]] = {}
+        for peer_id in non_voter_peer_ids:
+            provider = _get_provider(peer_id)
+            peers_by_provider.setdefault(provider, []).append(peer_id)
+
+        # Select one peer from each provider (up to remaining fanout)
         remaining_fanout = GOSSIP_FANOUT - len(selected_ids)
-        if remaining_fanout > 0 and non_voter_peer_ids:
-            sample_size = min(remaining_fanout, len(non_voter_peer_ids))
-            selected_ids.extend(random.sample(non_voter_peer_ids, sample_size))
+        providers = list(peers_by_provider.keys())
+        random.shuffle(providers)  # Randomize provider order to avoid bias
+
+        for provider in providers[:remaining_fanout]:
+            if peers_by_provider[provider]:
+                peer = random.choice(peers_by_provider[provider])
+                if peer not in selected_ids:
+                    selected_ids.append(peer)
+
+        # Fill remaining slots randomly from all non-voter peers not yet selected
+        remaining_fanout = GOSSIP_FANOUT - len(selected_ids)
+        if remaining_fanout > 0:
+            remaining_peers = [p for p in non_voter_peer_ids if p not in selected_ids]
+            if remaining_peers:
+                sample_size = min(remaining_fanout, len(remaining_peers))
+                selected_ids.extend(random.sample(remaining_peers, sample_size))
 
         # If we still have room and more voters, add them
         remaining = GOSSIP_FANOUT - len(selected_ids)

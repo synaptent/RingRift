@@ -57,12 +57,12 @@ HEARTBEAT_INTERVAL = int(os.environ.get("RINGRIFT_P2P_HEARTBEAT_INTERVAL", "15")
 # Jan 2, 2026: Increased to 120s for NAT-blocked nodes (Lambda GH200, RunPod) that
 # rely on relay mode. Relay adds latency and can cause false-positive peer deaths.
 # With 15s heartbeats, 8 missed = dead for NAT-blocked, 6 for coordinators, 4 for DC.
-PEER_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT", "90") or 90)
+PEER_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT", "120") or 120)
 # Original fast timeout for non-coordinator nodes in well-connected DC environments
 PEER_TIMEOUT_FAST = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT_FAST", "60") or 60)
 # Jan 2, 2026: Extended timeout for NAT-blocked nodes using relay mode.
 # These nodes have higher latency due to relay hops and need more tolerance.
-PEER_TIMEOUT_NAT_BLOCKED = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT_NAT_BLOCKED", "120") or 120)
+PEER_TIMEOUT_NAT_BLOCKED = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT_NAT_BLOCKED", "180") or 180)
 
 
 def get_peer_timeout_for_node(is_coordinator: bool = False, nat_blocked: bool = False) -> int:
@@ -296,51 +296,74 @@ RETRY_DEAD_NODE_INTERVAL = 120  # Retry dead nodes every 2 minutes (reduced from
 # ============================================
 
 # Gossip fanout - number of peers to forward gossip messages to
-# Dec 30, 2025: Increased default from 3 to 5 for medium clusters (~36 nodes)
-# to improve peer visibility across NAT boundaries. Use get_gossip_fanout()
-# for adaptive fanout based on cluster size.
-GOSSIP_FANOUT = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT", "5") or 5)
+# Jan 19, 2026: Increased default from 5 to 8 for larger clusters (20+ nodes)
+# to improve peer visibility across NAT boundaries and reduce false disconnections.
+# Use get_gossip_fanout() for adaptive fanout based on cluster size.
+# Jan 2026: Split into leader/follower fanout for differentiated propagation
+GOSSIP_FANOUT = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT", "10") or 10)
+GOSSIP_FANOUT_LEADER = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT_LEADER", "12") or 12)
+GOSSIP_FANOUT_FOLLOWER = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT_FOLLOWER", "10") or 10)
+
+# Gossip lock timeout - max time to wait for gossip state lock
+# Jan 2026: Increased from 2.0s to 3.0s for larger clusters with lock contention
+GOSSIP_LOCK_TIMEOUT_BASE = float(os.environ.get("RINGRIFT_P2P_GOSSIP_LOCK_TIMEOUT", "3.0") or 3.0)
 
 
-def get_gossip_fanout(peer_count: int) -> int:
-    """Get adaptive gossip fanout based on cluster size.
+def get_gossip_fanout(peer_count: int, is_leader: bool = False) -> int:
+    """Get adaptive gossip fanout based on cluster size and node role.
 
     Larger clusters need higher fanout to ensure gossip messages
     propagate to all nodes within a reasonable number of rounds.
     This is especially important for nodes behind NAT that may
     have limited direct connectivity.
 
+    Leaders use higher fanout to ensure faster propagation of
+    authoritative state (work assignments, model updates, etc.).
+
     Args:
         peer_count: Current number of known peers in the cluster.
+        is_leader: Whether this node is the cluster leader.
 
     Returns:
         Recommended gossip fanout:
-        - 3 for small clusters (<10 peers)
-        - 5 for medium clusters (10-29 peers)
-        - 8 for large clusters (30-49 peers)
-        - 10 for very large clusters (50+ peers)
+        - Leaders: 12 for 20+ peers, scaled down for smaller clusters
+        - Followers: 10 for 20+ peers, scaled down for smaller clusters
 
     December 30, 2025: Added to fix peer visibility discrepancy where
     mac-studio saw only 11 peers while Nebius nodes saw 21-26.
+    January 2026: Added leader/follower distinction for differentiated propagation.
     """
     # Allow environment override for testing/tuning
     env_fanout = os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT", "").strip()
     if env_fanout:
         return int(env_fanout)
 
-    if peer_count < 10:
-        return 3  # Small cluster - low fanout sufficient
-    elif peer_count < 30:
-        return 5  # Medium cluster - balanced fanout
-    elif peer_count < 50:
-        return 8  # Large cluster - high fanout for coverage
+    # Leader gets higher fanout for faster authoritative propagation
+    if is_leader:
+        if peer_count < 10:
+            return 5  # Small cluster leader
+        elif peer_count < 20:
+            return 8  # Medium cluster leader
+        elif peer_count < 40:
+            return 10  # Large cluster leader
+        else:
+            return GOSSIP_FANOUT_LEADER  # Very large cluster leader (12)
     else:
-        return 10  # Very large cluster - maximum fanout
+        # Followers use slightly lower fanout
+        if peer_count < 10:
+            return 3  # Small cluster follower
+        elif peer_count < 20:
+            return 5  # Medium cluster follower
+        elif peer_count < 40:
+            return 8  # Large cluster follower
+        else:
+            return GOSSIP_FANOUT_FOLLOWER  # Very large cluster follower (10)
 
 
 # Gossip interval - seconds between gossip rounds
 # Dec 2025: Reduced from 60s to 15s for faster state convergence (6 gossip rounds per PEER_TIMEOUT)
-GOSSIP_INTERVAL = int(os.environ.get("RINGRIFT_P2P_GOSSIP_INTERVAL", "15") or 15)
+# Jan 2026: Reduced to 12s for faster convergence at 20+ node clusters
+GOSSIP_INTERVAL = int(os.environ.get("RINGRIFT_P2P_GOSSIP_INTERVAL", "12") or 12)
 # Gossip jitter - randomization factor to prevent thundering herd (±10%)
 GOSSIP_JITTER = float(os.environ.get("RINGRIFT_P2P_GOSSIP_JITTER", "0.2") or 0.2)
 # Upper bound on peer endpoints included in gossip payloads to limit message size.

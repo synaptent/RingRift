@@ -57,8 +57,9 @@ class RelayHealth:
     last_error: str = ""
 
     # Circuit breaker settings
-    failure_threshold: int = 3  # Failures before marking unhealthy
-    recovery_timeout: float = 60.0  # Seconds before retrying unhealthy relay
+    # Jan 2026: Increased failure_threshold (3→4) and reduced recovery_timeout (60→45)
+    failure_threshold: int = 4  # Failures before marking unhealthy (was 3)
+    recovery_timeout: float = 45.0  # Seconds before retrying unhealthy relay (was 60)
 
     @property
     def is_healthy(self) -> bool:

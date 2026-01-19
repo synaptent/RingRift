@@ -46,8 +46,9 @@ class RelayHealthConfig:
     probe_timeout_seconds: float = 5.0  # Timeout for individual probe
     latency_warning_threshold_ms: float = 200.0  # Warn if latency exceeds this
     latency_critical_threshold_ms: float = 500.0  # Critical if latency exceeds this
-    consecutive_failures_for_degraded: int = 3  # Mark degraded after N failures
-    consecutive_failures_for_failover: int = 5  # Trigger failover after N failures
+    # Jan 2026: Reduced thresholds for preemptive failover
+    consecutive_failures_for_degraded: int = 2  # Mark degraded after N failures (was 3)
+    consecutive_failures_for_failover: int = 3  # Trigger failover after N failures (was 5)
     latency_history_size: int = 10  # Rolling window for latency trending
 
     def __post_init__(self) -> None:

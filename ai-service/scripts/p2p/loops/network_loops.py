@@ -1815,7 +1815,8 @@ class TailscaleKeepaliveConfig:
 
 # Module-level constants for RelayHysteresis (moved out of class body for Python compatibility)
 _RELAY_SWITCH_COOLDOWN = float(os.environ.get("RINGRIFT_RELAY_SWITCH_COOLDOWN", "300"))
-_RELAY_SWITCH_THRESHOLD = int(os.environ.get("RINGRIFT_RELAY_SWITCH_THRESHOLD", "3"))
+# Jan 2026: Increased from 3 to 4 for more tolerant relay handling
+_RELAY_SWITCH_THRESHOLD = int(os.environ.get("RINGRIFT_RELAY_SWITCH_THRESHOLD", "4"))
 
 
 class RelayHysteresis:
