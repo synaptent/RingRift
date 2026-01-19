@@ -859,3 +859,63 @@ class StatusHandlersMixin:
                 "error": str(e),
                 "node_id": self.node_id,
             }, status=500)
+
+    async def handle_parallelism_status(self, request: web.Request) -> web.Response:
+        """GET /status/parallelism - Return parallelism infrastructure metrics.
+
+        Jan 2026: Phase 5 of P2P multi-core parallelization.
+        Exposes metrics for:
+        - Thread pool utilization (Phase 2)
+        - Threaded loop runners (Phase 3)
+        - CPU affinity allocations (Phase 4)
+
+        Returns:
+            JSON with parallelism metrics for monitoring
+        """
+        response: dict[str, Any] = {
+            "node_id": self.node_id,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+        # Phase 2: Loop executor pools
+        try:
+            from scripts.p2p.loop_executors import LoopExecutors
+            response["loop_executors"] = LoopExecutors.get_all_stats_summary()
+        except ImportError:
+            response["loop_executors"] = {"available": False}
+        except Exception as e:
+            response["loop_executors"] = {"error": str(e)}
+
+        # Phase 3: Threaded loop runners
+        try:
+            from scripts.p2p.threaded_loop_runner import ThreadedLoopRegistry
+            response["threaded_runners"] = ThreadedLoopRegistry.get_summary()
+        except ImportError:
+            response["threaded_runners"] = {"available": False}
+        except Exception as e:
+            response["threaded_runners"] = {"error": str(e)}
+
+        # Phase 4: CPU affinity
+        try:
+            from scripts.p2p.cpu_affinity import get_affinity_manager
+            manager = get_affinity_manager()
+            response["cpu_affinity"] = manager.get_stats()
+            response["cpu_affinity"]["allocations"] = manager.get_all_allocations()
+        except ImportError:
+            response["cpu_affinity"] = {"available": False}
+        except Exception as e:
+            response["cpu_affinity"] = {"error": str(e)}
+
+        # Summary
+        pools_enabled = response.get("loop_executors", {}).get("enabled", False)
+        threads_enabled = response.get("threaded_runners", {}).get("enabled", False)
+        affinity_enabled = response.get("cpu_affinity", {}).get("enabled", False)
+
+        response["summary"] = {
+            "loop_pools_enabled": pools_enabled,
+            "threaded_loops_enabled": threads_enabled,
+            "cpu_affinity_enabled": affinity_enabled,
+            "all_features_enabled": pools_enabled and threads_enabled and affinity_enabled,
+        }
+
+        return web.json_response(response)

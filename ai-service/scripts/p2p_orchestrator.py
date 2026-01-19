@@ -29683,6 +29683,9 @@ print(json.dumps({{
             app.router.add_post('/loops/restart_stopped', self.handle_restart_stopped_loops)
             app.router.add_get('/loops/status', self.handle_loops_status)
 
+            # Parallelism monitoring (Jan 2026, Phase 5)
+            app.router.add_get('/status/parallelism', self.handle_parallelism_status)
+
             # Dynamic host registry routes (for IP auto-updates)
             app.router.add_post('/register', self.handle_register)
             app.router.add_get('/registry/status', self.handle_registry_status)
