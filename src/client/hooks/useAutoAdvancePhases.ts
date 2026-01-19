@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useRef } from 'react';
-import type { GameState, Move } from '../../shared/types/game';
+import type { GameState, Move, Position } from '../../shared/types/game';
 
 /**
  * Move types that should be auto-submitted when they're the only valid option.
@@ -32,8 +32,8 @@ const NO_ACTION_MOVE_TYPES = [
  */
 export interface PartialMove {
   type: string;
-  from?: { row: number; col: number };
-  to?: { row: number; col: number };
+  from?: Position;
+  to?: Position;
   placementCount?: number;
   placedOnStack?: boolean;
   captureDirection?: string;
@@ -93,7 +93,7 @@ export function useAutoAdvancePhases(
     }
 
     // Create a unique key for this phase to prevent double-submission
-    const phaseKey = `${gameState.currentPhase}-${gameState.turnNumber}-${onlyMove.type}`;
+    const phaseKey = `${gameState.currentPhase}-${gameState.moveHistory.length}-${onlyMove.type}`;
     if (submittedRef.current === phaseKey) {
       return; // Already submitted for this phase
     }
