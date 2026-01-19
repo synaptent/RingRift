@@ -1569,8 +1569,45 @@ export const SandboxGameHost: React.FC = () => {
         setValidTargets(eliminationTargets);
         return;
       }
+    } else if (sandboxPendingChoice?.type === 'region_order') {
+      // RR-FIX-2026-01-18: When a region_order pending choice is active,
+      // force update targets from the choice options. This handles the case where
+      // a player has multiple territories to process - after processing the first one,
+      // a new region_order choice is returned but the old targets remain.
+      // Skip if we've already processed this pending choice
+      if (lastProcessedPendingChoiceIdRef.current === sandboxPendingChoice.id) {
+        return;
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accessing choice options
+      const options = (sandboxPendingChoice as any).options ?? [];
+      const territorySpaces: Position[] = [];
+
+      for (const opt of options) {
+        // Each option has a representativePosition and optionally spaces array
+        const spaces = opt.spaces as Position[] | undefined;
+        if (spaces && spaces.length > 0) {
+          territorySpaces.push(...spaces);
+        } else if (opt.representativePosition) {
+          // Fallback to representative position if spaces not available
+          territorySpaces.push(opt.representativePosition);
+        }
+      }
+
+      if (territorySpaces.length > 0) {
+        // eslint-disable-next-line no-console
+        console.log('[SandboxGameHost] Setting territory targets from pending choice:', {
+          phase: sandboxGameState.currentPhase,
+          choiceId: sandboxPendingChoice.id,
+          targetCount: territorySpaces.length,
+          targets: territorySpaces.map((p) => positionToString(p)),
+        });
+        lastProcessedPendingChoiceIdRef.current = sandboxPendingChoice.id;
+        setValidTargets(territorySpaces);
+        return;
+      }
     } else {
-      // Reset ref when there's no ring_elimination choice active
+      // Reset ref when there's no ring_elimination or region_order choice active
       lastProcessedPendingChoiceIdRef.current = null;
     }
 
