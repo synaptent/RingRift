@@ -41,13 +41,40 @@ class TestGpuScalingConfig:
         assert config.rtx_memory_threshold_gb == 16.0
 
     def test_batch_multipliers(self):
-        """Should have correct batch multipliers per GPU tier."""
+        """Should have correct batch multipliers per GPU tier.
+
+        v3.0 (Jan 2026): Reduced multipliers for conservative memory targeting.
+        """
         config = GpuScalingConfig()
-        assert config.gh200_batch_multiplier == 64
-        assert config.h100_batch_multiplier == 32
-        assert config.a100_batch_multiplier == 16
-        assert config.rtx_batch_multiplier == 8
-        assert config.consumer_batch_multiplier == 4
+        # Conservative multipliers (reduced from 64/32/16/8/4)
+        assert config.gh200_batch_multiplier == 40
+        assert config.h100_batch_multiplier == 20
+        assert config.a100_batch_multiplier == 10
+        assert config.rtx_batch_multiplier == 5
+        assert config.consumer_batch_multiplier == 2
+
+    def test_memory_target_defaults(self):
+        """Should have conservative memory target defaults (v3.0)."""
+        config = GpuScalingConfig()
+        assert config.target_memory_fraction == 0.50  # Conservative default
+        assert config.safe_mode_memory_fraction == 0.35  # Extra conservative
+        assert config.safe_mode_enabled is False
+
+    def test_safe_mode_from_env(self):
+        """Should enable safe mode from environment variable."""
+        with patch.dict(os.environ, {"RINGRIFT_GPU_SAFE_MODE": "1"}):
+            config = GpuScalingConfig.from_env()
+            assert config.safe_mode_enabled is True
+
+        with patch.dict(os.environ, {"RINGRIFT_GPU_SAFE_MODE": "true"}):
+            config = GpuScalingConfig.from_env()
+            assert config.safe_mode_enabled is True
+
+    def test_memory_fraction_from_env(self):
+        """Should override memory fraction from environment."""
+        with patch.dict(os.environ, {"RINGRIFT_GPU_TARGET_MEMORY_FRACTION": "0.6"}):
+            config = GpuScalingConfig.from_env()
+            assert config.target_memory_fraction == 0.6
 
     def test_from_env_no_overrides(self):
         """Should return defaults when no env vars set."""
@@ -214,9 +241,10 @@ class TestGetGpuMemoryGb:
             assert abs(result - 80.0) < 0.1
 
     def test_returns_zero_on_exception(self):
-        """Should return 0 when exception occurs."""
+        """Should return 0 when RuntimeError occurs (e.g., CUDA errors)."""
         mock_torch = MagicMock()
-        mock_torch.cuda.is_available.side_effect = Exception("Test error")
+        # Use RuntimeError since _get_gpu_memory_gb catches (ImportError, AttributeError, RuntimeError)
+        mock_torch.cuda.is_available.side_effect = RuntimeError("CUDA error")
         with patch.dict('sys.modules', {'torch': mock_torch}):
             result = _get_gpu_memory_gb()
             assert result == 0.0

@@ -244,6 +244,16 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
         help='Disable auto-tuning batch size. Uses --batch-size value (default: 256) or explicit value.'
     )
     parser.add_argument(
+        '--target-memory-fraction', type=float, default=None,
+        help='Target GPU memory utilization fraction (0.0-1.0). Default is 0.50 (50%%), '
+             'or 0.35 if --safe-mode is specified. Higher values risk OOM errors.'
+    )
+    parser.add_argument(
+        '--safe-mode', action='store_true',
+        help='Enable extra conservative batch size tuning (35%% memory target). '
+             'Use when experiencing OOM errors or on nodes with memory pressure.'
+    )
+    parser.add_argument(
         '--track-calibration', action='store_true',
         help='Track value head calibration metrics during training'
     )
@@ -1251,6 +1261,9 @@ def main() -> None:
         num_filters=getattr(args, 'num_filters', None),
         # January 2026: Auto-tune batch size enabled by default for optimal GPU utilization
         auto_tune_batch_size=not getattr(args, 'no_auto_tune_batch_size', False),
+        # January 2026: Conservative memory targeting (50% default, 35% safe mode)
+        target_memory_fraction=getattr(args, 'target_memory_fraction', None),
+        safe_mode=getattr(args, 'safe_mode', False),
         track_calibration=getattr(args, 'track_calibration', False),
         # 2024-12 Hot Data Buffer and Integrated Enhancements
         use_hot_data_buffer=getattr(args, 'use_hot_data_buffer', False),

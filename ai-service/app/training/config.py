@@ -55,6 +55,11 @@ class GpuScalingConfig:
 
     Extracts magic numbers from _scale_batch_size_for_gpu for configurability.
     Can be overridden via environment variables with RINGRIFT_GPU_ prefix.
+
+    v3.0 (Jan 2026): Conservative defaults to prevent OOM on large GPUs.
+    - target_memory_fraction reduced from 0.7 to 0.5
+    - Tier multipliers reduced proportionally
+    - Added safe_mode for extra conservative batch sizing
     """
     # Memory per sample estimates (MB)
     mem_per_sample_large_policy_mb: float = 0.5   # Policies > 50k (Hex, Square19)
@@ -68,37 +73,57 @@ class GpuScalingConfig:
     # Memory reserved for model and overhead (GB)
     reserved_memory_gb: float = 8.0
 
+    # Memory target configuration (v3.0)
+    # Default is conservative 50% to leave headroom for torch.compile caches,
+    # activation checkpointing, and other dynamic memory allocations.
+    target_memory_fraction: float = 0.50     # Conservative default (was 0.7)
+    safe_mode_memory_fraction: float = 0.35  # Extra conservative for problematic nodes
+    safe_mode_enabled: bool = False          # Cluster-wide safe mode
+
     # GPU memory tiers and their batch multipliers
-    # v2.0: Increased multipliers for better GPU utilization based on benchmarks
+    # v3.0: Reduced multipliers to match conservative memory target
     # These scale the base batch size (64) for ParallelGameRunner
     gh200_memory_threshold_gb: float = 90.0   # GH200 class (96GB unified memory)
-    gh200_batch_multiplier: int = 64          # 64 * 64 = 4096 games (was 32)
+    gh200_batch_multiplier: int = 40          # 64 * 40 = 2560 games (was 64)
 
     h100_memory_threshold_gb: float = 70.0    # H100 class (80GB VRAM)
-    h100_batch_multiplier: int = 32           # 64 * 32 = 2048 games (was 16)
+    h100_batch_multiplier: int = 20           # 64 * 20 = 1280 games (was 32)
 
     a100_memory_threshold_gb: float = 30.0    # A100 class (40-80GB)
-    a100_batch_multiplier: int = 16           # 64 * 16 = 1024 games (was 8)
+    a100_batch_multiplier: int = 10           # 64 * 10 = 640 games (was 16)
 
     rtx_memory_threshold_gb: float = 16.0     # RTX 3090/4090 class (24GB)
-    rtx_batch_multiplier: int = 8             # 64 * 8 = 512 games (was 4)
+    rtx_batch_multiplier: int = 5             # 64 * 5 = 320 games (was 8)
 
-    consumer_batch_multiplier: int = 4        # Consumer GPUs (<16GB)
+    consumer_batch_multiplier: int = 2        # Consumer GPUs (<16GB) (was 4)
 
-    # Maximum batch size cap (increased for large GPUs)
+    # Maximum batch size cap
     max_batch_size: int = 16384
 
     @classmethod
     def from_env(cls) -> "GpuScalingConfig":
-        """Create config from environment variables."""
+        """Create config from environment variables.
+
+        Environment Variables:
+            RINGRIFT_GPU_TARGET_MEMORY_FRACTION: Target GPU memory (0.0-1.0, default 0.50)
+            RINGRIFT_GPU_SAFE_MODE_MEMORY_FRACTION: Safe mode target (default 0.35)
+            RINGRIFT_GPU_SAFE_MODE: Enable safe mode (1/true/yes to enable)
+            RINGRIFT_GPU_RESERVED_MEMORY_GB: Reserved memory for overhead (default 8.0)
+            RINGRIFT_GPU_MAX_BATCH_SIZE: Maximum batch size cap (default 16384)
+            RINGRIFT_GPU_GH200_BATCH_MULTIPLIER: GH200 tier multiplier (default 40)
+            RINGRIFT_GPU_H100_BATCH_MULTIPLIER: H100 tier multiplier (default 20)
+            RINGRIFT_GPU_A100_BATCH_MULTIPLIER: A100 tier multiplier (default 10)
+            RINGRIFT_GPU_RTX_BATCH_MULTIPLIER: RTX tier multiplier (default 5)
+        """
         config = cls()
         env_prefix = "RINGRIFT_GPU_"
 
-        # Override from environment if set
+        # Override numeric fields from environment if set
         for field_name in [
             "reserved_memory_gb", "max_batch_size",
             "gh200_batch_multiplier", "h100_batch_multiplier",
             "a100_batch_multiplier", "rtx_batch_multiplier",
+            "target_memory_fraction", "safe_mode_memory_fraction",
         ]:
             env_var = f"{env_prefix}{field_name.upper()}"
             if env_var in os.environ:
@@ -110,6 +135,12 @@ class GpuScalingConfig:
                         setattr(config, field_name, int(value))
                 except ValueError:
                     pass
+
+        # Safe mode boolean
+        safe_mode_env = os.environ.get(f"{env_prefix}SAFE_MODE", "").lower()
+        if safe_mode_env in ("1", "true", "yes"):
+            config.safe_mode_enabled = True
+
         return config
 
 
@@ -319,16 +350,17 @@ class BatchSizeAutoTuner:
     def find_optimal_batch_size(
         self,
         min_batch: int = 32,
-        max_batch: int = 8192,
-        target_memory_fraction: float = 0.85,
+        max_batch: int = 4096,  # Reduced from 8192 for safety
+        target_memory_fraction: float = 0.50,  # Reduced from 0.85 for safety
     ) -> int:
         """
         Binary search for largest batch that fits in memory.
 
         Args:
             min_batch: Minimum batch size to try
-            max_batch: Maximum batch size to try
-            target_memory_fraction: Target GPU memory utilization (0.0-1.0)
+            max_batch: Maximum batch size to try (reduced to 4096 for safety)
+            target_memory_fraction: Target GPU memory utilization (0.0-1.0).
+                Default reduced to 0.50 (was 0.85) to prevent OOM.
 
         Returns:
             Optimal batch size
@@ -426,7 +458,7 @@ def auto_tune_batch_size(
     globals_shape: tuple,
     policy_size: int = 7000,
     min_batch: int = 32,
-    max_batch: int = 8192,
+    max_batch: int = 4096,  # Reduced from 8192 for safety
 ) -> int:
     """
     Convenience function to auto-tune batch size.
@@ -438,7 +470,7 @@ def auto_tune_batch_size(
         globals_shape: Shape of globals tensor (D,)
         policy_size: Size of policy output
         min_batch: Minimum batch size
-        max_batch: Maximum batch size
+        max_batch: Maximum batch size (reduced to 4096 for safety)
 
     Returns:
         Optimal batch size
@@ -464,9 +496,10 @@ def get_optimal_batch_size_from_gpu_memory(
     feature_channels: int = 56,
     board_size: int = 8,
     num_players: int = 4,
-    target_memory_fraction: float = 0.7,
+    target_memory_fraction: float | None = None,  # None = use config default
     min_batch: int = 64,
-    max_batch: int = 8192,
+    max_batch: int = 4096,  # Reduced from 8192 for safety
+    config: GpuScalingConfig | None = None,  # Allow passing custom config
 ) -> int:
     """
     Calculate optimal batch size based on available GPU memory.
@@ -480,9 +513,11 @@ def get_optimal_batch_size_from_gpu_memory(
         feature_channels: Number of input feature channels
         board_size: Board size (e.g., 8 for 8x8)
         num_players: Number of players (affects value head size)
-        target_memory_fraction: Fraction of GPU memory to target (0.7 = 70%)
+        target_memory_fraction: Fraction of GPU memory to target.
+            If None, uses GpuScalingConfig default (0.50, or 0.35 in safe mode).
         min_batch: Minimum batch size
-        max_batch: Maximum batch size
+        max_batch: Maximum batch size (reduced to 4096 for safety)
+        config: Optional GpuScalingConfig to use. If None, loads from env.
 
     Returns:
         Optimal batch size
@@ -491,6 +526,13 @@ def get_optimal_batch_size_from_gpu_memory(
         >>> batch = get_optimal_batch_size_from_gpu_memory()
         >>> print(f"Optimal batch size: {batch}")
     """
+    # Get config and determine effective memory fraction
+    cfg = config or get_gpu_scaling_config()
+    if target_memory_fraction is None:
+        if cfg.safe_mode_enabled:
+            target_memory_fraction = cfg.safe_mode_memory_fraction  # 0.35
+        else:
+            target_memory_fraction = cfg.target_memory_fraction  # 0.50
     try:
         import torch
         if not torch.cuda.is_available():
@@ -543,8 +585,9 @@ def get_optimal_batch_size_from_gpu_memory(
         # Clamp to bounds
         optimal_batch = max(min_batch, min(max_batch, optimal_batch))
 
+        safe_mode_str = " [SAFE MODE]" if (cfg and cfg.safe_mode_enabled) else ""
         logger.info(
-            f"[AutoBatchSize] GPU: {total_memory / 1e9:.1f}GB total, "
+            f"[AutoBatchSize]{safe_mode_str} GPU: {total_memory / 1e9:.1f}GB total, "
             f"{available_memory / 1e9:.1f}GB available, "
             f"targeting {target_memory / 1e9:.1f}GB ({target_memory_fraction*100:.0f}%)"
         )

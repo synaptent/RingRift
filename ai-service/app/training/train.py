@@ -928,6 +928,9 @@ def train_model(
     enable_outcome_weighted_policy: bool = True,  # Learn from winning moves
     outcome_weight_scale: float = 0.5,  # How much to scale by outcome (0=no effect, 1=full)
     auto_tune_batch_size: bool = True,  # Enabled by default for 15-30% better throughput
+    # January 2026: Conservative memory targeting (50% default, 35% safe mode)
+    target_memory_fraction: float | None = None,  # None = use config default (50% or 35% safe mode)
+    safe_mode: bool = False,  # Extra conservative batch sizing (35% memory target)
     track_calibration: bool = False,
     # 2024-12 Hot Data Buffer and Integrated Enhancements
     use_hot_data_buffer: bool = False,
@@ -2814,9 +2817,13 @@ def train_model(
 
     # Auto-tune batch size if requested (overrides config.batch_size)
     # January 2026: Use fast GPU memory heuristic by default for optimal batch size
+    # Conservative memory targeting: 50% default, 35% safe mode (was 70%)
     if auto_tune_batch_size and str(device).startswith('cuda'):
         try:
-            from app.training.config import get_optimal_batch_size_from_gpu_memory
+            from app.training.config import (
+                get_optimal_batch_size_from_gpu_memory,
+                get_gpu_scaling_config,
+            )
             original_batch = config.batch_size
 
             # Count model parameters for memory estimation
@@ -2828,17 +2835,29 @@ def train_model(
             except Exception:
                 feature_channels = 56
 
-            logger.info(f"[AutoBatchSize] Calculating optimal batch size from GPU memory...")
+            # Determine effective memory fraction
+            gpu_config = get_gpu_scaling_config()
+            effective_memory_fraction = target_memory_fraction
+            if effective_memory_fraction is None:
+                if safe_mode:
+                    effective_memory_fraction = gpu_config.safe_mode_memory_fraction
+                # else: get_optimal_batch_size_from_gpu_memory uses config defaults (50% or 35%)
+
+            mode_str = "[SAFE MODE]" if safe_mode else ""
+            logger.info(f"[AutoBatchSize]{mode_str} Calculating optimal batch size from GPU memory...")
             logger.info(f"[AutoBatchSize] Model params: {model_params:,}, board_size: {board_size}, num_players: {num_players}")
+            if effective_memory_fraction:
+                logger.info(f"[AutoBatchSize] Memory target: {effective_memory_fraction*100:.0f}%")
 
             config.batch_size = get_optimal_batch_size_from_gpu_memory(
                 model_params=model_params,
                 feature_channels=feature_channels,
                 board_size=board_size,
                 num_players=num_players,
-                target_memory_fraction=0.7,  # Conservative to leave room for activations
+                target_memory_fraction=effective_memory_fraction,  # None = use config (50% or 35% safe mode)
                 min_batch=64,
-                max_batch=8192,
+                max_batch=4096,  # Reduced from 8192 for safety
+                config=gpu_config,
             )
             logger.info(f"[AutoBatchSize] Auto-tuned batch size: {config.batch_size} (was {original_batch})")
         except (RuntimeError, ValueError, ImportError) as e:
