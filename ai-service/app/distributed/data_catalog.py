@@ -910,39 +910,130 @@ class DataCatalog:
             if nfs_training.exists():
                 search_dirs.append(nfs_training)
 
+        # Jan 2026: Pre-filter by filename to avoid expensive np.load() on unrelated files
+        # This prevents hanging when there are many NPZ files (e.g., 900+)
+        filename_filters = []
+        if board_type:
+            filename_filters.append(board_type.lower())
+        if num_players:
+            filename_filters.append(f"{num_players}p")
+
+        files_checked = 0
+        files_matched = 0
+        max_files_to_check = 500  # Safety limit to prevent runaway scanning
+
         for search_dir in search_dirs:
             if not search_dir.exists():
                 continue
 
             for npz_path in search_dir.glob("**/*.npz"):
+                files_checked += 1
+
+                # Safety limit to prevent hanging on directories with many files
+                if files_checked > max_files_to_check:
+                    logger.warning(
+                        f"NPZ discovery stopped at {max_files_to_check} files "
+                        f"(found {files_matched} matches). Set board_type/num_players to filter."
+                    )
+                    break
+
+                # Pre-filter by filename BEFORE expensive analysis
+                if filename_filters:
+                    name_lower = npz_path.name.lower()
+                    if not all(f in name_lower for f in filename_filters):
+                        continue
+
                 try:
-                    source = self._analyze_npz_file(npz_path)
+                    # Use fast analysis (skip np.load, use file size estimate)
+                    source = self._analyze_npz_file_fast(npz_path, board_type, num_players)
                     if source is None:
                         continue
 
-                    # Apply filters
-                    if board_type and source.board_type != board_type:
-                        continue
-                    if num_players and source.num_players != num_players:
-                        continue
+                    # Apply remaining filters
                     if source.sample_count < min_samples:
                         continue
                     if max_age_hours and source.age_hours > max_age_hours:
                         continue
 
                     npz_sources.append(source)
+                    files_matched += 1
 
                 except (OSError, ValueError, zipfile.BadZipFile, EOFError) as e:
                     logger.debug(f"Failed to analyze NPZ {npz_path}: {e}")
 
+            # Break outer loop if limit reached
+            if files_checked > max_files_to_check:
+                break
+
         # Sort by recency (newest first)
         npz_sources.sort(key=lambda s: s.created_at, reverse=True)
 
-        logger.debug(f"Discovered {len(npz_sources)} NPZ files")
+        logger.debug(f"Discovered {len(npz_sources)} NPZ files (checked {files_checked})")
         return npz_sources
 
+    def _analyze_npz_file_fast(
+        self,
+        npz_path: Path,
+        expected_board_type: str | None = None,
+        expected_num_players: int | None = None,
+    ) -> NPZDataSource | None:
+        """Fast NPZ file analysis using only file metadata (no np.load).
+
+        Jan 2026: This method avoids the expensive np.load() call that was
+        causing training startup to hang when there are many NPZ files (900+).
+        It uses file size estimation for sample count instead.
+
+        Args:
+            npz_path: Path to the NPZ file
+            expected_board_type: Expected board type (used if not in filename)
+            expected_num_players: Expected player count (used if not in filename)
+
+        Returns:
+            NPZDataSource object or None if analysis fails
+        """
+        try:
+            stat = npz_path.stat()
+
+            # Parse board type and num_players from filename
+            name = npz_path.stem.lower()
+            board_type = expected_board_type
+            num_players = expected_num_players
+
+            # Extract board type from filename if not provided
+            if board_type is None:
+                for bt in ["hex8", "hexagonal", "square8", "square19"]:
+                    if bt in name:
+                        board_type = bt
+                        break
+
+            # Extract player count from filename if not provided
+            if num_players is None:
+                for players in [2, 3, 4]:
+                    if f"{players}p" in name:
+                        num_players = players
+                        break
+
+            # Estimate sample count from file size (skip np.load entirely)
+            # Typical: ~150-200 bytes per sample for compressed NPZ
+            estimated_samples = stat.st_size // 175
+
+            return NPZDataSource(
+                path=npz_path,
+                board_type=board_type,
+                num_players=num_players,
+                sample_count=estimated_samples,
+                total_size_bytes=stat.st_size,
+                created_at=stat.st_mtime,
+                host_origin=self.node_id,
+                is_available=True,
+            )
+
+        except OSError as e:
+            logger.debug(f"Error in fast NPZ analysis {npz_path}: {e}")
+            return None
+
     def _analyze_npz_file(self, npz_path: Path) -> NPZDataSource | None:
-        """Analyze an NPZ file and return source info.
+        """Analyze an NPZ file and return source info (with np.load for accuracy).
 
         Args:
             npz_path: Path to the NPZ file

@@ -1,8 +1,1 @@
-sleep: invalid time interval: cd
-sleep: invalid time interval: /Users/armand/Development/RingRift/ai-service
-sleep: invalid time interval: nohup
-sleep: invalid time interval: python
-sleep: invalid time interval: scripts/p2p_orchestrator.py
-usage: sleep number[unit] [...]
-Unit can be 's' (seconds, the default), m (minutes), h (hours), or d (days).
-(eval):cd:1: too many arguments
+/Users/armand/local/aws-cli/python: /Users/armand/local/aws-cli/python: cannot execute binary file

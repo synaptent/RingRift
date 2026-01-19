@@ -50,13 +50,22 @@ class ProgressWatchdogConfig:
     December 2025: Simplified - no longer inherits from DaemonConfig.
     HandlerBase uses cycle_interval directly.
 
+    January 2026: Added tiered escalation for enhanced stall recovery.
+    Longer stalls get progressively more aggressive interventions.
+
     Attributes:
         check_interval_seconds: How often to check Elo velocity (default: 1 hour)
         min_elo_velocity: Minimum Elo gain per hour to consider progress (default: 0.5)
         stall_threshold_hours: Hours of stall before triggering recovery (default: 6)
         recovery_action: What to do on stall (default: boost_selfplay)
-        boost_multiplier: How much to boost selfplay on recovery (default: 2.0)
+        boost_multiplier: Base selfplay boost multiplier (default: 2.0)
         max_recovery_attempts: Max recoveries per config per 24h (default: 4)
+
+        # January 2026: Tiered escalation thresholds
+        extended_stall_hours: Stall duration for 4x boost (default: 48)
+        prolonged_stall_hours: Stall duration for 4x + curriculum reset (default: 96)
+        severe_stall_hours: Stall duration for architecture exploration (default: 168)
+        extended_boost_multiplier: Boost multiplier for extended stalls (default: 4.0)
     """
 
     check_interval_seconds: int = 3600  # 1 hour
@@ -65,6 +74,12 @@ class ProgressWatchdogConfig:
     recovery_action: str = "boost_selfplay"  # Recovery action type
     boost_multiplier: float = 2.0  # Selfplay boost multiplier
     max_recovery_attempts: int = 4  # Max recoveries per 24h per config
+
+    # January 2026: Tiered escalation for enhanced stall recovery
+    extended_stall_hours: float = 48.0  # 2 days: 4x boost
+    prolonged_stall_hours: float = 96.0  # 4 days: 4x + curriculum reset
+    severe_stall_hours: float = 168.0  # 7 days: architecture exploration
+    extended_boost_multiplier: float = 4.0  # Boost for extended/prolonged stalls
 
     @classmethod
     def from_env(cls) -> "ProgressWatchdogConfig":
@@ -359,7 +374,14 @@ class ProgressWatchdogDaemon(HandlerBase):
     async def _trigger_recovery(
         self, config_key: str, progress: ConfigProgress
     ) -> None:
-        """Trigger recovery action for a stalled config."""
+        """Trigger recovery action for a stalled config.
+
+        January 2026: Implements tiered escalation based on stall duration:
+        - 6-48h: 2x boost (standard recovery)
+        - 48-96h: 4x boost (extended stall)
+        - 96-168h: 4x boost + curriculum reset (prolonged stall)
+        - 168h+: 4x boost + architecture exploration (severe stall)
+        """
         # Check if we can trigger recovery
         if progress.recovery_attempts >= self.config.max_recovery_attempts:
             logger.warning(
@@ -367,9 +389,46 @@ class ProgressWatchdogDaemon(HandlerBase):
             )
             return
 
-        logger.warning(
-            f"Triggering recovery for {config_key}: stalled {progress.stall_duration_hours:.1f}h"
-        )
+        stall_hours = progress.stall_duration_hours
+
+        # January 2026: Determine escalation tier and actions
+        boost_multiplier = self.config.boost_multiplier  # Default 2x
+        trigger_curriculum_reset = False
+        trigger_architecture_exploration = False
+        escalation_tier = "standard"
+
+        if stall_hours >= self.config.severe_stall_hours:
+            # Severe stall (168h+): Maximum intervention
+            boost_multiplier = self.config.extended_boost_multiplier
+            trigger_curriculum_reset = True
+            trigger_architecture_exploration = True
+            escalation_tier = "severe"
+            logger.warning(
+                f"SEVERE STALL: {config_key} stalled {stall_hours:.0f}h - "
+                f"triggering {boost_multiplier}x boost + curriculum reset + architecture exploration"
+            )
+        elif stall_hours >= self.config.prolonged_stall_hours:
+            # Prolonged stall (96h+): Major intervention
+            boost_multiplier = self.config.extended_boost_multiplier
+            trigger_curriculum_reset = True
+            escalation_tier = "prolonged"
+            logger.warning(
+                f"PROLONGED STALL: {config_key} stalled {stall_hours:.0f}h - "
+                f"triggering {boost_multiplier}x boost + curriculum reset"
+            )
+        elif stall_hours >= self.config.extended_stall_hours:
+            # Extended stall (48h+): Increased boost
+            boost_multiplier = self.config.extended_boost_multiplier
+            escalation_tier = "extended"
+            logger.warning(
+                f"EXTENDED STALL: {config_key} stalled {stall_hours:.0f}h - "
+                f"triggering {boost_multiplier}x boost"
+            )
+        else:
+            # Standard stall (6h+): Normal recovery
+            logger.warning(
+                f"Triggering recovery for {config_key}: stalled {stall_hours:.1f}h"
+            )
 
         # Update tracking
         progress.recovery_attempts += 1
@@ -377,20 +436,46 @@ class ProgressWatchdogDaemon(HandlerBase):
         self._total_stalls_detected += 1
         self._total_recoveries_triggered += 1
 
-        # Emit event
+        # Emit primary stall event
         safe_emit_event(
             "progress_stall_detected",
             {
                 "config_key": config_key,
                 "action": self.config.recovery_action,
-                "stall_duration_hours": progress.stall_duration_hours,
+                "stall_duration_hours": stall_hours,
                 "current_velocity": progress.velocity,
-                "boost_multiplier": self.config.boost_multiplier,
+                "boost_multiplier": boost_multiplier,
                 "recovery_attempt": progress.recovery_attempts,
+                "escalation_tier": escalation_tier,
                 "source": "ProgressWatchdogDaemon",
             },
             context="ProgressWatchdog",
         )
+
+        # January 2026: Emit additional events for escalated interventions
+        if trigger_curriculum_reset:
+            safe_emit_event(
+                "curriculum_reset_requested",
+                {
+                    "config_key": config_key,
+                    "reason": f"stall_recovery_{escalation_tier}",
+                    "stall_duration_hours": stall_hours,
+                    "source": "ProgressWatchdogDaemon",
+                },
+                context="ProgressWatchdog",
+            )
+
+        if trigger_architecture_exploration:
+            safe_emit_event(
+                "architecture_exploration_requested",
+                {
+                    "config_key": config_key,
+                    "reason": f"stall_recovery_{escalation_tier}",
+                    "stall_duration_hours": stall_hours,
+                    "source": "ProgressWatchdogDaemon",
+                },
+                context="ProgressWatchdog",
+            )
 
     async def _emit_recovery_event(
         self, config_key: str, progress: ConfigProgress

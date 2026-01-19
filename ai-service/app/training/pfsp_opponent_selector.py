@@ -43,6 +43,7 @@ Purpose: Strengthen AI training self-improvement loop (Phase 14)
 from __future__ import annotations
 
 import logging
+import math
 import random
 import time
 from collections import defaultdict
@@ -59,11 +60,24 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PFSPConfig:
-    """Configuration for PFSP opponent selection."""
+    """Configuration for PFSP opponent selection.
+
+    Zone of Proximal Development (ZPD) Mode:
+        Research shows optimal learning occurs when training against slightly
+        stronger opponents (~40% win rate) rather than equal-strength opponents
+        (50% win rate). This is because harder games provide more learning signal
+        per sample, pushing the model toward better strategies.
+
+        Set target_win_rate=0.4 and zpd_mode=True for ZPD training (recommended).
+    """
 
     # Priority function parameters
-    target_win_rate: float = 0.5  # Optimal win rate (maximum learning signal)
-    priority_sharpness: float = 0.1  # Lower = sharper priority (more focus on 50%)
+    # ZPD optimal: 0.4 (slightly harder opponents maximize learning)
+    # Traditional: 0.5 (equal-strength opponents)
+    target_win_rate: float = 0.4  # ZPD: optimal ~40% win rate (was 0.5)
+    zpd_elo_offset: float = 100.0  # Prefer opponents ~100 Elo higher when selecting
+    zpd_mode: bool = True  # Enable Zone of Proximal Development opponent selection
+    priority_sharpness: float = 0.1  # Lower = sharper priority (more focus on target)
     min_priority: float = 0.1  # Minimum priority to ensure exploration
 
     # Win rate estimation
@@ -194,7 +208,12 @@ class PFSPOpponentSelector:
     def _compute_priority(self, current_model: str, opponent: str) -> float:
         """Compute PFSP priority for an opponent.
 
-        Priority is highest when win rate is near target (default 50%).
+        Priority is highest when win rate is near target (default 40% for ZPD).
+
+        When ZPD mode is enabled, we also add a bonus for opponents that are
+        slightly stronger (~100 Elo higher). This implements Zone of Proximal
+        Development training, where learning from harder games maximizes
+        improvement per training sample.
 
         Args:
             current_model: Current model ID
@@ -210,6 +229,24 @@ class PFSPOpponentSelector:
         # Higher when win_rate is close to target
         deviation = abs(win_rate - self.config.target_win_rate)
         priority = 1.0 / (deviation + self.config.priority_sharpness)
+
+        # ZPD mode: boost priority for slightly stronger opponents
+        # This makes us prefer opponents ~100 Elo higher, as those games
+        # provide maximum learning signal per sample
+        if self.config.zpd_mode:
+            current_elo = self._model_elos.get(current_model, 1500.0)
+            opponent_elo = self._model_elos.get(opponent, 1500.0)
+            elo_diff = opponent_elo - current_elo  # Positive = opponent is stronger
+
+            # Boost for stronger opponents, maximum at zpd_elo_offset Elo higher
+            # Gaussian-like boost: exp(-((diff - target)^2) / (2 * sigma^2))
+            # Peak at +100 Elo (zpd_elo_offset), decays away from there
+            target_diff = self.config.zpd_elo_offset
+            sigma = 100.0  # Width of the bonus window
+            zpd_bonus = math.exp(-((elo_diff - target_diff) ** 2) / (2 * sigma ** 2))
+
+            # Scale the bonus (up to 2x priority for perfect ZPD match)
+            priority *= (1.0 + zpd_bonus)
 
         # Ensure minimum exploration
         priority = max(priority, self.config.min_priority)

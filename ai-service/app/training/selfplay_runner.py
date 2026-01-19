@@ -1724,6 +1724,7 @@ class HeuristicSelfplayRunner(SelfplayRunner):
                 "difficulty": self.config.difficulty,
                 "source": self.config.source,
                 "pfsp_opponent": pfsp_opponent,  # Phase 7: Track PFSP opponent
+                "model_elo": getattr(self.config, 'model_elo', None),  # Elo gating: track generator strength
             },
             initial_state=initial_state,
             final_state=state,
@@ -2032,6 +2033,7 @@ class GumbelMCTSSelfplayRunner(SelfplayRunner):
                 "source": self.config.source,
                 "simulation_budget": self.config.simulation_budget,
                 "pfsp_opponent": pfsp_opponent,  # Phase 7: Track PFSP opponent
+                "model_elo": getattr(self.config, 'model_elo', None),  # Elo gating: track generator strength
             },
             initial_state=initial_state,
             final_state=state,
@@ -2251,6 +2253,7 @@ class GNNSelfplayRunner(SelfplayRunner):
                 "source": self.config.source,
                 "model_tier": self._model_tier,
                 "pfsp_opponent": pfsp_opponent,  # Phase 7: Track PFSP opponent
+                "model_elo": getattr(self.config, 'model_elo', None),  # Elo gating: track generator strength
             },
             initial_state=initial_state,
             final_state=state,

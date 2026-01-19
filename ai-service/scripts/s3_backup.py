@@ -56,7 +56,8 @@ def run_command(cmd: list[str], dry_run: bool = False) -> tuple[bool, str]:
         return True, ""
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        # Increased timeout: large databases (10GB+) need ~30 min at 50 Mbps
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
         return result.returncode == 0, result.stdout + result.stderr
     except subprocess.TimeoutExpired:
         return False, "Command timed out"

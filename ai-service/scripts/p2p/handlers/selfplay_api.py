@@ -111,6 +111,39 @@ class SelfplayHandlersMixin:
 
         return True, "Local health OK for degraded-mode selfplay"
 
+    def _get_gpu_count(self) -> int:
+        """Get the number of CUDA GPUs available on this node.
+
+        Jan 18, 2026: Added for multi-GPU selfplay support. Enables spawning
+        one worker per GPU on Vast.ai nodes with multiple GPUs (8x3090, etc.).
+
+        Returns:
+            Number of CUDA GPUs, or 1 if detection fails or no CUDA available.
+        """
+        try:
+            import torch
+            if torch.cuda.is_available():
+                return torch.cuda.device_count()
+        except ImportError:
+            pass  # PyTorch not available
+
+        # Fallback: try nvidia-smi
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                gpu_names = [line.strip() for line in result.stdout.strip().split("\n") if line.strip()]
+                return len(gpu_names) if gpu_names else 1
+        except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+            pass
+
+        return 1  # Default to single GPU
+
     async def handle_selfplay_start(self, request: web.Request) -> web.Response:
         """POST /selfplay/start - Start GPU selfplay job on this node.
 
@@ -170,19 +203,52 @@ class SelfplayHandlersMixin:
 
             job_id = f"selfplay-{self.node_id}-{int(time.time())}"
 
-            # Start the selfplay job in background
-            # Delegate to JobManager (Phase 2B refactoring, Dec 2025)
-            asyncio.create_task(self.job_manager.run_gpu_selfplay_job(
-                job_id=job_id,
-                board_type=board_type,
-                num_players=num_players,
-                num_games=num_games,
-                engine_mode=engine_mode,
-                engine_extra_args=engine_extra_args,
-                model_version=model_version,  # Jan 5, 2026: Architecture selection feedback loop
-            ))
+            # Jan 18, 2026: Multi-GPU support - spawn one worker per GPU
+            # This improves utilization on multi-GPU Vast.ai nodes (8x3090, 4x5090, etc.)
+            num_gpus = self._get_gpu_count()
+            if num_gpus > 1:
+                # Distribute games across GPUs
+                games_per_gpu = max(1, num_games // num_gpus)
+                remainder = num_games % num_gpus
 
-            logger.info(f"Started GPU selfplay job {job_id}: {board_type}/{num_players}p, {num_games} games")
+                logger.info(
+                    f"Multi-GPU node detected ({num_gpus} GPUs), "
+                    f"spawning {num_gpus} parallel workers"
+                )
+
+                for gpu_id in range(num_gpus):
+                    gpu_games = games_per_gpu + (1 if gpu_id < remainder else 0)
+                    gpu_job_id = f"{job_id}_gpu{gpu_id}"
+
+                    # Start worker for this GPU
+                    asyncio.create_task(self.job_manager.run_gpu_selfplay_job(
+                        job_id=gpu_job_id,
+                        board_type=board_type,
+                        num_players=num_players,
+                        num_games=gpu_games,
+                        engine_mode=engine_mode,
+                        engine_extra_args=engine_extra_args,
+                        model_version=model_version,
+                        cuda_device=gpu_id,  # Route to specific GPU
+                    ))
+
+                logger.info(
+                    f"Started {num_gpus} GPU selfplay workers {job_id}_gpu*: "
+                    f"{board_type}/{num_players}p, {num_games} total games"
+                )
+            else:
+                # Single GPU or CPU-only: start single job (original behavior)
+                asyncio.create_task(self.job_manager.run_gpu_selfplay_job(
+                    job_id=job_id,
+                    board_type=board_type,
+                    num_players=num_players,
+                    num_games=num_games,
+                    engine_mode=engine_mode,
+                    engine_extra_args=engine_extra_args,
+                    model_version=model_version,
+                ))
+
+                logger.info(f"Started GPU selfplay job {job_id}: {board_type}/{num_players}p, {num_games} games")
 
             # Track diversity metrics for monitoring (Phase 2B, Dec 2025)
             # Jan 2026: Resolve mode-specific engines (minimax-only -> brs/maxn/minimax)
