@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   GameState,
   Player,
@@ -1023,35 +1023,68 @@ function PlayerTimerFromVM({
   isActive: boolean;
   playerName: string;
 }) {
+  // Use a ref to track when the countdown started and the initial value
+  const countdownStartRef = useRef<{ startTime: number; startValue: number } | null>(null);
   const [displayTime, setDisplayTime] = useState(timeRemaining);
 
   useEffect(() => {
     if (!isActive) {
+      // Not this player's turn - sync to server value and clear countdown tracking
+      countdownStartRef.current = null;
       setDisplayTime(timeRemaining);
       return;
     }
 
-    const interval = setInterval(() => {
-      setDisplayTime((prev) => Math.max(0, prev - 1000));
-    }, 1000);
+    // Start or continue countdown
+    if (!countdownStartRef.current) {
+      // Initialize countdown tracking when turn starts
+      countdownStartRef.current = {
+        startTime: Date.now(),
+        startValue: timeRemaining,
+      };
+    }
+
+    // Update display immediately based on elapsed time
+    const updateDisplay = () => {
+      if (!countdownStartRef.current) return;
+      const elapsed = Date.now() - countdownStartRef.current.startTime;
+      const newValue = Math.max(0, countdownStartRef.current.startValue - elapsed);
+      setDisplayTime(newValue);
+    };
+
+    // Initial update
+    updateDisplay();
+
+    // Use a shorter interval for smoother visual countdown
+    const interval = setInterval(updateDisplay, 200);
 
     return () => clearInterval(interval);
   }, [isActive, timeRemaining]);
 
+  // Sync with server when timeRemaining changes (e.g., after move with increment)
   useEffect(() => {
-    setDisplayTime(timeRemaining);
-  }, [timeRemaining]);
+    if (isActive && countdownStartRef.current) {
+      // Server sent a new timeRemaining (likely after a move with increment)
+      // Reset our countdown tracking to use the new server value
+      countdownStartRef.current = {
+        startTime: Date.now(),
+        startValue: timeRemaining,
+      };
+      setDisplayTime(timeRemaining);
+    }
+  }, [timeRemaining, isActive]);
 
   const minutes = Math.floor(displayTime / 60000);
   const seconds = Math.floor((displayTime % 60000) / 1000);
 
   const severity = getCountdownSeverity(displayTime);
 
-  let timerClass = 'font-mono text-gray-700';
+  // High contrast for visibility on dark HUD background
+  let timerClass = 'font-mono text-white font-semibold text-sm';
   if (severity === 'warning') {
-    timerClass = 'font-mono text-amber-400 font-semibold';
+    timerClass = 'font-mono text-amber-300 font-bold text-sm';
   } else if (severity === 'critical') {
-    timerClass = 'font-mono text-red-600 font-bold animate-pulse';
+    timerClass = 'font-mono text-red-400 font-bold animate-pulse text-sm';
   }
 
   const clockLabel = `${minutes}:${seconds.toString().padStart(2, '0')}`;
@@ -1061,6 +1094,84 @@ function PlayerTimerFromVM({
     <div className={timerClass} aria-label={ariaLabel} data-severity={severity ?? undefined}>
       {clockLabel}
     </div>
+  );
+}
+
+/**
+ * Compact timer display for the header row (P1: 9:58, P2: 9:34)
+ * Uses countdown logic when it's this player's turn.
+ */
+function CompactPlayerTimer({
+  playerNumber,
+  timeRemaining,
+  isActive,
+}: {
+  playerNumber: number;
+  timeRemaining: number;
+  isActive: boolean;
+}) {
+  const countdownStartRef = useRef<{ startTime: number; startValue: number } | null>(null);
+  const [displayTime, setDisplayTime] = useState(timeRemaining);
+
+  useEffect(() => {
+    if (!isActive) {
+      countdownStartRef.current = null;
+      setDisplayTime(timeRemaining);
+      return;
+    }
+
+    if (!countdownStartRef.current) {
+      countdownStartRef.current = {
+        startTime: Date.now(),
+        startValue: timeRemaining,
+      };
+    }
+
+    const updateDisplay = () => {
+      if (!countdownStartRef.current) return;
+      const elapsed = Date.now() - countdownStartRef.current.startTime;
+      const newValue = Math.max(0, countdownStartRef.current.startValue - elapsed);
+      setDisplayTime(newValue);
+    };
+
+    updateDisplay();
+    const interval = setInterval(updateDisplay, 200);
+    return () => clearInterval(interval);
+  }, [isActive, timeRemaining]);
+
+  // Sync with server when timeRemaining changes
+  useEffect(() => {
+    if (isActive && countdownStartRef.current) {
+      countdownStartRef.current = {
+        startTime: Date.now(),
+        startValue: timeRemaining,
+      };
+      setDisplayTime(timeRemaining);
+    }
+  }, [timeRemaining, isActive]);
+
+  const minutes = Math.floor(displayTime / 60000);
+  const seconds = Math.floor((displayTime % 60000) / 1000);
+  const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  const isLow = displayTime < 60000;
+  const isCritical = displayTime < 30000;
+
+  return (
+    <span
+      className={`font-mono ${
+        isActive
+          ? isCritical
+            ? 'text-red-400 font-bold animate-pulse'
+            : isLow
+              ? 'text-amber-400 font-bold'
+              : 'text-slate-100 font-semibold'
+          : 'text-slate-500 text-[10px]'
+      }`}
+      title={`Player ${playerNumber}${isActive ? ' (current turn)' : ''}`}
+    >
+      P{playerNumber}: {timeStr}
+      {isActive && <span className="ml-0.5 text-green-400">⏱</span>}
+    </span>
   );
 }
 
@@ -1924,32 +2035,18 @@ function GameHUDFromViewModel({
                 </span>
               </span>
             </div>
-            {/* Player times row */}
+            {/* Player times row - uses countdown for active player */}
             {players.some((p) => p.timeRemaining !== undefined) && (
               <div className="mt-1 flex items-center gap-2 text-[11px]">
                 {players.map((p) => {
                   if (p.timeRemaining === undefined) return null;
-                  const minutes = Math.floor(p.timeRemaining / 60000);
-                  const seconds = Math.floor((p.timeRemaining % 60000) / 1000);
-                  const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-                  const isLow = p.timeRemaining < 60000;
-                  const isCritical = p.timeRemaining < 30000;
                   return (
-                    <span
+                    <CompactPlayerTimer
                       key={p.playerNumber}
-                      className={`font-mono ${
-                        p.isCurrentPlayer
-                          ? isCritical
-                            ? 'text-red-400 font-bold animate-pulse'
-                            : isLow
-                              ? 'text-amber-400 font-bold'
-                              : 'text-slate-100 font-semibold'
-                          : 'text-slate-500 text-[10px]'
-                      }`}
-                      title={`Player ${p.playerNumber}${p.isCurrentPlayer ? ' (current turn)' : ''}`}
-                    >
-                      P{p.playerNumber}: {timeStr}
-                    </span>
+                      playerNumber={p.playerNumber}
+                      timeRemaining={p.timeRemaining}
+                      isActive={p.isCurrentPlayer}
+                    />
                   );
                 })}
               </div>

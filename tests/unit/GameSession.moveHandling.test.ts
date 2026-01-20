@@ -44,6 +44,7 @@ jest.mock('../../src/server/services/GamePersistenceService', () => ({
   GamePersistenceService: {
     saveMove: jest.fn(),
     finishGame: jest.fn().mockResolvedValue({}),
+    updateGameStateWithInternal: jest.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -505,6 +506,7 @@ describe('GameSession Move Handling', () => {
         (session as any).gameEngine = {
           getGameState: jest.fn().mockReturnValueOnce(state).mockReturnValue(updatedState),
           getValidMoves: jest.fn(() => []),
+          getInternalStateForPersistence: jest.fn().mockReturnValue({}),
         };
         (session as any).rulesFacade = {
           applyMove: jest.fn().mockResolvedValue({
@@ -630,6 +632,7 @@ describe('GameSession Move Handling', () => {
         (session as any).gameEngine = {
           getGameState: jest.fn().mockReturnValue(updatedState),
           getValidMoves: jest.fn(() => []),
+          getInternalStateForPersistence: jest.fn().mockReturnValue({}),
         };
         (session as any).rulesFacade = {
           applyMove: jest.fn().mockResolvedValue({

@@ -10,6 +10,7 @@ import { EvaluationPanel } from '../EvaluationPanel';
 import { AIThinkTimeProgress } from '../AIThinkTimeProgress';
 import { ResignButton } from '../ResignButton';
 import { BackendTouchControlsPanel } from './BackendTouchControlsPanel';
+import { VictoryConditionsPanel } from '../GameHUD';
 import { Button } from '../ui/Button';
 import { formatPosition } from '../../../shared/engine/notation';
 import { describeDecisionAutoResolved } from '../../hooks/useBackendDiagnosticsLog';
@@ -313,6 +314,7 @@ export const BackendGameSidebar: React.FC<BackendGameSidebarProps> = ({
           timeControl={timeControl}
           onShowBoardControls={onShowBoardControls}
           rulesUxContext={rulesUxContext}
+          hideVictoryConditions
         />
       )}
 
@@ -706,6 +708,9 @@ export const BackendGameSidebar: React.FC<BackendGameSidebarProps> = ({
           </Button>
         </form>
       </div>
+
+      {/* Victory Conditions - below Chat for better layout */}
+      <VictoryConditionsPanel />
     </aside>
   );
 };

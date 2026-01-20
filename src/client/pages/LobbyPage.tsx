@@ -743,7 +743,7 @@ export default function LobbyPage() {
         timeControl: {
           type: 'rapid',
           initialTime: 600,
-          increment: 5,
+          increment: 15,
         },
         aiOpponents: {
           count: option.numPlayers - 1,

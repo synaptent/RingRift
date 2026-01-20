@@ -651,16 +651,30 @@ export class GameSession {
       return;
     }
 
-    // Map playerId (UUID) to playerNumber using the mapping built during initialization
-    const playerNumber = this.playerIdToNumber.get(move.playerId);
+    // Map playerId (UUID) to playerNumber using the mapping built during initialization.
+    // For AI moves, fall back to moveData.player since AI moves use a shared AI user ID
+    // that isn't in the playerIdToNumber map (AI players use synthetic IDs).
+    let playerNumber = this.playerIdToNumber.get(move.playerId);
     if (playerNumber === undefined) {
-      logger.error('Failed to map playerId to playerNumber during move replay', {
-        gameId: this.gameId,
-        moveId: move.id,
-        playerId: move.playerId,
-        availablePlayerIds: Array.from(this.playerIdToNumber.keys()),
-      });
-      return;
+      // Try to extract player number from moveData (works for AI moves)
+      const moveData = move.moveData as Record<string, unknown> | null;
+      if (moveData && typeof moveData.player === 'number') {
+        playerNumber = moveData.player;
+        logger.info('Using moveData.player for move replay (likely AI move)', {
+          gameId: this.gameId,
+          moveId: move.id,
+          playerId: move.playerId,
+          playerNumber,
+        });
+      } else {
+        logger.error('Failed to map playerId to playerNumber during move replay', {
+          gameId: this.gameId,
+          moveId: move.id,
+          playerId: move.playerId,
+          availablePlayerIds: Array.from(this.playerIdToNumber.keys()),
+        });
+        return;
+      }
     }
 
     const gameMove: Omit<Move, 'id' | 'timestamp' | 'moveNumber'> = {
