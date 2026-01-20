@@ -64,6 +64,11 @@ DEFAULT_VRAM_REQUIREMENT = 8.0  # Fallback for unknown work types
 # Disk usage threshold - refuse work if disk is too full
 DISK_USAGE_CRITICAL_THRESHOLD = 85  # Percentage
 
+# GPU utilization threshold - refuse selfplay if GPU is already busy
+# Session 17.42 (Jan 20, 2026): Added to prevent OOM when training is running
+# Target 50-80% utilization; reject new selfplay above 80% to leave headroom
+GPU_UTILIZATION_REJECT_THRESHOLD = 80  # Percentage - reject selfplay if GPU% >= this
+
 # GPU name to total VRAM mapping (GB)
 # Session 17.32: Used to infer VRAM capacity from gpu_name since NodeInfo
 # doesn't expose gpu_vram_gb directly
@@ -304,10 +309,13 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
         """Check if node has sufficient resources for a work item.
 
         Session 17.32 (Jan 5, 2026): Added to prevent OOM and improve utilization.
+        Session 17.42 (Jan 20, 2026): Added GPU utilization and training checks.
 
         Checks:
         1. Disk usage < 85% (critical threshold)
-        2. GPU VRAM available >= job requirement
+        2. GPU utilization < 80% for selfplay (prevent OOM during training)
+        3. No active training on node when dispatching selfplay
+        4. GPU VRAM available >= job requirement
 
         Args:
             node_id: The node claiming work
@@ -330,6 +338,25 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
         disk_percent = node_info.get("disk_percent", 0.0)
         if disk_percent >= DISK_USAGE_CRITICAL_THRESHOLD:
             reason = f"disk usage {disk_percent:.1f}% >= {DISK_USAGE_CRITICAL_THRESHOLD}%"
+            logger.info(f"[capacity] {node_id} rejected: {reason}")
+            return (False, reason)
+
+        # Session 17.42: Check GPU utilization before dispatching selfplay
+        # This prevents OOM when training is already running on the node
+        gpu_percent = node_info.get("gpu_percent", 0.0)
+        if work_type == "selfplay" and gpu_percent >= GPU_UTILIZATION_REJECT_THRESHOLD:
+            reason = (
+                f"GPU utilization {gpu_percent:.1f}% >= {GPU_UTILIZATION_REJECT_THRESHOLD}% "
+                f"threshold (training likely running)"
+            )
+            logger.info(f"[capacity] {node_id} rejected for selfplay: {reason}")
+            return (False, reason)
+
+        # Session 17.42: Check if training is running on this node
+        # Don't dispatch selfplay to nodes actively running training jobs
+        training_jobs = node_info.get("training_jobs", 0)
+        if work_type == "selfplay" and training_jobs > 0:
+            reason = f"node has {training_jobs} active training job(s), rejecting selfplay"
             logger.info(f"[capacity] {node_id} rejected: {reason}")
             return (False, reason)
 

@@ -709,8 +709,8 @@ class RingRiftEnv:
 
     @cached_property
     def backpressure_gpu_threshold(self) -> float:
-        """GPU utilization threshold for backpressure."""
-        return float(os.environ.get("RINGRIFT_BACKPRESSURE_GPU_THRESHOLD", "90"))
+        """GPU utilization threshold for backpressure (Session 17.42: lowered from 90)."""
+        return float(os.environ.get("RINGRIFT_BACKPRESSURE_GPU_THRESHOLD", "70"))
 
     @cached_property
     def backpressure_memory_threshold(self) -> float:
