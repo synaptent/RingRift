@@ -29819,6 +29819,9 @@ print(json.dumps({{
             # Jan 20, 2026: Voter config sync - consensus-safe configuration synchronization
             app.router.add_get('/voter-config', self.handle_voter_config_get)
             app.router.add_post('/voter-config/sync', self.handle_voter_config_sync)
+            app.router.add_post('/voter-config/ack', self.handle_voter_config_ack)
+            app.router.add_post('/voter-config/propose', self.handle_voter_config_propose)
+            app.router.add_get('/voter-config/change-status', self.handle_voter_config_change_status)
 
             # Serf integration routes (battle-tested SWIM gossip)
             app.router.add_post('/serf/event', self.handle_serf_event)

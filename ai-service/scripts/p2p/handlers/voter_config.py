@@ -10,6 +10,9 @@ Usage:
 Endpoints:
     GET /voter-config - Get current voter configuration with version/hash
     POST /voter-config/sync - Apply remote voter config (pull mechanism)
+    POST /voter-config/ack - Acknowledge a change proposal (joint consensus)
+    POST /voter-config/propose - Propose a voter list change (leader only)
+    GET /voter-config/change-status - Get current change protocol status
 """
 
 from __future__ import annotations
@@ -152,3 +155,214 @@ class VoterConfigHandlersMixin(BaseP2PHandler):
                 },
                 status=500,
             )
+
+    @handler_timeout(10.0)
+    async def handle_voter_config_ack(self, request: web.Request) -> web.Response:
+        """POST /voter-config/ack - Acknowledge a change proposal.
+
+        Called by the leader during joint consensus to collect acks
+        from voters in both old and new voter sets.
+
+        Request body:
+            - proposal_id: str - Unique proposal ID
+            - phase: str - "old" or "new"
+            - old_version: int - Current config version
+            - new_version: int - Proposed new version
+            - old_voters: list[str] - Current voter list
+            - new_voters: list[str] - Proposed voter list
+
+        Returns:
+            JSON with:
+            - ack: bool - Whether this node acknowledges
+            - reason: str - Why ack was granted/denied
+        """
+        try:
+            data = await request.json()
+
+            # Validate required fields
+            required_fields = [
+                "proposal_id", "phase", "old_version",
+                "new_version", "old_voters", "new_voters"
+            ]
+            missing = [f for f in required_fields if f not in data]
+            if missing:
+                return web.json_response(
+                    {"ack": False, "reason": f"missing_fields: {missing}"},
+                    status=400,
+                )
+
+            # Get or create the change protocol
+            change_protocol = self._get_voter_config_change_protocol()
+            if change_protocol is None:
+                return web.json_response(
+                    {"ack": False, "reason": "change_protocol_not_available"},
+                    status=503,
+                )
+
+            # Process the ack request
+            ack, reason = await change_protocol.handle_ack_request(
+                proposal_id=data["proposal_id"],
+                phase=data["phase"],
+                old_version=data["old_version"],
+                new_version=data["new_version"],
+                old_voters=data["old_voters"],
+                new_voters=data["new_voters"],
+            )
+
+            return web.json_response({"ack": ack, "reason": reason})
+
+        except Exception as e:
+            logger.error(f"Error in handle_voter_config_ack: {e}")
+            return web.json_response(
+                {"ack": False, "reason": f"error: {e}"},
+                status=500,
+            )
+
+    @handler_timeout(180.0)  # 3 minutes - change protocol can take up to 2 min
+    async def handle_voter_config_propose(self, request: web.Request) -> web.Response:
+        """POST /voter-config/propose - Propose a voter list change.
+
+        Leader-only endpoint to propose changing the voter list.
+        Uses joint consensus (both old and new quorums must agree).
+
+        Request body:
+            - new_voters: list[str] - New voter node IDs
+            - reason: str (optional) - Reason for the change
+
+        Returns:
+            JSON with:
+            - success: bool - Whether change was applied
+            - proposal_id: str - Proposal ID
+            - old_version: int - Previous config version
+            - new_version: int - New config version (if success)
+            - reason: str - Success/failure reason
+            - phase_reached: str - Last phase before completion/failure
+        """
+        try:
+            # Check if this node is the leader
+            if not self._is_leader():
+                return web.json_response(
+                    {
+                        "success": False,
+                        "proposal_id": "",
+                        "reason": "not_leader",
+                        "phase_reached": "idle",
+                    },
+                    status=403,
+                )
+
+            data = await request.json()
+
+            # Validate required fields
+            if "new_voters" not in data:
+                return web.json_response(
+                    {
+                        "success": False,
+                        "proposal_id": "",
+                        "reason": "missing_new_voters",
+                        "phase_reached": "idle",
+                    },
+                    status=400,
+                )
+
+            new_voters = data["new_voters"]
+            reason = data.get("reason", "")
+
+            # Get or create the change protocol
+            change_protocol = self._get_voter_config_change_protocol()
+            if change_protocol is None:
+                return web.json_response(
+                    {
+                        "success": False,
+                        "proposal_id": "",
+                        "reason": "change_protocol_not_available",
+                        "phase_reached": "idle",
+                    },
+                    status=503,
+                )
+
+            # Execute the change
+            result = await change_protocol.propose_change(
+                new_voters=new_voters,
+                reason=reason,
+            )
+
+            return web.json_response({
+                "success": result.success,
+                "proposal_id": result.proposal_id,
+                "old_version": result.old_version,
+                "new_version": result.new_version,
+                "old_voters": result.old_voters,
+                "new_voters": result.new_voters,
+                "reason": result.reason,
+                "phase_reached": result.phase_reached.value,
+                "old_acks": result.old_acks,
+                "new_acks": result.new_acks,
+                "nacks": result.nacks,
+                "duration_seconds": result.duration_seconds,
+            })
+
+        except Exception as e:
+            logger.error(f"Error in handle_voter_config_propose: {e}")
+            return web.json_response(
+                {
+                    "success": False,
+                    "proposal_id": "",
+                    "reason": f"error: {e}",
+                    "phase_reached": "failed",
+                },
+                status=500,
+            )
+
+    @handler_timeout(5.0)
+    async def handle_voter_config_change_status(
+        self, request: web.Request
+    ) -> web.Response:
+        """GET /voter-config/change-status - Get change protocol status.
+
+        Returns:
+            JSON with:
+            - active: bool - Whether a change is in progress
+            - proposal_id: str (if active)
+            - phase: str - Current phase
+            - ... other status fields
+        """
+        try:
+            change_protocol = self._get_voter_config_change_protocol()
+            if change_protocol is None:
+                return web.json_response({
+                    "active": False,
+                    "phase": "idle",
+                    "error": "change_protocol_not_available",
+                })
+
+            return web.json_response(change_protocol.get_status())
+
+        except Exception as e:
+            logger.error(f"Error in handle_voter_config_change_status: {e}")
+            return web.json_response(
+                {"active": False, "phase": "error", "error": str(e)},
+                status=500,
+            )
+
+    def _get_voter_config_change_protocol(self):
+        """Get or create the VoterConfigChangeProtocol instance.
+
+        Returns:
+            VoterConfigChangeProtocol instance or None if not available
+        """
+        # Check if already cached
+        protocol = getattr(self, "_voter_config_change_protocol", None)
+        if protocol is not None:
+            return protocol
+
+        try:
+            from scripts.p2p.voter_config_change_protocol import (
+                VoterConfigChangeProtocol,
+            )
+            protocol = VoterConfigChangeProtocol(self)
+            self._voter_config_change_protocol = protocol
+            return protocol
+        except ImportError as e:
+            logger.warning(f"VoterConfigChangeProtocol not available: {e}")
+            return None

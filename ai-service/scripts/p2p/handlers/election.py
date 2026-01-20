@@ -109,6 +109,64 @@ class ElectionHandlersMixin(BaseP2PHandler):
     leader_id: str | None
     election_in_progress: bool
 
+    # Jan 20, 2026: Maximum voter config version delta before probation
+    MAX_VOTER_CONFIG_VERSION_DELTA = 3
+
+    def _check_voter_config_probation(
+        self, leader_id: str, request_data: dict
+    ) -> tuple[bool, str]:
+        """Check if a leader candidate is on probation due to stale voter config.
+
+        Jan 20, 2026: Nodes with voter config version delta > 3 must sync
+        their config before they can lead. This prevents nodes with stale
+        voter lists from causing cluster instability.
+
+        Args:
+            leader_id: The candidate requesting leadership
+            request_data: Request payload (may contain voter_config_version)
+
+        Returns:
+            Tuple of (allowed: bool, reason: str)
+        """
+        try:
+            # Get local config version
+            local_version = self._get_voter_config_version()
+            if local_version == 0:
+                # No local config, can't enforce probation
+                return True, "no_local_config"
+
+            # Get candidate's version from request or peer info
+            candidate_version = request_data.get("voter_config_version")
+
+            if candidate_version is None:
+                # Try to get from peer info
+                peers = getattr(self, "peers", {})
+                peer_info = peers.get(leader_id)
+                if peer_info:
+                    candidate_version = getattr(
+                        peer_info, "voter_config_version", None
+                    )
+
+            if candidate_version is None:
+                # Can't determine version, allow (for backward compatibility)
+                return True, "version_unknown"
+
+            # Check version delta
+            version_delta = abs(local_version - candidate_version)
+
+            if version_delta > self.MAX_VOTER_CONFIG_VERSION_DELTA:
+                return False, (
+                    f"config_stale: candidate v{candidate_version} "
+                    f"vs local v{local_version} (delta={version_delta})"
+                )
+
+            return True, "config_ok"
+
+        except Exception as e:
+            # On error, allow (don't break elections)
+            logger.debug(f"[Election] Probation check error: {e}")
+            return True, f"check_error: {e}"
+
     @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_election(self, request: web.Request) -> web.Response:
         """Handle election message from another node."""
@@ -209,6 +267,21 @@ class ElectionHandlersMixin(BaseP2PHandler):
                         error_code="LEADER_NOT_VOTER",
                         details={"granted": False},
                     )
+
+            # Jan 20, 2026: Probation check for stale voter config
+            # Nodes with voter config version delta > 3 must sync before leading
+            probation_result = self._check_voter_config_probation(leader_id, data)
+            if not probation_result[0]:
+                return self.error_response(
+                    probation_result[1],
+                    status=403,
+                    error_code="LEADER_CONFIG_STALE",
+                    details={
+                        "granted": False,
+                        "reason": probation_result[1],
+                        "must_sync": True,
+                    },
+                )
 
             now = time.time()
 
