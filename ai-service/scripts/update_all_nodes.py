@@ -831,20 +831,23 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Safe mode (RECOMMENDED for production)
-    python scripts/update_all_nodes.py --safe-mode --restart-p2p
+    # Default: Safe mode with P2P restart (Jan 19, 2026: now the default!)
+    python scripts/update_all_nodes.py --restart-p2p
 
     # Safe mode with custom convergence timeout
-    python scripts/update_all_nodes.py --safe-mode --restart-p2p --convergence-timeout 180
+    python scripts/update_all_nodes.py --restart-p2p --convergence-timeout 180
 
     # Update only non-voter nodes (safest, no quorum risk)
-    python scripts/update_all_nodes.py --safe-mode --skip-voters --restart-p2p
+    python scripts/update_all_nodes.py --skip-voters --restart-p2p
 
     # Dry run to preview batches
-    python scripts/update_all_nodes.py --safe-mode --restart-p2p --dry-run
+    python scripts/update_all_nodes.py --restart-p2p --dry-run
 
-    # Legacy mode (not recommended, shows warning)
-    python scripts/update_all_nodes.py --restart-p2p
+    # Bypass safe-mode (NOT RECOMMENDED - can cause quorum loss)
+    python scripts/update_all_nodes.py --no-safe-mode --restart-p2p
+
+    # Git update only (no P2P restart, no safe-mode needed)
+    python scripts/update_all_nodes.py
 """
     )
     parser.add_argument(
@@ -865,8 +868,8 @@ Examples:
     parser.add_argument(
         '--max-parallel',
         type=int,
-        default=10,
-        help='Maximum number of parallel updates (default: 10)'
+        default=3,
+        help='Maximum number of parallel updates (default: 3, reduced from 10 for stability)'
     )
     parser.add_argument(
         '--include-coordinators',
@@ -875,16 +878,22 @@ Examples:
     )
 
     # January 3, 2026 - Sprint 16.2: Quorum-safe rolling updates
+    # Jan 19, 2026: Made safe-mode default when --restart-p2p is used
     parser.add_argument(
         '--safe-mode',
         action='store_true',
-        help='Use quorum-safe rolling updates (RECOMMENDED for production)'
+        help='Use quorum-safe rolling updates (DEFAULT with --restart-p2p)'
+    )
+    parser.add_argument(
+        '--no-safe-mode',
+        action='store_true',
+        help='Disable safe-mode (NOT RECOMMENDED - can cause quorum loss with --restart-p2p)'
     )
     parser.add_argument(
         '--batch-delay',
         type=int,
-        default=30,
-        help='Seconds between voter batches in safe mode (default: 30)'
+        default=60,
+        help='Seconds between voter batches in safe mode (default: 60, increased for convergence)'
     )
     parser.add_argument(
         '--skip-voters',
@@ -1109,7 +1118,11 @@ Examples:
         sys.exit(0)
 
     # January 3, 2026 - Sprint 16.2: Use QuorumSafeUpdateCoordinator in safe mode
-    if args.safe_mode:
+    # Jan 19, 2026: Safe-mode is now DEFAULT when --restart-p2p is used (unless --no-safe-mode)
+    # This prevents quorum loss from simultaneous voter restarts
+    use_safe_mode = args.safe_mode or (args.restart_p2p and not args.no_safe_mode)
+
+    if use_safe_mode:
         logger.info("SAFE MODE: Using quorum-safe rolling updates")
 
         try:
@@ -1173,18 +1186,19 @@ Examples:
             sys.exit(1)
 
     else:
-        # Legacy mode - warn about quorum risk
-        if args.restart_p2p:
+        # Legacy mode - only used if explicitly disabled via --no-safe-mode or no --restart-p2p
+        if args.restart_p2p and args.no_safe_mode:
+            # Jan 19, 2026: User explicitly requested unsafe mode - show stern warning
             warnings.warn(
-                "Running without --safe-mode with --restart-p2p can cause quorum loss. "
-                "Consider using: python scripts/update_all_nodes.py --safe-mode --restart-p2p",
+                "Running with --no-safe-mode and --restart-p2p can cause IMMEDIATE quorum loss. "
+                "You have been warned.",
                 UserWarning,
                 stacklevel=2,
             )
             logger.warning(
-                "⚠️  WARNING: Running without --safe-mode. "
-                "Simultaneous P2P restarts may cause quorum loss. "
-                "Use --safe-mode for production updates."
+                "⚠️  DANGER: Running with --no-safe-mode explicitly. "
+                "Simultaneous P2P restarts WILL cause quorum loss if voters restart together. "
+                "Proceeding at your own risk."
             )
 
         # Run legacy parallel updates

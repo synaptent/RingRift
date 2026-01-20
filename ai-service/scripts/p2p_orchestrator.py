@@ -841,6 +841,7 @@ from scripts.p2p.constants import (
     SPAWN_RATE_LIMIT_PER_MINUTE,
     STALE_PROCESS_CHECK_INTERVAL,
     STARTUP_GRACE_PERIOD,
+    ELECTION_PARTICIPATION_DELAY,
     STALE_PROCESS_PATTERNS,
     STARTUP_JSONL_GRACE_PERIOD_SECONDS,
     # State directory
@@ -22146,9 +22147,22 @@ print(json.dumps({{
         # Jan 3, 2026 Sprint 13.3: Track election start time for latency metrics
         self._start_election_timing()
 
+        # Jan 19, 2026: Don't participate in elections until state loaded
+        # CRITICAL FIX: Nodes were voting at 5s but state loads in 30-50s,
+        # causing elections with incomplete cluster view (split-brain, thrashing)
+        elapsed = time.time() - getattr(self, "_startup_time", 0)
+        if elapsed < ELECTION_PARTICIPATION_DELAY:
+            logger.info(
+                f"[Election] Skipping: still in startup grace "
+                f"({elapsed:.0f}s < {ELECTION_PARTICIPATION_DELAY}s)"
+            )
+            return
+
         # Jan 5, 2026: Global election cooldown to prevent rapid election storms
         # This complements the per-loop backoff in _maybe_trigger_election()
-        ELECTION_GLOBAL_COOLDOWN = 30.0  # seconds
+        # Jan 19, 2026: Reduced from 30s to 15s to match ELECTION_TIMEOUT
+        # CRITICAL FIX: 30s cooldown > 15s timeout caused 15s dead-leader gaps
+        ELECTION_GLOBAL_COOLDOWN = 15.0  # seconds
         now = time.time()
         last_election = getattr(self, "_last_election_completed", 0.0)
         if now - last_election < ELECTION_GLOBAL_COOLDOWN:
@@ -25864,15 +25878,15 @@ print(json.dumps({{
             )
             return False
 
-        if self.leader_id == self.node_id:
-            # We are leader - check our own lease
-            return time.time() < self.leader_lease_expires
-        else:
-            # Another node is leader - check if we've received recent lease renewal
-            # Dec 31, 2025: Reduced grace period from 2x to 1.5x lease duration
-            # This allows faster detection of dead leaders while still tolerating network delays
-            # With LEADER_LEASE_DURATION=180s, grace period is now 90s instead of 180s
-            return time.time() < self.leader_lease_expires + (LEADER_LEASE_DURATION * 0.5)
+        # Jan 19, 2026: Use symmetric grace period for both leader and followers
+        # CRITICAL FIX: Previous code used strict check for leader (no grace) but
+        # lenient check for followers (+90s grace). This caused 90s split-brain window:
+        # - Leader steps down at t=180
+        # - Followers still see leader valid until t=270
+        # - During t=180-270: leader="none" on leader, leader=old on followers
+        # Now using consistent 30s grace for everyone to prevent split-brain.
+        grace = 30  # Same grace for leader and followers
+        return time.time() < self.leader_lease_expires + grace
 
     async def _check_and_resolve_split_brain(self) -> bool:
         """Check for split-brain (multiple leaders) and resolve by stepping down if needed.

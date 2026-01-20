@@ -557,11 +557,12 @@ class GossipProtocolMixin(P2PMixinBase):
     # Jan 3, 2026: Use centralized config, fallback to hardcoded for import safety
     # Jan 6, 2026: Reduced fallback from 3600s to 600s to match coordination_defaults
     # January 8, 2026: Reduced to 180s for faster stale peer detection
+    # Jan 19, 2026: Reduced to 60s (2x convergence time) for faster view convergence
     try:
         from app.config.coordination_defaults import GossipDefaults as _GD
         GOSSIP_STATE_TTL = _GD.STATE_TTL
     except ImportError:
-        GOSSIP_STATE_TTL = 180  # 3 min TTL for stale states (reduced from 10min)
+        GOSSIP_STATE_TTL = 60  # 1 min TTL for stale states (down from 180s)
     GOSSIP_ENDPOINT_TTL = 1800  # 30 min TTL for learned endpoints
 
     # Dec 30, 2025: Configurable gossip parameters via environment variables

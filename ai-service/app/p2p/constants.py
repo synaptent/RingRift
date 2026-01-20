@@ -538,6 +538,15 @@ PEER_BOOTSTRAP_MIN_PEERS = 3
 # Role-based variants: Coordinators 120s, GPU training 90s, GPU selfplay 60s
 # Use RINGRIFT_P2P_STARTUP_GRACE_PERIOD=120 for coordinated restarts if needed.
 STARTUP_GRACE_PERIOD = int(os.environ.get("RINGRIFT_P2P_STARTUP_GRACE_PERIOD", "60") or 60)
+
+# Jan 19, 2026: Election participation delay - don't participate in elections until state loaded
+# CRITICAL FIX: Nodes were voting at 5s startup but state loads in 30-50s, causing elections
+# with incomplete cluster view. This led to split-brain and leader thrashing.
+# Default 90s gives time for: state load (30-50s) + gossip convergence (30s) + buffer (10s)
+ELECTION_PARTICIPATION_DELAY = int(
+    os.environ.get("RINGRIFT_P2P_ELECTION_PARTICIPATION_DELAY", "90") or 90
+)
+
 # Jan 13, 2026: Changed default from 3 to 2 for simplified 3-voter setup
 # With 3 voters, quorum=2 allows 1 failure (simple majority)
 VOTER_MIN_QUORUM = int(os.environ.get("RINGRIFT_P2P_VOTER_MIN_QUORUM", "2") or 2)

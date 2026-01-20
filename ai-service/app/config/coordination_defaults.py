@@ -3300,7 +3300,9 @@ class GossipDefaults:
     # State TTL: how long gossip states are cached before expiring (seconds)
     # Jan 6, 2026: Reduced from 3600s (1hr) to 600s (10min) for faster peer recovery discovery
     # January 8, 2026: Further reduced from 600s to 180s for faster autonomous recovery
-    STATE_TTL: float = _env_float("RINGRIFT_GOSSIP_STATE_TTL", 180.0)
+    # Jan 19, 2026: Further reduced from 180s to 60s (2x convergence time)
+    # CRITICAL FIX: 180s TTL >> 30s convergence caused minutes of view divergence
+    STATE_TTL: float = _env_float("RINGRIFT_GOSSIP_STATE_TTL", 60.0)
 
     # =========================================================================
     # January 5, 2026 Session 17.28: Recovery Probing for Dead Nodes
