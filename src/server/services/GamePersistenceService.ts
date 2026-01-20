@@ -505,10 +505,33 @@ export class GamePersistenceService {
     }
 
     try {
+      // First, read the existing game state to preserve metadata fields
+      // (aiOpponents, rulesOptions) that were set at game creation time
+      const existingGame = await prisma.game.findUnique({
+        where: { id: gameId },
+        select: { gameState: true },
+      });
+
+      // Extract preserved metadata from existing state
+      const existingState =
+        typeof existingGame?.gameState === 'string'
+          ? JSON.parse(existingGame.gameState)
+          : existingGame?.gameState;
+      const aiOpponents = existingState?.aiOpponents;
+      const rulesOptions = existingState?.rulesOptions;
+
+      // Serialize game state while preserving metadata
+      const serialized = this.serializeGameState(gameState);
+      const serializedObj = JSON.parse(serialized);
+
+      // Re-add preserved metadata
+      if (aiOpponents) serializedObj.aiOpponents = aiOpponents;
+      if (rulesOptions) serializedObj.rulesOptions = rulesOptions;
+
       await prisma.game.update({
         where: { id: gameId },
         data: {
-          gameState: this.serializeGameState(gameState),
+          gameState: JSON.stringify(serializedObj),
           updatedAt: new Date(),
         },
       });
@@ -546,7 +569,22 @@ export class GamePersistenceService {
     }
 
     try {
-      // Serialize with internal state included
+      // First, read the existing game state to preserve metadata fields
+      // (aiOpponents, rulesOptions) that were set at game creation time
+      const existingGame = await prisma.game.findUnique({
+        where: { id: gameId },
+        select: { gameState: true },
+      });
+
+      // Extract preserved metadata from existing state
+      const existingState =
+        typeof existingGame?.gameState === 'string'
+          ? JSON.parse(existingGame.gameState)
+          : existingGame?.gameState;
+      const aiOpponents = existingState?.aiOpponents;
+      const rulesOptions = existingState?.rulesOptions;
+
+      // Serialize with internal state included, preserving metadata
       const serializable = {
         ...gameState,
         board: {
@@ -558,6 +596,9 @@ export class GamePersistenceService {
         },
         // Include internal state for crash recovery
         _internalState: internalState,
+        // Preserve metadata from game creation
+        ...(aiOpponents && { aiOpponents }),
+        ...(rulesOptions && { rulesOptions }),
       };
 
       await prisma.game.update({
