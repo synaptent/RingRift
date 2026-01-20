@@ -1174,31 +1174,33 @@ export class GameSession {
 
         // January 2026: Trigger online learning if human wins
         // This updates a shadow model, which is periodically validated and merged
+        // Fire-and-forget: don't block game completion on learning
         if (humanWon && state.moveHistory && state.moveHistory.length > 0) {
-          try {
-            const aiClient = getAIServiceClient();
-            const learningResult = await aiClient.learnFromGame(
+          const aiClient = getAIServiceClient();
+          aiClient
+            .learnFromGame(
               state.boardType,
               state.players.length,
               state.moveHistory,
               winnerPlayerNumber as number,
               humanPlayer.playerNumber
-            );
-
-            if (learningResult?.success) {
-              logger.info('Online learning triggered from human win', {
+            )
+            .then((learningResult) => {
+              if (learningResult?.success) {
+                logger.info('Online learning triggered from human win', {
+                  gameId: this.gameId,
+                  totalLoss: learningResult.metrics?.total_loss,
+                  transitions: learningResult.metrics?.num_transitions,
+                });
+              }
+            })
+            .catch((learningErr) => {
+              // Non-fatal: learning failures should not affect game completion
+              logger.warn('Online learning failed', {
                 gameId: this.gameId,
-                totalLoss: learningResult.metrics?.total_loss,
-                transitions: learningResult.metrics?.num_transitions,
+                error: learningErr instanceof Error ? learningErr.message : String(learningErr),
               });
-            }
-          } catch (learningErr) {
-            // Non-fatal: learning failures should not affect game completion
-            logger.warn('Online learning failed', {
-              gameId: this.gameId,
-              error: learningErr instanceof Error ? learningErr.message : String(learningErr),
             });
-          }
         }
       }
 
@@ -1499,6 +1501,15 @@ export class GameSession {
           aiDiagnostics: this.diagnosticsSnapshot,
         });
 
+        // Skip AI turn if game is over - prevents delay before victory modal
+        if (result.gameResult) {
+          logger.info('Game ended after AI move, skipping further AI processing', {
+            gameId: this.gameId,
+            gameResult: result.gameResult,
+          });
+          return;
+        }
+
         // Recursively check for next AI turn
         await this.maybePerformAITurn();
       } catch (error) {
@@ -1639,7 +1650,11 @@ export class GameSession {
 
         await this.persistAIMove(playerNumber, fallbackMove.type, result);
         await this.broadcastUpdate(result);
-        await this.maybePerformAITurn();
+
+        // Skip AI turn if game is over
+        if (!result.gameResult) {
+          await this.maybePerformAITurn();
+        }
       } else {
         // Both service and fallback failed
         await this.handleAIFatalFailure(playerNumber, 'Fallback move also rejected');
@@ -1676,7 +1691,11 @@ export class GameSession {
 
         await this.persistAIMove(playerNumber, fallbackMove.type, result);
         await this.broadcastUpdate(result);
-        await this.maybePerformAITurn();
+
+        // Skip AI turn if game is over
+        if (!result.gameResult) {
+          await this.maybePerformAITurn();
+        }
       } else {
         await this.handleAIFatalFailure(playerNumber, 'Fallback move rejected');
       }
@@ -1729,7 +1748,11 @@ export class GameSession {
         if (result.success) {
           await this.persistAIMove(playerNumber, emergencyMove.type, result);
           await this.broadcastUpdate(result);
-          await this.maybePerformAITurn();
+
+          // Skip AI turn if game is over
+          if (!result.gameResult) {
+            await this.maybePerformAITurn();
+          }
         } else {
           logger.error('AI fatal failure recovery move rejected', {
             gameId: this.gameId,
@@ -2321,8 +2344,10 @@ export class GameSession {
       moveId: selected.id,
     });
 
-    // After an auto-resolved human move, AI may need to act next.
-    await this.maybePerformAITurn();
+    // After an auto-resolved human move, AI may need to act next (if game isn't over)
+    if (!result.gameResult) {
+      await this.maybePerformAITurn();
+    }
   }
 
   /**
