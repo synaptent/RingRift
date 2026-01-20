@@ -115,6 +115,7 @@ from .evaluation_play import EvaluationPlayHandlersMixin
 from .event_management import EventManagementHandlersMixin
 from .status import StatusHandlersMixin
 from .cluster_nodes import ClusterNodeHandlersMixin
+from .voter_config import VoterConfigHandlersMixin  # Jan 20, 2026: Voter config sync
 
 __all__ = [
     # Base class (Dec 2025 - handler consolidation)
@@ -172,4 +173,6 @@ __all__ = [
     "StatusHandlersMixin",
     # Cluster Nodes (January 2026 - P2P Modularization Phase 7b)
     "ClusterNodeHandlersMixin",
+    # Voter Config Sync (January 2026 - Consensus-safe config synchronization)
+    "VoterConfigHandlersMixin",
 ]

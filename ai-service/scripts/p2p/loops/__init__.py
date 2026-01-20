@@ -208,6 +208,11 @@ from .quorum_crisis_discovery_loop import (
     QuorumCrisisConfig,
     CrisisStats,
 )
+from .voter_config_sync_loop import (
+    VoterConfigSyncLoop,
+    PeerConfigInfo,
+    DriftResult,
+)
 
 __all__ = [
     # Base
@@ -355,4 +360,8 @@ __all__ = [
     "QuorumCrisisDiscoveryLoop",
     "QuorumCrisisConfig",
     "CrisisStats",
+    # Voter Config Sync (Jan 20, 2026 - Consensus-safe config synchronization)
+    "VoterConfigSyncLoop",
+    "PeerConfigInfo",
+    "DriftResult",
 ]

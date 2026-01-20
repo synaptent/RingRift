@@ -241,6 +241,79 @@ class VoterConfigManager:
             logger.error(f"Failed to load voters from YAML: {e}")
             return None
 
+    def apply_remote_config(
+        self,
+        remote_config: VoterConfigVersion,
+        source: str = "sync",
+    ) -> tuple[bool, str]:
+        """Apply a voter config received from a remote peer.
+
+        This is the core sync mechanism. Only applies if:
+        1. Remote version > local version (never downgrade)
+        2. Remote config passes integrity check
+
+        Jan 20, 2026: Added for automated voter config synchronization.
+
+        Args:
+            remote_config: VoterConfigVersion received from remote peer
+            source: String identifying source (e.g., "sync", "leader", "gossip")
+
+        Returns:
+            Tuple of (success: bool, reason: str)
+        """
+        with self._config_lock:
+            # Validate integrity
+            if not remote_config.verify_integrity():
+                logger.error(
+                    f"[VoterConfigSync] Remote config v{remote_config.version} "
+                    f"failed integrity check, rejecting"
+                )
+                return False, "integrity_check_failed"
+
+            # Check version ordering
+            local_version = self._config.version if self._config else 0
+            if remote_config.version <= local_version:
+                logger.debug(
+                    f"[VoterConfigSync] Remote v{remote_config.version} <= local v{local_version}, "
+                    f"ignoring (source={source})"
+                )
+                return False, "version_not_newer"
+
+            # Check minimum voters
+            if not remote_config.has_minimum_voters(MIN_VOTERS_FOR_QUORUM):
+                logger.warning(
+                    f"[VoterConfigSync] Remote config has only {len(remote_config.voters)} voters, "
+                    f"need {MIN_VOTERS_FOR_QUORUM}"
+                )
+                return False, "insufficient_voters"
+
+            # Apply the remote config
+            old_voters = self._config.voters if self._config else []
+            self._config = remote_config
+            self._persist()
+
+            logger.info(
+                f"[VoterConfigSync] Applied remote config v{remote_config.version} from {source}: "
+                f"{len(remote_config.voters)} voters, hash={remote_config.sha256_hash[:16]}"
+            )
+
+            # Notify callbacks
+            for callback in self._update_callbacks:
+                try:
+                    callback(remote_config)
+                except Exception as e:
+                    logger.error(f"Voter config callback failed: {e}")
+
+            # Log voter changes for audit
+            added = set(remote_config.voters) - set(old_voters)
+            removed = set(old_voters) - set(remote_config.voters)
+            if added or removed:
+                logger.info(
+                    f"[VoterConfigSync] Voter changes - added: {sorted(added)}, removed: {sorted(removed)}"
+                )
+
+            return True, "applied"
+
     def check_quorum(
         self,
         alive_voter_ids: list[str] | None = None,

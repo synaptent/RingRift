@@ -656,6 +656,34 @@ class LeaderElectionMixin(P2PMixinBase):
 
         return alive >= effective_quorum
 
+    def _get_voter_config_version(self) -> int:
+        """Get current voter config version for sync protocol.
+
+        Jan 20, 2026: Added for automated voter config synchronization.
+        Returns 0 if no config manager available (graceful degradation).
+        """
+        try:
+            from scripts.p2p.managers.voter_config_manager import get_voter_config_manager
+            manager = get_voter_config_manager()
+            config = manager.get_current()
+            return config.version if config else 0
+        except (ImportError, AttributeError):
+            return 0
+
+    def _get_voter_config_hash(self) -> str:
+        """Get current voter config hash (first 16 chars) for drift detection.
+
+        Jan 20, 2026: Added for automated voter config synchronization.
+        Returns empty string if no config manager available.
+        """
+        try:
+            from scripts.p2p.managers.voter_config_manager import get_voter_config_manager
+            manager = get_voter_config_manager()
+            config = manager.get_current()
+            return config.sha256_hash[:16] if config else ""
+        except (ImportError, AttributeError):
+            return ""
+
     def _check_quorum_health(self) -> QuorumHealthLevel:
         """Proactive quorum health check with early warning and single-node fallback.
 

@@ -683,6 +683,7 @@ from scripts.p2p.handlers import (
     EventManagementHandlersMixin,  # January 2026 - P2P Modularization Phase 5b (Event Subscriptions)
     StatusHandlersMixin,  # January 2026 - P2P Modularization Phase 6a (Status/Health/Loops)
     ModelHandlersMixin,  # January 2026 - Comprehensive Model Evaluation Pipeline
+    VoterConfigHandlersMixin,  # January 2026 - Consensus-safe voter config sync
     RegistryHandlersMixin,
     ManifestHandlersMixin,
     RelayHandlersMixin,
@@ -932,6 +933,10 @@ from scripts.p2p.managers import (
     create_job_orchestration_manager,
 )
 from scripts.p2p.managers.state_manager import PersistedLeaderState
+from scripts.p2p.managers.voter_config_manager import (
+    get_voter_config_manager,
+    VoterConfigManager,
+)
 from scripts.p2p.managers.work_discovery_manager import (
     _is_selfplay_enabled_for_node,
     set_selfplay_disabled_override,
@@ -1535,6 +1540,7 @@ class P2POrchestrator(
     RelayLeaderPropagatorMixin,  # NAT-blocked leader propagation via gossip (Jan 4, 2026 - Phase 1)
     EventEmissionMixin,     # Event emission consolidation (Dec 28, 2025 - Phase 8)
     FailoverIntegrationMixin,  # Multi-layer transport failover (Dec 30, 2025 - Phase 9)
+    VoterConfigHandlersMixin,  # Voter config sync (Jan 20, 2026 - Consensus-safe config sync)
 ):
     """Main P2P orchestrator class that runs on each node.
 
@@ -3807,6 +3813,19 @@ class P2POrchestrator(
                 )
             except (ImportError, TypeError) as e:
                 logger.debug(f"CircuitBreakerDecayLoop: not available: {e}")
+
+            # VoterConfigSyncLoop - January 20, 2026
+            # Detects voter config drift across cluster and auto-syncs from peers
+            # with higher version numbers. Part of consensus-safe config sync system.
+            try:
+                from scripts.p2p.loops.voter_config_sync_loop import VoterConfigSyncLoop
+
+                voter_config_sync = VoterConfigSyncLoop(orchestrator=self)
+                manager.register(voter_config_sync)
+                self._voter_config_sync_loop = voter_config_sync
+                logger.info("[LoopManager] VoterConfigSyncLoop registered")
+            except (ImportError, TypeError) as e:
+                logger.debug(f"VoterConfigSyncLoop: not available: {e}")
 
             self._loops_registered = True
             logger.info(f"LoopManager: registered {len(manager.loop_names)} loops")
@@ -12716,6 +12735,9 @@ class P2POrchestrator(
             "voter_quorum_size": int(getattr(self, "voter_quorum_size", 0) or 0),
             "voters_alive": voters_alive,
             "voter_quorum_ok": self._has_voter_quorum(),
+            # Jan 20, 2026: Voter config sync - version and hash for drift detection
+            "voter_config_version": self._get_voter_config_version(),
+            "voter_config_hash": self._get_voter_config_hash(),
             # Jan 2, 2026: Detailed voter health for monitoring
             # Jan 16, 2026: Now pre-computed with timeout protection
             "voter_health": voter_health,
@@ -29793,6 +29815,10 @@ print(json.dumps({{
 
             # Jan 1, 2026: ULSM - Leadership state change broadcast (ensures peers learn of step-down)
             app.router.add_post('/leader-state-change', self.handle_leader_state_change)
+
+            # Jan 20, 2026: Voter config sync - consensus-safe configuration synchronization
+            app.router.add_get('/voter-config', self.handle_voter_config_get)
+            app.router.add_post('/voter-config/sync', self.handle_voter_config_sync)
 
             # Serf integration routes (battle-tested SWIM gossip)
             app.router.add_post('/serf/event', self.handle_serf_event)
