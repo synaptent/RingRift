@@ -114,6 +114,48 @@ class ConnectionConfig:
 
 
 @dataclass
+class DynamicPoolConfig:
+    """Dynamic pool limits that scale with cluster size.
+
+    January 20, 2026: Added to replace static 250 connection limit.
+    The static limit caused connection exhaustion with 40+ node clusters:
+    40 nodes × 8 connections = 320 > 250 limit = exhaustion
+
+    This config automatically scales limits based on cluster size.
+    """
+
+    base_per_peer: int = 6  # Base connections per peer
+    max_per_peer: int = 12  # Maximum connections per peer (for large clusters)
+    cluster_multiplier: float = 8.0  # Connections per node in cluster
+    min_total: int = 200  # Minimum total connections
+    max_total: int = 600  # Maximum total connections (prevents unbounded growth)
+    resize_interval: float = 60.0  # Minimum seconds between resizes
+
+    def get_limits(self, cluster_size: int) -> tuple[int, int]:
+        """Calculate pool limits for the given cluster size.
+
+        Args:
+            cluster_size: Number of nodes in the cluster
+
+        Returns:
+            Tuple of (per_peer_limit, total_limit)
+        """
+        # Per-peer: 6 base, +2 per 50 nodes, max 12
+        per_peer = min(
+            self.max_per_peer,
+            self.base_per_peer + (cluster_size // 50) * 2
+        )
+
+        # Total: 8 per node, clamped to [200, 600]
+        total = int(max(
+            self.min_total,
+            min(cluster_size * self.cluster_multiplier, self.max_total)
+        ))
+
+        return per_peer, total
+
+
+@dataclass
 class PooledConnection:
     """A pooled connection to a peer."""
 
@@ -161,6 +203,7 @@ class PeerConnectionPool:
     - Automatic idle connection cleanup
     - Health checking of pooled connections
     - Thread-safe access
+    - Dynamic pool sizing based on cluster size (Jan 2026)
     """
 
     _instance: "PeerConnectionPool | None" = None
@@ -187,11 +230,26 @@ class PeerConnectionPool:
         self._running = False
         self._initialized = True
 
+        # Jan 20, 2026: Dynamic pool sizing based on cluster size
+        self._dynamic_config = DynamicPoolConfig()
+        self._get_cluster_size: callable | None = None
+        self._last_resize: float = 0.0
+        self._resize_count: int = 0
+
         logger.debug(
             f"PeerConnectionPool initialized: "
             f"max_per_peer={self._config.max_connections_per_peer}, "
             f"max_total={self._config.max_total_connections}"
         )
+
+    def set_cluster_size_callback(self, callback: callable) -> None:
+        """Set callback to get current cluster size for dynamic scaling.
+
+        Args:
+            callback: Callable that returns the current cluster size (int)
+        """
+        self._get_cluster_size = callback
+        logger.info("Connection pool cluster size callback configured")
 
     async def start(self) -> None:
         """Start background tasks for cleanup and health checks."""
@@ -273,8 +331,75 @@ class PeerConnectionPool:
             except Exception as e:
                 logger.debug(f"Health check error: {e}")
 
+    def _maybe_resize_pool(self) -> None:
+        """Resize pool based on current cluster size.
+
+        January 20, 2026: Added for dynamic pool sizing.
+        Called during cleanup loop (every idle_timeout/2 seconds).
+        Actual resize only happens if resize_interval has passed.
+        """
+        if not self._get_cluster_size:
+            return  # No callback configured
+
+        now = time.time()
+        if now - self._last_resize < self._dynamic_config.resize_interval:
+            return  # Too soon since last resize
+
+        try:
+            cluster_size = self._get_cluster_size()
+            if cluster_size <= 0:
+                return  # Invalid cluster size
+
+            per_peer, total = self._dynamic_config.get_limits(cluster_size)
+
+            # Check if resize is needed
+            if (total != self._config.max_total_connections or
+                    per_peer != self._config.max_connections_per_peer):
+                old_total = self._config.max_total_connections
+                old_per_peer = self._config.max_connections_per_peer
+
+                self._config.max_total_connections = total
+                self._config.max_connections_per_peer = per_peer
+                self._resize_count += 1
+
+                logger.info(
+                    f"Connection pool resized: "
+                    f"total {old_total} -> {total}, "
+                    f"per_peer {old_per_peer} -> {per_peer} "
+                    f"(cluster size: {cluster_size}, resize #{self._resize_count})"
+                )
+
+            self._last_resize = now
+
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Pool resize error: {e}")
+
+    def get_pool_stats(self) -> dict[str, Any]:
+        """Get pool statistics for monitoring.
+
+        Returns:
+            Dict with pool configuration and stats
+        """
+        total_pooled = sum(p.qsize() for p in self._pools.values())
+        total_active = sum(len(a) for a in self._active_connections.values())
+
+        return {
+            "max_per_peer": self._config.max_connections_per_peer,
+            "max_total": self._config.max_total_connections,
+            "current_pooled": total_pooled,
+            "current_active": total_active,
+            "current_total": total_pooled + total_active,
+            "peer_count": len(self._pools),
+            "dynamic_scaling_enabled": self._get_cluster_size is not None,
+            "resize_count": self._resize_count,
+            "last_resize": self._last_resize,
+        }
+
     async def _cleanup_idle_connections(self) -> None:
         """Remove connections that have been idle too long."""
+        # Jan 20, 2026: Check if pool needs resizing based on cluster size
+        self._maybe_resize_pool()
+
         async with self._data_lock:
             for peer_id, pool in list(self._pools.items()):
                 # Check each connection in the pool

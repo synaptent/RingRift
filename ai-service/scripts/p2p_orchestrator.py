@@ -290,6 +290,31 @@ def get_swim_manager(node_id: str | None = None, bind_port: int = 7947):
     return _swim_manager
 
 
+# Dead Peer Cooldown Manager (Jan 2026)
+# Adaptive cooldown with probe-based early recovery
+_dead_peer_cooldown_manager = None
+
+
+def get_dead_peer_cooldown_manager():
+    """Get the dead peer cooldown manager singleton (lazy load).
+
+    The DeadPeerCooldownManager replaces the static 1-hour cooldown with:
+    - Tiered cooldowns (30s -> 2min -> 10min -> 30min) based on failure frequency
+    - Probe-based early recovery when gossip reports a dead node might be alive
+    - Prevents 25-40% node loss from brief network blips
+    """
+    global _dead_peer_cooldown_manager
+    if _dead_peer_cooldown_manager is None:
+        try:
+            from scripts.p2p.dead_peer_recovery import DeadPeerCooldownManager
+            _dead_peer_cooldown_manager = DeadPeerCooldownManager()
+            logger.info("DeadPeerCooldownManager initialized with adaptive cooldown")
+        except ImportError as e:
+            logger.warning(f"DeadPeerCooldownManager not available: {e}")
+            _dead_peer_cooldown_manager = None
+    return _dead_peer_cooldown_manager
+
+
 # ============================================
 # Phase 4: Extracted Background Loops (Dec 2025)
 # ============================================
@@ -1754,9 +1779,11 @@ class P2POrchestrator(
         # Jan 12, 2026: Lock-free peer snapshot for read-heavy operations like /status
         # PeerSnapshot maintains an immutable copy that can be read without acquiring peers_lock
         self._peer_snapshot: PeerSnapshot[NodeInfo] = PeerSnapshot()
-        # Jan 12, 2026: Track recently-dead peers to prevent gossip from re-adding them.
-        # When a peer is retired, record its death timestamp. Gossip won't re-add peers
-        # that died within the last hour, preventing dead node accumulation.
+        # Jan 20, 2026: Adaptive dead peer cooldown with probe-based recovery.
+        # Replaces the static 1-hour cooldown that was causing 25-40% node loss.
+        # The manager uses tiered cooldowns (30s -> 30min) based on failure frequency.
+        self._cooldown_manager = get_dead_peer_cooldown_manager()
+        # Fallback dict for compatibility if cooldown manager fails to load
         self._dead_peer_timestamps: dict[str, float] = {}
         self.local_jobs: dict[str, ClusterJob] = {}
         self.active_jobs: dict[str, dict[str, Any]] = {}  # Track running jobs by type (selfplay, training, etc.)
@@ -3793,6 +3820,7 @@ class P2POrchestrator(
             # Prevents circuits from being stuck OPEN indefinitely after transient failures.
             # Decays old circuit breakers (operation, transport, node) with configurable TTL.
             # Default: 1 hour TTL, checked every 5 minutes.
+            # Jan 20, 2026: Added external_alive_check for gossip-integrated recovery.
             try:
                 from scripts.p2p.loops.maintenance_loops import (
                     CircuitBreakerDecayLoop,
@@ -3806,10 +3834,13 @@ class P2POrchestrator(
                 )
 
                 cb_decay_loop = CircuitBreakerDecayLoop(config=cb_decay_config)
+                # Jan 20, 2026: Wire up gossip-based alive check for faster circuit recovery
+                cb_decay_loop.set_external_alive_check(self._is_peer_alive_for_circuit_breaker)
                 manager.register(cb_decay_loop)
+                self._cb_decay_loop = cb_decay_loop  # Store reference
                 logger.info(
                     f"[P2P] CircuitBreakerDecayLoop registered "
-                    f"(enabled={cb_decay_config.enabled}, ttl={cb_decay_config.ttl_seconds}s)"
+                    f"(enabled={cb_decay_config.enabled}, ttl={cb_decay_config.ttl_seconds}s, external_check=True)"
                 )
             except (ImportError, TypeError) as e:
                 logger.debug(f"CircuitBreakerDecayLoop: not available: {e}")
@@ -12853,6 +12884,8 @@ class P2POrchestrator(
             "config_version": self._get_config_version(),
             # Jan 13, 2026: Unified data summary across all sources (LOCAL, CLUSTER, S3, OWC)
             "data_summary": self._get_data_summary_cached(),
+            # Jan 20, 2026: Adaptive dead peer cooldown stats
+            "cooldown_stats": self._get_cooldown_stats(),
         })
 
     @with_request_timeout(10.0)
@@ -13048,8 +13081,11 @@ class P2POrchestrator(
                     # Mark as retired (NodeInfo equivalent of "left")
                     peer.retired = True
                     peer.retired_at = time.time()
-                    # Jan 12, 2026: Track death timestamp to prevent gossip re-add
-                    self._dead_peer_timestamps[node_name] = time.time()
+                    # Jan 20, 2026: Use adaptive cooldown manager
+                    if self._cooldown_manager:
+                        self._cooldown_manager.record_death(node_name)
+                    else:
+                        self._dead_peer_timestamps[node_name] = time.time()
 
         # C2 fix: Sync peer snapshot after Serf member leave updates
         if members:
@@ -13123,8 +13159,11 @@ class P2POrchestrator(
                 if isinstance(peer, NodeInfo):
                     peer.retired = True
                     peer.retired_at = time.time()
-                    # Jan 12, 2026: Track death timestamp to prevent gossip re-add
-                    self._dead_peer_timestamps[node_name] = time.time()
+                    # Jan 20, 2026: Use adaptive cooldown manager
+                    if self._cooldown_manager:
+                        self._cooldown_manager.record_death(node_name)
+                    else:
+                        self._dead_peer_timestamps[node_name] = time.time()
 
     async def _handle_serf_user_event(self, payload: dict) -> None:
         """Handle Serf user events (custom RingRift events).
@@ -21751,8 +21790,11 @@ print(json.dumps({{
                     # Peer came back: clear retirement and remove from dead tracking.
                     info.retired = False
                     info.retired_at = 0.0
-                    # Jan 12, 2026: Remove from dead peer tracking on recovery
-                    self._dead_peer_timestamps.pop(node_id, None)
+                    # Jan 20, 2026: Clear cooldown on recovery
+                    if self._cooldown_manager:
+                        self._cooldown_manager.clear_cooldown(node_id)
+                    else:
+                        self._dead_peer_timestamps.pop(node_id, None)
                     # Collect data for event emission outside lock
                     caps = []
                     if hasattr(info, "gpu_type") and info.gpu_type:
@@ -21828,8 +21870,11 @@ print(json.dumps({{
                     if info and not getattr(info, "retired", False):
                         info.retired = True
                         info.retired_at = now
-                        # Track for dead letter queue / recovery attempts
-                        self._dead_peer_timestamps[node_id] = now
+                        # Jan 20, 2026: Use adaptive cooldown manager
+                        if self._cooldown_manager:
+                            self._cooldown_manager.record_death(node_id)
+                        else:
+                            self._dead_peer_timestamps[node_id] = now
                         retired_peers.append((node_id, last_hb, dead_for))
                         logger.info(f"Retired peer {node_id} (dead for {dead_for:.0f}s)")
 
@@ -22055,8 +22100,11 @@ print(json.dumps({{
                     if not getattr(info, "retired", False) and dead_for >= PEER_RETIRE_AFTER_SECONDS:
                         info.retired = True
                         info.retired_at = now
-                        # Jan 12, 2026: Track death timestamp to prevent gossip re-add
-                        self._dead_peer_timestamps[node_id] = now
+                        # Jan 20, 2026: Use adaptive cooldown manager
+                        if self._cooldown_manager:
+                            self._cooldown_manager.record_death(node_id)
+                        else:
+                            self._dead_peer_timestamps[node_id] = now
                         logger.info(f"Retiring peer {node_id} (offline for {int(dead_for)}s)")
                         # Collect data for event emission outside lock
                         last_hb = getattr(info, "last_heartbeat", None)
@@ -22065,8 +22113,11 @@ print(json.dumps({{
                     # Peer came back: clear retirement and remove from dead tracking.
                     info.retired = False
                     info.retired_at = 0.0
-                    # Jan 12, 2026: Remove from dead peer tracking on recovery
-                    self._dead_peer_timestamps.pop(node_id, None)
+                    # Jan 20, 2026: Clear cooldown on recovery
+                    if self._cooldown_manager:
+                        self._cooldown_manager.clear_cooldown(node_id)
+                    else:
+                        self._dead_peer_timestamps.pop(node_id, None)
                     # Collect data for event emission outside lock
                     caps = []
                     if hasattr(info, "gpu_type") and info.gpu_type:
@@ -23950,19 +24001,37 @@ print(json.dumps({{
             if node_id in self.peers and self.peers[node_id].is_alive():
                 return
 
-            # Jan 12, 2026: Skip peers that died recently to prevent gossip re-adding dead nodes.
-            # Dead peer cooldown is 1 hour to allow time for nodes to actually come back up.
-            DEAD_PEER_COOLDOWN_SECONDS = 3600  # 1 hour
-            if node_id in self._dead_peer_timestamps:
-                dead_time = self._dead_peer_timestamps[node_id]
-                if time.time() - dead_time < DEAD_PEER_COOLDOWN_SECONDS:
-                    logger.debug(
-                        f"Skipping gossip-learned peer {node_id} - died {int(time.time() - dead_time)}s ago"
+            # Jan 20, 2026: Use adaptive cooldown with probe-based recovery.
+            # Replaces static 1-hour cooldown that was causing 25-40% node loss.
+            if self._cooldown_manager:
+                if self._cooldown_manager.is_in_cooldown(node_id):
+                    # Attempt probe-based early recovery
+                    recovered = await self._cooldown_manager.probe_and_recover(
+                        node_id, host, port
                     )
-                    return
-                else:
-                    # Cooldown expired, allow reconnection attempt
-                    del self._dead_peer_timestamps[node_id]
+                    if recovered:
+                        logger.info(f"Peer {node_id} recovered via probe during cooldown")
+                    else:
+                        tier = self._cooldown_manager.get_cooldown_tier(node_id)
+                        remaining = self._cooldown_manager.get_remaining_cooldown(node_id)
+                        logger.debug(
+                            f"Skipping gossip-learned peer {node_id} - "
+                            f"tier {tier} cooldown, {remaining:.0f}s remaining"
+                        )
+                        return
+            else:
+                # Fallback to static cooldown if manager not available
+                DEAD_PEER_COOLDOWN_SECONDS = 3600  # 1 hour
+                if node_id in self._dead_peer_timestamps:
+                    dead_time = self._dead_peer_timestamps[node_id]
+                    if time.time() - dead_time < DEAD_PEER_COOLDOWN_SECONDS:
+                        logger.debug(
+                            f"Skipping gossip-learned peer {node_id} - died {int(time.time() - dead_time)}s ago"
+                        )
+                        return
+                    else:
+                        # Cooldown expired, allow reconnection attempt
+                        del self._dead_peer_timestamps[node_id]
 
             logger.info(f"Attempting connection to gossip-learned peer: {node_id} at {host}:{port}")
 
@@ -23981,6 +24050,106 @@ print(json.dumps({{
         except Exception as e:  # noqa: BLE001
             if self.verbose:
                 logger.debug(f"Failed to connect to gossip-learned peer {node_id}: {e}")
+
+    async def _tcp_probe_peer(self, node_id: str, host: str, port: int) -> bool:
+        """Probe a peer via HTTP /status to check if it's reachable.
+
+        This is used by DeadPeerCooldownManager for probe-based early recovery.
+        A successful probe indicates the node is back online and can be reconnected.
+
+        Args:
+            node_id: The node identifier (for logging)
+            host: The host to probe
+            port: The port to probe
+
+        Returns:
+            True if the peer responded to /status, False otherwise
+        """
+        try:
+            url = f"http://{host}:{port}/status"
+            timeout = ClientTimeout(total=5.0)
+            async with get_client_session(timeout) as session:
+                async with session.get(url, headers=self._auth_headers()) as resp:
+                    if resp.status == 200:
+                        logger.debug(f"TCP probe success for {node_id} at {host}:{port}")
+                        return True
+        except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError) as e:
+            logger.debug(f"TCP probe failed for {node_id}: {type(e).__name__}")
+        return False
+
+    def _wire_cooldown_manager_probe(self) -> None:
+        """Wire the TCP probe function to the cooldown manager.
+
+        Called during startup to enable probe-based early recovery.
+        """
+        if self._cooldown_manager:
+            self._cooldown_manager.set_probe_func(self._tcp_probe_peer)
+            logger.info("Cooldown manager probe function wired")
+
+    def _wire_connection_pool_dynamic_sizing(self) -> None:
+        """Wire cluster size callback to the connection pool.
+
+        January 20, 2026: Enables dynamic pool scaling based on cluster size.
+        Fixes connection exhaustion with 40+ node clusters.
+        """
+        try:
+            from scripts.p2p.connection_pool import get_connection_pool
+            pool = get_connection_pool()
+            pool.set_cluster_size_callback(self._get_cluster_size_for_pool)
+            logger.info("Connection pool dynamic sizing wired")
+        except ImportError as e:
+            logger.debug(f"Connection pool not available for dynamic sizing: {e}")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Failed to wire connection pool sizing: {e}")
+
+    def _get_cluster_size_for_pool(self) -> int:
+        """Get current cluster size for connection pool dynamic sizing.
+
+        Returns the number of alive peers plus self.
+        """
+        try:
+            # Use peer snapshot for lock-free access
+            alive_count = sum(
+                1 for p in self._peer_snapshot.get_snapshot().values()
+                if p.is_alive() and not getattr(p, "retired", False)
+            )
+            return alive_count + 1  # +1 for self
+        except Exception:  # noqa: BLE001
+            return 40  # Default to reasonable cluster size
+
+    def _is_peer_alive_for_circuit_breaker(self, host: str) -> bool:
+        """Check if a peer is alive based on gossip/P2P membership.
+
+        January 20, 2026: Used by CircuitBreakerDecayLoop for external alive
+        verification. Enables immediate circuit recovery when gossip reports
+        a node is alive, instead of waiting for TTL expiry.
+
+        Args:
+            host: Host identifier (node_id or Tailscale IP)
+
+        Returns:
+            True if the host is known to be alive from P2P membership
+        """
+        try:
+            # Check by node_id first
+            for peer in self._peer_snapshot.get_snapshot().values():
+                if peer.node_id == host:
+                    return peer.is_alive() and not getattr(peer, "retired", False)
+
+                # Also check by Tailscale IP
+                tailscale_ip = getattr(peer, "tailscale_ip", "")
+                if tailscale_ip and host == tailscale_ip:
+                    return peer.is_alive() and not getattr(peer, "retired", False)
+
+                # Check by regular host IP
+                peer_host = getattr(peer, "host", "")
+                if peer_host and host == peer_host:
+                    return peer.is_alive() and not getattr(peer, "retired", False)
+
+            # Host not found in peers
+            return False
+        except Exception:  # noqa: BLE001
+            return False
 
     def _handle_incoming_cluster_epoch(self, incoming_epoch: Any, response: dict) -> None:
         """Phase 29: Handle incoming cluster epoch for split-brain resolution."""
@@ -25422,6 +25591,47 @@ print(json.dumps({{
                 "total_games": 0,
                 "by_config": {},
                 "source": "error",
+                "error": str(e),
+            }
+
+    def _get_cooldown_stats(self) -> dict[str, Any]:
+        """Get adaptive dead peer cooldown statistics for monitoring.
+
+        January 20, 2026: Added to expose cooldown manager metrics in /status.
+        Helps diagnose peer recovery issues and verify adaptive cooldown is working.
+
+        Returns:
+            Dict with:
+            - enabled: Whether the adaptive cooldown manager is active
+            - nodes_in_cooldown: Number of nodes currently in cooldown
+            - stats: Cooldown manager statistics (probes, recoveries, etc.)
+            - in_cooldown: List of nodes currently in cooldown with their tier/remaining time
+        """
+        if not self._cooldown_manager:
+            # Fallback to legacy dict tracking
+            return {
+                "enabled": False,
+                "nodes_in_cooldown": len(self._dead_peer_timestamps),
+                "fallback_mode": True,
+                "dead_peer_timestamps": {
+                    node_id: {"dead_since": ts, "age_seconds": time.time() - ts}
+                    for node_id, ts in self._dead_peer_timestamps.items()
+                },
+            }
+
+        try:
+            stats = self._cooldown_manager.get_stats()
+            in_cooldown = self._cooldown_manager.get_all_in_cooldown()
+            return {
+                "enabled": True,
+                "nodes_in_cooldown": stats.get("nodes_in_cooldown", 0),
+                "stats": stats,
+                "in_cooldown": in_cooldown,
+                "fallback_mode": False,
+            }
+        except Exception as e:  # noqa: BLE001
+            return {
+                "enabled": True,
                 "error": str(e),
             }
 
@@ -30141,6 +30351,14 @@ print(json.dumps({{
 
         # Wire SyncRouter to event system for real-time sync triggers (December 2025)
         self._wire_sync_router_events()
+
+        # Wire DeadPeerCooldownManager probe function (January 2026)
+        # Enables probe-based early recovery from adaptive cooldown
+        self._wire_cooldown_manager_probe()
+
+        # Wire connection pool dynamic sizing (January 2026)
+        # Scales pool limits based on cluster size to prevent exhaustion
+        self._wire_connection_pool_dynamic_sizing()
 
         # Wire LeadershipStateMachine broadcast callback (ULSM - Jan 2026)
         # This enables the state machine to broadcast step-down to peers

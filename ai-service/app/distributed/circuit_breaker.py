@@ -1259,19 +1259,30 @@ def get_all_transport_breaker_states() -> dict[str, dict[str, CircuitStatus]]:
 
 
 def decay_transport_circuit_breakers(
-    transport_ttls: dict[str, float] | None = None
+    transport_ttls: dict[str, float] | None = None,
+    external_alive_check: Callable[[str], bool] | None = None,
 ) -> dict[str, Any]:
     """Decay old transport circuit breakers with transport-specific TTLs.
 
     Jan 5, 2026: Added to provide faster recovery for transports that
     typically recover quickly (e.g., relay has 15 min TTL, ssh has 1 hour TTL).
 
+    Jan 20, 2026: Added external_alive_check for gossip-integrated recovery.
+    If gossip reports a node as alive while its circuit is open, we can reset
+    the circuit immediately without waiting for TTL. This enables faster
+    recovery (seconds vs minutes) when we have external proof the node is up.
+
     Args:
         transport_ttls: Optional override for per-transport TTL values.
             If not provided, uses TRANSPORT_CONFIGS decay_ttl values.
+        external_alive_check: Optional callback that returns True if a host
+            is known to be alive (e.g., from gossip/P2P membership). If provided
+            and returns True for an open circuit's host, the circuit is reset
+            immediately without waiting for TTL.
 
     Returns:
         Dict with "decayed" list of reset breaker keys, "checked" count,
+        "external_recovered" list of circuits reset via external check,
         and per-transport breakdown.
     """
     import logging
@@ -1280,6 +1291,7 @@ def decay_transport_circuit_breakers(
 
     now = time.time()
     decayed: list[str] = []
+    external_recovered: list[str] = []
     checked = 0
     by_transport: dict[str, list[str]] = {}
 
@@ -1300,27 +1312,48 @@ def decay_transport_circuit_breakers(
             # Get TTL for this transport type
             ttl = ttls.get(transport, DEFAULT_TRANSPORT_DECAY_TTL)
 
-            # Check if circuit is open and past its TTL
+            # Check if circuit is open
             status = breaker.get_status(host)
-            if status and status.state == CircuitState.OPEN and status.opened_at:
-                elapsed = now - status.opened_at
-                if elapsed > ttl:
-                    breaker.reset(host)
-                    decayed.append(key)
-                    by_transport.setdefault(transport, []).append(host)
-                    logger.info(
-                        f"[TransportCircuitBreaker] TTL decay reset {transport}:{host} "
-                        f"(was open for {elapsed:.0f}s, TTL={ttl:.0f}s)"
-                    )
+            if status and status.state == CircuitState.OPEN:
+                # Jan 20, 2026: First check external alive status (gossip)
+                # This allows immediate recovery when we know the node is alive
+                if external_alive_check:
+                    try:
+                        if external_alive_check(host):
+                            breaker.reset(host)
+                            external_recovered.append(key)
+                            by_transport.setdefault(transport, []).append(host)
+                            logger.info(
+                                f"[TransportCircuitBreaker] External recovery reset {transport}:{host} "
+                                f"(gossip reports node alive)"
+                            )
+                            continue  # Skip TTL check, already reset
+                    except Exception as e:
+                        logger.debug(f"External alive check failed for {host}: {e}")
 
-    if decayed:
+                # Fall back to TTL-based decay
+                if status.opened_at:
+                    elapsed = now - status.opened_at
+                    if elapsed > ttl:
+                        breaker.reset(host)
+                        decayed.append(key)
+                        by_transport.setdefault(transport, []).append(host)
+                        logger.info(
+                            f"[TransportCircuitBreaker] TTL decay reset {transport}:{host} "
+                            f"(was open for {elapsed:.0f}s, TTL={ttl:.0f}s)"
+                        )
+
+    total_reset = len(decayed) + len(external_recovered)
+    if total_reset > 0:
         logger.info(
-            f"[TransportCircuitBreaker] TTL decay: reset {len(decayed)}/{checked} circuits "
+            f"[TransportCircuitBreaker] Reset {total_reset}/{checked} circuits "
+            f"(TTL decay: {len(decayed)}, external recovery: {len(external_recovered)}) "
             f"across transports: {list(by_transport.keys())}"
         )
 
     return {
         "decayed": decayed,
+        "external_recovered": external_recovered,
         "checked": checked,
         "by_transport": by_transport,
         "ttls_used": ttls,

@@ -47,6 +47,8 @@ __all__ = [
     "get_provider_probe_timeout",
     # Jan 7, 2026: TCP connectivity check for faster backoff reset
     "check_tcp_connectivity",
+    # Jan 20, 2026: Coordinated intervals to prevent overlapping probes
+    "get_coordinated_interval",
 ]
 
 import asyncio
@@ -85,6 +87,28 @@ def _extract_provider_from_node_id(node_id: str) -> str:
     Jan 16, 2026: Delegated to centralized ProviderTimeouts.extract_provider().
     """
     return ProviderTimeouts.extract_provider(node_id)
+
+
+def get_coordinated_interval(node_id: str, base_interval: float = 15.0) -> float:
+    """Get recovery interval that won't overlap with probe timeout.
+
+    January 20, 2026: Prevents overlapping probes by ensuring interval >= timeout * 1.5.
+    When probe timeout (35s for Vast.ai) > recovery interval (15s), multiple
+    concurrent probes can run for the same peer, causing state corruption.
+
+    Rule: interval >= probe_timeout * 1.5
+    This ensures a probe has time to complete plus a buffer before the next cycle.
+
+    Args:
+        node_id: Node identifier to get provider-specific timeout for
+        base_interval: Base recovery interval (default: 15s)
+
+    Returns:
+        Coordinated interval that won't cause overlapping probes
+    """
+    probe_timeout = ProviderTimeouts.get_probe_timeout(node_id)
+    min_interval = probe_timeout * 1.5
+    return max(base_interval, min_interval)
 
 
 def get_provider_probe_timeout(node_id: str, base_timeout: float = 20.0) -> float:
@@ -366,10 +390,17 @@ class PeerRecoveryLoop(BaseLoop):
         self._peer_last_probe: dict[str, float] = {}  # node_id -> last probe timestamp
         self._peer_next_probe: dict[str, float] = {}  # node_id -> next allowed probe time
 
+        # Jan 20, 2026: Active probe tracking to prevent overlapping probes
+        # When probe_timeout (35s for Vast) > recovery_interval (15s), multiple
+        # concurrent probes for the same peer can corrupt state. Track active
+        # probes to ensure at most one probe per peer at a time.
+        self._active_probes: set[str] = set()
+
         # Statistics
         self._stats_probes_sent = 0
         self._stats_recoveries = 0
         self._stats_probe_failures = 0
+        self._stats_skipped_active_probe = 0  # Jan 20, 2026: Track skips due to active probe
 
         # Burst mode state (January 2026 - P2P Stability Plan Phase 1.3)
         self._burst_mode_active = False
@@ -504,6 +535,13 @@ class PeerRecoveryLoop(BaseLoop):
         for peer in peers:
             node_id = self._get_peer_id(peer)
 
+            # Jan 20, 2026: Skip if already probing this peer
+            # Prevents overlapping probes when timeout > interval
+            if node_id in self._active_probes:
+                self._stats_skipped_active_probe += 1
+                logger.debug(f"[PeerRecovery] Skipping {node_id}: probe already in progress")
+                continue
+
             # Check circuit breaker state
             if self._get_circuit_state:
                 circuit_state = self._get_circuit_state(node_id)
@@ -554,6 +592,9 @@ class PeerRecoveryLoop(BaseLoop):
             node_id = self._get_peer_id(peer)
             address = self._get_peer_address(peer)
 
+            # Jan 20, 2026: Mark peer as actively being probed
+            self._active_probes.add(node_id)
+
             try:
                 self._stats_probes_sent += 1
                 self._peer_last_probe[node_id] = now
@@ -601,6 +642,9 @@ class PeerRecoveryLoop(BaseLoop):
             except Exception as e:
                 self._record_probe_failure(node_id, f"error: {e}")
                 logger.debug(f"[PeerRecovery] Probe failed for {node_id}: {e}")
+            finally:
+                # Jan 20, 2026: Always remove from active probes when done
+                self._active_probes.discard(node_id)
 
         if recovered_count > 0:
             logger.info(f"[PeerRecovery] Recovered {recovered_count} peers this cycle")

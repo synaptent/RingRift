@@ -233,11 +233,13 @@ class CircuitBreakerDecayLoop(BaseLoop):
 
     January 2026 Sprint 17.6: Added as part of stability improvements.
     January 5, 2026 (Phase 3): TTL reduced from 6h to 1h for faster recovery.
+    January 20, 2026: Added external_alive_check for gossip-integrated recovery.
 
     Benefits:
     - Prevents 1h+ stuck circuits blocking health checks (was 6h)
     - Reduces manual interventions from stuck states
     - Enables graceful recovery after network partitions
+    - External alive check enables immediate recovery when gossip reports node alive
     """
 
     def __init__(
@@ -256,6 +258,21 @@ class CircuitBreakerDecayLoop(BaseLoop):
         )
         self._decay_count = 0
         self._last_decay_result: dict[str, Any] = {}
+        # Jan 20, 2026: External alive check for gossip-integrated recovery
+        self._external_alive_check: callable | None = None
+
+    def set_external_alive_check(self, callback: callable) -> None:
+        """Set callback for external alive verification (e.g., from gossip).
+
+        January 20, 2026: Enables immediate circuit recovery when gossip
+        reports a node is alive, instead of waiting for TTL expiry.
+
+        Args:
+            callback: Callable(host: str) -> bool that returns True if the
+                host is known to be alive from external source (gossip/P2P).
+        """
+        self._external_alive_check = callback
+        logger.info("[CircuitBreakerDecay] External alive check callback configured")
 
     async def _run_once(self) -> None:
         """Run one decay cycle."""
@@ -285,13 +302,23 @@ class CircuitBreakerDecayLoop(BaseLoop):
             # Jan 5, 2026: Also decay with transport-specific TTLs
             # This provides faster recovery for transports that typically
             # recover quickly (relay: 15min, tailscale: 30min, ssh: 1hr)
+            # Jan 20, 2026: Added external_alive_check for gossip-integrated recovery
             try:
                 from app.distributed.circuit_breaker import (
                     decay_transport_circuit_breakers,
                 )
 
-                transport_result = decay_transport_circuit_breakers()
+                transport_result = decay_transport_circuit_breakers(
+                    external_alive_check=self._external_alive_check
+                )
                 result["transport_specific_decay"] = transport_result
+
+                # Track external recoveries separately
+                external_count = len(transport_result.get("external_recovered", []))
+                if external_count > 0:
+                    logger.info(
+                        f"[CircuitBreakerDecay] {external_count} circuits recovered via gossip"
+                    )
             except Exception as e:
                 logger.debug(
                     f"[CircuitBreakerDecay] Transport-specific decay not available: {e}"
