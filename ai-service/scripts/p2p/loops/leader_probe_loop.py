@@ -6,9 +6,10 @@ Problem: When the leader becomes unreachable, the cluster relies on gossip timeo
 and periodic election checks to detect the failure. This can take 60-180 seconds,
 during which training and selfplay dispatch is blocked.
 
-Solution: LeaderProbeLoop actively probes the leader every 10 seconds. After 6
-consecutive failures (60s total), it triggers a forced election to recover from
-unreachable leader conditions faster.
+Solution: LeaderProbeLoop actively probes the leader every 10 seconds. After 8
+consecutive failures (80s total), it triggers a forced election to recover from
+unreachable leader conditions faster. The increased timeout (from 60s) accommodates
+Lambda GH200 and Vast.ai nodes which can have 2-5s baseline latency.
 
 Features:
 - Probes leader health via HTTP /health endpoint
@@ -60,8 +61,8 @@ class LeaderProbeLoop(BaseLoop):
         orchestrator: Any,
         *,
         probe_interval: float = 10.0,
-        failure_threshold: int = 6,
-        probe_timeout: float = 5.0,
+        failure_threshold: int = 8,  # Jan 20, 2026: Increased from 6 (80s total vs 60s)
+        probe_timeout: float = 10.0,  # Jan 20, 2026: Increased from 5s to match probe interval
         probe_backup_candidates: bool = True,
         startup_grace_period: float = 20.0,
     ) -> None:
@@ -70,8 +71,8 @@ class LeaderProbeLoop(BaseLoop):
         Args:
             orchestrator: P2POrchestrator instance
             probe_interval: Seconds between probes (default: 10s)
-            failure_threshold: Consecutive failures before triggering election (default: 6 = 60s)
-            probe_timeout: Timeout for each probe request (default: 5s)
+            failure_threshold: Consecutive failures before triggering election (default: 8 = 80s)
+            probe_timeout: Timeout for each probe request (default: 10s, matches probe interval)
             probe_backup_candidates: Whether to probe backup candidates in parallel (default: True)
                 Session 17.33 Phase 17: Enables faster failover by pre-probing backup candidates
             startup_grace_period: Seconds to wait after startup before triggering elections (default: 20s)
@@ -210,11 +211,13 @@ class LeaderProbeLoop(BaseLoop):
             recent_latencies = list(self._latency_history)[-3:]
             avg_latency = sum(recent_latencies) / len(recent_latencies)
 
-            if avg_latency > 2.0:
-                # Very high latency (>2s) - network is struggling
+            # Jan 20, 2026: Relaxed latency thresholds for Lambda/Vast.ai nodes
+            # which can have 2-5s baseline latency due to NAT relay
+            if avg_latency > 5.0:
+                # Very high latency (>5s) - network is struggling
                 threshold = min(threshold + 3, self._max_failure_threshold)
-            elif avg_latency > 1.0:
-                # High latency (>1s) - be more cautious
+            elif avg_latency > 3.0:
+                # High latency (>3s) - be more cautious
                 threshold = min(threshold + 1, self._max_failure_threshold)
             elif avg_latency < 0.1:
                 # Very low latency (<100ms) - network is healthy

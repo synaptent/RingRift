@@ -707,10 +707,14 @@ class LeaderElectionMixin(P2PMixinBase):
             - MINIMUM: == quorum voters alive (no room for failure), OR single-node fallback
             - LOST: < quorum voters alive (cluster cannot make progress)
         """
+        # Jan 20, 2026: CRITICAL - Take atomic snapshot of voters at start
+        # All calculations must use this snapshot to prevent race conditions
+        # where voter list changes mid-calculation causing split-brain
         voters = list(getattr(self, "voter_node_ids", []) or [])
         if not voters:
             return QuorumHealthLevel.HEALTHY
 
+        # Use snapshot values throughout - never re-read self.voter_node_ids
         total = len(voters)
         alive = self._count_alive_peers(voters)
 
