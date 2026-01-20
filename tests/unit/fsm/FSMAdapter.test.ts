@@ -533,10 +533,10 @@ describe('FSMAdapter', () => {
       expect(result.valid).toBe(true);
     });
 
-    it('should accept skip_placement when move hint is trusted (replay parity)', () => {
-      // In replay mode, skip_placement moves are trusted because they come from
-      // recorded game data where the player genuinely couldn't place. We trust
-      // the moveHint to set canPlace=false in deriveRingPlacementState.
+    it('should accept skip_placement when player has stacks (player choice to not place)', () => {
+      // skip_placement is a player CHOICE - the PlacementAggregate's evaluateSkipPlacementEligibility
+      // allows it when the player has stacks with legal moves, regardless of whether placements exist.
+      // This gives players strategic flexibility to focus on movement instead of placement.
       const state = createTestGameState();
       const move: Move = {
         id: 'test-4',
@@ -550,7 +550,52 @@ describe('FSMAdapter', () => {
 
       const result = validateMoveWithFSM(state, move);
 
-      // Should pass because skip_placement is trusted via moveHint
+      // Should PASS because skip_placement is trusted as a player choice
+      expect(result.valid).toBe(true);
+    });
+
+    it('should reject no_placement_action during live validation when player has rings and valid placements exist', () => {
+      // RR-FIX-2026-01-19: This test ensures the AI cannot pass (no_placement_action)
+      // when it has rings in hand and valid positions to place them.
+      // no_placement_action is for when the player CANNOT place, not when they CHOOSE not to.
+      const state = createTestGameState();
+      const move: Move = {
+        id: 'test-5',
+        type: 'no_placement_action',
+        player: 1,
+        to: { x: 0, y: 0 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 1,
+      };
+
+      const result = validateMoveWithFSM(state, move);
+
+      // Should FAIL because player 1 has rings and valid placements exist
+      expect(result.valid).toBe(false);
+      expect(result.errorCode).toBe('GUARD_FAILED');
+    });
+
+    it('should accept no_placement_action during replay when currentPlayer differs (parity compatibility)', () => {
+      // During replay, no_placement_action may be recorded for a player other than currentPlayer.
+      // In this case, trust the recorded move for parity compatibility.
+      const state = createTestGameState();
+      // Change currentPlayer to 2, but the move is for player 1 (replay scenario)
+      state.currentPlayer = 2;
+      const move: Move = {
+        id: 'test-6',
+        type: 'no_placement_action',
+        player: 1,
+        to: { x: 0, y: 0 },
+        timestamp: new Date(),
+        thinkTime: 0,
+        moveNumber: 1,
+      };
+
+      // Use replayCompatibility option
+      const result = validateMoveWithFSM(state, move, false, { replayCompatibility: true });
+
+      // Should pass because in replay mode with player mismatch, we trust the hint
       expect(result.valid).toBe(true);
     });
   });

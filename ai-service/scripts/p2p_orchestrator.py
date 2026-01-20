@@ -821,10 +821,15 @@ from scripts.p2p.constants import (
     P2P_TRAINING_DB_SYNC_MIN,
     PEER_BOOTSTRAP_INTERVAL,
     PEER_BOOTSTRAP_MIN_PEERS,
+    PEER_DEATH_RATE_LIMIT,
     PEER_PURGE_AFTER_SECONDS,
     PEER_RECOVERY_RETRY_INTERVAL,
     PEER_RETIRE_AFTER_SECONDS,
     PEER_TIMEOUT,
+    PEER_TIMEOUT_JITTER_FACTOR,
+    get_jittered_peer_timeout,
+    get_cpu_adaptive_timeout,
+    CPU_LOAD_HIGH_THRESHOLD,
     RELAY_COMMAND_MAX_ATTEMPTS,
     RELAY_COMMAND_MAX_BATCH,
     RELAY_COMMAND_TTL_SECONDS,
@@ -8951,10 +8956,12 @@ class P2POrchestrator(
             return False
 
         # Count peers with recent heartbeat failures
+        # Jan 19, 2026: Use jittered timeout to prevent synchronized partition detection
         now = time.time()
+        jittered_timeout = get_jittered_peer_timeout(PEER_TIMEOUT)
         unreachable = 0
         for peer in peers_snapshot:
-            if peer.consecutive_failures >= 3 or (now - peer.last_heartbeat > PEER_TIMEOUT):
+            if peer.consecutive_failures >= 3 or (now - peer.last_heartbeat > jittered_timeout):
                 unreachable += 1
 
         partition_ratio = unreachable / len(peers_snapshot)
@@ -20800,7 +20807,8 @@ print(json.dumps({{
                     dead_since = now - peer.last_heartbeat
 
                     # Skip if not actually dead yet (within timeout window)
-                    if dead_since < PEER_TIMEOUT:
+                    # Jan 19, 2026: Use jittered timeout to prevent synchronized retries
+                    if dead_since < get_jittered_peer_timeout(PEER_TIMEOUT):
                         continue
 
                     # Exponential backoff: 15s, 30s, 60s, 120s based on time since death
@@ -21618,6 +21626,11 @@ print(json.dumps({{
 
         January 12, 2026: Refactored to move event emissions outside the lock
         to prevent deadlock risk when event handlers need the same lock.
+
+        January 19, 2026: Added rate limiting (PEER_DEATH_RATE_LIMIT) to prevent
+        cascade failures. When 5+ nodes are busy, ALL nodes would mark ALL of them
+        dead simultaneously, causing gossip storms and further instability.
+        Now max PEER_DEATH_RATE_LIMIT peers can be retired per check cycle.
         """
         now = time.time()
         dead_peers = []
@@ -21628,24 +21641,23 @@ print(json.dumps({{
         retired_peers: list[tuple[str, float | None, float]] = []  # (node_id, last_hb, dead_for)
         recovered_peers: list[tuple[str, list[str]]] = []  # (node_id, capabilities)
 
+        # Jan 19, 2026: Track candidates for retirement with their dead_for time
+        # so we can sort by longest-dead and rate-limit retirements
+        retirement_candidates: list[tuple[str, float, float | None]] = []  # (node_id, dead_for, last_hb)
+
         async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
             for node_id, info in self.peers.items():
                 if not info.is_alive() and node_id != self.node_id:
                     dead_peers.append(node_id)
-                    # Retire long-dead peers so they don't pollute active scheduling.
+                    # Check if peer should be retired (long-dead)
                     try:
                         dead_for = now - float(getattr(info, "last_heartbeat", 0.0) or 0.0)
                     except (ValueError, AttributeError):
                         dead_for = float("inf")
                     if not getattr(info, "retired", False) and dead_for >= PEER_RETIRE_AFTER_SECONDS:
-                        info.retired = True
-                        info.retired_at = now
-                        # Jan 12, 2026: Track death timestamp to prevent gossip re-add
-                        self._dead_peer_timestamps[node_id] = now
-                        logger.info(f"Retiring peer {node_id} (offline for {int(dead_for)}s)")
-                        # Collect data for event emission outside lock
+                        # Jan 19, 2026: Collect candidates instead of immediately retiring
                         last_hb = getattr(info, "last_heartbeat", None)
-                        retired_peers.append((node_id, last_hb, dead_for))
+                        retirement_candidates.append((node_id, dead_for, last_hb))
                 elif info.is_alive() and getattr(info, "retired", False):
                     # Peer came back: clear retirement and remove from dead tracking.
                     info.retired = False
@@ -21703,6 +21715,34 @@ print(json.dumps({{
             capacity_alive = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False))
             capacity_gpu = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False) and getattr(p, "gpu_type", None))
             capacity_training = sum(1 for p in self.peers.values() if p.is_alive() and not getattr(p, "retired", False) and getattr(p, "training_enabled", False))
+
+        # Jan 19, 2026: Apply rate limiting to peer retirements
+        # Sort by longest-dead first, then only retire up to PEER_DEATH_RATE_LIMIT peers
+        if retirement_candidates:
+            # Sort by dead_for descending (longest-dead first)
+            retirement_candidates.sort(key=lambda x: x[1], reverse=True)
+
+            # Rate-limit: only retire the top N peers this cycle
+            to_retire = retirement_candidates[:PEER_DEATH_RATE_LIMIT]
+            skipped = len(retirement_candidates) - len(to_retire)
+
+            if skipped > 0:
+                logger.warning(
+                    f"Rate-limiting peer retirement: retiring {len(to_retire)}/{len(retirement_candidates)} "
+                    f"candidates this cycle (skipped {skipped} to prevent cascade)"
+                )
+
+            # Now actually retire these peers (need brief lock acquisition)
+            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
+                for node_id, dead_for, last_hb in to_retire:
+                    info = self.peers.get(node_id)
+                    if info and not getattr(info, "retired", False):
+                        info.retired = True
+                        info.retired_at = now
+                        # Track for dead letter queue / recovery attempts
+                        self._dead_peer_timestamps[node_id] = now
+                        retired_peers.append((node_id, last_hb, dead_for))
+                        logger.info(f"Retired peer {node_id} (dead for {dead_for:.0f}s)")
 
         # Jan 12, 2026: Emit events OUTSIDE the lock to prevent deadlocks
         # Event handlers may need to acquire peers_lock themselves

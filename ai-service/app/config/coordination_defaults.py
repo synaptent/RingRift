@@ -701,12 +701,17 @@ class ResourceLimitsDefaults:
     """Default values for per-tier resource limits.
 
     Used by: app/coordination/resource_optimizer.py
+
+    Jan 19, 2026: Significantly lowered all limits to prevent node
+    saturation and maintain P2P heartbeat responsiveness. Previous
+    values (16-128) allowed nodes to hit 100% CPU with 5+ concurrent
+    selfplay processes, blocking heartbeats.
     """
-    # Maximum concurrent selfplay by GPU tier
-    CONSUMER_MAX: int = _env_int("RINGRIFT_CONSUMER_MAX_SELFPLAY", 16)
-    PROSUMER_MAX: int = _env_int("RINGRIFT_PROSUMER_MAX_SELFPLAY", 32)
-    DATACENTER_MAX: int = _env_int("RINGRIFT_DATACENTER_MAX_SELFPLAY", 64)
-    HIGH_CPU_MAX: int = _env_int("RINGRIFT_HIGH_CPU_MAX_SELFPLAY", 128)
+    # Maximum concurrent selfplay by GPU tier - lowered for P2P stability
+    CONSUMER_MAX: int = _env_int("RINGRIFT_CONSUMER_MAX_SELFPLAY", 4)   # was 16
+    PROSUMER_MAX: int = _env_int("RINGRIFT_PROSUMER_MAX_SELFPLAY", 8)   # was 32
+    DATACENTER_MAX: int = _env_int("RINGRIFT_DATACENTER_MAX_SELFPLAY", 16)  # was 64
+    HIGH_CPU_MAX: int = _env_int("RINGRIFT_HIGH_CPU_MAX_SELFPLAY", 24)  # was 128
 
 
 # =============================================================================
@@ -743,11 +748,16 @@ class ResourceMonitoringDefaults:
     """Default values for resource monitoring and backpressure.
 
     Used by: app/coordination/resource_monitoring_coordinator.py
+
+    Jan 19, 2026: Lowered thresholds to prevent node saturation and
+    maintain P2P heartbeat responsiveness. Previous high thresholds
+    (85-90%) allowed nodes to hit 100% before throttling, causing
+    heartbeat timeouts and cluster instability.
     """
-    # Backpressure thresholds (%)
-    BACKPRESSURE_GPU_THRESHOLD: float = _env_float("RINGRIFT_BACKPRESSURE_GPU_THRESHOLD", 90.0)
-    BACKPRESSURE_MEMORY_THRESHOLD: float = _env_float("RINGRIFT_BACKPRESSURE_MEMORY_THRESHOLD", 85.0)
-    BACKPRESSURE_DISK_THRESHOLD: float = _env_float("RINGRIFT_BACKPRESSURE_DISK_THRESHOLD", 90.0)
+    # Backpressure thresholds (%) - lowered to prevent node saturation
+    BACKPRESSURE_GPU_THRESHOLD: float = _env_float("RINGRIFT_BACKPRESSURE_GPU_THRESHOLD", 70.0)  # was 90
+    BACKPRESSURE_MEMORY_THRESHOLD: float = _env_float("RINGRIFT_BACKPRESSURE_MEMORY_THRESHOLD", 70.0)  # was 85
+    BACKPRESSURE_DISK_THRESHOLD: float = _env_float("RINGRIFT_BACKPRESSURE_DISK_THRESHOLD", 75.0)  # was 90
 
     # Resource update interval (seconds)
     UPDATE_INTERVAL: int = _env_int("RINGRIFT_RESOURCE_UPDATE_INTERVAL", 10)
@@ -1157,11 +1167,24 @@ class P2PDefaults:
     VOTER_HEARTBEAT_INTERVAL: int = _env_int("RINGRIFT_P2P_VOTER_HEARTBEAT_INTERVAL", 5)
 
     # Peer timeout (seconds) - consider dead after no heartbeat
-    # Dec 30, 2025: Reduced from 60 to 30 for faster partition detection
-    PEER_TIMEOUT: int = _env_int("RINGRIFT_P2P_PEER_TIMEOUT", 30)
+    # Jan 19, 2026: Increased from 30 to 90 to reduce false disconnections
+    # The 30s timeout was too aggressive for NAT-blocked nodes (Lambda, Vast CGNAT)
+    PEER_TIMEOUT: int = _env_int("RINGRIFT_P2P_PEER_TIMEOUT", 90)
+
+    # NAT-blocked peer timeout (seconds) - longer timeout for Lambda/Vast NAT-blocked nodes
+    # Jan 19, 2026: Added for nodes behind CGNAT or strict NAT (rely on relay/P2PD)
+    PEER_TIMEOUT_NAT_BLOCKED: int = _env_int("RINGRIFT_P2P_PEER_TIMEOUT_NAT_BLOCKED", 120)
+
+    # Fast peer timeout (seconds) - for well-connected datacenter nodes
+    # Jan 19, 2026: Added for Hetzner, Vultr nodes with direct connectivity
+    PEER_TIMEOUT_FAST: int = _env_int("RINGRIFT_P2P_PEER_TIMEOUT_FAST", 60)
 
     # Leader election timeout (seconds)
     ELECTION_TIMEOUT: int = _env_int("RINGRIFT_P2P_ELECTION_TIMEOUT", 30)
+
+    # Gossip fanout - number of random peers to gossip to each cycle
+    # Jan 19, 2026: Increased from 5 to 8 for larger clusters (20+ nodes)
+    GOSSIP_FANOUT: int = _env_int("RINGRIFT_P2P_GOSSIP_FANOUT", 8)
 
     # Startup grace period (seconds) - don't kill processes during startup
     STARTUP_GRACE_PERIOD: int = _env_int("RINGRIFT_P2P_STARTUP_GRACE_PERIOD", 120)
@@ -1894,10 +1917,12 @@ class DaemonHealthDefaults:
     ADAPTIVE_TIMEOUT_HIGH: float = _env_float("RINGRIFT_HEALTH_TIMEOUT_HIGH", 15.0)
 
     # CPU threshold (fraction 0-1) for moderate load
-    CPU_THRESHOLD_MODERATE: float = _env_float("RINGRIFT_CPU_THRESHOLD_MODERATE", 0.6)
+    # Jan 19, 2026: Lowered from 0.6 to 0.5 for earlier backpressure response
+    CPU_THRESHOLD_MODERATE: float = _env_float("RINGRIFT_CPU_THRESHOLD_MODERATE", 0.5)
 
     # CPU threshold (fraction 0-1) for high load
-    CPU_THRESHOLD_HIGH: float = _env_float("RINGRIFT_CPU_THRESHOLD_HIGH", 0.85)
+    # Jan 19, 2026: Lowered from 0.85 to 0.7 to prevent node saturation
+    CPU_THRESHOLD_HIGH: float = _env_float("RINGRIFT_CPU_THRESHOLD_HIGH", 0.7)
 
 
 def get_adaptive_health_timeout() -> float:
@@ -1907,9 +1932,12 @@ def get_adaptive_health_timeout() -> float:
     5s timeout being too aggressive. This function returns a timeout
     that scales with system load:
 
-    - Idle/low load (CPU < 60%): 5s (default)
-    - Moderate load (CPU 60-85%): 10s
-    - High load (CPU > 85%): 15s
+    - Idle/low load (CPU < 50%): 5s (default)
+    - Moderate load (CPU 50-70%): 10s
+    - High load (CPU > 70%): 15s
+
+    Jan 19, 2026: Lowered thresholds from 60/85 to 50/70 to detect
+    load earlier and prevent P2P heartbeat failures.
 
     Returns:
         Appropriate timeout value in seconds.
@@ -2619,12 +2647,16 @@ class IdleThresholdDefaults:
     """Default values for GPU idle detection and process cleanup.
 
     Used by: app/coordination/idle_resource_daemon.py, unified_idle_shutdown_daemon.py
+
+    Jan 19, 2026: Lowered MAX_PROCESSES from 128 to 16 to prevent
+    node saturation and maintain P2P heartbeat responsiveness.
     """
     # GPU idle threshold - consider GPU idle after this duration (seconds)
     GPU_IDLE_THRESHOLD: int = _env_int("RINGRIFT_GPU_IDLE_THRESHOLD", 600)  # 10 minutes
 
     # Maximum selfplay processes per node before cleanup
-    MAX_PROCESSES: int = _env_int("RINGRIFT_MAX_PROCESSES", 128)
+    # Jan 19, 2026: Lowered from 128 to 16 for P2P stability
+    MAX_PROCESSES: int = _env_int("RINGRIFT_MAX_PROCESSES", 16)
 
     # Disk usage threshold for cleanup (percentage)
     CLEANUP_THRESHOLD_PERCENT: int = _env_int("RINGRIFT_CLEANUP_THRESHOLD_PERCENT", 90)

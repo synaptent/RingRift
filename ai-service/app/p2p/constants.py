@@ -89,6 +89,95 @@ def get_peer_timeout_for_node(is_coordinator: bool = False, nat_blocked: bool = 
     return PEER_TIMEOUT_FAST  # 60s for well-connected DC nodes
 
 
+# Jan 19, 2026: Jitter factor to prevent synchronized death cascades.
+# When multiple nodes check peer liveness at exactly the same timeout,
+# they all mark the same slow peer dead simultaneously, causing gossip storms.
+# Adding ±10% randomness desynchronizes these checks.
+PEER_TIMEOUT_JITTER_FACTOR = float(
+    os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT_JITTER", "0.10") or 0.10
+)
+
+
+def get_jittered_peer_timeout(base_timeout: int | None = None) -> float:
+    """Get peer timeout with random jitter to prevent synchronized death cascades.
+
+    When multiple nodes mark the same peer as dead at exactly the same time,
+    they all gossip this death simultaneously, causing network storms.
+    Adding ±10% jitter desynchronizes these decisions.
+
+    Args:
+        base_timeout: Base timeout in seconds (defaults to PEER_TIMEOUT)
+
+    Returns:
+        Timeout with ±PEER_TIMEOUT_JITTER_FACTOR (default ±10%) random jitter
+    """
+    import random
+
+    timeout = base_timeout if base_timeout is not None else PEER_TIMEOUT
+    jitter = timeout * PEER_TIMEOUT_JITTER_FACTOR
+    return timeout + random.uniform(-jitter, jitter)
+
+
+# Jan 19, 2026: CPU-adaptive timeouts for busy nodes.
+# GPU nodes running selfplay at 100% CPU can't respond to SWIM pings quickly.
+# High CPU load -> longer timeouts to avoid false positive deaths.
+CPU_LOAD_HIGH_THRESHOLD = float(
+    os.environ.get("RINGRIFT_P2P_CPU_LOAD_HIGH", "0.80") or 0.80
+)
+CPU_LOAD_CRITICAL_THRESHOLD = float(
+    os.environ.get("RINGRIFT_P2P_CPU_LOAD_CRITICAL", "0.95") or 0.95
+)
+# Timeout multipliers for high CPU load
+CPU_HIGH_TIMEOUT_MULTIPLIER = float(
+    os.environ.get("RINGRIFT_P2P_CPU_HIGH_TIMEOUT_MULT", "1.5") or 1.5
+)
+CPU_CRITICAL_TIMEOUT_MULTIPLIER = float(
+    os.environ.get("RINGRIFT_P2P_CPU_CRITICAL_TIMEOUT_MULT", "2.0") or 2.0
+)
+
+
+def get_cpu_adaptive_timeout(base_timeout: int | None = None, cpu_load: float | None = None) -> float:
+    """Get timeout adjusted for CPU load to avoid false-positive peer deaths.
+
+    Under high CPU load, nodes respond slowly to SWIM probes. Using fixed
+    timeouts causes busy nodes to be marked dead incorrectly. This function
+    extends timeouts proportionally to CPU load.
+
+    Args:
+        base_timeout: Base timeout in seconds (defaults to PEER_TIMEOUT)
+        cpu_load: CPU load 0.0-1.0 (if None, queries local CPU)
+
+    Returns:
+        Adjusted timeout:
+        - base_timeout if CPU < 80%
+        - base_timeout * 1.5 if CPU >= 80%
+        - base_timeout * 2.0 if CPU >= 95%
+    """
+    timeout = float(base_timeout if base_timeout is not None else PEER_TIMEOUT)
+
+    if cpu_load is None:
+        try:
+            import psutil
+            cpu_load = psutil.cpu_percent(interval=0.1) / 100.0
+        except ImportError:
+            return timeout  # No psutil, use base timeout
+
+    if cpu_load >= CPU_LOAD_CRITICAL_THRESHOLD:
+        return timeout * CPU_CRITICAL_TIMEOUT_MULTIPLIER
+    if cpu_load >= CPU_LOAD_HIGH_THRESHOLD:
+        return timeout * CPU_HIGH_TIMEOUT_MULTIPLIER
+    return timeout
+
+
+# Jan 19, 2026: Rate limiting for peer death detection.
+# When 5+ nodes are CPU-saturated, all nodes would mark all of them dead
+# simultaneously, causing gossip storms and further instability.
+# Limit how many peers can be retired per check cycle.
+PEER_DEATH_RATE_LIMIT = int(
+    os.environ.get("RINGRIFT_P2P_PEER_DEATH_RATE_LIMIT", "2") or 2
+)
+
+
 # SUSPECT grace period: nodes transition ALIVE -> SUSPECT -> DEAD
 # Dec 29, 2025: Reduced from 60s to 30s - faster suspect detection enables quicker recovery.
 # Jan 2026: Reduced from 30s to 15s for aggressive SUSPECT probing (MTTR 90s → 45s)
@@ -392,6 +481,14 @@ RETRY_RETIRED_NODE_INTERVAL = PEER_RECOVERY_RETRY_INTERVAL
 # Jan 12, 2026: Reduced from 21600 (6 hr) to 3600 (1 hr) to purge dead nodes faster.
 PEER_PURGE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_PURGE_AFTER_SECONDS", "3600") or 3600)
 
+# Jan 19, 2026: Rate limit peer death detection to prevent cascade failures.
+# Without rate limiting, when 5 nodes are busy/unreachable, all 40 nodes mark all 5
+# as dead simultaneously, triggering a gossip storm that causes MORE nodes to miss
+# heartbeats → more cascade deaths → cluster collapse.
+# With rate limit of 2/cycle: max 2 peers marked dead per 60s check cycle.
+# This gives busy nodes time to recover before being marked dead by everyone.
+PEER_DEATH_RATE_LIMIT = int(os.environ.get("RINGRIFT_P2P_PEER_DEATH_RATE_LIMIT", "2") or 2)
+
 # Peer cache / reputation settings
 PEER_CACHE_TTL_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_CACHE_TTL_SECONDS", "604800") or 604800)
 PEER_CACHE_MAX_ENTRIES = int(os.environ.get("RINGRIFT_P2P_PEER_CACHE_MAX_ENTRIES", "200") or 200)
@@ -417,7 +514,10 @@ NAT_BLOCKED_PROBE_TIMEOUT = 5
 # Voter heartbeat settings
 VOTER_HEARTBEAT_INTERVAL = 10
 # Jan 11, 2026: Phase 4 - Increased from 5s to 10s for CPU-bound voters during elections
-VOTER_HEARTBEAT_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_VOTER_HEARTBEAT_TIMEOUT", "10") or 10)
+# Jan 19, 2026: CRITICAL FIX - Timeout was 10s but HEARTBEAT_INTERVAL is 15s!
+# This caused voters to be marked unhealthy before they could send heartbeats.
+# Timeout should be >= HEARTBEAT_INTERVAL * 3 to tolerate network jitter and CPU load.
+VOTER_HEARTBEAT_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_VOTER_HEARTBEAT_TIMEOUT", "45") or 45)
 VOTER_MESH_REFRESH_INTERVAL = 30
 VOTER_NAT_RECOVERY_AGGRESSIVE = True
 

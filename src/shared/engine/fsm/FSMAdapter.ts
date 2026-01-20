@@ -505,10 +505,32 @@ function deriveRingPlacementState(
     isPositionInBounds(moveHint.to);
 
   // Special handling for skip_placement and no_placement_action moves:
-  // - skip_placement: Player has rings but no valid positions to place them
-  // - no_placement_action: Player has no rings (bookkeeping)
-  // In both cases, the recording indicates placements weren't available. Trust this.
-  if (moveHint?.type === 'skip_placement' || moveHint?.type === 'no_placement_action') {
+  // - skip_placement: Player CHOOSES not to place (has rings, has stacks with legal moves)
+  // - no_placement_action: Player CANNOT place (no valid positions or no rings)
+  //
+  // RR-FIX-2026-01-19: During LIVE validation (currentPlayer === player), we must
+  // strictly verify no_placement_action - it should ONLY be valid when no placements
+  // exist. The bug was that the AI could pass (no_placement_action) when valid
+  // placements existed because the hint was blindly trusted.
+  //
+  // skip_placement is different: the PlacementAggregate's evaluateSkipPlacementEligibility
+  // allows it when the player has stacks with legal moves, giving players the CHOICE
+  // not to place. We continue to trust skip_placement hints to maintain this behavior.
+  if (moveHint?.type === 'no_placement_action') {
+    if (state.currentPlayer === player) {
+      // Live validation: verify no valid placements exist
+      const validMoves = getValidMoves(state);
+      const placementMoves = validMoves.filter((m) => m.type === 'place_ring');
+      validPositions = placementMoves.map((m) => m.to);
+      canPlace = placementMoves.length > 0;
+    } else {
+      // Replay mode: trust the recorded move (parity compatibility)
+      canPlace = false;
+    }
+  } else if (moveHint?.type === 'skip_placement') {
+    // skip_placement is a player CHOICE - trust the aggregate's eligibility check
+    // which allows it when the player has stacks with legal moves/captures.
+    // Set canPlace = false so the FSM guard passes (allowing the skip).
     canPlace = false;
   } else if (isRecordedPlacementMoveForPlayer) {
     // Trust the recorded placement move - position was valid when Python recorded it

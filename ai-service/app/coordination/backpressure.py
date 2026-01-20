@@ -100,20 +100,25 @@ class BackpressureSignal:
         """Get spawn rate multiplier based on pressure.
 
         Returns:
-            1.0 = full speed (pressure < 0.3)
-            0.0 = stopped (pressure > 0.9)
+            1.0 = full speed (pressure < 0.2)
+            0.0 = stopped (pressure > 0.7)
             Linear interpolation in between
+
+        Jan 19, 2026: Lowered thresholds to prevent node saturation.
+        Previous values (0.3-0.9) allowed nodes to hit 100% CPU before
+        throttling, causing P2P heartbeat failures. New values (0.2-0.7)
+        start throttling earlier to keep nodes responsive.
         """
         pressure = self.overall_pressure
 
-        if pressure < 0.3:
+        if pressure < 0.2:
             return 1.0
-        if pressure > 0.9:
+        if pressure > 0.7:
             return 0.0
 
-        # Linear interpolation between 0.3 and 0.9
-        # At 0.3 → 1.0, at 0.9 → 0.0
-        return 1.0 - (pressure - 0.3) / 0.6
+        # Linear interpolation between 0.2 and 0.7
+        # At 0.2 → 1.0, at 0.7 → 0.0
+        return 1.0 - (pressure - 0.2) / 0.5
 
     @property
     def should_pause(self) -> bool:
@@ -143,27 +148,33 @@ class BackpressureSignal:
 
 @dataclass
 class BackpressureConfig:
-    """Configuration for backpressure monitoring."""
+    """Configuration for backpressure monitoring.
+
+    Jan 19, 2026: Lowered thresholds to prevent node saturation and
+    maintain P2P heartbeat responsiveness. Previous high thresholds
+    (50%/90%) allowed nodes to hit 100% CPU before throttling,
+    causing heartbeat timeouts and cluster instability.
+    """
 
     # Queue pressure thresholds
-    queue_low_threshold: int = 10      # Below this = 0 pressure
-    queue_high_threshold: int = 100    # Above this = 1.0 pressure
+    queue_low_threshold: int = 5       # Below this = 0 pressure (was 10)
+    queue_high_threshold: int = 50     # Above this = 1.0 pressure (was 100)
 
     # Training pressure thresholds
-    training_low_threshold: int = 2    # Below this = 0 pressure
-    training_high_threshold: int = 10  # Above this = 1.0 pressure
+    training_low_threshold: int = 1    # Below this = 0 pressure (was 2)
+    training_high_threshold: int = 5   # Above this = 1.0 pressure (was 10)
 
     # Disk pressure thresholds (percentage)
-    disk_low_threshold: float = 0.5    # Below 50% = 0 pressure
-    disk_high_threshold: float = 0.9   # Above 90% = 1.0 pressure
+    disk_low_threshold: float = 0.4    # Below 40% = 0 pressure (was 50%)
+    disk_high_threshold: float = 0.75  # Above 75% = 1.0 pressure (was 90%)
 
     # Sync pressure thresholds
-    sync_low_threshold: int = 5        # Below this = 0 pressure
-    sync_high_threshold: int = 50      # Above this = 1.0 pressure
+    sync_low_threshold: int = 3        # Below this = 0 pressure (was 5)
+    sync_high_threshold: int = 30      # Above this = 1.0 pressure (was 50)
 
     # Memory pressure thresholds (percentage)
-    memory_low_threshold: float = 0.5  # Below 50% = 0 pressure
-    memory_high_threshold: float = 0.9 # Above 90% = 1.0 pressure
+    memory_low_threshold: float = 0.3  # Below 30% = 0 pressure (was 50%)
+    memory_high_threshold: float = 0.7 # Above 70% = 1.0 pressure (was 90%)
 
     # Cache settings
     cache_ttl_seconds: float = 10.0    # How long to cache the signal

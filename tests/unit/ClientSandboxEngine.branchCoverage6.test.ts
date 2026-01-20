@@ -819,11 +819,18 @@ describe('ClientSandboxEngine Branch Coverage 6', () => {
       expect(engine.getGameState()).toBeDefined();
     });
 
-    it('handles no_placement_action move', async () => {
+    it('handles no_placement_action move when player has no rings', async () => {
+      // RR-FIX-2026-01-19: no_placement_action is only valid when player CANNOT place.
+      // Set up a state where the player has no rings in hand.
       const engine = new ClientSandboxEngine({
         config: createConfig(2),
         interactionHandler: new ConfigurableMockHandler(),
       });
+
+      // Set player 1 to have no rings in hand (makes no_placement_action valid)
+      const engineAny = engine as any;
+      const player1 = engineAny.gameState.players.find((p: any) => p.playerNumber === 1);
+      player1.ringsInHand = 0;
 
       const move: Move = {
         id: 'noplace1',
@@ -835,8 +842,10 @@ describe('ClientSandboxEngine Branch Coverage 6', () => {
         moveNumber: 1,
       };
 
+      // Move should be accepted (player has no rings, so no_placement_action is valid)
       await engine.applyCanonicalMoveForReplay(move, null);
 
+      // Game state should be defined (may be game_over due to no material check)
       expect(engine.getGameState()).toBeDefined();
     });
 

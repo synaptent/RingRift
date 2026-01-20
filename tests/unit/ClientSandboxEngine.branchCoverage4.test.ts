@@ -507,11 +507,18 @@ describe('ClientSandboxEngine Branch Coverage 4', () => {
       await expect(engine.applyCanonicalMove(invalidMove)).rejects.toThrow(/unsupported move type/);
     });
 
-    it('handles no_placement_action move type', async () => {
+    it('handles no_placement_action move type when player has no rings', async () => {
+      // RR-FIX-2026-01-19: no_placement_action is only valid when player CANNOT place
+      // (no rings in hand or no valid positions). Set up a state with no rings.
       const engine = new ClientSandboxEngine({
         config: createConfig(2),
         interactionHandler: new ConfigurableMockHandler(),
       });
+
+      // Set player 1 to have no rings in hand
+      const engineAny = engine as any;
+      const player1 = engineAny.gameState.players.find((p: any) => p.playerNumber === 1);
+      player1.ringsInHand = 0;
 
       const move: Move = {
         id: 'no-place',
@@ -526,6 +533,8 @@ describe('ClientSandboxEngine Branch Coverage 4', () => {
       await engine.applyCanonicalMove(move);
       const state = engine.getGameState();
       expect(state).toBeDefined();
+      // Should advance to movement phase
+      expect(state.currentPhase).toBe('movement');
     });
 
     it('handles no_movement_action move type', async () => {
