@@ -301,8 +301,10 @@ RETRY_DEAD_NODE_INTERVAL = 120  # Retry dead nodes every 2 minutes (reduced from
 # Use get_gossip_fanout() for adaptive fanout based on cluster size.
 # Jan 2026: Split into leader/follower fanout for differentiated propagation
 GOSSIP_FANOUT = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT", "10") or 10)
-GOSSIP_FANOUT_LEADER = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT_LEADER", "12") or 12)
-GOSSIP_FANOUT_FOLLOWER = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT_FOLLOWER", "10") or 10)
+# January 2026: Increased fanout for better visibility in 20-40 node clusters
+# Leader: 14 (was 12), Follower: 12 (was 10) for >90% peer visibility
+GOSSIP_FANOUT_LEADER = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT_LEADER", "14") or 14)
+GOSSIP_FANOUT_FOLLOWER = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT_FOLLOWER", "12") or 12)
 
 # Gossip lock timeout - max time to wait for gossip state lock
 # Jan 2026: Increased from 2.0s to 3.0s for larger clusters with lock contention
@@ -339,25 +341,26 @@ def get_gossip_fanout(peer_count: int, is_leader: bool = False) -> int:
         return int(env_fanout)
 
     # Leader gets higher fanout for faster authoritative propagation
+    # January 2026: Increased fanout for 20-40 node clusters to achieve >90% visibility
     if is_leader:
         if peer_count < 10:
-            return 5  # Small cluster leader
+            return 6  # Small cluster leader (was 5)
         elif peer_count < 20:
-            return 8  # Medium cluster leader
+            return 10  # Medium cluster leader (was 8)
         elif peer_count < 40:
-            return 10  # Large cluster leader
+            return 12  # Large cluster leader (was 10)
         else:
-            return GOSSIP_FANOUT_LEADER  # Very large cluster leader (12)
+            return GOSSIP_FANOUT_LEADER  # Very large cluster leader (14)
     else:
         # Followers use slightly lower fanout
         if peer_count < 10:
-            return 3  # Small cluster follower
+            return 4  # Small cluster follower (was 3)
         elif peer_count < 20:
-            return 5  # Medium cluster follower
+            return 7  # Medium cluster follower (was 5)
         elif peer_count < 40:
-            return 8  # Large cluster follower
+            return 10  # Large cluster follower (was 8)
         else:
-            return GOSSIP_FANOUT_FOLLOWER  # Very large cluster follower (10)
+            return GOSSIP_FANOUT_FOLLOWER  # Very large cluster follower (12)
 
 
 # Gossip interval - seconds between gossip rounds

@@ -212,6 +212,45 @@ class PeerRecoveryConfig:
         in {"1", "true", "yes", "on"}
     )
 
+    # ==========================================================================
+    # Burst Recovery Mode Configuration (January 2026 - P2P Stability Plan Phase 1.3)
+    # ==========================================================================
+    # When a significant fraction of peers are retired (mass failure event like
+    # network partition recovery or provider outage), accelerate recovery by:
+    # - Increasing max probes per cycle (20 → 50)
+    # - Reducing recovery interval (15s → 5s)
+    # This helps the cluster converge faster after mass disconnection events.
+
+    # Threshold for activating burst mode (fraction of total peers that are retired)
+    # When retired_peers / total_peers > threshold, burst mode activates
+    burst_mode_threshold: float = field(
+        default_factory=lambda: float(
+            os.environ.get("RINGRIFT_P2P_BURST_MODE_THRESHOLD", "0.30")
+        )
+    )
+
+    # Max probes per cycle during burst mode (increased from normal 20)
+    burst_mode_max_probes: int = field(
+        default_factory=lambda: int(
+            os.environ.get("RINGRIFT_P2P_BURST_MODE_MAX_PROBES", "50")
+        )
+    )
+
+    # Recovery interval during burst mode (reduced from normal 15s)
+    burst_mode_interval_seconds: float = field(
+        default_factory=lambda: float(
+            os.environ.get("RINGRIFT_P2P_BURST_MODE_INTERVAL", "5")
+        )
+    )
+
+    # Whether burst mode is enabled
+    burst_mode_enabled: bool = field(
+        default_factory=lambda: os.environ.get(
+            "RINGRIFT_P2P_BURST_MODE_ENABLED", "true"
+        ).lower()
+        in {"1", "true", "yes", "on"}
+    )
+
     def __post_init__(self) -> None:
         """Validate configuration values."""
         if self.recovery_interval_seconds <= 0:
@@ -222,6 +261,13 @@ class PeerRecoveryConfig:
             raise ValueError("probe_timeout_seconds must be > 0")
         if self.backoff_multiplier <= 1:
             raise ValueError("backoff_multiplier must be > 1")
+        # Burst mode validation
+        if not (0.0 < self.burst_mode_threshold <= 1.0):
+            raise ValueError("burst_mode_threshold must be between 0 and 1")
+        if self.burst_mode_max_probes <= 0:
+            raise ValueError("burst_mode_max_probes must be > 0")
+        if self.burst_mode_interval_seconds <= 0:
+            raise ValueError("burst_mode_interval_seconds must be > 0")
 
 
 # =============================================================================
@@ -267,6 +313,7 @@ class PeerRecoveryLoop(BaseLoop):
     - Emits NODE_RECOVERED event on successful recovery
     - Respects circuit breaker state (skip peers with open circuit)
     - Limited probes per cycle to avoid API overload
+    - Burst recovery mode for mass failure events (Jan 2026)
     """
 
     def __init__(
@@ -277,6 +324,7 @@ class PeerRecoveryLoop(BaseLoop):
         emit_event: Callable[[str, dict[str, Any]], None] | None = None,
         get_circuit_state: Callable[[str], str] | None = None,
         reset_circuit: Callable[[str], bool] | None = None,
+        get_total_peer_count: Callable[[], int] | None = None,
         config: PeerRecoveryConfig | None = None,
     ):
         """Initialize peer recovery loop.
@@ -292,6 +340,9 @@ class PeerRecoveryLoop(BaseLoop):
                                Returns 'OPEN', 'HALF_OPEN', or 'CLOSED'.
             reset_circuit: Optional callback to reset circuit breaker for a peer.
                           Sprint 12 Session 8: Enables proactive circuit recovery.
+            get_total_peer_count: Optional callback to get total known peer count.
+                                  Required for burst mode detection. If not provided,
+                                  burst mode will use retired peer count as estimate.
             config: Recovery configuration
         """
         self.config = config or PeerRecoveryConfig()
@@ -308,6 +359,7 @@ class PeerRecoveryLoop(BaseLoop):
         self._emit_event = emit_event
         self._get_circuit_state = get_circuit_state
         self._reset_circuit = reset_circuit
+        self._get_total_peer_count = get_total_peer_count
 
         # Per-peer failure tracking for backoff
         self._peer_failures: dict[str, int] = {}  # node_id -> consecutive failures
@@ -319,6 +371,112 @@ class PeerRecoveryLoop(BaseLoop):
         self._stats_recoveries = 0
         self._stats_probe_failures = 0
 
+        # Burst mode state (January 2026 - P2P Stability Plan Phase 1.3)
+        self._burst_mode_active = False
+        self._burst_mode_activated_at: float | None = None
+        self._stats_burst_mode_activations = 0
+
+    def _check_burst_mode(self, retired_count: int) -> bool:
+        """Check if burst recovery mode should be active.
+
+        January 2026 - P2P Stability Plan Phase 1.3:
+        Activates burst mode when >30% of peers are retired, indicating a mass
+        failure event (network partition recovery, provider outage, etc.).
+
+        Args:
+            retired_count: Number of retired/dead peers
+
+        Returns:
+            True if burst mode should be active
+        """
+        if not self.config.burst_mode_enabled:
+            return False
+
+        # Get total peer count
+        if self._get_total_peer_count:
+            total_peers = self._get_total_peer_count()
+        else:
+            # Fallback: estimate total as retired + some baseline (20 nodes typical)
+            # This is imperfect but allows burst mode without the callback
+            total_peers = max(retired_count + 10, 20)
+
+        if total_peers <= 0:
+            return False
+
+        retired_ratio = retired_count / total_peers
+        should_activate = retired_ratio > self.config.burst_mode_threshold
+
+        # Track state transitions
+        was_active = self._burst_mode_active
+        self._burst_mode_active = should_activate
+
+        if should_activate and not was_active:
+            # Just activated burst mode
+            self._burst_mode_activated_at = time.time()
+            self._stats_burst_mode_activations += 1
+            logger.warning(
+                f"[PeerRecovery] BURST MODE ACTIVATED: {retired_count}/{total_peers} "
+                f"peers retired ({retired_ratio:.1%} > {self.config.burst_mode_threshold:.0%} threshold). "
+                f"Accelerating recovery: interval {self.config.burst_mode_interval_seconds}s, "
+                f"max_probes {self.config.burst_mode_max_probes}"
+            )
+
+            if self._emit_event and self.config.emit_events:
+                self._emit_event(
+                    "BURST_RECOVERY_MODE_ACTIVATED",
+                    {
+                        "retired_count": retired_count,
+                        "total_peers": total_peers,
+                        "retired_ratio": retired_ratio,
+                        "threshold": self.config.burst_mode_threshold,
+                        "burst_interval": self.config.burst_mode_interval_seconds,
+                        "burst_max_probes": self.config.burst_mode_max_probes,
+                        "timestamp": time.time(),
+                    },
+                )
+
+        elif not should_activate and was_active:
+            # Just deactivated burst mode
+            duration = time.time() - (self._burst_mode_activated_at or time.time())
+            logger.info(
+                f"[PeerRecovery] Burst mode deactivated after {duration:.1f}s. "
+                f"Retired ratio {retired_ratio:.1%} <= {self.config.burst_mode_threshold:.0%} threshold"
+            )
+            self._burst_mode_activated_at = None
+
+            if self._emit_event and self.config.emit_events:
+                self._emit_event(
+                    "BURST_RECOVERY_MODE_DEACTIVATED",
+                    {
+                        "retired_count": retired_count,
+                        "total_peers": total_peers,
+                        "retired_ratio": retired_ratio,
+                        "duration_seconds": duration,
+                        "timestamp": time.time(),
+                    },
+                )
+
+        return should_activate
+
+    def _get_effective_params(self, burst_mode: bool) -> tuple[int, float]:
+        """Get effective max_probes and interval based on mode.
+
+        Args:
+            burst_mode: Whether burst mode is active
+
+        Returns:
+            Tuple of (max_probes_per_cycle, recovery_interval)
+        """
+        if burst_mode:
+            return (
+                self.config.burst_mode_max_probes,
+                self.config.burst_mode_interval_seconds,
+            )
+        return (
+            self.config.max_probes_per_cycle,
+            self.config.recovery_interval_seconds,
+        )
+
     async def _run_once(self) -> None:
         """Execute one recovery cycle."""
         if not self.config.enabled:
@@ -328,7 +486,14 @@ class PeerRecoveryLoop(BaseLoop):
         peers = self._get_retired_peers()
         if not peers:
             logger.debug("[PeerRecovery] No retired peers to probe")
+            # Deactivate burst mode if no retired peers
+            if self._burst_mode_active:
+                self._check_burst_mode(0)
             return
+
+        # Check for burst mode (mass failure detection)
+        burst_mode = self._check_burst_mode(len(peers))
+        max_probes, _ = self._get_effective_params(burst_mode)
 
         # Filter peers that are ready to be probed (respecting backoff)
         now = time.time()
@@ -376,10 +541,11 @@ class PeerRecoveryLoop(BaseLoop):
             logger.debug("[PeerRecovery] All retired peers in backoff")
             return
 
-        # Limit probes per cycle
-        probes_this_cycle = ready_peers[: self.config.max_probes_per_cycle]
+        # Limit probes per cycle (use burst mode max if active)
+        probes_this_cycle = ready_peers[:max_probes]
+        mode_str = " [BURST]" if burst_mode else ""
         logger.info(
-            f"[PeerRecovery] Probing {len(probes_this_cycle)}/{len(peers)} retired peers"
+            f"[PeerRecovery]{mode_str} Probing {len(probes_this_cycle)}/{len(peers)} retired peers"
         )
 
         # Probe each peer
@@ -487,13 +653,49 @@ class PeerRecoveryLoop(BaseLoop):
 
     def get_recovery_stats(self) -> dict[str, Any]:
         """Get recovery statistics."""
-        return {
+        stats = {
             "probes_sent": self._stats_probes_sent,
             "recoveries": self._stats_recoveries,
             "probe_failures": self._stats_probe_failures,
             "peers_in_backoff": len(self._peer_next_probe),
             "total_tracked_failures": sum(self._peer_failures.values()),
+            # Burst mode stats (January 2026)
+            "burst_mode_active": self._burst_mode_active,
+            "burst_mode_activations": self._stats_burst_mode_activations,
         }
+        if self._burst_mode_activated_at:
+            stats["burst_mode_duration"] = time.time() - self._burst_mode_activated_at
+        return stats
+
+    def is_burst_mode_active(self) -> bool:
+        """Check if burst recovery mode is currently active.
+
+        January 2026 - P2P Stability Plan Phase 1.3:
+        Returns True when >30% of peers are retired and the loop is
+        operating with accelerated recovery parameters.
+        """
+        return self._burst_mode_active
+
+    def get_burst_mode_info(self) -> dict[str, Any]:
+        """Get detailed burst mode status information.
+
+        Returns:
+            Dict with burst mode configuration and current state
+        """
+        info = {
+            "enabled": self.config.burst_mode_enabled,
+            "active": self._burst_mode_active,
+            "threshold": self.config.burst_mode_threshold,
+            "burst_interval_seconds": self.config.burst_mode_interval_seconds,
+            "burst_max_probes": self.config.burst_mode_max_probes,
+            "normal_interval_seconds": self.config.recovery_interval_seconds,
+            "normal_max_probes": self.config.max_probes_per_cycle,
+            "activations_total": self._stats_burst_mode_activations,
+        }
+        if self._burst_mode_activated_at:
+            info["active_since"] = self._burst_mode_activated_at
+            info["active_duration_seconds"] = time.time() - self._burst_mode_activated_at
+        return info
 
     def reset_peer_backoff(self, node_id: str) -> None:
         """Reset backoff state for a specific peer.
@@ -869,11 +1071,15 @@ class PeerRecoveryLoop(BaseLoop):
                 },
             )
 
-        # Healthy
+        # Healthy - include burst mode status
+        burst_info = ""
+        if self._burst_mode_active:
+            burst_info = " [BURST MODE]"
+
         return HealthCheckResult(
             healthy=True,
             status=CoordinatorStatus.RUNNING,
-            message=f"PeerRecoveryLoop healthy ({recoveries} recovered, {recovery_rate:.1f}% rate)",
+            message=f"PeerRecoveryLoop healthy ({recoveries} recovered, {recovery_rate:.1f}% rate){burst_info}",
             details={
                 "probes_sent": probes_sent,
                 "recoveries": recoveries,
@@ -881,5 +1087,8 @@ class PeerRecoveryLoop(BaseLoop):
                 "peers_in_backoff": peers_in_backoff,
                 "recovery_rate_pct": round(recovery_rate, 1),
                 "interval_seconds": self.config.recovery_interval_seconds,
+                # Burst mode info (January 2026)
+                "burst_mode_active": self._burst_mode_active,
+                "burst_mode_activations": self._stats_burst_mode_activations,
             },
         )

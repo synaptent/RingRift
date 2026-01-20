@@ -29780,6 +29780,9 @@ print(json.dumps({{
             # Parallelism monitoring (Jan 2026, Phase 5)
             app.router.add_get('/status/parallelism', self.handle_parallelism_status)
 
+            # P2P diagnostics (January 2026 - P2P Stability Plan Phase 4)
+            app.router.add_get('/p2p/diagnostics', self.handle_p2p_diagnostics)
+
             # Dynamic host registry routes (for IP auto-updates)
             app.router.add_post('/register', self.handle_register)
             app.router.add_get('/registry/status', self.handle_registry_status)

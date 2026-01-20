@@ -338,6 +338,10 @@ class MemoryPressureController(HandlerBase):
         # Force garbage collection
         gc.collect()
 
+        # January 2026 - P2P Stability Plan Phase 3: Trigger emergency gossip cleanup
+        # This purges gossip state with aggressive TTLs to free memory
+        await self._trigger_gossip_emergency_cleanup()
+
         # Kill non-essential daemons
         await self._kill_non_essential_daemons()
 
@@ -353,6 +357,49 @@ class MemoryPressureController(HandlerBase):
         )
 
         self._record_action("kill_non_essential")
+
+    async def _trigger_gossip_emergency_cleanup(self) -> None:
+        """Trigger emergency gossip state cleanup.
+
+        January 2026 - P2P Stability Plan Phase 3:
+        When memory pressure is CRITICAL (>80%), force aggressive cleanup of
+        gossip state data structures to free memory.
+        """
+        try:
+            # Try to get the gossip cleanup loop from P2P orchestrator
+            from scripts.p2p.loops.gossip_state_cleanup_loop import GossipStateCleanupLoop
+
+            # Check if there's a global/singleton instance we can access
+            # Try via loop manager first
+            try:
+                from scripts.p2p.loops.base import LoopManager
+                loop_manager = LoopManager.get_instance()
+                if loop_manager:
+                    cleanup_loop = loop_manager.get_loop("gossip_state_cleanup")
+                    if cleanup_loop and hasattr(cleanup_loop, "force_emergency_cleanup"):
+                        result = await cleanup_loop.force_emergency_cleanup()
+                        logger.info(
+                            f"[MemoryPressure] Gossip emergency cleanup freed {result.get('total', 0)} entries"
+                        )
+                        return
+            except Exception as e:
+                logger.debug(f"[MemoryPressure] Could not access loop manager: {e}")
+
+            # Fallback: emit event for P2P orchestrator to handle
+            self._emit_event(
+                "GOSSIP_EMERGENCY_CLEANUP_REQUEST",
+                {
+                    "trigger": "memory_pressure_critical",
+                    "ram_percent": self._pressure_state.ram_percent,
+                    "node_id": os.environ.get("RINGRIFT_NODE_ID", "local"),
+                },
+            )
+            logger.info("[MemoryPressure] Emitted GOSSIP_EMERGENCY_CLEANUP_REQUEST event")
+
+        except ImportError:
+            logger.debug("[MemoryPressure] GossipStateCleanupLoop not available")
+        except Exception as e:
+            logger.warning(f"[MemoryPressure] Gossip emergency cleanup failed: {e}")
 
     async def _handle_emergency_tier(self) -> None:
         """Handle EMERGENCY tier - prepare for failover."""

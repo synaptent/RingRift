@@ -51,8 +51,10 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # Default configuration from environment
+# January 2026 - P2P Stability Plan Phase 3: Increased connection limit from 100 to 200
+# Supports 20+ node clusters with multiple concurrent connections per node
 DEFAULT_KEEPALIVE_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_KEEPALIVE_TIMEOUT", "30"))
-DEFAULT_CONNECTION_LIMIT = int(os.environ.get("RINGRIFT_P2P_CONNECTION_LIMIT", "100"))
+DEFAULT_CONNECTION_LIMIT = int(os.environ.get("RINGRIFT_P2P_CONNECTION_LIMIT", "200"))
 DEFAULT_CONNECT_TIMEOUT = float(os.environ.get("RINGRIFT_P2P_CONNECT_TIMEOUT", "10.0"))
 DEFAULT_TOTAL_TIMEOUT = float(os.environ.get("RINGRIFT_P2P_TOTAL_TIMEOUT", "30.0"))
 DNS_CACHE_TTL = int(os.environ.get("RINGRIFT_P2P_DNS_CACHE_TTL", "300"))

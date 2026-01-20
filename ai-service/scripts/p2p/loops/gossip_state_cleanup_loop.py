@@ -79,9 +79,11 @@ class GossipStateCleanupConfig:
     )
 
     # TTL for node recovery attempts (seconds)
+    # January 2026 - P2P Stability Plan Phase 3: Reduced from 6h to 2h
+    # Faster cleanup allows recovery of stuck nodes sooner
     recovery_attempts_ttl_seconds: float = field(
         default_factory=lambda: float(
-            os.environ.get("RINGRIFT_RECOVERY_ATTEMPTS_TTL", "21600")  # 6 hours
+            os.environ.get("RINGRIFT_RECOVERY_ATTEMPTS_TTL", "7200")  # 2 hours
         )
     )
 
@@ -143,9 +145,11 @@ class GossipStateCleanupConfig:
 
     # TTL for completed job states (seconds)
     # Jan 12, 2026: Reduced from 6h to 1h to mitigate memory pressure
+    # January 2026 - P2P Stability Plan Phase 3: Reduced from 1h to 30m
+    # Keeps memory footprint smaller on long-running clusters
     job_states_ttl_seconds: float = field(
         default_factory=lambda: float(
-            os.environ.get("RINGRIFT_JOB_STATES_TTL", "3600")  # 1 hour
+            os.environ.get("RINGRIFT_JOB_STATES_TTL", "1800")  # 30 minutes
         )
     )
 
@@ -827,3 +831,110 @@ class GossipStateCleanupLoop(BaseLoop):
                 "job_states_purged": stats.job_states_purged,
             },
         }
+
+    async def force_emergency_cleanup(self) -> dict[str, int]:
+        """Force immediate cleanup with aggressive thresholds for memory pressure.
+
+        January 2026 - P2P Stability Plan Phase 3:
+        Called when memory pressure reaches CRITICAL tier (>80%).
+        Uses 50% of normal TTLs and 50% of max limits for aggressive cleanup.
+
+        This method:
+        1. Runs cleanup immediately (doesn't wait for next interval)
+        2. Uses halved TTL values for more aggressive purging
+        3. Uses halved max limits
+        4. Emits EMERGENCY_GOSSIP_CLEANUP event
+
+        Returns:
+            Dict with counts of purged entries by category
+        """
+        logger.warning("[GossipStateCleanup] EMERGENCY CLEANUP triggered by memory pressure")
+
+        orchestrator = self._get_orchestrator()
+        if not orchestrator:
+            logger.error("[GossipStateCleanup] Cannot run emergency cleanup: no orchestrator")
+            return {"error": 1}
+
+        now = time.time()
+        results = {}
+
+        # Get active peer IDs for reference
+        active_peers = set(getattr(orchestrator, "peers", {}).keys())
+
+        # Save original config values
+        original_config = {
+            "gossip_state_ttl": self.config.gossip_state_ttl_seconds,
+            "gossip_manifest_ttl": self.config.gossip_manifest_ttl_seconds,
+            "recovery_attempts_ttl": self.config.recovery_attempts_ttl_seconds,
+            "peer_reputation_ttl": self.config.peer_reputation_ttl_seconds,
+            "learned_endpoints_ttl": self.config.learned_endpoints_ttl_seconds,
+            "job_states_ttl": self.config.job_states_ttl_seconds,
+            "max_gossip_states": self.config.max_gossip_states,
+            "max_gossip_manifests": self.config.max_gossip_manifests,
+            "max_recovery_attempts": self.config.max_recovery_attempts,
+            "max_peer_reputation": self.config.max_peer_reputation,
+            "max_learned_endpoints": self.config.max_learned_endpoints,
+            "max_job_states": self.config.max_job_states,
+        }
+
+        try:
+            # Apply aggressive thresholds (50% of normal)
+            self.config.gossip_state_ttl_seconds = original_config["gossip_state_ttl"] * 0.5
+            self.config.gossip_manifest_ttl_seconds = original_config["gossip_manifest_ttl"] * 0.5
+            self.config.recovery_attempts_ttl_seconds = original_config["recovery_attempts_ttl"] * 0.5
+            self.config.peer_reputation_ttl_seconds = original_config["peer_reputation_ttl"] * 0.5
+            self.config.learned_endpoints_ttl_seconds = original_config["learned_endpoints_ttl"] * 0.5
+            self.config.job_states_ttl_seconds = original_config["job_states_ttl"] * 0.5
+            self.config.max_gossip_states = original_config["max_gossip_states"] // 2
+            self.config.max_gossip_manifests = original_config["max_gossip_manifests"] // 2
+            self.config.max_recovery_attempts = original_config["max_recovery_attempts"] // 2
+            self.config.max_peer_reputation = original_config["max_peer_reputation"] // 2
+            self.config.max_learned_endpoints = original_config["max_learned_endpoints"] // 2
+            self.config.max_job_states = original_config["max_job_states"] // 2
+
+            # Run cleanup with aggressive thresholds
+            results["gossip_states"] = self._cleanup_gossip_peer_states(orchestrator, active_peers, now)
+            results["gossip_manifests"] = self._cleanup_gossip_peer_manifests(orchestrator, active_peers, now)
+            results["recovery_attempts"] = self._cleanup_node_recovery_attempts(orchestrator, active_peers, now)
+            results["peer_reputation"] = self._cleanup_peer_reputation(orchestrator, active_peers, now)
+            results["learned_endpoints"] = self._cleanup_learned_endpoints(orchestrator, active_peers, now)
+            results["promotion_failures"] = self._cleanup_promotion_failures(orchestrator, now)
+            results["job_states"] = self._cleanup_job_states(orchestrator, now)
+
+            total_purged = sum(results.values())
+            results["total"] = total_purged
+
+            logger.warning(
+                f"[GossipStateCleanup] EMERGENCY CLEANUP complete: purged {total_purged} entries "
+                f"(states={results['gossip_states']}, manifests={results['gossip_manifests']}, "
+                f"jobs={results['job_states']})"
+            )
+
+            # Emit emergency cleanup event
+            if self._emit_event:
+                self._emit_event(
+                    "EMERGENCY_GOSSIP_CLEANUP_COMPLETED",
+                    {
+                        "total_purged": total_purged,
+                        "breakdown": results,
+                        "trigger": "memory_pressure",
+                        "timestamp": now,
+                    },
+                )
+
+        finally:
+            # Restore original config values
+            self.config.gossip_state_ttl_seconds = original_config["gossip_state_ttl"]
+            self.config.gossip_manifest_ttl_seconds = original_config["gossip_manifest_ttl"]
+            self.config.recovery_attempts_ttl_seconds = original_config["recovery_attempts_ttl"]
+            self.config.peer_reputation_ttl_seconds = original_config["peer_reputation_ttl"]
+            self.config.learned_endpoints_ttl_seconds = original_config["learned_endpoints_ttl"]
+            self.config.job_states_ttl_seconds = original_config["job_states_ttl"]
+            self.config.max_gossip_states = original_config["max_gossip_states"]
+            self.config.max_gossip_manifests = original_config["max_gossip_manifests"]
+            self.config.max_recovery_attempts = original_config["max_recovery_attempts"]
+            self.config.max_peer_reputation = original_config["max_peer_reputation"]
+            self.config.max_learned_endpoints = original_config["max_learned_endpoints"]
+            self.config.max_job_states = original_config["max_job_states"]
+
+        return results

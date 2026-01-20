@@ -919,3 +919,252 @@ class StatusHandlersMixin:
         }
 
         return web.json_response(response)
+
+    async def handle_p2p_diagnostics(self, request: web.Request) -> web.Response:
+        """GET /p2p/diagnostics - Comprehensive P2P network diagnostics.
+
+        January 2026 - P2P Stability Plan Phase 4:
+        Provides unified visibility into P2P network health for debugging
+        connectivity issues and monitoring cluster stability.
+
+        Returns:
+            JSON with:
+            - connectivity: Alive/dead/retired peer counts and coverage ratio
+            - provider_health: Per-provider breakdown of node health
+            - circuit_breakers: Circuit breaker metrics
+            - memory_pressure: Current memory state
+            - gossip_state_sizes: Size of various gossip data structures
+            - recovery_loops: Status of recovery-related loops
+        """
+        response: dict[str, Any] = {
+            "node_id": self.node_id,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+        # =================================================================
+        # 1. Connectivity - Peer status breakdown
+        # =================================================================
+        try:
+            with self.peers_lock:
+                peers_snapshot = dict(self.peers)
+
+            alive_peers = []
+            dead_peers = []
+            retired_peers = []
+
+            for peer_id, peer_info in peers_snapshot.items():
+                if hasattr(peer_info, "is_alive") and peer_info.is_alive():
+                    alive_peers.append(peer_id)
+                elif hasattr(peer_info, "state"):
+                    state = str(peer_info.state).lower()
+                    if "retired" in state:
+                        retired_peers.append(peer_id)
+                    else:
+                        dead_peers.append(peer_id)
+                else:
+                    dead_peers.append(peer_id)
+
+            total_known = len(peers_snapshot)
+            target_peers = 20  # From plan: target 20+ nodes
+            coverage_ratio = len(alive_peers) / target_peers if target_peers > 0 else 0.0
+
+            response["connectivity"] = {
+                "alive_count": len(alive_peers),
+                "alive_peers": alive_peers,
+                "dead_count": len(dead_peers),
+                "dead_peers": dead_peers,
+                "retired_count": len(retired_peers),
+                "retired_peers": retired_peers,
+                "total_known": total_known,
+                "target_peers": target_peers,
+                "coverage_ratio": round(coverage_ratio, 2),
+                "coverage_percent": f"{coverage_ratio * 100:.1f}%",
+            }
+        except Exception as e:
+            response["connectivity"] = {"error": str(e)}
+
+        # =================================================================
+        # 2. Provider Health - Per-provider breakdown
+        # =================================================================
+        try:
+            provider_stats: dict[str, dict[str, int]] = {}
+
+            with self.peers_lock:
+                for peer_id, peer_info in self.peers.items():
+                    # Try to determine provider from peer_id or info
+                    provider = "unknown"
+                    if "lambda" in peer_id.lower() or "gh200" in peer_id.lower():
+                        provider = "lambda"
+                    elif "vast" in peer_id.lower():
+                        provider = "vast"
+                    elif "runpod" in peer_id.lower():
+                        provider = "runpod"
+                    elif "nebius" in peer_id.lower():
+                        provider = "nebius"
+                    elif "hetzner" in peer_id.lower():
+                        provider = "hetzner"
+                    elif "vultr" in peer_id.lower():
+                        provider = "vultr"
+                    elif "mac" in peer_id.lower() or "local" in peer_id.lower():
+                        provider = "local"
+
+                    if provider not in provider_stats:
+                        provider_stats[provider] = {"alive": 0, "dead": 0, "retired": 0}
+
+                    if hasattr(peer_info, "is_alive") and peer_info.is_alive():
+                        provider_stats[provider]["alive"] += 1
+                    elif hasattr(peer_info, "state") and "retired" in str(peer_info.state).lower():
+                        provider_stats[provider]["retired"] += 1
+                    else:
+                        provider_stats[provider]["dead"] += 1
+
+            response["provider_health"] = provider_stats
+        except Exception as e:
+            response["provider_health"] = {"error": str(e)}
+
+        # =================================================================
+        # 3. Circuit Breakers - Node circuit breaker metrics
+        # =================================================================
+        try:
+            from app.coordination.node_circuit_breaker import get_node_circuit_registry
+
+            registry = get_node_circuit_registry()
+            cb_metrics = registry.get_metrics()
+
+            response["circuit_breakers"] = {
+                "total_circuits": cb_metrics.get("total_circuits", 0),
+                "open_count": cb_metrics.get("open_count", 0),
+                "half_open_count": cb_metrics.get("half_open_count", 0),
+                "closed_count": cb_metrics.get("closed_count", 0),
+                "total_trips": cb_metrics.get("total_trips", 0),
+                "total_resets": cb_metrics.get("total_resets", 0),
+            }
+        except ImportError:
+            response["circuit_breakers"] = {"available": False}
+        except Exception as e:
+            response["circuit_breakers"] = {"error": str(e)}
+
+        # =================================================================
+        # 4. Memory Pressure - Current memory state
+        # =================================================================
+        try:
+            import psutil
+            mem = psutil.virtual_memory()
+
+            response["memory_pressure"] = {
+                "total_gb": round(mem.total / (1024**3), 1),
+                "available_gb": round(mem.available / (1024**3), 1),
+                "used_percent": mem.percent,
+                "tier": (
+                    "EMERGENCY" if mem.percent >= 90 else
+                    "CRITICAL" if mem.percent >= 80 else
+                    "WARNING" if mem.percent >= 70 else
+                    "CAUTION" if mem.percent >= 60 else
+                    "HEALTHY"
+                ),
+            }
+        except ImportError:
+            response["memory_pressure"] = {"available": False, "error": "psutil not installed"}
+        except Exception as e:
+            response["memory_pressure"] = {"error": str(e)}
+
+        # =================================================================
+        # 5. Gossip State Sizes - Memory usage of gossip structures
+        # =================================================================
+        try:
+            gossip_sizes = {}
+
+            # Try to get orchestrator and count entries
+            if hasattr(self, "_gossip_peer_states"):
+                gossip_sizes["peer_states"] = len(self._gossip_peer_states)
+            if hasattr(self, "_gossip_peer_manifests"):
+                gossip_sizes["manifests"] = len(self._gossip_peer_manifests)
+            if hasattr(self, "_node_recovery_attempts"):
+                gossip_sizes["recovery_attempts"] = len(self._node_recovery_attempts)
+            if hasattr(self, "_peer_reputation"):
+                gossip_sizes["peer_reputation"] = len(self._peer_reputation)
+            if hasattr(self, "_gossip_learned_endpoints"):
+                gossip_sizes["learned_endpoints"] = len(self._gossip_learned_endpoints)
+            if hasattr(self, "_promotion_failures"):
+                gossip_sizes["promotion_failures"] = sum(
+                    len(v) if isinstance(v, list) else 1
+                    for v in self._promotion_failures.values()
+                ) if isinstance(self._promotion_failures, dict) else 0
+
+            response["gossip_state_sizes"] = gossip_sizes
+        except Exception as e:
+            response["gossip_state_sizes"] = {"error": str(e)}
+
+        # =================================================================
+        # 6. Recovery Loops - Status of recovery-related loops
+        # =================================================================
+        try:
+            loop_manager = self._get_loop_manager()
+            if loop_manager:
+                loop_statuses = {}
+                recovery_loops = [
+                    "peer_recovery",
+                    "cluster_healing",
+                    "circuit_breaker_decay",
+                    "gossip_state_cleanup",
+                    "self_healing",
+                    "split_brain_detection",
+                ]
+
+                for loop_name in recovery_loops:
+                    loop = loop_manager.get_loop(loop_name)
+                    if loop:
+                        loop_statuses[loop_name] = {
+                            "running": loop.running if hasattr(loop, "running") else False,
+                            "enabled": loop.config.enabled if hasattr(loop, "config") and hasattr(loop.config, "enabled") else True,
+                        }
+                        # Get burst mode status for peer_recovery
+                        if loop_name == "peer_recovery" and hasattr(loop, "is_burst_mode_active"):
+                            loop_statuses[loop_name]["burst_mode_active"] = loop.is_burst_mode_active()
+                    else:
+                        loop_statuses[loop_name] = {"registered": False}
+
+                response["recovery_loops"] = loop_statuses
+            else:
+                response["recovery_loops"] = {"error": "Loop manager not available"}
+        except Exception as e:
+            response["recovery_loops"] = {"error": str(e)}
+
+        # =================================================================
+        # 7. Summary - Quick health assessment
+        # =================================================================
+        try:
+            connectivity = response.get("connectivity", {})
+            memory = response.get("memory_pressure", {})
+            circuits = response.get("circuit_breakers", {})
+
+            alive = connectivity.get("alive_count", 0)
+            retired = connectivity.get("retired_count", 0)
+            coverage = connectivity.get("coverage_ratio", 0)
+            mem_tier = memory.get("tier", "UNKNOWN")
+            open_circuits = circuits.get("open_count", 0)
+
+            # Determine overall health
+            if mem_tier in ("EMERGENCY", "CRITICAL"):
+                health = "CRITICAL"
+            elif coverage < 0.5 or retired > alive:
+                health = "DEGRADED"
+            elif open_circuits > 5 or mem_tier == "WARNING":
+                health = "WARNING"
+            elif coverage >= 0.9:
+                health = "HEALTHY"
+            else:
+                health = "OK"
+
+            response["summary"] = {
+                "health": health,
+                "alive_peers": alive,
+                "coverage_ratio": coverage,
+                "memory_tier": mem_tier,
+                "open_circuits": open_circuits,
+                "burst_recovery_active": response.get("recovery_loops", {}).get("peer_recovery", {}).get("burst_mode_active", False),
+            }
+        except Exception as e:
+            response["summary"] = {"error": str(e)}
+
+        return web.json_response(response)
