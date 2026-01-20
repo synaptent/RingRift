@@ -34,6 +34,8 @@ RATE_LIMIT_ENV_KEYS.forEach((key) => {
 
 // Import Testing Library jest-dom matchers
 import '@testing-library/jest-dom';
+// Import cleanup for explicit React component unmounting
+import { cleanup } from '@testing-library/react';
 
 // Polyfill TextEncoder/TextDecoder for jsdom
 import { TextEncoder, TextDecoder } from 'util';
@@ -128,6 +130,8 @@ if (!global.localStorage) {
 
 // Global test cleanup
 afterEach(() => {
+  // Explicitly cleanup React Testing Library components to prevent memory leaks
+  cleanup();
   // Clear all mocks after each test
   jest.clearAllMocks();
 });
