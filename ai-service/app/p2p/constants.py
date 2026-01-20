@@ -92,8 +92,10 @@ def get_peer_timeout_for_node(is_coordinator: bool = False, nat_blocked: bool = 
 # SUSPECT grace period: nodes transition ALIVE -> SUSPECT -> DEAD
 # Dec 29, 2025: Reduced from 60s to 30s - faster suspect detection enables quicker recovery.
 # Jan 2026: Reduced from 30s to 15s for aggressive SUSPECT probing (MTTR 90s → 45s)
-# With 15s heartbeats, this means 1 missed = suspect, 3 missed = dead
-SUSPECT_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_SUSPECT_TIMEOUT", "15") or 15)
+# Jan 19, 2026: Increased from 15s to 45s - 15s was too aggressive for CPU-saturated nodes.
+# Nodes at 100% CPU running selfplay can't respond to SWIM pings in time, causing mass
+# SUSPECT->DEAD cascade failures. With 15s heartbeats: 3 missed = suspect, 6 missed = dead.
+SUSPECT_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_SUSPECT_TIMEOUT", "45") or 45)
 
 # Jan 2, 2026 (Sprint 3.5): Dynamic voter promotion delay
 # When enabled via RINGRIFT_P2P_DYNAMIC_VOTER=true, this delay prevents premature promotion
@@ -561,9 +563,10 @@ SWIM_BIND_PORT = int(os.environ.get("RINGRIFT_SWIM_BIND_PORT", str(SWIM_PORT)) o
 # Original values: 5.0s failure, 3.0s suspicion, 3 indirect pings
 # Increased for P99 RTT of 2.6s observed between cloud providers
 # Jan 2, 2026: Further increased to 15s/10s for NAT-blocked nodes using relay.
-# Relay adds 1-3 RTTs of latency; 10s was too aggressive for stable detection.
-SWIM_FAILURE_TIMEOUT = float(os.environ.get("RINGRIFT_SWIM_FAILURE_TIMEOUT", "15.0") or 15.0)
-SWIM_SUSPICION_TIMEOUT = float(os.environ.get("RINGRIFT_SWIM_SUSPICION_TIMEOUT", "10.0") or 10.0)
+# Jan 19, 2026: Increased to 30s/20s - CPU-saturated nodes running selfplay at 100%
+# couldn't respond to SWIM pings fast enough, causing cascade SUSPECT->DEAD failures.
+SWIM_FAILURE_TIMEOUT = float(os.environ.get("RINGRIFT_SWIM_FAILURE_TIMEOUT", "30.0") or 30.0)
+SWIM_SUSPICION_TIMEOUT = float(os.environ.get("RINGRIFT_SWIM_SUSPICION_TIMEOUT", "20.0") or 20.0)
 SWIM_PING_INTERVAL = float(os.environ.get("RINGRIFT_SWIM_PING_INTERVAL", "1.0") or 1.0)
 # Increased indirect probes from 3 to 7 per SWIM paper for better success rate
 SWIM_INDIRECT_PING_COUNT = int(os.environ.get("RINGRIFT_SWIM_INDIRECT_PING_COUNT", "7") or 7)
@@ -571,17 +574,20 @@ SWIM_INDIRECT_PING_COUNT = int(os.environ.get("RINGRIFT_SWIM_INDIRECT_PING_COUNT
 # Jan 2, 2026: Tiered SWIM timeouts based on node connectivity type
 # Direct nodes (DC, well-connected): Shorter timeouts for faster detection
 # Relay nodes (NAT-blocked): Longer timeouts to account for relay latency
+# Jan 19, 2026: Increased all timeouts - 15s was too aggressive during high CPU load.
+# Direct nodes (15s/10s): Allow 2-3 missed pings before suspect
+# Relay nodes (45s/30s): NAT-blocked nodes under load need extra tolerance
 SWIM_FAILURE_TIMEOUT_DIRECT = float(
-    os.environ.get("RINGRIFT_SWIM_FAILURE_TIMEOUT_DIRECT", "10.0") or 10.0
+    os.environ.get("RINGRIFT_SWIM_FAILURE_TIMEOUT_DIRECT", "15.0") or 15.0
 )
 SWIM_FAILURE_TIMEOUT_RELAY = float(
-    os.environ.get("RINGRIFT_SWIM_FAILURE_TIMEOUT_RELAY", "25.0") or 25.0
+    os.environ.get("RINGRIFT_SWIM_FAILURE_TIMEOUT_RELAY", "45.0") or 45.0
 )
 SWIM_SUSPICION_TIMEOUT_DIRECT = float(
-    os.environ.get("RINGRIFT_SWIM_SUSPICION_TIMEOUT_DIRECT", "6.0") or 6.0
+    os.environ.get("RINGRIFT_SWIM_SUSPICION_TIMEOUT_DIRECT", "10.0") or 10.0
 )
 SWIM_SUSPICION_TIMEOUT_RELAY = float(
-    os.environ.get("RINGRIFT_SWIM_SUSPICION_TIMEOUT_RELAY", "15.0") or 15.0
+    os.environ.get("RINGRIFT_SWIM_SUSPICION_TIMEOUT_RELAY", "30.0") or 30.0
 )
 
 
