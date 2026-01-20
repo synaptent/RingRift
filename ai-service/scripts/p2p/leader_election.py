@@ -37,8 +37,10 @@ import logging
 import os
 import time
 from collections import deque
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from scripts.p2p.p2p_mixin_base import P2PMixinBase
 
@@ -73,6 +75,26 @@ class QuorumHealthLevel(str, Enum):
     DEGRADED = "degraded"
     MINIMUM = "minimum"
     LOST = "lost"
+
+
+# Jan 20, 2026: Per-failure event tracking for partition grace period
+# Fixes trap where global _last_healthy_quorum_at could reference much older
+# recovery, masking current quorum loss
+@dataclass
+class QuorumFailureEvent:
+    """Tracks a specific quorum failure event for grace period calculation.
+
+    The partition grace period should apply to THIS failure event, not globally.
+    When quorum recovers (even briefly), the failure event resets.
+
+    Attributes:
+        timestamp: When this specific failure started
+        previous_level: What level we were at before dropping to LOST
+        failure_id: Unique ID for logging/debugging
+    """
+    timestamp: float
+    previous_level: QuorumHealthLevel
+    failure_id: str = field(default_factory=lambda: uuid4().hex[:8])
 
 if TYPE_CHECKING:
     from threading import RLock
@@ -598,6 +620,10 @@ class LeaderElectionMixin(P2PMixinBase):
     _last_healthy_quorum_at: float | None = None  # Timestamp when quorum was last healthy
     _last_healthy_voter_list: list[str] | None = None  # Last known alive voters when healthy
 
+    # Jan 20, 2026: Per-failure event tracking for partition grace period
+    # Fixes trap where global timestamp could mask current failures
+    _current_failure_event: QuorumFailureEvent | None = None
+
     def _calculate_dynamic_quorum(self, alive_voters: int) -> int:
         """Calculate quorum dynamically based on alive voters.
 
@@ -738,24 +764,45 @@ class LeaderElectionMixin(P2PMixinBase):
             level = QuorumHealthLevel.HEALTHY
 
         # January 13, 2026: Track last-healthy state for partition tolerance
+        # Jan 20, 2026: Only track when NOT LOST - prevents grace period updates during failure
         if level in (QuorumHealthLevel.HEALTHY, QuorumHealthLevel.DEGRADED, QuorumHealthLevel.MINIMUM):
             self._last_healthy_quorum_at = time.time()
             self._last_healthy_voter_list = alive_voter_list
+            # Jan 20, 2026: Clear failure event on recovery (even brief recovery resets grace)
+            if self._current_failure_event is not None:
+                logger.debug(
+                    f"Quorum recovered to {level.value}, clearing failure event "
+                    f"{self._current_failure_event.failure_id}"
+                )
+                self._current_failure_event = None
 
         # January 13, 2026: Partition tolerance - stale quorum grace period
-        # If we just dropped to LOST but had healthy quorum recently, use grace period
+        # Jan 20, 2026: REFACTORED - Track per-failure event, not global timestamp
+        # This fixes the trap where brief recoveries kept extending grace period
         if level == QuorumHealthLevel.LOST and QUORUM_STALE_GRACE_SECONDS > 0:
-            last_healthy = getattr(self, "_last_healthy_quorum_at", None)
-            if last_healthy is not None:
-                time_since_healthy = time.time() - last_healthy
-                if time_since_healthy < QUORUM_STALE_GRACE_SECONDS:
-                    # Within grace period - treat as DEGRADED instead of LOST
-                    logger.info(
-                        f"Quorum appears lost ({alive}/{total}) but within stale grace period "
-                        f"({time_since_healthy:.1f}s < {QUORUM_STALE_GRACE_SECONDS}s), "
-                        f"treating as DEGRADED"
-                    )
-                    level = QuorumHealthLevel.DEGRADED
+            # Start tracking this failure event if not already
+            if self._current_failure_event is None:
+                last_level = getattr(self, "_last_quorum_health_level", None) or QuorumHealthLevel.HEALTHY
+                self._current_failure_event = QuorumFailureEvent(
+                    timestamp=time.time(),
+                    previous_level=last_level,
+                )
+                logger.debug(
+                    f"Started tracking failure event {self._current_failure_event.failure_id} "
+                    f"(dropped from {last_level.value} to LOST)"
+                )
+
+            # Check grace period for THIS failure event
+            time_in_failure = time.time() - self._current_failure_event.timestamp
+            if time_in_failure < QUORUM_STALE_GRACE_SECONDS:
+                # Within grace period for this specific failure - treat as DEGRADED
+                logger.info(
+                    f"Quorum lost ({alive}/{total}) but within grace period for failure "
+                    f"{self._current_failure_event.failure_id} "
+                    f"({time_in_failure:.1f}s < {QUORUM_STALE_GRACE_SECONDS}s), "
+                    f"treating as DEGRADED"
+                )
+                level = QuorumHealthLevel.DEGRADED
 
         # Session 17.48: Single-node fallback when quorum is lost for extended period
         # January 13, 2026: Respect ALLOW_SINGLE_NODE_FALLBACK setting
@@ -780,13 +827,24 @@ class LeaderElectionMixin(P2PMixinBase):
                 lost_duration = time.time() - self._quorum_lost_at
                 if lost_duration >= SINGLE_NODE_FALLBACK_TIMEOUT:
                     if not self._single_node_mode:
-                        logger.warning(
-                            f"Quorum lost for {lost_duration:.0f}s (> {SINGLE_NODE_FALLBACK_TIMEOUT}s), "
-                            f"enabling single-node fallback mode"
-                        )
-                        self._single_node_mode = True
-                    # Return MINIMUM instead of LOST to allow local leadership
-                    level = QuorumHealthLevel.MINIMUM
+                        # Jan 20, 2026: Priority-based coordination to prevent split-brain
+                        # Only the node with lowest ID among alive peers can enter single-node mode
+                        # This is deterministic - if all nodes agree on alive peers, they agree on priority
+                        can_enter = self._can_enter_single_node_mode()
+                        if can_enter:
+                            logger.warning(
+                                f"Quorum lost for {lost_duration:.0f}s (> {SINGLE_NODE_FALLBACK_TIMEOUT}s), "
+                                f"enabling single-node fallback mode (won priority check)"
+                            )
+                            self._single_node_mode = True
+                        else:
+                            logger.info(
+                                f"Quorum lost for {lost_duration:.0f}s but another node has priority "
+                                f"for single-node mode, staying LOST"
+                            )
+                    # Return MINIMUM instead of LOST to allow local leadership (only if we entered)
+                    if self._single_node_mode:
+                        level = QuorumHealthLevel.MINIMUM
         else:
             # Quorum restored - reset tracking
             if self._quorum_lost_at is not None or self._single_node_mode:
@@ -934,17 +992,93 @@ class LeaderElectionMixin(P2PMixinBase):
                 "time_until_fallback": max(0, SINGLE_NODE_FALLBACK_TIMEOUT - lost_duration) if quorum_lost_at and not single_node_mode else None,
             },
             # January 13, 2026: Partition tolerance status
+            # Jan 20, 2026: Added per-failure event tracking
             "partition_tolerance": {
                 "grace_period_seconds": QUORUM_STALE_GRACE_SECONDS,
                 "last_healthy_at": getattr(self, "_last_healthy_quorum_at", None),
                 "last_healthy_voters": getattr(self, "_last_healthy_voter_list", None),
                 "time_since_healthy": (time.time() - getattr(self, "_last_healthy_quorum_at", time.time())) if getattr(self, "_last_healthy_quorum_at", None) else None,
+                # Jan 20, 2026: Per-failure event tracking
+                "current_failure_event": {
+                    "failure_id": self._current_failure_event.failure_id if self._current_failure_event else None,
+                    "started_at": self._current_failure_event.timestamp if self._current_failure_event else None,
+                    "duration": time.time() - self._current_failure_event.timestamp if self._current_failure_event else None,
+                    "previous_level": self._current_failure_event.previous_level.value if self._current_failure_event else None,
+                } if True else {},  # Always include, even if None
                 "within_grace_period": (
-                    getattr(self, "_last_healthy_quorum_at", None) is not None
-                    and (time.time() - getattr(self, "_last_healthy_quorum_at", 0)) < QUORUM_STALE_GRACE_SECONDS
+                    self._current_failure_event is not None
+                    and (time.time() - self._current_failure_event.timestamp) < QUORUM_STALE_GRACE_SECONDS
                 ),
             },
         }
+
+    def _can_enter_single_node_mode(self) -> bool:
+        """Check if this node should enter single-node mode (priority-based).
+
+        Jan 20, 2026: Prevents split-brain where multiple nodes simultaneously
+        enter single-node mode. Uses deterministic priority based on node_id.
+
+        Priority rules:
+        1. If no other peers are alive, we can enter
+        2. If other peers exist, only the lowest node_id alphabetically can enter
+        3. This ensures exactly one node enters single-node mode
+
+        Returns:
+            True if this node has priority to enter single-node mode
+        """
+        node_id = getattr(self, "node_id", None)
+        if not node_id:
+            return False
+
+        # Get all peer IDs from peers dict (with lock for thread safety)
+        peers_lock = getattr(self, "peers_lock", None)
+        peers = getattr(self, "peers", {})
+
+        if peers_lock:
+            with peers_lock:
+                all_peer_ids = list(peers.keys())
+        else:
+            all_peer_ids = list(peers.keys())
+
+        # Get alive peers from all known peers
+        alive_peers = self._get_alive_peer_list(all_peer_ids) if all_peer_ids else []
+
+        # Remove self from alive list
+        alive_others = [p for p in alive_peers if p != node_id]
+
+        if not alive_others:
+            # No other peers alive - we can enter single-node mode
+            logger.debug(f"No other peers alive, can enter single-node mode")
+            return True
+
+        # Check if another node already claims to be in single-node mode via gossip
+        # This provides additional protection if gossip is working
+        try:
+            for peer_id, peer_info in peers.items():
+                if peer_id == node_id:
+                    continue
+                # Check if peer has single_node_mode flag in their shared state
+                if hasattr(peer_info, "single_node_mode") and peer_info.single_node_mode:
+                    logger.info(
+                        f"Peer {peer_id} already in single-node mode, deferring"
+                    )
+                    return False
+        except (AttributeError, TypeError):
+            pass  # peers dict not available or wrong format
+
+        # Priority check: only lowest node_id can enter
+        # This is deterministic - all nodes will agree if they see the same alive set
+        all_candidates = sorted([node_id] + alive_others)
+        priority_node = all_candidates[0]
+
+        if priority_node == node_id:
+            logger.debug(f"Have priority for single-node mode (lowest of {all_candidates})")
+            return True
+        else:
+            logger.debug(
+                f"Deferring to {priority_node} for single-node mode (we are {node_id})"
+            )
+            return False
 
     def _release_voter_grant_if_self(self) -> None:
         """Release our voter-side lease grant when stepping down.
