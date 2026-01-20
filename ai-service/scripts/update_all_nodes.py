@@ -696,7 +696,7 @@ async def update_node(
             start_cmd = (
                 f"cd {node_path} && {venv_activate} && "
                 f"mkdir -p logs && "
-                f"nohup python scripts/p2p_orchestrator.py {p2p_args_str} "
+                f"RINGRIFT_MEMBERSHIP_MODE=http nohup python scripts/p2p_orchestrator.py {p2p_args_str} "
                 f"> logs/p2p.log 2>&1 &"
             )
             start_result = await client.run_async(start_cmd, timeout=15)
