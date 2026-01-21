@@ -1671,6 +1671,14 @@ def _evaluate_single_opponent(
                         else:
                             result["draws"] += 1
 
+                        # Jan 2026: Progress logging for visibility
+                        current_win_rate = result["wins"] / result["games"] * 100 if result["games"] > 0 else 0
+                        logger.info(
+                            f"[gauntlet] vs {baseline_name}: Game {result['games']}/{games_per_opponent} - "
+                            f"W:{result['wins']} L:{result['losses']} D:{result['draws']} "
+                            f"({current_win_rate:.1f}% win rate)"
+                        )
+
                         # Jan 2026: Record Elo for parallel games (was missing, causing empty gauntlet DBs)
                         try:
                             from app.training.elo_recording import (
@@ -1826,9 +1834,10 @@ def _evaluate_single_opponent(
 
             if verbose:
                 outcome = "WIN" if game_result.candidate_won else "LOSS"
+                current_win_rate = result["wins"] / result["games"] * 100 if result["games"] > 0 else 0
                 logger.info(
-                    f"[gauntlet] Game {game_num+1}/{games_per_opponent} vs {baseline_name}: "
-                    f"{outcome} ({game_result.victory_reason}, {game_result.move_count} moves)"
+                    f"[gauntlet] vs {baseline_name}: Game {game_num+1}/{games_per_opponent} {outcome} - "
+                    f"W:{result['wins']} L:{result['losses']} D:{result['draws']} ({current_win_rate:.1f}%)"
                 )
 
             # Emit EVALUATION_PROGRESS event for real-time monitoring (December 2025)
