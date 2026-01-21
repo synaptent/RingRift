@@ -53,13 +53,19 @@ export default function ResetPasswordPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        if (data.error?.code === 'INVALID_TOKEN') {
-          setError('This reset link has expired or is invalid. Please request a new one.');
-        } else if (data.error?.code === 'WEAK_PASSWORD') {
-          setError('Password must be at least 8 characters long.');
-        } else {
-          setError(data.error?.message || 'Failed to reset password. Please try again.');
-        }
+        const errorCode = data.error?.code;
+        const errorMessages: Record<string, string> = {
+          INVALID_TOKEN: 'This reset link has expired or is invalid. Please request a new one.',
+          TOKEN_EXPIRED: 'This reset link has expired. Please request a new one.',
+          WEAK_PASSWORD: 'Password must be at least 8 characters long.',
+          USER_NOT_FOUND: 'Account not found. The reset link may be invalid.',
+          RATE_LIMIT_EXCEEDED: 'Too many attempts. Please wait before trying again.',
+        };
+        setError(
+          (errorCode && errorMessages[errorCode]) ||
+            data.error?.message ||
+            'Failed to reset password. Please try again.'
+        );
         return;
       }
 

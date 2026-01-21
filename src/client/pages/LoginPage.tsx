@@ -32,18 +32,27 @@ export default function LoginPage() {
       navigate('/');
     } catch (error: unknown) {
       const errorCode = extractErrorCode(error);
+      const serverMessage = extractErrorMessage(error, '');
 
-      // Show appropriate error message based on error code
-      if (errorCode === 'AUTH_INVALID_CREDENTIALS' || errorCode === 'INVALID_CREDENTIALS') {
-        setError('Invalid email or password. Please try again or register for a new account.');
-        return;
-      }
+      // Map error codes to user-friendly messages
+      const errorMessages: Record<string, string> = {
+        AUTH_INVALID_CREDENTIALS: 'Invalid email or password. Please try again.',
+        INVALID_CREDENTIALS: 'Invalid email or password. Please try again.',
+        AUTH_ACCOUNT_DEACTIVATED: 'Your account has been deactivated. Please contact support.',
+        AUTH_EMAIL_NOT_VERIFIED: 'Please verify your email address before logging in.',
+        AUTH_ACCOUNT_LOCKED:
+          'Your account has been temporarily locked due to too many failed login attempts. Please try again later.',
+        AUTH_USER_NOT_FOUND: 'No account found with this email address.',
+        RATE_LIMIT_EXCEEDED: 'Too many login attempts. Please wait a few minutes and try again.',
+      };
 
-      const message = extractErrorMessage(
-        error,
-        'Login failed. Please check your credentials and try again.'
-      );
-      setError(message);
+      // Use mapped message if available, otherwise use server message, otherwise use default
+      const displayMessage =
+        (errorCode && errorMessages[errorCode]) ||
+        serverMessage ||
+        'Login failed. Please check your credentials and try again.';
+
+      setError(displayMessage);
     } finally {
       setIsSubmitting(false);
     }

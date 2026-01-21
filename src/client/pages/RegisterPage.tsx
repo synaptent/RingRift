@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { InlineAlert } from '../components/ui/InlineAlert';
-import { extractErrorMessage } from '../utils/errorReporting';
+import { extractErrorMessage, extractErrorCode } from '../utils/errorReporting';
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -43,19 +43,26 @@ export default function RegisterPage() {
       // and redirected into the main app shell.
       navigate('/');
     } catch (err: unknown) {
-      // Log the full error for debugging
-      console.error('Registration error:', err);
-      let message: string;
-      try {
-        message = extractErrorMessage(
-          err,
-          'Registration failed. Please check your details and try again.'
-        );
-      } catch (extractErr) {
-        console.error('Error extracting message:', extractErr);
-        message = 'Registration failed. Please check your details and try again.';
-      }
-      setError(message);
+      const errorCode = extractErrorCode(err);
+      const serverMessage = extractErrorMessage(err, '');
+
+      // Map error codes to user-friendly messages
+      const errorMessages: Record<string, string> = {
+        EMAIL_ALREADY_EXISTS: 'An account with this email already exists. Please login instead.',
+        USERNAME_ALREADY_EXISTS: 'This username is already taken. Please choose another.',
+        WEAK_PASSWORD: 'Password must be at least 8 characters long.',
+        INVALID_EMAIL: 'Please enter a valid email address.',
+        INVALID_USERNAME: 'Username can only contain letters, numbers, and underscores.',
+        RATE_LIMIT_EXCEEDED: 'Too many attempts. Please wait before trying again.',
+        PASSWORDS_DO_NOT_MATCH: 'Passwords do not match.',
+      };
+
+      const displayMessage =
+        (errorCode && errorMessages[errorCode]) ||
+        serverMessage ||
+        'Registration failed. Please check your details and try again.';
+
+      setError(displayMessage);
     } finally {
       setIsSubmitting(false);
     }

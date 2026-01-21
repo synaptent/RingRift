@@ -32,7 +32,17 @@ export default function ForgotPasswordPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.error?.message || 'Failed to send reset email. Please try again.');
+        const errorCode = data.error?.code;
+        const errorMessages: Record<string, string> = {
+          RATE_LIMIT_EXCEEDED: 'Too many requests. Please wait before trying again.',
+          EMAIL_REQUIRED: 'Please enter a valid email address.',
+          EMAIL_SEND_FAILED: 'Failed to send reset email. Please try again later.',
+        };
+        setError(
+          (errorCode && errorMessages[errorCode]) ||
+            data.error?.message ||
+            'Failed to send reset email. Please try again.'
+        );
         return;
       }
 
