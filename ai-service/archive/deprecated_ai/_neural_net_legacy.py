@@ -4397,11 +4397,15 @@ class NeuralNetAI(BaseAI):
         # V3 uses 64 input channels (16 base × 4 frames)
         in_channels = 64
 
+        # max_distance is board_size - 1 (hex8 uses 8, hexagonal uses 24)
+        max_distance = board_size - 1
+
         self.model = HexNeuralNet_v3(
             in_channels=in_channels,
             board_size=board_size,
             num_players=players,
             hex_radius=hex_radius,
+            max_distance=max_distance,
         )
 
         self.model.to(self.device)
@@ -4523,11 +4527,15 @@ class NeuralNetAI(BaseAI):
         # V4 uses 64 input channels (16 base × 4 frames), same as v3
         in_channels = 64
 
+        # max_distance is board_size - 1 (hex8 uses 8, hexagonal uses 24)
+        max_distance = board_size - 1
+
         self.model = HexNeuralNet_v4(
             in_channels=in_channels,
             board_size=board_size,
             num_players=players,
             hex_radius=hex_radius,
+            max_distance=max_distance,
         )
 
         self.model.to(self.device)
