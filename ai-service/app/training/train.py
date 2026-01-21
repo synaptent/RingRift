@@ -2631,6 +2631,7 @@ def train_model(
             variant=hex_large_variant,
             num_heuristics=hex_large_num_heuristics,
             dropout=dropout,
+            in_channels=hex_in_channels,  # Match training data channels
         )
         if not distributed or is_main_process():
             param_count = sum(p.numel() for p in model.parameters())
