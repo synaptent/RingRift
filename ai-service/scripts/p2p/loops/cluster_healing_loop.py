@@ -349,8 +349,8 @@ class ClusterHealingLoop(BaseLoop):
         # Jan 21, 2026: This is ROOT CAUSE #1 of cluster instability - the healing
         # loop was restarting the local P2P process, killing the orchestrator itself.
         try:
-            from app.config.env import get_node_id
-            local_node_id = get_node_id()
+            from app.config.node_identity import get_node_id_safe
+            local_node_id = get_node_id_safe()
         except Exception:
             # Fallback: try to get from environment
             import socket
@@ -519,8 +519,8 @@ echo "P2P restarted"
         """Attempt to heal a single node."""
         # CRITICAL: Double-check we're not healing ourselves
         try:
-            from app.config.env import get_node_id
-            local_node_id = get_node_id()
+            from app.config.node_identity import get_node_id_safe
+            local_node_id = get_node_id_safe()
         except Exception:
             import socket
             local_node_id = os.environ.get("RINGRIFT_NODE_ID", socket.gethostname())
