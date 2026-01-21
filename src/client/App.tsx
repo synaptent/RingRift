@@ -23,6 +23,8 @@ const HelpPage = lazy(() => import('./pages/HelpPage'));
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 
 // Suspense fallback component for lazy-loaded routes
 function PageLoader() {
@@ -126,6 +128,14 @@ function App() {
             {/* Public routes */}
             <Route path="/login" element={!user ? <LoginPage /> : <Navigate to="/" />} />
             <Route path="/register" element={!user ? <RegisterPage /> : <Navigate to="/" />} />
+            <Route
+              path="/forgot-password"
+              element={!user ? <ForgotPasswordPage /> : <Navigate to="/" />}
+            />
+            <Route
+              path="/reset-password"
+              element={!user ? <ResetPasswordPage /> : <Navigate to="/" />}
+            />
             {/* Public sandbox route (no auth required) */}
             <Route path="/sandbox" element={<SandboxGameHost />} />
             <Route path="/help" element={<HelpPage />} />

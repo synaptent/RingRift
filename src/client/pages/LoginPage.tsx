@@ -119,7 +119,15 @@ export default function LoginPage() {
                 {isSubmitting ? 'Logging in…' : 'Login'}
               </Button>
 
-              <div className="pt-3 border-t border-slate-700/50">
+              <div className="pt-3 border-t border-slate-700/50 space-y-2">
+                <p className="text-sm text-slate-300">
+                  <Link
+                    to="/forgot-password"
+                    className="text-sky-400 hover:text-sky-300 underline font-medium"
+                  >
+                    Forgot your password?
+                  </Link>
+                </p>
                 <p className="text-sm text-slate-300">
                   Don't have an account yet?{' '}
                   <Link
