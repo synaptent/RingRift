@@ -3234,14 +3234,23 @@ class NeuralNetAI(BaseAI):
         self.board_size = get_spatial_size_for_board(board_type)
 
         # =====================================================================
-        # V5-Heavy/V5-Heavy-Large architecture path (Jan 2026)
+        # Architecture-specific initialization paths (Jan 2026)
         # =====================================================================
-        # If nn_model_version specifies a v5-heavy variant, use the specialized
-        # HexNeuralNet_v5_Heavy model instead of the default v2 architecture.
+        # If nn_model_version specifies a non-v2 architecture, use the specialized
+        # model class instead of the default v2 architecture.
         nn_model_version = getattr(self.config, "nn_model_version", None)
-        if nn_model_version and nn_model_version.lower() in ("v5-heavy", "v5-heavy-large", "v5heavy", "v5heavylarge"):
-            self._init_v5_heavy_model(board_type, num_players, nn_model_version)
-            return
+        if nn_model_version:
+            version_lower = nn_model_version.lower()
+            if version_lower in ("v5-heavy", "v5-heavy-large", "v5heavy", "v5heavylarge"):
+                self._init_v5_heavy_model(board_type, num_players, nn_model_version)
+                return
+            elif version_lower in ("v4", "v4.0", "v4.0.0"):
+                self._init_v4_model(board_type, num_players)
+                return
+            elif version_lower in ("v3", "v3.0", "v3.0.0"):
+                self._init_v3_model(board_type, num_players)
+                return
+            # v2 falls through to default path below
 
         # =====================================================================
         # In-memory state_dict loading path (zero disk I/O)
@@ -4325,6 +4334,258 @@ class NeuralNetAI(BaseAI):
         self._initialized_board_type = board_type
         logger.info(
             "V5-Heavy model initialized: %s, device=%s",
+            type(self.model).__name__, self.device,
+        )
+
+    def _init_v3_model(
+        self,
+        board_type: BoardType,
+        num_players: int | None = None,
+    ) -> None:
+        """Initialize a V3 model (Jan 2026).
+
+        V3 uses spatial policy heads with 64 input channels (16 base × 4 frames).
+
+        Args:
+            board_type: Board type (HEX8 or HEXAGONAL)
+            num_players: Optional player count override
+        """
+        import os
+
+        logger.info(
+            "Initializing V3 model: board=%s, players=%s",
+            board_type, num_players,
+        )
+
+        # Import v3 architecture
+        try:
+            from .neural_net.hex_architectures import HexNeuralNet_v3
+        except ImportError as e:
+            logger.error("Failed to import v3 module: %s", e)
+            raise RuntimeError(f"v3 architecture not available: {e}")
+
+        # Resolve model path
+        model_id = getattr(self.config, "nn_model_id", None)
+        if model_id:
+            if model_id.endswith(".pth"):
+                model_path = model_id
+                if not os.path.isabs(model_path):
+                    for prefix in [".", "models", os.path.join(self._base_dir, "models")]:
+                        candidate = os.path.join(prefix, model_path)
+                        if os.path.exists(candidate):
+                            model_path = candidate
+                            break
+            else:
+                model_path = os.path.join(self._base_dir, "models", f"{model_id}.pth")
+        else:
+            # Default path based on board type
+            board_name = board_type.name.lower()
+            players = num_players or 2
+            model_path = os.path.join(
+                self._base_dir, "models", f"arch_test_v3_{board_name}_{players}p.pth"
+            )
+
+        logger.info("V3 model path: %s", model_path)
+
+        # Get board configuration
+        board_size = get_spatial_size_for_board(board_type)
+        players = num_players or 2
+
+        # Determine hex_radius from board_size
+        hex_radius = (board_size - 1) // 2
+
+        # V3 uses 64 input channels (16 base × 4 frames)
+        in_channels = 64
+
+        self.model = HexNeuralNet_v3(
+            in_channels=in_channels,
+            board_size=board_size,
+            num_players=players,
+            hex_radius=hex_radius,
+        )
+
+        self.model.to(self.device)
+
+        # Load weights if checkpoint exists
+        if os.path.exists(model_path):
+            from ..utils.torch_utils import safe_load_checkpoint
+            checkpoint = safe_load_checkpoint(model_path, map_location=self.device)
+
+            # Handle versioned checkpoint format
+            if 'model_state_dict' in checkpoint:
+                state_dict = checkpoint['model_state_dict']
+            elif 'state_dict' in checkpoint:
+                state_dict = checkpoint['state_dict']
+            else:
+                state_dict = checkpoint
+
+            # Strip module prefix (DDP compatibility)
+            state_dict = _strip_module_prefix(state_dict)
+
+            # Load weights
+            try:
+                self.model.load_state_dict(state_dict, strict=True)
+                logger.info("Loaded V3 weights from %s", model_path)
+            except RuntimeError as e:
+                logger.warning("Strict loading failed: %s, trying non-strict", e)
+                self.model.load_state_dict(state_dict, strict=False)
+                logger.info("Loaded V3 weights (non-strict) from %s", model_path)
+
+            self.model.eval()
+        else:
+            allow_fresh = getattr(self.config, "allow_fresh_weights", False)
+            if allow_fresh:
+                logger.info("V3 checkpoint not found at %s; using fresh weights", model_path)
+                self.model.eval()
+            else:
+                raise FileNotFoundError(
+                    f"V3 checkpoint not found: {model_path}. "
+                    "Set AIConfig.allow_fresh_weights=True to use random weights."
+                )
+
+        # Initialize encoder for v3 (uses V3 encoder with 16 base channels)
+        try:
+            from app.training.encoding import HexStateEncoderV3
+        except ImportError:
+            # Fallback to v2 encoder if V3 not available
+            from app.training.encoding import HexStateEncoder as HexStateEncoderV3
+            logger.warning("HexStateEncoderV3 not found, using V2 encoder")
+        self.encoder = HexStateEncoderV3(
+            board_type=board_type,
+            history_length=3,
+        )
+        self.history_length = 3
+        self.feature_version = 3
+
+        self._initialized_board_type = board_type
+        logger.info(
+            "V3 model initialized: %s, device=%s",
+            type(self.model).__name__, self.device,
+        )
+
+    def _init_v4_model(
+        self,
+        board_type: BoardType,
+        num_players: int | None = None,
+    ) -> None:
+        """Initialize a V4 model (Jan 2026).
+
+        V4 uses NAS-optimized attention with 64 input channels (16 base × 4 frames).
+
+        Args:
+            board_type: Board type (HEX8 or HEXAGONAL)
+            num_players: Optional player count override
+        """
+        import os
+
+        logger.info(
+            "Initializing V4 model: board=%s, players=%s",
+            board_type, num_players,
+        )
+
+        # Import v4 architecture
+        try:
+            from .neural_net.hex_architectures import HexNeuralNet_v4
+        except ImportError as e:
+            logger.error("Failed to import v4 module: %s", e)
+            raise RuntimeError(f"v4 architecture not available: {e}")
+
+        # Resolve model path
+        model_id = getattr(self.config, "nn_model_id", None)
+        if model_id:
+            if model_id.endswith(".pth"):
+                model_path = model_id
+                if not os.path.isabs(model_path):
+                    for prefix in [".", "models", os.path.join(self._base_dir, "models")]:
+                        candidate = os.path.join(prefix, model_path)
+                        if os.path.exists(candidate):
+                            model_path = candidate
+                            break
+            else:
+                model_path = os.path.join(self._base_dir, "models", f"{model_id}.pth")
+        else:
+            # Default path based on board type
+            board_name = board_type.name.lower()
+            players = num_players or 2
+            model_path = os.path.join(
+                self._base_dir, "models", f"arch_test_v4_{board_name}_{players}p.pth"
+            )
+
+        logger.info("V4 model path: %s", model_path)
+
+        # Get board configuration
+        board_size = get_spatial_size_for_board(board_type)
+        players = num_players or 2
+
+        # Determine hex_radius from board_size
+        hex_radius = (board_size - 1) // 2
+
+        # V4 uses 64 input channels (16 base × 4 frames), same as v3
+        in_channels = 64
+
+        self.model = HexNeuralNet_v4(
+            in_channels=in_channels,
+            board_size=board_size,
+            num_players=players,
+            hex_radius=hex_radius,
+        )
+
+        self.model.to(self.device)
+
+        # Load weights if checkpoint exists
+        if os.path.exists(model_path):
+            from ..utils.torch_utils import safe_load_checkpoint
+            checkpoint = safe_load_checkpoint(model_path, map_location=self.device)
+
+            # Handle versioned checkpoint format
+            if 'model_state_dict' in checkpoint:
+                state_dict = checkpoint['model_state_dict']
+            elif 'state_dict' in checkpoint:
+                state_dict = checkpoint['state_dict']
+            else:
+                state_dict = checkpoint
+
+            # Strip module prefix (DDP compatibility)
+            state_dict = _strip_module_prefix(state_dict)
+
+            # Load weights
+            try:
+                self.model.load_state_dict(state_dict, strict=True)
+                logger.info("Loaded V4 weights from %s", model_path)
+            except RuntimeError as e:
+                logger.warning("Strict loading failed: %s, trying non-strict", e)
+                self.model.load_state_dict(state_dict, strict=False)
+                logger.info("Loaded V4 weights (non-strict) from %s", model_path)
+
+            self.model.eval()
+        else:
+            allow_fresh = getattr(self.config, "allow_fresh_weights", False)
+            if allow_fresh:
+                logger.info("V4 checkpoint not found at %s; using fresh weights", model_path)
+                self.model.eval()
+            else:
+                raise FileNotFoundError(
+                    f"V4 checkpoint not found: {model_path}. "
+                    "Set AIConfig.allow_fresh_weights=True to use random weights."
+                )
+
+        # Initialize encoder for v4 (uses V3 encoder with 16 base channels)
+        try:
+            from app.training.encoding import HexStateEncoderV3
+        except ImportError:
+            # Fallback to v2 encoder if V3 not available
+            from app.training.encoding import HexStateEncoder as HexStateEncoderV3
+            logger.warning("HexStateEncoderV3 not found, using V2 encoder")
+        self.encoder = HexStateEncoderV3(
+            board_type=board_type,
+            history_length=3,
+        )
+        self.history_length = 3
+        self.feature_version = 3
+
+        self._initialized_board_type = board_type
+        logger.info(
+            "V4 model initialized: %s, device=%s",
             type(self.model).__name__, self.device,
         )
 
