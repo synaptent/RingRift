@@ -501,11 +501,16 @@ def create_ai_from_model(
     model_def: dict[str, Any],
     player_number: int,
     board_type: BoardType,
+    game_seed: int = 0,
 ) -> BaseAI:
     """Create an AI instance from a model definition.
 
     Supports neural network models (model_path to .pth file), NNUE models (.pt files),
     and baseline players (model_path starting with __BASELINE_).
+
+    Args:
+        game_seed: Per-game seed for varied randomness (Jan 2026 fix).
+                   Without this, RandomAI/HeuristicAI produce identical games.
     """
     from app.ai.heuristic_ai import HeuristicAI
     from app.ai.mcts_ai import MCTSAI
@@ -515,6 +520,9 @@ def create_ai_from_model(
     model_path = model_def.get("model_path", "")
     ai_type = model_def.get("ai_type", "neural_net")
 
+    # Per-game seed for varied randomness
+    rng_seed = (game_seed * 104729 + player_number * 7919) & 0xFFFFFFFF
+
     # Check if model file exists (skip for baseline players)
     if model_path and not model_path.startswith("__BASELINE_") and not Path(model_path).exists():
         raise FileNotFoundError(
@@ -523,11 +531,11 @@ def create_ai_from_model(
         )
 
     if model_path == "__BASELINE_RANDOM__" or ai_type == "random":
-        config = AIConfig(ai_type=AIType.RANDOM, board_type=board_type, difficulty=1)
+        config = AIConfig(ai_type=AIType.RANDOM, board_type=board_type, difficulty=1, rng_seed=rng_seed)
         return RandomAI(player_number, config)
 
     elif model_path == "__BASELINE_HEURISTIC__" or ai_type == "heuristic":
-        config = AIConfig(ai_type=AIType.HEURISTIC, board_type=board_type, difficulty=5)
+        config = AIConfig(ai_type=AIType.HEURISTIC, board_type=board_type, difficulty=5, rng_seed=rng_seed)
         return HeuristicAI(player_number, config)
 
     elif model_path.startswith("__BASELINE_MCTS") or ai_type == "mcts":
@@ -623,11 +631,16 @@ def play_model_vs_model_game(
     num_players: int = 2,
     max_moves: int = 10000,
     save_game_history: bool = True,
+    game_seed: int = 0,
 ) -> dict[str, Any]:
     """Play a single game between two models (NN or baseline).
 
     Returns dict with: winner (model_a, model_b, or draw), game_length, duration_sec, game_record
     If save_game_history=True, also returns full game record for training data export.
+
+    Args:
+        game_seed: Per-game seed for varied randomness (Jan 2026 fix).
+                   Without this, RandomAI/HeuristicAI produce identical games.
     """
     import uuid
 
@@ -649,10 +662,10 @@ def play_model_vs_model_game(
     moves_played = []
     termination_reason = None
 
-    # Create AIs for both models
+    # Create AIs for both models (pass game_seed for unique randomness - Jan 2026 fix)
     # Model A plays as player 1, Model B plays as player 2
-    ai_a = create_ai_from_model(model_a, 1, board_type)
-    ai_b = create_ai_from_model(model_b, 2, board_type)
+    ai_a = create_ai_from_model(model_a, 1, board_type, game_seed)
+    ai_b = create_ai_from_model(model_b, 2, board_type, game_seed)
 
     # Check if neural net models actually loaded their networks
     # If they fell back to heuristic, we should not record under NN name
@@ -1288,6 +1301,7 @@ def run_model_matchup(
                         num_players=num_players,
                         max_moves=10000,
                         save_game_history=jsonl_enabled,
+                        game_seed=game_num,  # Jan 2026: unique randomness per game
                     )
                 else:
                     # Use NN-specific game play for neural networks

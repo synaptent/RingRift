@@ -80,18 +80,28 @@ def create_ai(
     player_number: int,
     checkpoint_path: str | None = None,
     device: str = "cuda",
+    game_seed: int | None = None,
 ):
     """Create an AI instance based on model type.
 
     Supported types: gmo, gmo_v2, ig_gmo, ebmo, random, heuristic, mcts
+
+    Args:
+        game_seed: Optional per-game seed for varied randomness (Jan 2026 fix).
+                   Without this, RandomAI/HeuristicAI produce identical games.
     """
+    # Derive player-specific seed for varied but reproducible behavior
+    rng_seed = None
+    if game_seed is not None:
+        rng_seed = (game_seed * 104729 + player_number * 7919) & 0xFFFFFFFF
+
     if model_type == "random":
         from app.ai.random_ai import RandomAI
-        return RandomAI(player_number=player_number, config=AIConfig(difficulty=1))
+        return RandomAI(player_number=player_number, config=AIConfig(difficulty=1, rng_seed=rng_seed))
 
     elif model_type == "heuristic":
         from app.ai.heuristic_ai import HeuristicAI
-        return HeuristicAI(player_number=player_number, config=AIConfig(difficulty=3))
+        return HeuristicAI(player_number=player_number, config=AIConfig(difficulty=3, rng_seed=rng_seed))
 
     elif model_type == "mcts":
         from app.ai.factory import AIFactory

@@ -112,6 +112,7 @@ def create_ai_for_algorithm(
     think_time_ms: int,
     board_type: BoardType,
     num_players: int = 2,
+    game_seed: int = 0,
 ) -> BaseAI:
     """Create an AI instance for the specified algorithm.
 
@@ -121,6 +122,8 @@ def create_ai_for_algorithm(
         think_time_ms: Think time budget in milliseconds
         board_type: Board type for the game
         num_players: Number of players in the game
+        game_seed: Per-game seed for varied randomness (Jan 2026 fix).
+                   Without this, RandomAI produces identical games.
 
     Returns:
         Configured AI instance
@@ -204,11 +207,14 @@ def create_ai_for_algorithm(
     elif algorithm == "random":
         # Random player for neutral fill-in positions in multiplayer games
         from app.ai.random_ai import RandomAI
+        # Per-game seed for varied randomness (Jan 2026 fix)
+        rng_seed = (game_seed * 10000 + player_number * 1000) & 0xFFFFFFFF
         config = AIConfig(
             ai_type=AIType.RANDOM,
             board_type=board_type,
             difficulty=1,
             randomness=1.0,
+            rng_seed=rng_seed,
         )
         return RandomAI(player_number, config)
 
@@ -224,6 +230,7 @@ def play_game(
     num_players: int = 2,
     max_moves: int = 500,
     verbose: bool = False,
+    game_idx: int = 0,
 ) -> MatchResult:
     """Play a single game between two algorithms.
 
@@ -235,6 +242,7 @@ def play_game(
         num_players: Number of players
         max_moves: Maximum moves before declaring draw
         verbose: Print progress
+        game_idx: Game index for unique RNG seeding (Jan 2026 fix).
 
     Returns:
         MatchResult with game outcome
@@ -245,17 +253,17 @@ def play_game(
     state = create_initial_state(board_type, num_players)
     engine = DefaultRulesEngine()
 
-    # Create AIs with proper model for this board/player combo
+    # Create AIs with proper model for this board/player combo (pass game_idx for unique seeding)
     # P1 = algo1, P2 = algo2, P3+ = random (neutral fill-in for fair comparison)
     ais = {}
     for player_num in range(1, num_players + 1):
         if player_num == 1:
-            ais[player_num] = create_ai_for_algorithm(algo1, player_num, think_time_ms, board_type, num_players)
+            ais[player_num] = create_ai_for_algorithm(algo1, player_num, think_time_ms, board_type, num_players, game_idx)
         elif player_num == 2:
-            ais[player_num] = create_ai_for_algorithm(algo2, player_num, think_time_ms, board_type, num_players)
+            ais[player_num] = create_ai_for_algorithm(algo2, player_num, think_time_ms, board_type, num_players, game_idx)
         else:
             # Neutral random players for positions 3+
-            ais[player_num] = create_ai_for_algorithm("random", player_num, think_time_ms, board_type, num_players)
+            ais[player_num] = create_ai_for_algorithm("random", player_num, think_time_ms, board_type, num_players, game_idx)
     move_count = 0
     algo1_think_time = 0.0
     algo2_think_time = 0.0
@@ -370,7 +378,8 @@ def run_benchmark(
                     result = play_game(
                         algo1, algo2, think_time, board_type,
                         num_players=num_players,
-                        verbose=verbose
+                        verbose=verbose,
+                        game_idx=game_num,  # Jan 2026: unique randomness per game
                     )
 
                     if result.winner == "algo1":
@@ -392,7 +401,8 @@ def run_benchmark(
                     result = play_game(
                         algo2, algo1, think_time, board_type,
                         num_players=num_players,
-                        verbose=verbose
+                        verbose=verbose,
+                        game_idx=half + game_num,  # Jan 2026: unique randomness (offset by half)
                     )
 
                     # Note: roles are swapped

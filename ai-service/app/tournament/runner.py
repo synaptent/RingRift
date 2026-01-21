@@ -777,16 +777,30 @@ class TournamentRunner:
                 pass
         return int(agent.search_depth + default_offset)
 
+    _fallback_ai_counter: int = 0  # Class-level counter for unique seeds
+
     def _create_fallback_random_ai(self) -> Any:
         """Create a random AI instance for filling missing player slots.
 
         Used when tournaments register fewer agents than num_players in a game.
         The fallback AI simply picks random legal moves.
+
+        Each fallback AI gets a unique seed to ensure varied behavior across
+        multiple games (Jan 2026 bug fix).
         """
+        import time
+
         from app.ai.random_ai import RandomAI
         from app.models import AIConfig
 
-        config = AIConfig(difficulty=1)
+        # Unique seed per instance: counter + time-based entropy
+        TournamentRunner._fallback_ai_counter += 1
+        rng_seed = (
+            TournamentRunner._fallback_ai_counter * 104729 +
+            int(time.time() * 1000) % 1_000_000
+        ) & 0xFFFFFFFF
+
+        config = AIConfig(difficulty=1, rng_seed=rng_seed)
         random_ai = RandomAI(player_number=0, config=config)
 
         class RandomAgentWrapper:

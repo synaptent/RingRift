@@ -188,12 +188,21 @@ def run_regression_test(
             lpsExclusivePlayerForCompletedRound=None,
         )
 
-    def create_opponent(player_num: int):
-        """Create test opponent."""
+    def create_opponent(player_num: int, game_idx: int = 0):
+        """Create test opponent.
+
+        Args:
+            player_num: Player number (1-indexed)
+            game_idx: Game index for unique RNG seeding (Jan 2026 fix).
+                     Without this, RandomAI/HeuristicAI produce identical games.
+        """
+        # Per-game seed for varied randomness
+        rng_seed = (game_idx * 10000 + player_num * 1000) & 0xFFFFFFFF
         config = AIConfig(
             difficulty=test.opponent_config.get("difficulty", 5),
             randomness=0.0,
             think_time=100,
+            rng_seed=rng_seed,
         )
         if test.opponent_type == "random":
             from app.ai.random_ai import RandomAI
@@ -254,11 +263,11 @@ def run_regression_test(
 
         state = create_initial_state()
 
-        # Create AIs
+        # Create AIs (pass game_idx for unique seeding - Jan 2026 fix)
         if test_player == 1:
-            ais = {1: create_test_ai(1), 2: create_opponent(2)}
+            ais = {1: create_test_ai(1), 2: create_opponent(2, game_idx)}
         else:
-            ais = {1: create_opponent(1), 2: create_test_ai(2)}
+            ais = {1: create_opponent(1, game_idx), 2: create_test_ai(2)}
 
         move_count = 0
         max_moves = 300

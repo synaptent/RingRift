@@ -14038,10 +14038,15 @@ import os
 # Skip shadow contracts for performance
 os.environ['RINGRIFT_SKIP_SHADOW_CONTRACTS'] = 'true'
 
-def load_agent(agent_id: str, player_idx: int, board_type: str, num_players: int):
-    '''Load agent by ID - supports random, heuristic, or model paths.'''
-    # Dec 29, 2025: Added difficulty=5 (medium) as required by AIConfig
-    config = AIConfig(board_type=board_type, num_players=num_players, difficulty=5)
+def load_agent(agent_id: str, player_idx: int, board_type: str, num_players: int, game_seed: int = 0):
+    '''Load agent by ID - supports random, heuristic, or model paths.
+
+    Jan 2026: Added game_seed for unique randomness per game.
+    Without this, RandomAI/HeuristicAI produce identical games.
+    '''
+    # Per-game seed for varied randomness
+    rng_seed = (game_seed * 10000 + player_idx * 1000) & 0xFFFFFFFF
+    config = AIConfig(board_type=board_type, num_players=num_players, difficulty=5, rng_seed=rng_seed)
     if agent_id == 'random':
         return RandomAI(player_idx, config=config)
     elif agent_id == 'heuristic':
@@ -14070,8 +14075,8 @@ def load_agent(agent_id: str, player_idx: int, board_type: str, num_players: int
 engine = get_rules_engine(skip_shadow_contracts=True)
 state = create_initial_state(board_type='{board_type}', num_players={num_players})
 agents = [
-    load_agent('{agent1}', 0, '{board_type}', {num_players}),
-    load_agent('{agent2}', 1, '{board_type}', {num_players}),
+    load_agent('{agent1}', 0, '{board_type}', {num_players}, {game_num}),
+    load_agent('{agent2}', 1, '{board_type}', {num_players}, {game_num}),
 ]
 
 # Play until completion
