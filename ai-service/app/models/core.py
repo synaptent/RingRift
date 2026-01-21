@@ -565,6 +565,16 @@ class AIConfig(BaseModel):
     rng_seed: Optional[int] = Field(None, alias="rngSeed")
     heuristic_profile_id: Optional[str] = None
     nn_model_id: Optional[str] = None
+    nn_model_version: Optional[str] = Field(
+        default=None,
+        description=(
+            "When provided, specifies the neural network architecture version to use "
+            "(e.g., 'v2', 'v3', 'v4', 'v5-heavy', 'v5-heavy-large'). This controls "
+            "which model class is instantiated when loading checkpoints. When None, "
+            "defaults to 'v2' for backwards compatibility. Required when loading "
+            "non-v2 architecture checkpoints (e.g., v5-heavy models)."
+        ),
+    )
     nn_state_dict: Optional[dict] = Field(
         default=None,
         description=(

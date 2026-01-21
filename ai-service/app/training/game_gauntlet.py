@@ -1063,6 +1063,7 @@ def create_neural_ai(
     model_type: str = "cnn",
     use_search: bool = False,
     search_budget: int | None = None,
+    model_version: str | None = None,  # Jan 2026: Support non-v2 architectures
 ) -> Any:
     """Create a neural network AI instance.
 
@@ -1166,13 +1167,14 @@ def create_neural_ai(
                         difficulty=8,
                         use_neural_net=True,
                         nn_model_id=model_id,
+                        nn_model_version=model_version,  # Jan 2026: Support non-v2 architectures
                         gumbel_simulation_budget=budget,
                         gumbel_num_sampled_actions=8,  # Light sampling for evaluation
                         policy_temperature=temperature,
                         rngSeed=ai_rng_seed,
                     )
                     logger.info(
-                        f"[gauntlet] Creating GumbelMCTSAI with {budget} sims for player {player}"
+                        f"[gauntlet] Creating GumbelMCTSAI with {budget} sims, version={model_version} for player {player}"
                     )
                     return GumbelMCTSAI(player, config, board_type=board_type)
 
@@ -1203,13 +1205,14 @@ def create_neural_ai(
                 difficulty=8,
                 use_neural_net=True,
                 nn_model_id=model_id,
+                nn_model_version=model_version,  # Jan 2026: Support non-v2 architectures
                 gumbel_simulation_budget=budget,
                 gumbel_num_sampled_actions=8,
                 policy_temperature=temperature,
                 rngSeed=ai_rng_seed,
             )
             logger.info(
-                f"[gauntlet] Creating GumbelMCTSAI (fallback) with {budget} sims for player {player}"
+                f"[gauntlet] Creating GumbelMCTSAI (fallback) with {budget} sims, version={model_version} for player {player}"
             )
             return GumbelMCTSAI(player, config, board_type=board_type)
 
@@ -1219,6 +1222,7 @@ def create_neural_ai(
             difficulty=8,
             use_neural_net=True,
             nn_model_id=model_id,
+            nn_model_version=model_version,  # Jan 2026: Support non-v2 architectures
             policy_temperature=temperature,
             rngSeed=ai_rng_seed,
         )
@@ -1491,6 +1495,7 @@ def _play_single_gauntlet_game(
     model_type: str,
     recording_config: Any | None = None,  # Jan 2026: Add recording support for parallel games
     use_search: bool = True,  # Jan 2026: Enable MCTS search to align with training
+    model_version: str | None = None,  # Jan 2026: Support non-v2 architectures
 ) -> dict[str, Any]:
     """Play a single gauntlet game (for parallel execution).
 
@@ -1515,6 +1520,7 @@ def _play_single_gauntlet_game(
             num_players=num_players,
             model_type=model_type,
             use_search=use_search,
+            model_version=model_version,
         )
 
         # Create baseline AIs for all other players
@@ -1643,6 +1649,7 @@ def _evaluate_single_opponent(
                         model_type,
                         recording_config,  # Jan 2026: Pass recording_config for game saving
                         use_search,  # Jan 2026: Pass use_search for MCTS alignment
+                        model_version,  # Jan 2026: Pass model_version for non-v2 architectures
                     ): g
                     for g in batch_games
                 }
@@ -1749,6 +1756,7 @@ def _evaluate_single_opponent(
                 num_players=num_players,
                 model_type=model_type,
                 use_search=use_search,  # Jan 2026: Use MCTS search to align with training
+                model_version=model_version,  # Jan 2026: Support non-v2 architectures
             )
 
             # Create baseline AIs for all other players
@@ -1980,6 +1988,7 @@ def run_baseline_gauntlet(
     harness_type: str = "",  # Dec 29: Harness type for unified evaluation
     game_count: int | None = None,  # Dec 30: Training game count for graduated thresholds
     use_search: bool = True,  # Jan 2026: Use MCTS search for candidate model
+    model_version: str | None = None,  # Jan 2026: Support non-v2 architectures (v4, v5-heavy, etc.)
 ) -> GauntletResult:
     """Run a gauntlet evaluation against baseline opponents.
 

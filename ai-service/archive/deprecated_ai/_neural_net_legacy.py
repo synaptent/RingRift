@@ -3234,6 +3234,16 @@ class NeuralNetAI(BaseAI):
         self.board_size = get_spatial_size_for_board(board_type)
 
         # =====================================================================
+        # V5-Heavy/V5-Heavy-Large architecture path (Jan 2026)
+        # =====================================================================
+        # If nn_model_version specifies a v5-heavy variant, use the specialized
+        # HexNeuralNet_v5_Heavy model instead of the default v2 architecture.
+        nn_model_version = getattr(self.config, "nn_model_version", None)
+        if nn_model_version and nn_model_version.lower() in ("v5-heavy", "v5-heavy-large", "v5heavy", "v5heavylarge"):
+            self._init_v5_heavy_model(board_type, num_players, nn_model_version)
+            return
+
+        # =====================================================================
         # In-memory state_dict loading path (zero disk I/O)
         # =====================================================================
         # If nn_state_dict is provided in config, skip all file-based loading
@@ -4178,6 +4188,146 @@ class NeuralNetAI(BaseAI):
             f"device={self.device} (total cached: {len(_MODEL_CACHE)})"
         )
 
+    def _init_v5_heavy_model(
+        self,
+        board_type: BoardType,
+        num_players: int | None = None,
+        model_version: str = "v5-heavy",
+    ) -> None:
+        """Initialize a V5-Heavy or V5-Heavy-Large model (Jan 2026).
+
+        This is the specialized path for loading HexNeuralNet_v5_Heavy models
+        which have a different architecture than the default v2 models.
+
+        Args:
+            board_type: Board type (should be HEX8 or HEXAGONAL)
+            num_players: Optional player count override
+            model_version: Version string ('v5-heavy' or 'v5-heavy-large')
+        """
+        import os
+
+        logger.info(
+            "Initializing V5-Heavy model: board=%s, players=%s, version=%s",
+            board_type, num_players, model_version,
+        )
+
+        # Import the v5-heavy factory
+        try:
+            if model_version.lower() in ("v5-heavy-large", "v5heavylarge"):
+                from .neural_net.v5_heavy_large import create_v5_heavy_large
+                variant = "large"
+            else:
+                from .neural_net.v5_heavy import create_v5_heavy_model
+                variant = "standard"
+        except ImportError as e:
+            logger.error("Failed to import v5-heavy modules: %s", e)
+            raise RuntimeError(f"v5-heavy architecture not available: {e}")
+
+        # Resolve model path
+        model_id = getattr(self.config, "nn_model_id", None)
+        if model_id:
+            if model_id.endswith(".pth"):
+                model_path = model_id
+                if not os.path.isabs(model_path):
+                    for prefix in [".", "models", os.path.join(self._base_dir, "models")]:
+                        candidate = os.path.join(prefix, model_path)
+                        if os.path.exists(candidate):
+                            model_path = candidate
+                            break
+            else:
+                model_path = os.path.join(self._base_dir, "models", f"{model_id}.pth")
+        else:
+            # Default path based on board type
+            board_name = board_type.name.lower()
+            players = num_players or 2
+            model_path = os.path.join(
+                self._base_dir, "models", f"arch_test_{model_version.replace('-', '')}_{board_name}_{players}p.pth"
+            )
+
+        logger.info("V5-Heavy model path: %s", model_path)
+
+        # Create the model
+        board_name_str = board_type.name.lower()
+        players = num_players or 2
+
+        # V5-heavy models use 40 input channels (v2 encoder with heuristics)
+        # determined from training data
+        in_channels = 40  # Default for v2 encoder with heuristics
+
+        if variant == "large":
+            self.model = create_v5_heavy_large(
+                board_type=board_name_str,
+                num_players=players,
+                variant="large",
+                num_heuristics=49,
+                dropout=0.0,
+                in_channels=in_channels,
+            )
+        else:
+            from .neural_net.v5_heavy import create_v5_heavy_model
+            self.model = create_v5_heavy_model(
+                board_type=board_name_str,
+                num_players=players,
+                num_heuristics=49,
+                dropout=0.0,
+                in_channels=in_channels,
+            )
+
+        self.model.to(self.device)
+
+        # Load weights if checkpoint exists
+        if os.path.exists(model_path):
+            from ..utils.torch_utils import safe_load_checkpoint
+            checkpoint = safe_load_checkpoint(model_path, map_location=self.device)
+
+            # Handle versioned checkpoint format
+            if 'model_state_dict' in checkpoint:
+                state_dict = checkpoint['model_state_dict']
+            elif 'state_dict' in checkpoint:
+                state_dict = checkpoint['state_dict']
+            else:
+                state_dict = checkpoint
+
+            # Strip module prefix (DDP compatibility)
+            state_dict = _strip_module_prefix(state_dict)
+
+            # Load weights
+            try:
+                self.model.load_state_dict(state_dict, strict=True)
+                logger.info("Loaded V5-Heavy weights from %s", model_path)
+            except RuntimeError as e:
+                logger.warning("Strict loading failed: %s, trying non-strict", e)
+                self.model.load_state_dict(state_dict, strict=False)
+                logger.info("Loaded V5-Heavy weights (non-strict) from %s", model_path)
+
+            self.model.eval()
+        else:
+            allow_fresh = getattr(self.config, "allow_fresh_weights", False)
+            if allow_fresh:
+                logger.info("V5-Heavy checkpoint not found at %s; using fresh weights", model_path)
+                self.model.eval()
+            else:
+                raise FileNotFoundError(
+                    f"V5-Heavy checkpoint not found: {model_path}. "
+                    "Set AIConfig.allow_fresh_weights=True to use random weights."
+                )
+
+        # Initialize encoder for v5-heavy
+        from app.ai._neural_net_legacy import HexStateEncoder
+        self.encoder = HexStateEncoder(
+            board_type=board_type,
+            history_length=3,
+            feature_version=2,
+        )
+        self.history_length = 3
+        self.feature_version = 2
+
+        self._initialized_board_type = board_type
+        logger.info(
+            "V5-Heavy model initialized: %s, device=%s",
+            type(self.model).__name__, self.device,
+        )
+
     def _init_from_state_dict(
         self,
         state_dict: dict[str, Any],
@@ -4598,11 +4748,23 @@ class NeuralNetAI(BaseAI):
                         expected_class = self.model._orig_mod.__class__.__name__
                     elif hasattr(self.model, "module"):
                         expected_class = self.model.module.__class__.__name__
+
+                # Jan 2026: If nn_model_version is specified in config, skip strict version
+                # checking since the caller knows which architecture they're loading.
+                # This allows loading v5-heavy, v5-heavy-large, v4 models without errors.
+                config_model_version = getattr(self.config, "nn_model_version", None)
+                use_strict_version = config_model_version is None  # Only strict if not specified
+                if config_model_version:
+                    logger.info(
+                        "nn_model_version=%s specified in config; relaxing version check",
+                        config_model_version,
+                    )
+
                 state_dict, metadata = manager.load_checkpoint(
                     model_path,
-                    strict=True,
-                    expected_version=expected_version,
-                    expected_class=expected_class,
+                    strict=use_strict_version,
+                    expected_version=expected_version if use_strict_version else None,
+                    expected_class=expected_class if use_strict_version else None,
                     verify_checksum=True,
                     device=self.device,
                 )
