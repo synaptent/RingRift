@@ -1366,7 +1366,14 @@ router.post(
 
     // Send email
     try {
-      await sendPasswordResetEmail(user.email, resetToken);
+      const emailSent = await sendPasswordResetEmail(user.email, resetToken);
+      if (!emailSent) {
+        httpLogger.error(req, 'Failed to send password reset email (returned false)', {
+          userId: user.id,
+          email: redactEmail(user.email),
+        });
+        throw createError('Failed to send password reset email', 500, 'EMAIL_SEND_FAILED');
+      }
     } catch (emailError) {
       httpLogger.error(req, 'Failed to send password reset email', {
         userId: user.id,

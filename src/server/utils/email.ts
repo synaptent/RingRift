@@ -119,6 +119,13 @@ async function sendViaMock(options: EmailOptions): Promise<boolean> {
 export const sendEmail = async (options: EmailOptions): Promise<boolean> => {
   const provider = config.email.provider;
 
+  logger.info('sendEmail called', {
+    provider,
+    to: options.to,
+    subject: options.subject,
+    hasSesConfig: !!config.email.ses,
+  });
+
   switch (provider) {
     case 'ses':
       return sendViaSES(options);
