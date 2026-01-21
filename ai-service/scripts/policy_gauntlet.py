@@ -22,20 +22,43 @@ from app.ai.policy_only_ai import PolicyOnlyAI
 from app.ai.random_ai import RandomAI
 from app.ai.heuristic_ai import HeuristicAI
 from app.rules import get_rules_engine, create_game_state
-from app.models import BoardType, GamePhase
+from app.models import BoardType, GamePhase, AIConfig
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
+def create_policy_ai(model_path: str, board_type: BoardType, player_number: int) -> PolicyOnlyAI:
+    """Create a PolicyOnlyAI with the correct configuration."""
+    config = AIConfig(
+        difficulty=5,  # Not used but required
+        nn_model_id=model_path,
+        policy_temperature=0.1,  # Low temp for more deterministic play
+        allow_fresh_weights=False,
+    )
+    return PolicyOnlyAI(
+        player_number=player_number,
+        config=config,
+        board_type=board_type,
+    )
+
+
 def run_game(
     model_ai,
-    opponent_ai,
+    opponent_ais: dict,
     board_type: BoardType,
     num_players: int,
     model_player: int = 0,
 ) -> int:
-    """Run a single game and return winner index."""
+    """Run a single game and return winner index.
+
+    Args:
+        model_ai: The model AI controlling one player
+        opponent_ais: Dict mapping player numbers to opponent AIs
+        board_type: The board type
+        num_players: Number of players
+        model_player: 0-indexed position of the model player
+    """
     state = create_game_state(
         board_type=board_type.value,
         num_players=num_players,
@@ -43,12 +66,8 @@ def run_game(
     engine = get_rules_engine()
 
     # Map players to AIs (1-indexed player numbers)
-    ais = {}
-    for i in range(num_players):
-        if i == model_player:
-            ais[i + 1] = model_ai
-        else:
-            ais[i + 1] = opponent_ai
+    ais = {model_player + 1: model_ai}
+    ais.update(opponent_ais)
 
     # Play game
     move_count = 0
@@ -79,21 +98,6 @@ def run_gauntlet(
     """Run gauntlet evaluation against specified opponent."""
     bt = BoardType(board_type)
 
-    # Create model AI (policy-only for speed)
-    model_ai = PolicyOnlyAI(
-        model_path=model_path,
-        board_type=bt,
-        num_players=num_players,
-    )
-
-    # Create opponent AI
-    if opponent_type == "random":
-        opponent_ai = RandomAI()
-    elif opponent_type == "heuristic":
-        opponent_ai = HeuristicAI()
-    else:
-        raise ValueError(f"Unknown opponent type: {opponent_type}")
-
     # Track results
     wins = 0
     losses = 0
@@ -103,8 +107,24 @@ def run_gauntlet(
         # Alternate who goes first for fairness (0-indexed position)
         model_player = i % num_players
 
+        # Create model AI (policy-only for speed) - needs correct player number
+        model_ai = create_policy_ai(model_path, bt, model_player + 1)
+
+        # Create opponent AIs for all other players
+        opponent_config = AIConfig(difficulty=5)
+        opponent_ais = {}
+        for p in range(1, num_players + 1):
+            if p == model_player + 1:
+                continue  # This is the model player
+            if opponent_type == "random":
+                opponent_ais[p] = RandomAI(player_number=p, config=opponent_config)
+            elif opponent_type == "heuristic":
+                opponent_ais[p] = HeuristicAI(player_number=p, config=opponent_config)
+            else:
+                raise ValueError(f"Unknown opponent type: {opponent_type}")
+
         # run_game returns 1-indexed winner (1-4) or -1 for draw
-        winner = run_game(model_ai, opponent_ai, bt, num_players, model_player)
+        winner = run_game(model_ai, opponent_ais, bt, num_players, model_player)
 
         # model_player is 0-indexed, winner is 1-indexed
         if winner == model_player + 1:
