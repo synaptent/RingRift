@@ -3903,8 +3903,10 @@ class P2POrchestrator(
     async def _cancel_job_for_reaper(self, job_id: str) -> bool:
         """Cancel a job by ID for the job reaper.
 
+        Jan 21, 2026: Enhanced to escalate SIGTERM -> SIGKILL for stuck processes.
+
         Attempts to:
-        1. Kill the process if PID is known
+        1. Kill the process with SIGTERM, wait 3s, then SIGKILL if still alive
         2. Update job status to 'cancelled'
         3. Remove from active jobs dict
         4. Emit TASK_ABANDONED event
@@ -3923,9 +3925,36 @@ class P2POrchestrator(
 
                     # Kill the process if we have a PID
                     if pid:
+                        process_killed = False
                         try:
+                            # First try SIGTERM
                             os.kill(pid, signal.SIGTERM)
                             logger.info(f"[JobReaper] Sent SIGTERM to pid {pid} for job {job_id}")
+
+                            # Wait up to 3 seconds for graceful termination
+                            for _ in range(6):  # 6 x 0.5s = 3s
+                                await asyncio.sleep(0.5)
+                                try:
+                                    # Check if process still exists (signal 0 = check only)
+                                    os.kill(pid, 0)
+                                except ProcessLookupError:
+                                    # Process is dead
+                                    process_killed = True
+                                    logger.debug(f"[JobReaper] Process {pid} terminated gracefully")
+                                    break
+
+                            # If still alive after 3s, escalate to SIGKILL
+                            if not process_killed:
+                                try:
+                                    os.kill(pid, signal.SIGKILL)
+                                    logger.warning(
+                                        f"[JobReaper] SIGTERM failed for pid {pid}, sent SIGKILL for job {job_id}"
+                                    )
+                                    # Wait briefly for SIGKILL to take effect
+                                    await asyncio.sleep(0.5)
+                                except ProcessLookupError:
+                                    pass  # Died between check and kill
+
                         except ProcessLookupError:
                             logger.debug(f"[JobReaper] Process {pid} already dead for job {job_id}")
                         except OSError as e:
@@ -13442,6 +13471,127 @@ class P2POrchestrator(
     # NOTE: Peer admin handlers (handle_purge_retired_peers, handle_purge_stale_peers,
     # handle_admin_unretire, handle_admin_reset_node_jobs) moved to AdminHandlersMixin
     # in scripts/p2p/handlers/admin.py (Dec 28, 2025)
+
+    async def handle_process_kill(self, request: web.Request) -> web.Response:
+        """Kill processes matching a pattern on this node.
+
+        Jan 21, 2026: Added to fix zombie process accumulation.
+        This endpoint enables remote cleanup of stuck/zombie processes.
+
+        Request JSON:
+            pattern: str - Process pattern to match (e.g., "selfplay", "gpu_selfplay")
+            signal: str - Signal to send (default: "SIGKILL")
+
+        Returns:
+            JSON with killed count and details
+        """
+        import shutil
+
+        try:
+            data = await request.json()
+            pattern = data.get("pattern", "")
+            signal_name = data.get("signal", "SIGKILL").upper()
+
+            if not pattern:
+                return web.json_response(
+                    {"error": "missing pattern", "killed": 0},
+                    status=400,
+                )
+
+            # Validate signal
+            signal_map = {
+                "SIGTERM": "-15",
+                "SIGKILL": "-9",
+                "SIGHUP": "-1",
+            }
+            signal_flag = signal_map.get(signal_name, "-9")
+
+            # Safety: only allow certain patterns to prevent accidents
+            allowed_patterns = [
+                "selfplay", "gpu_selfplay", "gumbel", "train", "gauntlet",
+                "tournament", "export", "run_self_play", "run_gpu_selfplay",
+                "run_hybrid_selfplay", "policy_only", "nnue",
+            ]
+            if not any(allowed in pattern.lower() for allowed in allowed_patterns):
+                return web.json_response(
+                    {"error": f"pattern not allowed: {pattern}", "killed": 0},
+                    status=403,
+                )
+
+            if not shutil.which("pgrep") or not shutil.which("pkill"):
+                return web.json_response(
+                    {"error": "pgrep/pkill not available", "killed": 0},
+                    status=500,
+                )
+
+            # Count matching processes first
+            try:
+                pgrep_result = await asyncio.to_thread(
+                    subprocess.run,
+                    ["pgrep", "-f", pattern],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if pgrep_result.returncode == 0 and pgrep_result.stdout.strip():
+                    pids = [p.strip() for p in pgrep_result.stdout.strip().split() if p.strip()]
+                    pid_count = len(pids)
+                else:
+                    pid_count = 0
+                    pids = []
+            except subprocess.TimeoutExpired:
+                return web.json_response(
+                    {"error": "pgrep timeout", "killed": 0},
+                    status=500,
+                )
+
+            if pid_count == 0:
+                return web.json_response({
+                    "killed": 0,
+                    "pattern": pattern,
+                    "message": "no matching processes",
+                })
+
+            # Kill matching processes
+            try:
+                pkill_result = await asyncio.to_thread(
+                    subprocess.run,
+                    ["pkill", signal_flag, "-f", pattern],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                # pkill returns 0 if processes were killed, 1 if none matched
+                killed = pid_count if pkill_result.returncode == 0 else 0
+            except subprocess.TimeoutExpired:
+                return web.json_response(
+                    {"error": "pkill timeout", "killed": 0},
+                    status=500,
+                )
+
+            logger.info(
+                f"[ProcessKill] Killed {killed} processes matching '{pattern}' "
+                f"with {signal_name} (pids: {pids[:10]}{'...' if len(pids) > 10 else ''})"
+            )
+
+            return web.json_response({
+                "killed": killed,
+                "pattern": pattern,
+                "signal": signal_name,
+                "pids": pids[:20],  # Limit returned PIDs
+            })
+
+        except json.JSONDecodeError:
+            return web.json_response(
+                {"error": "invalid JSON", "killed": 0},
+                status=400,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"[ProcessKill] Error: {e}")
+            return web.json_response(
+                {"error": str(e), "killed": 0},
+                status=500,
+            )
 
     async def handle_training_sync(self, request: web.Request) -> web.Response:
         """Manually trigger sync of selfplay data to training nodes.
@@ -30117,6 +30267,7 @@ print(json.dumps({{
             app.router.add_post('/start_job', self.handle_start_job)
             app.router.add_post('/stop_job', self.handle_stop_job)
             app.router.add_post('/job/kill', self.handle_job_kill)
+            app.router.add_post('/process/kill', self.handle_process_kill)  # Jan 21, 2026: Remote zombie cleanup
             app.router.add_post('/cleanup', self.handle_cleanup)
             app.router.add_post('/restart_stuck_jobs', self.handle_restart_stuck_jobs)
             app.router.add_post('/reduce_selfplay', self.handle_reduce_selfplay)

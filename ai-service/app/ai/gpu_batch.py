@@ -324,6 +324,36 @@ def log_cuda_memory_state(device_id: int = 0, prefix: str = "") -> None:
 # =============================================================================
 
 
+def _configure_dynamo_for_dynamic_shapes() -> None:
+    """Configure torch._dynamo for better handling of dynamic batch sizes.
+
+    This prevents excessive recompilation warnings when batch sizes vary
+    during inference (e.g., single state eval vs batched MCTS evaluation).
+    """
+    try:
+        import torch._dynamo as dynamo
+
+        # Increase cache size limit to handle more shape variations
+        # Default is 8, which is too low for MCTS with varying batch sizes
+        dynamo.config.cache_size_limit = 64
+
+        # Enable automatic dynamic shapes detection
+        # This helps dynamo understand which dimensions are truly dynamic
+        dynamo.config.automatic_dynamic_shapes = True
+
+        # Suppress recompilation warnings after limit is hit
+        # The model still works (falls back to eager mode), just with a warning
+        dynamo.config.suppress_errors = True
+
+    except (ImportError, AttributeError):
+        # torch._dynamo not available or config attributes don't exist
+        pass
+
+
+# Configure dynamo once at module load
+_configure_dynamo_for_dynamic_shapes()
+
+
 def compile_model(
     model: nn.Module,
     device: torch.device | None = None,
@@ -354,6 +384,7 @@ def compile_model(
         - MPS has limited torch.compile() support (will skip gracefully)
         - Requires PyTorch 2.0+
         - Set RINGRIFT_DISABLE_TORCH_COMPILE=1 to skip compilation
+        - dynamo cache_size_limit increased to 64 to handle varying batch sizes
     """
     # Check for env var to disable compilation
     import os
