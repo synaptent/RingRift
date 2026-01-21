@@ -542,35 +542,47 @@ class ResourceDetector:
                     cpu_count = os.cpu_count() or 1
                     result["cpu_percent"] = min(100.0, load * 100 / cpu_count)
 
-            # Memory
-            if sys.platform == "darwin":
-                out = subprocess.run(
-                    ["vm_stat"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                # Parse vm_stat output
-                lines = out.stdout.strip().split("\n")
-                stats: dict[str, int] = {}
-                for line in lines[1:]:
-                    if ":" in line:
-                        key, val = line.split(":")
-                        stats[key.strip()] = int(val.strip().rstrip("."))
-                page_size = 16384  # Usually 16KB on M1
-                free = stats.get("Pages free", 0) * page_size
-                total = self.detect_memory() * (1024**3)
-                result["memory_percent"] = 100.0 * (1 - free / total) if total > 0 else 0.0
-            else:
-                with open("/proc/meminfo") as f:
-                    mem: dict[str, int] = {}
-                    for line in f:
-                        parts = line.split()
-                        if len(parts) >= 2:
-                            mem[parts[0].rstrip(":")] = int(parts[1])
-                    total = mem.get("MemTotal", 1)
-                    avail = mem.get("MemAvailable", mem.get("MemFree", 0))
-                    result["memory_percent"] = 100.0 * (1 - avail / total)
+            # Memory - use psutil for accurate cross-platform measurement
+            # Jan 21, 2026: psutil correctly handles macOS memory pressure calculation
+            # by including inactive/purgeable/cached pages as "available"
+            try:
+                import psutil
+                mem = psutil.virtual_memory()
+                result["memory_percent"] = mem.percent
+            except ImportError:
+                # Fallback when psutil not available
+                if sys.platform == "darwin":
+                    out = subprocess.run(
+                        ["vm_stat"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    lines = out.stdout.strip().split("\n")
+                    stats: dict[str, int] = {}
+                    for line in lines[1:]:
+                        if ":" in line:
+                            key, val = line.split(":")
+                            stats[key.strip()] = int(val.strip().rstrip("."))
+                    page_size = 16384
+                    # Include free + purgeable + inactive as available
+                    free_pages = stats.get("Pages free", 0)
+                    purgeable_pages = stats.get("Pages purgeable", 0)
+                    inactive_pages = stats.get("Pages inactive", 0)
+                    available = (free_pages + purgeable_pages + inactive_pages) * page_size
+                    total = self.detect_memory() * (1024**3)
+                    result["memory_percent"] = 100.0 * (1 - available / total) if total > 0 else 0.0
+                else:
+                    # Linux fallback
+                    with open("/proc/meminfo") as f:
+                        meminfo: dict[str, int] = {}
+                        for line in f:
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                meminfo[parts[0].rstrip(":")] = int(parts[1])
+                        total = meminfo.get("MemTotal", 1)
+                        avail = meminfo.get("MemAvailable", meminfo.get("MemFree", 0))
+                        result["memory_percent"] = 100.0 * (1 - avail / total)
 
             # Disk
             usage = shutil.disk_usage(self.ringrift_path)
