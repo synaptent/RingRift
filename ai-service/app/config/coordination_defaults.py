@@ -2033,10 +2033,30 @@ class StaleFallbackDefaults:
     Solution: After configurable failures or timeout, allow training with
     older data while continuing to attempt sync in background.
 
+    Jan 21, 2026: Phase 5 - Added tiered warnings before fallback.
+    - Tier 1 (NOTICE): 15 min OR 2 failures - log info
+    - Tier 2 (WARNING): 30 min OR 4 failures - emit warning event
+    - Tier 3 (CRITICAL): 45 min OR 6 failures - allow fallback
+    Rollback: RINGRIFT_STALE_FALLBACK_LEGACY=true (uses 45min OR 5 failures)
+
     Used by: app/coordination/stale_fallback.py, app/training/train.py
     """
+    # Jan 21, 2026: Phase 5 - Tier 1: NOTICE (early warning)
+    TIER_1_DURATION: float = _env_float("RINGRIFT_STALE_TIER1_DURATION", 900.0)  # 15 min
+    TIER_1_FAILURES: int = _env_int("RINGRIFT_STALE_TIER1_FAILURES", 2)
+
+    # Jan 21, 2026: Phase 5 - Tier 2: WARNING (escalated warning)
+    TIER_2_DURATION: float = _env_float("RINGRIFT_STALE_TIER2_DURATION", 1800.0)  # 30 min
+    TIER_2_FAILURES: int = _env_int("RINGRIFT_STALE_TIER2_FAILURES", 4)
+
+    # Jan 21, 2026: Phase 5 - Tier 3: CRITICAL (fallback allowed)
+    # Same as MAX_SYNC_DURATION and MAX_SYNC_FAILURES for backward compatibility
+    TIER_3_DURATION: float = _env_float("RINGRIFT_STALE_TIER3_DURATION", 2700.0)  # 45 min
+    TIER_3_FAILURES: int = _env_int("RINGRIFT_STALE_TIER3_FAILURES", 6)  # Was 5, increased to 6
+
     # Maximum sync failures before allowing stale fallback
-    MAX_SYNC_FAILURES: int = _env_int("RINGRIFT_MAX_SYNC_FAILURES", 5)
+    # Jan 21, 2026: Increased from 5 to 6 to match TIER_3_FAILURES
+    MAX_SYNC_FAILURES: int = _env_int("RINGRIFT_MAX_SYNC_FAILURES", 6)
 
     # Maximum sync duration before fallback (seconds) - 45 minutes
     MAX_SYNC_DURATION: float = _env_float("RINGRIFT_MAX_SYNC_DURATION", 2700.0)
@@ -2057,6 +2077,10 @@ class StaleFallbackDefaults:
 
     # Whether to emit events when falling back to stale data
     EMIT_FALLBACK_EVENTS: bool = _env_bool("RINGRIFT_EMIT_FALLBACK_EVENTS", True)
+
+    # Jan 21, 2026: Phase 5 - Legacy mode flag (disables tier system)
+    # When true, uses original 45min OR 5 failures without intermediate warnings
+    LEGACY_MODE: bool = _env_bool("RINGRIFT_STALE_FALLBACK_LEGACY", False)
 
 
 # =============================================================================

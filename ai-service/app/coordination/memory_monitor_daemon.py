@@ -3,10 +3,12 @@
 Monitors GPU VRAM and process memory (RSS) to detect memory pressure
 before OOM conditions occur. Part of 48-hour autonomous operation.
 
-Key thresholds:
-- GPU VRAM: 75% warning, 85% critical → Emit MEMORY_PRESSURE, pause spawning
-- System RAM: 80% warning, 90% critical → Emit RESOURCE_CONSTRAINT
-- Process RSS: 32GB critical → SIGTERM → wait 60s → SIGKILL
+Key thresholds (Jan 21, 2026 - Phase 4 lowered for earlier intervention):
+- GPU VRAM: 65% caution → 70% warning → 80% critical → Emit MEMORY_PRESSURE
+- System RAM: 70% caution → 75% warning → 85% critical → Emit RESOURCE_CONSTRAINT
+- Process RSS: 24GB warning → 28GB critical → SIGTERM → wait 60s → SIGKILL
+
+Rollback: RINGRIFT_MEMORY_LEGACY_THRESHOLDS=true (uses 75/85% GPU, 80/90% RAM, 32GB RSS)
 
 Usage:
     from app.coordination.memory_monitor_daemon import MemoryMonitorDaemon
@@ -55,18 +57,31 @@ class MemoryThresholds:
     """Memory threshold configuration.
 
     All thresholds are percentages (0.0 to 1.0).
+
+    Jan 21, 2026: Phase 4 - Lowered thresholds for earlier intervention.
+    - Added CAUTION tier (65% GPU, 70% RAM) for early warning
+    - Lowered WARNING tier (70% GPU, 75% RAM) to reduce batch sizes
+    - Lowered CRITICAL tier (80% GPU, 85% RAM) to pause spawning earlier
+    - Lowered process RSS thresholds (24GB warning, 28GB critical)
+    Rollback: RINGRIFT_MEMORY_LEGACY_THRESHOLDS=true (uses 75/85% GPU, 80/90% RAM)
     """
 
     # GPU VRAM thresholds
-    gpu_warning: float = 0.75  # 75% - start logging warnings
-    gpu_critical: float = 0.85  # 85% - emit MEMORY_PRESSURE
+    # Jan 21, 2026: Added caution tier, lowered warning/critical for earlier OOM prevention
+    gpu_caution: float = 0.65  # 65% - log + emit MEMORY_CAUTION
+    gpu_warning: float = 0.70  # 70% - reduce batch sizes (was 75%)
+    gpu_critical: float = 0.80  # 80% - pause spawning (was 85%)
 
     # System RAM thresholds
-    ram_warning: float = 0.80  # 80% - start logging warnings
-    ram_critical: float = 0.90  # 90% - emit RESOURCE_CONSTRAINT
+    # Jan 21, 2026: Added caution tier, lowered warning/critical
+    ram_caution: float = 0.70  # 70% - log + emit MEMORY_CAUTION
+    ram_warning: float = 0.75  # 75% - reduce batch sizes (was 80%)
+    ram_critical: float = 0.85  # 85% - emit RESOURCE_CONSTRAINT (was 90%)
 
-    # Process RSS threshold (bytes)
-    process_rss_critical_bytes: int = 32 * 1024 * 1024 * 1024  # 32GB
+    # Process RSS thresholds (bytes)
+    # Jan 21, 2026: Added warning tier, lowered critical
+    process_rss_warning_bytes: int = 24 * 1024 * 1024 * 1024  # 24GB warning
+    process_rss_critical_bytes: int = 28 * 1024 * 1024 * 1024  # 28GB critical (was 32GB)
 
     # Grace period before SIGKILL (seconds)
     sigkill_grace_period: float = 60.0
@@ -95,17 +110,50 @@ class MemoryMonitorConfig:
 
     @classmethod
     def from_env(cls) -> MemoryMonitorConfig:
-        """Create config from environment variables."""
-        thresholds = MemoryThresholds(
-            gpu_warning=_env_float("GPU_WARNING_THRESHOLD", 0.75),
-            gpu_critical=_env_float("GPU_CRITICAL_THRESHOLD", 0.85),
-            ram_warning=_env_float("RAM_WARNING_THRESHOLD", 0.80),
-            ram_critical=_env_float("RAM_CRITICAL_THRESHOLD", 0.90),
-            process_rss_critical_bytes=_env_int(
-                "PROCESS_RSS_CRITICAL_GB", 32
-            ) * 1024 * 1024 * 1024,
-            sigkill_grace_period=_env_float("SIGKILL_GRACE_PERIOD", 60.0),
-        )
+        """Create config from environment variables.
+
+        Jan 21, 2026: Phase 4 - Added RINGRIFT_MEMORY_LEGACY_THRESHOLDS=true
+        for rollback to old thresholds (75/85% GPU, 80/90% RAM, 32GB RSS).
+        """
+        # Check for legacy mode rollback
+        legacy_mode = os.environ.get(
+            "RINGRIFT_MEMORY_LEGACY_THRESHOLDS", ""
+        ).lower() in ("true", "1", "yes")
+
+        if legacy_mode:
+            # Legacy thresholds (pre-Phase 4)
+            thresholds = MemoryThresholds(
+                gpu_caution=0.70,  # No caution in legacy, set to warning level
+                gpu_warning=_env_float("GPU_WARNING_THRESHOLD", 0.75),
+                gpu_critical=_env_float("GPU_CRITICAL_THRESHOLD", 0.85),
+                ram_caution=0.75,  # No caution in legacy, set to warning level
+                ram_warning=_env_float("RAM_WARNING_THRESHOLD", 0.80),
+                ram_critical=_env_float("RAM_CRITICAL_THRESHOLD", 0.90),
+                process_rss_warning_bytes=_env_int(
+                    "PROCESS_RSS_WARNING_GB", 28
+                ) * 1024 * 1024 * 1024,
+                process_rss_critical_bytes=_env_int(
+                    "PROCESS_RSS_CRITICAL_GB", 32
+                ) * 1024 * 1024 * 1024,
+                sigkill_grace_period=_env_float("SIGKILL_GRACE_PERIOD", 60.0),
+            )
+        else:
+            # New Phase 4 thresholds (Jan 21, 2026)
+            thresholds = MemoryThresholds(
+                gpu_caution=_env_float("GPU_CAUTION_THRESHOLD", 0.65),
+                gpu_warning=_env_float("GPU_WARNING_THRESHOLD", 0.70),
+                gpu_critical=_env_float("GPU_CRITICAL_THRESHOLD", 0.80),
+                ram_caution=_env_float("RAM_CAUTION_THRESHOLD", 0.70),
+                ram_warning=_env_float("RAM_WARNING_THRESHOLD", 0.75),
+                ram_critical=_env_float("RAM_CRITICAL_THRESHOLD", 0.85),
+                process_rss_warning_bytes=_env_int(
+                    "PROCESS_RSS_WARNING_GB", 24
+                ) * 1024 * 1024 * 1024,
+                process_rss_critical_bytes=_env_int(
+                    "PROCESS_RSS_CRITICAL_GB", 28
+                ) * 1024 * 1024 * 1024,
+                sigkill_grace_period=_env_float("SIGKILL_GRACE_PERIOD", 60.0),
+            )
         return cls(
             enabled=_env_bool("ENABLED", True),
             check_interval_seconds=_env_float("CHECK_INTERVAL", 30.0),
@@ -120,7 +168,10 @@ class MemoryMonitorConfig:
 
 @dataclass
 class MemoryStatus:
-    """Current memory status snapshot."""
+    """Current memory status snapshot.
+
+    Jan 21, 2026: Phase 4 - Added caution flags and process warning flag.
+    """
 
     # GPU memory
     gpu_used_bytes: int = 0
@@ -137,17 +188,30 @@ class MemoryStatus:
     largest_process_pid: int = 0
     largest_process_rss_bytes: int = 0
 
-    # Status flags
-    gpu_warning: bool = False
-    gpu_critical: bool = False
-    ram_warning: bool = False
-    ram_critical: bool = False
-    process_critical: bool = False
+    # Status flags - Jan 21, 2026: Added caution tier
+    gpu_caution: bool = False  # 65% - early warning
+    gpu_warning: bool = False  # 70% - reduce batch sizes
+    gpu_critical: bool = False  # 80% - pause spawning
+    ram_caution: bool = False  # 70% - early warning
+    ram_warning: bool = False  # 75% - reduce batch sizes
+    ram_critical: bool = False  # 85% - emit RESOURCE_CONSTRAINT
+    process_warning: bool = False  # 24GB - log warning
+    process_critical: bool = False  # 28GB - kill process
 
     @property
     def any_critical(self) -> bool:
         """Check if any resource is in critical state."""
         return self.gpu_critical or self.ram_critical or self.process_critical
+
+    @property
+    def any_caution(self) -> bool:
+        """Check if any resource is in caution state (but not warning/critical)."""
+        return (self.gpu_caution or self.ram_caution) and not self.any_warning
+
+    @property
+    def any_warning(self) -> bool:
+        """Check if any resource is in warning state (but not critical)."""
+        return (self.gpu_warning or self.ram_warning or self.process_warning) and not self.any_critical
 
 
 class MemoryMonitorDaemon(HandlerBase):
@@ -271,12 +335,17 @@ class MemoryMonitorDaemon(HandlerBase):
         except Exception as e:  # noqa: BLE001
             logger.debug(f"[MemoryMonitor] Process scan failed: {e}")
 
-        # Apply thresholds
+        # Apply thresholds - Jan 21, 2026: Phase 4 added caution tier
         thresholds = self._memory_config.thresholds
+        status.gpu_caution = status.gpu_utilization >= thresholds.gpu_caution
         status.gpu_warning = status.gpu_utilization >= thresholds.gpu_warning
         status.gpu_critical = status.gpu_utilization >= thresholds.gpu_critical
+        status.ram_caution = status.ram_utilization >= thresholds.ram_caution
         status.ram_warning = status.ram_utilization >= thresholds.ram_warning
         status.ram_critical = status.ram_utilization >= thresholds.ram_critical
+        status.process_warning = (
+            status.largest_process_rss_bytes >= thresholds.process_rss_warning_bytes
+        )
         status.process_critical = (
             status.largest_process_rss_bytes >= thresholds.process_rss_critical_bytes
         )
@@ -357,7 +426,10 @@ class MemoryMonitorDaemon(HandlerBase):
             return 0, 0
 
     async def _check_gpu_memory(self, status: MemoryStatus) -> None:
-        """Check GPU memory and emit events."""
+        """Check GPU memory and emit events.
+
+        Jan 21, 2026: Phase 4 - Added caution tier for earlier intervention.
+        """
         if status.gpu_critical:
             self._gpu_criticals_emitted += 1
             await self._emit_memory_pressure(status, "gpu")
@@ -371,9 +443,18 @@ class MemoryMonitorDaemon(HandlerBase):
             logger.warning(
                 f"[MemoryMonitor] GPU VRAM warning: {status.gpu_utilization:.1%}"
             )
+        elif status.gpu_caution:
+            # Jan 21, 2026: Phase 4 - Emit caution event for early awareness
+            logger.info(
+                f"[MemoryMonitor] GPU VRAM caution: {status.gpu_utilization:.1%}"
+            )
+            await self._emit_memory_caution(status, "gpu")
 
     async def _check_ram(self, status: MemoryStatus) -> None:
-        """Check system RAM and emit events."""
+        """Check system RAM and emit events.
+
+        Jan 21, 2026: Phase 4 - Added caution tier for earlier intervention.
+        """
         if status.ram_critical:
             self._ram_criticals_emitted += 1
             await self._emit_resource_constraint(status, "ram")
@@ -387,9 +468,42 @@ class MemoryMonitorDaemon(HandlerBase):
             logger.warning(
                 f"[MemoryMonitor] System RAM warning: {status.ram_utilization:.1%}"
             )
+        elif status.ram_caution:
+            # Jan 21, 2026: Phase 4 - Emit caution event for early awareness
+            logger.info(
+                f"[MemoryMonitor] System RAM caution: {status.ram_utilization:.1%}"
+            )
+            await self._emit_memory_caution(status, "ram")
+
+    async def _emit_memory_caution(self, status: MemoryStatus, resource_type: str) -> None:
+        """Emit MEMORY_CAUTION event for early warning.
+
+        Jan 21, 2026: Phase 4 - New event type for caution tier.
+        """
+        self._safe_emit_event(
+            "MEMORY_CAUTION",
+            {
+                "resource_type": resource_type,
+                "utilization": status.gpu_utilization if resource_type == "gpu" else status.ram_utilization,
+                "node_id": getattr(self, "node_id", None) or os.environ.get("RINGRIFT_NODE_ID", "unknown"),
+            },
+        )
 
     async def _check_large_processes(self, status: MemoryStatus) -> None:
-        """Check for oversized selfplay processes and kill if needed."""
+        """Check for oversized selfplay processes and kill if needed.
+
+        Jan 21, 2026: Phase 4 - Added warning tier logging before critical action.
+        """
+        # Log warning tier first (24GB threshold)
+        if status.process_warning and not status.process_critical:
+            pid = status.largest_process_pid
+            rss_gb = status.largest_process_rss_bytes / (1024**3)
+            warning_threshold_gb = self._memory_config.thresholds.process_rss_warning_bytes / (1024**3)
+            logger.warning(
+                f"[MemoryMonitor] Process RSS warning: PID {pid} using "
+                f"{rss_gb:.1f}GB (threshold: {warning_threshold_gb:.0f}GB)"
+            )
+
         if not status.process_critical:
             return
 

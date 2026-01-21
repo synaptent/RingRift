@@ -1366,6 +1366,7 @@ class SSHClient:
 
 # =============================================================================
 # Client Pool / Factory (December 2025: Added TTL, health checks, LRU eviction)
+# January 2026: Added dynamic pool scaling (Phase 7 P2P Stability)
 # =============================================================================
 
 import threading
@@ -1375,27 +1376,92 @@ _client_pool: dict[str, SSHClient] = {}
 _client_last_used: dict[str, float] = {}  # Track last use time
 _client_pool_lock = threading.Lock()
 
-# Pool configuration
-MAX_POOL_SIZE = 50  # Maximum clients to keep in pool
-CLIENT_TTL_SECONDS = 1800  # 30 minutes max age
+# Pool configuration - static defaults (used if dynamic scaling disabled)
+_STATIC_MAX_POOL_SIZE = 50  # Maximum clients to keep in pool
+_STATIC_CLIENT_TTL_SECONDS = 1800  # 30 minutes max age
 HEALTH_CHECK_INTERVAL = 300  # Check health every 5 minutes
+
+# Jan 21, 2026: Phase 7 P2P Stability - Rollback via environment variable
+_USE_STATIC_POOL = os.environ.get("RINGRIFT_SSH_STATIC_POOL", "").lower() in (
+    "true", "1", "yes"
+)
+
+
+def _get_max_pool_size() -> int:
+    """Get maximum pool size, scaling with active cluster nodes.
+
+    Jan 21, 2026: Phase 7 P2P Stability Plan - prevents ControlMaster pool
+    exhaustion with 41+ nodes under load.
+
+    Returns:
+        Dynamic pool size = max(30, active_nodes * 1.5), or static 50 if disabled
+    """
+    if _USE_STATIC_POOL:
+        return _STATIC_MAX_POOL_SIZE
+
+    try:
+        from app.config.cluster_config import get_active_nodes
+        active_count = len(get_active_nodes())
+        # Scale pool: 1.5x overhead for active nodes, minimum 30
+        return max(30, int(active_count * 1.5))
+    except (ImportError, Exception):
+        return _STATIC_MAX_POOL_SIZE
+
+
+def _get_client_ttl() -> int:
+    """Get client TTL, reducing under pool pressure.
+
+    Jan 21, 2026: Phase 7 P2P Stability Plan - reduces TTL when pool is
+    under pressure to make room for new connections.
+
+    Returns:
+        TTL in seconds (300-1800 depending on utilization)
+    """
+    if _USE_STATIC_POOL:
+        return _STATIC_CLIENT_TTL_SECONDS
+
+    max_pool = _get_max_pool_size()
+    current_size = len(_client_pool)
+
+    if max_pool == 0:
+        return _STATIC_CLIENT_TTL_SECONDS
+
+    utilization = current_size / max_pool
+
+    if utilization > 0.9:
+        return 300   # 5 min under high pressure
+    elif utilization > 0.7:
+        return 900   # 15 min under moderate pressure
+    return 1800      # 30 min default
+
+
+# Legacy aliases for backward compatibility
+MAX_POOL_SIZE = _STATIC_MAX_POOL_SIZE
+CLIENT_TTL_SECONDS = _STATIC_CLIENT_TTL_SECONDS
 
 
 def _evict_stale_clients() -> int:
-    """Evict stale clients from pool. Returns number evicted."""
+    """Evict stale clients from pool. Returns number evicted.
+
+    Jan 21, 2026: Uses dynamic TTL and pool size from Phase 7 scaling.
+    """
     now = time_module.time()
     evicted = 0
     to_remove = []
 
+    # Get dynamic TTL and pool size
+    ttl_seconds = _get_client_ttl()
+    max_pool_size = _get_max_pool_size()
+
     with _client_pool_lock:
         for node_id, last_used in list(_client_last_used.items()):
-            if now - last_used > CLIENT_TTL_SECONDS:
+            if now - last_used > ttl_seconds:
                 to_remove.append(node_id)
 
         # Also evict LRU if pool is too large
-        if len(_client_pool) > MAX_POOL_SIZE:
+        if len(_client_pool) > max_pool_size:
             sorted_by_age = sorted(_client_last_used.items(), key=lambda x: x[1])
-            excess = len(_client_pool) - MAX_POOL_SIZE
+            excess = len(_client_pool) - max_pool_size
             for node_id, _ in sorted_by_age[:excess]:
                 if node_id not in to_remove:
                     to_remove.append(node_id)
@@ -1407,7 +1473,10 @@ def _evict_stale_clients() -> int:
                 evicted += 1
 
     if evicted > 0:
-        logger.debug(f"[SSHPool] Evicted {evicted} stale clients, pool size: {len(_client_pool)}")
+        logger.debug(
+            f"[SSHPool] Evicted {evicted} stale clients, pool size: {len(_client_pool)}/{max_pool_size}, "
+            f"TTL: {ttl_seconds}s"
+        )
 
     return evicted
 
@@ -1417,9 +1486,12 @@ def get_ssh_client(node_id_or_host: str) -> SSHClient:
 
     Loads config from cluster_hosts.yaml if node_id matches.
     Automatically evicts stale clients when pool grows too large.
+
+    Jan 21, 2026: Uses dynamic pool size from Phase 7 scaling.
     """
-    # Periodically evict stale clients
-    if len(_client_pool) > MAX_POOL_SIZE // 2:
+    # Periodically evict stale clients (use dynamic pool size)
+    max_pool_size = _get_max_pool_size()
+    if len(_client_pool) > max_pool_size // 2:
         _evict_stale_clients()
 
     with _client_pool_lock:
@@ -1443,13 +1515,24 @@ def get_ssh_client(node_id_or_host: str) -> SSHClient:
 
 
 def get_pool_stats() -> dict:
-    """Get SSH connection pool statistics."""
+    """Get SSH connection pool statistics.
+
+    Jan 21, 2026: Returns dynamic pool size and TTL from Phase 7 scaling.
+    """
+    max_pool_size = _get_max_pool_size()
+    ttl_seconds = _get_client_ttl()
+
     with _client_pool_lock:
         now = time_module.time()
+        current_size = len(_client_pool)
+        utilization = current_size / max_pool_size if max_pool_size > 0 else 0.0
+
         return {
-            "pool_size": len(_client_pool),
-            "max_pool_size": MAX_POOL_SIZE,
-            "ttl_seconds": CLIENT_TTL_SECONDS,
+            "pool_size": current_size,
+            "max_pool_size": max_pool_size,
+            "ttl_seconds": ttl_seconds,
+            "utilization_pct": round(utilization * 100, 1),
+            "dynamic_scaling_enabled": not _USE_STATIC_POOL,
             "clients": {
                 node_id: {
                     "age_seconds": now - _client_last_used.get(node_id, now),

@@ -4,6 +4,13 @@ December 2025: Part of 48-hour autonomous operation plan.
 When sync failures block training indefinitely, allow training to proceed
 with stale data after N failures or timeout.
 
+Jan 21, 2026: Phase 5 - Added tiered warnings before fallback.
+- Tier 0: No issues, data quality is good
+- Tier 1 (NOTICE): 15 min OR 2 failures - log info
+- Tier 2 (WARNING): 30 min OR 4 failures - emit warning event
+- Tier 3 (CRITICAL): 45 min OR 6 failures - allow fallback
+Rollback: RINGRIFT_STALE_FALLBACK_LEGACY=true
+
 Problem: Sync failures can block training indefinitely, freezing progress.
 Solution: After configurable failures or timeout, allow training with
 older data while continuing to attempt sync in background.
@@ -15,8 +22,13 @@ Usage:
         should_allow_stale_training,
     )
 
-    # Check if stale training should be allowed
+    # Check data quality tier before sync
     controller = get_training_fallback_controller()
+    tier, message = controller.check_data_quality_tier("hex8_2p")
+    if tier >= 2:
+        logger.warning(f"Sync degraded: {message}")
+
+    # Check if stale training should be allowed
     allowed, reason = controller.should_allow_training(
         config_key="hex8_2p",
         data_age_hours=2.5,
@@ -46,6 +58,7 @@ __all__ = [
     "get_training_fallback_controller",
     "reset_training_fallback_controller",
     "should_allow_stale_training",
+    "check_data_quality_tier",  # Jan 21, 2026: Phase 5
 ]
 
 
@@ -121,12 +134,21 @@ class TrainingFallbackController:
     4. Within FALLBACK_COOLDOWN of last fallback for this config
 
     December 2025: Part of 48-hour autonomous operation plan.
+
+    Jan 21, 2026: Phase 5 - Added tiered warnings before fallback.
+    - Tier 0: No issues
+    - Tier 1 (NOTICE): 15 min OR 2 failures - log info
+    - Tier 2 (WARNING): 30 min OR 4 failures - emit warning event
+    - Tier 3 (CRITICAL): 45 min OR 6 failures - allow fallback
+    Rollback: RINGRIFT_STALE_FALLBACK_LEGACY=true
     """
 
     def __init__(self) -> None:
         """Initialize the fallback controller."""
         self._states: dict[str, FallbackState] = {}
         self._start_time = time.time()
+        # Jan 21, 2026: Track emitted tier events to avoid spam
+        self._tier_events_emitted: dict[str, int] = {}  # config_key -> highest tier emitted
 
     def _get_state(self, config_key: str) -> FallbackState:
         """Get or create state for a config."""
@@ -159,6 +181,118 @@ class TrainingFallbackController:
                 f"{state.sync_failures} failures"
             )
         state.reset()
+        # Reset tier event tracking on success
+        if config_key in self._tier_events_emitted:
+            del self._tier_events_emitted[config_key]
+
+    def check_data_quality_tier(
+        self,
+        config_key: str,
+        sync_failures: int | None = None,
+        elapsed_sync_time: float | None = None,
+    ) -> tuple[int, str]:
+        """Check the current data quality tier based on sync issues.
+
+        Jan 21, 2026: Phase 5 - Gradual warnings before fallback.
+
+        Args:
+            config_key: Config identifier (e.g., "hex8_2p")
+            sync_failures: Override for sync failures (uses tracked count if None)
+            elapsed_sync_time: Time spent trying to sync (seconds)
+
+        Returns:
+            Tuple of (tier 0-3, message describing the tier)
+            - Tier 0: No issues, data quality is good
+            - Tier 1: NOTICE - early warning, sync has some issues
+            - Tier 2: WARNING - escalated warning, sync struggling
+            - Tier 3: CRITICAL - fallback threshold reached
+        """
+        # Check legacy mode
+        if StaleFallbackDefaults.LEGACY_MODE:
+            # In legacy mode, only report tier 0 or 3
+            state = self._get_state(config_key)
+            failures = sync_failures if sync_failures is not None else state.sync_failures
+            elapsed = elapsed_sync_time if elapsed_sync_time is not None else state.elapsed_time
+            if failures >= 5 or elapsed >= 2700:  # Legacy thresholds
+                return 3, f"Sync issues: {failures} failures, {elapsed:.0f}s elapsed (legacy mode)"
+            return 0, "Data quality: OK"
+
+        # Get current state
+        state = self._get_state(config_key)
+        failures = sync_failures if sync_failures is not None else state.sync_failures
+        elapsed = elapsed_sync_time if elapsed_sync_time is not None else state.elapsed_time
+
+        # Determine tier based on thresholds
+        tier = 0
+        message = "Data quality: OK"
+
+        # Check Tier 3 (CRITICAL) first
+        if failures >= StaleFallbackDefaults.TIER_3_FAILURES or elapsed >= StaleFallbackDefaults.TIER_3_DURATION:
+            tier = 3
+            message = f"CRITICAL: {failures} failures, {elapsed:.0f}s elapsed - fallback threshold reached"
+        # Check Tier 2 (WARNING)
+        elif failures >= StaleFallbackDefaults.TIER_2_FAILURES or elapsed >= StaleFallbackDefaults.TIER_2_DURATION:
+            tier = 2
+            message = f"WARNING: {failures} failures, {elapsed:.0f}s elapsed - sync struggling"
+        # Check Tier 1 (NOTICE)
+        elif failures >= StaleFallbackDefaults.TIER_1_FAILURES or elapsed >= StaleFallbackDefaults.TIER_1_DURATION:
+            tier = 1
+            message = f"NOTICE: {failures} failures, {elapsed:.0f}s elapsed - early warning"
+
+        # Emit tier event if this is a new/higher tier
+        self._emit_tier_event(config_key, tier, failures, elapsed)
+
+        return tier, message
+
+    def _emit_tier_event(
+        self,
+        config_key: str,
+        tier: int,
+        failures: int,
+        elapsed: float,
+    ) -> None:
+        """Emit event for tier changes.
+
+        Jan 21, 2026: Phase 5 - Only emits when tier increases to avoid spam.
+        """
+        if tier == 0:
+            return
+
+        # Check if we've already emitted for this tier or higher
+        previous_tier = self._tier_events_emitted.get(config_key, 0)
+        if tier <= previous_tier:
+            return
+
+        # Record that we've emitted for this tier
+        self._tier_events_emitted[config_key] = tier
+
+        # Log based on tier
+        tier_names = {1: "NOTICE", 2: "WARNING", 3: "CRITICAL"}
+        tier_name = tier_names.get(tier, f"TIER_{tier}")
+
+        if tier == 1:
+            logger.info(f"[StaleFallback] {tier_name} for {config_key}: {failures} failures, {elapsed:.0f}s elapsed")
+        elif tier == 2:
+            logger.warning(f"[StaleFallback] {tier_name} for {config_key}: {failures} failures, {elapsed:.0f}s elapsed")
+        else:
+            logger.warning(f"[StaleFallback] {tier_name} for {config_key}: {failures} failures, {elapsed:.0f}s elapsed - fallback imminent")
+
+        # Emit event for tier 2 and 3
+        if tier >= 2 and StaleFallbackDefaults.EMIT_FALLBACK_EVENTS:
+            try:
+                from app.coordination.event_router import emit_event
+                emit_event(
+                    f"STALE_DATA_QUALITY_TIER_{tier}",
+                    {
+                        "config_key": config_key,
+                        "tier": tier,
+                        "tier_name": tier_name,
+                        "sync_failures": failures,
+                        "elapsed_seconds": elapsed,
+                    },
+                )
+            except (ImportError, AttributeError, RuntimeError) as e:
+                logger.debug(f"[StaleFallback] Could not emit tier event: {e}")
 
     def should_allow_training(
         self,
@@ -506,3 +640,32 @@ def should_allow_stale_training(
         games_available=games_available,
     )
     return decision.allowed, decision.reason
+
+
+def check_data_quality_tier(
+    config_key: str,
+    sync_failures: int = 0,
+    elapsed_sync_time: float = 0.0,
+) -> tuple[int, str]:
+    """Convenience function to check data quality tier.
+
+    Jan 21, 2026: Phase 5 - Gradual warnings before fallback.
+
+    Args:
+        config_key: Config identifier (e.g., "hex8_2p")
+        sync_failures: Number of sync failures
+        elapsed_sync_time: Time spent trying to sync (seconds)
+
+    Returns:
+        Tuple of (tier: int 0-3, message: str)
+        - Tier 0: No issues
+        - Tier 1: NOTICE (early warning)
+        - Tier 2: WARNING (sync struggling)
+        - Tier 3: CRITICAL (fallback threshold)
+    """
+    controller = get_training_fallback_controller()
+    return controller.check_data_quality_tier(
+        config_key=config_key,
+        sync_failures=sync_failures,
+        elapsed_sync_time=elapsed_sync_time,
+    )

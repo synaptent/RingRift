@@ -1,19 +1,20 @@
 """Fast Leader Health Probe Loop.
 
 Jan 4, 2026 - Phase 5 of P2P Cluster Resilience.
+Jan 21, 2026 - Phase 1 timeout alignment: threshold increased to 10 (100s).
 
 Problem: When the leader becomes unreachable, the cluster relies on gossip timeouts
 and periodic election checks to detect the failure. This can take 60-180 seconds,
 during which training and selfplay dispatch is blocked.
 
-Solution: LeaderProbeLoop actively probes the leader every 10 seconds. After 8
-consecutive failures (80s total), it triggers a forced election to recover from
-unreachable leader conditions faster. The increased timeout (from 60s) accommodates
-Lambda GH200 and Vast.ai nodes which can have 2-5s baseline latency.
+Solution: LeaderProbeLoop actively probes the leader every 10 seconds. After 10
+consecutive failures (100s total), it triggers a forced election to recover from
+unreachable leader conditions faster. The 100s threshold is 2/3 of the 150s leader
+lease duration, giving a 50s buffer before lease expiry.
 
 Features:
 - Probes leader health via HTTP /health endpoint
-- Configurable failure threshold (default: 6 consecutive failures = 60s)
+- Configurable failure threshold (default: 10 consecutive failures = 100s)
 - Triggers election via _start_election() on threshold breach
 - Skips probing when this node is the leader
 - Emits events for observability (LEADER_PROBE_FAILED, LEADER_PROBE_RECOVERED)
@@ -61,7 +62,7 @@ class LeaderProbeLoop(BaseLoop):
         orchestrator: Any,
         *,
         probe_interval: float = 10.0,
-        failure_threshold: int = 8,  # Jan 20, 2026: Increased from 6 (80s total vs 60s)
+        failure_threshold: int = 10,  # Jan 21, 2026: Increased from 8 (100s total vs 80s) for Phase 1 timeout alignment
         probe_timeout: float = 10.0,  # Jan 20, 2026: Increased from 5s to match probe interval
         probe_backup_candidates: bool = True,
         startup_grace_period: float = 20.0,
@@ -71,7 +72,7 @@ class LeaderProbeLoop(BaseLoop):
         Args:
             orchestrator: P2POrchestrator instance
             probe_interval: Seconds between probes (default: 10s)
-            failure_threshold: Consecutive failures before triggering election (default: 8 = 80s)
+            failure_threshold: Consecutive failures before triggering election (default: 10 = 100s)
             probe_timeout: Timeout for each probe request (default: 10s, matches probe interval)
             probe_backup_candidates: Whether to probe backup candidates in parallel (default: True)
                 Session 17.33 Phase 17: Enables faster failover by pre-probing backup candidates
@@ -124,9 +125,10 @@ class LeaderProbeLoop(BaseLoop):
 
         # Jan 13, 2026: Dynamic failure threshold scaling (P2.1)
         # Scale failure threshold based on quorum health and latency
-        # Range: 4-12 failures (45-120s at 10s probe interval)
-        self._min_failure_threshold = 4  # 45s - healthy cluster, fast failover
-        self._max_failure_threshold = 12  # 120s - degraded cluster, avoid false elections
+        # Jan 21, 2026: Adjusted range for Phase 1 timeout alignment (6-14 failures = 60-140s)
+        # Range: 6-14 failures (60-140s at 10s probe interval)
+        self._min_failure_threshold = 6  # 60s - healthy cluster, fast failover
+        self._max_failure_threshold = 14  # 140s - degraded cluster, avoid false elections
         self._dynamic_threshold_enabled = True
 
     def _is_in_startup_phase(self) -> bool:

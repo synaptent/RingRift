@@ -61,11 +61,346 @@ except ImportError:
     SQLITE_CACHE_SIZE_KB = -2000
 
 import logging
+import time
+from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
 
 # Thread-local storage for database connections
 _local = threading.local()
+
+
+# =============================================================================
+# SQLite Connection Limiter (January 2026 - Phase 6 P2P Stability)
+# =============================================================================
+
+
+@dataclass
+class ConnectionSlot:
+    """Tracks a single connection slot."""
+
+    db_path: str
+    acquired_at: float
+    thread_id: int
+    thread_name: str
+
+
+class SQLiteConnectionLimiter:
+    """Global connection limiter to prevent SQLite connection exhaustion.
+
+    Jan 21, 2026: Phase 6 of P2P Stability Plan - prevents connection
+    accumulation under high load conditions in 20+ node clusters.
+
+    Features:
+    - Global connection limit with backpressure (blocks when at limit)
+    - Warning threshold at 80% capacity
+    - Leak detection for connections open > threshold
+    - Rollback via RINGRIFT_SQLITE_DISABLE_LIMIT=true
+
+    Usage:
+        limiter = get_connection_limiter()
+
+        # Acquire slot before opening connection
+        if limiter.acquire("path/to/db.sqlite", timeout=30.0):
+            try:
+                conn = sqlite3.connect("path/to/db.sqlite")
+                # ... use connection ...
+            finally:
+                limiter.release()
+
+        # Check for leaks periodically
+        leaks = limiter.detect_leaks(threshold_seconds=300.0)
+        for leak in leaks:
+            logger.warning(f"Potential leak: {leak}")
+    """
+
+    # Configurable limits via environment
+    MAX_CONNECTIONS = int(os.environ.get("RINGRIFT_SQLITE_MAX_CONNECTIONS", "100"))
+    WARN_THRESHOLD = int(MAX_CONNECTIONS * 0.8)
+
+    # Disable limiter for rollback
+    _disabled = os.environ.get("RINGRIFT_SQLITE_DISABLE_LIMIT", "").lower() in (
+        "true", "1", "yes"
+    )
+
+    # Singleton instance
+    _instance: "SQLiteConnectionLimiter | None" = None
+    _instance_lock = threading.Lock()
+
+    def __new__(cls) -> "SQLiteConnectionLimiter":
+        if cls._instance is None:
+            with cls._instance_lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if self._initialized:
+            return
+
+        self._initialized = True
+        self._lock = threading.Lock()
+        self._condition = threading.Condition(self._lock)
+        self._active_slots: dict[int, ConnectionSlot] = {}  # slot_id -> ConnectionSlot
+        self._next_slot_id = 0
+        self._warned_at_threshold = False
+        self._total_acquired = 0
+        self._total_timeouts = 0
+        self._total_leaks_detected = 0
+
+        # Thread-local slot tracking for release()
+        self._thread_local = threading.local()
+
+        if self._disabled:
+            logger.info("SQLiteConnectionLimiter disabled via RINGRIFT_SQLITE_DISABLE_LIMIT")
+
+    def acquire(self, db_path: str, timeout: float = 30.0) -> bool:
+        """Acquire a connection slot with backpressure.
+
+        Args:
+            db_path: Path to database (for tracking)
+            timeout: Max time to wait for a slot (seconds)
+
+        Returns:
+            True if slot acquired, False if timeout
+
+        Note:
+            Call release() when done to free the slot.
+        """
+        if self._disabled:
+            return True
+
+        deadline = time.time() + timeout
+
+        with self._condition:
+            # Wait for available slot
+            while len(self._active_slots) >= self.MAX_CONNECTIONS:
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    self._total_timeouts += 1
+                    logger.warning(
+                        f"SQLite connection limit timeout ({self.MAX_CONNECTIONS} connections, "
+                        f"waited {timeout:.1f}s for {db_path})"
+                    )
+                    self._emit_backpressure_event(db_path, timeout)
+                    return False
+
+                self._condition.wait(timeout=remaining)
+
+            # Acquire slot
+            slot_id = self._next_slot_id
+            self._next_slot_id += 1
+
+            current_thread = threading.current_thread()
+            slot = ConnectionSlot(
+                db_path=db_path,
+                acquired_at=time.time(),
+                thread_id=current_thread.ident or 0,
+                thread_name=current_thread.name,
+            )
+            self._active_slots[slot_id] = slot
+            self._total_acquired += 1
+
+            # Track slot for this thread (for release)
+            if not hasattr(self._thread_local, "slot_stack"):
+                self._thread_local.slot_stack = []
+            self._thread_local.slot_stack.append(slot_id)
+
+            # Warn at threshold
+            current_count = len(self._active_slots)
+            if current_count >= self.WARN_THRESHOLD and not self._warned_at_threshold:
+                self._warned_at_threshold = True
+                logger.warning(
+                    f"SQLite connections at {current_count}/{self.MAX_CONNECTIONS} "
+                    f"(warning threshold {self.WARN_THRESHOLD})"
+                )
+                self._emit_warning_event(current_count)
+
+            return True
+
+    def release(self) -> None:
+        """Release the most recently acquired connection slot."""
+        if self._disabled:
+            return
+
+        with self._condition:
+            # Get slot from thread-local stack
+            if not hasattr(self._thread_local, "slot_stack") or not self._thread_local.slot_stack:
+                logger.debug("release() called without matching acquire()")
+                return
+
+            slot_id = self._thread_local.slot_stack.pop()
+
+            if slot_id in self._active_slots:
+                del self._active_slots[slot_id]
+
+                # Reset threshold warning if we drop below
+                if len(self._active_slots) < self.WARN_THRESHOLD:
+                    self._warned_at_threshold = False
+
+                # Notify waiters
+                self._condition.notify()
+
+    def detect_leaks(self, threshold_seconds: float = 300.0) -> list[dict]:
+        """Find connections open longer than threshold.
+
+        Args:
+            threshold_seconds: Consider connections open longer than this as leaks
+
+        Returns:
+            List of dicts with leak details (db_path, thread_name, age_seconds)
+        """
+        if self._disabled:
+            return []
+
+        leaks = []
+        now = time.time()
+
+        with self._lock:
+            for slot_id, slot in list(self._active_slots.items()):
+                age = now - slot.acquired_at
+                if age > threshold_seconds:
+                    leaks.append({
+                        "slot_id": slot_id,
+                        "db_path": slot.db_path,
+                        "thread_id": slot.thread_id,
+                        "thread_name": slot.thread_name,
+                        "age_seconds": round(age, 1),
+                        "acquired_at": slot.acquired_at,
+                    })
+
+            if leaks:
+                self._total_leaks_detected += len(leaks)
+
+        return leaks
+
+    def get_stats(self) -> dict:
+        """Get connection limiter statistics."""
+        with self._lock:
+            return {
+                "active_connections": len(self._active_slots),
+                "max_connections": self.MAX_CONNECTIONS,
+                "warn_threshold": self.WARN_THRESHOLD,
+                "utilization_pct": round(len(self._active_slots) / self.MAX_CONNECTIONS * 100, 1),
+                "total_acquired": self._total_acquired,
+                "total_timeouts": self._total_timeouts,
+                "total_leaks_detected": self._total_leaks_detected,
+                "disabled": self._disabled,
+            }
+
+    def get_active_connections(self) -> list[dict]:
+        """Get details of all active connections."""
+        with self._lock:
+            now = time.time()
+            return [
+                {
+                    "slot_id": slot_id,
+                    "db_path": slot.db_path,
+                    "thread_name": slot.thread_name,
+                    "age_seconds": round(now - slot.acquired_at, 1),
+                }
+                for slot_id, slot in self._active_slots.items()
+            ]
+
+    def _emit_backpressure_event(self, db_path: str, wait_time: float) -> None:
+        """Emit event when connection limit causes backpressure."""
+        try:
+            from app.coordination.safe_event_emitter import safe_emit_event
+
+            safe_emit_event(
+                "sqlite_backpressure",  # DataEventType.SQLITE_BACKPRESSURE.value
+                {
+                    "db_path": db_path,
+                    "wait_time": wait_time,
+                    "active_connections": len(self._active_slots),
+                    "max_connections": self.MAX_CONNECTIONS,
+                },
+                source="sqlite_connection_limiter",
+            )
+        except (ImportError, Exception):
+            pass  # Event emission is optional
+
+    def _emit_warning_event(self, current_count: int) -> None:
+        """Emit event when approaching connection limit."""
+        try:
+            from app.coordination.safe_event_emitter import safe_emit_event
+
+            safe_emit_event(
+                "sqlite_connection_warning",  # DataEventType.SQLITE_CONNECTION_WARNING.value
+                {
+                    "active_connections": current_count,
+                    "max_connections": self.MAX_CONNECTIONS,
+                    "warn_threshold": self.WARN_THRESHOLD,
+                },
+                source="sqlite_connection_limiter",
+            )
+        except (ImportError, Exception):
+            pass  # Event emission is optional
+
+
+# Module-level singleton accessor
+_limiter: SQLiteConnectionLimiter | None = None
+
+
+def get_connection_limiter() -> SQLiteConnectionLimiter:
+    """Get the singleton SQLiteConnectionLimiter instance."""
+    global _limiter
+    if _limiter is None:
+        _limiter = SQLiteConnectionLimiter()
+    return _limiter
+
+
+@contextmanager
+def limited_connection(
+    db_path: str | Path,
+    timeout: float | None = None,
+    quick: bool = False,
+    row_factory: bool = True,
+) -> Generator[sqlite3.Connection]:
+    """Get a SQLite connection with global limiting.
+
+    This wraps get_db_connection() with the connection limiter to prevent
+    connection exhaustion under high load.
+
+    Args:
+        db_path: Path to SQLite database
+        timeout: Connection timeout (default uses SQLITE_TIMEOUT)
+        quick: Use short timeout for quick checks
+        row_factory: Set row_factory to sqlite3.Row
+
+    Yields:
+        SQLite connection
+
+    Raises:
+        TimeoutError: If connection slot cannot be acquired in time
+
+    Example:
+        with limited_connection("data.db") as conn:
+            conn.execute("SELECT ...")
+
+    Jan 21, 2026: Phase 6 P2P Stability Plan
+    """
+    limiter = get_connection_limiter()
+    db_path_str = str(db_path)
+
+    # Acquire slot with backpressure
+    slot_timeout = timeout if timeout is not None else SQLITE_TIMEOUT
+    if not limiter.acquire(db_path_str, timeout=slot_timeout):
+        raise TimeoutError(
+            f"Could not acquire SQLite connection slot for {db_path_str} "
+            f"(limit: {limiter.MAX_CONNECTIONS})"
+        )
+
+    try:
+        # Get actual connection
+        conn = get_db_connection(db_path, quick=quick, timeout=timeout, row_factory=row_factory)
+        try:
+            yield conn
+        finally:
+            conn.close()
+    finally:
+        limiter.release()
 
 
 # =============================================================================

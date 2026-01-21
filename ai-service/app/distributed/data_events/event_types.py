@@ -293,6 +293,13 @@ class DataEventType(Enum):
     # Database lifecycle events (Phase 4A.3 - December 2025)
     DATABASE_CREATED = "database_created"  # New database file created - immediate registration
 
+    # SQLite connection pooling events (January 2026 - Phase 6 P2P Stability)
+    SQLITE_BACKPRESSURE = "sqlite_backpressure"  # Connection limit causing backpressure (timeout waiting for slot)
+    SQLITE_CONNECTION_WARNING = "sqlite_connection_warning"  # Approaching connection limit (80% threshold)
+
+    # Transport corruption events (January 2026 - Phase 8 P2P Stability)
+    TRANSPORT_CORRUPTION_DETECTED = "transport_corruption_detected"  # Binary transfer corruption detected on transport
+
     # System events
     DAEMON_STARTED = "daemon_started"
     DAEMON_STOPPED = "daemon_stopped"

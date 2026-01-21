@@ -187,7 +187,9 @@ PEER_DEATH_RATE_LIMIT = int(
 # Jan 19, 2026: Increased from 15s to 45s - 15s was too aggressive for CPU-saturated nodes.
 # Nodes at 100% CPU running selfplay can't respond to SWIM pings in time, causing mass
 # SUSPECT->DEAD cascade failures. With 15s heartbeats: 3 missed = suspect, 6 missed = dead.
-SUSPECT_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_SUSPECT_TIMEOUT", "45") or 45)
+# Jan 21, 2026: Increased from 45s to 60s for Phase 1 timeout staggering.
+# Creates sequence: SUSPECT(60s) → PEER_TIMEOUT(120s) → RETIRE(180s) to prevent race conditions.
+SUSPECT_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_SUSPECT_TIMEOUT", "60") or 60)
 
 # Jan 2, 2026 (Sprint 3.5): Dynamic voter promotion delay
 # When enabled via RINGRIFT_P2P_DYNAMIC_VOTER=true, this delay prevents premature promotion
@@ -209,7 +211,10 @@ ELECTION_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_ELECTION_TIMEOUT", "15") or 
 # can cause lease renewal to fail even with Tailscale.
 # Jan 2, 2026: Increased from 180s to 300s to reduce election churn during transient
 # network issues. 80% of 10-minute monitoring windows showed leaderless states with 180s.
-LEADER_LEASE_DURATION = 300  # seconds (5 minutes)
+# Jan 21, 2026: Reduced from 300s to 150s for Phase 1 timeout alignment.
+# Probe threshold (100s) is now 2/3 of lease (150s), giving 50s buffer before election.
+# Rollback: RINGRIFT_USE_LEGACY_TIMEOUTS=true
+LEADER_LEASE_DURATION = int(os.environ.get("RINGRIFT_P2P_LEADER_LEASE_DURATION", "150") or 150)
 LEADER_LEASE_RENEW_INTERVAL = 15  # How often leader renews lease
 
 # Leaderless fallback - trigger local training when no leader for this long
@@ -479,7 +484,10 @@ GOSSIP_MAX_PEER_ENDPOINTS = int(
 # CRITICAL FIX: Two-stage death (120s dead, 600s retired) caused 8-minute windows where peers
 # were marked "dead" but still counted in quorum calculations by some nodes, causing split-brain.
 # Now dead = retired immediately (120s), eliminating the inconsistent window.
-PEER_RETIRE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_RETIRE_AFTER_SECONDS", "120") or 120)
+# Jan 21, 2026: Increased from 120s to 180s for Phase 1 timeout staggering.
+# Creates 60s gap between PEER_TIMEOUT(120s) and RETIRE(180s) to prevent race conditions.
+# Rollback: RINGRIFT_USE_LEGACY_TIMEOUTS=true
+PEER_RETIRE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_RETIRE_AFTER_SECONDS", "180") or 180)
 # Renamed from RETRY_RETIRED_NODE_INTERVAL to PEER_RECOVERY_RETRY_INTERVAL for clarity
 PEER_RECOVERY_RETRY_INTERVAL = int(os.environ.get("RINGRIFT_P2P_PEER_RECOVERY_INTERVAL", "120") or 120)
 # Backward compat alias (deprecated - use PEER_RECOVERY_RETRY_INTERVAL)

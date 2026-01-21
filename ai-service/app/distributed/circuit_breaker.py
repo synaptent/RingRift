@@ -40,6 +40,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import os
 import random
 import time
 from collections.abc import Callable
@@ -117,6 +118,15 @@ except ImportError:
     # Dec 28, 2025: Reduced from 600 to 180 to prevent long stalls in training pipelines
     DEFAULT_MAX_BACKOFF = 180.0
     DEFAULT_HALF_OPEN_MAX_CALLS = 1
+
+# Jan 21, 2026: Phase 3 - TTL reset prevents permanently stuck circuit breakers
+# These are module-level constants, not part of the try/except fallback,
+# because they're not in CircuitBreakerDefaults (yet)
+# After 24 hours in OPEN state, circuit auto-resets to allow retry
+# Rollback: RINGRIFT_DISABLE_CB_TTL_RESET=true
+DEFAULT_TTL_RESET_HOURS = 24.0
+# Jan 21, 2026: Phase 3 - max_backoff now capped at max_recovery_timeout (3600s = 1 hour)
+DEFAULT_MAX_RECOVERY_TIMEOUT = 3600.0  # 1 hour ceiling for backoff
 
 # Phase 15.1.4: Default health probe ports by target pattern (December 2025)
 # Maps target name patterns to (port, endpoint) tuples for health checks
@@ -322,6 +332,8 @@ class _CircuitData:
     # Phase 15.1.8: Escalation tier tracking
     escalation_tier: int = 0  # Current escalation tier (0 = normal)
     escalation_entered_at: float | None = None  # When we entered current tier
+    # Jan 21, 2026: Phase 3 - TTL tracking for auto-reset
+    created_at: float | None = None  # When circuit was first created
     last_probe_at: float | None = None  # When we last attempted a probe
 
 
@@ -360,6 +372,9 @@ class CircuitBreaker:
         # Active recovery parameters (December 2025)
         active_recovery_probe: Callable[[str], bool] | None = None,
         max_consecutive_opens: int = 5,  # After this many, require manual reset
+        # Jan 21, 2026: Phase 3 - TTL reset and max timeout ceiling
+        ttl_reset_hours: float = DEFAULT_TTL_RESET_HOURS,
+        max_recovery_timeout: float = DEFAULT_MAX_RECOVERY_TIMEOUT,
     ):
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
@@ -372,6 +387,13 @@ class CircuitBreaker:
         self.jitter_factor = jitter_factor
         self._active_recovery_probe = active_recovery_probe
         self.max_consecutive_opens = max_consecutive_opens
+        # Jan 21, 2026: Phase 3 - TTL reset parameters
+        self.ttl_reset_hours = ttl_reset_hours
+        self.max_recovery_timeout = max_recovery_timeout
+        # Rollback via environment variable
+        self._ttl_reset_disabled = os.environ.get(
+            "RINGRIFT_DISABLE_CB_TTL_RESET", ""
+        ).lower() in ("true", "1", "yes")
 
         self._circuits: dict[str, _CircuitData] = {}
         self._lock = RLock()
@@ -525,21 +547,87 @@ class CircuitBreaker:
     def _get_or_create_circuit(self, target: str) -> _CircuitData:
         """Get or create circuit data for a target."""
         if target not in self._circuits:
-            self._circuits[target] = _CircuitData()
+            # Jan 21, 2026: Phase 3 - Initialize with created_at for TTL tracking
+            self._circuits[target] = _CircuitData(created_at=time.time())
+        else:
+            # Check TTL reset for existing circuits
+            self._check_ttl_reset(target)
         return self._circuits[target]
+
+    def _check_ttl_reset(self, target: str) -> bool:
+        """Check if circuit should be auto-reset due to TTL expiry.
+
+        Jan 21, 2026: Phase 3 - Prevents permanently stuck circuit breakers.
+        After 24 hours in OPEN state, the circuit is automatically reset to
+        allow retry. This prevents single long-term failures from permanently
+        blocking operations.
+
+        Args:
+            target: The circuit target identifier
+
+        Returns:
+            True if circuit was reset, False otherwise
+        """
+        if self._ttl_reset_disabled:
+            return False
+
+        if target not in self._circuits:
+            return False
+
+        circuit = self._circuits[target]
+
+        # Only reset OPEN circuits that have been open for too long
+        if circuit.state != CircuitState.OPEN:
+            return False
+
+        # Check if TTL exceeded
+        if circuit.created_at is None:
+            # Legacy circuit without created_at, set it now
+            circuit.created_at = time.time()
+            return False
+
+        age_hours = (time.time() - circuit.created_at) / 3600
+        if age_hours >= self.ttl_reset_hours:
+            # Log the reset
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(
+                f"[CircuitBreaker] TTL reset for {target} after {age_hours:.1f}h "
+                f"(threshold: {self.ttl_reset_hours}h)"
+            )
+
+            # Reset the circuit
+            circuit.state = CircuitState.CLOSED
+            circuit.failure_count = 0
+            circuit.success_count = 0
+            circuit.consecutive_opens = 0
+            circuit.escalation_tier = 0
+            circuit.escalation_entered_at = None
+            circuit.opened_at = None
+            circuit.half_open_at = None
+            circuit.created_at = time.time()  # Reset TTL timer
+
+            return True
+
+        return False
 
     def _compute_backoff_timeout(self, circuit: _CircuitData) -> float:
         """Compute recovery timeout with exponential backoff and jitter.
 
+        Jan 21, 2026: Phase 3 - Added max_recovery_timeout ceiling (1 hour)
+        to prevent indefinitely long backoff times.
+
         Returns:
-            Recovery timeout in seconds, capped at max_backoff.
+            Recovery timeout in seconds, capped at both max_backoff and max_recovery_timeout.
         """
         # Exponential backoff: base * (multiplier ^ consecutive_opens)
         backoff = self.recovery_timeout * (
             self.backoff_multiplier ** circuit.consecutive_opens
         )
-        # Cap at max_backoff
+        # Cap at max_backoff (legacy ceiling)
         backoff = min(backoff, self.max_backoff)
+        # Jan 21, 2026: Also cap at max_recovery_timeout (hard ceiling)
+        backoff = min(backoff, self.max_recovery_timeout)
         # Add jitter: random value in range [-jitter_factor, +jitter_factor] * backoff
         if self.jitter_factor > 0:
             jitter = backoff * self.jitter_factor * (2 * random.random() - 1)
@@ -895,7 +983,8 @@ class CircuitBreaker:
         """Reset circuit for a target to CLOSED state."""
         with self._lock:
             if target in self._circuits:
-                self._circuits[target] = _CircuitData()
+                # Jan 21, 2026: Phase 3 - Initialize with created_at for TTL tracking
+                self._circuits[target] = _CircuitData(created_at=time.time())
 
     def reset_all(self) -> None:
         """Reset all circuits to CLOSED state."""

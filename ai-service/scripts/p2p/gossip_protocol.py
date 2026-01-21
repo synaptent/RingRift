@@ -693,6 +693,31 @@ class GossipProtocolMixin(P2PMixinBase):
             import threading
             self._per_peer_locks_rlock = threading.RLock()  # Protects _per_peer_locks dict
 
+        # Jan 21, 2026: Phase 2 - Lock contention metrics (P2P Stability Plan)
+        # Track lock wait times to detect contention that accumulates over 4+ hours
+        if not hasattr(self, "_lock_wait_times"):
+            self._lock_wait_times: deque[float] = deque(maxlen=100)  # Recent wait times
+        if not hasattr(self, "_lock_cleanup_interval"):
+            self._lock_cleanup_interval: float = 3600.0  # Reset metrics hourly
+        if not hasattr(self, "_last_lock_cleanup"):
+            self._last_lock_cleanup: float = time.time()
+        if not hasattr(self, "_lock_contention_warning_threshold"):
+            # Warn if average wait exceeds 50% of lock timeout
+            self._lock_contention_warning_threshold: float = 0.5
+
+        # Jan 21, 2026: Phase 2 - Lock sharding for large clusters (40+ nodes)
+        # Reduces contention by distributing locks across 4 shards based on peer_id hash
+        # Rollback: RINGRIFT_DISABLE_LOCK_SHARDING=true
+        if not hasattr(self, "_lock_sharding_enabled"):
+            self._lock_sharding_enabled = not os.environ.get("RINGRIFT_DISABLE_LOCK_SHARDING", "").lower() in ("true", "1", "yes")
+        if not hasattr(self, "_lock_shard_count"):
+            self._lock_shard_count = 4  # 4 shards = 25% contention per shard
+        if not hasattr(self, "_lock_shards"):
+            self._lock_shards: list[asyncio.Lock] = [asyncio.Lock() for _ in range(self._lock_shard_count)]
+        if not hasattr(self, "_lock_shards_rlock"):
+            import threading
+            self._lock_shards_rlock = threading.RLock()  # Protects _lock_shards list
+
         # Dec 29, 2025: Restore persisted gossip state on startup
         # This allows faster cluster state recovery after P2P restarts
         self._restore_gossip_state_on_startup()
@@ -996,6 +1021,11 @@ class GossipProtocolMixin(P2PMixinBase):
         Use this in async contexts where you need to serialize message handling
         for a specific peer. Returns False if lock cannot be acquired.
 
+        Jan 21, 2026: Phase 2 - Added lock contention metrics and optional sharding.
+        - Tracks wait times to detect accumulating contention over 4+ hours
+        - Uses lock sharding for large clusters (40+ nodes) when enabled
+        - Emits GOSSIP_LOCK_CONTENTION event if average wait exceeds threshold
+
         Args:
             peer_id: The peer's node ID
             timeout: Maximum seconds to wait for lock (uses GossipDefaults.STATE_LOCK_TIMEOUT if None)
@@ -1009,13 +1039,101 @@ class GossipProtocolMixin(P2PMixinBase):
                 timeout = GossipDefaults.STATE_LOCK_TIMEOUT
             except ImportError:
                 timeout = 5.0  # Fallback
-        lock = self._get_peer_lock(peer_id)
+
+        # Use sharded lock for large clusters, per-peer lock otherwise
+        if getattr(self, "_lock_sharding_enabled", False) and hasattr(self, "_lock_shards"):
+            lock = self._get_sharded_lock(peer_id)
+        else:
+            lock = self._get_peer_lock(peer_id)
+
+        # Track lock acquisition time for contention metrics
+        start_time = time.time()
         try:
             await asyncio.wait_for(lock.acquire(), timeout=timeout)
+            wait_time = time.time() - start_time
+
+            # Record wait time for metrics
+            if hasattr(self, "_lock_wait_times"):
+                self._lock_wait_times.append(wait_time)
+
+            # Check for contention warning
+            await self._check_lock_contention(timeout)
+
+            # Periodic cleanup
+            await self._periodic_lock_cleanup()
+
             return True
         except asyncio.TimeoutError:
             self._log_warning(f"Per-peer lock timeout for {peer_id} after {timeout}s")
             return False
+
+    def _get_sharded_lock(self, peer_id: str) -> asyncio.Lock:
+        """Get the sharded lock for a peer based on peer_id hash.
+
+        Jan 21, 2026: Phase 2 - Lock sharding for large clusters.
+        Distributes locks across 4 shards to reduce contention when
+        the cluster has 40+ nodes all doing concurrent gossip operations.
+
+        Args:
+            peer_id: The peer's node ID
+
+        Returns:
+            asyncio.Lock from the appropriate shard
+        """
+        if not hasattr(self, "_lock_shards") or not self._lock_shards:
+            # Fallback to per-peer lock
+            return self._get_peer_lock(peer_id)
+
+        shard_idx = hash(peer_id) % len(self._lock_shards)
+        return self._lock_shards[shard_idx]
+
+    async def _check_lock_contention(self, timeout: float) -> None:
+        """Check if lock contention is high and emit warning event.
+
+        Jan 21, 2026: Phase 2 - Lock contention monitoring.
+        Alerts when average lock wait time exceeds threshold, which can
+        indicate accumulating contention that will cause failures after 4+ hours.
+
+        Args:
+            timeout: The lock timeout for threshold calculation
+        """
+        if not hasattr(self, "_lock_wait_times") or len(self._lock_wait_times) < 10:
+            return
+
+        avg_wait = sum(self._lock_wait_times) / len(self._lock_wait_times)
+        threshold = timeout * getattr(self, "_lock_contention_warning_threshold", 0.5)
+
+        if avg_wait > threshold:
+            self._log_warning(f"Gossip lock contention high: avg wait {avg_wait:.3f}s > {threshold:.3f}s threshold")
+            self._safe_emit_event(
+                "GOSSIP_LOCK_CONTENTION",
+                {
+                    "avg_wait_ms": avg_wait * 1000,
+                    "threshold_ms": threshold * 1000,
+                    "samples": len(self._lock_wait_times),
+                    "max_wait_ms": max(self._lock_wait_times) * 1000,
+                    "sharding_enabled": getattr(self, "_lock_sharding_enabled", False),
+                },
+            )
+
+    async def _periodic_lock_cleanup(self) -> None:
+        """Reset lock metrics hourly to prevent accumulation drift.
+
+        Jan 21, 2026: Phase 2 - Prevents false contention alerts from
+        stale metrics that accumulated during periods of heavy load but
+        no longer reflect current state.
+        """
+        if not hasattr(self, "_last_lock_cleanup"):
+            self._last_lock_cleanup = time.time()
+            return
+
+        cleanup_interval = getattr(self, "_lock_cleanup_interval", 3600.0)
+        if time.time() - self._last_lock_cleanup > cleanup_interval:
+            # Reset metrics
+            if hasattr(self, "_lock_wait_times"):
+                self._lock_wait_times.clear()
+            self._last_lock_cleanup = time.time()
+            self._log_debug("Gossip lock metrics reset (hourly cleanup)")
 
     # =========================================================================
     # Endpoint Validation (Dec 30, 2025)

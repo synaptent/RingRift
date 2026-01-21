@@ -115,6 +115,40 @@ try:
 except ImportError:
     P2P_DEFAULT_PORT = 8770  # Fallback for testing/standalone use
 
+# Import corruption tracking (January 21, 2026 - Phase 8 P2P Stability)
+try:
+    from app.distributed.transport_health import (
+        is_node_corruption_prone,
+        record_transport_corruption,
+    )
+    HAS_CORRUPTION_TRACKING = True
+except ImportError:
+    HAS_CORRUPTION_TRACKING = False
+    is_node_corruption_prone = None
+    record_transport_corruption = None
+
+
+def _is_corruption_error(error: Exception) -> bool:
+    """Check if an error indicates binary stream corruption.
+
+    These errors typically indicate that binary data was corrupted during
+    transfer, often due to firewalls, proxies, or network configs that
+    interfere with binary streams.
+    """
+    error_str = str(error).lower()
+    corruption_indicators = [
+        "connection reset",
+        "broken pipe",
+        "checksum",
+        "integrity",
+        "truncated",
+        "corrupt",
+        "invalid data",
+        "unexpected eof",
+        "premature end",
+    ]
+    return any(indicator in error_str for indicator in corruption_indicators)
+
 
 # =============================================================================
 # Error Classes - Import from canonical location (December 28, 2025)
@@ -458,6 +492,19 @@ class ClusterTransport:
                 ("base64", self._transfer_via_base64),
                 ("http", self._transfer_via_http),
             ]
+        # January 21, 2026: Corruption-aware transport selection (Phase 8 P2P Stability)
+        # Nodes with repeated binary corruption events get base64 prioritized
+        elif HAS_CORRUPTION_TRACKING and is_node_corruption_prone is not None:
+            if is_node_corruption_prone(node.hostname):
+                logger.debug(
+                    f"Node {node.hostname} is corruption-prone, prioritizing base64"
+                )
+                transports = [
+                    ("base64", self._transfer_via_base64),
+                    ("http", self._transfer_via_http),
+                    ("tailscale", self._transfer_via_tailscale),
+                    ("ssh", self._transfer_via_ssh),
+                ]
 
         skipped_transports = []
         for transport_name, transport_fn in transports:
@@ -488,6 +535,24 @@ class ClusterTransport:
                 # TypeError: invalid argument types
                 # RuntimeError: transfer operation failed
                 self.record_transport_failure(node.hostname, transport_name)
+
+                # January 21, 2026: Track corruption events (Phase 8 P2P Stability)
+                # Binary stream corruption errors (connection reset, broken pipe)
+                # should be tracked so we can prioritize base64 for these nodes
+                if (
+                    HAS_CORRUPTION_TRACKING
+                    and record_transport_corruption is not None
+                    and transport_name in ("tailscale", "ssh")  # Binary transports
+                    and _is_corruption_error(e)
+                ):
+                    record_transport_corruption(
+                        node.hostname, transport_name, str(e)
+                    )
+                    logger.info(
+                        f"Recorded corruption event for {node.hostname} on "
+                        f"{transport_name}: {e}"
+                    )
+
                 logger.debug(
                     f"Transport {transport_name} failed for {node.hostname}: {e}"
                 )
