@@ -1020,10 +1020,12 @@ STALE_PROCESS_PATTERNS: list[str] = [p.strip() for p in _stale_patterns_env.spli
 ]
 
 # Max runtime limits for various job types
-MAX_SELFPLAY_RUNTIME = int(os.environ.get("RINGRIFT_P2P_MAX_SELFPLAY_RUNTIME", "7200") or 7200)    # 2 hours
+# Jan 21, 2026: Reduced selfplay/gauntlet timeouts to catch zombie processes faster
+# GPU selfplay typically completes in 5-20 minutes; processes running 45+ min are likely stuck
+MAX_SELFPLAY_RUNTIME = int(os.environ.get("RINGRIFT_P2P_MAX_SELFPLAY_RUNTIME", "2700") or 2700)    # 45 minutes (was 2 hours)
 MAX_TRAINING_RUNTIME = int(os.environ.get("RINGRIFT_P2P_MAX_TRAINING_RUNTIME", "86400") or 86400)  # 24 hours
-MAX_TOURNAMENT_RUNTIME = int(os.environ.get("RINGRIFT_P2P_MAX_TOURNAMENT_RUNTIME", "14400") or 14400)  # 4 hours
-MAX_GAUNTLET_RUNTIME = int(os.environ.get("RINGRIFT_P2P_MAX_GAUNTLET_RUNTIME", "7200") or 7200)    # 2 hours
+MAX_TOURNAMENT_RUNTIME = int(os.environ.get("RINGRIFT_P2P_MAX_TOURNAMENT_RUNTIME", "7200") or 7200)  # 2 hours (was 4 hours)
+MAX_GAUNTLET_RUNTIME = int(os.environ.get("RINGRIFT_P2P_MAX_GAUNTLET_RUNTIME", "3600") or 3600)    # 1 hour (was 2 hours)
 
 # ============================================
 # Work Assignment

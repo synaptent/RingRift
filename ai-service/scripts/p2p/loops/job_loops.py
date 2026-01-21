@@ -2217,6 +2217,191 @@ class JobReassignmentLoop(BaseLoop):
         }
 
 
+@dataclass
+class OrphanProcessDetectionConfig:
+    """Configuration for orphan process detection loop.
+
+    Jan 21, 2026: Added to detect and kill zombie processes that aren't
+    tracked in the jobs dict but are consuming resources.
+
+    These are processes that:
+    - Match selfplay/training patterns
+    - Are NOT in the tracked jobs dict
+    - Have been running for too long (orphan_threshold)
+    """
+
+    check_interval_seconds: float = 60.0  # Check every minute
+    orphan_threshold_seconds: float = 900.0  # 15 minutes - process running this long without tracking = orphan
+    dry_run: bool = False  # If True, log but don't kill
+    max_kills_per_cycle: int = 50  # Safety limit
+
+    # Patterns to search for
+    orphan_patterns: list[str] = field(default_factory=lambda: [
+        "selfplay",
+        "gpu_selfplay",
+        "gumbel",
+        "run_self_play",
+        "run_gpu_selfplay",
+        "run_hybrid_selfplay",
+    ])
+
+    def __post_init__(self) -> None:
+        if self.check_interval_seconds <= 0:
+            raise ValueError("check_interval_seconds must be > 0")
+        if self.orphan_threshold_seconds <= 0:
+            raise ValueError("orphan_threshold_seconds must be > 0")
+
+
+class OrphanProcessDetectionLoop(BaseLoop):
+    """Background loop that detects and kills orphan processes.
+
+    Jan 21, 2026: Added to fix zombie process accumulation on cluster nodes.
+
+    Orphan processes are those that:
+    1. Match selfplay/training patterns (via pgrep)
+    2. Are NOT tracked in the active jobs dict
+    3. Have been running longer than the threshold
+
+    These can accumulate when:
+    - Jobs crash without cleanup
+    - Network partitions cause job tracking to desync
+    - Subprocesses outlive their parent jobs
+    """
+
+    def __init__(
+        self,
+        get_tracked_pids: Callable[[], set[int]] | None = None,
+        config: OrphanProcessDetectionConfig | None = None,
+    ):
+        """Initialize orphan process detection loop.
+
+        Args:
+            get_tracked_pids: Callback returning set of PIDs currently tracked by job manager
+            config: Detection configuration
+        """
+        self.config = config or OrphanProcessDetectionConfig()
+        super().__init__(
+            name="orphan_process_detection",
+            interval=self.config.check_interval_seconds,
+        )
+        self._get_tracked_pids = get_tracked_pids
+        self._orphans_killed = 0
+        self._orphans_detected = 0
+        self._last_kill_time: float = 0
+
+    async def _run_once(self) -> None:
+        """Scan for and kill orphan processes."""
+        import shutil
+        import subprocess
+
+        if not shutil.which("pgrep") or not shutil.which("ps"):
+            logger.debug("[OrphanDetection] pgrep/ps not available")
+            return
+
+        # Get currently tracked PIDs
+        tracked_pids: set[int] = set()
+        if self._get_tracked_pids:
+            try:
+                tracked_pids = self._get_tracked_pids()
+            except Exception as e:
+                logger.debug(f"[OrphanDetection] Could not get tracked PIDs: {e}")
+                # Continue anyway - we'll be more conservative
+
+        orphan_pids: list[tuple[int, str, float]] = []  # (pid, pattern, elapsed_seconds)
+
+        for pattern in self.config.orphan_patterns:
+            try:
+                # Find PIDs matching pattern
+                pgrep_result = await asyncio.to_thread(
+                    subprocess.run,
+                    ["pgrep", "-f", pattern],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if pgrep_result.returncode != 0 or not pgrep_result.stdout.strip():
+                    continue
+
+                pids = [int(p.strip()) for p in pgrep_result.stdout.strip().split() if p.strip().isdigit()]
+
+                for pid in pids:
+                    # Skip if tracked
+                    if pid in tracked_pids:
+                        continue
+
+                    # Get process elapsed time
+                    try:
+                        ps_result = await asyncio.to_thread(
+                            subprocess.run,
+                            ["ps", "-o", "etimes=", "-p", str(pid)],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                        )
+                        if ps_result.returncode != 0 or not ps_result.stdout.strip():
+                            continue
+
+                        elapsed = float(ps_result.stdout.strip())
+
+                        # Check if orphan (untracked + running too long)
+                        if elapsed > self.config.orphan_threshold_seconds:
+                            orphan_pids.append((pid, pattern, elapsed))
+
+                    except (ValueError, subprocess.TimeoutExpired):
+                        continue
+
+            except Exception as e:
+                logger.debug(f"[OrphanDetection] Error checking pattern {pattern}: {e}")
+                continue
+
+        if not orphan_pids:
+            return
+
+        self._orphans_detected += len(orphan_pids)
+        logger.warning(
+            f"[OrphanDetection] Found {len(orphan_pids)} orphan processes "
+            f"(threshold: {self.config.orphan_threshold_seconds}s)"
+        )
+
+        # Kill orphans (with safety limit)
+        killed = 0
+        for pid, pattern, elapsed in orphan_pids[:self.config.max_kills_per_cycle]:
+            if self.config.dry_run:
+                logger.info(f"[OrphanDetection] DRY RUN: Would kill pid {pid} ({pattern}, {elapsed:.0f}s)")
+                continue
+
+            try:
+                import os
+                import signal
+
+                # Try SIGKILL directly for orphans (they're already stuck)
+                os.kill(pid, signal.SIGKILL)
+                killed += 1
+                logger.info(
+                    f"[OrphanDetection] Killed orphan pid {pid} ({pattern}, running {elapsed/60:.1f}m)"
+                )
+
+            except ProcessLookupError:
+                logger.debug(f"[OrphanDetection] Process {pid} already dead")
+            except OSError as e:
+                logger.warning(f"[OrphanDetection] Failed to kill pid {pid}: {e}")
+
+        if killed > 0:
+            self._orphans_killed += killed
+            self._last_kill_time = time.time()
+            logger.info(f"[OrphanDetection] Killed {killed} orphan processes this cycle")
+
+    def get_stats(self) -> dict[str, Any]:
+        """Get detection statistics."""
+        return {
+            "orphans_detected": self._orphans_detected,
+            "orphans_killed": self._orphans_killed,
+            "last_kill_time": self._last_kill_time,
+            "dry_run": self.config.dry_run,
+            **self.stats.to_dict(),
+        }
+
+
 __all__ = [
     "IdleDetectionConfig",
     "IdleDetectionLoop",
@@ -2224,6 +2409,8 @@ __all__ = [
     "JobReaperLoop",
     "JobReassignmentConfig",
     "JobReassignmentLoop",
+    "OrphanProcessDetectionConfig",
+    "OrphanProcessDetectionLoop",
     "PredictiveScalingConfig",
     "PredictiveScalingLoop",
     "SpawnVerificationConfig",

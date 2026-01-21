@@ -2535,6 +2535,34 @@ class P2POrchestrator(
             )
             manager.register(job_reaper)
 
+            # OrphanProcessDetectionLoop - kills zombie processes not in tracked jobs
+            # Jan 21, 2026: Added to fix zombie process accumulation (e.g., vast-29118471)
+            try:
+                from scripts.p2p.loops.job_loops import OrphanProcessDetectionLoop
+
+                def _get_tracked_pids_for_orphan_detection() -> set[int]:
+                    """Get set of PIDs currently tracked by job manager."""
+                    tracked_pids: set[int] = set()
+                    with self.jobs_lock:
+                        for job_type, jobs in self.active_jobs.items():
+                            for job_id, job_info in jobs.items():
+                                pid = None
+                                if isinstance(job_info, dict):
+                                    pid = job_info.get("pid")
+                                else:
+                                    pid = getattr(job_info, "pid", None)
+                                if pid and isinstance(pid, int):
+                                    tracked_pids.add(pid)
+                    return tracked_pids
+
+                orphan_detection = OrphanProcessDetectionLoop(
+                    get_tracked_pids=_get_tracked_pids_for_orphan_detection,
+                )
+                manager.register(orphan_detection)
+                logger.info("[LoopManager] OrphanProcessDetectionLoop registered (zombie cleanup)")
+            except ImportError as e:
+                logger.debug(f"OrphanProcessDetectionLoop: not available: {e}")
+
             # IdleDetectionLoop - auto-assigns work to idle nodes
             # Jan 2, 2026: Added on_zombie_detected callback to kill stuck processes
             # Jan 9, 2026: Now uses OrchestratorContext for unified callback access
