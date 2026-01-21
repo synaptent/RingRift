@@ -4321,11 +4321,10 @@ class NeuralNetAI(BaseAI):
                     "Set AIConfig.allow_fresh_weights=True to use random weights."
                 )
 
-        # Initialize encoder for v5-heavy
-        from app.ai._neural_net_legacy import HexStateEncoder
+        # Initialize encoder for v5-heavy (uses v2 encoder with 10 base channels)
+        from app.training.encoding import HexStateEncoder
         self.encoder = HexStateEncoder(
-            board_type=board_type,
-            history_length=3,
+            board_size=self.board_size,
             feature_version=2,
         )
         self.history_length = 3
@@ -4455,11 +4454,11 @@ class NeuralNetAI(BaseAI):
             from app.training.encoding import HexStateEncoder as HexStateEncoderV3
             logger.warning("HexStateEncoderV3 not found, using V2 encoder")
         self.encoder = HexStateEncoderV3(
-            board_type=board_type,
-            history_length=3,
+            board_size=board_size,
+            feature_version=2,
         )
         self.history_length = 3
-        self.feature_version = 3
+        self.feature_version = 2
 
         self._initialized_board_type = board_type
         logger.info(
@@ -4585,11 +4584,11 @@ class NeuralNetAI(BaseAI):
             from app.training.encoding import HexStateEncoder as HexStateEncoderV3
             logger.warning("HexStateEncoderV3 not found, using V2 encoder")
         self.encoder = HexStateEncoderV3(
-            board_type=board_type,
-            history_length=3,
+            board_size=board_size,
+            feature_version=2,
         )
         self.history_length = 3
-        self.feature_version = 3
+        self.feature_version = 2
 
         self._initialized_board_type = board_type
         logger.info(
