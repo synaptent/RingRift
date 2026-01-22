@@ -2592,11 +2592,13 @@ def train_model(
         # -1e9 masking creating log_softmax numerical instability. Use flat by default.
         # See hex_architectures.py lines 878-917 for detailed explanation.
         if model_version == 'v3-spatial':
-            # V3 with spatial policy heads (BROKEN - use for debugging only)
-            # Known issue: Masks invalid cells with -1e9, causing log_softmax instability
-            logger.warning(
-                "Using V3 spatial policy heads (v3-spatial). This is known to cause "
-                "loss explosion (~42 policy loss). Use --model-version v3 for flat heads."
+            # V3 with spatial policy heads
+            # NOTE: Don't pass explicit policy_size - let V3 compute it dynamically
+            # from board_size. hex8 needs 11908 slots (9*9*3 + 9*9*6*24 + 1),
+            # but the default policy_size=4500 is too small.
+            logger.info(
+                "Using V3 spatial policy heads (v3-spatial). "
+                "Policy size computed dynamically from board_size=%d.", board_size
             )
             model = HexNeuralNet_v3(
                 in_channels=hex_in_channels,
@@ -2605,7 +2607,10 @@ def train_model(
                 num_filters=effective_filters,
                 board_size=board_size,
                 hex_radius=hex_radius,
-                policy_size=policy_size,
+                # NOTE: Pass policy_size=None so V3 computes it dynamically from board_size.
+                # This ensures correct policy_size for any hex board (hex8=11908, hexagonal=91876).
+                # Passing explicit policy_size=4500 caused -1e9 logits outside scatter range.
+                policy_size=None,
                 num_players=hex_num_players,
             )
         else:

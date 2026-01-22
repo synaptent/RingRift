@@ -400,7 +400,7 @@ class HexNeuralNet_v3(nn.Module):
         num_res_blocks: int = 12,
         num_filters: int = 192,
         board_size: int = HEX_BOARD_SIZE,
-        policy_size: int = P_HEX,
+        policy_size: int | None = None,  # Computed dynamically if None
         value_intermediate: int = 128,
         num_players: int = 4,
         se_reduction: int = 16,
@@ -415,7 +415,6 @@ class HexNeuralNet_v3(nn.Module):
         self.num_res_blocks = num_res_blocks
         self.num_filters = num_filters
         self.board_size = board_size
-        self.policy_size = policy_size
         self.num_players = num_players
 
         # Spatial policy dimensions
@@ -430,6 +429,14 @@ class HexNeuralNet_v3(nn.Module):
         self.placement_span = board_size * board_size * num_ring_counts
         self.movement_span = board_size * board_size * num_directions * self.max_distance
         self.special_base = self.placement_span + self.movement_span
+
+        # Compute policy_size dynamically if not provided
+        # hex8 (board_size=9): 9*9*3 + 9*9*6*8 + 1 = 243 + 3888 + 1 = 4132
+        # hexagonal (board_size=25): 25*25*3 + 25*25*6*24 + 1 = 1875 + 90000 + 1 = 91876
+        if policy_size is None:
+            self.policy_size = self.special_base + 1  # +1 for special action
+        else:
+            self.policy_size = policy_size
 
         # Pre-compute hex validity mask
         self.register_buffer("hex_mask", create_hex_mask(hex_radius, board_size))
@@ -693,7 +700,7 @@ class HexNeuralNet_v3_Lite(nn.Module):
         num_res_blocks: int = 6,
         num_filters: int = 96,
         board_size: int = HEX_BOARD_SIZE,
-        policy_size: int = P_HEX,
+        policy_size: int | None = None,  # Computed dynamically if None
         value_intermediate: int = 64,
         num_players: int = 4,
         se_reduction: int = 8,
@@ -708,7 +715,6 @@ class HexNeuralNet_v3_Lite(nn.Module):
         self.num_res_blocks = num_res_blocks
         self.num_filters = num_filters
         self.board_size = board_size
-        self.policy_size = policy_size
         self.num_players = num_players
 
         # Spatial policy dimensions
@@ -723,6 +729,12 @@ class HexNeuralNet_v3_Lite(nn.Module):
         self.placement_span = board_size * board_size * num_ring_counts
         self.movement_span = board_size * board_size * num_directions * self.max_distance
         self.special_base = self.placement_span + self.movement_span
+
+        # Compute policy_size dynamically if not provided
+        if policy_size is None:
+            self.policy_size = self.special_base + 1  # +1 for special action
+        else:
+            self.policy_size = policy_size
 
         # Pre-compute hex validity mask
         self.register_buffer("hex_mask", create_hex_mask(hex_radius, board_size))
