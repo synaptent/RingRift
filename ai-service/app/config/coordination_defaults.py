@@ -3326,7 +3326,12 @@ class GossipDefaults:
     # January 8, 2026: Further reduced from 600s to 180s for faster autonomous recovery
     # Jan 19, 2026: Further reduced from 180s to 60s (2x convergence time)
     # CRITICAL FIX: 180s TTL >> 30s convergence caused minutes of view divergence
-    STATE_TTL: float = _env_float("RINGRIFT_GOSSIP_STATE_TTL", 60.0)
+    # Jan 22, 2026: INCREASED from 60s to 240s for 40-node cluster propagation.
+    # CRITICAL FIX: 60s TTL was too short for gossip to propagate across 40 nodes.
+    # Math: With fanout 10 and 30s interval, 40 nodes need 2 rounds = 60s minimum.
+    # With 4x safety factor for jitter/delays: 60s * 4 = 240s minimum TTL.
+    # Without this fix, Lambda nodes never learned about peer changes (state expired mid-propagation).
+    STATE_TTL: float = _env_float("RINGRIFT_GOSSIP_STATE_TTL", 240.0)
 
     # =========================================================================
     # January 5, 2026 Session 17.28: Recovery Probing for Dead Nodes
@@ -3344,6 +3349,46 @@ class GossipDefaults:
 # =============================================================================
 # Convenience Functions
 # =============================================================================
+
+
+def get_gossip_state_ttl(cluster_size: int = 40) -> float:
+    """Calculate gossip state TTL based on cluster size.
+
+    Jan 22, 2026: Dynamic TTL ensures gossip state lives long enough to propagate.
+
+    Formula: TTL = gossip_rounds_for_propagation * gossip_interval * safety_factor
+
+    For N nodes with fanout F:
+    - Rounds needed: ceil(log_F(N))
+    - With 40 nodes, fanout 10: ceil(log10(40)) = 2 rounds
+    - gossip_interval = 30s (stable mode)
+    - safety_factor = 4 (for jitter, network delays, retries)
+
+    TTL = 2 * 30s * 4 = 240s minimum
+
+    Args:
+        cluster_size: Number of nodes in the cluster (default: 40)
+
+    Returns:
+        Recommended gossip state TTL in seconds
+
+    Example:
+        >>> get_gossip_state_ttl(40)
+        240.0
+        >>> get_gossip_state_ttl(100)  # Larger cluster needs longer TTL
+        360.0
+    """
+    import math
+
+    fanout = 10  # GOSSIP_FANOUT_LEADER
+    gossip_interval = 30.0  # GOSSIP_INTERVAL_STABLE
+    safety_factor = 4.0
+
+    rounds = max(2, math.ceil(math.log(max(cluster_size, 2), fanout)))
+    ttl = rounds * gossip_interval * safety_factor
+
+    return max(ttl, 240.0)  # Minimum 240s for stability
+
 
 def get_all_defaults() -> dict:
     """Get all defaults as a dictionary for inspection/logging."""

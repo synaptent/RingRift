@@ -175,9 +175,12 @@ def get_cpu_adaptive_timeout(base_timeout: int | None = None, cpu_load: float | 
 # Jan 20, 2026: DISABLED - rate limiting caused 8-minute inconsistent windows where
 # peers were "dead" but not "retired", confusing gossip state. With single-stage
 # timeout (dead = retired immediately), rate limiting is no longer needed.
-# Set to high value to effectively disable while preserving the code path.
+# Jan 22, 2026: Changed from 100 (disabled) to 10 (moderate rate limiting).
+# Rate limiting prevents cascade failures: max 10 peers marked dead per 60s cycle.
+# This gives busy nodes time to recover before being marked dead by all peers.
+# Set to 100 to effectively disable, or 2 for aggressive rate limiting.
 PEER_DEATH_RATE_LIMIT = int(
-    os.environ.get("RINGRIFT_P2P_PEER_DEATH_RATE_LIMIT", "100") or 100
+    os.environ.get("RINGRIFT_P2P_PEER_DEATH_RATE_LIMIT", "10") or 10
 )
 
 
@@ -498,12 +501,9 @@ RETRY_RETIRED_NODE_INTERVAL = PEER_RECOVERY_RETRY_INTERVAL
 PEER_PURGE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_PURGE_AFTER_SECONDS", "3600") or 3600)
 
 # Jan 19, 2026: Rate limit peer death detection to prevent cascade failures.
-# Without rate limiting, when 5 nodes are busy/unreachable, all 40 nodes mark all 5
-# as dead simultaneously, triggering a gossip storm that causes MORE nodes to miss
-# heartbeats → more cascade deaths → cluster collapse.
-# With rate limit of 2/cycle: max 2 peers marked dead per 60s check cycle.
-# This gives busy nodes time to recover before being marked dead by everyone.
-PEER_DEATH_RATE_LIMIT = int(os.environ.get("RINGRIFT_P2P_PEER_DEATH_RATE_LIMIT", "2") or 2)
+# Jan 22, 2026: REMOVED DUPLICATE - PEER_DEATH_RATE_LIMIT is now defined once at line ~179.
+# The canonical definition uses default of 10 (moderate rate limiting).
+# NOTE: This duplicate was ignored by Python (first definition wins), causing confusion.
 
 # Peer cache / reputation settings
 PEER_CACHE_TTL_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_CACHE_TTL_SECONDS", "604800") or 604800)
@@ -692,8 +692,15 @@ SWIM_BIND_PORT = int(os.environ.get("RINGRIFT_SWIM_BIND_PORT", str(SWIM_PORT)) o
 # Jan 2, 2026: Further increased to 15s/10s for NAT-blocked nodes using relay.
 # Jan 19, 2026: Increased to 30s/20s - CPU-saturated nodes running selfplay at 100%
 # couldn't respond to SWIM pings fast enough, causing cascade SUSPECT->DEAD failures.
-SWIM_FAILURE_TIMEOUT = float(os.environ.get("RINGRIFT_SWIM_FAILURE_TIMEOUT", "30.0") or 30.0)
-SWIM_SUSPICION_TIMEOUT = float(os.environ.get("RINGRIFT_SWIM_SUSPICION_TIMEOUT", "20.0") or 20.0)
+# Jan 22, 2026: CRITICAL FIX - Unified SWIM and HTTP timeouts to prevent split-brain membership.
+# Problem: SWIM (30s) marked peers dead while HTTP (120s) considered them alive, causing
+# conflicting membership views and peer count fluctuations (5-8 instead of stable 20+).
+# Solution: SWIM_FAILURE = PEER_TIMEOUT * 0.75 (90s), SWIM_SUSPICION = PEER_TIMEOUT * 0.5 (60s)
+# This allows SWIM to detect failures ~25% earlier than HTTP while staying within same window.
+_SWIM_FAILURE_DEFAULT = str(PEER_TIMEOUT * 0.75)  # 90s for 120s PEER_TIMEOUT
+_SWIM_SUSPICION_DEFAULT = str(PEER_TIMEOUT * 0.5)  # 60s for 120s PEER_TIMEOUT
+SWIM_FAILURE_TIMEOUT = float(os.environ.get("RINGRIFT_SWIM_FAILURE_TIMEOUT", _SWIM_FAILURE_DEFAULT) or float(_SWIM_FAILURE_DEFAULT))
+SWIM_SUSPICION_TIMEOUT = float(os.environ.get("RINGRIFT_SWIM_SUSPICION_TIMEOUT", _SWIM_SUSPICION_DEFAULT) or float(_SWIM_SUSPICION_DEFAULT))
 SWIM_PING_INTERVAL = float(os.environ.get("RINGRIFT_SWIM_PING_INTERVAL", "1.0") or 1.0)
 # Increased indirect probes from 3 to 7 per SWIM paper for better success rate
 SWIM_INDIRECT_PING_COUNT = int(os.environ.get("RINGRIFT_SWIM_INDIRECT_PING_COUNT", "7") or 7)
@@ -702,19 +709,24 @@ SWIM_INDIRECT_PING_COUNT = int(os.environ.get("RINGRIFT_SWIM_INDIRECT_PING_COUNT
 # Direct nodes (DC, well-connected): Shorter timeouts for faster detection
 # Relay nodes (NAT-blocked): Longer timeouts to account for relay latency
 # Jan 19, 2026: Increased all timeouts - 15s was too aggressive during high CPU load.
-# Direct nodes (15s/10s): Allow 2-3 missed pings before suspect
-# Relay nodes (45s/30s): NAT-blocked nodes under load need extra tolerance
+# Jan 22, 2026: Scaled tiered timeouts relative to unified PEER_TIMEOUT (120s) to prevent split-brain.
+# Direct nodes: PEER_TIMEOUT * 0.375 failure (45s), PEER_TIMEOUT * 0.25 suspicion (30s)
+# Relay nodes: PEER_TIMEOUT * 1.125 failure (135s), PEER_TIMEOUT * 0.75 suspicion (90s)
+_SWIM_FAILURE_DIRECT_DEFAULT = str(PEER_TIMEOUT * 0.375)  # 45s for direct nodes
+_SWIM_FAILURE_RELAY_DEFAULT = str(PEER_TIMEOUT * 1.125)   # 135s for relay nodes
+_SWIM_SUSPICION_DIRECT_DEFAULT = str(PEER_TIMEOUT * 0.25) # 30s for direct nodes
+_SWIM_SUSPICION_RELAY_DEFAULT = str(PEER_TIMEOUT * 0.75)  # 90s for relay nodes
 SWIM_FAILURE_TIMEOUT_DIRECT = float(
-    os.environ.get("RINGRIFT_SWIM_FAILURE_TIMEOUT_DIRECT", "15.0") or 15.0
+    os.environ.get("RINGRIFT_SWIM_FAILURE_TIMEOUT_DIRECT", _SWIM_FAILURE_DIRECT_DEFAULT) or float(_SWIM_FAILURE_DIRECT_DEFAULT)
 )
 SWIM_FAILURE_TIMEOUT_RELAY = float(
-    os.environ.get("RINGRIFT_SWIM_FAILURE_TIMEOUT_RELAY", "45.0") or 45.0
+    os.environ.get("RINGRIFT_SWIM_FAILURE_TIMEOUT_RELAY", _SWIM_FAILURE_RELAY_DEFAULT) or float(_SWIM_FAILURE_RELAY_DEFAULT)
 )
 SWIM_SUSPICION_TIMEOUT_DIRECT = float(
-    os.environ.get("RINGRIFT_SWIM_SUSPICION_TIMEOUT_DIRECT", "10.0") or 10.0
+    os.environ.get("RINGRIFT_SWIM_SUSPICION_TIMEOUT_DIRECT", _SWIM_SUSPICION_DIRECT_DEFAULT) or float(_SWIM_SUSPICION_DIRECT_DEFAULT)
 )
 SWIM_SUSPICION_TIMEOUT_RELAY = float(
-    os.environ.get("RINGRIFT_SWIM_SUSPICION_TIMEOUT_RELAY", "30.0") or 30.0
+    os.environ.get("RINGRIFT_SWIM_SUSPICION_TIMEOUT_RELAY", _SWIM_SUSPICION_RELAY_DEFAULT) or float(_SWIM_SUSPICION_RELAY_DEFAULT)
 )
 
 

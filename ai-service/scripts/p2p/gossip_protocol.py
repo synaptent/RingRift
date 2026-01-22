@@ -559,11 +559,13 @@ class GossipProtocolMixin(P2PMixinBase):
     # Jan 6, 2026: Reduced fallback from 3600s to 600s to match coordination_defaults
     # January 8, 2026: Reduced to 180s for faster stale peer detection
     # Jan 19, 2026: Reduced to 60s (2x convergence time) for faster view convergence
+    # Jan 22, 2026: INCREASED to 240s for 40-node cluster propagation.
+    # Math: 40 nodes, fanout 10, 30s interval -> 2 rounds * 30s * 4 safety = 240s minimum
     try:
         from app.config.coordination_defaults import GossipDefaults as _GD
         GOSSIP_STATE_TTL = _GD.STATE_TTL
     except ImportError:
-        GOSSIP_STATE_TTL = 60  # 1 min TTL for stale states (down from 180s)
+        GOSSIP_STATE_TTL = 240  # 4 min TTL for 40-node cluster propagation
     GOSSIP_ENDPOINT_TTL = 1800  # 30 min TTL for learned endpoints
 
     # Dec 30, 2025: Configurable gossip parameters via environment variables
@@ -4041,6 +4043,101 @@ class GossipProtocolMixin(P2PMixinBase):
             "metrics": summary,
             "peer_health": health_tracker_stats,  # Phase 6
         }
+
+    def check_membership_consistency(self) -> dict[str, Any]:
+        """Compare SWIM and HTTP membership views for divergence.
+
+        Jan 22, 2026: Phase 3 architectural fix - membership consistency monitoring.
+
+        When SWIM and HTTP layers use different timeouts, they can have conflicting
+        views of which peers are alive. This causes split-brain behavior where
+        nodes see different peer counts (e.g., Lambda nodes see 1 alive peer while
+        other nodes see 15+).
+
+        This method compares both views and emits a MEMBERSHIP_DIVERGENCE_DETECTED
+        event when they disagree, enabling automated alerting and investigation.
+
+        Returns:
+            dict with:
+            - swim_alive: Number of peers SWIM considers alive
+            - http_alive: Number of peers HTTP considers alive
+            - divergent_peers: List of peer IDs with conflicting status
+            - consistent: True if both views agree
+
+        Example:
+            >>> metrics = self.check_membership_consistency()
+            >>> if not metrics["consistent"]:
+            ...     logger.warning(f"Divergent peers: {metrics['divergent_peers']}")
+        """
+        metrics: dict[str, Any] = {
+            "swim_alive": 0,
+            "http_alive": 0,
+            "divergent_peers": [],
+            "consistent": True,
+            "timestamp": time.time(),
+        }
+
+        # Check if SWIM manager is available
+        swim_manager = getattr(self, "_swim_manager", None)
+        if swim_manager is None:
+            # SWIM not enabled, can't compare
+            metrics["swim_enabled"] = False
+            return metrics
+
+        metrics["swim_enabled"] = True
+
+        try:
+            # Get SWIM view - peers it considers alive
+            swim_alive_peers = set()
+            if hasattr(swim_manager, "get_alive_peers"):
+                swim_alive_peers = set(swim_manager.get_alive_peers())
+            elif hasattr(swim_manager, "_members"):
+                # Fallback: read internal member state
+                swim_alive_peers = {
+                    mid for mid, state in swim_manager._members.items()
+                    if state == "alive"
+                }
+            metrics["swim_alive"] = len(swim_alive_peers)
+
+            # Get HTTP view - peers with recent heartbeat
+            http_alive_peers: set[str] = set()
+            peers = getattr(self, "peers", {})
+            now = time.time()
+            peer_timeout = getattr(self, "PEER_TIMEOUT", 120)
+
+            for node_id, peer in peers.items():
+                last_hb = getattr(peer, "last_heartbeat", 0)
+                is_retired = getattr(peer, "retired", False)
+                if not is_retired and (now - last_hb) < peer_timeout:
+                    # Normalize to IP for comparison with SWIM
+                    peer_host = getattr(peer, "host", node_id)
+                    http_alive_peers.add(peer_host)
+
+            metrics["http_alive"] = len(http_alive_peers)
+
+            # Normalize SWIM peer IDs to IPs (SWIM uses "IP:7947" format)
+            swim_ips = {p.rsplit(":", 1)[0] if ":" in p else p for p in swim_alive_peers}
+
+            # Find divergent peers (symmetric difference)
+            divergent = swim_ips ^ http_alive_peers
+            if divergent:
+                metrics["consistent"] = False
+                metrics["divergent_peers"] = list(divergent)[:10]  # Limit to 10
+
+                # Emit event for monitoring
+                self._safe_emit_event("MEMBERSHIP_DIVERGENCE_DETECTED", {
+                    "swim_alive": metrics["swim_alive"],
+                    "http_alive": metrics["http_alive"],
+                    "divergent_count": len(divergent),
+                    "divergent_peers": metrics["divergent_peers"],
+                    "node_id": getattr(self, "node_id", "unknown"),
+                })
+
+        except (TypeError, AttributeError, KeyError) as e:
+            self._log_debug(f"Membership consistency check failed: {e}")
+            metrics["error"] = str(e)
+
+        return metrics
 
     def health_check(self) -> dict[str, Any]:
         """Return health status for gossip protocol mixin (DaemonManager integration).

@@ -116,7 +116,7 @@ from collections.abc import Generator
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 from urllib.parse import urlparse
 
 if TYPE_CHECKING:
@@ -254,6 +254,39 @@ def get_predictive_alerts():
 _swim_manager = None
 SWIM_AVAILABLE = False
 
+# Jan 22, 2026: SWIM callback registration for state synchronization.
+# Problem: SWIM adapter has callbacks but they were never wired to orchestrator.
+# SWIM detects failures at 90s but never syncs state to gossip layer.
+# Solution: Register callbacks BEFORE get_swim_manager() creates the manager.
+_swim_on_member_alive: Callable[[str], None] | None = None
+_swim_on_member_failed: Callable[[str], None] | None = None
+
+
+def set_swim_callbacks(
+    on_alive: Callable[[str], None] | None = None,
+    on_failed: Callable[[str], None] | None = None,
+) -> None:
+    """Register SWIM membership callbacks before get_swim_manager().
+
+    Jan 22, 2026: Wire SWIM failure detection to gossip layer.
+
+    Must be called BEFORE get_swim_manager() to ensure callbacks are set
+    during manager creation. If manager already exists, sets callbacks directly.
+
+    Args:
+        on_alive: Callback when a member becomes alive (member_id: str)
+        on_failed: Callback when a member fails (member_id: str)
+    """
+    global _swim_on_member_alive, _swim_on_member_failed
+    _swim_on_member_alive = on_alive
+    _swim_on_member_failed = on_failed
+
+    # If manager already exists, set callbacks directly
+    if _swim_manager is not None:
+        _swim_manager.on_member_alive = on_alive
+        _swim_manager.on_member_failed = on_failed
+        logger.info("SWIM callbacks registered on existing manager")
+
 
 def get_swim_manager(node_id: str | None = None, bind_port: int = 7947):
     """Get the SWIM membership manager singleton (lazy load).
@@ -281,7 +314,13 @@ def get_swim_manager(node_id: str | None = None, bind_port: int = 7947):
                     node_id=node_id,
                     bind_port=bind_port,
                 )
-                logger.info(f"SWIM membership manager initialized for {node_id}")
+                # Jan 22, 2026: Wire SWIM callbacks registered via set_swim_callbacks()
+                if _swim_on_member_alive is not None:
+                    _swim_manager.on_member_alive = _swim_on_member_alive
+                if _swim_on_member_failed is not None:
+                    _swim_manager.on_member_failed = _swim_on_member_failed
+                callback_status = "with callbacks" if (_swim_on_member_alive or _swim_on_member_failed) else "no callbacks"
+                logger.info(f"SWIM membership manager initialized for {node_id} ({callback_status})")
             else:
                 logger.warning("swim-p2p not installed - using HTTP heartbeats only")
         except ImportError as e:
@@ -2497,6 +2536,13 @@ class P2POrchestrator(
 
         # SWIM-based leaderless membership (gossip protocol)
         # This provides faster failure detection (<5s vs 60s+) and O(1) bandwidth
+        # Jan 22, 2026: Register SWIM callbacks BEFORE creating manager to wire
+        # SWIM failure detection to gossip layer. Previously SWIM detected failures
+        # but never synced state, causing split-brain membership views.
+        set_swim_callbacks(
+            on_alive=self._on_swim_member_alive,
+            on_failed=self._on_swim_member_failed,
+        )
         self._swim_manager = get_swim_manager(node_id=node_id, bind_port=7947)
         self._swim_started = False
 
@@ -7332,6 +7378,66 @@ class P2POrchestrator(
             return True
         return False
 
+    def _on_swim_member_alive(self, member_id: str) -> None:
+        """Handle SWIM member becoming alive - sync to gossip layer.
+
+        Jan 22, 2026: Wire SWIM failure detection to gossip layer.
+
+        When SWIM detects a member is alive (via ping/ack or indirect probe),
+        this callback syncs the state to the HTTP gossip layer by:
+        1. Updating the peer's last_heartbeat timestamp
+        2. Clearing any retired status
+
+        This ensures membership consistency between SWIM and HTTP layers.
+
+        Args:
+            member_id: SWIM member identifier (usually "IP:7947")
+        """
+        logger.info(f"[SWIM->Gossip] Member {member_id} ALIVE")
+        # Extract host from member_id (format: "IP:7947")
+        host = member_id.rsplit(":", 1)[0] if ":" in member_id else member_id
+
+        with self.peers_lock:
+            for node_id, peer in self.peers.items():
+                peer_host = getattr(peer, "host", "")
+                peer_tailscale = getattr(peer, "tailscale_ip", "")
+                if peer_host == host or peer_tailscale == host:
+                    peer.last_heartbeat = time.time()
+                    if getattr(peer, "retired", False):
+                        peer.retired = False
+                        logger.info(f"[SWIM->Gossip] Unretired peer {node_id} via SWIM alive")
+                    break
+
+    def _on_swim_member_failed(self, member_id: str) -> None:
+        """Handle SWIM member failure - mark as suspect in gossip layer.
+
+        Jan 22, 2026: Wire SWIM failure detection to gossip layer.
+
+        When SWIM detects a member has failed (via suspicion timeout),
+        this callback records the failure in the health tracker. This allows
+        the gossip layer to factor in SWIM's faster failure detection when
+        making membership decisions.
+
+        Note: This does NOT immediately retire the peer - the gossip layer
+        uses its own timeout (PEER_TIMEOUT) for final retirement decisions.
+        This just records the SWIM signal as an early warning.
+
+        Args:
+            member_id: SWIM member identifier (usually "IP:7947")
+        """
+        logger.warning(f"[SWIM->Gossip] Member {member_id} FAILED")
+        host = member_id.rsplit(":", 1)[0] if ":" in member_id else member_id
+
+        # Record failure in gossip health tracker if available
+        if hasattr(self, "_gossip_health_tracker") and self._gossip_health_tracker:
+            with self.peers_lock:
+                for node_id, peer in self.peers.items():
+                    peer_host = getattr(peer, "host", "")
+                    if peer_host == host:
+                        self._gossip_health_tracker.record_gossip_failure(node_id)
+                        logger.info(f"[SWIM->Gossip] Recorded failure for {node_id}")
+                        break
+
     def _is_self_voter(self, voter_id: str, voter_ips: set[str]) -> bool:
         """Check if we are this voter using multiple identification methods.
 
@@ -9460,8 +9566,9 @@ class P2POrchestrator(
 
         # Count peers with recent heartbeat failures
         # Jan 19, 2026: Use jittered timeout to prevent synchronized partition detection
+        # Jan 22, 2026: Use cached jittered timeout to ensure consistent death detection
         now = time.time()
-        jittered_timeout = get_jittered_peer_timeout(PEER_TIMEOUT)
+        jittered_timeout = self._get_cached_jittered_timeout()
         unreachable = 0
         for peer in peers_snapshot:
             if peer.consecutive_failures >= 3 or (now - peer.last_heartbeat > jittered_timeout):
@@ -21583,7 +21690,8 @@ print(json.dumps({{
 
                     # Skip if not actually dead yet (within timeout window)
                     # Jan 19, 2026: Use jittered timeout to prevent synchronized retries
-                    if dead_since < get_jittered_peer_timeout(PEER_TIMEOUT):
+                    # Jan 22, 2026: Use cached jittered timeout to ensure consistent death detection
+                    if dead_since < self._get_cached_jittered_timeout():
                         continue
 
                     # Exponential backoff: 15s, 30s, 60s, 120s based on time since death

@@ -65,39 +65,45 @@ class GossipStateCleanupConfig:
     # TTL for gossip peer states (seconds) - peers not in active peer list
     # January 8, 2026: Reduced from 3600s to 180s for faster stale peer cleanup
     # January 15, 2026: Reduced to 60s for faster partition detection and recovery
+    # Jan 22, 2026: INCREASED to 240s for 40-node cluster propagation.
+    # Math: 40 nodes, fanout 10, 30s interval -> 2 rounds * 30s * 4 safety = 240s minimum
     gossip_state_ttl_seconds: float = field(
         default_factory=lambda: float(
-            os.environ.get("RINGRIFT_GOSSIP_STATE_TTL", "60")  # 1 minute
+            os.environ.get("RINGRIFT_GOSSIP_STATE_TTL", "240")  # 4 minutes
         )
     )
 
     # TTL for gossip peer manifests (seconds)
+    # Jan 22, 2026: Aligned to 5x base TTL (240s * 5 = 1200s = 20 min)
     gossip_manifest_ttl_seconds: float = field(
         default_factory=lambda: float(
-            os.environ.get("RINGRIFT_GOSSIP_MANIFEST_TTL", "3600")  # 1 hour
+            os.environ.get("RINGRIFT_GOSSIP_MANIFEST_TTL", "1200")  # 20 minutes
         )
     )
 
     # TTL for node recovery attempts (seconds)
     # January 2026 - P2P Stability Plan Phase 3: Reduced from 6h to 2h
-    # Faster cleanup allows recovery of stuck nodes sooner
+    # Jan 22, 2026: Aligned to 10x base TTL (240s * 10 = 2400s = 40 min)
     recovery_attempts_ttl_seconds: float = field(
         default_factory=lambda: float(
-            os.environ.get("RINGRIFT_RECOVERY_ATTEMPTS_TTL", "7200")  # 2 hours
+            os.environ.get("RINGRIFT_RECOVERY_ATTEMPTS_TTL", "2400")  # 40 minutes
         )
     )
 
     # TTL for peer reputation entries without activity (seconds)
+    # Jan 22, 2026: Aligned to 30x base TTL (240s * 30 = 7200s = 2 hours)
+    # Previously 24h was causing unbounded memory growth
     peer_reputation_ttl_seconds: float = field(
         default_factory=lambda: float(
-            os.environ.get("RINGRIFT_PEER_REPUTATION_TTL", "86400")  # 24 hours
+            os.environ.get("RINGRIFT_PEER_REPUTATION_TTL", "7200")  # 2 hours
         )
     )
 
     # TTL for learned endpoints (seconds)
+    # Jan 22, 2026: Aligned to 3x base TTL (240s * 3 = 720s = 12 min)
     learned_endpoints_ttl_seconds: float = field(
         default_factory=lambda: float(
-            os.environ.get("RINGRIFT_LEARNED_ENDPOINTS_TTL", "1800")  # 30 minutes
+            os.environ.get("RINGRIFT_LEARNED_ENDPOINTS_TTL", "720")  # 12 minutes
         )
     )
 
