@@ -18,11 +18,13 @@ export const connectRedis = async (): Promise<RedisClient> => {
       socket: {
         connectTimeout: 60000,
         reconnectStrategy: (retries: number) => {
-          if (retries > 10) {
-            logger.error('Redis reconnection failed after 10 attempts');
-            return false;
+          // Never give up on Redis - use exponential backoff with cap at 30 seconds
+          // This ensures the application can recover from Redis outages automatically
+          const delay = Math.min(retries * 100, 30000);
+          if (retries % 10 === 0) {
+            logger.warn(`Redis reconnection attempt ${retries}, next retry in ${delay}ms`);
           }
-          return Math.min(retries * 50, 1000);
+          return delay;
         },
       },
     };

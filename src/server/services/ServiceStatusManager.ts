@@ -72,7 +72,11 @@ export interface SystemStatus {
  */
 export interface ServiceStatusEvents {
   /** Emitted when any service status changes */
-  statusChange: (service: ServiceName, oldStatus: ServiceHealthStatus, newStatus: ServiceHealthStatus) => void;
+  statusChange: (
+    service: ServiceName,
+    oldStatus: ServiceHealthStatus,
+    newStatus: ServiceHealthStatus
+  ) => void;
   /** Emitted when the overall degradation level changes */
   degradationLevelChange: (oldLevel: DegradationLevel, newLevel: DegradationLevel) => void;
   /** Emitted when a service recovers from unhealthy/degraded to healthy */
@@ -165,10 +169,7 @@ export class ServiceStatusManager extends EventEmitter {
    * Register a health check callback for a service.
    * The callback will be invoked during polling to check service health.
    */
-  registerHealthCheck(
-    service: ServiceName,
-    callback: () => Promise<HealthCheckResult>
-  ): void {
+  registerHealthCheck(service: ServiceName, callback: () => Promise<HealthCheckResult>): void {
     this.healthCheckCallbacks.set(service, callback);
     logger.debug('Health check callback registered', { service });
   }
@@ -203,7 +204,8 @@ export class ServiceStatusManager extends EventEmitter {
       lastChecked: now,
       error: status === 'healthy' ? undefined : error,
       latencyMs,
-      failureCount: status === 'healthy' ? 0 : current.failureCount + (oldStatus !== status ? 1 : 0),
+      failureCount:
+        status === 'healthy' ? 0 : current.failureCount + (oldStatus !== status ? 1 : 0),
       fallbackActive: status !== 'healthy',
     };
 
@@ -394,9 +396,27 @@ export class ServiceStatusManager extends EventEmitter {
 
   /**
    * Start automatic health check polling.
+   *
+   * Polling is enabled when:
+   * - ENABLE_HEALTH_POLLING=true (explicit enable), OR
+   * - NODE_ENV=production (auto-enable in prod)
+   *
+   * Polling is disabled when:
+   * - ENABLE_HEALTH_POLLING=false (explicit disable), OR
+   * - Not production AND not explicitly enabled
    */
   startPolling(): void {
-    if (!this.config.enablePolling || this.pollingInterval) {
+    // Check environment for auto-enable in production
+    const isProduction = process.env.NODE_ENV === 'production';
+    const explicitlyEnabled = process.env.ENABLE_HEALTH_POLLING === 'true';
+    const explicitlyDisabled = process.env.ENABLE_HEALTH_POLLING === 'false';
+
+    // Determine if polling should be enabled
+    const shouldPoll = explicitlyDisabled
+      ? false
+      : explicitlyEnabled || isProduction || this.config.enablePolling;
+
+    if (!shouldPoll || this.pollingInterval) {
       return;
     }
 
@@ -489,7 +509,9 @@ export function getServiceStatusManager(): ServiceStatusManager {
 /**
  * Initialize the ServiceStatusManager with custom configuration.
  */
-export function initServiceStatusManager(config?: Partial<HealthCheckConfig>): ServiceStatusManager {
+export function initServiceStatusManager(
+  config?: Partial<HealthCheckConfig>
+): ServiceStatusManager {
   if (serviceStatusManager) {
     serviceStatusManager.destroy();
   }
