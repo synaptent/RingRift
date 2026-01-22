@@ -357,15 +357,20 @@ class GumbelMCTSAI(BaseAI):
         Early game positions are simpler and need fewer simulations.
         Mid/late game positions with more complex tactics get full budget.
 
-        Minimum budget is 800 simulations to ensure quality search.
+        Jan 2026: Minimum budget is 64 simulations (Sequential Halving requirement).
+        Previously this was 800, which blocked selfplay from completing games
+        in reasonable time. Production play can still use budget=800+ for quality.
 
         Args:
             game_state: Current game state.
 
         Returns:
-            Adaptive simulation budget (minimum 800).
+            Adaptive simulation budget (minimum 64).
         """
-        base_budget = max(self.simulation_budget, 800)  # Minimum 800 sims
+        # Jan 2026: Respect configured budget - minimum 64 for Sequential Halving
+        # to work correctly. Selfplay uses budget=64-200 for throughput.
+        # Production game play should configure budget=800+ for quality.
+        base_budget = max(self.simulation_budget, 64)
 
         # Estimate move number from game state or AI's own move count
         move_number = getattr(game_state, 'move_count', None) or self.move_count
@@ -384,11 +389,11 @@ class GumbelMCTSAI(BaseAI):
         mid_threshold = max(15, board_size // 4)    # ~16 for 64 cells, ~90 for 361
 
         if move_number < early_threshold:
-            # Very early game: 50% budget (minimum 800)
-            return max(800, base_budget // 2)
+            # Very early game: 50% budget
+            return max(64, base_budget // 2)
         elif move_number < mid_threshold:
-            # Early-mid game: 75% budget (minimum 800)
-            return max(800, (base_budget * 3) // 4)
+            # Early-mid game: 75% budget
+            return max(64, (base_budget * 3) // 4)
         else:
             # Mid-late game: full budget for complex tactics
             return base_budget
