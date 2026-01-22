@@ -1805,6 +1805,43 @@ class P2POrchestrator(
             logger.info("[P2P] Diagnostic instrumentation enabled (Phase 0)")
         except ImportError as e:
             logger.warning(f"[P2P] Diagnostic instrumentation unavailable: {e}")
+
+        # Jan 2026: P2P Stability Controller (Self-Healing Architecture)
+        # Closes the feedback loop: Diagnostics -> Symptom Detection -> Recovery Action -> Effectiveness
+        self._stability_controller = None
+        self._adaptive_timeouts = None
+        self._effectiveness_tracker = None
+        try:
+            from scripts.p2p.controllers import (
+                StabilityController,
+                RecoveryAction,
+                AdaptiveTimeoutManager,
+                EffectivenessTracker,
+            )
+            self._adaptive_timeouts = AdaptiveTimeoutManager()
+            self._effectiveness_tracker = EffectivenessTracker()
+            self._stability_controller = StabilityController(
+                peer_state_tracker=self._peer_state_tracker,
+                connection_failure_tracker=self._conn_failure_tracker,
+                probe_tracker=self._probe_tracker,
+                action_callbacks={
+                    RecoveryAction.INCREASE_TIMEOUT: self._action_increase_timeout,
+                    RecoveryAction.DECREASE_TIMEOUT: self._action_decrease_timeout,
+                    RecoveryAction.SCALE_POOL_UP: self._action_scale_pool,
+                    RecoveryAction.RESET_CIRCUIT: self._action_reset_circuits,
+                    RecoveryAction.INCREASE_COOLDOWN: self._action_increase_cooldown,
+                    RecoveryAction.REINJECT_PEER: self._action_reinject_peer,
+                    RecoveryAction.EMIT_ALERT: self._action_emit_alert,
+                },
+            )
+            # Wire effectiveness tracker to get metrics
+            self._effectiveness_tracker.set_metrics_callback(self._get_stability_metrics)
+            logger.info("[P2P] Stability controller enabled (Self-Healing Architecture)")
+        except ImportError as e:
+            logger.warning(f"[P2P] Stability controller unavailable: {e}")
+        except Exception as e:
+            logger.warning(f"[P2P] Stability controller init failed: {e}")
+
         self.local_jobs: dict[str, ClusterJob] = {}
         self.active_jobs: dict[str, dict[str, Any]] = {}  # Track running jobs by type (selfplay, training, etc.)
 
@@ -2148,6 +2185,10 @@ class P2POrchestrator(
         self.running = True
         self.election_in_progress = False
         self.last_election_attempt: float = 0.0
+        # Jan 22, 2026: Atomic election guard to prevent race conditions
+        # Multiple coroutines could pass the `if election_in_progress` check
+        # before any sets the flag, causing multiple simultaneous elections.
+        self._election_lock = asyncio.Lock()
 
         # LEARNED LESSONS - Lease-based leadership to prevent split-brain
         # Leader must continuously renew lease; if lease expires, leadership is void
@@ -3905,6 +3946,18 @@ class P2POrchestrator(
                 logger.info("[LoopManager] VoterConfigSyncLoop registered")
             except (ImportError, TypeError) as e:
                 logger.debug(f"VoterConfigSyncLoop: not available: {e}")
+
+            # StabilityController - January 2026 (Self-Healing Architecture)
+            # Closes feedback loop: Diagnostics -> Symptoms -> Recovery Actions -> Effectiveness
+            # Detects peer flapping, false positives, connection exhaustion, provider degradation
+            if self._stability_controller is not None:
+                try:
+                    manager.register(self._stability_controller)
+                    logger.info("[LoopManager] StabilityController registered (self-healing)")
+                except Exception as e:
+                    logger.debug(f"StabilityController: registration failed: {e}")
+            else:
+                logger.debug("[LoopManager] StabilityController: not initialized, skipping")
 
             self._loops_registered = True
             logger.info(f"LoopManager: registered {len(manager.loop_names)} loops")
@@ -7400,6 +7453,72 @@ class P2POrchestrator(
             "quorum_threatened": quorum_threatened,
             "voter_status": voter_status,
         }
+
+    def _log_cluster_health_snapshot(self) -> None:
+        """Log detailed cluster health for debugging.
+
+        Jan 22, 2026: Added as part of Phase 2 P2P stability instrumentation.
+        Provides real-time visibility into peer discovery and voter health.
+        Called periodically from a background loop.
+        """
+        try:
+            # Count alive peers (excluding SWIM entries)
+            alive_peers = 0
+            total_peers = 0
+            swim_peers = 0
+            for peer_id, peer in self.peers.items():
+                total_peers += 1
+                if self._is_swim_peer_id(peer_id):
+                    swim_peers += 1
+                    continue
+                if hasattr(peer, "is_alive") and peer.is_alive():
+                    alive_peers += 1
+                elif isinstance(peer, dict) and self._is_peer_alive(peer):
+                    alive_peers += 1
+
+            # Count voters
+            voters_alive = self._count_alive_voters()
+            voters_total = len(getattr(self, "voter_node_ids", []) or [])
+
+            # Get uptime
+            uptime = time.time() - getattr(self, "_startup_time", time.time())
+
+            snapshot = {
+                "timestamp": time.time(),
+                "node_id": self.node_id,
+                "leader_id": self.leader_id,
+                "is_leader": self.leader_id == self.node_id,
+                "alive_peers": alive_peers,
+                "total_peers": total_peers,
+                "swim_peers": swim_peers,
+                "voters_alive": voters_alive,
+                "voters_total": voters_total,
+                "quorum_ok": voters_alive >= getattr(self, "voter_quorum_size", 0),
+                "election_in_progress": self.election_in_progress,
+                "uptime_seconds": int(uptime),
+            }
+            logger.info(f"[ClusterHealth] {json.dumps(snapshot)}")
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[ClusterHealth] Snapshot failed: {e}")
+
+    async def _cluster_health_snapshot_loop(self) -> None:
+        """Periodically log cluster health snapshots for debugging.
+
+        Jan 22, 2026: Added as part of Phase 2 P2P stability instrumentation.
+        Provides real-time visibility into peer discovery and voter health.
+
+        Interval: 60 seconds
+        """
+        SNAPSHOT_INTERVAL = 60  # seconds
+        await asyncio.sleep(30)  # Initial delay to let cluster stabilize
+
+        while True:
+            try:
+                self._log_cluster_health_snapshot()
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"[ClusterHealth] Snapshot loop error: {e}")
+
+            await asyncio.sleep(SNAPSHOT_INTERVAL)
 
     def _maybe_adopt_voter_node_ids(self, voter_node_ids: list[str], *, source: str) -> bool:
         """Adopt/override the voter set when it's not explicitly configured.
@@ -13113,6 +13232,96 @@ class P2POrchestrator(
                 "error": "internal_error",
                 "detail": str(e),
             }, status=500)
+
+    # -------------------------------------------------------------------------
+    # Stability Controller Handlers (January 2026 - Self-Healing Architecture)
+    # -------------------------------------------------------------------------
+
+    async def handle_stability(self, request: web.Request) -> web.Response:
+        """GET /stability - Return stability controller status.
+
+        January 2026: Added as part of P2P Self-Healing Architecture.
+
+        Returns JSON with:
+            - controller: StabilityController status (symptoms, actions, running state)
+            - adaptive_timeouts: Per-node adaptive timeouts
+            - effectiveness: Recovery action effectiveness tracking
+            - metrics: Current stability metrics
+        """
+        response: dict[str, Any] = {
+            "node_id": self.node_id,
+            "timestamp": time.time(),
+        }
+
+        # Stability controller status
+        if self._stability_controller:
+            response["controller"] = self._stability_controller.get_status()
+        else:
+            response["controller"] = {"enabled": False, "reason": "not_initialized"}
+
+        # Adaptive timeout status
+        if self._adaptive_timeouts:
+            response["adaptive_timeouts"] = self._adaptive_timeouts.get_status()
+        else:
+            response["adaptive_timeouts"] = {"enabled": False}
+
+        # Effectiveness tracking status
+        if self._effectiveness_tracker:
+            response["effectiveness"] = self._effectiveness_tracker.get_status()
+        else:
+            response["effectiveness"] = {"enabled": False}
+
+        # Current stability metrics
+        try:
+            response["metrics"] = self._get_stability_metrics()
+        except Exception as e:
+            response["metrics"] = {"error": str(e)}
+
+        return web.json_response(response)
+
+    async def handle_p2p_diagnostics(self, request: web.Request) -> web.Response:
+        """GET /p2p/diagnostics - Return P2P diagnostic tracker data.
+
+        January 2026: Phase 0 diagnostic instrumentation endpoint.
+
+        Returns JSON with:
+            - peer_state: Peer state transition tracking (flapping, death reasons)
+            - connection_failures: Connection failure tracking by type/transport
+            - probe_effectiveness: Probe success rates and false positives
+        """
+        response: dict[str, Any] = {
+            "node_id": self.node_id,
+            "timestamp": time.time(),
+        }
+
+        # Peer state tracker
+        if self._peer_state_tracker:
+            try:
+                response["peer_state"] = self._peer_state_tracker.get_diagnostics()
+            except Exception as e:
+                response["peer_state"] = {"error": str(e)}
+        else:
+            response["peer_state"] = {"enabled": False}
+
+        # Connection failure tracker
+        if self._conn_failure_tracker:
+            try:
+                response["connection_failures"] = self._conn_failure_tracker.get_diagnostics()
+            except Exception as e:
+                response["connection_failures"] = {"error": str(e)}
+        else:
+            response["connection_failures"] = {"enabled": False}
+
+        # Probe effectiveness tracker
+        if self._probe_tracker:
+            try:
+                response["probe_effectiveness"] = self._probe_tracker.get_diagnostics()
+            except Exception as e:
+                response["probe_effectiveness"] = {"error": str(e)}
+        else:
+            response["probe_effectiveness"] = {"enabled": False}
+
+        return web.json_response(response)
 
     # -------------------------------------------------------------------------
     # Peer Health Handlers - EXTRACTED to scripts/p2p/handlers/status.py
@@ -22779,8 +22988,15 @@ print(json.dumps({{
         if self._maybe_adopt_leader_from_peers():
             return
 
-        if self.election_in_progress:
-            return
+        # Jan 22, 2026: Atomic election guard using asyncio.Lock
+        # Prevents race condition where multiple coroutines pass the check
+        # before any sets the flag, causing multiple simultaneous elections.
+        async with self._election_lock:
+            if self.election_in_progress:
+                logger.debug("[Election] Already in progress, skipping")
+                return
+            # Atomically set the flag while holding the lock
+            self.election_in_progress = True
 
         # =========================================================================
         # Jan 2, 2026: Leader Stickiness
@@ -22793,7 +23009,6 @@ print(json.dumps({{
                 f"Incumbent advantage: attempting immediate leadership reclaim "
                 f"(stepped down {time.time() - self._last_step_down_time:.1f}s ago)"
             )
-            self.election_in_progress = True
             # C1 fix: Use leader_state_lock for role changes
             with self.leader_state_lock:
                 self.role = NodeRole.CANDIDATE
@@ -22810,11 +23025,11 @@ print(json.dumps({{
                 with self.leader_state_lock:
                     if self.role == NodeRole.CANDIDATE:
                         self.role = NodeRole.FOLLOWER
-                self.election_in_progress = False
+                # Don't clear election_in_progress here - fall through to normal election
             # If we failed to reclaim, fall through to normal election
             logger.info("Incumbent reclaim failed, falling back to normal election")
 
-        self.election_in_progress = True
+        # election_in_progress is already True (set atomically above)
         # C1 fix: Use leader_state_lock for role changes
         with self.leader_state_lock:
             self.role = NodeRole.CANDIDATE
@@ -25211,6 +25426,196 @@ print(json.dumps({{
             "failures": metrics.get("failures", 0),
             "nodes_in_cooldown": in_cooldown,
         }
+
+    # =========================================================================
+    # STABILITY CONTROLLER CALLBACKS (Jan 2026 - Self-Healing Architecture)
+    # =========================================================================
+    # Recovery action callbacks triggered by StabilityController when symptoms
+    # are detected. Each callback records effectiveness for feedback loop.
+    # =========================================================================
+
+    def _get_stability_metrics(self) -> dict:
+        """Get current stability metrics for effectiveness tracking.
+
+        Returns metrics used to evaluate whether recovery actions helped.
+        """
+        alive_count = sum(1 for p in self.peers.values() if p.is_alive())
+        total_count = len(self.peers) + 1  # Include self
+
+        # Calculate stability score (0-100)
+        stability_score = 0.0
+        if total_count > 0:
+            alive_ratio = alive_count / total_count
+            stability_score = alive_ratio * 100
+
+            # Bonus for having a leader
+            if self.leader_id:
+                stability_score += 10
+
+            # Penalty for flapping peers
+            if self._peer_state_tracker:
+                try:
+                    diag = self._peer_state_tracker.get_diagnostics()
+                    flapping_count = len(diag.get("flapping_peers", []))
+                    stability_score -= flapping_count * 5
+                except Exception:
+                    pass
+
+        return {
+            "alive_count": alive_count,
+            "total_count": total_count,
+            "stability_score": max(0, min(100, stability_score)),
+        }
+
+    async def _action_increase_timeout(
+        self, nodes: list[str], symptom: Any
+    ) -> None:
+        """Increase timeout for affected nodes."""
+        if not self._adaptive_timeouts:
+            return
+
+        for node_id in nodes:
+            self._adaptive_timeouts.increase_timeout(node_id)
+
+        if self._effectiveness_tracker:
+            self._effectiveness_tracker.record_action(
+                "increase_timeout",
+                nodes,
+                {"symptom": symptom.symptom.value if hasattr(symptom, "symptom") else str(symptom)},
+            )
+        logger.info(f"[Stability] Increased timeout for {len(nodes)} nodes")
+
+    async def _action_decrease_timeout(
+        self, nodes: list[str], symptom: Any
+    ) -> None:
+        """Decrease timeout for affected nodes."""
+        if not self._adaptive_timeouts:
+            return
+
+        for node_id in nodes:
+            self._adaptive_timeouts.decrease_timeout(node_id)
+
+        if self._effectiveness_tracker:
+            self._effectiveness_tracker.record_action(
+                "decrease_timeout",
+                nodes,
+                {"symptom": symptom.symptom.value if hasattr(symptom, "symptom") else str(symptom)},
+            )
+        logger.info(f"[Stability] Decreased timeout for {len(nodes)} nodes")
+
+    async def _action_scale_pool(
+        self, nodes: list[str], symptom: Any
+    ) -> None:
+        """Scale up connection pool size."""
+        if self._effectiveness_tracker:
+            self._effectiveness_tracker.record_action(
+                "scale_pool_up",
+                [],
+                {"symptom": symptom.symptom.value if hasattr(symptom, "symptom") else str(symptom)},
+            )
+        logger.info("[Stability] Would scale connection pool (not implemented)")
+
+    async def _action_reset_circuits(
+        self, nodes: list[str], symptom: Any
+    ) -> None:
+        """Reset circuit breakers for affected nodes."""
+        reset_count = 0
+        try:
+            from app.distributed.circuit_breaker import reset_circuit_breaker
+            for node_id in nodes:
+                try:
+                    reset_circuit_breaker(node_id)
+                    reset_count += 1
+                except Exception as e:
+                    logger.debug(f"Failed to reset circuit for {node_id}: {e}")
+        except ImportError:
+            logger.debug("Circuit breaker module not available")
+
+        if self._effectiveness_tracker:
+            self._effectiveness_tracker.record_action(
+                "reset_circuit",
+                nodes,
+                {"symptom": symptom.symptom.value if hasattr(symptom, "symptom") else str(symptom)},
+            )
+        logger.info(f"[Stability] Reset {reset_count} circuit breakers")
+
+    async def _action_increase_cooldown(
+        self, nodes: list[str], symptom: Any
+    ) -> None:
+        """Increase cooldown period for recovery actions."""
+        if self._stability_controller:
+            old_cooldown = self._stability_controller._action_cooldown
+            self._stability_controller._action_cooldown = min(old_cooldown * 1.5, 600.0)
+            logger.info(
+                f"[Stability] Increased action cooldown: {old_cooldown:.0f}s -> "
+                f"{self._stability_controller._action_cooldown:.0f}s"
+            )
+
+        if self._effectiveness_tracker:
+            self._effectiveness_tracker.record_action(
+                "increase_cooldown",
+                [],
+                {"symptom": symptom.symptom.value if hasattr(symptom, "symptom") else str(symptom)},
+            )
+
+    async def _action_reinject_peer(
+        self, nodes: list[str], symptom: Any
+    ) -> None:
+        """Reinject dead peers back into alive state for retry."""
+        reinjected = 0
+        for node_id in nodes:
+            if node_id in self.peers:
+                peer = self.peers[node_id]
+                if not peer.is_alive():
+                    peer.last_seen = time.time()
+                    peer.status = "alive"
+                    reinjected += 1
+                    logger.info(f"[Stability] Reinjected peer {node_id}")
+
+        if self._effectiveness_tracker:
+            self._effectiveness_tracker.record_action(
+                "reinject_peer",
+                nodes,
+                {"symptom": symptom.symptom.value if hasattr(symptom, "symptom") else str(symptom)},
+            )
+        logger.info(f"[Stability] Reinjected {reinjected}/{len(nodes)} peers")
+
+    async def _action_emit_alert(
+        self, nodes: list[str], symptom: Any
+    ) -> None:
+        """Emit alert for manual intervention."""
+        symptom_str = symptom.symptom.value if hasattr(symptom, "symptom") else str(symptom)
+        confidence = symptom.confidence if hasattr(symptom, "confidence") else 0.0
+        root_cause = symptom.root_cause if hasattr(symptom, "root_cause") else "unknown"
+
+        logger.warning(
+            f"[Stability ALERT] {symptom_str} detected "
+            f"(confidence={confidence:.2f}, cause={root_cause}, nodes={len(nodes)})"
+        )
+
+        try:
+            from app.coordination.data_events import DataEventType
+            from app.coordination.event_router import emit_event
+
+            emit_event(
+                DataEventType.STABILITY_ALERT,
+                {
+                    "symptom": symptom_str,
+                    "confidence": confidence,
+                    "root_cause": root_cause,
+                    "affected_nodes": nodes[:10],
+                    "timestamp": time.time(),
+                },
+            )
+        except Exception:
+            pass
+
+        if self._effectiveness_tracker:
+            self._effectiveness_tracker.record_action(
+                "emit_alert",
+                nodes,
+                {"symptom": symptom_str},
+            )
 
     # =========================================================================
     # GOSSIP-BASED LEADER HINTS
@@ -30553,6 +30958,9 @@ print(json.dumps({{
             # P2P diagnostics (January 2026 - P2P Stability Plan Phase 4)
             app.router.add_get('/p2p/diagnostics', self.handle_p2p_diagnostics)
 
+            # P2P stability controller (January 2026 - Self-Healing Architecture)
+            app.router.add_get('/stability', self.handle_stability)
+
             # Dynamic host registry routes (for IP auto-updates)
             app.router.add_post('/register', self.handle_register)
             app.router.add_get('/registry/status', self.handle_registry_status)
@@ -30937,6 +31345,12 @@ print(json.dumps({{
         # Keeps scheduler game counts up-to-date as games are generated and consolidated
         tasks.append(self._create_safe_task(
             self._game_count_refresh_loop(), "game_count_refresh", factory=self._game_count_refresh_loop
+        ))
+
+        # Jan 22, 2026: Periodic cluster health snapshots for Phase 2 P2P stability instrumentation
+        # Logs detailed peer counts, voter health, and election state every 60 seconds
+        tasks.append(self._create_safe_task(
+            self._cluster_health_snapshot_loop(), "cluster_health_snapshot", factory=self._cluster_health_snapshot_loop
         ))
 
         # NOTE: _follower_discovery_loop removed Dec 2025 - now runs via LoopManager (FollowerDiscoveryLoop)
