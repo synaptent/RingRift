@@ -22604,6 +22604,18 @@ print(json.dumps({{
             )
             return
 
+        # Jan 22, 2026: Add random jitter to prevent election cascade
+        # When leader dies, all nodes detect it simultaneously and try to start elections.
+        # Without jitter, this causes election floods that destabilize the cluster.
+        import random
+        jitter = random.uniform(0.5, 3.0)  # 500ms to 3s
+        await asyncio.sleep(jitter)
+
+        # Re-check if election still needed after jitter (leader may have emerged)
+        if self.leader_id and self.leader_id != self.node_id:
+            logger.debug(f"[Election] Skipping after jitter: leader {self.leader_id} emerged")
+            return
+
         self._update_self_info()
 
         # NAT-blocked nodes cannot act as a leader because peers can't reach them.

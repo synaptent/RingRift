@@ -45,6 +45,13 @@ from typing import Any, ClassVar
 # December 2025: Use centralized port constants
 from app.config.ports import P2P_DEFAULT_PORT
 
+# Jan 22, 2026: Import canonical PEER_TIMEOUT to prevent mismatch
+# Previously hardcoded 90s here vs 120s in app/p2p/constants.py
+try:
+    from app.p2p.constants import PEER_TIMEOUT as _CANONICAL_PEER_TIMEOUT
+except ImportError:
+    _CANONICAL_PEER_TIMEOUT = 120.0
+
 __all__ = [
     "NodeInfo",
     "NodeRole",
@@ -291,7 +298,8 @@ class NodeHealthStatus:
     nfs_accessible: bool = True
     errors_last_hour: int = 0
 
-    PEER_TIMEOUT: ClassVar[float] = 90.0
+    # Jan 22, 2026: Use canonical timeout from app.p2p.constants (was hardcoded 90s)
+    PEER_TIMEOUT: ClassVar[float] = _CANONICAL_PEER_TIMEOUT
     MAX_CONSECUTIVE_FAILURES: ClassVar[int] = 3
 
     @property
