@@ -216,7 +216,16 @@ async def lifespan(app: FastAPI):
     # Phase 18: Auto-start critical daemons for full automation (December 2025)
     # EVENT_ROUTER is required for all event-driven daemons
     # FeedbackLoopController orchestrates the entire SELFPLAY→TRAINING→EVALUATION→PROMOTION chain
-    if HAS_DAEMON_MANAGER:
+    #
+    # RINGRIFT_INFERENCE_ONLY=true: Skip all coordination daemons (January 2026)
+    # Use this on production web servers that only need AI inference endpoints.
+    # This prevents starting the full training cluster coordination stack which
+    # causes failures when the server can't reach the training cluster.
+    inference_only = os.environ.get("RINGRIFT_INFERENCE_ONLY", "").lower() in ("1", "true", "yes")
+    if inference_only:
+        logger.info("[Startup] INFERENCE_ONLY mode - skipping coordination daemons")
+
+    if HAS_DAEMON_MANAGER and not inference_only:
         try:
             daemon_manager = get_daemon_manager()
 
