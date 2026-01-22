@@ -635,11 +635,12 @@ class HexNeuralNet_v3(nn.Module):
         # the softmax denominator. The encoder ensures targets only reference
         # valid hex positions, so masking during training is safe.
         # (Fixed Jan 2026 - previous Dec 2025 fix was backwards)
+        # NOTE: Compute masking in FP32 since -1e9 exceeds FP16 range (±65504).
+        # Keep logits in FP32 - the scatter function handles dtype internally.
         if mask is not None:
-            mask_expanded = mask.to(dtype=out.dtype, device=out.device)
-            # Broadcast mask to all channels
-            placement_logits = placement_logits * mask_expanded + (1.0 - mask_expanded) * (-1e9)
-            movement_logits = movement_logits * mask_expanded + (1.0 - mask_expanded) * (-1e9)
+            mask_expanded = mask.to(dtype=torch.float32, device=out.device)
+            placement_logits = placement_logits.float() * mask_expanded + (1.0 - mask_expanded) * (-1e9)
+            movement_logits = movement_logits.float() * mask_expanded + (1.0 - mask_expanded) * (-1e9)
 
         # Special action logits from pooled features
         out_pooled = self._masked_global_avg_pool(out, hex_mask)
@@ -885,10 +886,12 @@ class HexNeuralNet_v3_Lite(nn.Module):
         # the softmax denominator. The encoder ensures targets only reference
         # valid hex positions, so masking during training is safe.
         # (Fixed Jan 2026 - previous Dec 2025 fix was backwards)
+        # NOTE: Compute masking in FP32 since -1e9 exceeds FP16 range (±65504).
+        # Keep logits in FP32 - the scatter function handles dtype internally.
         if mask is not None:
-            mask_expanded = mask.to(dtype=out.dtype, device=out.device)
-            placement_logits = placement_logits * mask_expanded + (1.0 - mask_expanded) * (-1e9)
-            movement_logits = movement_logits * mask_expanded + (1.0 - mask_expanded) * (-1e9)
+            mask_expanded = mask.to(dtype=torch.float32, device=out.device)
+            placement_logits = placement_logits.float() * mask_expanded + (1.0 - mask_expanded) * (-1e9)
+            movement_logits = movement_logits.float() * mask_expanded + (1.0 - mask_expanded) * (-1e9)
 
         out_pooled = self._masked_global_avg_pool(out, hex_mask)
         special_input = torch.cat([out_pooled, globals], dim=1)
@@ -1380,10 +1383,12 @@ class HexNeuralNet_v4(nn.Module):
         # the softmax denominator. The encoder's _is_valid_hex_cell() ensures training
         # targets only have probability on valid hex positions, so this is safe.
         # (Fixed Jan 2026 - previous Dec 2025 fix was backwards)
+        # NOTE: Compute masking in FP32 since -1e9 exceeds FP16 range (±65504).
+        # Keep logits in FP32 - the scatter function handles dtype internally.
         if mask is not None:
-            mask_expanded = mask.to(dtype=out.dtype, device=out.device)
-            placement_logits = placement_logits * mask_expanded + (1.0 - mask_expanded) * (-1e9)
-            movement_logits = movement_logits * mask_expanded + (1.0 - mask_expanded) * (-1e9)
+            mask_expanded = mask.to(dtype=torch.float32, device=out.device)
+            placement_logits = placement_logits.float() * mask_expanded + (1.0 - mask_expanded) * (-1e9)
+            movement_logits = movement_logits.float() * mask_expanded + (1.0 - mask_expanded) * (-1e9)
 
         special_input = torch.cat([out_pooled, globals], dim=1)
         special_logits = self.special_fc(special_input)
