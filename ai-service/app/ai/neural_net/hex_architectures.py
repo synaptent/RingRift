@@ -548,17 +548,19 @@ class HexNeuralNet_v3(nn.Module):
 
         # Initialize flat policy with -1e9 to mask padding positions.
         # This ensures positions not covered by scatter (e.g., policy_size padding)
-        # don't pollute the softmax. For FP16 inference, the model will convert
-        # to FP32 first or clamp values.
-        policy = torch.full((B, self.policy_size), -1e9, device=device, dtype=dtype)
+        # don't pollute the softmax.
+        # NOTE: Use FP32 for initialization since -1e9 exceeds FP16 range (±65504).
+        # We'll cast to the input dtype after scatter operations.
+        policy = torch.full((B, self.policy_size), -1e9, device=device, dtype=torch.float32)
 
         # Flatten spatial dimensions for scatter
         # placement_logits: [B, 3, H, W] → [B, 3*H*W]
-        placement_flat = placement_logits.view(B, -1)
+        # Cast to FP32 to match policy tensor dtype
+        placement_flat = placement_logits.float().view(B, -1)
         placement_idx_flat = self.placement_idx.view(-1).expand(B, -1)
 
         # movement_logits: [B, 144, H, W] → [B, 144*H*W]
-        movement_flat = movement_logits.view(B, -1)
+        movement_flat = movement_logits.float().view(B, -1)
         movement_idx_flat = self.movement_idx.view(-1).expand(B, -1)
 
         # Scatter placement and movement logits
@@ -566,9 +568,10 @@ class HexNeuralNet_v3(nn.Module):
         policy.scatter_(1, movement_idx_flat, movement_flat)
 
         # Add special action logit at dynamically computed special_base
-        policy[:, self.special_base : self.special_base + 1] = special_logits
+        policy[:, self.special_base : self.special_base + 1] = special_logits.float()
 
-        return policy
+        # Cast back to input dtype for downstream operations
+        return policy.to(dtype)
 
     def forward(
         self,
@@ -819,19 +822,22 @@ class HexNeuralNet_v3_Lite(nn.Module):
         dtype = placement_logits.dtype
 
         # Initialize with -1e9 to properly mask padding positions
-        policy = torch.full((B, self.policy_size), -1e9, device=device, dtype=dtype)
+        # NOTE: Use FP32 for initialization since -1e9 exceeds FP16 range (±65504).
+        policy = torch.full((B, self.policy_size), -1e9, device=device, dtype=torch.float32)
 
-        placement_flat = placement_logits.view(B, -1)
+        # Cast to FP32 to match policy tensor dtype
+        placement_flat = placement_logits.float().view(B, -1)
         placement_idx_flat = self.placement_idx.view(-1).expand(B, -1)
 
-        movement_flat = movement_logits.view(B, -1)
+        movement_flat = movement_logits.float().view(B, -1)
         movement_idx_flat = self.movement_idx.view(-1).expand(B, -1)
 
         policy.scatter_(1, placement_idx_flat, placement_flat)
         policy.scatter_(1, movement_idx_flat, movement_flat)
-        policy[:, self.special_base : self.special_base + 1] = special_logits
+        policy[:, self.special_base : self.special_base + 1] = special_logits.float()
 
-        return policy
+        # Cast back to input dtype for downstream operations
+        return policy.to(dtype)
 
     def forward(
         self,
@@ -1297,28 +1303,31 @@ class HexNeuralNet_v4(nn.Module):
         dtype = placement_logits.dtype
 
         # Initialize policy with large negative (masked out)
-        policy = torch.full((B, self.policy_size), -1e9, device=device, dtype=dtype)
+        # NOTE: Use FP32 for initialization since -1e9 exceeds FP16 range (±65504).
+        policy = torch.full((B, self.policy_size), -1e9, device=device, dtype=torch.float32)
 
         # Scatter placement logits: [B, 3, H, W] → [B, placement_span]
         # NOTE: We scatter ALL indices (including padding cells) to ensure v3-encoded
         # targets always have valid logits. The training loss will mask invalid moves.
         # VECTORIZED: Single scatter call instead of B*3 Python loop iterations
-        pl_values = placement_logits.view(B, -1)  # [B, 3*H*W]
+        # Cast to FP32 to match policy tensor dtype
+        pl_values = placement_logits.float().view(B, -1)  # [B, 3*H*W]
         pl_idx_flat = self.placement_idx.reshape(-1)  # [3*H*W]
         pl_idx_expanded = pl_idx_flat.unsqueeze(0).expand(B, -1)  # [B, 3*H*W]
         policy.scatter_(1, pl_idx_expanded, pl_values)
 
         # Scatter movement logits: [B, movement_channels, H, W] → [B, movement_span]
         # VECTORIZED: Single scatter call instead of B*movement_channels Python loop iterations
-        mv_values = movement_logits.view(B, -1)  # [B, C*H*W]
+        mv_values = movement_logits.float().view(B, -1)  # [B, C*H*W]
         mv_idx_flat = self.movement_idx.reshape(-1)  # [C*H*W]
         mv_idx_expanded = mv_idx_flat.unsqueeze(0).expand(B, -1)  # [B, C*H*W]
         policy.scatter_(1, mv_idx_expanded, mv_values)
 
         # Add special action logit at the computed special_base index
-        policy[:, self.special_base] = special_logits.squeeze(-1)
+        policy[:, self.special_base] = special_logits.float().squeeze(-1)
 
-        return policy
+        # Cast back to input dtype for downstream operations
+        return policy.to(dtype)
 
     def forward(
         self,
