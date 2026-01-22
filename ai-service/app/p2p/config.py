@@ -13,13 +13,24 @@ from pathlib import Path
 
 from app.config.ports import GOSSIP_PORT, P2P_DEFAULT_PORT
 
+# Jan 22, 2026: Import canonical timeout values from constants.py to ensure consistency.
+# Previously hardcoded values (30s/90s) conflicted with constants.py (15s/120s),
+# causing 30-second disagreement between modules and split-brain conditions.
+from app.p2p.constants import (
+    HEARTBEAT_INTERVAL,
+    PEER_TIMEOUT,
+    PEER_TIMEOUT_FAST,
+    PEER_TIMEOUT_NAT_BLOCKED,
+    ELECTION_TIMEOUT,
+    LEADER_LEASE_DURATION,
+    PEER_RETIRE_AFTER_SECONDS,
+)
+
 # Network Configuration
 # NOTE: Using canonical port constants from app/config/ports.py
 DEFAULT_PORT = P2P_DEFAULT_PORT
-HEARTBEAT_INTERVAL = 30  # seconds
-PEER_TIMEOUT = 90  # seconds without heartbeat = node considered dead
-ELECTION_TIMEOUT = 10  # seconds to wait for election responses
-LEADER_LEASE_DURATION = 90  # seconds
+# HEARTBEAT_INTERVAL, PEER_TIMEOUT, ELECTION_TIMEOUT, LEADER_LEASE_DURATION
+# are now imported from app.p2p.constants (canonical source)
 LEADER_LEASE_RENEW_INTERVAL = 10  # How often leader renews lease
 # Dec 29, 2025: Reduced from 60s to 15s for faster job status updates
 JOB_CHECK_INTERVAL = int(os.environ.get("RINGRIFT_P2P_JOB_CHECK_INTERVAL", "15") or 15)

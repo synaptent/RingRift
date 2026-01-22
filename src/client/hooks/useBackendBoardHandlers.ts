@@ -701,33 +701,32 @@ export function useBackendBoardHandlers(
         const hasStack = !!board.stacks.get(posKey);
 
         // Skip placement + movement shortcut: if user has selected a stack they control
-        // and clicks on a valid landing position, chain skip_placement + move_stack
+        // and clicks on a valid landing position, chain skip/no_placement + move_stack
         if (selected && !positionsEqual(selected, pos)) {
           const selectedKey = positionToString(selected);
           const selectedStack = board.stacks.get(selectedKey);
 
           if (selectedStack && selectedStack.controllingPlayer === gameState.currentPlayer) {
-            // Check if there's a skip_placement move available
+            // Check for skip_placement (has rings) OR no_placement_action (0 rings)
             const skipPlacementMove = validMoves.find((m) => m.type === 'skip_placement');
+            const noPlacementMove = validMoves.find((m) => m.type === 'no_placement_action');
+            const placementSkipMove = skipPlacementMove || noPlacementMove;
 
-            // Compute valid landing positions using the shared movement logic
-            // This validates direction, distance, and path clearance properly
-            const boardView = createMovementBoardView(board);
-            const validLandings = enumerateSimpleMoveTargetsFromStack(
-              board.type as BoardType,
+            // Compute valid landing positions including captures
+            const landings = computeValidLandingsForExistingStack(
+              board,
               selected,
-              gameState.currentPlayer,
-              boardView
+              gameState.currentPlayer
             );
-            const isValidLanding = validLandings.some((t) => positionsEqual(t.to, pos));
+            const isValidLanding = landings.some((landing) => positionsEqual(landing, pos));
 
-            if (skipPlacementMove && isValidLanding) {
-              // Store the pending movement and submit skip_placement
+            if (placementSkipMove && isValidLanding) {
+              // Store the pending movement and submit the appropriate skip move
               pendingMovementRef.current = { from: selected, to: pos, timestamp: Date.now() };
 
               submitMove({
-                type: 'skip_placement',
-                to: { x: 0, y: 0 }, // skip_placement doesn't use 'to' meaningfully
+                type: placementSkipMove.type,
+                to: { x: 0, y: 0 }, // skip moves don't use 'to' meaningfully
               } as PartialMove);
 
               // Keep selection for the movement phase
