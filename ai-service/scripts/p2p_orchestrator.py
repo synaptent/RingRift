@@ -1786,6 +1786,25 @@ class P2POrchestrator(
         self._cooldown_manager = get_dead_peer_cooldown_manager()
         # Fallback dict for compatibility if cooldown manager fails to load
         self._dead_peer_timestamps: dict[str, float] = {}
+
+        # Jan 21, 2026: P2P Diagnostic Instrumentation (Phase 0)
+        # Provides comprehensive visibility into peer state transitions, connection
+        # failures, and probe effectiveness for diagnosing cluster instability.
+        self._peer_state_tracker = None
+        self._conn_failure_tracker = None
+        self._probe_tracker = None
+        try:
+            from scripts.p2p.diagnostics import (
+                PeerStateTracker,
+                ConnectionFailureTracker,
+                ProbeEffectivenessTracker,
+            )
+            self._peer_state_tracker = PeerStateTracker()
+            self._conn_failure_tracker = ConnectionFailureTracker()
+            self._probe_tracker = ProbeEffectivenessTracker()
+            logger.info("[P2P] Diagnostic instrumentation enabled (Phase 0)")
+        except ImportError as e:
+            logger.warning(f"[P2P] Diagnostic instrumentation unavailable: {e}")
         self.local_jobs: dict[str, ClusterJob] = {}
         self.active_jobs: dict[str, dict[str, Any]] = {}  # Track running jobs by type (selfplay, training, etc.)
 
@@ -22001,6 +22020,19 @@ print(json.dumps({{
                     recovered_peers.append((node_id, caps))
                     logger.info(f"Peer {node_id} recovered from retirement")
 
+                    # Jan 21, 2026: Track state transition for diagnostics
+                    if self._peer_state_tracker:
+                        try:
+                            from scripts.p2p.diagnostics import PeerState
+                            self._peer_state_tracker.record_transition(
+                                node_id=node_id,
+                                to_state=PeerState.ALIVE,
+                                reason=None,
+                                details={"recovery_type": "retirement_cleared"},
+                            )
+                        except Exception:
+                            pass  # Graceful degradation
+
             for node_id in dead_peers:
                 info = self.peers.get(node_id)
                 if info and getattr(info, "retired", False):
@@ -22076,6 +22108,19 @@ print(json.dumps({{
                             self._dead_peer_timestamps[node_id] = now
                         retired_peers.append((node_id, last_hb, dead_for))
                         logger.info(f"Retired peer {node_id} (dead for {dead_for:.0f}s)")
+
+                        # Jan 21, 2026: Track state transition for diagnostics
+                        if self._peer_state_tracker:
+                            try:
+                                from scripts.p2p.diagnostics import PeerState, DeathReason
+                                self._peer_state_tracker.record_transition(
+                                    node_id=node_id,
+                                    to_state=PeerState.DEAD,
+                                    reason=DeathReason.HEARTBEAT_TIMEOUT,
+                                    details={"dead_for": dead_for, "last_heartbeat": last_hb},
+                                )
+                            except Exception:
+                                pass  # Graceful degradation
 
         # Jan 12, 2026: Emit events OUTSIDE the lock to prevent deadlocks
         # Event handlers may need to acquire peers_lock themselves
@@ -22234,6 +22279,31 @@ print(json.dumps({{
 
                             logger.info(f"Recovered retired peer via probe: {peer.node_id}")
 
+                            # Jan 21, 2026: Track successful probe for diagnostics
+                            if self._probe_tracker:
+                                try:
+                                    self._probe_tracker.record_probe(
+                                        node_id=peer.node_id,
+                                        success=True,
+                                        latency_ms=None,  # Could measure this
+                                        transport="http",
+                                    )
+                                except Exception:
+                                    pass
+
+                            # Jan 21, 2026: Track state transition for diagnostics
+                            if self._peer_state_tracker:
+                                try:
+                                    from scripts.p2p.diagnostics import PeerState
+                                    self._peer_state_tracker.record_transition(
+                                        node_id=peer.node_id,
+                                        to_state=PeerState.ALIVE,
+                                        reason=None,
+                                        details={"recovery_type": "probe_success"},
+                                    )
+                                except Exception:
+                                    pass
+
                             # Emit HOST_ONLINE event
                             caps = []
                             if hasattr(peer, "gpu_type") and peer.gpu_type:
@@ -22268,6 +22338,31 @@ print(json.dumps({{
             except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
                 # Still unreachable - remain retired
                 logger.debug(f"Retired peer {peer.node_id} still unreachable: {e}")
+
+                # Jan 21, 2026: Track failed probe for diagnostics
+                if self._probe_tracker:
+                    try:
+                        self._probe_tracker.record_probe(
+                            node_id=peer.node_id,
+                            success=False,
+                            latency_ms=None,
+                            transport="http",
+                        )
+                    except Exception:
+                        pass
+
+                # Jan 21, 2026: Track connection failure for diagnostics
+                if self._conn_failure_tracker:
+                    try:
+                        self._conn_failure_tracker.record_failure(
+                            node_id=peer.node_id,
+                            error=e,
+                            transport="http",
+                            host=peer.host,
+                            port=peer.port,
+                        )
+                    except Exception:
+                        pass
                 continue
             except Exception as e:
                 # Unexpected error - log but don't crash

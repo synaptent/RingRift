@@ -1131,7 +1131,36 @@ class StatusHandlersMixin:
             response["recovery_loops"] = {"error": str(e)}
 
         # =================================================================
-        # 7. Summary - Quick health assessment
+        # 7. Diagnostic Trackers - Peer state, connection failures, probes
+        # Jan 21, 2026 - Phase 0 P2P Stability instrumentation
+        # =================================================================
+        try:
+            diagnostic_data: dict[str, Any] = {}
+
+            # Peer state tracker - state transitions and flap detection
+            if hasattr(self, "_peer_state_tracker") and self._peer_state_tracker:
+                diagnostic_data["peer_states"] = self._peer_state_tracker.get_diagnostics()
+            else:
+                diagnostic_data["peer_states"] = {"available": False}
+
+            # Connection failure tracker - failure categorization
+            if hasattr(self, "_conn_failure_tracker") and self._conn_failure_tracker:
+                diagnostic_data["connection_failures"] = self._conn_failure_tracker.get_diagnostics()
+            else:
+                diagnostic_data["connection_failures"] = {"available": False}
+
+            # Probe effectiveness tracker - success rates and false positives
+            if hasattr(self, "_probe_tracker") and self._probe_tracker:
+                diagnostic_data["probe_effectiveness"] = self._probe_tracker.get_diagnostics()
+            else:
+                diagnostic_data["probe_effectiveness"] = {"available": False}
+
+            response["diagnostic_trackers"] = diagnostic_data
+        except Exception as e:
+            response["diagnostic_trackers"] = {"error": str(e)}
+
+        # =================================================================
+        # 8. Summary - Quick health assessment
         # =================================================================
         try:
             connectivity = response.get("connectivity", {})
