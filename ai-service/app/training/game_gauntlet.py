@@ -44,6 +44,72 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================
+# Model Version Auto-Detection (Jan 2026)
+# ============================================
+
+def _detect_model_version_from_checkpoint(model_path: str | Path | None) -> str | None:
+    """Auto-detect model architecture version from checkpoint metadata.
+
+    This allows the gauntlet to load V3, V4, V5-heavy models correctly without
+    requiring explicit --model-version flags. The version is extracted from
+    the checkpoint metadata without loading the full model.
+
+    Args:
+        model_path: Path to the checkpoint file.
+
+    Returns:
+        Architecture version string (e.g., "v4", "v5-heavy") or None if not detected.
+    """
+    if model_path is None:
+        return None
+
+    try:
+        from app.training.model_versioning import ModelVersionManager
+
+        manager = ModelVersionManager()
+        path_str = str(model_path)
+
+        # Check if file exists
+        import os
+        if not os.path.exists(path_str):
+            return None
+
+        # Try to get metadata
+        try:
+            metadata = manager.get_metadata(path_str)
+            version = metadata.architecture_version
+
+            # Map version strings to simplified form
+            if version:
+                v_lower = version.lower()
+                if v_lower.startswith("v4"):
+                    return "v4"
+                elif v_lower.startswith("v5"):
+                    # v5-heavy or v5-heavy-large
+                    if "heavy" in v_lower:
+                        if "large" in v_lower:
+                            return "v5-heavy-large"
+                        return "v5-heavy"
+                    return None  # Unknown v5 variant
+                elif v_lower.startswith("v3"):
+                    return "v3"
+                elif v_lower.startswith("v2") or v_lower == "v0.0.0-legacy":
+                    return None  # v2 is the default, no need to specify
+
+            logger.debug(f"Detected model version {version} from {model_path}")
+            return None  # Unknown version, use default
+
+        except Exception as e:
+            # Legacy checkpoint or extraction failed
+            logger.debug(f"Could not extract version from {model_path}: {e}")
+            return None
+
+    except ImportError:
+        logger.debug("model_versioning module not available")
+        return None
+
+
+# ============================================
 # Default Gauntlet Recording Configuration (Dec 2025)
 # ============================================
 
@@ -1085,6 +1151,14 @@ def create_neural_ai(
         AI instance (GumbelMCTSAI if use_search=True, else PolicyOnlyAI/UniversalAI)
     """
     _ensure_game_modules()
+
+    # Jan 2026: Auto-detect model version from checkpoint if not specified
+    # This allows V3, V4, V5-heavy models to be loaded without explicit --model-version
+    if model_version is None and model_path is not None:
+        detected_version = _detect_model_version_from_checkpoint(model_path)
+        if detected_version:
+            logger.info(f"[gauntlet] Auto-detected model version: {detected_version}")
+            model_version = detected_version
 
     # GNN models use dedicated GNNAI class
     if model_type in ("gnn", "hybrid"):
