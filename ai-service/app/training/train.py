@@ -2915,13 +2915,38 @@ def train_model(
     # Auto-detect canonical model for iterative training (January 2026)
     # If no init_weights specified and not resuming, use the existing canonical model
     # This enables continuous self-improvement: train on new data, improving existing model
+    # IMPORTANT: Only auto-select if encoder versions are compatible (Jan 2026 fix)
     if init_weights_path is None and not os.path.exists(save_path):
         board_type_str = config.board_type.value if hasattr(config.board_type, 'value') else str(config.board_type)
         canonical_path = f"models/canonical_{board_type_str}_{num_players}p.pth"
         if os.path.exists(canonical_path):
-            init_weights_path = canonical_path
-            if not distributed or is_main_process():
-                logger.info(f"[AutoInitWeights] Using canonical model as starting point: {canonical_path}")
+            # Check encoder compatibility BEFORE auto-selecting
+            try:
+                from app.ai.neural_net.architecture_registry import get_encoder_version_from_checkpoint
+                canonical_encoder = get_encoder_version_from_checkpoint(canonical_path)
+
+                # Determine data encoder version
+                data_encoder = None
+                if hex_in_channels == 40:
+                    data_encoder = "v2"
+                elif hex_in_channels == 64:
+                    data_encoder = "v3"
+                elif hex_in_channels == 56:
+                    data_encoder = "v3"  # V5-heavy compatible with v3
+
+                if canonical_encoder and data_encoder and canonical_encoder == data_encoder:
+                    init_weights_path = canonical_path
+                    if not distributed or is_main_process():
+                        logger.info(f"[AutoInitWeights] Using canonical model as starting point: {canonical_path}")
+                else:
+                    if not distributed or is_main_process():
+                        logger.info(
+                            f"[AutoInitWeights] Canonical model {canonical_path} has encoder {canonical_encoder}, "
+                            f"but data uses {data_encoder}. Training from scratch instead."
+                        )
+            except Exception as e:
+                if not distributed or is_main_process():
+                    logger.warning(f"[AutoInitWeights] Could not check canonical model compatibility: {e}. Training from scratch.")
         else:
             if not distributed or is_main_process():
                 logger.info(f"[AutoInitWeights] No canonical model found at {canonical_path}, training from scratch")
