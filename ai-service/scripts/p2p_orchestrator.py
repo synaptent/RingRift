@@ -10656,7 +10656,10 @@ class P2POrchestrator(
         """
         # Phase 2A: Delegate to SyncPlanner (Dec 2025)
         # This eliminates ~150 lines of duplicate code
-        return self.sync_planner.collect_local_manifest(use_cache=False)
+        # Jan 23, 2026: Changed use_cache=False to True to reduce event loop blocking
+        # The uncached version does heavy filesystem I/O (glob, stat, SQLite COUNT)
+        # which can take 5-8 seconds and block the event loop, causing leader election failures
+        return self.sync_planner.collect_local_manifest(use_cache=True)
 
     # NOTE: _collect_local_data_manifest_legacy() removed Dec 27, 2025
     # (150 LOC dead code - was never called, SyncPlanner.collect_local_manifest used instead)

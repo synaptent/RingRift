@@ -553,7 +553,9 @@ class SyncPlanner(EventSubscriptionMixin):
         manifest = ClusterDataManifest(collected_at=time.time())
 
         # Include our own manifest
-        local_manifest = self.collect_local_manifest(use_cache=False)
+        # Jan 23, 2026: Changed use_cache=False to True to prevent event loop blocking
+        # The uncached version can take 5-8 seconds and cause leader election failures
+        local_manifest = self.collect_local_manifest(use_cache=True)
         manifest.node_manifests[self.node_id] = local_manifest
         manifest.total_nodes += 1
 
