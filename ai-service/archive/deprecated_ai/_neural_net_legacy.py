@@ -4458,17 +4458,10 @@ class NeuralNetAI(BaseAI):
         # max_distance is board_size - 1 (hex8 uses 8, hexagonal uses 24)
         max_distance = board_size - 1
 
-        self.model = HexNeuralNet_v3(
-            in_channels=in_channels,
-            board_size=board_size,
-            num_players=players,
-            hex_radius=hex_radius,
-            max_distance=max_distance,
-        )
+        # Load checkpoint first to auto-detect flat vs spatial policy heads
+        use_flat_model = False
+        state_dict = None
 
-        self.model.to(self.device)
-
-        # Load weights if checkpoint exists
         if os.path.exists(model_path):
             from ..utils.torch_utils import safe_load_checkpoint
             checkpoint = safe_load_checkpoint(model_path, map_location=self.device)
@@ -4484,6 +4477,39 @@ class NeuralNetAI(BaseAI):
             # Strip module prefix (DDP compatibility)
             state_dict = _strip_module_prefix(state_dict)
 
+            # Detect flat vs spatial policy heads from checkpoint keys
+            # Flat model has: policy_conv, policy_bn, policy_fc1, policy_fc2
+            # Spatial model has: placement_conv, movement_conv, special_fc
+            has_flat_policy = "policy_fc1.weight" in state_dict or "policy_conv.weight" in state_dict
+            has_spatial_policy = "placement_conv.weight" in state_dict or "movement_conv.weight" in state_dict
+
+            if has_flat_policy and not has_spatial_policy:
+                use_flat_model = True
+                logger.info("Detected flat policy head checkpoint, using HexNeuralNet_v3_Flat")
+            else:
+                logger.info("Detected spatial policy head checkpoint, using HexNeuralNet_v3")
+
+        # Create the appropriate model class based on checkpoint type
+        if use_flat_model:
+            self.model = HexNeuralNet_v3_Flat(
+                in_channels=in_channels,
+                board_size=board_size,
+                num_players=players,
+                hex_radius=hex_radius,
+            )
+        else:
+            self.model = HexNeuralNet_v3(
+                in_channels=in_channels,
+                board_size=board_size,
+                num_players=players,
+                hex_radius=hex_radius,
+                max_distance=max_distance,
+            )
+
+        self.model.to(self.device)
+
+        # Load weights if checkpoint exists and was loaded
+        if state_dict is not None:
             # Load weights
             try:
                 self.model.load_state_dict(state_dict, strict=True)
