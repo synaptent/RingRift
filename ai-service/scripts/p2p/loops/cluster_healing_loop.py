@@ -538,8 +538,21 @@ echo "P2P restarted"
             # P2P is running but not connected to us - might be in another partition
             leader = status.get("leader_id")
             peers = status.get("alive_peers", 0)
+
+            # Jan 23, 2026: Don't restart nodes that have healthy P2P
+            # A node is considered healthy if it has:
+            # - A leader (any leader) OR
+            # - At least 2 alive peers (could be in election)
+            # Only restart truly isolated nodes (0-1 peers, no leader)
+            if leader or peers >= 2:
+                logger.info(
+                    f"[ClusterHealing] {host.name} has healthy P2P "
+                    f"(leader={leader}, peers={peers}), skipping restart - not isolated"
+                )
+                return True  # Consider it "healed" - it's in a partition but not dead
+
             logger.info(
-                f"[ClusterHealing] {host.name} has P2P running "
+                f"[ClusterHealing] {host.name} has isolated P2P "
                 f"(leader={leader}, peers={peers}), restarting with correct bootstrap"
             )
 
