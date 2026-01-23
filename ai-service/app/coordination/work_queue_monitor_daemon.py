@@ -110,7 +110,7 @@ class QueueStats:
 # =============================================================================
 
 
-@dataclass(kw_only=True)
+@dataclass
 class WorkQueueMonitorConfig(MonitorConfig):
     """Configuration for WorkQueueMonitorDaemon.
 

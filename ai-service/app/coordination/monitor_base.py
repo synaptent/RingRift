@@ -64,7 +64,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
-@dataclass(kw_only=True)
+@dataclass
 class MonitorConfig(DaemonConfig):
     """Configuration for monitors.
 

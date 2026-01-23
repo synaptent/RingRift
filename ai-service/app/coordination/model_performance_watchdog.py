@@ -70,7 +70,7 @@ class ModelPerformance:
     degraded_since: float | None = None
 
 
-@dataclass(kw_only=True)
+@dataclass
 class ModelPerformanceWatchdogConfig(MonitorConfig):
     """Configuration for ModelPerformanceWatchdog.
 

@@ -51,7 +51,8 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
-@dataclass(kw_only=True)
+# Note: kw_only=True removed for Python 3.9 compatibility (requires 3.10+)
+@dataclass
 class DaemonConfig:
     """Base configuration for all daemons.
 

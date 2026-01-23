@@ -75,7 +75,7 @@ CoordinatorState = CoordinatorHealthState
 # =============================================================================
 
 
-@dataclass(kw_only=True)
+@dataclass
 class CoordinatorHealthMonitorConfig(MonitorConfig):
     """Configuration for CoordinatorHealthMonitorDaemon.
 
