@@ -21110,11 +21110,12 @@ print(json.dumps({{
             # Check if Raft initialized successfully
             if self._hybrid_coordinator:
                 status = self._hybrid_coordinator.get_status()
+                # Note: get_status() returns a dict, not HybridStatus object
                 logger.info(
                     f"[P2P] HybridCoordinator started: "
-                    f"consensus_mode={status.consensus_mode}, "
-                    f"raft_enabled={status.raft_enabled}, "
-                    f"raft_available={status.raft_available}"
+                    f"consensus_mode={status.get('consensus_mode', 'unknown')}, "
+                    f"raft_enabled={status.get('raft', {}).get('enabled', False)}, "
+                    f"raft_available={status.get('raft', {}).get('available', False)}"
                 )
         except ImportError as e:
             logger.warning(f"[P2P] HybridCoordinator not available: {e}")

@@ -451,7 +451,7 @@ class ReplicatedWorkQueue(SyncObj):
     def _handle_ready(self) -> None:
         """Handle cluster ready event."""
         self._is_ready = True
-        leader = self.getLeader()
+        leader = self._getLeader()
         logger.info(f"Raft cluster ready. Leader: {leader}")
         if self._on_ready_callback:
             try:
@@ -461,7 +461,7 @@ class ReplicatedWorkQueue(SyncObj):
 
     def _handle_leader_change(self) -> None:
         """Handle leader change event."""
-        leader = self.getLeader()
+        leader = self._getLeader()
         logger.info(f"Raft leader changed to: {leader}")
         if self._on_leader_change_callback:
             try:
@@ -482,7 +482,7 @@ class ReplicatedWorkQueue(SyncObj):
     @property
     def leader_address(self) -> str | None:
         """Get current leader's address."""
-        return self.getLeader()
+        return self._getLeader()
 
     # ========================================
     # Replicated (mutating) methods
@@ -871,7 +871,7 @@ class ReplicatedJobAssignments(SyncObj):
     def _handle_ready(self) -> None:
         """Handle cluster ready event."""
         self._is_ready = True
-        leader = self.getLeader()
+        leader = self._getLeader()
         logger.info(f"Job assignments Raft cluster ready. Leader: {leader}")
         if self._on_ready_callback:
             try:
@@ -881,7 +881,7 @@ class ReplicatedJobAssignments(SyncObj):
 
     def _handle_leader_change(self) -> None:
         """Handle leader change event."""
-        leader = self.getLeader()
+        leader = self._getLeader()
         logger.info(f"Job assignments Raft leader changed to: {leader}")
         if self._on_leader_change_callback:
             try:
@@ -902,7 +902,7 @@ class ReplicatedJobAssignments(SyncObj):
     @property
     def leader_address(self) -> str | None:
         """Get current leader's address."""
-        return self.getLeader()
+        return self._getLeader()
 
     # ========================================
     # Replicated (mutating) methods
@@ -1323,7 +1323,7 @@ class ReplicatedEloStore(SyncObj):
     def _handle_ready(self) -> None:
         """Handle cluster ready event."""
         self._is_ready = True
-        leader = self.getLeader()
+        leader = self._getLeader()
         logger.info(f"Elo store Raft cluster ready. Leader: {leader}")
         if self._on_ready_callback:
             try:
@@ -1333,7 +1333,7 @@ class ReplicatedEloStore(SyncObj):
 
     def _handle_leader_change(self) -> None:
         """Handle leader change event."""
-        leader = self.getLeader()
+        leader = self._getLeader()
         logger.info(f"Elo store Raft leader changed to: {leader}")
         if self._on_leader_change_callback:
             try:
@@ -1354,7 +1354,7 @@ class ReplicatedEloStore(SyncObj):
     @property
     def leader_address(self) -> str | None:
         """Get current leader's address."""
-        return self.getLeader()
+        return self._getLeader()
 
     def _make_key(
         self, participant_id: str, board_type: str, num_players: int
