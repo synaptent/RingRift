@@ -1814,6 +1814,12 @@ class P2POrchestrator(
         self._leadership_sm = LeadershipStateMachine(node_id=self.node_id)
         # Broadcast callback is set in _setup_routes() after app is created
 
+        # Jan 23, 2026: HybridCoordinator for Raft-based leader election
+        # Replaces buggy Bully algorithm when RINGRIFT_CONSENSUS_MODE=raft or hybrid.
+        # HybridCoordinator routes is_leader() calls to PySyncObj's Raft implementation
+        # which provides proven consensus with sub-second failover.
+        self._hybrid_coordinator: Any = None  # Type: HybridCoordinator | None
+
         self.verbose = bool(os.environ.get("RINGRIFT_P2P_VERBOSE", "").strip())
         self.peers: dict[str, NodeInfo] = {}
         # Jan 12, 2026: Lock-free peer snapshot for read-heavy operations like /status
@@ -5482,7 +5488,31 @@ class P2POrchestrator(
             return is_now_leader
 
     def _is_leader(self) -> bool:
-        """Check if this node is the current cluster leader with valid lease."""
+        """Check if this node is the current cluster leader with valid lease.
+
+        Jan 23, 2026: Routes through HybridCoordinator when Raft is enabled.
+        The HybridCoordinator provides Raft-based leader election which is more
+        robust than the Bully algorithm for handling network partitions and timeouts.
+        """
+        # Jan 23, 2026: Route through HybridCoordinator if available (supports Raft)
+        # This replaces the Bully algorithm with Raft's proven consensus when enabled.
+        if self._hybrid_coordinator is not None:
+            try:
+                is_raft_leader = self._hybrid_coordinator.is_leader()
+                # Sync orchestrator state with Raft's view if we are leader
+                if is_raft_leader and self.leader_id != self.node_id:
+                    logger.info(f"[Raft] Syncing orchestrator state: Raft says we're leader")
+                    with self.leader_state_lock:
+                        self.leader_id = self.node_id
+                        self.role = NodeRole.LEADER
+                elif not is_raft_leader and self.leader_id == self.node_id:
+                    logger.info(f"[Raft] Syncing orchestrator state: Raft says we're not leader")
+                    # Don't clear leader_id here - let Raft's leader change callback handle it
+                return is_raft_leader
+            except Exception as e:
+                logger.warning(f"[Raft] HybridCoordinator.is_leader() failed, falling back to Bully: {e}")
+                # Fall through to Bully algorithm as fallback
+
         # Dec 31, 2025: Enhanced logging for leader self-recognition debugging
         if self.leader_id != self.node_id:
             logger.debug(
@@ -21036,6 +21066,132 @@ print(json.dumps({{
         else:
             logger.warning(f"[P2P] Failed to register with any relay nodes - cluster discovery may be delayed")
 
+    async def _init_hybrid_coordinator(self) -> None:
+        """Initialize HybridCoordinator for Raft-based leader election.
+
+        January 23, 2026: This method initializes the HybridCoordinator which
+        provides Raft-based leader election as a replacement for the buggy
+        Bully algorithm.
+
+        The HybridCoordinator:
+        - Uses PySyncObj's Raft implementation for proven consensus
+        - Provides sub-second leader failover (vs 60-90s with Bully)
+        - Routes is_leader() calls based on CONSENSUS_MODE env var
+        - Falls back to Bully if Raft is unavailable
+
+        To enable Raft:
+            export RINGRIFT_RAFT_ENABLED=true
+            export RINGRIFT_CONSENSUS_MODE=raft  # or "hybrid"
+        """
+        try:
+            from app.p2p.constants import RAFT_ENABLED, CONSENSUS_MODE
+        except ImportError:
+            logger.warning("[P2P] Cannot import p2p constants, HybridCoordinator disabled")
+            return
+
+        # Check if Raft is enabled
+        if not RAFT_ENABLED and CONSENSUS_MODE == "bully":
+            logger.info(
+                f"[P2P] HybridCoordinator not started: RAFT_ENABLED={RAFT_ENABLED}, "
+                f"CONSENSUS_MODE={CONSENSUS_MODE}. To enable Raft, set "
+                "RINGRIFT_RAFT_ENABLED=true and RINGRIFT_CONSENSUS_MODE=raft"
+            )
+            return
+
+        try:
+            from app.p2p.hybrid_coordinator import HybridCoordinator
+
+            self._hybrid_coordinator = HybridCoordinator(
+                orchestrator=self,
+                on_leader_change=self._on_raft_leader_change,
+            )
+            await self._hybrid_coordinator.start()
+
+            # Check if Raft initialized successfully
+            if self._hybrid_coordinator:
+                status = self._hybrid_coordinator.get_status()
+                logger.info(
+                    f"[P2P] HybridCoordinator started: "
+                    f"consensus_mode={status.consensus_mode}, "
+                    f"raft_enabled={status.raft_enabled}, "
+                    f"raft_available={status.raft_available}"
+                )
+        except ImportError as e:
+            logger.warning(f"[P2P] HybridCoordinator not available: {e}")
+            self._hybrid_coordinator = None
+        except Exception as e:
+            logger.error(f"[P2P] HybridCoordinator initialization failed: {e}")
+            self._hybrid_coordinator = None
+
+    def _on_raft_leader_change(self, leader_address: str | None) -> None:
+        """Handle Raft leader change events.
+
+        January 23, 2026: This callback is invoked by HybridCoordinator when
+        Raft elects a new leader. We update the orchestrator's leader_id to
+        keep it synchronized with Raft's view.
+
+        Args:
+            leader_address: The new leader's address (ip:port) or None if no leader
+        """
+        if not leader_address:
+            logger.info("[Raft] No leader elected - Raft cluster may be forming")
+            return
+
+        # Convert Raft address (ip:port) to node_id
+        leader_node_id = self._resolve_raft_address_to_node_id(leader_address)
+        if leader_node_id:
+            # Update orchestrator's leader_id via _set_leader for consistency
+            self._set_leader(leader_node_id, reason="raft_election")
+            logger.info(f"[Raft] Leader elected: {leader_node_id} (address: {leader_address})")
+        else:
+            logger.warning(
+                f"[Raft] Leader elected at {leader_address} but cannot resolve to node_id"
+            )
+
+    def _resolve_raft_address_to_node_id(self, raft_address: str) -> str | None:
+        """Resolve a Raft address (ip:port) to a node_id.
+
+        Args:
+            raft_address: The Raft address in "ip:port" format
+
+        Returns:
+            The node_id if found, or None if not resolvable
+        """
+        try:
+            # Parse the address
+            ip, port_str = raft_address.rsplit(":", 1)
+
+            # First, check if this is our own address
+            if ip in (self.host, self.public_host, getattr(self, 'tailscale_ip', None)):
+                return self.node_id
+
+            # Check our IP-to-node mapping
+            if hasattr(self, '_ip_to_node_map') and ip in self._ip_to_node_map:
+                return self._ip_to_node_map[ip]
+
+            # Check peer list for matching IP
+            with self.peers_lock:
+                for node_id, peer_info in self.peers.items():
+                    peer_host = getattr(peer_info, 'host', '') or ''
+                    peer_tailscale = getattr(peer_info, 'tailscale_ip', '') or ''
+                    if ip in (peer_host, peer_tailscale):
+                        return node_id
+
+            # Fallback: Check cluster config
+            try:
+                from app.config.cluster_config import get_cluster_nodes
+                for node in get_cluster_nodes():
+                    node_ip = getattr(node, 'tailscale_ip', '') or getattr(node, 'ssh_host', '')
+                    if node_ip == ip:
+                        return node.name
+            except ImportError:
+                pass
+
+        except (ValueError, AttributeError) as e:
+            logger.debug(f"[Raft] Failed to parse address {raft_address}: {e}")
+
+        return None
+
     async def _send_startup_peer_announcements(self) -> None:
         """Send immediate announcements to all known peers on startup.
 
@@ -31573,6 +31729,11 @@ print(json.dumps({{
         # Jan 7, 2026: Send immediate peer announcements for ALL nodes
         # This reduces discovery latency from 15-30s to 2-5s after startup
         await self._send_startup_peer_announcements()
+
+        # Jan 23, 2026: Initialize HybridCoordinator for Raft-based leader election
+        # This replaces the buggy Bully algorithm when CONSENSUS_MODE=raft or hybrid.
+        # The HybridCoordinator provides sub-second leader failover via PySyncObj's Raft.
+        await self._init_hybrid_coordinator()
 
         # Jan 9, 2026: Async fallback for game count seeding from peers
         # Cluster nodes don't have local canonical DBs, so fetch from coordinator
