@@ -94,9 +94,12 @@ def get_peer_timeout_for_node(is_coordinator: bool = False, nat_blocked: bool = 
 # Jan 19, 2026: Jitter factor to prevent synchronized death cascades.
 # When multiple nodes check peer liveness at exactly the same timeout,
 # they all mark the same slow peer dead simultaneously, causing gossip storms.
-# Adding ±10% randomness desynchronizes these checks.
+# Adding randomness desynchronizes these checks.
+# Jan 23, 2026: Increased from ±10% to ±25% for 40+ node clusters.
+# With 180s timeout, ±10% = ±18s window - still too narrow for 40 nodes.
+# With ±25% = ±45s window, nodes spread their checks over 90s range.
 PEER_TIMEOUT_JITTER_FACTOR = float(
-    os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT_JITTER", "0.10") or 0.10
+    os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT_JITTER", "0.25") or 0.25
 )
 
 
@@ -404,11 +407,13 @@ RETRY_DEAD_NODE_INTERVAL = 120  # Retry dead nodes every 2 minutes (reduced from
 # to improve peer visibility across NAT boundaries and reduce false disconnections.
 # Use get_gossip_fanout() for adaptive fanout based on cluster size.
 # Jan 2026: Split into leader/follower fanout for differentiated propagation
-GOSSIP_FANOUT = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT", "10") or 10)
+# Jan 23, 2026: Increased base fanout from 10 to 12 for 40+ node clusters.
+# Higher fanout = faster gossip convergence but more network traffic.
+GOSSIP_FANOUT = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT", "12") or 12)
 # January 2026: Increased fanout for better visibility in 20-40 node clusters
-# Leader: 14 (was 12), Follower: 12 (was 10) for >90% peer visibility
-GOSSIP_FANOUT_LEADER = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT_LEADER", "14") or 14)
-GOSSIP_FANOUT_FOLLOWER = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT_FOLLOWER", "12") or 12)
+# Jan 23, 2026: Leader: 16 (was 14), Follower: 14 (was 12) for >95% peer visibility
+GOSSIP_FANOUT_LEADER = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT_LEADER", "16") or 16)
+GOSSIP_FANOUT_FOLLOWER = int(os.environ.get("RINGRIFT_P2P_GOSSIP_FANOUT_FOLLOWER", "14") or 14)
 
 # Gossip lock timeout - max time to wait for gossip state lock
 # Jan 2026: Increased from 2.0s to 3.0s for larger clusters with lock contention
@@ -446,25 +451,26 @@ def get_gossip_fanout(peer_count: int, is_leader: bool = False) -> int:
 
     # Leader gets higher fanout for faster authoritative propagation
     # January 2026: Increased fanout for 20-40 node clusters to achieve >90% visibility
+    # Jan 23, 2026: Further increased for >95% visibility in 40+ node clusters
     if is_leader:
         if peer_count < 10:
-            return 6  # Small cluster leader (was 5)
+            return 8  # Small cluster leader (was 6)
         elif peer_count < 20:
-            return 10  # Medium cluster leader (was 8)
+            return 12  # Medium cluster leader (was 10)
         elif peer_count < 40:
-            return 12  # Large cluster leader (was 10)
+            return 14  # Large cluster leader (was 12)
         else:
-            return GOSSIP_FANOUT_LEADER  # Very large cluster leader (14)
+            return GOSSIP_FANOUT_LEADER  # Very large cluster leader (16)
     else:
         # Followers use slightly lower fanout
         if peer_count < 10:
-            return 4  # Small cluster follower (was 3)
+            return 6  # Small cluster follower (was 4)
         elif peer_count < 20:
-            return 7  # Medium cluster follower (was 5)
+            return 10  # Medium cluster follower (was 7)
         elif peer_count < 40:
-            return 10  # Large cluster follower (was 8)
+            return 12  # Large cluster follower (was 10)
         else:
-            return GOSSIP_FANOUT_FOLLOWER  # Very large cluster follower (12)
+            return GOSSIP_FANOUT_FOLLOWER  # Very large cluster follower (14)
 
 
 # Gossip interval - seconds between gossip rounds
@@ -478,8 +484,10 @@ GOSSIP_JITTER = float(os.environ.get("RINGRIFT_P2P_GOSSIP_JITTER", "0.2") or 0.2
 # are shared in gossip messages. With 25 limit, only ~60% of peers were visible.
 # Jan 22, 2026: Increased from 45 to 60 for growing cluster (41+ nodes) to prevent
 # gossip messages from randomly excluding peers, which can cause network partitions.
+# Jan 23, 2026: Increased from 60 to 80 for reliable 40+ node operation.
+# Ensures 100% peer visibility in gossip messages (each endpoint ~30 bytes, total ~2.4KB).
 GOSSIP_MAX_PEER_ENDPOINTS = int(
-    os.environ.get("RINGRIFT_P2P_GOSSIP_MAX_PEER_ENDPOINTS", "60") or 60
+    os.environ.get("RINGRIFT_P2P_GOSSIP_MAX_PEER_ENDPOINTS", "80") or 80
 )
 
 # Peer lifecycle
