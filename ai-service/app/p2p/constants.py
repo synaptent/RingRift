@@ -57,7 +57,9 @@ HEARTBEAT_INTERVAL = int(os.environ.get("RINGRIFT_P2P_HEARTBEAT_INTERVAL", "15")
 # Jan 2, 2026: Increased to 120s for NAT-blocked nodes (Lambda GH200, RunPod) that
 # rely on relay mode. Relay adds latency and can cause false-positive peer deaths.
 # With 15s heartbeats, 8 missed = dead for NAT-blocked, 6 for coordinators, 4 for DC.
-PEER_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT", "120") or 120)
+# Jan 22, 2026: Increased to 180s to allow more time for gossip state reconciliation.
+# Nodes were being marked dead before gossip could converge, causing cluster instability.
+PEER_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT", "180") or 180)
 # Original fast timeout for non-coordinator nodes in well-connected DC environments
 PEER_TIMEOUT_FAST = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT_FAST", "60") or 60)
 # Jan 2, 2026: Extended timeout for NAT-blocked nodes using relay mode.
