@@ -17,6 +17,8 @@ Architecture Note (2025-12):
     - ELIMINATE_RINGS_FROM_STACK: Follow-up elimination after region processing
 """
 
+from __future__ import annotations  # Enable Python 3.10+ type hints on 3.9
+
 from app.board_manager import BoardManager
 from app.models import GameState, Move, MoveType, Position, Territory
 from app.rules.elimination import EliminationContext, is_stack_eligible_for_elimination
