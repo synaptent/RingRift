@@ -391,6 +391,7 @@ MODEL_VERSIONS: dict[str, str] = {
     "HexNeuralNet_v2_Lite": "v2.0.0-lite",
     "HexNeuralNet_v3": HEX_NEURAL_NET_V3_VERSION,
     "HexNeuralNet_v3_Lite": "v3.0.0-lite",
+    "HexNeuralNet_v3_Flat": "v3.1.0-flat",  # V3 backbone with flat policy heads
     "HexNeuralNet_v4": HEX_NEURAL_NET_V4_VERSION,
 }
 
@@ -400,6 +401,9 @@ COMPATIBLE_VERSIONS: dict[tuple[str, str], bool] = {
     # v3.0.0 checkpoints can be loaded by v3.1.0 code (minor version bump, backwards compatible)
     ("v3.0.0", "v3.1.0"): True,
     ("v3.0.0-lite", "v3.1.0-lite"): True,
+    # v3.1.0-flat is a standalone variant (flat policy heads for hex boards)
+    # Allow loading v3.1.0-flat checkpoints in v3.1.0-flat code
+    ("v3.1.0-flat", "v3.1.0-flat"): True,
     # v2.0.0 checkpoints can be loaded by v2.x code
     ("v2.0.0", "v2.0.0"): True,
 }

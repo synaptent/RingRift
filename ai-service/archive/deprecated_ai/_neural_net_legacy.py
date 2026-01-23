@@ -4417,7 +4417,7 @@ class NeuralNetAI(BaseAI):
 
         # Import v3 architecture
         try:
-            from .neural_net.hex_architectures import HexNeuralNet_v3
+            from .neural_net.hex_architectures import HexNeuralNet_v3, HexNeuralNet_v3_Flat
         except ImportError as e:
             logger.error("Failed to import v3 module: %s", e)
             raise RuntimeError(f"v3 architecture not available: {e}")
@@ -4773,6 +4773,16 @@ class NeuralNetAI(BaseAI):
         is_hex_model = any(k in state_dict for k in hex_model_keys)
         has_hex_v3_spatial = any(k in state_dict for k in hex_v3_keys)
 
+        # V3 flat detection: hex model with flat policy heads (policy_fc*) and 64 input channels
+        # V3 encoder produces 64 channels (16 base × 4 frames), V2 produces 40 channels (10 base × 4 frames)
+        conv1_weight = state_dict.get("conv1.weight")
+        has_v3_input_channels = (
+            conv1_weight is not None
+            and hasattr(conv1_weight, "shape")
+            and conv1_weight.shape[1] == 64  # V3 encoder: 16 base × 4 = 64
+        )
+        is_hex_v3_flat = is_hex_model and has_v2_policy and has_v3_input_channels and not has_hex_v3_spatial
+
         # Check value_fc1 hidden size to distinguish Lite from full models
         # V2/V3 full: 128 hidden units, Lite: 64 hidden units
         value_fc1_weight = state_dict.get("value_fc1.weight")
@@ -4785,6 +4795,9 @@ class NeuralNetAI(BaseAI):
         if is_hex_model:
             if has_hex_v3_spatial:
                 model_class_name = "HexNeuralNet_v3_Lite" if is_lite_fc else "HexNeuralNet_v3"
+            elif is_hex_v3_flat:
+                # V3 flat model: has V3 encoder channels (64) but flat policy heads
+                model_class_name = "HexNeuralNet_v3_Flat"
             else:
                 model_class_name = "HexNeuralNet_v2_Lite" if is_lite_fc else "HexNeuralNet_v2"
         elif has_v4_attention:
@@ -4821,11 +4834,18 @@ class NeuralNetAI(BaseAI):
             "RingRiftCNN_v4": RingRiftCNN_v4,
         }
 
+        # Import V3 flat model for hex boards (has flat policy heads, not spatial)
+        try:
+            from .neural_net.hex_architectures import HexNeuralNet_v3_Flat
+        except ImportError:
+            HexNeuralNet_v3_Flat = None  # May not be available in older versions
+
         hex_model_classes = {
             "HexNeuralNet_v2": HexNeuralNet_v2,
             "HexNeuralNet_v2_Lite": HexNeuralNet_v2_Lite,
             "HexNeuralNet_v3": HexNeuralNet_v3,
             "HexNeuralNet_v3_Lite": HexNeuralNet_v3_Lite,
+            "HexNeuralNet_v3_Flat": HexNeuralNet_v3_Flat,
         }
 
         if model_class_name in square_model_classes:
