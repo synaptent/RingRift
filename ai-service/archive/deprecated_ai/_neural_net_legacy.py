@@ -4491,12 +4491,23 @@ class NeuralNetAI(BaseAI):
 
         # Create the appropriate model class based on checkpoint type
         if use_flat_model:
-            self.model = HexNeuralNet_v3_Flat(
-                in_channels=in_channels,
-                board_size=board_size,
-                num_players=players,
-                hex_radius=hex_radius,
-            )
+            # Infer policy_size from checkpoint's policy_fc2.weight shape
+            # policy_fc2.weight has shape [policy_size, intermediate_size]
+            checkpoint_policy_size = None
+            if state_dict is not None and "policy_fc2.weight" in state_dict:
+                checkpoint_policy_size = state_dict["policy_fc2.weight"].shape[0]
+                logger.info("Inferred policy_size=%d from checkpoint", checkpoint_policy_size)
+
+            model_kwargs = {
+                "in_channels": in_channels,
+                "board_size": board_size,
+                "num_players": players,
+                "hex_radius": hex_radius,
+            }
+            if checkpoint_policy_size is not None:
+                model_kwargs["policy_size"] = checkpoint_policy_size
+
+            self.model = HexNeuralNet_v3_Flat(**model_kwargs)
         else:
             self.model = HexNeuralNet_v3(
                 in_channels=in_channels,
