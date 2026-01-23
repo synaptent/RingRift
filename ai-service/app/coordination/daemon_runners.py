@@ -779,60 +779,56 @@ async def _create_runner_from_spec(name: str) -> None:
         module = importlib.import_module(spec.module)
 
         # Instantiate daemon based on style
+        # Note: Using if/elif for Python 3.9 compatibility (match requires 3.10+)
         daemon: Any = None
-        match spec.style:
-            case InstantiationStyle.DIRECT:
-                daemon_class = getattr(module, spec.class_name)
-                daemon = daemon_class()
-
-            case InstantiationStyle.SINGLETON:
-                daemon_class = getattr(module, spec.class_name)
-                daemon = daemon_class.get_instance()
-
-            case InstantiationStyle.FACTORY:
-                factory = getattr(module, spec.factory_func)
-                daemon = factory()
-
-            case InstantiationStyle.ASYNC_FACTORY:
-                factory = getattr(module, spec.factory_func)
-                daemon = await factory()
-
-            case InstantiationStyle.WITH_CONFIG:
-                daemon_class = getattr(module, spec.class_name)
-                config_class = getattr(module, spec.config_class)
-                config = config_class.from_env()
-                daemon = daemon_class(config=config)
+        if spec.style == InstantiationStyle.DIRECT:
+            daemon_class = getattr(module, spec.class_name)
+            daemon = daemon_class()
+        elif spec.style == InstantiationStyle.SINGLETON:
+            daemon_class = getattr(module, spec.class_name)
+            daemon = daemon_class.get_instance()
+        elif spec.style == InstantiationStyle.FACTORY:
+            factory = getattr(module, spec.factory_func)
+            daemon = factory()
+        elif spec.style == InstantiationStyle.ASYNC_FACTORY:
+            factory = getattr(module, spec.factory_func)
+            daemon = await factory()
+        elif spec.style == InstantiationStyle.WITH_CONFIG:
+            daemon_class = getattr(module, spec.class_name)
+            config_class = getattr(module, spec.config_class)
+            config = config_class.from_env()
+            daemon = daemon_class(config=config)
 
         # Start daemon based on start method
-        match spec.start_method:
-            case StartMethod.ASYNC_START:
-                await daemon.start()
-            case StartMethod.SYNC_START:
-                daemon.start()
-            case StartMethod.INITIALIZE:
-                await daemon.initialize()
-                await daemon.start()  # Managers often need start() after initialize()
-            case StartMethod.START_SERVER:
-                await daemon.start_server()
-            case StartMethod.NONE:
-                pass  # No start method needed
+        # Note: Using if/elif for Python 3.9 compatibility (match requires 3.10+)
+        if spec.start_method == StartMethod.ASYNC_START:
+            await daemon.start()
+        elif spec.start_method == StartMethod.SYNC_START:
+            daemon.start()
+        elif spec.start_method == StartMethod.INITIALIZE:
+            await daemon.initialize()
+            await daemon.start()  # Managers often need start() after initialize()
+        elif spec.start_method == StartMethod.START_SERVER:
+            await daemon.start_server()
+        elif spec.start_method == StartMethod.NONE:
+            pass  # No start method needed
 
         # Wait for daemon based on wait style
-        match spec.wait:
-            case WaitStyle.DAEMON:
-                await _wait_for_daemon(daemon)
-            case WaitStyle.FOREVER_LOOP:
-                while True:
-                    await asyncio.sleep(spec.wait_interval)
-            case WaitStyle.RUN_FOREVER:
-                await daemon.run_forever()
-            case WaitStyle.NONE:
-                pass  # No waiting
-            case WaitStyle.CUSTOM:
-                # Custom handling - fall through to legacy function
-                # This shouldn't happen if we migrated correctly
-                logger.warning(f"[{name}] Using CUSTOM wait - check if legacy function is needed")
-                await _wait_for_daemon(daemon)
+        # Note: Using if/elif for Python 3.9 compatibility (match requires 3.10+)
+        if spec.wait == WaitStyle.DAEMON:
+            await _wait_for_daemon(daemon)
+        elif spec.wait == WaitStyle.FOREVER_LOOP:
+            while True:
+                await asyncio.sleep(spec.wait_interval)
+        elif spec.wait == WaitStyle.RUN_FOREVER:
+            await daemon.run_forever()
+        elif spec.wait == WaitStyle.NONE:
+            pass  # No waiting
+        elif spec.wait == WaitStyle.CUSTOM:
+            # Custom handling - fall through to legacy function
+            # This shouldn't happen if we migrated correctly
+            logger.warning(f"[{name}] Using CUSTOM wait - check if legacy function is needed")
+            await _wait_for_daemon(daemon)
 
     except ImportError as e:
         logger.error(f"{spec.class_name} not available: {e}")
