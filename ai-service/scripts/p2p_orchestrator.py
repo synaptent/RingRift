@@ -5762,6 +5762,81 @@ class P2POrchestrator(
 
         return False  # State was consistent
 
+    def _reconcile_leadership_state(self) -> bool:
+        """Reconcile ULSM state with gossip consensus.
+
+        Jan 23, 2026: Phase 2 fix for P2P stability plan.
+        Addresses the issue where gossip leader_consensus disagrees with ULSM state,
+        causing nodes like vultr-a100-20gb to be consensus leader but not claim leadership.
+
+        This method is called every 30 seconds from the heartbeat loop and handles:
+        - Case 1: Gossip says we're leader, ULSM doesn't know -> Accept leadership
+        - Case 2: ULSM says leader, gossip disagrees -> Step down
+
+        Returns:
+            True if reconciliation action was taken, False otherwise.
+        """
+        if not hasattr(self, "_leadership_sm") or not self._leadership_sm:
+            return False
+
+        try:
+            from scripts.p2p.leadership_state_machine import LeaderState
+        except ImportError:
+            return False
+
+        # Get gossip consensus on who the leader is
+        consensus_info = self._get_cluster_leader_consensus()
+        consensus_leader = consensus_info.get("consensus_leader")
+        total_voters = consensus_info.get("total_voters", 0)
+        agreement = consensus_info.get("leader_agreement", 0)
+
+        # Need at least 2 voters to have meaningful consensus
+        if total_voters < 2:
+            return False
+
+        # Calculate consensus ratio
+        consensus_ratio = agreement / total_voters if total_voters > 0 else 0
+
+        # Only act on strong consensus (>50%)
+        if consensus_ratio < 0.5:
+            return False
+
+        ulsm_state = self._leadership_sm._state
+        ulsm_leader = self._leadership_sm._leader_id
+
+        # Case 1: Gossip says we're leader, ULSM doesn't know
+        if consensus_leader == self.node_id and ulsm_state != LeaderState.LEADER:
+            if self._is_leader_lease_valid():
+                logger.info(
+                    f"[LeaderReconciliation] Accepting leadership from gossip consensus "
+                    f"(agreement={agreement}/{total_voters}={consensus_ratio:.0%})"
+                )
+                # Update ULSM state to match gossip
+                self._leadership_sm._state = LeaderState.LEADER
+                self._leadership_sm._leader_id = self.node_id
+                # Update local state
+                self.role = NodeRole.LEADER
+                self.leader_id = self.node_id
+                return True
+            else:
+                logger.warning(
+                    f"[LeaderReconciliation] Gossip says we're leader but lease invalid; "
+                    f"clearing leader_id to trigger election"
+                )
+                self.leader_id = None
+                return True
+
+        # Case 2: ULSM says leader, gossip disagrees (another node is consensus leader)
+        if ulsm_state == LeaderState.LEADER and consensus_leader and consensus_leader != self.node_id:
+            logger.warning(
+                f"[LeaderReconciliation] Gossip consensus says {consensus_leader} is leader "
+                f"(agreement={agreement}/{total_voters}={consensus_ratio:.0%}); stepping down"
+            )
+            self._schedule_step_down_sync(TransitionReason.HIGHER_EPOCH_SEEN)
+            return True
+
+        return False
+
     def _get_config_version(self) -> dict:
         """Get config file version info for drift detection.
 
@@ -5979,7 +6054,9 @@ class P2POrchestrator(
                 self.leader_lease_id = ""
                 self.leader_lease_expires = 0.0
                 self.last_lease_renewal = 0.0
-                self._is_leader_quorum_fail_count = 0
+                # Jan 23, 2026: Reset ULSM QuorumHealth instead of legacy counter
+                if self._leadership_sm:
+                    self._leadership_sm.quorum_health.reset()
                 # Jan 2, 2026: Track when we stepped down for leader stickiness
                 self._last_step_down_time = time.time()
             self._release_voter_grant_if_self()
@@ -21456,6 +21533,18 @@ print(json.dumps({{
                 except Exception as e:
                     logger.debug(f"[HeartbeatLoop] Desync check failed: {e}")
 
+                # Jan 23, 2026: Phase 2 - Reconcile ULSM with gossip consensus every 30s
+                # This fixes the issue where nodes are consensus leader but don't claim leadership
+                now = time.time()
+                last_reconcile = getattr(self, "_last_leadership_reconcile", 0)
+                if now - last_reconcile >= 30.0:
+                    self._last_leadership_reconcile = now
+                    try:
+                        if self._reconcile_leadership_state():
+                            logger.info("[HeartbeatLoop] Reconciled leadership state with gossip consensus")
+                    except Exception as e:
+                        logger.debug(f"[HeartbeatLoop] Leadership reconciliation failed: {e}")
+
                 # Send to known peers from config
                 for peer_addr in self.known_peers:
                     try:
@@ -23614,8 +23703,9 @@ print(json.dumps({{
         self._record_election_latency("won")
         # Dec 31, 2025: Track leadership acquisition time and reset quorum fail counters
         self._last_become_leader_time = time.time()
-        self._quorum_fail_count = 0
-        self._is_leader_quorum_fail_count = 0
+        # Jan 23, 2026: Reset ULSM QuorumHealth (unified tracker)
+        if hasattr(self, "_leadership_sm") and self._leadership_sm:
+            self._leadership_sm.quorum_health.reset()
 
         # Phase 29: Increment cluster epoch on leadership change
         # This helps resolve split-brain when partitions merge
@@ -27392,31 +27482,30 @@ print(json.dumps({{
         """Renew our leadership lease and broadcast to peers."""
         if self.role != NodeRole.LEADER:
             return
-        # Dec 31, 2025: Add grace period for quorum failures to prevent flapping
-        # Require 3 consecutive failures (~45 seconds) before stepping down
+        # Jan 23, 2026: Use ULSM QuorumHealth for unified quorum tracking
+        # (Phase 1 fix: previously used separate _quorum_fail_count which diverged from _is_leader())
         if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
-            self._quorum_fail_count = getattr(self, "_quorum_fail_count", 0) + 1
             # Jan 2, 2026: Use _count_alive_voters() to check IP:port matches
             voters_alive = self._count_alive_voters()
             quorum_size = getattr(self, "voter_quorum_size", 0)
+            # Use ULSM QuorumHealth - same tracker as _is_leader() uses
+            threshold_exceeded = self._leadership_sm.quorum_health.record_failure(voters_alive)
+            fail_count = self._leadership_sm.quorum_health.consecutive_failures
+            threshold = self._leadership_sm.quorum_health.failure_threshold
             logger.warning(
-                f"[LeaseRenewal] Voter quorum check failed ({self._quorum_fail_count}/3): "
+                f"[LeaseRenewal] Voter quorum check failed ({fail_count}/{threshold}): "
                 f"voters_alive={voters_alive}, quorum_size={quorum_size}"
             )
-            if self._quorum_fail_count >= 3:
-                logger.info(f"Lost voter quorum (3 consecutive failures); stepping down: {self.node_id}")
-                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
-                self._set_leader(None, reason="lost_voter_quorum", save_state=False)
-                self.leader_lease_id = ""
-                self.leader_lease_expires = 0.0
-                self.last_lease_renewal = 0.0
-                self._quorum_fail_count = 0
+            if threshold_exceeded:
+                logger.info(f"Lost voter quorum ({threshold} consecutive failures via ULSM); stepping down: {self.node_id}")
+                # Jan 2026: Use ULSM step-down which broadcasts to peers BEFORE local mutation
+                self._schedule_step_down_sync(TransitionReason.QUORUM_LOST)
                 self._release_voter_grant_if_self()
-                self._save_state()
             return
         else:
-            # Reset counter on success
-            self._quorum_fail_count = 0
+            # Reset ULSM quorum health counter on success
+            voters_alive = self._count_alive_voters()
+            self._leadership_sm.quorum_health.record_success(voters_alive)
 
         now = time.time()
         if now - self.last_lease_renewal < LEADER_LEASE_RENEW_INTERVAL:

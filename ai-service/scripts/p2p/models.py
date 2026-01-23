@@ -31,6 +31,12 @@ from .constants import (
 )
 from .types import JobType, NodeHealthState, NodeRole
 
+# Jan 23, 2026: Phase 3 - Provider-aware timeouts for peer death detection
+try:
+    from app.config.provider_timeouts import ProviderTimeouts
+except ImportError:
+    ProviderTimeouts = None  # Graceful degradation if not available
+
 
 @dataclass
 class NodeInfo:
@@ -129,10 +135,18 @@ class NodeInfo:
         - base_timeout * 2.0 if CPU >= 95%
         This prevents marking busy nodes as dead due to slow heartbeat responses.
 
+        Jan 23, 2026: Phase 3 - Integrated provider-specific timeouts. Different
+        providers have different network characteristics (NAT, latency, reliability).
+        Provider multipliers are applied after CPU-adaptive adjustment:
+        - Vast.ai: 2.5x (consumer networks, NAT issues)
+        - Lambda: 2.0x (NAT-blocked GH200s)
+        - Nebius/Vultr: 1.5x (cloud infrastructure)
+        - Hetzner: 1.0x (bare metal)
+
         Returns:
             NodeHealthState.ALIVE if heartbeat within SUSPECT_TIMEOUT
             NodeHealthState.SUSPECT if heartbeat between SUSPECT_TIMEOUT and adaptive timeout
-            NodeHealthState.DEAD if no heartbeat for adaptive PEER_TIMEOUT
+            NodeHealthState.DEAD if no heartbeat for provider-adjusted timeout
         """
         elapsed = time.time() - self.last_heartbeat
 
@@ -140,6 +154,12 @@ class NodeInfo:
         # If peer reports high CPU, give it more time before marking dead
         cpu_load = self.cpu_percent / 100.0 if self.cpu_percent > 0 else None
         adaptive_timeout = get_cpu_adaptive_timeout(PEER_TIMEOUT, cpu_load)
+
+        # Jan 23, 2026: Apply provider-specific timeout multiplier
+        # This prevents false-positive deaths for nodes with slower networks
+        if ProviderTimeouts is not None:
+            provider_mult = ProviderTimeouts.get_multiplier(self.node_id)
+            adaptive_timeout = adaptive_timeout * provider_mult
 
         if elapsed < SUSPECT_TIMEOUT:
             return NodeHealthState.ALIVE

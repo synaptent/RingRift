@@ -635,10 +635,24 @@ class CircuitBreaker:
         return backoff
 
     def _check_recovery(self, circuit: _CircuitData) -> None:
-        """Check if circuit should transition to half-open."""
+        """Check if circuit should transition to half-open.
+
+        Jan 23, 2026: Phase 4 - Added forced retry interval (RINGRIFT_CB_FORCED_RETRY_INTERVAL).
+        This ensures circuits don't stay OPEN indefinitely with exponential backoff.
+        Even if backoff would wait longer, we retry after the forced interval (default: 5 min).
+        This prevents permanent exclusion of nodes with transient issues.
+        """
         if circuit.state == CircuitState.OPEN:
             # Use exponential backoff timeout based on consecutive opens
             timeout = self._compute_backoff_timeout(circuit)
+
+            # Jan 23, 2026: Apply forced retry interval as a ceiling
+            # Even if backoff is longer, retry after forced_retry_interval
+            forced_retry_env = os.environ.get("RINGRIFT_CB_FORCED_RETRY_INTERVAL", "300")
+            forced_retry_interval = float(forced_retry_env) if forced_retry_env else 300.0
+            if forced_retry_interval > 0 and timeout > forced_retry_interval:
+                timeout = forced_retry_interval
+
             if circuit.opened_at and (time.time() - circuit.opened_at) >= timeout:
                 circuit.state = CircuitState.HALF_OPEN
                 circuit.half_open_at = time.time()
