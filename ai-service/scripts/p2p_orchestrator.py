@@ -4739,6 +4739,15 @@ class P2POrchestrator(
             status["in_startup_grace_period"] = True
             status["grace_period_remaining"] = round(STARTUP_GRACE_PERIOD - uptime, 1)
 
+        # Jan 22, 2026: Add timeout protection to individual manager health checks
+        # to prevent event loop blocking when a manager's health_check() is slow
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+        MANAGER_HEALTH_TIMEOUT = 2.0  # 2 second timeout per manager
+
+        def _safe_health_check(manager):
+            """Call health_check with timeout protection."""
+            return manager.health_check()
+
         for name, manager in managers:
             try:
                 if manager is None:
@@ -4746,7 +4755,18 @@ class P2POrchestrator(
                     status["all_healthy"] = False
                     status["unhealthy_count"] += 1
                 elif hasattr(manager, "health_check"):
-                    health = manager.health_check()
+                    # Jan 22, 2026: Use ThreadPoolExecutor with timeout to prevent blocking
+                    # This ensures slow manager health checks don't freeze the entire orchestrator
+                    try:
+                        with ThreadPoolExecutor(max_workers=1) as executor:
+                            future = executor.submit(_safe_health_check, manager)
+                            health = future.result(timeout=MANAGER_HEALTH_TIMEOUT)
+                    except FuturesTimeout:
+                        logger.warning(f"[P2P] Manager {name} health check timed out after {MANAGER_HEALTH_TIMEOUT}s")
+                        status["managers"][name] = {"status": "timeout", "error": f"Health check timed out after {MANAGER_HEALTH_TIMEOUT}s"}
+                        status["all_healthy"] = False
+                        status["unhealthy_count"] += 1
+                        continue
                     # Handle both dict and HealthCheckResult return types
                     # Jan 2026: Fixed to accept "running" status from managers (CoordinatorStatus.RUNNING)
                     # Jan 2026: Added "starting" and "initializing" for startup grace period
