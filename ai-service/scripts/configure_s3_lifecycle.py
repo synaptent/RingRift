@@ -16,6 +16,8 @@ Usage:
 January 2026: Created as part of S3 first-class storage tier upgrade.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import subprocess

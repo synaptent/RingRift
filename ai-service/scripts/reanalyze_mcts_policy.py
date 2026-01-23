@@ -17,6 +17,8 @@ Environment:
     PYTHONPATH must include the ai-service directory.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os

@@ -11,6 +11,8 @@ a comprehensive statistical analysis report including:
 - Ranking of AI implementations
 """
 
+from __future__ import annotations
+
 import json
 import math
 from dataclasses import dataclass

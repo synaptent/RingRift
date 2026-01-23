@@ -9,6 +9,8 @@ Usage:
     python scripts/truncate_games_at_victory.py --db data/games/canonical_square8_4p.db
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import sqlite3

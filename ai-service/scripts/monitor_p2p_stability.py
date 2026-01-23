@@ -8,6 +8,8 @@ Usage:
     python scripts/monitor_p2p_stability.py [--interval 60] [--output stability.log]
 """
 
+from __future__ import annotations
+
 import argparse
 import datetime
 import json

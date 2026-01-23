@@ -9,6 +9,8 @@ Usage:
     python scripts/migrate_jsonl_moves.py --db data/games/canonical_hexagonal_2p.db --dry-run
     python scripts/migrate_jsonl_moves.py --all  # Process all canonical DBs
 """
+from __future__ import annotations
+
 import argparse
 import json
 import sqlite3

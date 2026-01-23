@@ -9,6 +9,8 @@ Usage:
     python scripts/cross_board_transfer.py --source square8 --target hexagonal --epochs 20
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import sys

@@ -36,6 +36,8 @@ Created: December 2025
 Purpose: Phase 4 ACTIVATION - enable 24/7 automated training
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import logging

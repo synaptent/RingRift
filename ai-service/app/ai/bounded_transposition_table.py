@@ -1,5 +1,7 @@
 """Bounded transposition table with LRU eviction for memory-limited search."""
 
+from __future__ import annotations
+
 from collections import OrderedDict
 from collections.abc import Hashable
 from typing import Any

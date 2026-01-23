@@ -12,6 +12,8 @@ Usage:
     python scripts/monitor_48h.py --summary          # Show summary of recent logs
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import json

@@ -36,6 +36,8 @@ Usage:
     python elo_db_sync.py --mode status
 """
 
+from __future__ import annotations
+
 import argparse
 import hashlib
 import http.server

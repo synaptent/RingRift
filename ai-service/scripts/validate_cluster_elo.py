@@ -12,6 +12,8 @@ Usage:
     python scripts/validate_cluster_elo.py --verbose    # Show detailed comparison
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import subprocess

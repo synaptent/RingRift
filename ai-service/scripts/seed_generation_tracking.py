@@ -16,6 +16,8 @@ Usage:
 January 2026 - Created for MVP research demonstration.
 """
 
+from __future__ import annotations
+
 import argparse
 import logging
 import os

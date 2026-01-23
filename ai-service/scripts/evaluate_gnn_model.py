@@ -8,6 +8,8 @@ Usage:
     python scripts/evaluate_gnn_model.py --games 20
 """
 
+from __future__ import annotations
+
 import argparse
 import sys
 from pathlib import Path

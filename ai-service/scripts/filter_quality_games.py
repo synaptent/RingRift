@@ -19,6 +19,8 @@ Usage:
     python scripts/filter_quality_games.py --input-dir data/selfplay --output-dir data/quality --remove-low-quality
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import os

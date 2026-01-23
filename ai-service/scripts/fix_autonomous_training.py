@@ -15,6 +15,8 @@ Usage:
     python scripts/fix_autonomous_training.py --all       # All of the above
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import logging

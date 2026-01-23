@@ -19,6 +19,8 @@ Environment variables:
     RINGRIFT_GPU_TREE_SHADOW_RATE: Set to 1.0 for full validation
 """
 
+from __future__ import annotations
+
 import argparse
 import logging
 import sys

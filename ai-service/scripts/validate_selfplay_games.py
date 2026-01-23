@@ -5,6 +5,8 @@ This script checks if games can be replayed successfully and reports
 statistics on invalid games per file/directory.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import logging

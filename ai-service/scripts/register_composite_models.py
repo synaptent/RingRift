@@ -21,6 +21,8 @@ Usage:
     python scripts/register_composite_models.py --config hex8_2p --execute
 """
 
+from __future__ import annotations
+
 import argparse
 import logging
 import sys

@@ -7,6 +7,8 @@ to feature tensors suitable for the HexNeuralNet model.
 """
 
 
+from __future__ import annotations
+
 import numpy as np
 
 from app.ai.game_state_utils import (

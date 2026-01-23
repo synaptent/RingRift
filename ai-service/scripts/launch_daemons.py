@@ -29,6 +29,8 @@ Usage:
     python scripts/launch_daemons.py --watch --interval 5
 """
 
+from __future__ import annotations
+
 import argparse
 import asyncio
 import json
