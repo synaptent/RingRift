@@ -5265,6 +5265,66 @@ class NeuralNetAI(BaseAI):
                 return
 
             except VersionMismatchError as e:
+                # Special case: V3 flat models (v3.1.0-flat) loaded into V3 spatial (v3.0.0)
+                # This happens when the model was trained with --model-version v3 (flat)
+                # but inference creates HexNeuralNet_v3 (spatial) by default.
+                # Solution: Rebuild model as HexNeuralNet_v3_Flat and retry.
+                if (
+                    e.checkpoint_version == "v3.1.0-flat"
+                    and hasattr(self.model, "hex_mask")  # Is a hex model
+                    and self.model.__class__.__name__ in ("HexNeuralNet_v3", "HexNeuralNet_v3_Lite")
+                ):
+                    logger.warning(
+                        "V3 flat checkpoint detected (v3.1.0-flat), rebuilding model "
+                        "as HexNeuralNet_v3_Flat..."
+                    )
+                    try:
+                        from .neural_net.hex_architectures import HexNeuralNet_v3_Flat
+                        # Infer parameters from current model
+                        in_channels = getattr(self.model, "in_channels", 64)
+                        num_res_blocks = getattr(self.model, "num_res_blocks", 12)
+                        num_filters = getattr(self.model, "num_filters", 192)
+                        board_size = getattr(self.model, "board_size", 9)
+                        hex_radius = getattr(self.model, "hex_radius", (board_size - 1) // 2)
+                        policy_size = getattr(self.model, "policy_size", 4500)
+                        num_players = getattr(self.model, "num_players", 2)
+                        global_features = getattr(self.model, "global_features", 20)
+
+                        # Rebuild as V3 flat
+                        self.model = HexNeuralNet_v3_Flat(
+                            in_channels=in_channels,
+                            global_features=global_features,
+                            num_res_blocks=num_res_blocks,
+                            num_filters=num_filters,
+                            board_size=board_size,
+                            hex_radius=hex_radius,
+                            policy_size=policy_size,
+                            num_players=num_players,
+                        ).to(self.device)
+
+                        # Retry loading
+                        state_dict, metadata = manager.load_checkpoint(
+                            model_path,
+                            strict=False,  # Use relaxed loading after rebuild
+                            verify_checksum=True,
+                            device=self.device,
+                        )
+                        if isinstance(state_dict, dict):
+                            state_dict = _strip_module_prefix(state_dict)
+                        self.model.load_state_dict(state_dict)
+                        self.model.eval()
+                        logger.info(
+                            "Successfully rebuilt and loaded V3 flat model "
+                            "(HexNeuralNet_v3_Flat) from %s",
+                            os.path.basename(model_path),
+                        )
+                        return
+                    except Exception as rebuild_error:
+                        logger.error(
+                            "Failed to rebuild V3 flat model: %s", rebuild_error
+                        )
+                        # Fall through to original error
+
                 # Version mismatch - FAIL EXPLICITLY instead of silent fallback
                 logger.error(
                     f"ARCHITECTURE VERSION MISMATCH - Cannot load!\n"
