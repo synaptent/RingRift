@@ -114,8 +114,8 @@ class GossipPeerPromotionLoop(BaseLoop):
         # Track connection state per peer for smart backoff
         self._peer_states: dict[str, PeerConnectionState] = {}
 
-        # Stats for observability
-        self._stats = {
+        # Stats for observability (don't override parent's _stats!)
+        self._promotion_stats = {
             "total_promotion_attempts": 0,
             "successful_promotions": 0,
             "failed_promotions": 0,
@@ -127,8 +127,8 @@ class GossipPeerPromotionLoop(BaseLoop):
         return {
             "name": self.name,
             "running": self._running,
-            "stats": self._loop_stats.to_dict() if self._loop_stats else {},
-            "promotion_stats": self._stats.copy(),
+            "stats": self._stats.to_dict() if hasattr(self._stats, 'to_dict') else {},
+            "promotion_stats": self._promotion_stats.copy(),
             "tracked_peers": len(self._peer_states),
         }
 
@@ -199,7 +199,7 @@ class GossipPeerPromotionLoop(BaseLoop):
 
         # Limit candidates per cycle
         candidates = candidates[: self.config.max_peers_per_cycle]
-        self._stats["peers_currently_tracked"] = len(self._peer_states)
+        self._promotion_stats["peers_currently_tracked"] = len(self._peer_states)
 
         logger.info(
             f"[GossipPromotion] Attempting to promote {len(candidates)} gossip peers"
@@ -218,7 +218,7 @@ class GossipPeerPromotionLoop(BaseLoop):
         """Attempt to promote a single gossip peer to active status."""
         state.last_attempt_time = now
         state.total_attempts += 1
-        self._stats["total_promotion_attempts"] += 1
+        self._promotion_stats["total_promotion_attempts"] += 1
 
         # Try multiple addresses: tailscale_ip first, then host
         addresses_to_try = []
@@ -264,7 +264,7 @@ class GossipPeerPromotionLoop(BaseLoop):
 
                     state.consecutive_failures = 0
                     state.last_success_time = now
-                    self._stats["successful_promotions"] += 1
+                    self._promotion_stats["successful_promotions"] += 1
                     success = True
 
                     logger.info(
@@ -302,7 +302,7 @@ class GossipPeerPromotionLoop(BaseLoop):
 
         if not success:
             state.consecutive_failures += 1
-            self._stats["failed_promotions"] += 1
+            self._promotion_stats["failed_promotions"] += 1
 
             if state.consecutive_failures >= self.config.max_consecutive_failures:
                 logger.debug(
@@ -314,7 +314,7 @@ class GossipPeerPromotionLoop(BaseLoop):
     def get_promotion_stats(self) -> dict[str, Any]:
         """Get promotion statistics for observability."""
         return {
-            **self._stats,
+            **self._promotion_stats,
             "peer_states": {
                 node_id: {
                     "consecutive_failures": state.consecutive_failures,
