@@ -44,9 +44,9 @@ logger = logging.getLogger(__name__)
 # January 2026: Use centralized timeouts from loop_constants
 try:
     from scripts.p2p.loops.loop_constants import LoopTimeouts
-    PEER_TIMEOUT = LoopTimeouts.PEER_DEAD_TIMEOUT  # 60.0 seconds
+    PEER_TIMEOUT = LoopTimeouts.PEER_DEAD_TIMEOUT  # 90.0 seconds (matches app/p2p/constants.py)
 except ImportError:
-    PEER_TIMEOUT = 60.0  # Fallback - peer considered dead after this
+    PEER_TIMEOUT = 90.0  # Fallback - peer considered dead after this (matches PEER_TIMEOUT)
 
 
 class NetworkDiscoveryMixin(BaseP2PHandler):

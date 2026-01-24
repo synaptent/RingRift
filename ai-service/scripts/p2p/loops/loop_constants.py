@@ -201,7 +201,9 @@ class LoopTimeouts:
     PARTITION_DISCOVERY: float = 30.0        # Peer discovery during healing
 
     # Peer management
-    PEER_DEAD_TIMEOUT: float = 60.0          # Peer considered dead after this
+    # Jan 24, 2026: Increased from 60.0 to 90.0 to match PEER_TIMEOUT in app/p2p/constants.py
+    # The 30s mismatch caused nodes to be marked dead too quickly, leading to network instability
+    PEER_DEAD_TIMEOUT: float = 90.0          # Peer considered dead after this (matches PEER_TIMEOUT)
 
     # Sync and transfer
     SYNC_LOCK: float = 120.0                 # Sync operation lock
