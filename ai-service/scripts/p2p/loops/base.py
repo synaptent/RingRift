@@ -199,6 +199,9 @@ class BaseLoop(ABC):
         self._state_lock = asyncio.Lock()
 
         # Statistics
+        # IMPORTANT: Subclasses must NOT shadow _stats with incompatible types.
+        # Use a different attribute name for custom stats (e.g., _custom_stats).
+        # Jan 24, 2026: Added validation in __setattr__ to catch shadowing issues.
         self._stats = LoopStats(name=name)
 
         # Performance degradation tracking (Jan 2026 - Phase 5.1 P2P Observability)
@@ -206,6 +209,28 @@ class BaseLoop(ABC):
 
         # Callbacks
         self._error_callbacks: list[Callable[[Exception], None]] = []
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Validate _stats is not shadowed with incompatible type.
+
+        Jan 24, 2026: Added to prevent bugs like the GossipPeerPromotionLoop
+        _stats shadowing issue (fixed in de0b9bf8e).
+
+        Subclasses should use different attribute names for custom stats
+        (e.g., _promotion_stats, _custom_stats) instead of overriding _stats.
+        """
+        if name == "_stats" and hasattr(self, "_stats"):
+            # Check if the new value is compatible (has to_dict method)
+            if not isinstance(value, LoopStats) and not hasattr(value, "to_dict"):
+                import warnings
+
+                warnings.warn(
+                    f"{self.__class__.__name__}: Assigning incompatible type to _stats. "
+                    f"Expected LoopStats or object with to_dict() method, got {type(value).__name__}. "
+                    f"Use a different attribute name for custom stats (e.g., _custom_stats).",
+                    stacklevel=2,
+                )
+        super().__setattr__(name, value)
 
     @property
     def running(self) -> bool:
