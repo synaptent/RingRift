@@ -41,7 +41,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .base import BaseLoop
+from .base import BaseLoop, LoopStats
 
 logger = logging.getLogger(__name__)
 
@@ -135,25 +135,34 @@ class RemoteP2PRecoveryConfig:
 
 
 @dataclass
-class RemoteP2PRecoveryStats:
-    """Statistics for remote P2P recovery operations."""
+class RemoteP2PRecoveryStats(LoopStats):
+    """Statistics for remote P2P recovery operations.
 
+    Inherits from LoopStats (Jan 24, 2026) to ensure type consistency with
+    BaseLoop expectations. This fixes potential AttributeError issues when
+    BaseLoop.run_forever() accesses fields like last_run_time, last_error_time, etc.
+
+    Inherited from LoopStats:
+        - name, total_runs, successful_runs, failed_runs, consecutive_errors
+        - last_run_time, last_success_time, last_error_time, last_error_message
+        - total_run_duration, last_run_duration
+        - success_rate (property), avg_run_duration (property)
+    """
+
+    # Provide default for inherited required field
+    name: str = "remote_p2p_recovery"
+
+    # Domain-specific fields for recovery tracking
     nodes_recovered: int = 0
     nodes_verified: int = 0  # Nodes confirmed in P2P mesh after recovery
     nodes_failed: int = 0
     nodes_verification_failed: int = 0  # Started but didn't appear in mesh
     nodes_skipped_unreachable: int = 0  # Nodes skipped due to failed pre-flight check
     last_recovery_time: float = 0.0
-    # Jan 1, 2026: Changed from cycles_run to total_runs to match LoopStats interface
-    # This is required because base.py does self._stats.total_runs += 1
-    total_runs: int = 0
     nodes_skipped_cooldown: int = 0
     nodes_skipped_backoff: int = 0  # Jan 2026: Nodes skipped due to exponential backoff
     nodes_skipped_circuit_broken: int = 0  # Jan 5, 2026: Nodes skipped due to circuit breaker OPEN
     ssh_key_missing: bool = False  # SSH key validation failed
-    consecutive_errors: int = 0  # Required by LoopManager.get_status()
-    successful_runs: int = 0  # Required by LoopManager.get_status()
-    total_run_duration: float = 0.0  # Required by base.py for avg_run_duration calculation
     backoff_resets: int = 0  # Jan 2026: Count of nodes that had backoff reset after stability
 
     @property
@@ -161,53 +170,13 @@ class RemoteP2PRecoveryStats:
         """Alias for total_runs for backward compatibility."""
         return self.total_runs
 
-    @property
-    def success_rate(self) -> float:
-        """Calculate success rate as a percentage.
-
-        Required by LoopManager.get_status() at base.py:410.
-        """
-        if self.cycles_run == 0:
-            return 100.0
-        return (self.successful_runs / self.cycles_run) * 100.0
-
-    @property
-    def avg_run_duration(self) -> float:
-        """Calculate average run duration in seconds.
-
-        Required by base.py:483 for performance degradation checks.
-        Jan 7, 2026: Added to fix AttributeError on _check_performance_degradation.
-        """
-        if self.successful_runs == 0:
-            return 0.0
-        return self.total_run_duration / self.successful_runs
-
-    @property
-    def failed_runs(self) -> int:
-        """Number of failed runs.
-
-        Required by LoopManager.health_check() at base.py:792.
-        Maps to cycles_run - successful_runs for this stats class.
-        """
-        return self.cycles_run - self.successful_runs
-
-    @failed_runs.setter
-    def failed_runs(self, value: int) -> None:
-        """Set failed_runs by adjusting total_runs.
-
-        Jan 3, 2026: Added to support base.py:282 which increments failed_runs.
-        Since failed_runs = cycles_run - successful_runs, incrementing failed_runs
-        means incrementing total_runs without changing successful_runs.
-        """
-        # Calculate delta from current value
-        current = self.total_runs - self.successful_runs
-        delta = value - current
-        # Adjust total_runs to achieve the desired failed_runs
-        self.total_runs += delta
-
     def to_dict(self) -> dict:
-        """Convert stats to dictionary for JSON serialization."""
-        return {
+        """Convert stats to dictionary for JSON serialization.
+
+        Extends parent's to_dict() with domain-specific recovery fields.
+        """
+        base_dict = super().to_dict()
+        base_dict.update({
             "nodes_recovered": self.nodes_recovered,
             "nodes_verified": self.nodes_verified,
             "nodes_failed": self.nodes_failed,
@@ -215,15 +184,13 @@ class RemoteP2PRecoveryStats:
             "nodes_skipped_unreachable": self.nodes_skipped_unreachable,
             "last_recovery_time": self.last_recovery_time,
             "cycles_run": self.cycles_run,  # Property alias for backward compat
-            "total_runs": self.total_runs,  # Canonical field
-            "successful_runs": self.successful_runs,
-            "failed_runs": self.failed_runs,  # Computed property
             "nodes_skipped_cooldown": self.nodes_skipped_cooldown,
             "nodes_skipped_backoff": self.nodes_skipped_backoff,
             "nodes_skipped_circuit_broken": self.nodes_skipped_circuit_broken,
             "backoff_resets": self.backoff_resets,
             "ssh_key_missing": self.ssh_key_missing,
-        }
+        })
+        return base_dict
 
 
 # =============================================================================
