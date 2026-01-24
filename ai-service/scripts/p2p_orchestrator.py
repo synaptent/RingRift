@@ -3095,6 +3095,29 @@ class P2POrchestrator(
             except (ImportError, TypeError, AttributeError) as e:
                 logger.warning(f"[LoopManager] GossipStateCleanupLoop: not available: {e}")
 
+            # GossipPeerPromotionLoop - January 2026
+            # Periodically attempts to promote gossip-learned peers to active peers
+            # Fixes critical gap where peers discovered via gossip never become active
+            # because initial connection attempt fails with no retry mechanism
+            try:
+                from scripts.p2p.loops.gossip_peer_promotion_loop import (
+                    GossipPeerPromotionLoop,
+                    GossipPeerPromotionConfig,
+                )
+
+                gossip_promotion = GossipPeerPromotionLoop(
+                    orchestrator=self,
+                    config=GossipPeerPromotionConfig(
+                        interval_seconds=30.0,  # Check every 30s
+                        max_peers_per_cycle=5,  # Try 5 peers per cycle
+                        min_retry_interval_seconds=60.0,  # Wait 60s between retries
+                    ),
+                )
+                manager.register(gossip_promotion)
+                logger.info("[LoopManager] GossipPeerPromotionLoop registered")
+            except (ImportError, TypeError, AttributeError) as e:
+                logger.warning(f"[LoopManager] GossipPeerPromotionLoop: not available: {e}")
+
             # QuorumCrisisDiscoveryLoop - January 2026
             # Aggressive peer discovery during quorum loss to speed up recovery
             # Reduces bootstrap interval from 60s to 10s when quorum drops

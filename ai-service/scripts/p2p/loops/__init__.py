@@ -179,6 +179,11 @@ from .gossip_state_cleanup_loop import (
     GossipStateCleanupConfig,
     GossipStateCleanupLoop,
 )
+from .gossip_peer_promotion_loop import (
+    GossipPeerPromotionConfig,
+    GossipPeerPromotionLoop,
+    PeerConnectionState,
+)
 from .comprehensive_evaluation_loop import (
     ComprehensiveEvaluationConfig,
     ComprehensiveEvaluationLoop,
@@ -336,6 +341,10 @@ __all__ = [
     "GossipCleanupStats",
     "GossipStateCleanupConfig",
     "GossipStateCleanupLoop",
+    # Gossip Peer Promotion (Jan 24, 2026 - Fix gossip peer promotion)
+    "GossipPeerPromotionConfig",
+    "GossipPeerPromotionLoop",
+    "PeerConnectionState",
     # Comprehensive Evaluation (Jan 2026 - Model Evaluation Pipeline)
     "ComprehensiveEvaluationConfig",
     "ComprehensiveEvaluationLoop",
