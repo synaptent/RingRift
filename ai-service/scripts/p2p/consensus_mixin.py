@@ -553,6 +553,22 @@ class ConsensusMixin(P2PMixinBase):
                 partner_addrs=partners,
             )
 
+            # Jan 24, 2026: Start AsyncRaftManager for manual tick control
+            # This prevents autoTick's CPU-hogging busy-loop
+            self._raft_manager = None
+            if _consts["RAFT_USE_MANUAL_TICK"]:
+                try:
+                    from app.p2p.async_raft_wrapper import AsyncRaftManager
+                    self._raft_manager = AsyncRaftManager(tick_interval=0.05)
+                    self._raft_manager.register(self._raft_work_queue, name="ReplicatedWorkQueue")
+                    self._raft_manager.register(self._raft_job_assignments, name="ReplicatedJobAssignments")
+                    asyncio.create_task(self._raft_manager.start())
+                    logger.info("AsyncRaftManager started for manual Raft tick control")
+                except ImportError as e:
+                    logger.warning(f"AsyncRaftManager not available: {e}")
+                except Exception as e:
+                    logger.error(f"Failed to start AsyncRaftManager: {e}")
+
             # Dec 30, 2025: Only mark READY after ALL objects are initialized
             # The state machine prevents other code from using Raft before this point
             self._raft_init_state = RaftInitState.READY
