@@ -884,7 +884,7 @@ class LeaderProbeLoop(BaseLoop):
 
             start_election = getattr(self._orchestrator, "_start_election", None)
             if start_election:
-                await start_election(reason="leader_unreachable_probe")
+                await start_election()
                 logger.info("[LeaderProbe] Election triggered successfully")
             else:
                 logger.warning("[LeaderProbe] No _start_election method available")
@@ -945,7 +945,7 @@ class LeaderProbeLoop(BaseLoop):
             # Trigger election
             start_election = getattr(self._orchestrator, "_start_election", None)
             if start_election:
-                await start_election(reason="no_leader_timeout")
+                await start_election()
                 logger.info("[LeaderProbe] No-leader election triggered successfully")
             else:
                 logger.warning("[LeaderProbe] No _start_election method available")
