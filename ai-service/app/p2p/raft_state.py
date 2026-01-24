@@ -293,30 +293,38 @@ def get_self_raft_address(
 ) -> str | None:
     """Get this node's Raft address from config.
 
-    Jan 23, 2026: Enhanced to work on macOS by checking:
-    1. RINGRIFT_ADVERTISE_HOST environment variable (most reliable)
+    Jan 24, 2026: BLOCKING SUBPROCESS CALLS REMOVED for P2P stability.
+    Previous subprocess calls (hostname -I, ifconfig) could block the event
+    loop for up to 15 seconds when network interfaces were slow to respond.
+
+    Now uses only non-blocking methods:
+    1. RINGRIFT_ADVERTISE_HOST environment variable (RECOMMENDED for Raft)
     2. cluster_config tailscale_ip lookup
-    3. hostname-based lookup
-    4. ifconfig/hostname -I for interface IPs
+    3. hostname-based socket lookup (usually fast)
+
+    For Raft to work reliably, set RINGRIFT_ADVERTISE_HOST in your environment
+    or ensure your node is configured in distributed_hosts.yaml with tailscale_ip.
 
     Args:
         config_path: Path to distributed_hosts.yaml
         bind_port: Raft bind port
 
     Returns:
-        Self address in "host:port" format, or None if not determinable
+        Self address in "host:port" format, or None if not determinable.
+        If None is returned, Raft should NOT be started as it won't be able
+        to communicate with other nodes.
     """
     import os
     import socket
-    import subprocess
 
-    # Method 1: Check environment variable (works on all platforms)
+    # Method 1: Check environment variable (PREFERRED - non-blocking)
+    # This is the most reliable method and should be set for Raft nodes
     advertise_host = os.environ.get("RINGRIFT_ADVERTISE_HOST")
     if advertise_host and advertise_host not in ("127.0.0.1", "localhost"):
         logger.debug(f"Using RINGRIFT_ADVERTISE_HOST for Raft: {advertise_host}")
         return f"{advertise_host}:{bind_port}"
 
-    # Method 2: Get from cluster_config using node_id
+    # Method 2: Get from cluster_config using node_id (non-blocking)
     if HAS_CLUSTER_CONFIG and get_cluster_nodes is not None:
         try:
             node_id = os.environ.get("RINGRIFT_NODE_ID")
@@ -333,55 +341,26 @@ def get_self_raft_address(
         except Exception as e:
             logger.debug(f"cluster_config lookup failed: {e}")
 
-    # Method 3: Try to get hostname-based address
+    # Method 3: Try to get hostname-based address (usually fast, non-blocking)
     try:
         hostname = socket.gethostname()
         ip = socket.gethostbyname(hostname)
         if ip and ip not in ("127.0.0.1", "localhost"):
+            logger.debug(f"Using hostname-based lookup for Raft: {ip}")
             return f"{ip}:{bind_port}"
     except socket.error:
         pass
 
-    # Method 4a: Linux - hostname -I
-    try:
-        result = subprocess.run(
-            ["hostname", "-I"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            ips = result.stdout.strip().split()
-            for ip in ips:
-                if ip and not ip.startswith("127."):
-                    return f"{ip}:{bind_port}"
-    except (subprocess.SubprocessError, FileNotFoundError):
-        pass
+    # REMOVED: Blocking subprocess calls (hostname -I, ifconfig)
+    # These could block for 5-15 seconds and cause event loop stalls.
+    # If you need Raft, set RINGRIFT_ADVERTISE_HOST or configure your node
+    # in distributed_hosts.yaml with a tailscale_ip.
 
-    # Method 4b: macOS - ifconfig (en0 for ethernet/wifi, utun for Tailscale)
-    try:
-        result = subprocess.run(
-            ["ifconfig"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if result.returncode == 0:
-            import re
-            # Look for Tailscale IPs (100.x.x.x) first, then any non-localhost
-            tailscale_ips = re.findall(r"inet (100\.\d+\.\d+\.\d+)", result.stdout)
-            if tailscale_ips:
-                logger.debug(f"Using Tailscale IP from ifconfig: {tailscale_ips[0]}")
-                return f"{tailscale_ips[0]}:{bind_port}"
-
-            # Fall back to any non-localhost IPv4
-            all_ips = re.findall(r"inet (\d+\.\d+\.\d+\.\d+)", result.stdout)
-            for ip in all_ips:
-                if not ip.startswith("127."):
-                    return f"{ip}:{bind_port}"
-    except (subprocess.SubprocessError, FileNotFoundError):
-        pass
-
+    logger.warning(
+        "Could not determine Raft address. Raft will be disabled. "
+        "To enable Raft, set RINGRIFT_ADVERTISE_HOST environment variable "
+        "or configure tailscale_ip in distributed_hosts.yaml for this node."
+    )
     return None
 
 

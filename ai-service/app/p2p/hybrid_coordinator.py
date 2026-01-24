@@ -348,7 +348,12 @@ class HybridCoordinator:
             return False
 
     async def _start_raft(self) -> bool:
-        """Start Raft consensus protocol."""
+        """Start Raft consensus protocol.
+
+        Jan 24, 2026: Wrapped create_replicated_work_queue in asyncio.to_thread()
+        to prevent event loop blocking during Raft initialization. PySyncObj
+        initialization can take several seconds on slow networks.
+        """
         if not PYSYNCOBJ_AVAILABLE:
             logger.warning("pysyncobj not installed, cannot start Raft")
             return False
@@ -358,11 +363,20 @@ class HybridCoordinator:
             return False
 
         try:
-            self._raft_queue = create_replicated_work_queue(
+            # Run Raft initialization in thread pool to avoid blocking event loop
+            # create_replicated_work_queue() calls PySyncObj.__init__() which
+            # performs network operations and can block for seconds
+            logger.info("Starting Raft work queue in background thread...")
+
+            # Use functools.partial to pass keyword arguments to asyncio.to_thread
+            import functools
+            create_raft = functools.partial(
+                create_replicated_work_queue,
                 node_id=self._node_id,
                 on_ready=self._handle_raft_ready,
                 on_leader_change=self._handle_raft_leader_change,
             )
+            self._raft_queue = await asyncio.to_thread(create_raft)
 
             if self._raft_queue is None:
                 logger.warning("Failed to create Raft work queue")
@@ -371,6 +385,7 @@ class HybridCoordinator:
             # Wait briefly for cluster formation
             await asyncio.sleep(1.0)
 
+            logger.info("Raft work queue started successfully")
             return True
 
         except Exception as e:
