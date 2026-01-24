@@ -9515,6 +9515,10 @@ class P2POrchestrator(
         info.tailscale_ip = ts_ip or ""
         info.addresses = self._collect_all_addresses(ts_ip, info.host)
 
+        # Jan 24, 2026: Populate visible_peers for connectivity scoring
+        # Used by _compute_connectivity_score() to determine leader eligibility
+        info.visible_peers = len([p for p in self.peers.values() if p.is_alive()])
+
         return info
 
     def _collect_all_addresses(
@@ -20349,6 +20353,10 @@ print(json.dumps({{
             (1 if self.self_info.gauntlet_running else 0) +
             (1 if self.self_info.tournament_running else 0)
         )
+
+        # Jan 24, 2026: Update visible_peers count for connectivity scoring
+        # Used by _compute_connectivity_score() to determine leader eligibility
+        self.self_info.visible_peers = len([p for p in self.peers.values() if p.is_alive()])
 
         # Report to unified resource optimizer for cluster-wide coordination
         if HAS_NEW_COORDINATION:

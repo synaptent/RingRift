@@ -670,14 +670,22 @@ class JobsApiHandlersMixin(BaseP2PHandler):
                     "training": ["train_nnue", "train.*model"],
                     "selfplay": ["selfplay", "run_hybrid_selfplay"],
                 }
+
+                def _pkill_pattern(pattern: str) -> bool:
+                    """Run pkill in thread pool to avoid blocking event loop."""
+                    result = subprocess.run(
+                        ["pkill", "-9", "-f", pattern],
+                        timeout=5,
+                        capture_output=True,
+                    )
+                    return result.returncode == 0
+
                 for pattern in patterns.get(job_type, [job_type]):
                     try:
-                        result = subprocess.run(
-                            ["pkill", "-9", "-f", pattern],
-                            timeout=5,
-                            capture_output=True,
-                        )
-                        if result.returncode == 0:
+                        # Jan 24, 2026: Run in thread to avoid blocking event loop
+                        import asyncio
+                        success = await asyncio.to_thread(_pkill_pattern, pattern)
+                        if success:
                             killed += 1
                             logger.info(f"Killed processes matching '{pattern}': {reason}")
                     except Exception as e:  # noqa: BLE001

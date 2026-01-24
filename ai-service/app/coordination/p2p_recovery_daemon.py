@@ -412,6 +412,8 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
 
         Jan 5, 2026 (Sprint 17.9): Subscribe to DAEMON_FAILURE_CLASSIFIED events
         from DaemonHealthAnalyzer for unified failure response coordination.
+
+        Jan 24, 2026: Subscribe to EVENT_LOOP_BLOCKED for event loop health recovery.
         """
         return {
             "QUORUM_LOST": self._on_quorum_lost,
@@ -424,6 +426,8 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
             "PARTITION_HEALING_FAILED": self._on_partition_healing_failed,
             # Jan 5, 2026 (Sprint 17.9): Unified failure classification
             "DAEMON_FAILURE_CLASSIFIED": self._on_daemon_failure_classified,
+            # Jan 24, 2026: Event loop blocking detection
+            "EVENT_LOOP_BLOCKED": self._on_event_loop_blocked,
         }
 
     async def _on_quorum_lost(self, event: Any) -> None:
@@ -787,6 +791,66 @@ class P2PRecoveryDaemon(HandlerBase, StatePersistenceMixin):
                 f"[P2PRecovery] Transient daemon failure: {daemon_name} "
                 f"(expected to self-recover)"
             )
+
+    async def _on_event_loop_blocked(self, event: Any) -> None:
+        """Handle EVENT_LOOP_BLOCKED - event loop health recovery.
+
+        Jan 24, 2026: Added to recover from blocked event loops that cause
+        P2P unresponsiveness. When the event loop is blocked by synchronous
+        operations (SQLite, subprocess.run, etc.), the node becomes unresponsive
+        to HTTP requests and leader probes.
+
+        Actions:
+        - Track consecutive blocking events
+        - After 5+ consecutive blocks, consider P2P restart to recover
+        - Emit monitoring event for alerting
+        """
+        payload = get_event_payload(event)
+        node_id = payload.get("node_id", "unknown")
+        latency_seconds = payload.get("latency_seconds", 0)
+        consecutive_blocks = payload.get("consecutive_blocks", 0)
+        severity = payload.get("severity", "warning")
+
+        logger.warning(
+            f"[P2PRecovery] Event loop blocked on {node_id}: "
+            f"latency={latency_seconds:.2f}s, consecutive={consecutive_blocks}, "
+            f"severity={severity}"
+        )
+
+        # Track consecutive blocks for this daemon
+        self._event_loop_blocks = getattr(self, "_event_loop_blocks", 0) + 1
+
+        # After 5+ consecutive critical blocks, consider P2P restart
+        # This is a fallback - the blocking operations should be fixed first
+        if severity == "critical" and consecutive_blocks >= 5:
+            logger.critical(
+                f"[P2PRecovery] Critical event loop blocking detected - "
+                f"{consecutive_blocks} consecutive blocks. P2P may be unresponsive."
+            )
+
+            # Emit alert event for monitoring
+            safe_emit_event(
+                "p2p_event_loop_critical",
+                {
+                    "node_id": node_id,
+                    "consecutive_blocks": consecutive_blocks,
+                    "latency_seconds": latency_seconds,
+                    "action": "alert",
+                },
+                context="P2PRecovery",
+            )
+
+            # Only trigger restart if we've seen sustained blocking
+            # and not already healing
+            if consecutive_blocks >= 10 and not self._is_healing_in_progress():
+                logger.critical(
+                    f"[P2PRecovery] Sustained event loop blocking ({consecutive_blocks} blocks) "
+                    f"- triggering P2P restart for recovery"
+                )
+                await self._trigger_p2p_restart(
+                    reason=f"event_loop_blocked:consecutive={consecutive_blocks}",
+                    force=False,  # Allow cooldown
+                )
 
     def _try_emit_daemon_recovery_event(
         self, daemon_name: str, category: str, recommended_action: str

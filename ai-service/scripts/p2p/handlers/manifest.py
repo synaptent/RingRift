@@ -318,12 +318,115 @@ class ManifestHandlersMixin(BaseP2PHandler):
             logger.exception("[ManifestHandlers] Error in handle_data_inventory")
             return web.json_response({"error": str(e)}, status=500)
 
+    def _query_inventory_sync(self, manifest) -> dict:
+        """Blocking SQLite queries for inventory - runs in thread pool.
+
+        Jan 24, 2026: Extracted from _collect_data_inventory() to avoid
+        blocking the event loop. Called via asyncio.to_thread().
+        """
+        games_by_config: dict[str, int] = {}
+        games_by_node: dict[str, int] = {}
+        npz_by_config: dict[str, dict] = {}
+        nodes_with_data: dict[str, list[str]] = {}
+        unconsolidated_by_config: dict[str, int] = {}
+        total_games = 0
+
+        # Query game_locations table for aggregated counts
+        with manifest._connection() as conn:
+            # Count by config
+            cursor = conn.execute("""
+                SELECT board_type || '_' || num_players || 'p' as config, COUNT(DISTINCT game_id)
+                FROM game_locations
+                WHERE board_type IS NOT NULL
+                GROUP BY board_type, num_players
+            """)
+            for row in cursor:
+                config_key = row[0]
+                count = row[1]
+                if config_key and config_key != "None_Nonep":
+                    games_by_config[config_key] = count
+                    total_games += count
+
+            # Count by node
+            cursor = conn.execute("""
+                SELECT node_id, COUNT(DISTINCT game_id)
+                FROM game_locations
+                GROUP BY node_id
+            """)
+            for row in cursor:
+                node_id = row[0]
+                count = row[1]
+                games_by_node[node_id] = count
+
+            # NPZ counts by config (Phase 1.1 addition)
+            cursor = conn.execute("""
+                SELECT board_type || '_' || num_players || 'p' as config,
+                       COUNT(DISTINCT npz_path) as file_count,
+                       SUM(sample_count) as total_samples,
+                       SUM(file_size) as total_size_bytes
+                FROM npz_locations
+                WHERE board_type IS NOT NULL
+                GROUP BY board_type, num_players
+            """)
+            for row in cursor:
+                config_key = row[0]
+                if config_key and config_key != "None_Nonep":
+                    npz_by_config[config_key] = {
+                        "count": row[1] or 0,
+                        "total_samples": row[2] or 0,
+                        "total_size_bytes": row[3] or 0,
+                    }
+
+            # Nodes with data per config (Phase 1.1 addition)
+            cursor = conn.execute("""
+                SELECT board_type || '_' || num_players || 'p' as config,
+                       node_id,
+                       COUNT(DISTINCT game_id) as game_count
+                FROM game_locations
+                WHERE board_type IS NOT NULL
+                GROUP BY board_type, num_players, node_id
+                HAVING game_count > 0
+            """)
+            for row in cursor:
+                config_key = row[0]
+                node_id = row[1]
+                if config_key and config_key != "None_Nonep":
+                    if config_key not in nodes_with_data:
+                        nodes_with_data[config_key] = []
+                    nodes_with_data[config_key].append(node_id)
+
+            # Unconsolidated games by config (Phase 1.1 addition)
+            cursor = conn.execute("""
+                SELECT board_type || '_' || num_players || 'p' as config,
+                       COUNT(DISTINCT game_id) as unconsolidated_count
+                FROM game_locations
+                WHERE board_type IS NOT NULL
+                  AND (is_consolidated = 0 OR is_consolidated IS NULL)
+                GROUP BY board_type, num_players
+            """)
+            for row in cursor:
+                config_key = row[0]
+                count = row[1]
+                if config_key and config_key != "None_Nonep":
+                    unconsolidated_by_config[config_key] = count
+
+        return {
+            "total_games": total_games,
+            "games_by_config": games_by_config,
+            "games_by_node": games_by_node,
+            "npz_by_config": npz_by_config,
+            "nodes_with_data": nodes_with_data,
+            "unconsolidated_by_config": unconsolidated_by_config,
+        }
+
     async def _collect_data_inventory(self, refresh: bool = False) -> dict:
         """Collect cluster-wide data inventory from ClusterManifest.
 
         Dec 30, 2025: Added for quick game count aggregation.
         Dec 30, 2025: Extended with NPZ counts and nodes_with_data for Phase 1.1
                       of distributed data pipeline architecture.
+        Jan 24, 2026: Wrapped SQLite queries in asyncio.to_thread() to avoid
+                      blocking the event loop.
 
         Returns:
             {
@@ -336,105 +439,14 @@ class ManifestHandlersMixin(BaseP2PHandler):
             }
         """
         try:
+            import asyncio
             from app.distributed.cluster_manifest import get_cluster_manifest
 
             manifest = get_cluster_manifest()
 
-            # Get all game locations from the registry
-            games_by_config: dict[str, int] = {}
-            games_by_node: dict[str, int] = {}
-            npz_by_config: dict[str, dict] = {}
-            nodes_with_data: dict[str, list[str]] = {}
-            unconsolidated_by_config: dict[str, int] = {}
-            total_games = 0
-
-            # Query game_locations table for aggregated counts
-            with manifest._connection() as conn:
-                # Count by config
-                cursor = conn.execute("""
-                    SELECT board_type || '_' || num_players || 'p' as config, COUNT(DISTINCT game_id)
-                    FROM game_locations
-                    WHERE board_type IS NOT NULL
-                    GROUP BY board_type, num_players
-                """)
-                for row in cursor:
-                    config_key = row[0]
-                    count = row[1]
-                    if config_key and config_key != "None_Nonep":
-                        games_by_config[config_key] = count
-                        total_games += count
-
-                # Count by node
-                cursor = conn.execute("""
-                    SELECT node_id, COUNT(DISTINCT game_id)
-                    FROM game_locations
-                    GROUP BY node_id
-                """)
-                for row in cursor:
-                    node_id = row[0]
-                    count = row[1]
-                    games_by_node[node_id] = count
-
-                # NPZ counts by config (Phase 1.1 addition)
-                cursor = conn.execute("""
-                    SELECT board_type || '_' || num_players || 'p' as config,
-                           COUNT(DISTINCT npz_path) as file_count,
-                           SUM(sample_count) as total_samples,
-                           SUM(file_size) as total_size_bytes
-                    FROM npz_locations
-                    WHERE board_type IS NOT NULL
-                    GROUP BY board_type, num_players
-                """)
-                for row in cursor:
-                    config_key = row[0]
-                    if config_key and config_key != "None_Nonep":
-                        npz_by_config[config_key] = {
-                            "count": row[1] or 0,
-                            "total_samples": row[2] or 0,
-                            "total_size_bytes": row[3] or 0,
-                        }
-
-                # Nodes with data per config (Phase 1.1 addition)
-                cursor = conn.execute("""
-                    SELECT board_type || '_' || num_players || 'p' as config,
-                           node_id,
-                           COUNT(DISTINCT game_id) as game_count
-                    FROM game_locations
-                    WHERE board_type IS NOT NULL
-                    GROUP BY board_type, num_players, node_id
-                    HAVING game_count > 0
-                """)
-                for row in cursor:
-                    config_key = row[0]
-                    node_id = row[1]
-                    if config_key and config_key != "None_Nonep":
-                        if config_key not in nodes_with_data:
-                            nodes_with_data[config_key] = []
-                        nodes_with_data[config_key].append(node_id)
-
-                # Unconsolidated games by config (Phase 1.1 addition)
-                cursor = conn.execute("""
-                    SELECT board_type || '_' || num_players || 'p' as config,
-                           COUNT(DISTINCT game_id) as unconsolidated_count
-                    FROM game_locations
-                    WHERE board_type IS NOT NULL
-                      AND (is_consolidated = 0 OR is_consolidated IS NULL)
-                    GROUP BY board_type, num_players
-                """)
-                for row in cursor:
-                    config_key = row[0]
-                    count = row[1]
-                    if config_key and config_key != "None_Nonep":
-                        unconsolidated_by_config[config_key] = count
-
-            return {
-                "total_games": total_games,
-                "games_by_config": games_by_config,
-                "games_by_node": games_by_node,
-                "npz_by_config": npz_by_config,
-                "nodes_with_data": nodes_with_data,
-                "unconsolidated_by_config": unconsolidated_by_config,
-            }
+            # Run blocking SQLite queries in thread pool
+            result = await asyncio.to_thread(self._query_inventory_sync, manifest)
+            return result
         except Exception as e:
             logger.warning(f"[ManifestHandlers] Error collecting inventory: {e}")
             return {

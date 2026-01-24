@@ -111,11 +111,11 @@ class SelfplayHandlersMixin:
 
         return True, "Local health OK for degraded-mode selfplay"
 
-    def _get_gpu_count(self) -> int:
-        """Get the number of CUDA GPUs available on this node.
+    def _get_gpu_count_sync(self) -> int:
+        """Get the number of CUDA GPUs available (blocking version).
 
-        Jan 18, 2026: Added for multi-GPU selfplay support. Enables spawning
-        one worker per GPU on Vast.ai nodes with multiple GPUs (8x3090, etc.).
+        Jan 18, 2026: Added for multi-GPU selfplay support.
+        Jan 24, 2026: Renamed to _sync, use _get_gpu_count_async() from async context.
 
         Returns:
             Number of CUDA GPUs, or 1 if detection fails or no CUDA available.
@@ -143,6 +143,15 @@ class SelfplayHandlersMixin:
             pass
 
         return 1  # Default to single GPU
+
+    async def _get_gpu_count_async(self) -> int:
+        """Get GPU count without blocking the event loop.
+
+        Jan 24, 2026: Async wrapper to prevent event loop blocking from
+        subprocess.run() calls in nvidia-smi fallback path.
+        """
+        import asyncio
+        return await asyncio.to_thread(self._get_gpu_count_sync)
 
     async def handle_selfplay_start(self, request: web.Request) -> web.Response:
         """POST /selfplay/start - Start GPU selfplay job on this node.
@@ -206,7 +215,7 @@ class SelfplayHandlersMixin:
 
             # Jan 18, 2026: Multi-GPU support - spawn one worker per GPU
             # This improves utilization on multi-GPU Vast.ai nodes (8x3090, 4x5090, etc.)
-            num_gpus = self._get_gpu_count()
+            num_gpus = await self._get_gpu_count_async()
             if num_gpus > 1:
                 # Distribute games across GPUs
                 games_per_gpu = max(1, num_games // num_gpus)

@@ -120,6 +120,9 @@ class NodeInfo:
     # Jan 13, 2026: Node status from distributed_hosts.yaml (e.g., "proxy_only", "active")
     # Used by _is_leader_eligible() to reject proxy nodes from becoming cluster leaders
     status: str = ""
+    # Jan 24, 2026: Number of visible peers for connectivity scoring
+    # Used by _compute_connectivity_score() to determine leader eligibility
+    visible_peers: int = 0
 
     def get_health_state(self) -> NodeHealthState:
         """Get detailed health state based on heartbeat timing.
@@ -532,6 +535,7 @@ class NodeInfo:
             self.gpu_memory_percent = other.gpu_memory_percent
             self.selfplay_jobs = other.selfplay_jobs
             self.training_jobs = other.training_jobs
+            self.visible_peers = other.visible_peers
 
         # Remove primary host from alternate_ips to avoid duplication
         all_ips.discard(self.host)
@@ -595,6 +599,8 @@ class NodeInfo:
         # Dec 30, 2025: Capabilities field - critical for job scheduling
         # Without this, nodes may have empty capabilities and get skipped by schedulers
         d.setdefault('capabilities', [])
+        # Jan 24, 2026: Visible peers count for connectivity scoring
+        d.setdefault('visible_peers', 0)
 
         # Dec 30, 2025: Capability inference - if capabilities empty, infer from has_gpu
         # This ensures nodes get work even if they didn't explicitly advertise capabilities
