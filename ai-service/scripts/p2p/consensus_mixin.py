@@ -143,17 +143,18 @@ if PYSYNCOBJ_AVAILABLE:
             raft_dump_dir.mkdir(parents=True, exist_ok=True)
             raft_dump_path = str(raft_dump_dir / "raft_work_queue.dump")
 
-            # Jan 24, 2026: Honor RAFT_USE_MANUAL_TICK to allow AsyncRaftManager
-            # to control ticking, preventing CPU-hogging autoTick thread.
-            _auto_tick = not _consts["RAFT_USE_MANUAL_TICK"]
-            logger.info(f"ReplicatedWorkQueue: RAFT_USE_MANUAL_TICK={_consts['RAFT_USE_MANUAL_TICK']}, autoTick={_auto_tick}")
+            # Jan 24, 2026: Keep autoTick=True but use slower tick period
+            # to prevent CPU-hogging while maintaining Raft functionality.
+            # Default autoTickPeriod is very small; 0.1s is more reasonable.
             conf = _SyncObjConf(
-                autoTick=_auto_tick,
+                autoTick=True,
+                autoTickPeriod=0.1,  # 100ms tick period (vs ~1ms default)
                 appendEntriesUseBatch=True,
                 fullDumpFile=raft_dump_path,  # Persist Raft state across restarts
                 logCompactionMinEntries=compaction_min_entries,
                 dynamicMembershipChange=True,  # Allow adding/removing nodes
             )
+            logger.info("ReplicatedWorkQueue: autoTick=True, autoTickPeriod=0.1s")
 
             super().__init__(self_addr, partner_addrs, conf=conf)
 
@@ -382,10 +383,10 @@ if PYSYNCOBJ_AVAILABLE:
             # callbacks may access is_ready property during initialization
             self._is_ready = False
 
-            # Jan 24, 2026: Honor RAFT_USE_MANUAL_TICK to prevent CPU-hogging
-            _auto_tick = not _consts["RAFT_USE_MANUAL_TICK"]
+            # Jan 24, 2026: Keep autoTick=True but use slower tick period
             conf = _SyncObjConf(
-                autoTick=_auto_tick,
+                autoTick=True,
+                autoTickPeriod=0.1,  # 100ms tick period (vs ~1ms default)
                 appendEntriesUseBatch=True,
             )
             super().__init__(self_addr, partner_addrs, conf=conf)
@@ -553,21 +554,6 @@ class ConsensusMixin(P2PMixinBase):
                 partner_addrs=partners,
             )
 
-            # Jan 24, 2026: Start AsyncRaftManager for manual tick control
-            # This prevents autoTick's CPU-hogging busy-loop
-            self._raft_manager = None
-            if _consts["RAFT_USE_MANUAL_TICK"]:
-                try:
-                    from app.p2p.async_raft_wrapper import AsyncRaftManager
-                    self._raft_manager = AsyncRaftManager(tick_interval=0.05)
-                    self._raft_manager.register(self._raft_work_queue, name="ReplicatedWorkQueue")
-                    self._raft_manager.register(self._raft_job_assignments, name="ReplicatedJobAssignments")
-                    asyncio.create_task(self._raft_manager.start())
-                    logger.info("AsyncRaftManager started for manual Raft tick control")
-                except ImportError as e:
-                    logger.warning(f"AsyncRaftManager not available: {e}")
-                except Exception as e:
-                    logger.error(f"Failed to start AsyncRaftManager: {e}")
 
             # Dec 30, 2025: Only mark READY after ALL objects are initialized
             # The state machine prevents other code from using Raft before this point
