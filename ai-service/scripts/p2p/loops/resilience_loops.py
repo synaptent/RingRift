@@ -267,9 +267,10 @@ class SelfHealingLoop(BaseLoop):
         now = time.time()
 
         # Stale process cleanup runs on ALL nodes (not just leader)
+        # Jan 23, 2026: Wrap blocking subprocess calls in asyncio.to_thread()
         if now - self._last_stale_check >= self.config.stale_process_check_interval_seconds:
             try:
-                killed = self._cleanup_stale_processes()
+                killed = await asyncio.to_thread(self._cleanup_stale_processes)
                 if killed > 0:
                     self._stale_processes_cleaned += killed
                     logger.info(f"[SelfHealing] Cleaned up {killed} stale processes")

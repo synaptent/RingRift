@@ -13222,7 +13222,8 @@ class P2POrchestrator(
             # Ignore self-heartbeats so NAT detection + leader election aren't
             # distorted when COORDINATOR_URL includes this node's own endpoint(s).
             if peer_info.node_id == self.node_id:
-                self._update_self_info()
+                # Jan 23, 2026: Use async version to avoid blocking event loop
+                await self._update_self_info_async()
                 payload = self.self_info.to_dict()
                 voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
                 if voter_node_ids:
@@ -13408,7 +13409,8 @@ class P2POrchestrator(
             self._sync_peer_snapshot()
 
             # Return our info
-            self._update_self_info()
+            # Jan 23, 2026: Use async version to avoid blocking event loop
+            await self._update_self_info_async()
             payload = self.self_info.to_dict()
             voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
             if voter_node_ids:
@@ -14315,7 +14317,8 @@ class P2POrchestrator(
         Also handles lease-based leadership updates.
         """
         try:
-            self._update_self_info()
+            # Jan 23, 2026: Use async version to avoid blocking event loop
+            await self._update_self_info_async()
             data = await request.json()
             new_leader_raw = data.get("leader_id")
             if not new_leader_raw:
@@ -20559,7 +20562,8 @@ print(json.dumps({{
 
         http_failed = False
         # Prepare payload outside try block so it's available for SSH fallback
-        self._update_self_info()
+        # Jan 23, 2026: Use async version to avoid blocking event loop
+        await self._update_self_info_async()
         payload = self.self_info.to_dict()
         voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
         if voter_node_ids:
@@ -27151,6 +27155,10 @@ print(json.dumps({{
         Returns game counts from local canonical databases for quick access.
         For full multi-source data, use /data/summary endpoint.
 
+        January 23, 2026: FIXED - Removed blocking SQLite fallback that was
+        causing event loop blocks. Now only returns cached data or empty dict.
+        The fallback to canonical DB scan should be done via async methods.
+
         Returns:
             Dict with total game counts per config from local canonical DBs
         """
@@ -27167,21 +27175,15 @@ print(json.dumps({{
                         "config_count": len(counts),
                     }
 
-            # Fall back to local canonical DB scan
-            game_counts = self._seed_selfplay_scheduler_game_counts_sync()
-            if game_counts:
-                return {
-                    "total_games": sum(game_counts.values()),
-                    "by_config": game_counts,
-                    "source": "canonical_databases",
-                    "config_count": len(game_counts),
-                }
-
+            # FIXED Jan 23, 2026: Do NOT fall back to blocking SQLite scan here.
+            # The sync method _seed_selfplay_scheduler_game_counts_sync() was
+            # blocking the event loop for seconds. Return empty dict instead.
+            # Game counts will be populated async via selfplay_scheduler.
             return {
                 "total_games": 0,
                 "by_config": {},
                 "source": "none",
-                "error": "No game data available",
+                "error": "No cached data - scheduler not initialized yet",
             }
 
         except Exception as e:  # noqa: BLE001
