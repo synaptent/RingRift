@@ -18149,6 +18149,36 @@ print(json.dumps(result))
     # Feature 4: Training Efficiency Dashboard
     # =========================================================================
 
+    def _get_elo_history_sync(self, db_path: Path, cutoff_time: float) -> dict[str, dict]:
+        """Get Elo history from database synchronously.
+
+        IMPORTANT: This is a blocking operation. Call via asyncio.to_thread() from async code.
+        Added Jan 25, 2026 to fix event loop blocking in _get_training_efficiency_cached().
+        """
+        elo_history: dict[str, dict] = {}
+        if not db_path.exists():
+            return elo_history
+
+        try:
+            with safe_db_connection(db_path) as conn:
+                rows = conn.execute("""
+                    SELECT board_type, num_players, participant_id, rating, timestamp
+                    FROM rating_history
+                    WHERE timestamp > ?
+                    ORDER BY timestamp ASC
+                """, (cutoff_time,)).fetchall()
+
+                for row in rows:
+                    config = f"{row[0]}_{row[1]}p"
+                    if config not in elo_history:
+                        elo_history[config] = {"ratings": [], "timestamps": []}
+                    elo_history[config]["ratings"].append(row[3])
+                    elo_history[config]["timestamps"].append(row[4])
+        except (sqlite3.Error, OSError):
+            pass
+
+        return elo_history
+
     async def _get_training_efficiency_cached(self) -> dict[str, Any]:
         """Get training efficiency metrics with caching (5 min TTL)."""
         import re
@@ -18168,24 +18198,9 @@ print(json.dumps(result))
         try:
             # Get Elo history to track improvements
             db_path = ai_root / "data" / "unified_elo.db"
-            elo_history = {}
 
-            if db_path.exists():
-                # Phase 3.4 Dec 29, 2025: Use context manager to prevent connection leaks
-                with safe_db_connection(db_path) as conn:
-                    rows = conn.execute("""
-                        SELECT board_type, num_players, participant_id, rating, timestamp
-                        FROM rating_history
-                        WHERE timestamp > ?
-                        ORDER BY timestamp ASC
-                    """, (now - 86400 * 7,)).fetchall()  # Last 7 days
-
-                    for row in rows:
-                        config = f"{row[0]}_{row[1]}p"
-                        if config not in elo_history:
-                            elo_history[config] = {"ratings": [], "timestamps": []}
-                        elo_history[config]["ratings"].append(row[3])
-                        elo_history[config]["timestamps"].append(row[4])
+            # Jan 25, 2026: Use asyncio.to_thread() for blocking SQLite operation
+            elo_history = await asyncio.to_thread(self._get_elo_history_sync, db_path, now - 86400 * 7)
 
             # Parse training logs for GPU hours
             logs_dir = ai_root / "logs" / "training"
@@ -18268,6 +18283,35 @@ print(json.dumps(result))
     # Feature 5: Automated Model Rollback
     # =========================================================================
 
+    def _get_rollback_elo_data_sync(self, db_path: Path) -> dict[str, list]:
+        """Get Elo data for rollback detection synchronously.
+
+        IMPORTANT: This is a blocking operation. Call via asyncio.to_thread() from async code.
+        Added Jan 25, 2026 to fix event loop blocking in _check_rollback_conditions().
+        """
+        elo_data: dict[str, list] = {}
+        if not db_path.exists():
+            return elo_data
+
+        try:
+            with safe_db_connection(db_path) as conn:
+                rows = conn.execute("""
+                    SELECT board_type, num_players, participant_id, rating, timestamp
+                    FROM rating_history
+                    ORDER BY timestamp DESC
+                    LIMIT 1000
+                """).fetchall()
+
+                for row in rows:
+                    config = f"{row[0]}_{row[1]}p"
+                    if config not in elo_data:
+                        elo_data[config] = []
+                    elo_data[config].append({"model": row[2], "rating": row[3], "timestamp": row[4]})
+        except (sqlite3.Error, OSError):
+            pass
+
+        return elo_data
+
     async def _check_rollback_conditions(self) -> dict[str, Any]:
         """Check if any models should be rolled back based on metrics."""
         rollback_status = {"candidates": [], "recent_rollbacks": [], "config_status": {}}
@@ -18280,23 +18324,8 @@ print(json.dumps(result))
             ai_root = Path(self._get_ai_service_path())
             db_path = ai_root / "data" / "unified_elo.db"
 
-            elo_data = {}
-            if db_path.exists():
-                import sqlite3
-                # Phase 3.4 Dec 29, 2025: Use context manager to prevent connection leaks
-                with safe_db_connection(db_path) as conn:
-                    rows = conn.execute("""
-                        SELECT board_type, num_players, participant_id, rating, timestamp
-                        FROM rating_history
-                        ORDER BY timestamp DESC
-                        LIMIT 1000
-                    """).fetchall()
-
-                    for row in rows:
-                        config = f"{row[0]}_{row[1]}p"
-                        if config not in elo_data:
-                            elo_data[config] = []
-                        elo_data[config].append({"model": row[2], "rating": row[3], "timestamp": row[4]})
+            # Jan 25, 2026: Use asyncio.to_thread() for blocking SQLite operation
+            elo_data = await asyncio.to_thread(self._get_rollback_elo_data_sync, db_path)
 
             # Check each config for rollback conditions
             for config, holdout_data in holdout.get("configs", {}).items():
