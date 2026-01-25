@@ -53,7 +53,10 @@ TAILSCALE_IPV6_NETWORK = ipaddress.ip_network("fd7a:115c:a1e0::/48")
 # Dec 2025: Now configurable via environment variable for cluster tuning.
 # Jan 25, 2026: Reduced from 15s to 10s for faster failure detection.
 # With 150s PEER_TIMEOUT, 10s interval = 15 missed heartbeats before DEAD.
-HEARTBEAT_INTERVAL = int(os.environ.get("RINGRIFT_P2P_HEARTBEAT_INTERVAL", "10") or 10)
+# Jan 25, 2026 (later): Reverted to 15s for 40+ node clusters. With 40 nodes,
+# 10s creates 160+ heartbeat messages/second, causing congestion and false timeouts.
+# At 15s: 40 * (40-1) / 15 = 104 heartbeats/sec, much more manageable.
+HEARTBEAT_INTERVAL = int(os.environ.get("RINGRIFT_P2P_HEARTBEAT_INTERVAL", "15") or 15)
 # Dec 2025: Originally reduced from 90s to 60s for faster failure detection.
 # Dec 30, 2025: Increased back to 90s for coordinator nodes behind NAT.
 # Jan 2, 2026: Increased to 120s for NAT-blocked nodes (Lambda GH200, RunPod) that
@@ -110,10 +113,11 @@ def get_peer_timeout_for_node(is_coordinator: bool = False, nat_blocked: bool = 
 # Adding randomness desynchronizes these checks.
 # Jan 24, 2026: Reduced from ±10% to ±5% for faster gossip convergence.
 # Jan 25, 2026: Reduced from ±5% to ±3% to minimize disagreement window.
-# With 150s timeout and ±3% jitter, max disagreement is 9s (150s * 0.03 * 2 = 9s).
-# This allows gossip to converge within 1 round (12s interval) before deaths.
+# Jan 25, 2026 (later): Further reduced from ±3% to ±1% for 40+ node clusters.
+# With 180s timeout and ±1% jitter, max disagreement is 3.6s (180s * 0.01 * 2).
+# This ensures gossip converges within 1 heartbeat interval (15s) before deaths.
 PEER_TIMEOUT_JITTER_FACTOR = float(
-    os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT_JITTER", "0.03") or 0.03
+    os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT_JITTER", "0.01") or 0.01
 )
 
 
@@ -217,9 +221,12 @@ PEER_DEATH_RATE_LIMIT = int(
 # Jan 24, 2026: Increased from 60s to 90s to reduce false-positive SUSPECT states.
 # Creates sequence: SUSPECT(90s) → PEER_TIMEOUT(120s) → RETIRE(180s).
 # Jan 25, 2026: Decreased from 90s to 60s for earlier suspect detection.
-# With PEER_TIMEOUT=150s, creates 90s gap between SUSPECT and DEAD.
-# Sequence: SUSPECT(60s) → DEAD(150s) → RETIRE(210s).
-SUSPECT_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_SUSPECT_TIMEOUT", "60") or 60)
+# Jan 25, 2026 (later): Increased back to 90s for 40+ node clusters.
+# With 60s SUSPECT, 40 nodes all marking peers SUSPECT simultaneously creates
+# gossip storms (40 * 40 = 1600 state updates). At 90s SUSPECT + 15s heartbeat,
+# nodes have 6 missed heartbeats before SUSPECT, allowing more time for recovery.
+# Sequence: SUSPECT(90s) → DEAD(180s) → RETIRE(240s).
+SUSPECT_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_SUSPECT_TIMEOUT", "90") or 90)
 
 # Jan 2, 2026 (Sprint 3.5): Dynamic voter promotion delay
 # When enabled via RINGRIFT_P2P_DYNAMIC_VOTER=true, this delay prevents premature promotion
