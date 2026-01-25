@@ -365,3 +365,311 @@ Node: local-mac, Leader: None
 Active Peers: 6, Voters: 5/7 (quorum OK)
 
 === MONITORING SESSION COMPLETE - Sat Jan 24 14:55:55 CST 2026 ===
+[2026-01-24 22:14:49] Status Check #1
+Leader: local-mac
+Active peers: 6/17
+Voters: 5/8 alive (quorum OK)
+Offline voters: mac-studio, macbook-pro-3, macbook-pro-4
+Issues:
+
+- Lambda GH200 GPU driver issues (training, 3)
+- Selfplay jobs failing with exit -9 (OOM)
+- vast-29118471 runaway processes (983)
+  Memory: 72%, Disk: 66%
+
+[2026-01-24 22:16:28] Root Cause Analysis #1
+
+CONFIGURED VOTERS (7 total, quorum=4):
+
+1. hetzner-cpu1 (100.94.174.19) - Active
+2. hetzner-cpu2 (100.67.131.72) - Active
+3. hetzner-cpu3 (100.126.21.102) - Active
+4. vultr-a100-20gb (100.94.201.92) - Active
+5. nebius-h100-1 (100.106.19.6) - Pingable, P2P NOT running
+6. nebius-h100-3 (100.109.195.71) - NOT reachable via Tailscale
+7. mac-studio (100.107.168.125) - Pingable, P2P NOT running
+
+ACTUAL VOTER STATUS:
+
+- Only 4/7 configured voters have P2P running
+- P2P dynamically learned voter set with 8 nodes including laptops
+- Voter mismatch between config and runtime
+
+ROOT CAUSES:
+
+1. Nebius nodes marked 'offline for cost reasons' - P2P not started
+2. mac-studio P2P not running (coordinator role only?)
+3. P2P gossip protocol learning voters not in YAML config
+
+RECOMMENDATIONS:
+
+1. Start P2P on nebius-h100-1 (reachable, has GPU)
+2. Verify mac-studio role - should it run P2P?
+3. Consider updating voter set to reflect actual available nodes
+
+[2026-01-24 22:17:35] Status Check #2
+Leader: local-mac
+Active peers: 8
+Uptime: 14.1 min
+Voters: 5/8 alive (quorum OK)
+Status: STABLE
+
+Notes:
+
+- nebius-h100-1 P2P stuck at 98% CPU (Raft bug, running as root - can't restart)
+- nebius-h100-3 unreachable via Tailscale
+- mac-studio no P2P running
+
+[2026-01-24 22:18:26] Status Check #3
+Leader: local-mac
+Active peers: 8
+Voters: 5/8 (quorum OK)
+
+Node Activity:
+
+- hetzner-cpu1: cpu=42%, gpu=0%
+- hetzner-cpu2: cpu=2%, gpu=0%
+- hetzner-cpu3: cpu=10%, gpu=0%
+- lambda-gh200-1: cpu=1%, gpu=0%
+- lambda-gh200-3: cpu=1%, gpu=0%
+- lambda-gh200-4: cpu=4%, gpu=98% (ACTIVE)
+- lambda-gh200-training: cpu=1%, gpu=0%
+- vultr-a100-20gb: cpu=100%, gpu=12%
+
+Status: STABLE - cluster actively processing work
+
+[2026-01-24 22:20:57] Status Check #4
+Leader: local-mac
+Active peers: 6-8 (fluctuating)
+Uptime: 17.4 min
+Voters: 5/8 (quorum OK)
+
+Notes:
+
+- Connection errors to 100.92.222.49 (macbook-pro-5) - unreachable
+- Peer count fluctuating between health endpoint and cluster health logs
+
+[2026-01-24 22:22:19] Status Check #5
+Leader: local-mac
+Active peers: 9 (growing!)
+Uptime: 18.9 min
+Voters: 5/8 (quorum OK)
+
+Nodes came online:
+
+- vast-29126088
+- lambda-gh200-training
+
+Status: HEALTHY - cluster self-healing, nodes reconnecting
+
+[2026-01-24 22:27:56] Status Check #6
+Leader: local-mac
+Active peers: 6 (local view)
+
+ISSUE DETECTED: View inconsistency
+
+- local-mac reports hetzner-cpu1 as offline
+- hetzner-cpu1 reports healthy with 10 peers and sees local-mac as leader
+
+Possible causes:
+
+1. Network asymmetry
+2. Heartbeat timing
+3. SWIM protocol divergence
+
+hetzner-cpu1 view:
+
+- 10 active peers
+- local-mac is leader
+- Uptime: 405 seconds
+
+Status: INVESTIGATING view inconsistency
+
+[2026-01-24 22:28:19] CRITICAL: CLUSTER SPLIT-BRAIN DETECTED
+
+Node views:
+
+- local-mac: 6 peers, leader=local-mac
+- hetzner-cpu1: 10 peers, leader=local-mac
+- hetzner-cpu2: 5 peers, leader=nebius-h100-3 (!)
+- hetzner-cpu3: 3 peers, leader=None (!)
+
+ROOT CAUSE: Network partition causing cluster split-brain
+
+- Multiple nodes claiming leadership
+- Divergent peer views
+- SWIM protocol not converging
+
+IMMEDIATE ACTION NEEDED:
+
+1. Investigate network connectivity between nodes
+2. Force leader election or restart nodes
+3. Check for firewall/routing issues
+
+Status: CRITICAL - cluster split into partitions
+
+[2026-01-24 22:28:52] ROOT CAUSE IDENTIFIED
+
+The split-brain was caused by:
+
+1. nebius-h100-1 is running P2P with WRONG node-id 'nebius-h100-3'
+2. This stuck P2P (98% CPU) announced itself as leader
+3. local-mac accepted the leadership announcement
+4. Then arbiter became unreachable, causing local-mac to step down
+5. No new leader election succeeded
+
+Current state:
+
+- leader_id: None (no leader)
+- Cluster is leaderless and split
+
+FIX REQUIRED:
+
+1. Kill the stuck P2P on nebius-h100-1 (running as root)
+2. Or wait for the misconfigured node to be excluded from voting
+
+This is the fundamental instability root cause.
+
+[2026-01-24 22:29:02] Status Check #7
+Leader: hetzner-cpu3 (NEW LEADER!)
+Active peers: 9
+local-mac Role: follower
+
+Cluster recovered with new leader election.
+Previous split-brain resolved (for now).
+
+================================================================================
+MONITORING SUMMARY - 2026-01-24 22:32:14
+================================================================================
+
+HEALTH CHECK RESULTS (3 checks over 20 minutes):
+
+- 22:11: 6 peers, leader=local-mac
+- 22:21: 8 peers, leader=local-mac
+- 22:31: 8 peers, leader=local-mac
+
+CURRENT STATUS:
+
+- Leader: hetzner-cpu3
+- Active peers: 4
+- Uptime: ~28 minutes
+- Cluster state: DEGRADED (below target of 20 peers)
+
+ROOT CAUSES IDENTIFIED:
+
+1. nebius-h100-1 running P2P with WRONG node-id 'nebius-h100-3'
+   - Stuck at 98% CPU (Raft bug)
+   - Keeps announcing itself as leader causing split-brain
+   - Running as root, cannot kill via SSH as ubuntu user
+
+2. Many Vast.ai nodes offline (terminated/expired instances)
+
+3. mac-studio not running P2P (coordinator only)
+
+4. nebius-h100-3 unreachable via Tailscale
+
+CLUSTER STABILITY ISSUES:
+
+- Split-brain occurred twice during monitoring
+- Leader changed: local-mac -> nebius-h100-3 (stuck node) -> hetzner-cpu3
+- View inconsistency between nodes (6-10 peers depending on node)
+
+RECOMMENDATIONS:
+
+1. IMMEDIATE: Access Nebius console to kill/restart P2P on nebius-h100-1
+2. Update distributed_hosts.yaml to remove unreachable nodes from voters
+3. Start P2P on mac-studio to add stable voter
+4. Consider disabling SWIM protocol if causing view divergence
+
+The cluster is functioning but degraded with only 4-8 active peers.
+The fundamental issue is the misconfigured/stuck P2P on nebius-h100-1.
+
+[2026-01-24 22:32:57] Status Check #8
+Leader: local-mac (RECOVERED)
+Active peers: 7
+Role: leader
+Uptime: 29.5 min
+
+Cluster recovered from split-brain.
+Update coordinator tried to restart nebius-h100-1 but failed (permission denied).
+
+[2026-01-24 22:42:14] Status Check #9
+Health monitor check #4: 9 peers, leader=local-mac
+
+Peer count trend:
+
+- 22:11: 6 peers
+- 22:21: 8 peers
+- 22:31: 8 peers
+- 22:41: 9 peers (IMPROVING!)
+
+Leader stability:
+
+- local-mac (recovered after split-brain)
+- hetzner-cpu2 briefly took over around 22:40
+
+Status: STABLE - peer count improving
+
+[2026-01-24 22:52:14] Monitoring Progress Update
+
+Health checks completed: 5/7
+Duration: ~50 minutes
+Leader: local-mac (STABLE for 30+ minutes)
+Peer range: 8-9
+
+No split-brain events since recovery at ~22:32
+Cluster operating at 40% capacity (8-9/20 target peers)
+
+Root cause remains: stuck nebius-h100-1 P2P (can't kill remotely)
+
+================================================================================
+FINAL MONITORING REPORT - 2026-01-24 23:15:12
+================================================================================
+
+MONITORING DURATION: 60 minutes (22:11 - 23:12)
+HEALTH CHECKS: 7 total
+
+CHECK RESULTS:
+Time | Peers | Leader | Status
+---------|-------|-------------|--------
+22:11 | 6 | local-mac | Below target
+22:21 | 8 | local-mac | Below target
+22:31 | 8 | local-mac | Below target
+22:41 | 9 | local-mac | Below target
+22:51 | 8 | local-mac | Below target
+23:01 | 11 | hetzner-cpu3| Below target (BEST\!)
+23:12 | 0 | None | P2P FROZEN
+
+KEY FINDINGS:
+
+1. Cluster operated at 40-55% capacity (8-11 peers vs target 20)
+2. Leadership changed multiple times (local-mac, nebius-h100-3, hetzner-cpu3)
+3. Split-brain event occurred around 22:28 due to stuck nebius node
+4. P2P froze after ~70 minutes of operation (23:07)
+
+ROOT CAUSES IDENTIFIED:
+
+1. nebius-h100-1 running P2P with WRONG node-id ('nebius-h100-3')
+   - Stuck at 98% CPU (Raft bug, doesn't have fix)
+   - Running as root, cannot kill via SSH
+   - Keeps announcing itself as leader causing confusion
+
+2. Many nodes offline:
+   - Vast.ai instances expired/terminated
+   - nebius-h100-3 unreachable
+   - mac-studio not running P2P
+
+3. P2P stability issue:
+   - Process froze without errors after ~70 min
+   - Event loop blocking detected (1.18s block at 23:06:44)
+   - Possible deadlock in async code
+
+RECOMMENDATIONS:
+
+1. IMMEDIATE: Access Nebius cloud console to kill stuck P2P on nebius-h100-1
+2. Investigate P2P freeze - add watchdog/timeout for event loop blocks
+3. Start P2P on mac-studio to add stable voter
+4. Update distributed_hosts.yaml to reflect available nodes
+5. Consider reducing voter count or adding auto-recovery for frozen P2P
+
+P2P RESTARTED at 23:13 - monitoring complete

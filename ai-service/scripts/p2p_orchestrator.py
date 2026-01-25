@@ -7769,10 +7769,14 @@ class P2POrchestrator(
         try:
             # Get all local IPs via getaddrinfo
             local_ips: set[str] = set()
+
+            # Try hostname resolution (may fail in containers)
             try:
-                for addr in socket.getaddrinfo(socket.gethostname(), None):
+                hostname = socket.gethostname()
+                for addr in socket.getaddrinfo(hostname, None):
                     local_ips.add(addr[4][0])
-            except socket.gaierror:
+            except (socket.gaierror, socket.herror, OSError, UnicodeError):
+                # Container environments often can't resolve their own hostname
                 pass
 
             # Also check common interface discovery
@@ -7780,8 +7784,22 @@ class P2POrchestrator(
                 # Check localhost variations
                 for addr in socket.getaddrinfo("localhost", None):
                     local_ips.add(addr[4][0])
-            except socket.gaierror:
+            except (socket.gaierror, socket.herror, OSError):
                 pass
+
+            # Fallback: use netifaces or subprocess if available (for containers)
+            if not local_ips:
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ["hostname", "-I"],
+                        capture_output=True, text=True, timeout=2
+                    )
+                    if result.returncode == 0:
+                        for ip in result.stdout.strip().split():
+                            local_ips.add(ip)
+                except Exception:
+                    pass
 
             if voter_ips & local_ips:
                 matching = voter_ips & local_ips
@@ -7799,10 +7817,18 @@ class P2POrchestrator(
         # Method 5: Check Tailscale CGNAT range IPs we might have
         try:
             from app.p2p.config import TAILSCALE_CGNAT_NETWORK
-            for addr in socket.getaddrinfo(socket.gethostname(), None):
-                ip = addr[4][0]
+            import ipaddress
+
+            # Safely get hostname IPs (may fail in containers)
+            hostname_ips = []
+            try:
+                hostname = socket.gethostname()
+                hostname_ips = [addr[4][0] for addr in socket.getaddrinfo(hostname, None)]
+            except (socket.gaierror, socket.herror, OSError, UnicodeError):
+                pass
+
+            for ip in hostname_ips:
                 try:
-                    import ipaddress
                     if ipaddress.ip_address(ip) in TAILSCALE_CGNAT_NETWORK:
                         if ip in voter_ips:
                             logger.debug(f"[VoterSelfRecognition] Matched via Tailscale CGNAT: {ip}")
@@ -17436,30 +17462,20 @@ print(json.dumps(result))
         setattr(self, cache_time_key, now)
         return metrics
 
-    async def _get_holdout_metrics_cached(self) -> dict[str, Any]:
-        """Get holdout validation metrics with caching (5 min TTL)."""
+    def _get_holdout_metrics_sync(self, db_path: Path) -> dict[str, Any]:
+        """Synchronous helper for holdout metrics (runs in thread pool).
+
+        Jan 25, 2026: Extracted from async method to avoid blocking event loop.
+        SQLite operations are blocking and must run in a separate thread.
+        """
         import sqlite3
 
-        cache_key = "_holdout_metrics_cache"
-        cache_time_key = "_holdout_metrics_cache_time"
-        cache_ttl = 300
-
-        now = time.time()
-        if hasattr(self, cache_key) and hasattr(self, cache_time_key) and now - getattr(self, cache_time_key) < cache_ttl:
-            return getattr(self, cache_key)
-
-        ai_root = Path(self._get_ai_service_path())
-        db_path = ai_root / "data" / "holdouts" / "holdout_validation.db"
-
-        metrics = {"configs": {}, "evaluations": [], "summary": {}}
+        metrics: dict[str, Any] = {"configs": {}, "evaluations": [], "summary": {}}
 
         if not db_path.exists():
-            setattr(self, cache_key, metrics)
-            setattr(self, cache_time_key, now)
             return metrics
 
         try:
-            # Phase 3.4 Dec 29, 2025: Use context manager to prevent connection leaks
             with safe_db_connection(db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
@@ -17516,6 +17532,27 @@ print(json.dumps(result))
                 metrics["summary"]["total_evaluations"] = cursor.fetchone()[0]
         except (sqlite3.Error, OSError, KeyError, IndexError, TypeError):
             pass
+
+        return metrics
+
+    async def _get_holdout_metrics_cached(self) -> dict[str, Any]:
+        """Get holdout validation metrics with caching (5 min TTL).
+
+        Jan 25, 2026: Fixed event loop blocking by running SQLite in thread pool.
+        """
+        cache_key = "_holdout_metrics_cache"
+        cache_time_key = "_holdout_metrics_cache_time"
+        cache_ttl = 300
+
+        now = time.time()
+        if hasattr(self, cache_key) and hasattr(self, cache_time_key) and now - getattr(self, cache_time_key) < cache_ttl:
+            return getattr(self, cache_key)
+
+        ai_root = Path(self._get_ai_service_path())
+        db_path = ai_root / "data" / "holdouts" / "holdout_validation.db"
+
+        # Jan 25, 2026: Run blocking SQLite operations in thread pool to avoid blocking event loop
+        metrics = await asyncio.to_thread(self._get_holdout_metrics_sync, db_path)
 
         setattr(self, cache_key, metrics)
         setattr(self, cache_time_key, now)
