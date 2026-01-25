@@ -3294,8 +3294,8 @@ class GossipDefaults:
 
     # Consecutive failures before marking peer as suspect
     # Jan 2026: Increased from 4 to 8 for more tolerance with flaky cross-cloud networks
-    # (Lambda↔Vast↔RunPod connections can have transient failures)
-    FAILURE_THRESHOLD: int = _env_int("RINGRIFT_GOSSIP_FAILURE_THRESHOLD", 8)
+    # Jan 24, 2026: Increased from 8 to 10 for better stability on 40+ node clusters
+    FAILURE_THRESHOLD: int = _env_int("RINGRIFT_GOSSIP_FAILURE_THRESHOLD", 10)
 
     # Maximum gossip message size in bytes (1MB default)
     MAX_MESSAGE_SIZE_BYTES: int = _env_int("RINGRIFT_GOSSIP_MAX_MESSAGE_SIZE", 1_048_576)

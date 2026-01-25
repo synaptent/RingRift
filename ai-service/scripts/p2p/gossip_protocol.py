@@ -52,14 +52,12 @@ except ImportError:
     GOSSIP_FAILURE_SUSPECT_THRESHOLD = 5  # Fallback
 
 # Jan 2026: Use centralized timeout from LoopTimeouts
-# Jan 10, 2026: Reduced from 5.0 to 2.0 to fix lock contention on 40+ node clusters
-# Jan 15, 2026: Made adaptive via environment variable for large clusters
-# Jan 20, 2026: Increased fallback to 3.0s for 40+ node stability (was 2.0s)
+# Jan 24, 2026: Increased from 2.0 to 4.0 for 40+ node cluster stability
 try:
     from scripts.p2p.loops.loop_constants import LoopTimeouts
     _GOSSIP_LOCK_TIMEOUT_BASE = LoopTimeouts.GOSSIP_LOCK
 except ImportError:
-    _GOSSIP_LOCK_TIMEOUT_BASE = 3.0  # Fallback (was 2.0, increased for 40+ node clusters)
+    _GOSSIP_LOCK_TIMEOUT_BASE = 4.0  # Fallback: 4.0s for 40+ node clusters
 
 # Allow override via environment variable for large clusters
 _GOSSIP_LOCK_TIMEOUT = float(

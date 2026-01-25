@@ -61,7 +61,9 @@ HEARTBEAT_INTERVAL = int(os.environ.get("RINGRIFT_P2P_HEARTBEAT_INTERVAL", "15")
 # Jan 23, 2026: REVERTED to 90s - 180s + ±25% jitter created 70s disagreement window
 # causing nodes to disagree on liveness. With 90s unified timeout and ±10% jitter,
 # disagreement window is only 18s, much better for gossip convergence.
-PEER_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT", "90") or 90)
+# Jan 24, 2026: Increased from 90s to 120s for better stability on 40+ node clusters.
+# With ±5% jitter on 120s, disagreement window is only 12s (vs 18s at 90s with ±10%).
+PEER_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT", "120") or 120)
 # Jan 23, 2026: UNIFIED - All node types now use the same timeout (90s) for consistency.
 # Role-based timeouts caused different nodes to disagree on peer liveness, breaking gossip.
 # NAT-blocked nodes compensate via retry/relay, not longer timeouts.
@@ -99,11 +101,11 @@ def get_peer_timeout_for_node(is_coordinator: bool = False, nat_blocked: bool = 
 # When multiple nodes check peer liveness at exactly the same timeout,
 # they all mark the same slow peer dead simultaneously, causing gossip storms.
 # Adding randomness desynchronizes these checks.
-# Jan 23, 2026: REVERTED to ±10% - ±25% with 180s timeout created 70s disagreement windows.
-# With unified 90s timeout and ±10% jitter, max disagreement is 18s (90s * 0.2 = 18s).
-# This is small enough for gossip to converge within 2-3 rounds (24-36s at 12s interval).
+# Jan 24, 2026: Reduced from ±10% to ±5% for faster gossip convergence.
+# With 120s timeout and ±5% jitter, max disagreement is 12s (120s * 0.1 = 12s).
+# This allows gossip to converge within 1 round (12s interval).
 PEER_TIMEOUT_JITTER_FACTOR = float(
-    os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT_JITTER", "0.10") or 0.10
+    os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT_JITTER", "0.05") or 0.05
 )
 
 
@@ -204,7 +206,9 @@ PEER_DEATH_RATE_LIMIT = int(
 # SUSPECT->DEAD cascade failures. With 15s heartbeats: 3 missed = suspect, 6 missed = dead.
 # Jan 21, 2026: Increased from 45s to 60s for Phase 1 timeout staggering.
 # Creates sequence: SUSPECT(60s) → PEER_TIMEOUT(120s) → RETIRE(180s) to prevent race conditions.
-SUSPECT_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_SUSPECT_TIMEOUT", "60") or 60)
+# Jan 24, 2026: Increased from 60s to 90s to reduce false-positive SUSPECT states.
+# Creates sequence: SUSPECT(90s) → PEER_TIMEOUT(120s) → RETIRE(180s).
+SUSPECT_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_SUSPECT_TIMEOUT", "90") or 90)
 
 # Jan 2, 2026 (Sprint 3.5): Dynamic voter promotion delay
 # When enabled via RINGRIFT_P2P_DYNAMIC_VOTER=true, this delay prevents premature promotion
@@ -226,10 +230,9 @@ ELECTION_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_ELECTION_TIMEOUT", "15") or 
 # can cause lease renewal to fail even with Tailscale.
 # Jan 2, 2026: Increased from 180s to 300s to reduce election churn during transient
 # network issues. 80% of 10-minute monitoring windows showed leaderless states with 180s.
-# Jan 21, 2026: Reduced from 300s to 150s for Phase 1 timeout alignment.
-# Probe threshold (100s) is now 2/3 of lease (150s), giving 50s buffer before election.
-# Rollback: RINGRIFT_USE_LEGACY_TIMEOUTS=true
-LEADER_LEASE_DURATION = int(os.environ.get("RINGRIFT_P2P_LEADER_LEASE_DURATION", "150") or 150)
+# Jan 24, 2026: Restored to 300s for 40+ node cluster stability.
+# 150s lease with 15s heartbeat was too aggressive for cross-cloud networks.
+LEADER_LEASE_DURATION = int(os.environ.get("RINGRIFT_P2P_LEADER_LEASE_DURATION", "300") or 300)
 LEADER_LEASE_RENEW_INTERVAL = 15  # How often leader renews lease
 
 # Leaderless fallback - trigger local training when no leader for this long

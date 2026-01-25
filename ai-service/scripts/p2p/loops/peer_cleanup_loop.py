@@ -68,9 +68,10 @@ class PeerCleanupConfig:
 
     # Tier 2: Auto-purge from memory (definitively gone)
     # Jan 12, 2026: Reduced from 6 hours to 1 hour to prevent dead node accumulation
+    # Jan 24, 2026: Reduced from 1 hour to 20 minutes for faster cleanup of stale peers
     tier2_purge_seconds: float = field(
         default_factory=lambda: float(
-            os.environ.get("RINGRIFT_PEER_PURGE_THRESHOLD", "3600")
+            os.environ.get("RINGRIFT_PEER_PURGE_THRESHOLD", "1200")
         )
     )
 

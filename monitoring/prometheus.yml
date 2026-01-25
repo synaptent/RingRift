@@ -20,33 +20,33 @@ scrape_configs:
   # P2P orchestrator on all nodes
   - job_name: 'ringrift-p2p'
     static_configs:
-      - targets: ['100.94.174.19:9091']
-        labels:
-          node="hetzner-cpu1"
       - targets: ['100.67.131.72:9091']
         labels:
           node="hetzner-cpu2"
-      - targets: ['100.126.21.102:9091']
+      - targets: ['100.94.174.19:9091']
         labels:
-          node="hetzner-cpu3"
-      - targets: ['93.91.156.82:9091']
+          node="hetzner-cpu1"
+      - targets: ['100.94.201.92:9091']
         labels:
-          node="vast-29128352"
+          node="vultr-a100-20gb"
+      - targets: ['100.69.101.108:9091']
+        labels:
+          node="lambda-gh200-3"
       - targets: ['100.68.208.43:9091']
         labels:
           node="lambda-gh200-training"
-      - targets: ['171.8.233.169:9091']
+      - targets: ['100.71.89.91:9091']
         labels:
-          node="vast-29118471"
-      - targets: ['100.109.195.71:9091']
+          node="lambda-gh200-1"
+      - targets: ['100.69.164.58:9091']
         labels:
-          node="nebius-h100-3"
-      - targets: ['100.127.168.116:9091']
+          node="local-mac"
+      - targets: ['100.106.87.89:9091']
         labels:
-          node="lambda-gh200-9"
-      - targets: ['154.42.3.70:9091']
+          node="lambda-gh200-11"
+      - targets: ['100.100.19.96:9091']
         labels:
-          node="vast-30274240"
+          node="lambda-gh200-10"
       - targets: ['localhost:8770']
         labels:
           node="mac-studio", role="leader"
@@ -54,33 +54,33 @@ scrape_configs:
   # Node exporter on all nodes
   - job_name: 'node_exporter'
     static_configs:
-      - targets: ['100.94.174.19:9100']
-        labels:
-          node="hetzner-cpu1"
       - targets: ['100.67.131.72:9100']
         labels:
           node="hetzner-cpu2"
-      - targets: ['100.126.21.102:9100']
+      - targets: ['100.94.174.19:9100']
         labels:
-          node="hetzner-cpu3"
-      - targets: ['93.91.156.82:9100']
+          node="hetzner-cpu1"
+      - targets: ['100.94.201.92:9100']
         labels:
-          node="vast-29128352"
+          node="vultr-a100-20gb"
+      - targets: ['100.69.101.108:9100']
+        labels:
+          node="lambda-gh200-3"
       - targets: ['100.68.208.43:9100']
         labels:
           node="lambda-gh200-training"
-      - targets: ['171.8.233.169:9100']
+      - targets: ['100.71.89.91:9100']
         labels:
-          node="vast-29118471"
-      - targets: ['100.109.195.71:9100']
+          node="lambda-gh200-1"
+      - targets: ['100.69.164.58:9100']
         labels:
-          node="nebius-h100-3"
-      - targets: ['100.127.168.116:9100']
+          node="local-mac"
+      - targets: ['100.106.87.89:9100']
         labels:
-          node="lambda-gh200-9"
-      - targets: ['154.42.3.70:9100']
+          node="lambda-gh200-11"
+      - targets: ['100.100.19.96:9100']
         labels:
-          node="vast-30274240"
+          node="lambda-gh200-10"
       - targets: ['localhost:9100']
         labels:
           node="mac-studio", role="leader"

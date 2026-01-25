@@ -1,0 +1,7 @@
+{"timestamp": "2026-01-24T19:26:31.310011", "healthy": false, "leader": null, "alive_peers": 0, "issues": ["P2P not responding: timed out"]}
+{"timestamp": "2026-01-24T19:36:31.484877", "healthy": "local-mac", "leader": "local-mac", "alive_peers": 7, "issues": ["Below target of 20 peers: 7"]}
+{"timestamp": "2026-01-24T19:46:31.593120", "healthy": "local-mac", "leader": "local-mac", "alive_peers": 6, "issues": ["Below target of 20 peers: 6"]}
+{"timestamp": "2026-01-24T19:56:32.604692", "healthy": "local-mac", "leader": "local-mac", "alive_peers": 6, "issues": ["Below target of 20 peers: 6"]}
+{"timestamp": "2026-01-24T20:06:42.617029", "healthy": false, "leader": null, "alive_peers": 0, "issues": ["P2P not responding: timed out"]}
+{"timestamp": "2026-01-24T20:16:52.626225", "healthy": false, "leader": null, "alive_peers": 0, "issues": ["P2P not responding: timed out"]}
+{"timestamp": "2026-01-24T20:27:02.634950", "healthy": false, "leader": null, "alive_peers": 0, "issues": ["P2P not responding: timed out"]}

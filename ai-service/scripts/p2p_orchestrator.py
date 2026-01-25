@@ -5824,8 +5824,8 @@ class P2POrchestrator(
         ulsm_leader = self._leadership_sm._leader_id
 
         # Jan 23, 2026: Lowered threshold from 50% to 25% to help build consensus
-        # Also added proactive consensus building when no consensus exists
-        MIN_CONSENSUS_THRESHOLD = 0.25
+        # Jan 24, 2026: Raised back to 50% to prevent split-brain - require majority agreement
+        MIN_CONSENSUS_THRESHOLD = 0.50
 
         # If very low consensus (<25%), try to help build it by broadcasting our leader view
         if consensus_ratio < MIN_CONSENSUS_THRESHOLD:
@@ -23683,9 +23683,9 @@ print(json.dumps({{
 
         # Jan 5, 2026: Global election cooldown to prevent rapid election storms
         # This complements the per-loop backoff in _maybe_trigger_election()
-        # Jan 19, 2026: Reduced from 30s to 15s to match ELECTION_TIMEOUT
-        # CRITICAL FIX: 30s cooldown > 15s timeout caused 15s dead-leader gaps
-        ELECTION_GLOBAL_COOLDOWN = 15.0  # seconds
+        # Jan 24, 2026: Increased from 15s to 30s to prevent rapid re-elections
+        # With LEADER_LEASE_DURATION at 300s, 30s cooldown is safe and prevents churn
+        ELECTION_GLOBAL_COOLDOWN = 30.0  # seconds
         now = time.time()
         last_election = getattr(self, "_last_election_completed", 0.0)
         if now - last_election < ELECTION_GLOBAL_COOLDOWN:
