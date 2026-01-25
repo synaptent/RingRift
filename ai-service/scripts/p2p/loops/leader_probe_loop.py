@@ -121,7 +121,9 @@ class LeaderProbeLoop(BaseLoop):
         # Session 17.43: Split-brain detection (Phase 2)
         # Detects when claimed leader doesn't acknowledge its own leadership
         self._split_brain_detected = False
-        self._split_brain_check_interval = 3  # Check every 3rd cycle (~30s at 10s interval)
+        # Jan 25, 2026: Check split-brain on EVERY cycle (was every 3rd = 30s)
+        # This is critical for fast split-brain detection in 20+ node clusters
+        self._split_brain_check_interval = 1  # Check every cycle (~10s)
 
         # Jan 13, 2026: Dynamic failure threshold scaling (P2.1)
         # Scale failure threshold based on quorum health and latency
