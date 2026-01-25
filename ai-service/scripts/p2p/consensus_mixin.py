@@ -143,18 +143,19 @@ if PYSYNCOBJ_AVAILABLE:
             raft_dump_dir.mkdir(parents=True, exist_ok=True)
             raft_dump_path = str(raft_dump_dir / "raft_work_queue.dump")
 
-            # Jan 24, 2026: Keep autoTick=True but use slower tick period
-            # to prevent CPU-hogging while maintaining Raft functionality.
-            # Default autoTickPeriod is very small; 0.1s is more reasonable.
+            # Jan 24, 2026: Use RAFT_USE_MANUAL_TICK to control ticking mode.
+            # When manual_tick=True, AsyncRaftManager handles ticking to avoid busy-wait.
+            # When manual_tick=False (default), autoTick=True uses slower 0.1s tick period.
+            manual_tick = _consts["RAFT_USE_MANUAL_TICK"]
             conf = _SyncObjConf(
-                autoTick=True,
+                autoTick=not manual_tick,
                 autoTickPeriod=0.1,  # 100ms tick period (vs ~1ms default)
                 appendEntriesUseBatch=True,
                 fullDumpFile=raft_dump_path,  # Persist Raft state across restarts
                 logCompactionMinEntries=compaction_min_entries,
                 dynamicMembershipChange=True,  # Allow adding/removing nodes
             )
-            logger.info("ReplicatedWorkQueue: autoTick=True, autoTickPeriod=0.1s")
+            logger.info(f"ReplicatedWorkQueue: autoTick={not manual_tick}, manual_tick={manual_tick}")
 
             super().__init__(self_addr, partner_addrs, conf=conf)
 
@@ -383,9 +384,10 @@ if PYSYNCOBJ_AVAILABLE:
             # callbacks may access is_ready property during initialization
             self._is_ready = False
 
-            # Jan 24, 2026: Keep autoTick=True but use slower tick period
+            # Jan 24, 2026: Use RAFT_USE_MANUAL_TICK to control ticking mode.
+            manual_tick = _consts["RAFT_USE_MANUAL_TICK"]
             conf = _SyncObjConf(
-                autoTick=True,
+                autoTick=not manual_tick,
                 autoTickPeriod=0.1,  # 100ms tick period (vs ~1ms default)
                 appendEntriesUseBatch=True,
             )
