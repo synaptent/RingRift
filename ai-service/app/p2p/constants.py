@@ -51,7 +51,9 @@ TAILSCALE_IPV6_NETWORK = ipaddress.ip_network("fd7a:115c:a1e0::/48")
 # Matches RELAY_HEARTBEAT_INTERVAL. 10s would match voters but may cause
 # false positives on congested networks.
 # Dec 2025: Now configurable via environment variable for cluster tuning.
-HEARTBEAT_INTERVAL = int(os.environ.get("RINGRIFT_P2P_HEARTBEAT_INTERVAL", "15") or 15)
+# Jan 25, 2026: Reduced from 15s to 10s for faster failure detection.
+# With 150s PEER_TIMEOUT, 10s interval = 15 missed heartbeats before DEAD.
+HEARTBEAT_INTERVAL = int(os.environ.get("RINGRIFT_P2P_HEARTBEAT_INTERVAL", "10") or 10)
 # Dec 2025: Originally reduced from 90s to 60s for faster failure detection.
 # Dec 30, 2025: Increased back to 90s for coordinator nodes behind NAT.
 # Jan 2, 2026: Increased to 120s for NAT-blocked nodes (Lambda GH200, RunPod) that
@@ -63,7 +65,10 @@ HEARTBEAT_INTERVAL = int(os.environ.get("RINGRIFT_P2P_HEARTBEAT_INTERVAL", "15")
 # disagreement window is only 18s, much better for gossip convergence.
 # Jan 24, 2026: Increased from 90s to 120s for better stability on 40+ node clusters.
 # With ±5% jitter on 120s, disagreement window is only 12s (vs 18s at 90s with ±10%).
-PEER_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT", "120") or 120)
+# Jan 25, 2026: Increased from 120s to 150s for stable 20+ node connectivity.
+# Creates sequence: SUSPECT(60s) → PEER_TIMEOUT(150s) → RETIRE(210s).
+# With 10s heartbeat, 15 missed = DEAD. ±5% jitter = 142.5-157.5s (15s window).
+PEER_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT", "150") or 150)
 # Jan 23, 2026: UNIFIED - All node types now use the same timeout (90s) for consistency.
 # Role-based timeouts caused different nodes to disagree on peer liveness, breaking gossip.
 # NAT-blocked nodes compensate via retry/relay, not longer timeouts.
@@ -208,7 +213,10 @@ PEER_DEATH_RATE_LIMIT = int(
 # Creates sequence: SUSPECT(60s) → PEER_TIMEOUT(120s) → RETIRE(180s) to prevent race conditions.
 # Jan 24, 2026: Increased from 60s to 90s to reduce false-positive SUSPECT states.
 # Creates sequence: SUSPECT(90s) → PEER_TIMEOUT(120s) → RETIRE(180s).
-SUSPECT_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_SUSPECT_TIMEOUT", "90") or 90)
+# Jan 25, 2026: Decreased from 90s to 60s for earlier suspect detection.
+# With PEER_TIMEOUT=150s, creates 90s gap between SUSPECT and DEAD.
+# Sequence: SUSPECT(60s) → DEAD(150s) → RETIRE(210s).
+SUSPECT_TIMEOUT = int(os.environ.get("RINGRIFT_P2P_SUSPECT_TIMEOUT", "60") or 60)
 
 # Jan 2, 2026 (Sprint 3.5): Dynamic voter promotion delay
 # When enabled via RINGRIFT_P2P_DYNAMIC_VOTER=true, this delay prevents premature promotion
@@ -512,7 +520,9 @@ GOSSIP_MAX_PEER_ENDPOINTS = int(
 # Jan 21, 2026: Increased from 120s to 180s for Phase 1 timeout staggering.
 # Creates 60s gap between PEER_TIMEOUT(120s) and RETIRE(180s) to prevent race conditions.
 # Rollback: RINGRIFT_USE_LEGACY_TIMEOUTS=true
-PEER_RETIRE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_RETIRE_AFTER_SECONDS", "180") or 180)
+# Jan 25, 2026: Increased from 180s to 210s to maintain 60s gap with PEER_TIMEOUT=150s.
+# Sequence: SUSPECT(60s) → DEAD(150s) → RETIRE(210s).
+PEER_RETIRE_AFTER_SECONDS = int(os.environ.get("RINGRIFT_P2P_PEER_RETIRE_AFTER_SECONDS", "210") or 210)
 # Renamed from RETRY_RETIRED_NODE_INTERVAL to PEER_RECOVERY_RETRY_INTERVAL for clarity
 PEER_RECOVERY_RETRY_INTERVAL = int(os.environ.get("RINGRIFT_P2P_PEER_RECOVERY_INTERVAL", "120") or 120)
 # Backward compat alias (deprecated - use PEER_RECOVERY_RETRY_INTERVAL)
