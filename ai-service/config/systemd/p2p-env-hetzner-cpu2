@@ -1,3 +1,6 @@
 NODE_ID=hetzner-cpu2
 ADVERTISE_HOST=100.67.131.72
-PEER_LIST=http://100.106.19.6:8770,http://100.110.28.41:8770,http://100.94.174.19:8770,http://100.126.21.102:8770
+# Jan 25, 2026: Updated peer list to stable voters only
+# Removed nebius-backbone-1 (100.110.28.41) - frequently offline
+# Added vultr-a100-20gb (100.94.201.92) - stable voter
+PEER_LIST=http://100.94.174.19:8770,http://100.126.21.102:8770,http://100.94.201.92:8770,http://100.107.168.125:8770
