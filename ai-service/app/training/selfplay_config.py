@@ -21,6 +21,7 @@ from enum import Enum
 from typing import Any
 
 from app.models import BoardType
+from app.utils.canonical_naming import normalize_board_type as _canonical_normalize
 from app.utils.parallel_defaults import get_default_workers, get_parallel_games_default
 
 
@@ -352,23 +353,12 @@ class SelfplayConfig:
 
     @staticmethod
     def _normalize_board_type(board_type: str) -> str:
-        """Normalize board type to canonical form."""
-        # Map aliases to canonical names
-        aliases = {
-            "hex": "hexagonal",
-            "hex8": "hex8",
-            "square": "square8",
-            "sq8": "square8",
-            "sq19": "square19",
-            "square19": "square19",
-            # Full hex / hex24 aliases for hexagonal (469-cell board, radius 12)
-            "full_hex": "hexagonal",
-            "full-hex": "hexagonal",
-            "fullhex": "hexagonal",
-            "full_hexagonal": "hexagonal",
-            "hex24": "hexagonal",
-        }
-        return aliases.get(board_type.lower(), board_type.lower())
+        """Normalize board type to canonical form.
+
+        Delegates to canonical_naming.normalize_board_type for consistency.
+        January 2026: Centralized to avoid 17+ duplicated alias mappings.
+        """
+        return _canonical_normalize(board_type)
 
     @property
     def config_key(self) -> str:

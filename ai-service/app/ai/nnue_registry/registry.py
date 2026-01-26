@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Iterator
 
 from app.coordination.types import BoardType
+from app.utils.canonical_naming import normalize_board_type as _canonical_normalize
 
 logger = logging.getLogger(__name__)
 
@@ -103,10 +104,12 @@ class NNUERegistryStats:
 
 
 def _normalize_board_type(board_type: str | BoardType) -> str:
-    """Normalize board type to string."""
-    if isinstance(board_type, BoardType):
-        return board_type.value.lower()
-    return board_type.lower()
+    """Normalize board type to canonical string.
+
+    Delegates to canonical_naming.normalize_board_type for consistency.
+    January 2026: Centralized to avoid duplicated normalization logic.
+    """
+    return _canonical_normalize(board_type)
 
 
 def get_nnue_models_dir() -> Path:

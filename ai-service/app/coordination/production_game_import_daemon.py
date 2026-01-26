@@ -39,6 +39,7 @@ from app.coordination.event_emission_helpers import safe_emit_event
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.protocols import CoordinatorStatus
 from app.db.game_replay import GameReplayDB
+from app.utils.canonical_naming import normalize_board_type as _canonical_normalize
 
 logger = logging.getLogger(__name__)
 
@@ -324,8 +325,18 @@ class ProductionGameImportDaemon(HandlerBase):
             logger.error("[ProductionImport] Request timed out")
 
     def _normalize_board_type(self, board_type: str) -> str:
-        """Normalize board type from production format."""
-        return BOARD_TYPE_MAP.get(board_type.upper(), board_type.lower())
+        """Normalize board type from production format.
+
+        Production uses uppercase enum names (HEX8, SQUARE8, etc.) which
+        need to be converted to lowercase canonical values.
+
+        January 2026: Delegates to canonical_naming for consistency.
+        """
+        # Try the direct mapping first (production uses uppercase)
+        if board_type.upper() in BOARD_TYPE_MAP:
+            return BOARD_TYPE_MAP[board_type.upper()]
+        # Fall back to centralized normalization for other formats
+        return _canonical_normalize(board_type)
 
     def _import_game(
         self, db: GameReplayDB, record: dict[str, Any], stats: ImportStats
