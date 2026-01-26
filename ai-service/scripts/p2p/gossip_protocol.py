@@ -411,13 +411,14 @@ class GossipHealthTracker:
                 "failure_threshold": self._failure_threshold,
             }
 
-    def cleanup_stale_peers(self, max_age_seconds: float = 3600.0) -> int:
+    def cleanup_stale_peers(self, max_age_seconds: float = 1800.0) -> int:
         """Remove stale peer tracking data.
 
         Thread-safe: Uses _state_lock to protect shared state.
 
         January 2026: Respects grace period - new peers won't be cleaned up
         until their grace period expires.
+        Jan 25, 2026: Reduced from 3600 to 1800 for cleaner startup.
 
         Args:
             max_age_seconds: Remove peers not seen in this many seconds
@@ -1629,11 +1630,12 @@ class GossipProtocolMixin(P2PMixinBase):
         )
         return result is not None
 
-    def _load_persisted_gossip_states(self, max_age_seconds: float = 3600.0) -> dict[str, dict]:
+    def _load_persisted_gossip_states(self, max_age_seconds: float = 1800.0) -> dict[str, dict]:
         """Load persisted gossip states from SQLite.
 
         Args:
-            max_age_seconds: Only load states newer than this (default 1 hour)
+            max_age_seconds: Only load states newer than this (default 30min)
+                            Jan 25, 2026: Reduced from 1h to 30m for cleaner startup
 
         Returns:
             Dictionary of {node_id: state_dict}

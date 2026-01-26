@@ -3295,7 +3295,9 @@ class GossipDefaults:
     # Consecutive failures before marking peer as suspect
     # Jan 2026: Increased from 4 to 8 for more tolerance with flaky cross-cloud networks
     # Jan 24, 2026: Increased from 8 to 10 for better stability on 40+ node clusters
-    FAILURE_THRESHOLD: int = _env_int("RINGRIFT_GOSSIP_FAILURE_THRESHOLD", 10)
+    # Jan 25, 2026: Increased from 10 to 15 for cross-cloud packet loss tolerance.
+    # With 15 failures at 15s heartbeat = 225s to mark SUSPECT, more tolerant of network jitter.
+    FAILURE_THRESHOLD: int = _env_int("RINGRIFT_GOSSIP_FAILURE_THRESHOLD", 15)
 
     # Maximum gossip message size in bytes (1MB default)
     MAX_MESSAGE_SIZE_BYTES: int = _env_int("RINGRIFT_GOSSIP_MAX_MESSAGE_SIZE", 1_048_576)
@@ -3307,7 +3309,11 @@ class GossipDefaults:
 
     # Dead peer detection: seconds since last seen before marking as dead
     # Jan 13, 2026: Reduced from 300s to 60s for faster quorum detection during 48h autonomous ops
-    DEAD_PEER_TIMEOUT: float = _env_float("RINGRIFT_GOSSIP_DEAD_PEER_TIMEOUT", 60.0)
+    # Jan 25, 2026: CRITICAL FIX - Increased from 60s to 240s.
+    # DEAD_PEER_TIMEOUT MUST be >= PEER_TIMEOUT (180s) to avoid premature gossip cleanup.
+    # With 60s, peers were removed from gossip before being marked dead, creating "zombie peers"
+    # where nodes disagreed on peer liveness (asymmetric connectivity, 9-19 peer fluctuation).
+    DEAD_PEER_TIMEOUT: float = _env_float("RINGRIFT_GOSSIP_DEAD_PEER_TIMEOUT", 240.0)
 
     # Cleanup interval: minimum seconds between gossip state cleanup passes
     CLEANUP_INTERVAL: float = _env_float("RINGRIFT_GOSSIP_CLEANUP_INTERVAL", 300.0)
@@ -3332,7 +3338,9 @@ class GossipDefaults:
     # Math: With fanout 10 and 30s interval, 40 nodes need 2 rounds = 60s minimum.
     # With 4x safety factor for jitter/delays: 60s * 4 = 240s minimum TTL.
     # Without this fix, Lambda nodes never learned about peer changes (state expired mid-propagation).
-    STATE_TTL: float = _env_float("RINGRIFT_GOSSIP_STATE_TTL", 240.0)
+    # Jan 25, 2026: Increased from 240s to 480s. STATE_TTL should be 2x DEAD_PEER_TIMEOUT (240s)
+    # to ensure gossip state persists long enough for cleanup to complete across all nodes.
+    STATE_TTL: float = _env_float("RINGRIFT_GOSSIP_STATE_TTL", 480.0)
 
     # =========================================================================
     # January 5, 2026 Session 17.28: Recovery Probing for Dead Nodes
@@ -3344,7 +3352,9 @@ class GossipDefaults:
     RECOVERY_PROBE_INTERVAL: float = _env_float("RINGRIFT_GOSSIP_RECOVERY_PROBE_INTERVAL", 60.0)
 
     # Recovery probe batch size: max dead nodes to probe per cycle (prevents thundering herd)
-    RECOVERY_PROBE_BATCH_SIZE: int = _env_int("RINGRIFT_GOSSIP_RECOVERY_PROBE_BATCH_SIZE", 3)
+    # Jan 25, 2026: Increased from 3 to 10 for faster dead peer recovery on 40-node clusters.
+    # With 8-10 dead peers and batch 3, took 180s to probe all. With batch 10, takes 60s.
+    RECOVERY_PROBE_BATCH_SIZE: int = _env_int("RINGRIFT_GOSSIP_RECOVERY_PROBE_BATCH_SIZE", 10)
 
 
 # =============================================================================

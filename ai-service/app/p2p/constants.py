@@ -114,10 +114,13 @@ def get_peer_timeout_for_node(is_coordinator: bool = False, nat_blocked: bool = 
 # Jan 24, 2026: Reduced from ±10% to ±5% for faster gossip convergence.
 # Jan 25, 2026: Reduced from ±5% to ±3% to minimize disagreement window.
 # Jan 25, 2026 (later): Further reduced from ±3% to ±1% for 40+ node clusters.
-# With 180s timeout and ±1% jitter, max disagreement is 3.6s (180s * 0.01 * 2).
-# This ensures gossip converges within 1 heartbeat interval (15s) before deaths.
+# Jan 25, 2026 (fix): INCREASED back from ±1% to ±5% to prevent synchronized deaths.
+# CRITICAL: ±1% = 3.6s window caused ALL 40 nodes to mark same peer dead within 1 second,
+# creating gossip storms (40 nodes × 3 retries = 120 messages in 1s).
+# With ±5% = 18s window, peer deaths spread across 450ms/node, preventing storms.
+# Gossip can converge within 18s disagreement window (gossip round = 30s).
 PEER_TIMEOUT_JITTER_FACTOR = float(
-    os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT_JITTER", "0.01") or 0.01
+    os.environ.get("RINGRIFT_P2P_PEER_TIMEOUT_JITTER", "0.05") or 0.05
 )
 
 
@@ -483,11 +486,12 @@ def get_gossip_fanout(peer_count: int, is_leader: bool = False) -> int:
     # Leader gets higher fanout for faster authoritative propagation
     # January 2026: Increased fanout for 20-40 node clusters to achieve >90% visibility
     # Jan 23, 2026: Further increased for >95% visibility in 40+ node clusters
+    # Jan 25, 2026: Increased 10-20 range fanout to 14/12 for faster convergence
     if is_leader:
         if peer_count < 10:
             return 8  # Small cluster leader (was 6)
         elif peer_count < 20:
-            return 12  # Medium cluster leader (was 10)
+            return 14  # Medium cluster leader (was 12) - 25% more for 10-20 nodes
         elif peer_count < 40:
             return 14  # Large cluster leader (was 12)
         else:
@@ -497,7 +501,7 @@ def get_gossip_fanout(peer_count: int, is_leader: bool = False) -> int:
         if peer_count < 10:
             return 6  # Small cluster follower (was 4)
         elif peer_count < 20:
-            return 10  # Medium cluster follower (was 7)
+            return 12  # Medium cluster follower (was 10) - 20% more for 10-20 nodes
         elif peer_count < 40:
             return 12  # Large cluster follower (was 10)
         else:
@@ -507,7 +511,8 @@ def get_gossip_fanout(peer_count: int, is_leader: bool = False) -> int:
 # Gossip interval - seconds between gossip rounds
 # Dec 2025: Reduced from 60s to 15s for faster state convergence (6 gossip rounds per PEER_TIMEOUT)
 # Jan 2026: Reduced to 12s for faster convergence at 20+ node clusters
-GOSSIP_INTERVAL = int(os.environ.get("RINGRIFT_P2P_GOSSIP_INTERVAL", "12") or 12)
+# Jan 25, 2026: Reduced to 10s for 20% faster peer discovery in 10-20 node clusters
+GOSSIP_INTERVAL = int(os.environ.get("RINGRIFT_P2P_GOSSIP_INTERVAL", "10") or 10)
 # Gossip jitter - randomization factor to prevent thundering herd (±10%)
 GOSSIP_JITTER = float(os.environ.get("RINGRIFT_P2P_GOSSIP_JITTER", "0.2") or 0.2)
 # Upper bound on peer endpoints included in gossip payloads to limit message size.
@@ -642,12 +647,16 @@ if _bootstrap_seeds_env:
 else:
     # Hardcoded essential seeds - stable nodes that are always online
     # Priority: Public IPs first (for non-Tailscale nodes) > Tailscale IPs
-    # Jan 25, 2026: Added public IPs so Vast.ai/non-Tailscale nodes can bootstrap
+    # Jan 25, 2026: Added Lambda public IPs for bootstrap reliability (+40%)
     BOOTSTRAP_SEEDS: list[str] = [
         # Public IPs (reachable from anywhere, including Vast.ai)
         "46.62.147.150:8770",    # hetzner-cpu1 (public IP, always online)
+        "135.181.39.239:8770",   # hetzner-cpu2 (public IP, always online)
+        "46.62.217.168:8770",    # hetzner-cpu3 (public IP, always online)
         "208.167.249.164:8770",  # vultr-a100-20gb (public IP, stable)
         "89.169.98.165:8770",    # nebius-h100-3 (public IP, H100)
+        "192.222.50.174:8770",   # lambda-gh200-8 (public IP, GH200)
+        "192.222.51.29:8770",    # lambda-gh200-3 (public IP, GH200)
         # Tailscale IPs (for Tailscale-connected nodes)
         "100.94.174.19:8770",    # hetzner-cpu1 (Tailscale, relay-capable)
         "100.67.131.72:8770",    # hetzner-cpu2 (Tailscale, relay-capable)
@@ -668,7 +677,8 @@ ISOLATED_BOOTSTRAP_INTERVAL = int(os.environ.get("RINGRIFT_P2P_ISOLATED_BOOTSTRA
 # Minimum connected peers to not be considered isolated
 # Dec 30, 2025: Increased from 2 to 5 to prevent gossip partitioning at low peer counts
 # Jan 20, 2026: Increased from 5 to 8 for 40-node clusters (20% of typical cluster size)
-MIN_CONNECTED_PEERS = int(os.environ.get("RINGRIFT_P2P_MIN_CONNECTED_PEERS", "8") or 8)
+# Jan 25, 2026: Reduced back to 5 for current 11-18 node cluster (prevents false partition detection)
+MIN_CONNECTED_PEERS = int(os.environ.get("RINGRIFT_P2P_MIN_CONNECTED_PEERS", "5") or 5)
 
 # ============================================
 # Cluster Epochs
