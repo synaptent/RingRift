@@ -256,8 +256,10 @@ class GossipPeerPromotionLoop(BaseLoop):
                     peers_lock = getattr(orchestrator, "peers_lock", None)
                     peers = getattr(orchestrator, "peers", {})
 
+                    # Jan 25, 2026: Fix - peers_lock is threading.RLock, not asyncio.Lock
+                    # Use synchronous 'with' instead of 'async with'
                     if peers_lock:
-                        async with peers_lock:
+                        with peers_lock:
                             peers[info.node_id] = info
                     else:
                         peers[info.node_id] = info
