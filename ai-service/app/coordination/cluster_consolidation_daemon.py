@@ -922,12 +922,13 @@ class ClusterConsolidationDaemon(HandlerBase):
                 )
             """)
 
-            # Initial state table
+            # Initial state table (must use initial_state_json to match TypeScript)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS game_initial_state (
                     game_id TEXT PRIMARY KEY,
-                    state_json TEXT NOT NULL,
-                    FOREIGN KEY (game_id) REFERENCES games(game_id)
+                    initial_state_json TEXT NOT NULL,
+                    compressed INTEGER DEFAULT 0,
+                    FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
                 )
             """)
 
@@ -942,15 +943,21 @@ class ClusterConsolidationDaemon(HandlerBase):
                 )
             """)
 
-            # Players table
+            # Players table (must match TypeScript schema in SelfPlayGameService)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS game_players (
                     game_id TEXT NOT NULL,
-                    player_index INTEGER NOT NULL,
+                    player_number INTEGER NOT NULL,
                     player_type TEXT,
+                    ai_type TEXT,
+                    ai_difficulty INTEGER,
+                    ai_profile_id TEXT,
+                    final_eliminated_rings INTEGER,
+                    final_territory_spaces INTEGER,
+                    final_rings_in_hand INTEGER,
                     model_version TEXT,
-                    PRIMARY KEY (game_id, player_index),
-                    FOREIGN KEY (game_id) REFERENCES games(game_id)
+                    PRIMARY KEY (game_id, player_number),
+                    FOREIGN KEY (game_id) REFERENCES games(game_id) ON DELETE CASCADE
                 )
             """)
 
