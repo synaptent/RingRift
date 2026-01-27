@@ -641,11 +641,16 @@ async def update_node(
         if p2p_was_running and restart_p2p:
             logger.info(f"[{node_name}] Restarting P2P orchestrator...")
 
-            # Kill existing P2P
-            kill_cmd = "pkill -f p2p_orchestrator"
-            await client.run_async(kill_cmd, timeout=10)
+            # Kill existing P2P and clean up screen sessions
+            # Jan 2026: Added screen cleanup to prevent dead session accumulation
+            kill_cmd = (
+                "pkill -f p2p_orchestrator 2>/dev/null || true; "
+                "screen -X -S p2p quit 2>/dev/null || true; "
+                "screen -wipe 2>/dev/null || true"
+            )
+            await client.run_async(kill_cmd, timeout=15)
 
-            # Wait for graceful shutdown
+            # Wait for graceful shutdown and cleanup
             await asyncio.sleep(2)
 
             # Build proper P2P start command

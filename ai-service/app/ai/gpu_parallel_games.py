@@ -1391,6 +1391,7 @@ class ParallelGameRunner:
         emit_events: bool = True,
         task_id: str | None = None,
         iteration: int = 0,
+        temperature_callback: Callable[[int], float] | None = None,
     ) -> dict[str, Any]:
         """Run all games to completion.
 
@@ -1406,6 +1407,12 @@ class ParallelGameRunner:
                        (December 2025). Default True.
             task_id: Optional task identifier for event emission. Auto-generated if None.
             iteration: Pipeline iteration number for event metadata.
+            temperature_callback: Optional callback for per-move temperature scheduling.
+                       Called with mean move count across active games, returns new temperature.
+                       Use with temperature_scheduling.py schedules:
+                           scheduler = LinearDecaySchedule(initial_temp=1.0, final_temp=0.3)
+                           callback = lambda move: scheduler.get_temperature(move)
+                       January 27, 2026: Phase 2.2 temperature scheduling integration.
 
         Returns:
             Dictionary with:
@@ -1455,6 +1462,15 @@ class ParallelGameRunner:
             phase_steps += 1
             if callback:
                 callback(phase_steps, self.state)
+
+            # Update temperature based on mean move count (Jan 27, 2026 - Phase 2.2)
+            if temperature_callback is not None:
+                active_moves = self.state.move_count[active_mask]
+                if active_moves.numel() > 0:
+                    mean_move = int(active_moves.float().mean().item())
+                    new_temp = temperature_callback(mean_move)
+                    if new_temp != self.temperature:
+                        self.set_temperature(new_temp)
 
             # Capture snapshots for games that have crossed the interval threshold
             if snapshot_interval > 0 and snapshot_callback:

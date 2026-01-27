@@ -865,9 +865,14 @@ class RemoteP2PRecoveryLoop(BaseLoop):
                 banner_timeout=self.config.ssh_timeout_seconds,
             )
 
-            # First kill any existing P2P process
-            client.exec_command("pkill -f p2p_orchestrator || true")
-            time.sleep(1)  # Sync function running in thread - use time.sleep
+            # First kill any existing P2P process and clean up screen sessions
+            # Jan 2026: Added screen cleanup to prevent dead session accumulation
+            client.exec_command(
+                "pkill -f p2p_orchestrator 2>/dev/null || true; "
+                "screen -X -S p2p quit 2>/dev/null || true; "
+                "screen -wipe 2>/dev/null || true"
+            )
+            time.sleep(2)  # Allow time for cleanup
 
             # Pull latest code and start P2P
             # Use python3 explicitly since 'python' may not exist on all nodes

@@ -120,6 +120,26 @@ from .worker_pull_controller import (
     reset_worker_pull_controller,
     set_worker_pull_controller,
 )
+# January 2026: Aggressive Decomposition Phase 7 - Data Pipeline Manager
+from .data_pipeline_manager import (
+    DataPipelineConfig,
+    DataPipelineManager,
+    DataPipelineStats,
+    create_data_pipeline_manager,
+    get_data_pipeline_manager,
+    reset_data_pipeline_manager,
+    set_data_pipeline_manager,
+)
+# January 2026: Aggressive Decomposition Phase 8 - Job Lifecycle Manager
+from .job_lifecycle_manager import (
+    JobLifecycleConfig,
+    JobLifecycleManager,
+    JobLifecycleStats,
+    create_job_lifecycle_manager,
+    get_job_lifecycle_manager,
+    reset_job_lifecycle_manager,
+    set_job_lifecycle_manager,
+)
 
 __all__ = [
     "DiscoveryChannel",
@@ -207,4 +227,20 @@ __all__ = [
     "get_worker_pull_controller",
     "reset_worker_pull_controller",
     "set_worker_pull_controller",
+    # Data Pipeline Manager
+    "DataPipelineConfig",
+    "DataPipelineManager",
+    "DataPipelineStats",
+    "create_data_pipeline_manager",
+    "get_data_pipeline_manager",
+    "reset_data_pipeline_manager",
+    "set_data_pipeline_manager",
+    # Job Lifecycle Manager
+    "JobLifecycleConfig",
+    "JobLifecycleManager",
+    "JobLifecycleStats",
+    "create_job_lifecycle_manager",
+    "get_job_lifecycle_manager",
+    "reset_job_lifecycle_manager",
+    "set_job_lifecycle_manager",
 ]

@@ -2554,6 +2554,30 @@ class P2POrchestrator(
         )
         logger.info("[P2P] WorkerPullController initialized")
 
+        # January 2026: Aggressive Decomposition Phase 7 - Data Pipeline Manager
+        # Handles JSONL to DB/NPZ conversions and database consolidation
+        from scripts.p2p.managers.data_pipeline_manager import (
+            create_data_pipeline_manager,
+            DataPipelineConfig,
+        )
+        self.data_pipeline_manager = create_data_pipeline_manager(
+            config=DataPipelineConfig(),
+            orchestrator=self,
+        )
+        logger.info("[P2P] DataPipelineManager initialized")
+
+        # January 2026: Aggressive Decomposition Phase 8 - Job Lifecycle Manager
+        # Handles stuck job detection and termination
+        from scripts.p2p.managers.job_lifecycle_manager import (
+            create_job_lifecycle_manager,
+            JobLifecycleConfig,
+        )
+        self.job_lifecycle_manager = create_job_lifecycle_manager(
+            config=JobLifecycleConfig(),
+            orchestrator=self,
+        )
+        logger.info("[P2P] JobLifecycleManager initialized")
+
         # January 4, 2026: Phase 5 - WorkDiscoveryManager for multi-channel work discovery
         # This enables workers to find work even during leader elections or partitions
         self._initialize_work_discovery_manager()
@@ -7786,15 +7810,9 @@ class P2POrchestrator(
     def _get_db_game_count_sync(self, db_path: Path) -> int:
         """Get game count from database synchronously.
 
-        IMPORTANT: This is a blocking operation. Call via asyncio.to_thread() from async code.
-        Added Dec 2025 to fix P2P orchestrator CPU spikes from blocking SQLite in async loops.
+        Jan 2026: Delegated to DataPipelineManager.
         """
-        try:
-            with safe_db_connection(db_path, timeout=5) as conn:
-                result = conn.execute("SELECT COUNT(*) FROM games").fetchone()
-                return result[0] if result else 0
-        except (sqlite3.Error, OSError):
-            return 0
+        return self.data_pipeline_manager.get_db_game_count_sync(db_path)
 
     def _seed_selfplay_scheduler_game_counts_sync(self) -> dict[str, int]:
         """Seed game counts from canonical databases synchronously.
@@ -7974,21 +7992,9 @@ class P2POrchestrator(
     def _find_dbs_to_merge_sync(self, selfplay_dir: Path, main_db_path: Path) -> list[tuple[Path, int]]:
         """Find databases that need merging synchronously.
 
-        IMPORTANT: This is a blocking operation. Call via asyncio.to_thread() from async code.
-        Added Dec 2025 to fix P2P orchestrator CPU spikes from blocking file I/O in async loops.
+        Jan 2026: Delegated to DataPipelineManager.
         """
-        dbs_to_merge = []
-        for db_path in selfplay_dir.glob("**/games.db"):
-            if ".tmp" in str(db_path) or db_path == main_db_path:
-                continue
-            try:
-                with safe_db_connection(db_path, timeout=5) as conn:
-                    count = conn.execute("SELECT COUNT(*) FROM games").fetchone()[0]
-                    if count > 0:
-                        dbs_to_merge.append((db_path, count))
-            except (KeyError, IndexError, AttributeError, sqlite3.Error):
-                pass
-        return dbs_to_merge
+        return self.data_pipeline_manager.find_dbs_to_merge_sync(selfplay_dir, main_db_path)
 
     def _run_subprocess_sync(self, cmd: list, timeout: int = 10) -> tuple[int, str, str]:
         """Run subprocess synchronously.
@@ -8978,605 +8984,31 @@ class P2POrchestrator(
         )
 
     async def _convert_jsonl_to_db(self, data_dir: Path, games_dir: Path) -> int:
-        """Convert JSONL selfplay files to SQLite DB format for training.
+        """Convert JSONL selfplay files to SQLite DB format.
 
-        This enables the training pipeline to access games stored in JSONL format.
-        Converted files are tracked to avoid re-processing.
-
-        Features:
-        - Chunked reading to handle large files without memory issues
-        - Limited files per cycle to avoid blocking the event loop
-        - Spawns external converter for large backlogs
-
-        Returns:
-            Number of games converted.
+        Jan 2026: Delegated to DataPipelineManager.
         """
-        # Skip if disabled via environment variable (prevents blocking event loop on startup)
-        if os.environ.get("RINGRIFT_SKIP_JSONL_CONVERSION", "").lower() in ("1", "true", "yes"):
-            logger.debug("[P2POrchestrator] JSONL→DB conversion skipped via RINGRIFT_SKIP_JSONL_CONVERSION")
-            return 0
-
-        import json
-        import sqlite3
-
-        # Configuration
-        MAX_FILES_PER_CYCLE = 50  # Process max 50 files per cycle to avoid blocking
-        CHUNK_SIZE = 500  # Lines to read at a time
-        LARGE_BACKLOG_THRESHOLD = 200  # Spawn external converter if more files
-
-        # Track converted files to avoid re-processing
-        converted_marker_file = data_dir / ".jsonl_converted"
-        converted_files: set = set()
-        if converted_marker_file.exists():
-            with contextlib.suppress(Exception):
-                converted_files = set(converted_marker_file.read_text().strip().split("\n"))
-
-        total_converted = 0
-        newly_converted = []
-        selfplay_dir = data_dir / "selfplay"
-
-        if not selfplay_dir.exists():
-            return 0
-
-        # Find all JSONL files in selfplay subdirectories
-        jsonl_files = list(selfplay_dir.rglob("*.jsonl"))
-        if not jsonl_files:
-            return 0
-
-        # Filter to unconverted files and sort by size (smallest first for quick wins)
-        unconverted_files = []
-        for jsonl_file in jsonl_files:
-            try:
-                file_size = jsonl_file.stat().st_size
-                if file_size < 100:
-                    continue
-                file_key = str(jsonl_file.relative_to(data_dir))
-                if file_key not in converted_files:
-                    unconverted_files.append((jsonl_file, file_size, file_key))
-            except (AttributeError):
-                continue
-
-        if not unconverted_files:
-            return 0
-
-        # Sort by size (smallest first) and limit per cycle
-        unconverted_files.sort(key=lambda x: x[1])
-        files_this_cycle = unconverted_files[:MAX_FILES_PER_CYCLE]
-
-        # If large backlog, spawn external converter in background
-        if len(unconverted_files) > LARGE_BACKLOG_THRESHOLD:
-            logger.info(f"Large JSONL backlog ({len(unconverted_files)} files), spawning background converter")
-            converter_script = Path(self._get_ai_service_path()) / "scripts" / "chunked_jsonl_converter.py"
-            if converter_script.exists():
-                try:
-                    import subprocess
-                    subprocess.Popen(
-                        ["python3", str(converter_script),
-                         "--input-dir", str(selfplay_dir),
-                         "--output-dir", str(games_dir),
-                         "--workers", "2",
-                         "--chunk-size", "500"],
-                        stdout=open("/tmp/chunked_converter.log", "a"),
-                        stderr=subprocess.STDOUT,
-                        cwd=str(Path(self._get_ai_service_path())),
-                    )
-                except Exception as e:  # noqa: BLE001
-                    logger.error(f"Failed to spawn background converter: {e}")
-
-        # Group files by board type
-        board_type_files: dict[str, list[tuple[Path, str]]] = {}
-        for jsonl_file, _file_size, file_key in files_this_cycle:
-            path_str = str(jsonl_file).lower()
-            if "hex" in path_str:
-                if "4p" in path_str:
-                    board_key = "hexagonal_4p"
-                elif "3p" in path_str:
-                    board_key = "hexagonal_3p"
-                else:
-                    board_key = "hexagonal_2p"
-            elif "square19" in path_str or "sq19" in path_str:
-                if "4p" in path_str:
-                    board_key = "square19_4p"
-                elif "3p" in path_str:
-                    board_key = "square19_3p"
-                else:
-                    board_key = "square19_2p"
-            else:
-                if "4p" in path_str:
-                    board_key = "square8_4p"
-                elif "3p" in path_str:
-                    board_key = "square8_3p"
-                else:
-                    board_key = "square8_2p"
-
-            if board_key not in board_type_files:
-                board_type_files[board_key] = []
-            board_type_files[board_key].append((jsonl_file, file_key))
-
-        # Helper function to convert one board type's files to DB - runs in thread pool
-        def _convert_board_type_to_db(
-            board_key: str,
-            files: list[tuple[Path, str]],
-            games_dir: Path,
-            chunk_size: int,
-        ) -> tuple[int, list[str]]:
-            """Convert one board type's JSONL files to SQLite DB.
-
-            Runs in thread pool via asyncio.to_thread() to avoid blocking event loop.
-
-            Returns:
-                (games_added, newly_converted_file_keys)
-            """
-            db_path = games_dir / f"jsonl_converted_{board_key}.db"
-            conn = None
-            games_added = 0
-            converted = []
-
-            try:
-                conn = sqlite3.connect(str(db_path), timeout=30.0)
-                conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute("PRAGMA synchronous=NORMAL")
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS games (
-                        game_id TEXT PRIMARY KEY,
-                        board_type TEXT,
-                        num_players INTEGER,
-                        winner INTEGER,
-                        move_count INTEGER,
-                        game_status TEXT,
-                        victory_type TEXT,
-                        created_at TEXT,
-                        source TEXT,
-                        metadata_json TEXT
-                    )
-                """)
-                conn.commit()
-
-                for jsonl_file, file_key in files:
-                    try:
-                        # Read file in chunks to avoid memory issues
-                        chunk_buffer = []
-                        with open_jsonl_file(jsonl_file) as f:
-                            for line_num, line in enumerate(f, 1):
-                                line = line.strip()
-                                if not line:
-                                    continue
-                                try:
-                                    record = json.loads(line)
-                                    game_id = f"{jsonl_file.stem}_{record.get('game_id', line_num)}"
-                                    chunk_buffer.append((
-                                        game_id,
-                                        record.get("board_type", board_key.split("_")[0]),
-                                        record.get("num_players", int(board_key[-2]) if board_key[-2].isdigit() else 2),
-                                        record.get("winner", 0),
-                                        record.get("move_count", 0),
-                                        record.get("status", "completed"),
-                                        record.get("victory_type", "unknown"),
-                                        record.get("timestamp", ""),
-                                        f"jsonl:{jsonl_file.name}",
-                                        json.dumps(record),
-                                    ))
-
-                                    # Flush chunk when buffer is full
-                                    if len(chunk_buffer) >= chunk_size:
-                                        conn.executemany("""
-                                            INSERT OR IGNORE INTO games
-                                            (game_id, board_type, num_players, winner, move_count,
-                                             game_status, victory_type, created_at, source, metadata_json)
-                                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                        """, chunk_buffer)
-                                        games_added += len(chunk_buffer)
-                                        chunk_buffer = []
-
-                                except (json.JSONDecodeError, Exception):
-                                    continue
-
-                        # Flush remaining records
-                        if chunk_buffer:
-                            conn.executemany("""
-                                INSERT OR IGNORE INTO games
-                                (game_id, board_type, num_players, winner, move_count,
-                                 game_status, victory_type, created_at, source, metadata_json)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """, chunk_buffer)
-                            games_added += len(chunk_buffer)
-
-                        converted.append(file_key)
-                    except Exception as e:  # noqa: BLE001
-                        logger.error(f"converting {jsonl_file.name}: {e}")
-                        continue
-
-                conn.commit()
-
-                if games_added > 0:
-                    logger.info(f"Converted {games_added} games to {db_path.name}")
-
-            except Exception as e:  # noqa: BLE001
-                logger.error(f"creating DB for {board_key}: {e}")
-            finally:
-                if conn:
-                    conn.close()
-
-            return games_added, converted
-
-        # Convert each board type to a consolidated DB (chunked reading)
-        # Jan 4, 2026: Run blocking SQLite ops in thread pool to avoid blocking event loop
-        for board_key, files in board_type_files.items():
-            if not files:
-                continue
-
-            games_added, converted = await asyncio.to_thread(
-                _convert_board_type_to_db,
-                board_key,
-                files,
-                games_dir,
-                CHUNK_SIZE,
-            )
-            total_converted += games_added
-            newly_converted.extend(converted)
-
-        # Update converted files marker
-        if newly_converted:
-            try:
-                all_converted = converted_files | set(newly_converted)
-                converted_marker_file.write_text("\n".join(sorted(all_converted)))
-            except (AttributeError):
-                pass
-
-        if total_converted > 0:
-            logger.info(f"JSONL conversion complete: {total_converted} total games converted")
-
-        return total_converted
+        return await self.data_pipeline_manager.convert_jsonl_to_db(data_dir, games_dir)
 
     async def _convert_jsonl_to_npz_for_training(self, data_dir: Path, training_dir: Path) -> int:
-        """Convert JSONL selfplay files directly to NPZ for training.
+        """Convert JSONL selfplay files directly to NPZ.
 
-        This bypasses the DB intermediate step and creates training-ready NPZ files
-        directly from JSONL. Called periodically when JSONL backlog exists.
-
-        Returns:
-            Number of NPZ files created.
+        Jan 2026: Delegated to DataPipelineManager.
         """
-        # Skip if disabled via environment variable (prevents blocking event loop on startup)
-        if os.environ.get("RINGRIFT_SKIP_JSONL_CONVERSION", "").lower() in ("1", "true", "yes"):
-            logger.debug("[P2POrchestrator] JSONL→NPZ conversion skipped via RINGRIFT_SKIP_JSONL_CONVERSION")
-            return 0
-
-        import json as json_module
-        import subprocess
-
-        # Configuration
-        JSONL_THRESHOLD_GAMES = 50  # Only convert when > 50 games accumulated
-        MAX_CONVERSIONS_PER_CYCLE = 3  # Limit conversions per cycle
-
-        selfplay_dir = data_dir / "selfplay"
-        canonical_dir = selfplay_dir / "canonical"
-
-        # Track converted files
-        npz_marker_file = data_dir / ".jsonl_to_npz_converted"
-        converted_files: set = set()
-        if npz_marker_file.exists():
-            with contextlib.suppress(Exception):
-                converted_files = set(npz_marker_file.read_text().strip().split("\n"))
-
-        conversions_done = 0
-        newly_converted = []
-
-        # Board configs to check
-        board_configs = [
-            ("square8", 2), ("square8", 3), ("square8", 4),
-            ("square19", 2), ("square19", 3), ("square19", 4),
-            ("hex8", 2), ("hex8", 3), ("hex8", 4),
-            ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
-        ]
-
-        for board_type, num_players in board_configs:
-            if conversions_done >= MAX_CONVERSIONS_PER_CYCLE:
-                break
-
-            config_key = f"{board_type}_{num_players}p"
-
-            # Skip if already converted recently
-            if config_key in converted_files:
-                continue
-
-            # Find JSONL files for this config
-            jsonl_files = []
-            search_dirs = [canonical_dir, selfplay_dir, data_dir / "games"]
-
-            for search_dir in search_dirs:
-                if not search_dir.exists():
-                    continue
-                for jsonl_file in search_dir.rglob("*.jsonl"):
-                    if jsonl_file.stat().st_size < 100:
-                        continue
-                    jsonl_files.append(jsonl_file)
-
-            if not jsonl_files:
-                continue
-
-            # Count games matching this config (quick check - just count lines with board type)
-            game_count = 0
-            valid_files = []
-            for jsonl_file in jsonl_files:
-                try:
-                    with open_jsonl_file(jsonl_file) as f:
-                        for line in f:
-                            if not line.strip():
-                                continue
-                            try:
-                                game = json_module.loads(line)
-                                game_board = game.get("board_type", "")
-                                game_players = game.get("num_players", 0)
-                                has_moves = "moves" in game and len(game.get("moves", [])) > 0
-
-                                # Check if matches config
-                                board_match = board_type in game_board.lower() or game_board.lower() in board_type
-                                if board_type == "hexagonal":
-                                    board_match = "hex" in game_board.lower()
-
-                                if board_match and game_players == num_players and has_moves:
-                                    game_count += 1
-                                    if jsonl_file not in valid_files:
-                                        valid_files.append(jsonl_file)
-                            except json_module.JSONDecodeError:
-                                continue
-                except (AttributeError):
-                    continue
-
-            if game_count < JSONL_THRESHOLD_GAMES:
-                continue
-
-            if not valid_files:
-                continue
-
-            # Convert to NPZ using jsonl_to_npz.py
-            output_npz = training_dir / f"jsonl_auto_{config_key}_{int(time.time())}.npz"
-            converter_script = Path(self._get_ai_service_path()) / "scripts" / "jsonl_to_npz.py"
-
-            if not converter_script.exists():
-                logger.info(f"JSONL→NPZ converter not found: {converter_script}")
-                continue
-
-            cmd = [
-                sys.executable, str(converter_script),
-                "--output", str(output_npz),
-                "--board-type", board_type,
-                "--num-players", str(num_players),
-                "--sample-every", "5",
-                "--max-games", "100",
-            ]
-            for vf in valid_files[:10]:  # Limit input files
-                cmd.extend(["--input", str(vf)])
-
-            env = os.environ.copy()
-            env["PYTHONPATH"] = str(Path(self._get_ai_service_path()))
-
-            # Jan 2026: Use asyncio.to_thread() to avoid blocking event loop
-            # This can take up to 600 seconds - must not block
-            def _run_conversion():
-                return subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=600, env=env,
-                    cwd=str(Path(self._get_ai_service_path()))
-                )
-
-            try:
-                logger.info(f"Converting {game_count} {config_key} JSONL games to NPZ...")
-                result = await asyncio.to_thread(_run_conversion)
-                if result.returncode == 0 and output_npz.exists():
-                    logger.info(f"Created {output_npz.name} from JSONL")
-                    conversions_done += 1
-                    newly_converted.append(config_key)
-                else:
-                    logger.info(f"JSONL→NPZ conversion failed for {config_key}: {result.stderr[:200] if result.stderr else 'no error'}")
-            except subprocess.TimeoutExpired:
-                logger.info(f"JSONL→NPZ conversion timeout for {config_key}")
-            except Exception as e:  # noqa: BLE001
-                logger.info(f"JSONL→NPZ conversion error for {config_key}: {e}")
-
-        # Update marker file
-        if newly_converted:
-            try:
-                all_converted = converted_files | set(newly_converted)
-                npz_marker_file.write_text("\n".join(sorted(all_converted)))
-            except (AttributeError):
-                pass
-
-        return conversions_done
+        return await self.data_pipeline_manager.convert_jsonl_to_npz_for_training(
+            data_dir, training_dir
+        )
 
     # Dec 2025: Data/model sync loops moved to LoopManager (323 LOC)
 
     async def _consolidate_selfplay_data(self):
         """Consolidate siloed job databases AND JSONL files into training DB.
 
-        LEARNED LESSONS: Selfplay jobs write to job-specific databases for isolation.
-        GPU selfplay jobs write JSONL files for efficiency.
-        These need to be periodically merged into the training DB for:
-        1. Training triggers to see accurate game counts
-        2. Cross-node data sync to work correctly
-        3. Training scripts to find all available data
-
-        Runs every ~5 minutes (every 5th job check cycle) to avoid overhead.
+        Jan 2026: Delegated to DataPipelineManager.
         """
-        # Only run every 5th cycle (~5 minutes with JOB_CHECK_INTERVAL=60)
-        cycle_counter = getattr(self, "_consolidation_cycle", 0)
-        self._consolidation_cycle = cycle_counter + 1
-        if cycle_counter % 5 != 0:
-            return
-
-        try:
-            import sqlite3
-            import subprocess
-            from pathlib import Path
-
-            data_dir = Path(self._get_ai_service_path()) / "data"
-            selfplay_dir = data_dir / "selfplay"
-            games_dir = data_dir / "games"
-            main_db_path = games_dir / "selfplay.db"
-            jsonl_db_path = games_dir / "jsonl_aggregated.db"
-
-            if not selfplay_dir.exists():
-                return
-
-            env = os.environ.copy()
-            env["PYTHONPATH"] = str(Path(self._get_ai_service_path()))
-
-            # --- PART 1: Aggregate JSONL files (GPU selfplay output) ---
-            jsonl_files = list(selfplay_dir.glob("**/games.jsonl"))
-            # Filter to files > 1KB and modified in last 24 hours
-            recent_jsonl = []
-            for jf in jsonl_files:
-                try:
-                    if jf.stat().st_size > 1024:
-                        recent_jsonl.append(jf)
-                except (AttributeError):
-                    pass
-
-            if recent_jsonl:
-                total_lines = 0
-                for jf in recent_jsonl[:20]:  # Sample first 20
-                    try:
-                        with open(jf) as f:
-                            total_lines += sum(1 for _ in f)
-                    except (OSError):
-                        pass
-
-                if total_lines > 100:  # Only run if there's meaningful data
-                    aggregate_script = Path(self._get_ai_service_path()) / "scripts" / "aggregate_jsonl_to_db.py"
-                    if aggregate_script.exists() and not getattr(self, "_jsonl_aggregation_running", False):
-                        self._jsonl_aggregation_running = True
-                        logger.info(f"JSONL aggregation: ~{total_lines * len(recent_jsonl) // 20} games in {len(recent_jsonl)} files")
-                        cmd = [
-                            sys.executable, str(aggregate_script),
-                            "--input-dir", str(selfplay_dir),
-                            "--output-db", str(jsonl_db_path),
-                        ]
-                        proc = subprocess.Popen(
-                            cmd,
-                            env=env,
-                            stdout=open("/tmp/jsonl_aggregate.log", "w"),
-                            stderr=subprocess.STDOUT,
-                            cwd=str(Path(self._get_ai_service_path())),
-                        )
-                        logger.info(f"Started JSONL aggregation (PID: {proc.pid})")
-                        # Reset flag after ~10 minutes
-                        asyncio.get_running_loop().call_later(
-                            600, lambda: setattr(self, "_jsonl_aggregation_running", False)
-                        )
-
-            # --- PART 1b: Export NPZ from aggregated DB for training ---
-            # Only run if we have a decent sized aggregated DB and not already exporting
-            # LEARNED LESSONS: NPZ export is CPU-intensive. Route to high-CPU nodes
-            # (vast nodes have 256-512 CPUs vs lambda's 64) to free GPU nodes for training.
-            if jsonl_db_path.exists() and not getattr(self, "_npz_export_running", False):
-                try:
-                    # Use asyncio.to_thread to avoid blocking event loop (fix Dec 2025)
-                    game_count = await asyncio.to_thread(self._get_db_game_count_sync, jsonl_db_path)
-
-                    # Only export if we have enough games and it's been a while
-                    training_dir = data_dir / "training"
-                    training_dir.mkdir(exist_ok=True)
-                    npz_output = training_dir / "auto_training_sq8_2p.npz"
-
-                    # Check if existing NPZ is stale (older than 1 hour) or small
-                    should_export = False
-                    if not npz_output.exists():
-                        should_export = game_count > 500
-                    else:
-                        npz_age_hours = (time.time() - npz_output.stat().st_mtime) / 3600
-                        npz_size_mb = npz_output.stat().st_size / (1024 * 1024)
-                        should_export = game_count > 1000 and (npz_age_hours > 1 or npz_size_mb < 1)
-
-                    if should_export:
-                        self._npz_export_running = True
-
-                        # Find best CPU node for export (prefer vast nodes)
-                        # Phase 2B: Direct call to NodeSelector
-                        cpu_nodes = self.node_selector.get_cpu_primary_nodes(count=3)
-                        export_node = None
-                        for node in cpu_nodes:
-                            # Skip nodes that are already very loaded
-                            if node.get_load_score() < 80 and node.cpu_percent < 90:
-                                export_node = node
-                                break
-
-                        if export_node and export_node.node_id != self.node_id:
-                            # Dispatch to high-CPU node
-                            logger.info(f"Dispatching NPZ export ({game_count} games) to {export_node.node_id} "
-                                  f"(cpu_power={export_node.cpu_power_score()}, cpus={export_node.cpu_count})")
-                            asyncio.create_task(self._dispatch_export_job(
-                                node=export_node,
-                                input_path=str(jsonl_db_path),
-                                output_path=str(npz_output),
-                                board_type="square8",
-                                num_players=2,
-                                encoder_version="v3",
-                                max_games=5000,
-                                is_jsonl=False,
-                            ))
-                        else:
-                            # Fall back to local export if no suitable CPU node
-                            export_script = Path(self._get_ai_service_path()) / "scripts" / "export_replay_dataset.py"
-                            if export_script.exists():
-                                logger.info(f"Starting local NPZ export ({game_count} games) -> {npz_output}")
-                                cmd = [
-                                    sys.executable, str(export_script),
-                                    "--db", str(jsonl_db_path),
-                                    "--board-type", "square8",
-                                    "--num-players", "2",
-                                    "--output", str(npz_output),
-                                    "--encoder-version", "v3",
-                                    "--max-games", "5000",
-                                ]
-                                subprocess.Popen(
-                                    cmd,
-                                    env=env,
-                                    stdout=open("/tmp/npz_export.log", "w"),
-                                    stderr=subprocess.STDOUT,
-                                    cwd=str(Path(self._get_ai_service_path())),
-                                )
-
-                        # Reset flag after 30 minutes (export is slow)
-                        asyncio.get_running_loop().call_later(
-                            1800, lambda: setattr(self, "_npz_export_running", False)
-                        )
-                except Exception as e:  # noqa: BLE001
-                    logger.info(f"NPZ export check error: {e}")
-
-            # --- PART 2: Merge job DBs (CPU selfplay output) ---
-            # Use asyncio.to_thread to avoid blocking event loop (fix Dec 2025)
-            dbs_to_merge = await asyncio.to_thread(
-                self._find_dbs_to_merge_sync, selfplay_dir, main_db_path
-            )
-
-            if dbs_to_merge:
-                total_games = sum(c for _, c in dbs_to_merge)
-                logger.info(f"DB consolidation: {len(dbs_to_merge)} DBs with {total_games} games to merge")
-
-                # Use merge script if available
-                merge_script = Path(self._get_ai_service_path()) / "scripts" / "merge_game_dbs.py"
-                if merge_script.exists():
-                    # Build command with all DBs
-                    cmd = [
-                        sys.executable, str(merge_script),  # Use venv Python
-                        "--output", str(main_db_path),
-                        "--dedupe-by-game-id",
-                    ]
-                    for db_path, _ in dbs_to_merge[:50]:  # Limit to 50 DBs at a time
-                        cmd.extend(["--db", str(db_path)])
-
-                    # Run merge in background
-                    proc = subprocess.Popen(
-                        cmd,
-                        env=env,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        cwd=str(Path(self._get_ai_service_path())),
-                    )
-                    logger.info(f"Started DB merge (PID: {proc.pid})")
-
-        except Exception as e:  # noqa: BLE001
-            logger.info(f"Data consolidation error: {e}")
+        await self.data_pipeline_manager.consolidate_selfplay_data(
+            dispatch_export_job_callback=self._dispatch_export_job,
+        )
 
     async def _start_auto_training(self, data_path: str):
         """Start automatic training job on local node."""
@@ -22913,220 +22345,25 @@ print(json.dumps({{
     async def _check_and_kill_stuck_jobs(self) -> int:
         """Detect and terminate stuck training/selfplay jobs.
 
-        A job is considered stuck if:
-        - Training: No log output for 10+ minutes while process still running
-        - Selfplay: No new games generated for 15+ minutes
-
-        Returns:
-            Number of stuck jobs terminated
+        Jan 2026: Delegated to JobLifecycleManager.
         """
-        killed = 0
-        now = time.time()
-        TRAINING_STUCK_THRESHOLD = 600  # 10 minutes
-        SELFPLAY_STUCK_THRESHOLD = 900  # 15 minutes
-
-        # Check training jobs
-        with self.training_lock:
-            training_snapshot = list(self.training_jobs.values())
-
-        for job in training_snapshot:
-            if job.status != "running":
-                continue
-            started = getattr(job, "started_at", 0) or 0
-            last_progress = getattr(job, "last_progress_time", started) or started
-            if now - last_progress > TRAINING_STUCK_THRESHOLD and now - started > TRAINING_STUCK_THRESHOLD:
-                logger.info(f"STUCK DETECTED: Training job {job.job_id} on {job.target_node} - no progress for {int((now - last_progress)/60)}min")
-                # Try to kill the process on the target node
-                target_node = job.target_node
-                if target_node and target_node != self.node_id:
-                    await self._remote_kill_stuck_job(target_node, job.job_id, "training")
-                else:
-                    # Local kill
-                    try:
-                        import subprocess
-                        subprocess.run(["pkill", "-9", "-f", f"train.*{job.job_id}"], timeout=5, capture_output=True)
-                    except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, KeyError, IndexError, AttributeError, ImportError):
-                        pass
-                job.status = "failed"
-                job.error_message = "Killed: no progress detected"
-                job.completed_at = now
-                killed += 1
-                logger.info(f"Killed stuck training job {job.job_id}")
-                # ALERTING: Notify when stuck job is killed
-                asyncio.create_task(self.notifier.send(
-                    title="Stuck Job Killed",
-                    message=f"Training job {job.job_id} killed after no progress for {int((now - last_progress)/60)}min",
-                    level="warning",
-                    fields={
-                        "Job ID": job.job_id,
-                        "Type": job.job_type,
-                        "Node": job.target_node or "local",
-                        "Config": f"{job.board_type}_{job.num_players}p",
-                        "Stuck For": f"{int((now - last_progress)/60)} minutes",
-                    },
-                    node_id=self.node_id,
-                ))
-
-        # Check for GPU nodes with 0% GPU but running GPU jobs
-        with self.peers_lock:
-            peers_snapshot = list(self.peers.values())
-
-        for peer in peers_snapshot:
-            if not peer.is_alive():
-                continue
-            gpu_percent = float(getattr(peer, "gpu_percent", 0) or 0)
-            selfplay_jobs = int(getattr(peer, "selfplay_jobs", 0) or 0)
-            has_gpu = bool(getattr(peer, "has_gpu", False))
-
-            # Check for stuck GPU selfplay (has GPU, jobs running, but 0% GPU util)
-            if has_gpu and selfplay_jobs > 0 and gpu_percent == 0:
-                last_gpu_active = getattr(peer, "_last_gpu_active_time", 0)
-                if last_gpu_active == 0:
-                    peer._last_gpu_active_time = now
-                elif now - last_gpu_active > SELFPLAY_STUCK_THRESHOLD:
-                    logger.info(f"STUCK DETECTED: {peer.node_id} has {selfplay_jobs} jobs but 0% GPU for {int((now - last_gpu_active)/60)}min")
-                    # Don't auto-kill selfplay, just log - might be CPU selfplay
-            elif has_gpu and gpu_percent > 5:
-                peer._last_gpu_active_time = now
-
-        if killed > 0:
-            logger.info(f"Self-healing: killed {killed} stuck job(s)")
-        return killed
+        return await self.job_lifecycle_manager.check_and_kill_stuck_jobs()
 
     async def _check_local_stuck_jobs(self) -> int:
         """DECENTRALIZED: Detect and kill stuck processes on THIS node only.
 
-        Runs on ALL nodes (not just leader) to ensure each node can self-heal
-        even when there's no functioning leader in the cluster.
-
-        Detects:
-        - GPU selfplay processes with 0% GPU utilization for too long
-        - Training processes that haven't made progress
-        - Orphaned processes that aren't tracked in local_jobs
-
-        Returns:
-            Number of stuck processes terminated
+        Jan 2026: Delegated to JobLifecycleManager.
         """
-        killed = 0
-        now = time.time()
-        STUCK_THRESHOLD = 900  # 15 minutes
-
-        # Only check periodically to avoid excessive process scanning
-        last_check = getattr(self, "_last_local_stuck_check", 0)
-        if now - last_check < 300:  # Check every 5 minutes
-            return 0
-        self._last_local_stuck_check = now
-
-        # Check if local GPU is at 0% but we have running GPU selfplay jobs
-        gpu_percent = float(getattr(self.self_info, "gpu_percent", 0) or 0)
-        selfplay_jobs = int(getattr(self.self_info, "selfplay_jobs", 0) or 0)
-        has_gpu = bool(getattr(self.self_info, "has_gpu", False))
-
-        if has_gpu and selfplay_jobs > 0 and gpu_percent < 5:
-            last_gpu_active = getattr(self, "_local_last_gpu_active", 0)
-            if last_gpu_active == 0:
-                self._local_last_gpu_active = now
-            elif now - last_gpu_active > STUCK_THRESHOLD:
-                logger.info(f"LOCAL STUCK: {selfplay_jobs} selfplay jobs but {gpu_percent:.0f}% GPU for {int((now - last_gpu_active)/60)}min")
-                # Kill all local GPU selfplay processes and let them restart
-                try:
-                    # Use asyncio.to_thread to avoid blocking event loop (fix Dec 2025)
-                    returncode, _, _ = await asyncio.to_thread(
-                        self._run_subprocess_sync, ["pkill", "-9", "-f", "gpu_selfplay"], 10
-                    )
-                    if returncode == 0:
-                        killed += 1
-                        logger.info("LOCAL: Killed stuck GPU selfplay processes")
-                        # Clear job tracking so they restart
-                        with self.jobs_lock:
-                            gpu_jobs = [jid for jid, job in self.local_jobs.items()
-                                       if "gpu" in str(getattr(job, "job_type", "")).lower()]
-                            for jid in gpu_jobs:
-                                del self.local_jobs[jid]
-                        self._local_last_gpu_active = now
-                except Exception as e:  # noqa: BLE001
-                    logger.info(f"LOCAL: Failed to kill stuck processes: {e}")
-        elif has_gpu and gpu_percent >= 5:
-            self._local_last_gpu_active = now
-
-        # Check for orphaned selfplay processes (processes running but not in job tracking)
-        try:
-            # Count actual selfplay processes
-            # Use asyncio.to_thread to avoid blocking event loop (fix Dec 2025)
-            # Jan 12, 2026: Use Python subprocess to exclude non-Python processes from count
-            # The old pgrep -fc "selfplay|gpu_selfplay" was counting SSH dispatcher processes
-            # and shell wrappers (zsh, bash) from Claude commands
-            def _count_local_selfplay_processes() -> int:
-                """Count local selfplay processes, excluding SSH dispatchers and shells."""
-                try:
-                    # Get all selfplay-related PIDs
-                    result = subprocess.run(
-                        ["pgrep", "-f", "selfplay|gpu_selfplay"],
-                        capture_output=True,
-                        text=True,
-                        timeout=5,
-                    )
-                    if result.returncode != 0 or not result.stdout.strip():
-                        return 0
-                    all_pids = set(result.stdout.strip().split())
-
-                    # Get PIDs to exclude (SSH and shell processes)
-                    excluded_pids: set[str] = set()
-                    for pattern in ("^ssh", "ssh ", "/bin/zsh", "/bin/bash", "/bin/sh"):
-                        try:
-                            exclude_result = subprocess.run(
-                                ["pgrep", "-f", pattern],
-                                capture_output=True,
-                                text=True,
-                                timeout=5,
-                            )
-                            if exclude_result.returncode == 0 and exclude_result.stdout.strip():
-                                excluded_pids.update(exclude_result.stdout.strip().split())
-                        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
-                            pass
-
-                    # Return count excluding non-Python processes
-                    return len(all_pids - excluded_pids)
-                except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
-                    return 0
-
-            actual_processes = await asyncio.to_thread(_count_local_selfplay_processes)
-
-            with self.jobs_lock:
-                tracked_jobs = len(self.local_jobs)
-
-            # If we have way more processes than tracked jobs, we have orphans
-            if actual_processes > tracked_jobs + 10:
-                last_orphan_check = getattr(self, "_last_orphan_kill", 0)
-                if now - last_orphan_check > 3600:  # Max once per hour
-                    logger.info(f"LOCAL: Orphan detection: {actual_processes} processes vs {tracked_jobs} tracked")
-                    # Don't auto-kill orphans yet, just warn
-                    # Could add aggressive cleanup here if needed
-                    self._last_orphan_kill = now
-        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, ValueError, KeyError, IndexError, AttributeError, ImportError):
-            pass
-
-        if killed > 0:
-            logger.info(f"LOCAL self-healing: terminated {killed} stuck process(es)")
-        return killed
+        return await self.job_lifecycle_manager.check_local_stuck_jobs()
 
     async def _remote_kill_stuck_job(self, target_node: str, job_id: str, job_type: str) -> bool:
-        """Send kill command to remote node for stuck job."""
-        with self.peers_lock:
-            peer = self.peers.get(target_node)
-        if not peer or not peer.is_alive():
-            return False
+        """Send kill command to remote node for stuck job.
 
-        try:
-            timeout = ClientTimeout(total=10)
-            async with get_client_session(timeout) as session:
-                url = self._url_for_peer(peer, "/job/kill")
-                payload = {"job_id": job_id, "job_type": job_type, "reason": "stuck"}
-                async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
-                    return resp.status == 200
-        except Exception as e:  # noqa: BLE001
-            logger.error(f"Failed to kill stuck job on {target_node}: {e}")
-            return False
+        Jan 2026: Delegated to JobLifecycleManager.
+        """
+        return await self.job_lifecycle_manager.remote_kill_stuck_job(
+            target_node, job_id, job_type
+        )
 
     async def _manage_local_jobs_decentralized(self) -> int:
         """DECENTRALIZED: Each node manages its own job count based on gossip state.

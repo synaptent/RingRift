@@ -366,17 +366,21 @@ class P2PAutoDeployer:
         # Remote command to start P2P with venv and proper peers
         # Note: We avoid "pkill -f p2p_orchestrator" as it can kill the SSH session
         # Instead, kill by listening port or use a more specific pattern
+        # Jan 2026: Switched to nohup and added screen cleanup to prevent dead sessions
         remote_cmd = f"""
 cd {ringrift_path} || exit 1
 # Kill any existing P2P by port (safer than pkill -f which can kill SSH)
 fuser -k {self.config.p2p_port}/tcp 2>/dev/null || true
+# Clean up any dead screen sessions
+screen -X -S p2p quit 2>/dev/null || true
+screen -wipe 2>/dev/null || true
 sleep 2
 # Ensure logs directory exists
 mkdir -p logs
-# Activate venv and start P2P orchestrator
+# Activate venv and start P2P orchestrator (use nohup, not screen)
 {venv_activate} 2>/dev/null || true
 export PYTHONPATH={ringrift_path}
-screen -dmS p2p bash -c 'python scripts/p2p_orchestrator.py --node-id {host_id} --port {self.config.p2p_port} --peers {seed_peers} 2>&1 | tee logs/p2p.log'
+nohup python scripts/p2p_orchestrator.py --node-id {host_id} --port {self.config.p2p_port} --peers {seed_peers} > logs/p2p.log 2>&1 &
 sleep 8
 # Verify it started via health check
 if curl -s --connect-timeout 5 localhost:{self.config.p2p_port}/health 2>/dev/null | grep -q '"healthy"'; then

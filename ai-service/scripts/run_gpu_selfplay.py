@@ -88,6 +88,11 @@ from app.models import GameState, Move, MoveType, Position
 from app.models.core import BoardType
 from app.training.initial_state import create_initial_state
 from app.training.selfplay_config import SelfplayConfig, create_argument_parser
+from app.training.temperature_scheduling import (
+    TemperatureSchedule,
+    LinearDecaySchedule,
+    create_scheduler,
+)
 from app.utils.ramdrive import RamdriveSyncer, get_config_from_args, get_games_directory
 
 # Curriculum feedback for adaptive training weights
@@ -583,6 +588,7 @@ class GPUSelfPlayGenerator:
         record_policy: bool = False,
         persona_pool: list[str] | None = None,
         per_player_personas: list[str] | None = None,
+        temperature_schedule: TemperatureSchedule | None = None,
     ):
         self.board_size = board_size
         self.num_players = num_players
@@ -662,6 +668,16 @@ class GPUSelfPlayGenerator:
             record_policy=record_policy,
             per_player_personas=per_player_personas,
         )
+
+        # January 27, 2026 (Phase 2.2): Temperature scheduling integration
+        # Store temperature schedule for per-move temperature updates during games
+        self.temperature_schedule = temperature_schedule
+        if temperature_schedule is not None:
+            logger.info(f"Temperature scheduling ENABLED: {type(temperature_schedule).__name__}")
+            # Create callback for run_games() to update temperature per step
+            self._temperature_callback = lambda move_num: temperature_schedule.get_temperature(move_num)
+        else:
+            self._temperature_callback = None
 
         # Store persona pool for per-batch rotation (handled in generate_batch)
         if persona_pool:
@@ -803,6 +819,7 @@ class GPUSelfPlayGenerator:
             max_moves=self.max_moves,
             snapshot_interval=self.snapshot_interval,
             snapshot_callback=snapshot_callback,
+            temperature_callback=self._temperature_callback,
         )
         elapsed = time.time() - start
 
@@ -1571,6 +1588,7 @@ def run_gpu_selfplay(
     record_policy: bool = False,
     persona_pool: list[str] | None = None,
     per_player_personas: list[str] | None = None,
+    temperature_schedule: TemperatureSchedule | None = None,
 ) -> dict[str, Any]:
     """Run GPU-accelerated self-play generation.
 
@@ -1698,7 +1716,11 @@ def run_gpu_selfplay(
         record_policy=record_policy,
         persona_pool=persona_pool,
         per_player_personas=per_player_personas,
+        temperature_schedule=temperature_schedule,
     )
+
+    if temperature_schedule is not None:
+        logger.info(f"Temperature schedule: {type(temperature_schedule).__name__} (per-move decay)")
 
     if persona_pool:
         logger.info(f"Persona pool: {persona_pool} (full 45-weight profiles)")
@@ -1899,6 +1921,19 @@ def main():
         default=None,
         choices=["uniform", "weighted", "random"],
         help="Mix different temperature levels per game for training diversity",
+    )
+    # January 27, 2026 (Phase 2.2): Per-move temperature scheduling
+    parser.add_argument(
+        "--temperature-schedule",
+        type=str,
+        default=None,
+        choices=["linear", "adaptive", "elo_adaptive", "cosine", "curriculum"],
+        help="Per-move temperature schedule (decays temperature during game). "
+             "linear: 1.0->0.3 over moves 15-60. "
+             "adaptive: Based on position complexity. "
+             "elo_adaptive: Based on model Elo rating. "
+             "cosine: Cosine annealing. "
+             "curriculum: Based on training progress.",
     )
     # Additional ramdrive args beyond base parser
     parser.add_argument("--ram-storage", action="store_true", help="Use ramdrive storage")
@@ -2240,6 +2275,23 @@ def main():
         # Check for quality tier mode
         quality_tier = args.quality_tier
 
+        # January 27, 2026 (Phase 2.2): Create temperature scheduler from CLI arg
+        temperature_schedule = None
+        if hasattr(args, 'temperature_schedule') and args.temperature_schedule:
+            schedule_type = args.temperature_schedule
+            if schedule_type == "linear":
+                # Default linear decay: 1.0 -> 0.3 over moves 15-60
+                temperature_schedule = LinearDecaySchedule(
+                    initial_temp=1.0,
+                    final_temp=0.3,
+                    decay_start=15,
+                    decay_end=60,
+                )
+            else:
+                # Use create_scheduler for other schedule types
+                temperature_schedule = create_scheduler(schedule_type)
+            logger.info(f"Using temperature schedule: {schedule_type}")
+
         while True:
             iteration += 1
             current_seed = args.seed + (iteration - 1) * 10000 if args.seed else None
@@ -2297,6 +2349,7 @@ def main():
                     record_policy=args.record_policy,
                     persona_pool=persona_pool,
                     per_player_personas=per_player_personas_list,
+                    temperature_schedule=temperature_schedule,
                 )
 
             if not continuous:

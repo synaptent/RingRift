@@ -103,12 +103,15 @@ async def kill_duplicate_p2p(node_name: str, node: ClusterNode, dry_run: bool = 
     client = None
     try:
         client = SSHClient(ssh_config)
-        # Kill all p2p_orchestrator processes
+        # Kill all p2p_orchestrator processes and clean up screen sessions
+        # Jan 2026: Added screen cleanup to prevent dead session accumulation
         result = await client.run_async(
-            "pkill -f p2p_orchestrator || true",
-            timeout=10
+            "pkill -f p2p_orchestrator 2>/dev/null || true; "
+            "screen -X -S p2p quit 2>/dev/null || true; "
+            "screen -wipe 2>/dev/null || true",
+            timeout=15
         )
-        logger.info(f"[{node_name}] Killed P2P processes")
+        logger.info(f"[{node_name}] Killed P2P processes and cleaned up screens")
         await asyncio.sleep(2)  # Allow processes to terminate
         return True
     except Exception as e:

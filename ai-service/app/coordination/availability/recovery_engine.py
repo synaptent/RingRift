@@ -338,11 +338,15 @@ class RecoveryEngine(HandlerBase):
 
         try:
             # Kill and restart P2P
+            # Jan 2026: Switched to nohup and added screen cleanup to prevent dead sessions
             cmd = (
-                "pkill -f 'python.*p2p_orchestrator' && "
-                "sleep 2 && "
+                "pkill -f 'python.*p2p_orchestrator' 2>/dev/null || true; "
+                "screen -X -S p2p quit 2>/dev/null || true; "
+                "screen -wipe 2>/dev/null || true; "
+                "sleep 2; "
                 "cd ~/ringrift/ai-service && "
-                "screen -dmS p2p bash -c 'PYTHONPATH=. python scripts/p2p_orchestrator.py'"
+                "mkdir -p logs && "
+                "PYTHONPATH=. nohup python scripts/p2p_orchestrator.py > logs/p2p.log 2>&1 &"
             )
 
             proc = await asyncio.create_subprocess_exec(

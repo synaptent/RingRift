@@ -609,8 +609,14 @@ class QuorumSafeUpdateCoordinator:
 
             # Restart P2P if needed
             if p2p_was_running and restart_p2p:
-                # Kill existing P2P
-                await client.run_async("pkill -f p2p_orchestrator", timeout=10)
+                # Kill existing P2P and clean up screen sessions
+                # Jan 2026: Added screen cleanup to prevent dead session accumulation
+                await client.run_async(
+                    "pkill -f p2p_orchestrator 2>/dev/null || true; "
+                    "screen -X -S p2p quit 2>/dev/null || true; "
+                    "screen -wipe 2>/dev/null || true",
+                    timeout=15,
+                )
                 await asyncio.sleep(2)
 
                 # Build restart command

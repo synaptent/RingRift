@@ -118,6 +118,7 @@ async def check_node_p2p_status(node: NodeInfo, timeout: int = 15) -> dict[str, 
             f"{node.ssh_user}@{target}",
         ]
 
+    proc = None
     try:
         # Check if P2P process is running
         check_cmd = ssh_cmd + ["pgrep -f 'python.*p2p_orchestrator' >/dev/null && echo 'RUNNING' || echo 'NOT_RUNNING'"]
@@ -129,7 +130,10 @@ async def check_node_p2p_status(node: NodeInfo, timeout: int = 15) -> dict[str, 
             ),
             timeout=timeout + 5,
         )
-        stdout, stderr = await proc.communicate()
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(),
+            timeout=timeout + 5,
+        )
 
         if proc.returncode == 0:
             result["reachable"] = True
@@ -147,7 +151,10 @@ async def check_node_p2p_status(node: NodeInfo, timeout: int = 15) -> dict[str, 
                     ),
                     timeout=timeout + 5,
                 )
-                stdout, _ = await proc.communicate()
+                stdout, _ = await asyncio.wait_for(
+                    proc.communicate(),
+                    timeout=timeout + 5,
+                )
                 http_code = stdout.decode().strip()
                 result["p2p_responding"] = http_code == "200"
         else:
@@ -155,8 +162,22 @@ async def check_node_p2p_status(node: NodeInfo, timeout: int = 15) -> dict[str, 
 
     except asyncio.TimeoutError:
         result["error"] = "Timeout"
+        # Kill the subprocess if it's still running
+        if proc is not None:
+            try:
+                proc.kill()
+                await proc.wait()
+            except ProcessLookupError:
+                pass  # Already terminated
     except Exception as e:
         result["error"] = str(e)[:100]
+        # Clean up on any error
+        if proc is not None:
+            try:
+                proc.kill()
+                await proc.wait()
+            except (ProcessLookupError, OSError):
+                pass
 
     return result
 
@@ -212,6 +233,7 @@ async def restart_p2p_on_node(node: NodeInfo, dry_run: bool = False) -> bool:
         f"> logs/p2p.log 2>&1 &"
     )
 
+    proc = None
     try:
         proc = await asyncio.wait_for(
             asyncio.create_subprocess_exec(
@@ -221,7 +243,7 @@ async def restart_p2p_on_node(node: NodeInfo, dry_run: bool = False) -> bool:
             ),
             timeout=30,
         )
-        await proc.communicate()
+        await asyncio.wait_for(proc.communicate(), timeout=30)
 
         if proc.returncode == 0:
             logger.info(f"  Successfully restarted P2P on {node.name}")
@@ -232,9 +254,23 @@ async def restart_p2p_on_node(node: NodeInfo, dry_run: bool = False) -> bool:
 
     except asyncio.TimeoutError:
         logger.error(f"  Timeout restarting P2P on {node.name}")
+        # Kill the subprocess if it's still running
+        if proc is not None:
+            try:
+                proc.kill()
+                await proc.wait()
+            except ProcessLookupError:
+                pass
         return False
     except Exception as e:
         logger.error(f"  Error restarting P2P on {node.name}: {e}")
+        # Clean up on any error
+        if proc is not None:
+            try:
+                proc.kill()
+                await proc.wait()
+            except (ProcessLookupError, OSError):
+                pass
         return False
 
 

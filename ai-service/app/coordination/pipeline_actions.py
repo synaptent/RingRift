@@ -1114,9 +1114,15 @@ async def _dispatch_evaluation_to_cluster(
     config_key = make_config_key(board_type, num_players)
 
     try:
-        from app.coordination.work_distributor import get_work_distributor
+        from app.coordination.work_distributor import (
+            get_work_distributor,
+            DistributedWorkConfig,
+        )
 
         distributor = get_work_distributor()
+        # January 27, 2026: Use priority=85 for gauntlets so they're claimed
+        # before most selfplay (50) but after critical training (100)
+        config = DistributedWorkConfig(priority=85, require_gpu=True)
         work_id = await distributor.submit_evaluation(
             candidate_model=model_path,
             baseline_model=None,
@@ -1124,6 +1130,7 @@ async def _dispatch_evaluation_to_cluster(
             board=board_type,
             num_players=num_players,
             evaluation_type="gauntlet",
+            config=config,
         )
 
         if work_id:
