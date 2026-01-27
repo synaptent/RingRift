@@ -770,8 +770,8 @@ from scripts.p2p.handlers.swim import SwimHandlersMixin
 from scripts.p2p.handlers.raft import RaftHandlersMixin
 from scripts.p2p.handlers.network_health import NetworkHealthMixin, setup_network_health_routes
 
-# Leadership health mixin for voter/quorum monitoring (Jan 2026)
-from scripts.p2p.mixins import LeadershipHealthMixin
+# Leadership mixins for voter/quorum monitoring and state transitions (Jan 2026)
+from scripts.p2p.mixins import LeadershipHealthMixin, LeadershipTransitionsMixin
 
 # Import constants from the refactored module (Phase 2 refactoring - consolidated)
 from scripts.p2p.constants import (
@@ -1623,6 +1623,7 @@ class P2POrchestrator(
     FailoverIntegrationMixin,  # Multi-layer transport failover (Dec 30, 2025 - Phase 9)
     VoterConfigHandlersMixin,  # Voter config sync (Jan 20, 2026 - Consensus-safe config sync)
     LeadershipHealthMixin,    # Voter/quorum health monitoring (Jan 26, 2026)
+    LeadershipTransitionsMixin,  # Step-down and state transitions (Jan 26, 2026)
 ):
     """Main P2P orchestrator class that runs on each node.
 
@@ -4593,101 +4594,8 @@ class P2POrchestrator(
             logger.debug(f"Broadcast to {peer_id} failed: {e}")
             return False
 
-    # =========================================================================
-    # ULSM STEP-DOWN HELPERS - Sync-to-async bridge for _is_leader() calls
-    # =========================================================================
-
-    def _schedule_step_down_sync(self, reason: "TransitionReason") -> None:
-        """Schedule async step-down from sync context (e.g., _is_leader()).
-
-        This is a sync-to-async bridge that schedules the full ULSM step-down
-        process via asyncio.create_task(). The step-down includes:
-        1. State machine transition to STEPPING_DOWN (broadcasts to peers)
-        2. Brief delay for broadcast propagation
-        3. Transition to FOLLOWER
-        4. Legacy field synchronization
-
-        Args:
-            reason: Why we're stepping down (LEASE_EXPIRED, QUORUM_LOST, etc.)
-        """
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(self._complete_step_down_async(reason))
-            logger.info(f"ULSM: Scheduled step-down for reason={reason.value}")
-        except RuntimeError:
-            # No running loop - this shouldn't happen in normal operation
-            logger.warning("ULSM: No event loop to schedule step-down")
-
-    async def _complete_step_down_async(self, reason: "TransitionReason") -> None:
-        """Complete the step-down process via ULSM state machine.
-
-        This is the async implementation that:
-        1. Transitions to STEPPING_DOWN (triggers broadcast to peers)
-        2. Waits briefly for broadcast propagation
-        3. Transitions to FOLLOWER
-        4. Syncs legacy fields and saves state
-
-        Args:
-            reason: Why we're stepping down
-        """
-        try:
-            # Step 1: Transition to STEPPING_DOWN (triggers broadcast)
-            old_leader_id = self.leader_id
-            success = await self._leadership_sm.transition_to(
-                LeaderState.STEPPING_DOWN,
-                reason,
-            )
-            if not success:
-                logger.warning(f"ULSM: Failed transition to STEPPING_DOWN, current state={self._leadership_sm.state}")
-                return
-
-            # Step 2: Brief delay to allow broadcast propagation
-            await asyncio.sleep(0.5)
-
-            # Step 3: Transition to FOLLOWER
-            await self._leadership_sm.transition_to(
-                LeaderState.FOLLOWER,
-                TransitionReason.STEP_DOWN_COMPLETE,
-            )
-
-            # Step 4: Sync legacy fields (for backward compatibility)
-            # C1 fix: Use leader_state_lock for role/leader_id changes
-            with self.leader_state_lock:
-                self.role = NodeRole.FOLLOWER
-                self.leader_id = None
-                self.leader_lease_id = ""
-                self.leader_lease_expires = 0.0
-                self.last_lease_renewal = 0.0
-                # Jan 23, 2026: Reset ULSM QuorumHealth instead of legacy counter
-                if self._leadership_sm:
-                    self._leadership_sm.quorum_health.reset()
-                # Jan 2, 2026: Track when we stepped down for leader stickiness
-                self._last_step_down_time = time.time()
-            self._release_voter_grant_if_self()
-            self._save_state()
-
-            # Emit LEADER_LOST event for other components
-            self._emit_leader_lost_sync(old_leader_id, reason.value)
-
-            logger.info(f"ULSM: Step-down complete, reason={reason.value}")
-
-            # Step 5: Trigger new election for certain step-down reasons
-            # Skip for QUORUM_LOST since election would fail anyway
-            if reason != TransitionReason.QUORUM_LOST:
-                if getattr(self, "voter_node_ids", []) and not self._has_voter_quorum():
-                    logger.warning("ULSM: Skipping post-step-down election - no voter quorum")
-                else:
-                    logger.info("ULSM: Starting election after step-down")
-                    asyncio.create_task(self._start_election())
-
-        except Exception as e:
-            logger.error(f"ULSM: Error during step-down: {e}", exc_info=True)
-            # Fallback: Force follower state
-            # C1 fix: Use leader_state_lock for role/leader_id changes
-            with self.leader_state_lock:
-                self.role = NodeRole.FOLLOWER
-                self.leader_id = None
-            self._save_state()
+    # NOTE: _schedule_step_down_sync() and _complete_step_down_async()
+    # moved to LeadershipTransitionsMixin (Jan 26, 2026)
 
     # =========================================================================
     # TASK ISOLATION - Prevent single task failure from crashing all tasks

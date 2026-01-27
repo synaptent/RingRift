@@ -26,6 +26,7 @@ from .health_tracking import (
     EntityHealthState,
 )
 from .leadership_health_mixin import LeadershipHealthMixin
+from .leadership_transitions_mixin import LeadershipTransitionsMixin
 
 __all__ = [
     "HealthTrackingMixin",
@@ -33,4 +34,5 @@ __all__ = [
     "EntityHealthSummary",
     "EntityHealthState",
     "LeadershipHealthMixin",
+    "LeadershipTransitionsMixin",
 ]
