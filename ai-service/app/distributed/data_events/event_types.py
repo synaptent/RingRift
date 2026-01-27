@@ -75,6 +75,12 @@ class DataEventType(Enum):
     CASCADE_TRANSFER_TRIGGERED = "cascade_transfer_triggered"  # Transfer learning triggered between player counts
     CASCADE_TRANSFER_FAILED = "cascade_transfer_failed"  # Transfer learning failed
 
+    # Reanalysis events (January 27, 2026 - Phase 2.1)
+    # Re-evaluates historical games with improved models for better training targets
+    REANALYSIS_STARTED = "reanalysis_started"  # Reanalysis job started for a config
+    REANALYSIS_COMPLETED = "reanalysis_completed"  # Reanalysis job finished successfully
+    REANALYSIS_FAILED = "reanalysis_failed"  # Reanalysis job failed
+
     # Evaluation events
     EVALUATION_STARTED = "evaluation_started"
     EVALUATION_PROGRESS = "evaluation_progress"

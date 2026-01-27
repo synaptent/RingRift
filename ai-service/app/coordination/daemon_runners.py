@@ -365,6 +365,11 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         module="app.coordination.auto_promotion_daemon",
         class_name="AutoPromotionDaemon",
     ),
+    # January 27, 2026 (Phase 2.1): Reanalysis daemon
+    "reanalysis": RunnerSpec(
+        module="app.coordination.reanalysis_daemon",
+        class_name="ReanalysisDaemon",
+    ),
     "unified_promotion": RunnerSpec(
         module="app.training.promotion_controller",
         class_name="PromotionController",

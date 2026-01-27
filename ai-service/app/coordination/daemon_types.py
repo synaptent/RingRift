@@ -222,6 +222,11 @@ class DaemonType(Enum):
     # Auto-promotion (December 2025) - auto-promote models based on evaluation results
     AUTO_PROMOTION = "auto_promotion"
 
+    # Reanalysis (January 2026 - Phase 2.1) - re-evaluates historical games with stronger models
+    # Triggers when model Elo improves by min_elo_delta (default: 50)
+    # Expected impact: +25-50 Elo from improved training targets
+    REANALYSIS = "reanalysis"
+
     # S3 backup (December 2025) - backup models to S3 after promotion
     S3_BACKUP = "s3_backup"
 

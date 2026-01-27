@@ -291,6 +291,16 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         depends_on=(DaemonType.EVENT_ROUTER, DaemonType.EVALUATION),
         category="evaluation",
     ),
+    # Reanalysis daemon (January 27, 2026 - Phase 2.1)
+    # Re-evaluates historical games with improved models
+    # Subscribes to MODEL_PROMOTED, triggers reanalysis on Elo improvements
+    DaemonType.REANALYSIS: DaemonSpec(
+        runner_name="create_reanalysis",
+        depends_on=(DaemonType.EVENT_ROUTER,),
+        soft_depends_on=(DaemonType.AUTO_PROMOTION,),
+        category="training",
+        health_check_interval=300.0,  # 5 min - matches daemon cycle
+    ),
     DaemonType.UNIFIED_PROMOTION: DaemonSpec(
         runner_name="create_unified_promotion",
         depends_on=(DaemonType.EVENT_ROUTER,),
