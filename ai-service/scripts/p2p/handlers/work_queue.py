@@ -66,8 +66,9 @@ DISK_USAGE_CRITICAL_THRESHOLD = 85  # Percentage
 
 # GPU utilization threshold - refuse selfplay if GPU is already busy
 # Session 17.42 (Jan 20, 2026): Added to prevent OOM when training is running
-# Target 50-80% utilization; reject new selfplay above 80% to leave headroom
-GPU_UTILIZATION_REJECT_THRESHOLD = 80  # Percentage - reject selfplay if GPU% >= this
+# Jan 27, 2026: Increased from 80% to 90% to improve job acceptance rate
+# Target 60-90% utilization; reject new selfplay above 90% to leave headroom
+GPU_UTILIZATION_REJECT_THRESHOLD = 90  # Percentage - reject selfplay if GPU% >= this
 
 # GPU name to total VRAM mapping (GB)
 # Session 17.32: Used to infer VRAM capacity from gpu_name since NodeInfo

@@ -918,7 +918,8 @@ RESOURCE_WAIT_TIMEOUT = 300
 HEARTBEAT_INTERVAL = 30
 
 # Peer timeout - no heartbeat means dead (seconds)
-PEER_TIMEOUT = 90
+# Jan 27, 2026: Aligned to 150s to match PEER_DEAD_TIMEOUT in loop_constants.py
+PEER_TIMEOUT = 150
 
 # Election timeout for leader election (seconds)
 ELECTION_TIMEOUT = 10

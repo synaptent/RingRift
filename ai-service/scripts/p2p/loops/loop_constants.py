@@ -234,7 +234,8 @@ class LoopTimeouts:
     HANDLER_ADMIN: float = 300.0             # Admin/long-running handlers
 
     # Job and work queue timeouts
-    WORK_QUEUE_ITEM: float = 3600.0          # 1 hour per work queue item
+    # Jan 27, 2026: Increased from 3600 to 5400 (1.5h) for large board selfplay
+    WORK_QUEUE_ITEM: float = 5400.0          # 1.5 hours per work queue item
     LONG_RUNNING_JOB: float = 21600.0        # 6 hours for training/gauntlet jobs
 
     # Lock acquisition timeouts

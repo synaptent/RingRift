@@ -206,12 +206,13 @@ DEFAULT_DB_PATH = Path(os.environ.get("RINGRIFT_WORK_QUEUE_DB", str(_DEFAULT_DB_
 # Root cause: 3-player selfplay jobs were rejected due to full queue (2000/2000)
 # despite 500x priority multiplier. Starving configs need queue capacity.
 # Jan 25, 2026: Increased to 10000 hard limit for 20+ node cluster stability.
+# Jan 27, 2026: Increased to 15000 hard limit to provide recovery headroom.
 # With 20 nodes × 25 cores × 2 items/min = 1000 items/min capacity.
-# 10000 limit provides ~10 min buffer for backpressure handling.
+# 15000 limit provides ~15 min buffer for backpressure handling.
 # Soft limit: Emit BACKPRESSURE_ACTIVATED event, warn callers
 # Hard limit: Reject new items, force callers to wait
-BACKPRESSURE_SOFT_LIMIT = int(os.environ.get("RINGRIFT_WORK_QUEUE_SOFT_LIMIT", "5000"))
-BACKPRESSURE_HARD_LIMIT = int(os.environ.get("RINGRIFT_WORK_QUEUE_HARD_LIMIT", "10000"))
+BACKPRESSURE_SOFT_LIMIT = int(os.environ.get("RINGRIFT_WORK_QUEUE_SOFT_LIMIT", "7500"))
+BACKPRESSURE_HARD_LIMIT = int(os.environ.get("RINGRIFT_WORK_QUEUE_HARD_LIMIT", "15000"))
 # Recovery threshold: Emit BACKPRESSURE_RELEASED when queue drops below this
 BACKPRESSURE_RECOVERY_THRESHOLD = int(os.environ.get("RINGRIFT_WORK_QUEUE_RECOVERY", "1200"))
 
