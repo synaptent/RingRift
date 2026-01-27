@@ -38,6 +38,10 @@ from app.coordination.priority_calculator import (
 from app.coordination.selfplay.status_monitoring import StatusMonitoringMixin
 from app.coordination.selfplay.quality_signal_handler import SelfplayQualitySignalMixin
 from app.coordination.selfplay.velocity_mixin import SelfplayVelocityMixin
+from app.coordination.selfplay.data_providers import DataProviderMixin
+from app.coordination.selfplay.node_targeting import NodeTargetingMixin
+from app.coordination.selfplay.idle_injection import IdleWorkInjectionMixin
+from app.coordination.selfplay.architecture_tracker_mixin import ArchitectureTrackerMixin
 
 # Event handler documentation and registry
 from app.coordination.selfplay.event_handlers import (
@@ -115,6 +119,10 @@ __all__ = [
     "StatusMonitoringMixin",
     "SelfplayQualitySignalMixin",
     "SelfplayVelocityMixin",
+    "DataProviderMixin",
+    "NodeTargetingMixin",
+    "IdleWorkInjectionMixin",
+    "ArchitectureTrackerMixin",
     # Event registry (Sprint 17.3)
     "CORE_EVENTS",
     "QUALITY_EVENTS",

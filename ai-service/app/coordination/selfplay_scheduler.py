@@ -161,6 +161,18 @@ from app.coordination.selfplay.allocation_engine import (
     AllocationResult,
 )
 
+# January 2026 Sprint 17.9: Data provider methods extracted to mixin
+from app.coordination.selfplay.data_providers import DataProviderMixin
+
+# January 2026 Sprint 17.9: Node targeting methods extracted to mixin
+from app.coordination.selfplay.node_targeting import NodeTargetingMixin
+
+# January 2026 Sprint 17.9: Idle work injection methods extracted to mixin
+from app.coordination.selfplay.idle_injection import IdleWorkInjectionMixin
+
+# January 2026 Sprint 17.9: Architecture tracking methods extracted to mixin
+from app.coordination.selfplay.architecture_tracker_mixin import ArchitectureTrackerMixin
+
 # Note: backpressure concrete import moved to lazy loading in allocate_selfplay_batch()
 # to break circular dependency cycle (Dec 2025). The IBackpressureMonitor protocol
 # from interfaces allows type hints without importing the concrete class.
@@ -274,7 +286,16 @@ from app.coordination.selfplay_priority_types import ConfigPriority, DynamicWeig
 # (January 2, 2026 extraction - ~200 LOC moved to separate module)
 
 
-class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, SelfplayHealthMonitorMixin, HandlerBase):
+class SelfplayScheduler(
+    DataProviderMixin,
+    NodeTargetingMixin,
+    IdleWorkInjectionMixin,
+    ArchitectureTrackerMixin,
+    SelfplayVelocityMixin,
+    SelfplayQualitySignalMixin,
+    SelfplayHealthMonitorMixin,
+    HandlerBase,
+):
     """Priority-based selfplay scheduler across cluster nodes.
 
     Responsibilities:
@@ -493,103 +514,10 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
                     logger.warning(f"[SelfplayScheduler] Failed to load config {config_path}: {e}")
 
     # =========================================================================
-    # Game Count Normalization (Dec 29, 2025)
+    # Game Count Normalization - Delegated to DataProviderMixin
+    # Sprint 17.9 (Jan 2026): _get_samples_per_game_estimate, set_target_training_samples,
+    # get_games_needed, get_all_games_needed moved to selfplay/data_providers.py
     # =========================================================================
-
-    def _get_samples_per_game_estimate(self, config_key: str) -> float:
-        """Get estimated samples per game for a config.
-
-        Uses historical averages from SAMPLES_PER_GAME_BY_BOARD, falling back
-        to a conservative default of 50 samples/game if config not found.
-
-        Args:
-            config_key: Config key like "hex8_2p", "square19_4p"
-
-        Returns:
-            Estimated samples per game
-        """
-        board_type, num_players = parse_config_key(config_key)
-        player_key = f"{num_players}p"
-        if board_type in SAMPLES_PER_GAME_BY_BOARD:
-            return float(SAMPLES_PER_GAME_BY_BOARD[board_type].get(player_key, 50))
-        return 50.0  # Conservative default
-
-    def set_target_training_samples(self, config_key: str, target_samples: int) -> None:
-        """Set training sample target for a configuration.
-
-        Dec 29, 2025: Part of game count normalization feature.
-        DataPipelineOrchestrator calls this before requesting export to
-        communicate how many samples are needed for training.
-
-        This updates the ConfigPriority's target_training_samples and
-        samples_per_game_estimate, which are then used by games_needed
-        property to determine how many more games should be generated.
-
-        Args:
-            config_key: Config key (e.g., "hex8_2p", "square19_4p")
-            target_samples: Number of training samples needed
-
-        Example:
-            scheduler.set_target_training_samples("hex8_2p", 100000)
-            # Now scheduler.get_games_needed("hex8_2p") returns games needed
-        """
-        if config_key not in self._config_priorities:
-            logger.warning(
-                f"[SelfplayScheduler] Unknown config {config_key}, creating priority entry"
-            )
-            self._config_priorities[config_key] = ConfigPriority(config_key=config_key)
-
-        priority = self._config_priorities[config_key]
-        # Validate target: 0 or negative keeps existing value or uses default
-        if target_samples <= 0:
-            if priority.target_training_samples <= 0:
-                # Use default if no existing value
-                priority.target_training_samples = 100000
-            # Otherwise keep existing value
-            logger.debug(
-                f"[SelfplayScheduler] Target {target_samples} <= 0 for {config_key}, "
-                f"using existing/default: {priority.target_training_samples}"
-            )
-        else:
-            priority.target_training_samples = target_samples
-        priority.samples_per_game_estimate = self._get_samples_per_game_estimate(config_key)
-
-        games_needed = priority.games_needed
-        logger.info(
-            f"[SelfplayScheduler] Set training target for {config_key}: "
-            f"{target_samples} samples, {priority.samples_per_game_estimate:.0f} samples/game estimate, "
-            f"{games_needed} games needed"
-        )
-
-    def get_games_needed(self, config_key: str) -> int:
-        """Get number of additional games needed for a configuration.
-
-        Dec 29, 2025: Part of game count normalization feature.
-        Returns how many more games are needed to meet the training sample target.
-
-        Args:
-            config_key: Config key (e.g., "hex8_2p", "square19_4p")
-
-        Returns:
-            Number of games needed (0 if target already met or config unknown)
-        """
-        if config_key not in self._config_priorities:
-            return 0
-        return self._config_priorities[config_key].games_needed
-
-    def get_all_games_needed(self) -> dict[str, int]:
-        """Get games needed for all configurations.
-
-        Dec 29, 2025: Part of game count normalization feature.
-        Returns a dict mapping config_key to games_needed for all configs.
-
-        Returns:
-            Dict[config_key, games_needed] for all tracked configurations
-        """
-        return {
-            cfg: priority.games_needed
-            for cfg, priority in self._config_priorities.items()
-        }
 
     # =========================================================================
     # Priority Calculation
@@ -1358,164 +1286,12 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
 
         return result
 
-    def _fetch_quality_from_daemon(self, config: str) -> Optional[float]:
-        """Fetch quality score from QualityMonitorDaemon.
-
-        Dec 30, 2025: Extracted as provider for ConfigStateCache.
-
-        Args:
-            config: Config key like "hex8_2p"
-
-        Returns:
-            Quality score 0.0-1.0, or None if unavailable
-        """
-        try:
-            from app.coordination.quality_monitor_daemon import get_quality_daemon
-
-            daemon = get_quality_daemon()
-            if daemon:
-                return daemon.get_config_quality(config)
-        except ImportError:
-            logger.debug("[SelfplayScheduler] quality_monitor_daemon not available")
-        except (AttributeError, KeyError) as e:
-            logger.debug(f"[SelfplayScheduler] Error getting quality for {config}: {e}")
-        return None
-
-    def _get_config_data_quality(self, config: str) -> float:
-        """Get data quality score for a config from QualityMonitorDaemon.
-
-        Dec 29, 2025 - Phase 1: Quality-weighted selfplay allocation.
-        Higher quality score = better training data (Gumbel MCTS, passed parity).
-        Lower quality = heuristic-only games, parity failures.
-
-        Dec 30, 2025: Refactored to use ConfigStateCache for TTL caching.
-
-        Args:
-            config: Config key like "hex8_2p"
-
-        Returns:
-            Quality score 0.0-1.0 (default 0.7 if unavailable)
-        """
-        return self._quality_cache.get_quality_or_fetch(config)
-
-    async def _get_all_config_qualities(self) -> dict[str, float]:
-        """Get data quality scores for all configs.
-
-        Dec 29, 2025 - Phase 1: Batch quality lookup for priority calculation.
-        Dec 30, 2025: Refactored to use ConfigStateCache.
-
-        Returns:
-            Dict mapping config_key to quality score (0.0-1.0)
-        """
-        return self._quality_cache.get_all_qualities(list(ALL_CONFIGS))
-
-    def invalidate_quality_cache(self, config: str | None = None) -> int:
-        """Invalidate quality cache for a config or all configs.
-
-        Dec 30, 2025: Refactored to use ConfigStateCache.
-        Call this when quality data changes externally
-        (e.g., after evaluation completes, after parity gate updates).
-
-        Args:
-            config: Specific config to invalidate, or None to clear all
-
-        Returns:
-            Number of entries invalidated
-        """
-        return self._quality_cache.invalidate(config)
-
-    def _get_cluster_game_counts(self) -> dict[str, int]:
-        """Get cluster-wide game counts from UnifiedDataRegistry.
-
-        Jan 2026 Phase 2: Cluster awareness for selfplay scheduling.
-        Returns total games available across the cluster (local + remote nodes)
-        for each config to prevent duplicate game generation.
-
-        Uses TTL caching to avoid repeated lookups during priority calculation.
-        Logs source breakdown for visibility and emits events on fallback.
-
-        Returns:
-            Dict mapping config_key to cluster-wide total game count
-        """
-        now = time.time()
-
-        # Check if cache is fresh
-        if now - self._cluster_game_counts_last_update < self._cluster_game_counts_ttl:
-            return self._cluster_game_counts
-
-        # Refresh from registry
-        try:
-            from app.distributed.data_catalog import get_data_registry
-
-            registry = get_data_registry()
-            status = registry.get_cluster_status()
-
-            if status and sum(c.get("total", 0) for c in status.values()) > 0:
-                # Update cache with total game counts
-                self._cluster_game_counts = {
-                    config_key: config_data.get("total", 0)
-                    for config_key, config_data in status.items()
-                }
-                self._cluster_game_counts_last_update = now
-
-                # Log source breakdown for visibility (Jan 2026 - cluster-wide measurement)
-                local_total = sum(c.get("local", 0) for c in status.values())
-                cluster_total = sum(c.get("cluster", 0) for c in status.values())
-                owc_total = sum(c.get("owc", 0) for c in status.values())
-                total = sum(self._cluster_game_counts.values())
-
-                logger.info(
-                    f"[SelfplayScheduler] Using CLUSTER-WIDE counts: "
-                    f"local={local_total:,}, cluster={cluster_total:,}, owc={owc_total:,}, "
-                    f"total={total:,} games across {len(self._cluster_game_counts)} configs"
-                )
-                return self._cluster_game_counts
-
-            # Registry returned empty - fall through to fallback
-            logger.warning("[SelfplayScheduler] Cluster registry returned empty counts")
-
-        except ImportError as e:
-            logger.warning(f"[SelfplayScheduler] DataRegistry not available: {e}")
-        except (RuntimeError, ConnectionError, TimeoutError, OSError) as e:
-            logger.warning(f"[SelfplayScheduler] Error getting cluster counts: {e}")
-
-        # Fallback to local-only counts with explicit warning
-        logger.warning(
-            "[SelfplayScheduler] FALLBACK to LOCAL-ONLY game counts! "
-            "Cluster data unavailable - progress measurement may be incomplete."
-        )
-
-        # Emit event for monitoring (Jan 2026 - cluster visibility)
-        try:
-            from app.distributed.data_events.event_types import DataEventType
-            from app.coordination.event_router import emit_event
-
-            emit_event(
-                DataEventType.CLUSTER_VISIBILITY_DEGRADED,
-                {
-                    "reason": "cluster_manifest_unavailable",
-                    "node_id": getattr(self, "_node_id", "unknown"),
-                    "cached_count": sum(self._cluster_game_counts.values()),
-                },
-            )
-        except Exception:
-            pass  # Don't fail on event emission
-
-        return self._cluster_game_counts
-
-    def _get_cluster_game_count(self, config_key: str) -> int:
-        """Get cluster-wide game count for a specific config.
-
-        Jan 2026 Phase 2: Helper for priority calculation.
-
-        Args:
-            config_key: Config key like "hex8_2p"
-
-        Returns:
-            Total games available cluster-wide for this config (default: 0)
-        """
-        counts = self._get_cluster_game_counts()
-        return counts.get(config_key, 0)
+    # =========================================================================
+    # Data Fetching - Delegated to DataProviderMixin
+    # Sprint 17.9 (Jan 2026): _fetch_quality_from_daemon, _get_config_data_quality,
+    # _get_all_config_qualities, invalidate_quality_cache, _get_cluster_game_counts,
+    # _get_cluster_game_count moved to selfplay/data_providers.py
+    # =========================================================================
 
     def _get_cascade_priority(self, config_key: str) -> float:
         """Get cascade training priority boost for a config.
@@ -1564,55 +1340,7 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
         from app.coordination.selfplay.priority_boosts import get_architecture_boosts
         return get_architecture_boosts()
 
-    async def _get_game_counts(self) -> dict[str, int]:
-        """Get game counts per config - cluster-aware with fallback to local.
-
-        January 2026: Made cluster-aware. Coordinator nodes don't have local
-        canonical databases, so we must use cluster-wide aggregation first.
-
-        Priority order:
-        1. UnifiedDataRegistry (cluster manifest + local + OWC + S3)
-        2. Local GameDiscovery (last resort fallback)
-
-        Returns:
-            Dict mapping config_key to game count
-        """
-        result: dict[str, int] = {}
-
-        # Try 1: Cluster-wide counts from UnifiedDataRegistry
-        try:
-            cluster_counts = self._get_cluster_game_counts()
-            if cluster_counts and sum(cluster_counts.values()) > 0:
-                result = dict(cluster_counts)
-                logger.debug(
-                    f"[SelfplayScheduler] Using cluster game counts: "
-                    f"{sum(result.values()):,} total across {len(result)} configs"
-                )
-        except Exception as e:
-            logger.debug(f"[SelfplayScheduler] Cluster counts unavailable: {e}")
-
-        # Try 2: Local-only fallback (for nodes without cluster connectivity)
-        if not result or sum(result.values()) == 0:
-            try:
-                from app.utils.game_discovery import get_game_counts_summary
-
-                result = get_game_counts_summary()
-                if sum(result.values()) > 0:
-                    logger.debug(
-                        f"[SelfplayScheduler] Falling back to local counts: "
-                        f"{sum(result.values()):,} total across {len(result)} configs"
-                    )
-            except ImportError:
-                logger.debug("[SelfplayScheduler] game_discovery not available")
-            except Exception as e:
-                logger.warning(f"[SelfplayScheduler] Error getting local game counts: {e}")
-
-        # Ensure all configs have a count (0 if not found)
-        for config_key in ALL_CONFIGS:
-            if config_key not in result:
-                result[config_key] = 0
-
-        return result
+    # _get_game_counts moved to DataProviderMixin (Sprint 17.9)
 
     # =========================================================================
     # Node Allocation
@@ -1972,28 +1700,7 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
 
         return stolen_total
 
-    def _is_selfplay_enabled(self, node_id: str) -> bool:
-        """Check if selfplay is enabled for a node.
-
-        January 2026: Added to support training-only nodes that should not
-        receive selfplay jobs (prevents OOM from training + selfplay conflicts).
-
-        Args:
-            node_id: The node ID to check.
-
-        Returns:
-            True if selfplay is allowed on this node, False otherwise.
-        """
-        try:
-            cluster_nodes = get_cluster_nodes()
-            if node_id in cluster_nodes:
-                return cluster_nodes[node_id].selfplay_enabled
-            # If node not in config, default to enabled
-            return True
-        except Exception as e:
-            # Graceful fallback: if config unavailable, allow selfplay
-            logger.debug(f"[SelfplayScheduler] Could not check selfplay_enabled for {node_id}: {e}")
-            return True
+    # _is_selfplay_enabled moved to NodeTargetingMixin (Sprint 17.9)
 
     def _allocate_to_nodes(
         self,
@@ -2993,434 +2700,17 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
         )
 
     # =========================================================================
-    # Idle Node Work Injection (Jan 5, 2026 - Sprint 17.30)
+    # Idle Node Work Injection - Delegated to IdleWorkInjectionMixin
+    # Sprint 17.9 (Jan 2026): _update_node_idle_tracking, _detect_idle_nodes,
+    # _get_most_underserved_config, inject_work_for_idle_nodes
+    # moved to selfplay/idle_injection.py
     # =========================================================================
 
-    def _is_cpu_only_node(self, node_id: str) -> bool:
-        """Check if a node is CPU-only (no GPU).
-
-        Jan 5, 2026: CPU-only nodes (like Hetzner) can contribute
-        heuristic-only selfplay data. This helper identifies them
-        for appropriate work assignment.
-
-        Args:
-            node_id: Node identifier to check
-
-        Returns:
-            True if node has no GPU, False otherwise
-        """
-        cap = self._node_capabilities.get(node_id)
-        if not cap:
-            return False
-        return cap.gpu_memory_gb == 0
-
-    def _update_node_idle_tracking(self) -> None:
-        """Update idle tracking state for all nodes.
-
-        Called during node capability updates. Tracks when each node
-        first became idle (current_jobs == 0).
-
-        Jan 5, 2026: Part of idle node work injection feature.
-        Jan 5, 2026 (Task 8.4): Now includes CPU-only nodes for heuristic selfplay.
-        """
-        now = time.time()
-
-        for node_id, cap in self._node_capabilities.items():
-            # Jan 5, 2026: Include CPU-only nodes now that they can run heuristic selfplay
-            # Previously skipped CPU-only nodes, but they can contribute training data
-
-            if cap.current_jobs == 0:
-                # Node is idle - start tracking if not already
-                if node_id not in self._node_idle_since:
-                    self._node_idle_since[node_id] = now
-                    logger.debug(
-                        f"[SelfplayScheduler] Node {node_id} became idle, "
-                        f"will inject work after {self._idle_threshold_seconds}s"
-                    )
-            else:
-                # Node is working - clear idle tracking
-                if node_id in self._node_idle_since:
-                    del self._node_idle_since[node_id]
-
-    def _detect_idle_nodes(self) -> list[str]:
-        """Get list of nodes that have been idle longer than threshold.
-
-        Returns:
-            List of node IDs that are idle and eligible for work injection
-        """
-        now = time.time()
-        idle_nodes = []
-
-        # Get unhealthy nodes to skip
-        unhealthy_nodes = getattr(self, "_unhealthy_nodes", set())
-
-        for node_id, idle_since in self._node_idle_since.items():
-            idle_duration = now - idle_since
-
-            if idle_duration >= self._idle_threshold_seconds:
-                # Skip unhealthy nodes
-                if node_id in unhealthy_nodes:
-                    logger.debug(
-                        f"[SelfplayScheduler] Skipping unhealthy idle node: {node_id}"
-                    )
-                    continue
-
-                idle_nodes.append(node_id)
-                logger.debug(
-                    f"[SelfplayScheduler] Node {node_id} idle for {idle_duration:.0f}s "
-                    f"(threshold: {self._idle_threshold_seconds}s)"
-                )
-
-        return idle_nodes
-
-    def _get_most_underserved_config(self) -> str | None:
-        """Get the config with lowest game count that needs more data.
-
-        Jan 5, 2026: Used for idle node work injection. Prioritizes
-        configs in ULTRA/EMERGENCY starvation tiers.
-
-        Returns:
-            Config key of most underserved config, or None if all are healthy
-        """
-        most_underserved = None
-        lowest_game_count = float("inf")
-
-        for config_key, priority in self._config_priorities.items():
-            game_count = priority.game_count
-
-            # Skip configs that are adequately served
-            if game_count >= DATA_STARVATION_CRITICAL_THRESHOLD:
-                continue
-
-            # Prefer the config with lowest game count
-            if game_count < lowest_game_count:
-                lowest_game_count = game_count
-                most_underserved = config_key
-
-        return most_underserved
-
-    async def inject_work_for_idle_nodes(self) -> dict[str, Any]:
-        """Inject priority selfplay work for nodes that have been idle.
-
-        Jan 5, 2026 - Sprint 17.30: When GPU nodes are idle for more than
-        IDLE_THRESHOLD_SECONDS (default 5 min), allocate emergency selfplay
-        work for the most underserved config.
-
-        This improves:
-        - GPU utilization (+15-25% during backpressure periods)
-        - Elo improvement (+8-15 Elo from additional data for starved configs)
-        - Cluster efficiency (idle resources put to productive use)
-
-        Returns:
-            Dict with injection statistics
-        """
-        now = time.time()
-
-        # Rate limit work injection
-        if now - self._last_idle_injection < self._idle_injection_cooldown:
-            return {"skipped": True, "reason": "cooldown"}
-
-        # Update idle tracking from latest capabilities
-        self._update_node_idle_tracking()
-
-        # Detect nodes that are idle past threshold
-        idle_nodes = self._detect_idle_nodes()
-
-        if not idle_nodes:
-            return {"idle_nodes": 0, "injected": 0}
-
-        # Get most underserved config to work on
-        target_config = self._get_most_underserved_config()
-
-        if not target_config:
-            # All configs have sufficient data
-            logger.debug(
-                f"[SelfplayScheduler] {len(idle_nodes)} idle nodes but no underserved configs"
-            )
-            return {
-                "idle_nodes": len(idle_nodes),
-                "injected": 0,
-                "reason": "no_underserved_configs",
-            }
-
-        # Inject work for idle nodes
-        injected_count = 0
-        cpu_node_count = 0
-        games_per_node = 50  # Emergency allocation per node
-        # Jan 5, 2026 (Task 8.4): Lower batch for CPU-only nodes (heuristic is slower)
-        games_per_cpu_node = 25
-
-        allocation: dict[str, dict[str, int]] = {target_config: {}}
-
-        for node_id in idle_nodes:
-            # Jan 5, 2026 (Task 8.4): CPU nodes get fewer games (heuristic is slower)
-            is_cpu = self._is_cpu_only_node(node_id)
-            node_games = games_per_cpu_node if is_cpu else games_per_node
-
-            # Allocate emergency games to this node
-            allocation[target_config][node_id] = node_games
-            injected_count += 1
-            if is_cpu:
-                cpu_node_count += 1
-
-            # Clear idle tracking since we're injecting work
-            if node_id in self._node_idle_since:
-                del self._node_idle_since[node_id]
-
-        self._last_idle_injection = now
-
-        # Log the injection
-        priority = self._config_priorities.get(target_config)
-        game_count = priority.game_count if priority else 0
-        total_games = sum(allocation[target_config].values())
-
-        # Jan 5, 2026 (Task 8.4): Log CPU vs GPU node breakdown
-        gpu_node_count = injected_count - cpu_node_count
-        node_breakdown = f"{gpu_node_count} GPU, {cpu_node_count} CPU" if cpu_node_count > 0 else f"{gpu_node_count} GPU"
-
-        logger.info(
-            f"[SelfplayScheduler] Idle work injection: "
-            f"{len(idle_nodes)} idle nodes ({node_breakdown}) → {target_config} ({game_count} games, "
-            f"+{total_games} games allocated)"
-        )
-
-        # Emit event for observability
-        try:
-            from app.coordination.event_router import DataEventType, emit_event
-
-            emit_event(
-                DataEventType.IDLE_NODE_WORK_INJECTED,
-                {
-                    "idle_nodes": idle_nodes,
-                    "target_config": target_config,
-                    "games_injected": total_games,
-                    "timestamp": now,
-                    # Jan 5, 2026 (Task 8.4): Include CPU vs GPU breakdown
-                    "gpu_nodes": gpu_node_count,
-                    "cpu_nodes": cpu_node_count,
-                },
-            )
-        except (ImportError, AttributeError):
-            pass
-
-        return {
-            "idle_nodes": len(idle_nodes),
-            "injected": injected_count,
-            "target_config": target_config,
-            "games_per_node": games_per_node,
-            "games_per_cpu_node": games_per_cpu_node,
-            "total_games": total_games,
-            "gpu_nodes": gpu_node_count,
-            "cpu_nodes": cpu_node_count,
-        }
-
     # =========================================================================
-    # Per-Node Job Targeting (Dec 2025)
+    # Per-Node Job Targeting - Delegated to NodeTargetingMixin
+    # Sprint 17.9 (Jan 2026): get_target_jobs_for_node, _compute_hardware_limit
+    # moved to selfplay/node_targeting.py
     # =========================================================================
-
-    def get_target_jobs_for_node(self, node: Any) -> int:
-        """Return the desired selfplay concurrency for a node.
-
-        Uses unified resource targets for consistent 60-80% utilization:
-        - Backpressure-aware: Reduces jobs when training queue is full
-        - Adaptive scaling: Increases jobs when underutilized, decreases when overloaded
-        - Host-tier aware: Adjusts targets based on hardware capability
-
-        Args:
-            node: NodeInfo-like object with attributes:
-                - node_id: str
-                - memory_gb: int
-                - has_gpu: bool
-                - cpu_count: int
-                - cpu_percent: float
-                - memory_percent: float
-                - disk_percent: float
-                - gpu_percent: float
-                - gpu_memory_percent: float
-                - selfplay_jobs: int
-                - gpu_name: str (optional)
-                - gpu_count: int (optional)
-
-        Returns:
-            Target number of selfplay jobs for this node (always >= 1 unless blocked)
-        """
-        # Check safeguards first
-        if self._is_emergency_active_fn:
-            try:
-                if self._is_emergency_active_fn():
-                    return 0
-            except (TypeError, AttributeError, RuntimeError) as e:
-                # Dec 2025: Narrow exception - callback may be misconfigured
-                logger.debug(f"[SelfplayScheduler] Emergency check callback error: {e}")
-
-        # Check backpressure - reduce production when training queue is full
-        backpressure_factor = 1.0
-        if self._should_stop_production_fn:
-            try:
-                # Import QueueType lazily to avoid circular imports
-                from app.coordination.backpressure import QueueType
-                if self._should_stop_production_fn(QueueType.TRAINING_DATA):
-                    if self._verbose:
-                        logger.info(f"Backpressure STOP: training queue full, halting selfplay on {getattr(node, 'node_id', 'unknown')}")
-                    return 0
-            except Exception as e:
-                if self._verbose:
-                    logger.debug(f"Backpressure stop check error: {e}")
-
-        if self._should_throttle_production_fn and self._get_throttle_factor_fn:
-            try:
-                from app.coordination.backpressure import QueueType
-                if self._should_throttle_production_fn(QueueType.TRAINING_DATA):
-                    backpressure_factor = self._get_throttle_factor_fn(QueueType.TRAINING_DATA)
-                    if self._verbose:
-                        logger.info(f"Backpressure throttle: factor={backpressure_factor:.2f}")
-            except Exception as e:
-                if self._verbose:
-                    logger.debug(f"Backpressure throttle check error: {e}")
-
-        # Extract node metrics
-        node_id = getattr(node, "node_id", "unknown")
-        memory_gb = int(getattr(node, "memory_gb", 0) or 0)
-        has_gpu = bool(getattr(node, "has_gpu", False))
-        cpu_count = int(getattr(node, "cpu_count", 0) or 0)
-        cpu_percent = float(getattr(node, "cpu_percent", 0.0) or 0.0)
-        mem_percent = float(getattr(node, "memory_percent", 0.0) or 0.0)
-        disk_percent = float(getattr(node, "disk_percent", 0.0) or 0.0)
-        gpu_percent = float(getattr(node, "gpu_percent", 0.0) or 0.0)
-        gpu_mem_percent = float(getattr(node, "gpu_memory_percent", 0.0) or 0.0)
-        current_jobs = int(getattr(node, "selfplay_jobs", 0) or 0)
-        gpu_name = getattr(node, "gpu_name", "") or ""
-        gpu_count = int(getattr(node, "gpu_count", 1) or 1) if has_gpu else 0
-
-        # Minimum memory requirement
-        if memory_gb > 0 and memory_gb < MIN_MEMORY_GB_FOR_TASKS:
-            return 0
-
-        # Record utilization for adaptive feedback
-        if self._record_utilization_fn:
-            with contextlib.suppress(Exception):
-                self._record_utilization_fn(node_id, cpu_percent, gpu_percent, mem_percent, current_jobs)
-
-        # Try unified resource targets if available
-        if self._get_host_targets_fn and self._get_target_job_count_fn:
-            try:
-                host_targets = self._get_host_targets_fn(node_id)
-                target_selfplay = self._get_target_job_count_fn(
-                    node_id,
-                    cpu_count if cpu_count > 0 else 8,
-                    cpu_percent,
-                    gpu_percent if has_gpu else 0.0,
-                )
-
-                # Scale up if underutilized
-                if self._should_scale_up_fn:
-                    scale_up, reason = self._should_scale_up_fn(
-                        node_id, cpu_percent, gpu_percent, current_jobs
-                    )
-                    if scale_up and current_jobs < target_selfplay:
-                        scale_up_increment = min(4, target_selfplay - current_jobs)
-                        target_selfplay = current_jobs + scale_up_increment
-                        if self._verbose:
-                            logger.info(f"Scale-up on {node_id}: {reason}, target={target_selfplay}")
-
-                # Scale down if overloaded
-                if self._should_scale_down_fn:
-                    scale_down, reduction, reason = self._should_scale_down_fn(
-                        node_id, cpu_percent, gpu_percent, mem_percent
-                    )
-                    if scale_down:
-                        target_selfplay = max(1, current_jobs - reduction)
-                        logger.info(f"Scale-down on {node_id}: {reason}, target={target_selfplay}")
-
-                # Apply backpressure factor
-                target_selfplay = int(target_selfplay * backpressure_factor)
-
-                # Apply host-specific max
-                max_selfplay = getattr(host_targets, "max_selfplay", target_selfplay)
-                target_selfplay = min(target_selfplay, max_selfplay)
-
-                return int(max(1, target_selfplay))
-
-            except Exception as e:
-                if self._verbose:
-                    logger.info(f"Resource targets error, falling back to hardware-aware: {e}")
-
-        # FALLBACK: Use hardware-aware limits
-        if self._get_max_selfplay_for_node_fn:
-            max_selfplay = self._get_max_selfplay_for_node_fn(
-                node_id=node_id,
-                gpu_count=gpu_count,
-                gpu_name=gpu_name,
-                cpu_count=cpu_count,
-                memory_gb=memory_gb,
-                has_gpu=has_gpu,
-            )
-        else:
-            # Minimal fallback when callback unavailable
-            max_selfplay = self._compute_hardware_limit(
-                has_gpu, gpu_name, gpu_count, cpu_count, memory_gb
-            )
-
-        target_selfplay = max_selfplay
-
-        # Utilization-aware adjustments
-        gpu_overloaded = gpu_percent > 85 or gpu_mem_percent > 85
-        cpu_overloaded = cpu_percent > 80
-        gpu_has_headroom = gpu_percent < 60 and gpu_mem_percent < 75
-        cpu_has_headroom = cpu_percent < 60
-
-        if gpu_overloaded:
-            target_selfplay = max(2, target_selfplay - 2)
-        if cpu_overloaded:
-            target_selfplay = max(2, target_selfplay - 1)
-
-        if ((has_gpu and gpu_has_headroom and cpu_has_headroom) or
-            (not has_gpu and cpu_has_headroom)) and current_jobs < target_selfplay:
-            target_selfplay = min(target_selfplay, current_jobs + 2)
-
-        # Resource pressure warnings
-        if disk_percent >= DISK_WARNING_THRESHOLD:
-            target_selfplay = min(target_selfplay, 4)
-        if mem_percent >= MEMORY_WARNING_THRESHOLD:
-            target_selfplay = min(target_selfplay, 2)
-
-        # Apply backpressure factor
-        target_selfplay = int(target_selfplay * backpressure_factor)
-
-        return int(max(1, target_selfplay))
-
-    def _compute_hardware_limit(
-        self,
-        has_gpu: bool,
-        gpu_name: str,
-        gpu_count: int,
-        cpu_count: int,
-        memory_gb: int,
-    ) -> int:
-        """Compute hardware-based max selfplay limit.
-
-        This is a fallback when resource_optimizer callbacks are unavailable.
-        """
-        if has_gpu:
-            gpu_upper = gpu_name.upper()
-            if any(g in gpu_upper for g in ["GH200"]):
-                return int(cpu_count * 0.8) if cpu_count > 0 else 48
-            elif any(g in gpu_upper for g in ["H100", "H200"]):
-                return min(int(cpu_count * 0.5), 48) if cpu_count > 0 else 32
-            elif any(g in gpu_upper for g in ["A100", "L40"]):
-                return min(int(cpu_count * 0.4), 32) if cpu_count > 0 else 24
-            elif any(g in gpu_upper for g in ["5090"]):
-                return min(int(cpu_count * 0.3), gpu_count * 12, 64) if cpu_count > 0 else 48
-            elif any(g in gpu_upper for g in ["A10", "4090", "3090"]):
-                return min(int(cpu_count * 0.3), 24) if cpu_count > 0 else 16
-            elif any(g in gpu_upper for g in ["4080", "4070", "3080", "4060"]):
-                return min(int(cpu_count * 0.25), 12) if cpu_count > 0 else 8
-            elif any(g in gpu_upper for g in ["3070", "3060", "2060", "2070", "2080"]):
-                return min(int(cpu_count * 0.2), 10) if cpu_count > 0 else 6
-            else:
-                return min(int(cpu_count * 0.2), 8) if cpu_count > 0 else 6
-        else:
-            return min(int(cpu_count * 0.3), 32) if cpu_count > 0 else 8
 
     def get_metrics(self) -> dict[str, Any]:
         """Get throughput metrics for monitoring.
@@ -3516,160 +2806,12 @@ class SelfplayScheduler(SelfplayVelocityMixin, SelfplayQualitySignalMixin, Selfp
 
     # =========================================================================
     # Architecture Performance Tracking (December 29, 2025)
+    # January 2026 Sprint 17.9: Methods extracted to ArchitectureTrackerMixin
+    # - get_architecture_weights()
+    # - record_architecture_evaluation()
+    # - get_architecture_boost()
+    # - get_best_architecture()
     # =========================================================================
-
-    def get_architecture_weights(
-        self,
-        board_type: str,
-        num_players: int,
-        temperature: float = 0.5,
-    ) -> dict[str, float]:
-        """Get allocation weights for architectures based on Elo performance.
-
-        Higher-performing architectures get more weight for selfplay/training allocation.
-        Uses softmax with temperature to control concentration on best architecture.
-
-        Args:
-            board_type: Board type (e.g., "hex8", "square8")
-            num_players: Number of players (2, 3, or 4)
-            temperature: Softmax temperature (lower = more concentrated on best)
-
-        Returns:
-            Dictionary mapping architecture name to allocation weight (sums to 1.0)
-
-        Example:
-            >>> weights = scheduler.get_architecture_weights("hex8", 2)
-            >>> # {"v5": 0.4, "v4": 0.3, "v3": 0.2, "v2": 0.1}
-        """
-        try:
-            from app.training.architecture_tracker import get_allocation_weights
-
-            return get_allocation_weights(
-                board_type=board_type,
-                num_players=num_players,
-                temperature=temperature,
-            )
-        except ImportError:
-            logger.debug("[SelfplayScheduler] architecture_tracker not available")
-            return {}
-        except Exception as e:
-            logger.debug(f"[SelfplayScheduler] Error getting architecture weights: {e}")
-            return {}
-
-    def record_architecture_evaluation(
-        self,
-        architecture: str,
-        board_type: str,
-        num_players: int,
-        elo: float,
-        training_hours: float = 0.0,
-        games_evaluated: int = 0,
-    ) -> None:
-        """Record an evaluation result for an architecture.
-
-        Called after gauntlet evaluation to track architecture performance.
-        The architecture tracker uses this data to compute allocation weights.
-
-        Args:
-            architecture: Architecture version (e.g., "v4", "v5_heavy")
-            board_type: Board type (e.g., "hex8", "square8")
-            num_players: Number of players
-            elo: Elo rating from evaluation
-            training_hours: Additional training time for this evaluation
-            games_evaluated: Games used in evaluation
-        """
-        try:
-            from app.training.architecture_tracker import record_evaluation
-
-            stats = record_evaluation(
-                architecture=architecture,
-                board_type=board_type,
-                num_players=num_players,
-                elo=elo,
-                training_hours=training_hours,
-                games_evaluated=games_evaluated,
-            )
-            logger.info(
-                f"[SelfplayScheduler] Architecture evaluation recorded: "
-                f"{architecture} on {board_type}_{num_players}p -> Elo {elo:.0f} "
-                f"(avg: {stats.avg_elo:.0f}, best: {stats.best_elo:.0f})"
-            )
-        except ImportError:
-            logger.debug("[SelfplayScheduler] architecture_tracker not available")
-        except Exception as e:
-            logger.warning(f"[SelfplayScheduler] Failed to record architecture evaluation: {e}")
-
-    def get_architecture_boost(
-        self,
-        architecture: str,
-        board_type: str,
-        num_players: int,
-        threshold_elo_diff: float = 50.0,
-    ) -> float:
-        """Get boost factor for an architecture based on relative performance.
-
-        Returns a factor > 1.0 if this architecture is better than average,
-        < 1.0 if worse, exactly 1.0 if at average or no data available.
-
-        Args:
-            architecture: Architecture to check (e.g., "v4", "v5")
-            board_type: Board type
-            num_players: Player count
-            threshold_elo_diff: Minimum Elo difference for boost
-
-        Returns:
-            Boost factor (1.0 = no boost)
-        """
-        try:
-            from app.training.architecture_tracker import get_architecture_tracker
-
-            tracker = get_architecture_tracker()
-            return tracker.get_architecture_boost(
-                architecture=architecture,
-                board_type=board_type,
-                num_players=num_players,
-                threshold_elo_diff=threshold_elo_diff,
-            )
-        except ImportError:
-            logger.debug("[SelfplayScheduler] architecture_tracker not available")
-            return 1.0
-        except Exception as e:
-            logger.debug(f"[SelfplayScheduler] Error getting architecture boost: {e}")
-            return 1.0
-
-    def get_best_architecture(
-        self,
-        board_type: str,
-        num_players: int,
-        metric: str = "avg_elo",
-    ) -> str | None:
-        """Get the best-performing architecture for a configuration.
-
-        Args:
-            board_type: Board type
-            num_players: Player count
-            metric: Metric to rank by ("avg_elo", "best_elo", "efficiency_score")
-
-        Returns:
-            Architecture name (e.g., "v5") or None if no data available
-        """
-        try:
-            from app.training.architecture_tracker import get_best_architecture
-
-            stats = get_best_architecture(
-                board_type=board_type,
-                num_players=num_players,
-                metric=metric,
-            )
-            if stats:
-                return stats.architecture
-            return None
-        except ImportError:
-            logger.debug("[SelfplayScheduler] architecture_tracker not available")
-            return None
-        except Exception as e:
-            logger.debug(f"[SelfplayScheduler] Error getting best architecture: {e}")
-            return None
 
 
 # =============================================================================
