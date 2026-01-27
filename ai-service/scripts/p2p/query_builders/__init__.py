@@ -23,9 +23,11 @@ from scripts.p2p.query_builders.base_query_builder import (
     QueryResult,
     SummaryResult,
 )
+from scripts.p2p.query_builders.peer_query_builder import PeerQueryBuilder
 
 __all__ = [
     "BaseQueryBuilder",
     "QueryResult",
     "SummaryResult",
+    "PeerQueryBuilder",
 ]
