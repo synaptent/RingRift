@@ -643,6 +643,9 @@ class EloSyncManager(DatabaseSyncManager):
         Jan 2, 2026: Renamed from async _recalculate_ratings_from_history to
         sync _recalculate_ratings_from_history_sync for use within asyncio.to_thread().
 
+        Jan 27, 2026: Added support for participant_ids JSON column. Newer matches
+        store participants in JSON array instead of participant_a/participant_b columns.
+
         This ensures win/loss conservation after merging databases.
         Replays all matches chronologically to rebuild accurate ratings.
         """
@@ -673,11 +676,12 @@ class EloSyncManager(DatabaseSyncManager):
         model_a_col = schema["model_a"]
         model_b_col = schema["model_b"]
 
-        # Get all matches ordered by timestamp using detected column names
+        # Jan 27, 2026: Also select participant_ids JSON and winner_id columns for newer matches
+        # Newer matches store participants in JSON array and winner in winner_id, old columns may be NULL
         cur.execute(f"""
-            SELECT {model_a_col}, {model_b_col}, winner, board_type, num_players, timestamp
+            SELECT {model_a_col}, {model_b_col}, winner, board_type, num_players, timestamp, participant_ids, winner_id
             FROM match_history
-            WHERE winner IS NOT NULL
+            WHERE winner IS NOT NULL OR winner_id IS NOT NULL
             ORDER BY timestamp
         """)
         matches = cur.fetchall()
@@ -692,7 +696,29 @@ class EloSyncManager(DatabaseSyncManager):
         })
 
         # Replay all matches
-        for p_a, p_b, winner, board_type, num_players, _ts in matches:
+        # Jan 27, 2026: Handle both old format (participant_a/b + winner columns) and
+        # new format (participant_ids JSON + winner_id)
+        skipped_matches = 0
+        for p_a, p_b, winner, board_type, num_players, _ts, participant_ids_json, winner_id in matches:
+            # If old columns are NULL, try to parse from participant_ids JSON
+            if (p_a is None or p_b is None) and participant_ids_json:
+                try:
+                    participant_ids = json.loads(participant_ids_json)
+                    if isinstance(participant_ids, list) and len(participant_ids) >= 2:
+                        p_a = participant_ids[0]
+                        p_b = participant_ids[1]
+                except (json.JSONDecodeError, TypeError, IndexError):
+                    pass
+
+            # If winner is NULL, try winner_id (newer format)
+            if winner is None and winner_id:
+                winner = winner_id
+
+            # Skip if we still don't have valid participants or winner
+            if not p_a or not p_b or not winner:
+                skipped_matches += 1
+                continue
+
             key_a = (board_type, num_players, p_a)
             key_b = (board_type, num_players, p_b)
 
@@ -756,7 +782,10 @@ class EloSyncManager(DatabaseSyncManager):
             ))
 
         conn.commit()
-        logger.info(f"Recalculated {len(ratings)} ratings from {len(matches)} matches")
+        logger.info(
+            f"Recalculated {len(ratings)} ratings from {len(matches)} matches"
+            + (f" ({skipped_matches} skipped - missing participants)" if skipped_matches else "")
+        )
 
     async def push_new_matches(self, matches: list[dict]) -> int:
         """
