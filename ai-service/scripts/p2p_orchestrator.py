@@ -4919,6 +4919,112 @@ class P2POrchestrator(
 
         return True, "All safeguards passed"
 
+    def _spawn_and_track_job(
+        self,
+        job_id: str,
+        job_type: JobType,
+        board_type: str,
+        num_players: int,
+        engine_mode: str,
+        cmd: list[str],
+        output_dir: Path,
+        log_filename: str = "run.log",
+        cuda_visible_devices: str | None = None,
+        extra_env: dict[str, str] | None = None,
+        safeguard_reason: str | None = None,
+    ) -> tuple[ClusterJob, subprocess.Popen] | None:
+        """Spawn a subprocess job and track it in local_jobs.
+
+        January 2026: Extracted common job spawning logic to reduce duplication.
+
+        Args:
+            job_id: Unique job identifier
+            job_type: Type of job (SELFPLAY, GPU_SELFPLAY, etc.)
+            board_type: Board type (hex8, square8, etc.)
+            num_players: Number of players
+            engine_mode: Engine mode for the job
+            cmd: Command to execute
+            output_dir: Directory for output files
+            log_filename: Name of log file in output_dir
+            cuda_visible_devices: CUDA_VISIBLE_DEVICES value (None = inherit, "" = disable)
+            extra_env: Additional environment variables
+            safeguard_reason: Reason for safeguard check (default: job_type-board_type-Np)
+
+        Returns:
+            Tuple of (ClusterJob, Popen) if successful, None if blocked or failed
+        """
+        # Build safeguard check reason
+        if safeguard_reason is None:
+            safeguard_reason = f"{job_type.value}-{board_type}-{num_players}p"
+
+        # SAFEGUARD: Final check before spawning
+        can_spawn, spawn_reason = self._can_spawn_process(safeguard_reason)
+        if not can_spawn:
+            logger.info(f"BLOCKED {job_type.value} spawn: {spawn_reason}")
+            return None
+
+        # Build environment
+        env = os.environ.copy()
+        env["PYTHONPATH"] = self._get_ai_service_path()
+        env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
+        env["RINGRIFT_JOB_ORIGIN"] = "p2p_orchestrator"
+
+        # Handle CUDA_VISIBLE_DEVICES
+        if cuda_visible_devices is not None:
+            env["CUDA_VISIBLE_DEVICES"] = str(cuda_visible_devices).strip()
+
+        # Apply extra environment variables
+        if extra_env:
+            env.update(extra_env)
+
+        # Ensure output directory exists
+        output_dir.mkdir(parents=True, exist_ok=True)
+        log_path = output_dir / log_filename
+
+        # Spawn subprocess
+        try:
+            log_handle = open(log_path, "a")  # noqa: SIM115
+            try:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=log_handle,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    cwd=self.ringrift_path,
+                )
+                self._record_spawn()
+            finally:
+                log_handle.close()
+        except (OSError, subprocess.SubprocessError) as e:
+            logger.error(f"Failed to spawn {job_type.value}: {e}")
+            return None
+
+        # Create ClusterJob
+        job = ClusterJob(
+            job_id=job_id,
+            job_type=job_type,
+            node_id=self.node_id,
+            board_type=board_type,
+            num_players=num_players,
+            engine_mode=engine_mode,
+            pid=proc.pid,
+            started_at=time.time(),
+            status="running",
+        )
+
+        # Track in local_jobs
+        with self.jobs_lock:
+            self.local_jobs[job_id] = job
+
+        logger.info(f"Started {job_type.value} job {job_id} (PID {proc.pid})")
+        self._save_state()
+
+        # Track via JobOrchestrationManager
+        if hasattr(self, "job_orchestration") and self.job_orchestration:
+            self.job_orchestration.record_job_started(job_type.value)
+
+        return job, proc
+
     def _detect_build_version(self) -> str:
         env_version = (os.environ.get(BUILD_VERSION_ENV, "") or "").strip()
         if env_version:
@@ -28987,55 +29093,23 @@ print(json.dumps({{
                     *extra_args,
                 ]
 
-                # Start process
-                env = os.environ.copy()
-                env["PYTHONPATH"] = self._get_ai_service_path()
-                env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
-                env["RINGRIFT_JOB_ORIGIN"] = "p2p_orchestrator"
-
-                # SAFEGUARD: Final check before spawning (load + rate limit)
-                can_spawn, spawn_reason = self._can_spawn_process(f"selfplay-{board_type}-{num_players}p")
-                if not can_spawn:
-                    logger.info(f"BLOCKED selfplay spawn: {spawn_reason}")
-                    return None
-
-                log_handle = open(output_dir / "run.log", "a")  # noqa: SIM115
-                try:
-                    proc = subprocess.Popen(
-                        cmd,
-                        stdout=log_handle,
-                        stderr=subprocess.STDOUT,
-                        env=env,
-                        cwd=self.ringrift_path,
-                    )
-                    self._record_spawn()  # Track spawn for rate limiting
-                finally:
-                    log_handle.close()
-
-                job = ClusterJob(
+                # January 2026: Use _spawn_and_track_job helper to reduce duplication
+                result = self._spawn_and_track_job(
                     job_id=job_id,
                     job_type=job_type,
-                    node_id=self.node_id,
                     board_type=board_type,
                     num_players=num_players,
                     engine_mode=engine_mode_norm,
-                    pid=proc.pid,
-                    started_at=time.time(),
-                    status="running",
+                    cmd=cmd,
+                    output_dir=output_dir,
+                    safeguard_reason=f"selfplay-{board_type}-{num_players}p",
                 )
+                if result is None:
+                    return None
 
-                with self.jobs_lock:
-                    self.local_jobs[job_id] = job
-
-                logger.info(f"Started {job_type.value} job {job_id} (PID {proc.pid})")
-                self._save_state()
-
-                # Track job start via JobOrchestrationManager (Jan 2026)
-                if hasattr(self, "job_orchestration") and self.job_orchestration:
-                    self.job_orchestration.record_job_started(job_type.value)
+                job, proc = result
 
                 # Dec 31, 2025: Add process monitoring to track completion/failure
-                # Previously jobs remained in "running" status indefinitely
                 asyncio.create_task(self._monitor_selfplay_process(
                     job_id, proc, output_dir, board_type, num_players, "selfplay"
                 ))
@@ -29095,51 +29169,22 @@ print(json.dumps({{
                     *extra_args,
                 ]
 
-                env = os.environ.copy()
-                env["PYTHONPATH"] = self._get_ai_service_path()
-                env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
-                env["RINGRIFT_JOB_ORIGIN"] = "p2p_orchestrator"
-                env["CUDA_VISIBLE_DEVICES"] = ""  # Disable GPU for CPU-only jobs
-
-                can_spawn, spawn_reason = self._can_spawn_process(f"cpu-selfplay-{board_type}-{num_players}p")
-                if not can_spawn:
-                    logger.info(f"BLOCKED CPU selfplay spawn: {spawn_reason}")
-                    return None
-
-                log_handle = open(output_dir / "run.log", "a")  # noqa: SIM115
-                try:
-                    proc = subprocess.Popen(
-                        cmd,
-                        stdout=log_handle,
-                        stderr=subprocess.STDOUT,
-                        env=env,
-                        cwd=self.ringrift_path,
-                    )
-                    self._record_spawn()
-                finally:
-                    log_handle.close()
-
-                job = ClusterJob(
+                # January 2026: Use _spawn_and_track_job helper to reduce duplication
+                result = self._spawn_and_track_job(
                     job_id=job_id,
                     job_type=job_type,
-                    node_id=self.node_id,
                     board_type=board_type,
                     num_players=num_players,
                     engine_mode=engine_mode_norm,
-                    pid=proc.pid,
-                    started_at=time.time(),
-                    status="running",
+                    cmd=cmd,
+                    output_dir=output_dir,
+                    cuda_visible_devices="",  # Disable GPU for CPU-only jobs
+                    safeguard_reason=f"cpu-selfplay-{board_type}-{num_players}p",
                 )
+                if result is None:
+                    return None
 
-                with self.jobs_lock:
-                    self.local_jobs[job_id] = job
-
-                logger.info(f"Started {job_type.value} job {job_id} (PID {proc.pid}) [CPU-only hybrid mode]")
-                self._save_state()
-
-                # Track job start via JobOrchestrationManager (Jan 2026)
-                if hasattr(self, "job_orchestration") and self.job_orchestration:
-                    self.job_orchestration.record_job_started(job_type.value)
+                job, proc = result
 
                 # Dec 31, 2025: Add process monitoring to track completion/failure
                 asyncio.create_task(self._monitor_selfplay_process(
@@ -29174,7 +29219,6 @@ print(json.dumps({{
                     "data",
                     "games",
                 )
-                output_dir.mkdir(parents=True, exist_ok=True)
 
                 # Use venv python if available, otherwise fall back to system python3
                 venv_python = Path(self._get_ai_service_path(), "venv", "bin", "python")
@@ -29189,16 +29233,9 @@ print(json.dumps({{
                     "--output-dir", str(output_dir),
                 ]
 
-                # Start process with GPU environment
-                env = os.environ.copy()
-                env["PYTHONPATH"] = self._get_ai_service_path()
-                env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
-                env["RINGRIFT_JOB_ORIGIN"] = "p2p_orchestrator"
-
-                if cuda_visible_devices is not None and str(cuda_visible_devices).strip():
-                    env["CUDA_VISIBLE_DEVICES"] = str(cuda_visible_devices).strip()
-                # Choose a GPU automatically if not explicitly pinned.
-                elif "CUDA_VISIBLE_DEVICES" not in env:
+                # GPU selection: use explicit setting, auto-select, or default to 0
+                effective_cuda_devices = cuda_visible_devices
+                if effective_cuda_devices is None or not str(effective_cuda_devices).strip():
                     gpu_count = 0
                     try:
                         out = subprocess.run(
@@ -29216,52 +29253,31 @@ print(json.dumps({{
                                 1 for j in self.local_jobs.values()
                                 if j.job_type == JobType.GPU_SELFPLAY and j.status == "running"
                             )
-                        env["CUDA_VISIBLE_DEVICES"] = str(running_gpu_jobs % gpu_count)
+                        effective_cuda_devices = str(running_gpu_jobs % gpu_count)
                     else:
-                        env["CUDA_VISIBLE_DEVICES"] = "0"
+                        effective_cuda_devices = "0"
 
-                # SAFEGUARD: Final check before spawning (load + rate limit)
-                can_spawn, spawn_reason = self._can_spawn_process(f"gpu-selfplay-{board_type}-{num_players}p")
-                if not can_spawn:
-                    logger.info(f"BLOCKED GPU selfplay spawn: {spawn_reason}")
-                    return None
-
-                log_handle = open(output_dir / "gpu_run.log", "a")  # noqa: SIM115
-                try:
-                    proc = subprocess.Popen(
-                        cmd,
-                        stdout=log_handle,
-                        stderr=subprocess.STDOUT,
-                        env=env,
-                        cwd=self.ringrift_path,
-                    )
-                    self._record_spawn()  # Track spawn for rate limiting
-                finally:
-                    log_handle.close()
-
-                # Use gumbel-mcts for GPU selfplay (177x speedup with GPU tree)
-                gpu_engine_mode = "gumbel-mcts"
-                batch_size = num_games
-
-                job = ClusterJob(
+                # January 2026: Use _spawn_and_track_job helper to reduce duplication
+                gpu_engine_mode = "gumbel-mcts"  # 177x speedup with GPU tree
+                result = self._spawn_and_track_job(
                     job_id=job_id,
                     job_type=job_type,
-                    node_id=self.node_id,
                     board_type=board_type,
                     num_players=num_players,
                     engine_mode=gpu_engine_mode,
-                    pid=proc.pid,
-                    started_at=time.time(),
-                    status="running",
+                    cmd=cmd,
+                    output_dir=output_dir,
+                    log_filename="gpu_run.log",
+                    cuda_visible_devices=effective_cuda_devices,
+                    safeguard_reason=f"gpu-selfplay-{board_type}-{num_players}p",
                 )
+                if result is None:
+                    return None
 
-                with self.jobs_lock:
-                    self.local_jobs[job_id] = job
+                job, proc = result
 
                 # Jan 7, 2026: Track GPU job count for adaptive dispatch decisions
                 self._update_gpu_job_count(+1)
-
-                logger.info(f"Started GPU selfplay job {job_id} (PID {proc.pid}, batch={batch_size})")
 
                 # Track diversity metrics for monitoring (Phase 2B, Dec 2025)
                 self.selfplay_scheduler.track_diversity({
@@ -29269,12 +29285,6 @@ print(json.dumps({{
                     "num_players": num_players,
                     "engine_mode": gpu_engine_mode,
                 })
-
-                self._save_state()
-
-                # Track job start via JobOrchestrationManager (Jan 2026)
-                if hasattr(self, "job_orchestration") and self.job_orchestration:
-                    self.job_orchestration.record_job_started(job_type.value)
 
                 # Monitor GPU selfplay and trigger CPU validation when complete
                 asyncio.create_task(self._monitor_gpu_selfplay_and_validate(
@@ -29358,22 +29368,14 @@ print(json.dumps({{
                     "--verbose", "0",
                 ]
 
-                # Start process with GPU environment
-                env = os.environ.copy()
-                env["PYTHONPATH"] = self._get_ai_service_path()
-                env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
-                env["RINGRIFT_JOB_ORIGIN"] = "p2p_orchestrator"
-
-                if cuda_visible_devices is not None and str(cuda_visible_devices).strip():
-                    env["CUDA_VISIBLE_DEVICES"] = str(cuda_visible_devices).strip()
-                elif "CUDA_VISIBLE_DEVICES" not in env:
+                # GPU selection: use explicit setting, auto-select, or default to 0
+                effective_cuda_devices = cuda_visible_devices
+                if effective_cuda_devices is None or not str(effective_cuda_devices).strip():
                     gpu_count = 0
                     try:
                         out = subprocess.run(
                             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-                            capture_output=True,
-                            text=True,
-                            timeout=5,
+                            capture_output=True, text=True, timeout=5,
                         )
                         if out.returncode == 0 and out.stdout.strip():
                             gpu_count = len([line for line in out.stdout.splitlines() if line.strip()])
@@ -29383,49 +29385,30 @@ print(json.dumps({{
                     if gpu_count > 0:
                         with self.jobs_lock:
                             running_hybrid_jobs = sum(
-                                1
-                                for j in self.local_jobs.values()
+                                1 for j in self.local_jobs.values()
                                 if j.job_type == JobType.HYBRID_SELFPLAY and j.status == "running"
                             )
-                        env["CUDA_VISIBLE_DEVICES"] = str(running_hybrid_jobs % gpu_count)
+                        effective_cuda_devices = str(running_hybrid_jobs % gpu_count)
                     else:
-                        env["CUDA_VISIBLE_DEVICES"] = "0"
+                        effective_cuda_devices = "0"
 
-                # SAFEGUARD: Final check before spawning (load + rate limit)
-                can_spawn, spawn_reason = self._can_spawn_process(f"hybrid-selfplay-{board_type}-{num_players}p")
-                if not can_spawn:
-                    logger.info(f"BLOCKED hybrid selfplay spawn: {spawn_reason}")
-                    return None
-
-                log_handle = open(output_dir / "hybrid_run.log", "a")  # noqa: SIM115
-                try:
-                    proc = subprocess.Popen(
-                        cmd,
-                        stdout=log_handle,
-                        stderr=subprocess.STDOUT,
-                        env=env,
-                        cwd=self.ringrift_path,
-                    )
-                    self._record_spawn()  # Track spawn for rate limiting
-                finally:
-                    log_handle.close()
-
-                job = ClusterJob(
+                # January 2026: Use _spawn_and_track_job helper to reduce duplication
+                result = self._spawn_and_track_job(
                     job_id=job_id,
                     job_type=job_type,
-                    node_id=self.node_id,
                     board_type=board_type,
                     num_players=num_players,
                     engine_mode=engine_mode_norm,
-                    pid=proc.pid,
-                    started_at=time.time(),
-                    status="running",
+                    cmd=cmd,
+                    output_dir=output_dir,
+                    log_filename="hybrid_run.log",
+                    cuda_visible_devices=effective_cuda_devices,
+                    safeguard_reason=f"hybrid-selfplay-{board_type}-{num_players}p",
                 )
+                if result is None:
+                    return None
 
-                with self.jobs_lock:
-                    self.local_jobs[job_id] = job
-
-                logger.info(f"Started HYBRID selfplay job {job_id} (PID {proc.pid})")
+                job, proc = result
 
                 # Track diversity metrics for monitoring (Phase 2B, Dec 2025)
                 self.selfplay_scheduler.track_diversity({
@@ -29433,12 +29416,6 @@ print(json.dumps({{
                     "num_players": num_players,
                     "engine_mode": engine_mode_norm,
                 })
-
-                self._save_state()
-
-                # Track job start via JobOrchestrationManager (Jan 2026)
-                if hasattr(self, "job_orchestration") and self.job_orchestration:
-                    self.job_orchestration.record_job_started(job_type.value)
 
                 # Dec 31, 2025: Add process monitoring to track completion/failure
                 asyncio.create_task(self._monitor_selfplay_process(
@@ -29514,22 +29491,14 @@ print(json.dumps({{
                 if not node_config.get("disable_gpu_tree", False):
                     cmd.append("--use-gpu-tree")  # 170x speedup with GPU tensor tree MCTS
 
-                # Start process with GPU environment
-                env = os.environ.copy()
-                env["PYTHONPATH"] = self._get_ai_service_path()
-                env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
-                env["RINGRIFT_JOB_ORIGIN"] = "p2p_orchestrator"
-
-                if cuda_visible_devices is not None and str(cuda_visible_devices).strip():
-                    env["CUDA_VISIBLE_DEVICES"] = str(cuda_visible_devices).strip()
-                elif "CUDA_VISIBLE_DEVICES" not in env:
+                # GPU selection: use explicit setting, auto-select, or default to 0
+                effective_cuda_devices = cuda_visible_devices
+                if effective_cuda_devices is None or not str(effective_cuda_devices).strip():
                     gpu_count = 0
                     try:
                         out = subprocess.run(
                             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
-                            capture_output=True,
-                            text=True,
-                            timeout=5,
+                            capture_output=True, text=True, timeout=5,
                         )
                         if out.returncode == 0 and out.stdout.strip():
                             gpu_count = len([line for line in out.stdout.splitlines() if line.strip()])
@@ -29539,49 +29508,30 @@ print(json.dumps({{
                     if gpu_count > 0:
                         with self.jobs_lock:
                             running_gumbel_jobs = sum(
-                                1
-                                for j in self.local_jobs.values()
+                                1 for j in self.local_jobs.values()
                                 if j.job_type == JobType.GUMBEL_SELFPLAY and j.status == "running"
                             )
-                        env["CUDA_VISIBLE_DEVICES"] = str(running_gumbel_jobs % gpu_count)
+                        effective_cuda_devices = str(running_gumbel_jobs % gpu_count)
                     else:
-                        env["CUDA_VISIBLE_DEVICES"] = "0"
+                        effective_cuda_devices = "0"
 
-                # SAFEGUARD: Final check before spawning
-                can_spawn, spawn_reason = self._can_spawn_process(f"gumbel-selfplay-{board_type}-{num_players}p")
-                if not can_spawn:
-                    logger.info(f"BLOCKED gumbel selfplay spawn: {spawn_reason}")
-                    return None
-
-                log_handle = open(output_dir / "gumbel_run.log", "a")  # noqa: SIM115
-                try:
-                    proc = subprocess.Popen(
-                        cmd,
-                        stdout=log_handle,
-                        stderr=subprocess.STDOUT,
-                        env=env,
-                        cwd=self.ringrift_path,
-                    )
-                    self._record_spawn()
-                finally:
-                    log_handle.close()
-
-                job = ClusterJob(
+                # January 2026: Use _spawn_and_track_job helper to reduce duplication
+                result = self._spawn_and_track_job(
                     job_id=job_id,
                     job_type=job_type,
-                    node_id=self.node_id,
                     board_type=board_type,
                     num_players=num_players,
                     engine_mode="gumbel-mcts",
-                    pid=proc.pid,
-                    started_at=time.time(),
-                    status="running",
+                    cmd=cmd,
+                    output_dir=output_dir,
+                    log_filename="gumbel_run.log",
+                    cuda_visible_devices=effective_cuda_devices,
+                    safeguard_reason=f"gumbel-selfplay-{board_type}-{num_players}p",
                 )
+                if result is None:
+                    return None
 
-                with self.jobs_lock:
-                    self.local_jobs[job_id] = job
-
-                logger.info(f"Started GUMBEL selfplay job {job_id} (PID {proc.pid}, sims={effective_budget})")
+                job, proc = result
 
                 # Track diversity metrics for monitoring (Phase 2B, Dec 2025)
                 self.selfplay_scheduler.track_diversity({
@@ -29589,12 +29539,6 @@ print(json.dumps({{
                     "num_players": num_players,
                     "engine_mode": "gumbel-mcts",
                 })
-
-                self._save_state()
-
-                # Track job start via JobOrchestrationManager (Jan 2026)
-                if hasattr(self, "job_orchestration") and self.job_orchestration:
-                    self.job_orchestration.record_job_started(job_type.value)
 
                 # Dec 31, 2025: Add process monitoring to track completion/failure
                 asyncio.create_task(self._monitor_selfplay_process(
