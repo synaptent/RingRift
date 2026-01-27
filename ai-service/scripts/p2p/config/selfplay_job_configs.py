@@ -285,3 +285,260 @@ def get_gumbel_configs() -> list[dict[str, Any]]:
         List of Gumbel MCTS configs.
     """
     return get_configs_for_engine_mode("gumbel-mcts")
+
+
+# ============================================================================
+# DIVERSE_PROFILES - Weighted profiles for _auto_start_selfplay
+# ============================================================================
+# These profiles are used for weighted random sampling on idle GPU nodes.
+# Each profile has a 'weight' for selection probability and targets different
+# aspects of game understanding for high-quality training data.
+
+DIVERSE_PROFILES: list[dict[str, Any]] = [
+    # High-quality neural-guided profiles (50% of games)
+    {
+        "engine_mode": "gumbel-mcts",
+        "board_type": "hex8",
+        "num_players": 2,
+        "profile": "balanced",
+        "weight": 0.18,
+        "description": "Gumbel MCTS 2P hex8 - highest quality",
+    },
+    {
+        "engine_mode": "policy-only",
+        "board_type": "hex8",
+        "num_players": 2,
+        "profile": "balanced",
+        "weight": 0.12,
+        "description": "Policy-only 2P hex8 - fast NN inference",
+    },
+    {
+        "engine_mode": "nnue-guided",
+        "board_type": "square8",
+        "num_players": 2,
+        "profile": "aggressive",
+        "weight": 0.08,
+        "description": "NNUE-guided 2P square - aggressive style",
+    },
+    {
+        "engine_mode": "gumbel-mcts",
+        "board_type": "square8",
+        "num_players": 3,
+        "profile": "balanced",
+        "weight": 0.06,
+        "description": "Gumbel MCTS 3P square - multiplayer strategy",
+    },
+    {
+        "engine_mode": "mcts",
+        "board_type": "hex8",
+        "num_players": 2,
+        "profile": "territorial",
+        "weight": 0.06,
+        "description": "MCTS 2P hex8 - territorial focus",
+    },
+    # MaxN/BRS multiplayer profiles (15% of games)
+    # Benchmarks show: MaxN >> Descent in 3P/4P, MaxN ≈ BRS
+    {
+        "engine_mode": "maxn",
+        "board_type": "hex8",
+        "num_players": 3,
+        "profile": "balanced",
+        "weight": 0.05,
+        "description": "MaxN 3P hex8 - optimal multiplayer search",
+    },
+    {
+        "engine_mode": "maxn",
+        "board_type": "square8",
+        "num_players": 4,
+        "profile": "balanced",
+        "weight": 0.04,
+        "description": "MaxN 4P square - best for 4-player",
+    },
+    {
+        "engine_mode": "brs",
+        "board_type": "hex8",
+        "num_players": 3,
+        "profile": "aggressive",
+        "weight": 0.03,
+        "description": "BRS 3P hex8 - fast multiplayer search",
+    },
+    {
+        "engine_mode": "brs",
+        "board_type": "square8",
+        "num_players": 4,
+        "profile": "territorial",
+        "weight": 0.03,
+        "description": "BRS 4P square - territorial multiplayer",
+    },
+    # GPU-accelerated throughput profiles (25% of games)
+    {
+        "engine_mode": "heuristic-only",
+        "board_type": "hex8",
+        "num_players": 2,
+        "profile": "balanced",
+        "weight": 0.10,
+        "description": "GPU heuristic 2P hex8 - fast throughput",
+    },
+    {
+        "engine_mode": "heuristic-only",
+        "board_type": "square8",
+        "num_players": 2,
+        "profile": "defensive",
+        "weight": 0.07,
+        "description": "GPU heuristic 2P square - defensive style",
+    },
+    {
+        "engine_mode": "heuristic-only",
+        "board_type": "hex8",
+        "num_players": 4,
+        "profile": "balanced",
+        "weight": 0.05,
+        "description": "GPU heuristic 4P hex8 - large multiplayer",
+    },
+    # Exploration profiles (10% of games)
+    {
+        "engine_mode": "mixed",
+        "board_type": "square19",
+        "num_players": 2,
+        "profile": "balanced",
+        "weight": 0.04,
+        "description": "Mixed 2P large board - strategic depth",
+    },
+    {
+        "engine_mode": "nnue-guided",
+        "board_type": "hex8",
+        "num_players": 3,
+        "profile": "aggressive",
+        "weight": 0.04,
+        "description": "NNUE 3P hex8 - aggressive multiplayer",
+    },
+    {
+        "engine_mode": "policy-only",
+        "board_type": "square8",
+        "num_players": 4,
+        "profile": "territorial",
+        "weight": 0.05,
+        "description": "Policy 4P square - territory control",
+    },
+    # Large board profiles (square19, hexagonal) - lighter engines for feasible throughput
+    {
+        "engine_mode": "heuristic-only",
+        "board_type": "square19",
+        "num_players": 2,
+        "profile": "balanced",
+        "weight": 0.03,
+        "description": "Heuristic 2P square19 - fast large board",
+    },
+    {
+        "engine_mode": "heuristic-only",
+        "board_type": "hexagonal",
+        "num_players": 2,
+        "profile": "balanced",
+        "weight": 0.03,
+        "description": "Heuristic 2P hexagonal - fast large board",
+    },
+    {
+        "engine_mode": "brs",
+        "board_type": "square19",
+        "num_players": 3,
+        "profile": "balanced",
+        "weight": 0.02,
+        "description": "BRS 3P square19 - multiplayer large board",
+    },
+    {
+        "engine_mode": "brs",
+        "board_type": "hexagonal",
+        "num_players": 3,
+        "profile": "balanced",
+        "weight": 0.02,
+        "description": "BRS 3P hexagonal - multiplayer large board",
+    },
+    {
+        "engine_mode": "maxn",
+        "board_type": "square19",
+        "num_players": 4,
+        "profile": "balanced",
+        "weight": 0.02,
+        "description": "MaxN 4P square19 - high quality 4-player",
+    },
+    {
+        "engine_mode": "maxn",
+        "board_type": "hexagonal",
+        "num_players": 4,
+        "profile": "balanced",
+        "weight": 0.02,
+        "description": "MaxN 4P hexagonal - high quality 4-player",
+    },
+    # Full diversity profiles - Minimax (2P paranoid search), Descent (stochastic), Random (baseline)
+    {
+        "engine_mode": "nn-minimax",
+        "board_type": "hex8",
+        "num_players": 2,
+        "profile": "balanced",
+        "weight": 0.02,
+        "description": "NN-Minimax 2P hex8 - deep alpha-beta search",
+    },
+    {
+        "engine_mode": "nn-minimax",
+        "board_type": "square8",
+        "num_players": 2,
+        "profile": "balanced",
+        "weight": 0.02,
+        "description": "NN-Minimax 2P square - tactical search",
+    },
+    {
+        "engine_mode": "nn-descent",
+        "board_type": "hex8",
+        "num_players": 2,
+        "profile": "balanced",
+        "weight": 0.01,
+        "description": "NN-Descent 2P hex8 - stochastic exploration",
+    },
+    {
+        "engine_mode": "nn-descent",
+        "board_type": "square8",
+        "num_players": 3,
+        "profile": "balanced",
+        "weight": 0.01,
+        "description": "NN-Descent 3P square - multiplayer descent",
+    },
+    {
+        "engine_mode": "random",
+        "board_type": "hex8",
+        "num_players": 2,
+        "profile": "balanced",
+        "weight": 0.005,
+        "description": "Random 2P hex8 - baseline diversity",
+    },
+    {
+        "engine_mode": "random",
+        "board_type": "square8",
+        "num_players": 4,
+        "profile": "balanced",
+        "weight": 0.005,
+        "description": "Random 4P square - multiplayer baseline",
+    },
+]
+
+
+def get_diverse_profile_weights() -> list[float]:
+    """Get weights from DIVERSE_PROFILES for random.choices().
+
+    Returns:
+        List of weights corresponding to each profile.
+    """
+    return [p["weight"] for p in DIVERSE_PROFILES]
+
+
+def select_diverse_profiles(k: int = 1) -> list[dict[str, Any]]:
+    """Select k profiles using weighted random sampling.
+
+    Args:
+        k: Number of profiles to select.
+
+    Returns:
+        List of selected profile dicts.
+    """
+    import random
+    weights = get_diverse_profile_weights()
+    return random.choices(DIVERSE_PROFILES, weights=weights, k=k)
