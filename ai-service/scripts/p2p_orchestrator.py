@@ -6976,7 +6976,7 @@ class P2POrchestrator(
         """
         capabilities = ["selfplay"]  # All nodes can at least do CPU selfplay
         if has_gpu:
-            capabilities.extend(["training", "cmaes"])
+            capabilities.extend(["training", "cmaes", "gauntlet", "tournament"])
         if memory_gb >= 64:
             capabilities.append("large_boards")
         return capabilities
