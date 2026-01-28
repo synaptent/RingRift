@@ -864,16 +864,26 @@ class LoopManager:
                     while not dep_loop.running and time.time() - wait_start < 2.0:
                         await asyncio.sleep(0.1)
 
-            # Start this loop
-            loop.start_background()
-            await asyncio.sleep(0.1)  # Brief delay for startup
+            # Start this loop with proper async startup verification
+            # Jan 2026: Fixed race condition - use start_background_async() which
+            # polls until _running=True, instead of start_background() + 0.1s sleep
+            # which was insufficient for the asyncio task to actually start.
+            per_loop_timeout = 2.0
+            start_time = time.time()
+            task = await loop.start_background_async(timeout=per_loop_timeout)
+            elapsed = time.time() - start_time
 
             # Check if it started
-            if loop.running:
+            if task is not None and loop.running:
                 started_loops.add(loop_name)
                 results[loop_name] = True
+                if elapsed > 0.5:
+                    logger.info(f"[{self.name}] Loop '{loop_name}' took {elapsed:.2f}s to start")
             else:
                 results[loop_name] = False
+                logger.warning(
+                    f"[{self.name}] Loop '{loop_name}' failed to start within {per_loop_timeout}s"
+                )
 
         self._started = True
 
