@@ -6808,6 +6808,7 @@ class P2POrchestrator(
         # Dec 2025: RINGRIFT_IS_COORDINATOR=true restricts to coordinator-only
         # Dec 29, 2025: Also check distributed_hosts.yaml for role/enabled flags
         is_coordinator = os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() in ("true", "1", "yes")
+        logger.debug(f"[P2P] is_coordinator from env: {is_coordinator}")
 
         # Check YAML config for this node's settings
         if not is_coordinator:
@@ -6817,6 +6818,7 @@ class P2POrchestrator(
                 # ClusterConfig stores hosts in hosts_raw attribute
                 nodes = getattr(config, "hosts_raw", {}) or {}
                 node_cfg = nodes.get(self.node_id, {})
+                logger.debug(f"[P2P] node_cfg for {self.node_id}: role={node_cfg.get('role')}, selfplay={node_cfg.get('selfplay_enabled')}, training={node_cfg.get('training_enabled')}")
                 # Check role or explicit enabled flags
                 if node_cfg.get("role") == "coordinator":
                     is_coordinator = True
@@ -6827,6 +6829,7 @@ class P2POrchestrator(
             except Exception as e:
                 logger.debug(f"[P2P] Could not load cluster config: {e}")
 
+        logger.debug(f"[P2P] Final is_coordinator={is_coordinator} before capability assignment")
         if is_coordinator:
             # Dec 30, 2025: Warn if GPU node is misconfigured as coordinator
             if has_gpu:
@@ -7733,12 +7736,7 @@ class P2POrchestrator(
 
             await asyncio.sleep(REFRESH_INTERVAL)
 
-    def _find_dbs_to_merge_sync(self, selfplay_dir: Path, main_db_path: Path) -> list[tuple[Path, int]]:
-        """Find databases that need merging synchronously.
-
-        Jan 2026: Delegated to DataPipelineManager.
-        """
-        return self.data_pipeline_manager.find_dbs_to_merge_sync(selfplay_dir, main_db_path)
+    # Jan 27, 2026: Phase 17B - Removed _find_dbs_to_merge_sync (unused delegation wrapper)
 
     def _run_subprocess_sync(self, cmd: list, timeout: int = 10) -> tuple[int, str, str]:
         """Run subprocess synchronously.
@@ -8258,9 +8256,7 @@ class P2POrchestrator(
         """Extract config from path. Delegates to DataSyncCoordinator."""
         return self.data_sync_coordinator.extract_config_from_path(db_path)
 
-    def _get_s3_bucket_from_config(self) -> str | None:
-        """Get S3 bucket. Delegates to DataSyncCoordinator."""
-        return self.data_sync_coordinator.get_s3_bucket_from_config()
+    # Jan 27, 2026: Phase 17B - Removed _get_s3_bucket_from_config (unused delegation wrapper)
 
     async def _scan_s3_metadata(self) -> dict | None:
         """Scan S3 bucket. Delegates to DataSyncCoordinator."""
@@ -15823,35 +15819,7 @@ print(json.dumps({{
         key = self._endpoint_key(peer)
         return not (key and key in conflict_keys)
 
-    def _register_peer_with_dedup(self, info: NodeInfo) -> bool:
-        """Register or update a peer with deduplication support.
-
-        Dec 29, 2025: Implements peer deduplication by node_id. When the same
-        node is discovered via multiple IPs (Tailscale, public, etc.), this
-        method merges them into a single canonical entry instead of creating
-        duplicate entries.
-
-        Args:
-            info: NodeInfo to register
-
-        Returns:
-            True if this was a new peer, False if updating existing
-        """
-        if not info or not info.node_id:
-            return False
-
-        with self.peers_lock:
-            existing = self.peers.get(info.node_id)
-            if existing is not None:
-                # Merge new info into existing entry
-                existing.merge_from(info)
-                return False
-            else:
-                # New peer - initialize alternate_ips from host if available
-                if info.host and not info.alternate_ips:
-                    info.alternate_ips = set()
-                self.peers[info.node_id] = info
-                return True
+    # Jan 27, 2026: Phase 17B - Removed _register_peer_with_dedup (never called)
 
     def _deduplicate_peers(self) -> int:
         """Periodic deduplication of peers dict.
@@ -18814,21 +18782,7 @@ print(json.dumps({{
         with self._dedup_lock:
             return file_hash in self._synced_file_hashes
 
-    def _record_game_ids(self, game_ids: list[str]):
-        """Record game IDs as known for deduplication.
-
-        GAME ID TRACKING: Track game IDs we have to avoid syncing
-        duplicate games from different DB files.
-
-        Args:
-            game_ids: List of game IDs to record
-        """
-        if not hasattr(self, "_known_game_ids"):
-            self._init_data_deduplication()
-
-        with self._dedup_lock:
-            self._known_game_ids.update(game_ids)
-
+    # Jan 27, 2026: Phase 17B - Removed _record_game_ids (never called)
     # NOTE: _filter_unknown_games removed Dec 27, 2025 (dead code, never called)
 
     def _record_dedup_skip(self, file_count: int = 0, game_count: int = 0, bytes_saved: int = 0):
@@ -19222,12 +19176,7 @@ print(json.dumps({{
     # Jan 2026: Delegated to TournamentManager (Phase 11 decomposition).
     # ============================================================================
 
-    def _init_distributed_tournament_scheduling(self):
-        """Initialize distributed tournament scheduling state.
-
-        Jan 2026: Delegated to TournamentManager (Phase 11 decomposition).
-        """
-        self.tournament_manager.init_distributed_tournament_scheduling()
+    # Jan 27, 2026: Phase 17B - Removed _init_distributed_tournament_scheduling (unused delegation wrapper)
 
     def _get_tournament_gossip_state(self) -> dict:
         """Get tournament state for gossip propagation.
