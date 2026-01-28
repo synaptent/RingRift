@@ -6808,7 +6808,6 @@ class P2POrchestrator(
         # Dec 2025: RINGRIFT_IS_COORDINATOR=true restricts to coordinator-only
         # Dec 29, 2025: Also check distributed_hosts.yaml for role/enabled flags
         is_coordinator = os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() in ("true", "1", "yes")
-        logger.info(f"[P2P] COORDINATOR CHECK 1: env var -> is_coordinator={is_coordinator}")
 
         # Check YAML config for this node's settings
         if not is_coordinator:
@@ -6818,7 +6817,6 @@ class P2POrchestrator(
                 # ClusterConfig stores hosts in hosts_raw attribute
                 nodes = getattr(config, "hosts_raw", {}) or {}
                 node_cfg = nodes.get(self.node_id, {})
-                logger.info(f"[P2P] COORDINATOR CHECK 2: node_cfg for {self.node_id}: role={node_cfg.get('role')}, selfplay={node_cfg.get('selfplay_enabled')}, training={node_cfg.get('training_enabled')}")
                 # Check role or explicit enabled flags
                 if node_cfg.get("role") == "coordinator":
                     is_coordinator = True
@@ -6827,9 +6825,7 @@ class P2POrchestrator(
                     is_coordinator = True
                     logger.info(f"[P2P] Node {self.node_id} has selfplay/training disabled (from YAML)")
             except Exception as e:
-                logger.info(f"[P2P] COORDINATOR CHECK 3: Could not load cluster config: {e}")
-
-        logger.info(f"[P2P] COORDINATOR CHECK 4: Final is_coordinator={is_coordinator} before capability assignment")
+                logger.debug(f"[P2P] Could not load cluster config: {e}")
         if is_coordinator:
             # Dec 30, 2025: Warn if GPU node is misconfigured as coordinator
             if has_gpu:
