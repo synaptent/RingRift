@@ -1835,7 +1835,6 @@ class P2POrchestrator(
             ),
             get_peers=lambda: self.peers,
             get_peers_lock=lambda: self.peers_lock,
-            orchestrator=self,
         )
         self.voter_node_ids: list[str] = self.quorum_manager.load_voter_node_ids()
         self.voter_config_source: str = self.quorum_manager.voter_config_source
@@ -6372,12 +6371,7 @@ class P2POrchestrator(
         """
         self.health_metrics_manager.apply_loaded_peer_health(peer_health_states)
 
-    def _collect_peer_health_states(self) -> list:
-        """Collect peer health states from circuit breakers and gossip tracker.
-
-        Jan 2026: Delegated to HealthMetricsManager (Phase 9 decomposition).
-        """
-        return self.health_metrics_manager.collect_peer_health_states()
+    # NOTE: _collect_peer_health_states() inlined at call site (Jan 2026 Phase 2)
 
     def _save_state(self):
         """Save current state to database.
@@ -6418,7 +6412,8 @@ class P2POrchestrator(
 
             # Dec 28, 2025 (Phase 7): Save peer health state
             try:
-                peer_health_states = self._collect_peer_health_states()
+                # Inline: was _collect_peer_health_states()
+                peer_health_states = self.health_metrics_manager.collect_peer_health_states()
                 if peer_health_states:
                     saved = self.state_manager.save_peer_health_batch(peer_health_states)
                     if saved > 0 and self.verbose:
@@ -7347,13 +7342,7 @@ class P2POrchestrator(
 
     # _tailscale_urls_for_voter: Provided by NetworkUtilsMixin
     # Dec 2025: Resource/diversity methods delegated to mixins and selfplay_scheduler (~236 LOC)
-
-    def _get_db_game_count_sync(self, db_path: Path) -> int:
-        """Get game count from database synchronously.
-
-        Jan 2026: Delegated to DataPipelineManager.
-        """
-        return self.data_pipeline_manager.get_db_game_count_sync(db_path)
+    # NOTE: _get_db_game_count_sync() inlined at call site (Jan 2026 Phase 2)
 
     def _seed_selfplay_scheduler_game_counts_sync(self) -> dict[str, int]:
         """Seed game counts from canonical databases synchronously.
@@ -7375,7 +7364,8 @@ class P2POrchestrator(
                 stem = db_path.stem  # canonical_hex8_2p
                 if stem.startswith("canonical_"):
                     config_key = stem[len("canonical_"):]  # hex8_2p
-                    game_count = self._get_db_game_count_sync(db_path)
+                    # Inline: was _get_db_game_count_sync()
+                    game_count = self.data_pipeline_manager.get_db_game_count_sync(db_path)
                     if game_count > 0:
                         game_counts[config_key] = game_count
             except (ValueError, AttributeError):
@@ -9045,7 +9035,8 @@ class P2POrchestrator(
             # Jan 20, 2026: Adaptive dead peer cooldown stats
             "cooldown_stats": self._get_cooldown_stats(),
             # Jan 25, 2026: Peer health summary for P2P stability monitoring (Phase 3)
-            "peer_health_summary": self._get_peer_health_summary(),
+            # Inline: was _get_peer_health_summary()
+            "peer_health_summary": self.health_metrics_manager.get_peer_health_summary(),
         })
 
     @with_request_timeout(10.0)
@@ -14634,12 +14625,7 @@ print(json.dumps({{
         """
         await self.recovery_manager.validate_relay_assignments()
 
-    def _select_best_relay(self, for_peer: str = "") -> str:
-        """Select the best relay node based on connectivity and load.
-
-        Jan 2026: Delegated to RecoveryManager (Phase 12 decomposition).
-        """
-        return self.recovery_manager.select_best_relay(for_peer)
+    # NOTE: _select_best_relay() inlined at call site (Jan 2026 Phase 2)
 
     def _is_valid_relay(self, peer: "NodeInfo") -> bool:
         """Check if a peer is a valid relay candidate.
@@ -14730,12 +14716,7 @@ print(json.dumps({{
         """
         return await self.recovery_manager.sweep_nat_recovery()
 
-    def _compute_connectivity_score(self, peer: NodeInfo) -> float:
-        """Compute connectivity score for leader eligibility ranking.
-
-        Jan 2026: Delegated to RecoveryManager (Phase 12 decomposition).
-        """
-        return self.recovery_manager.compute_connectivity_score(peer)
+    # NOTE: _compute_connectivity_score() inlined at call site (Jan 2026 Phase 2)
 
     def _is_leader_eligible(
         self,
@@ -14769,7 +14750,8 @@ print(json.dumps({{
         if node_status == "proxy_only" or self._is_node_proxy_only(peer.node_id):
             return False
         # Jan 2, 2026: Require minimum connectivity score
-        if self._compute_connectivity_score(peer) < 0.3:
+        # Inline: was _compute_connectivity_score()
+        if self.recovery_manager.compute_connectivity_score(peer) < 0.3:
             return False
         key = self._endpoint_key(peer)
         return not (key and key in conflict_keys)
@@ -17922,12 +17904,7 @@ print(json.dumps({{
                 "error": str(e),
             }
 
-    def _get_peer_health_summary(self) -> dict[str, Any]:
-        """Get peer health summary for P2P stability monitoring.
-
-        Jan 2026: Delegated to HealthMetricsManager (Phase 9 decomposition).
-        """
-        return self.health_metrics_manager.get_peer_health_summary()
+    # NOTE: _get_peer_health_summary() inlined at call site (Jan 2026 Phase 2)
 
     def _get_fallback_status(self) -> dict[str, Any]:
         """Get fallback mechanism status for debugging partition issues.
@@ -20333,7 +20310,8 @@ print(json.dumps({{
                         # Dec 30, 2025: Automatic relay failover
                         # If the current relay is unreachable, try to find a new one
                         # January 4, 2026: Pass peer_id for configured relay preferences
-                        new_relay = self._select_best_relay(for_peer=peer_id)
+                        # Inline: was _select_best_relay()
+                        new_relay = self.recovery_manager.select_best_relay(for_peer=peer_id)
                         if new_relay and new_relay != relay_node_id:
                             logger.info(
                                 f"[RelayFailover] Switching {peer_id} relay: "
