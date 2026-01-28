@@ -744,3 +744,24 @@ async def stop_connection_pool() -> None:
     """Stop the connection pool and close all connections."""
     pool = get_connection_pool()
     await pool.stop()
+
+
+@asynccontextmanager
+async def get_client_session(
+    timeout: "aiohttp.ClientTimeout | None" = None,
+) -> "AsyncIterator[aiohttp.ClientSession]":
+    """Get a simple aiohttp client session with optional timeout.
+
+    This is a convenience function for one-off HTTP requests that don't need
+    connection pooling. Use get_pooled_session() for repeated requests to
+    the same peer.
+
+    Usage:
+        async with get_client_session(aiohttp.ClientTimeout(total=30)) as session:
+            async with session.get(url) as resp:
+                ...
+    """
+    import aiohttp
+    connector = aiohttp.TCPConnector(limit=10, force_close=True)
+    async with aiohttp.ClientSession(timeout=timeout, connector=connector) as session:
+        yield session
