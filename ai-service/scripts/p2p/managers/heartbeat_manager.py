@@ -483,6 +483,224 @@ class HeartbeatManager:
 
         return None
 
+    # =========================================================================
+    # Heartbeat Reception
+    # =========================================================================
+
+    async def process_incoming_heartbeat(
+        self,
+        data: dict[str, Any],
+        remote_addr: str | None = None,
+        forwarded_for: str | None = None,
+    ) -> dict[str, Any]:
+        """Process incoming heartbeat data from a peer node.
+
+        Handles peer registration, leader discovery, NAT-blocked status tracking,
+        capability inference, and HOST_ONLINE event emission.
+
+        Jan 28, 2026: Phase 18B - Migrated from p2p_orchestrator.py.
+
+        Args:
+            data: Heartbeat JSON data (node info dict)
+            remote_addr: Remote socket address (request.remote)
+            forwarded_for: X-Forwarded-For header value (for proxy/CDN support)
+
+        Returns:
+            Response payload dict with this node's info
+        """
+        from scripts.p2p.models import NodeInfo, NodeRole
+
+        # Parse incoming voter info
+        incoming_voters = data.get("voter_node_ids") or data.get("voters") or None
+        if incoming_voters:
+            voters_list: list[str] = []
+            if isinstance(incoming_voters, list):
+                voters_list = [str(v).strip() for v in incoming_voters if str(v).strip()]
+            elif isinstance(incoming_voters, str):
+                voters_list = [t.strip() for t in incoming_voters.split(",") if t.strip()]
+            if voters_list:
+                self._maybe_adopt_voter_node_ids(voters_list, source="learned")
+
+        peer_info = NodeInfo.from_dict(data)
+
+        # Ignore self-heartbeats
+        if peer_info.node_id == self._node_id:
+            await self._update_self_info_async()
+            payload = self._self_info.to_dict() if self._self_info else {}
+            voter_node_ids = list(self._voter_node_ids or [])
+            if voter_node_ids:
+                payload["voter_node_ids"] = voter_node_ids
+                payload["voter_quorum_size"] = int(getattr(self._orchestrator, "voter_quorum_size", 0) or 0)
+                payload["voter_config_source"] = str(getattr(self._orchestrator, "voter_config_source", "") or "")
+            return payload
+
+        # Receiving any inbound heartbeat implies we're reachable inbound
+        if self._orchestrator:
+            self._orchestrator.last_inbound_heartbeat = time.time()
+
+        # Preserve the node's self-reported endpoint for multi-path retries
+        if not peer_info.reported_host:
+            peer_info.reported_host = peer_info.host
+        if not peer_info.reported_port:
+            peer_info.reported_port = peer_info.port
+        peer_info.last_heartbeat = time.time()
+
+        # Prefer the remote socket address over self-reported host
+        if forwarded_for:
+            peer_info.host = forwarded_for.split(",")[0].strip()
+        elif remote_addr:
+            peer_info.host = remote_addr
+
+        # Use AsyncLockWrapper to avoid blocking event loop under high load
+        try:
+            from scripts.p2p.utils import NonBlockingAsyncLockWrapper
+        except ImportError:
+            from contextlib import asynccontextmanager
+            @asynccontextmanager
+            async def NonBlockingAsyncLockWrapper(lock, name, timeout=5.0):
+                if lock:
+                    with lock:
+                        yield
+                else:
+                    yield
+
+        is_first_contact = False
+        async with NonBlockingAsyncLockWrapper(self._peers_lock, "peers_lock", timeout=5.0):
+            existing = self._peers.get(peer_info.node_id)
+            is_first_contact = existing is None
+
+            if existing:
+                # Merge alternate IPs for peer deduplication
+                all_ips = set(existing.alternate_ips) if existing.alternate_ips else set()
+                if existing.host:
+                    all_ips.add(existing.host)
+                if peer_info.host and peer_info.host != existing.host:
+                    all_ips.add(peer_info.host)
+                all_ips.discard("")
+                all_ips.discard(peer_info.host)
+                peer_info.alternate_ips = all_ips
+                peer_info.consecutive_failures = int(getattr(existing, "consecutive_failures", 0) or 0)
+                peer_info.last_failure_time = float(getattr(existing, "last_failure_time", 0.0) or 0.0)
+
+                # Sticky NAT/relay routing with recovery
+                existing_nat_blocked = getattr(existing, "nat_blocked", False)
+                existing_nat_blocked_since = float(getattr(existing, "nat_blocked_since", 0.0) or 0.0)
+                existing_last_nat_probe = float(getattr(existing, "last_nat_probe", 0.0) or 0.0)
+
+                if existing_nat_blocked and not getattr(peer_info, "nat_blocked", False):
+                    peer_info.nat_blocked = True
+                    peer_info.nat_blocked_since = existing_nat_blocked_since or time.time()
+                    peer_info.last_nat_probe = existing_last_nat_probe
+                elif peer_info.nat_blocked and not existing_nat_blocked:
+                    peer_info.nat_blocked_since = time.time()
+                elif existing_nat_blocked and peer_info.nat_blocked:
+                    peer_info.nat_blocked_since = existing_nat_blocked_since or time.time()
+                    peer_info.last_nat_probe = existing_last_nat_probe
+
+                if (getattr(existing, "relay_via", "") or "") and not (getattr(peer_info, "relay_via", "") or ""):
+                    peer_info.relay_via = str(getattr(existing, "relay_via", "") or "")
+
+                # Preserve retirement state across updates
+                if getattr(existing, "retired", False):
+                    peer_info.retired = True
+                    peer_info.retired_at = float(getattr(existing, "retired_at", 0.0) or 0.0)
+
+            # Correct stale leader role claims
+            if peer_info.role == NodeRole.LEADER and peer_info.node_id != self._node_id:
+                actual_leader = self._leader_id
+                if actual_leader and actual_leader != peer_info.node_id:
+                    peer_info.role = NodeRole.FOLLOWER
+
+            # Leader discovery from peer heartbeats
+            peer_leader = getattr(peer_info, "leader_id", "") or ""
+
+            if peer_leader:
+                # Track leader reports for consensus building
+                if not hasattr(self._orchestrator, "_leader_reports"):
+                    self._orchestrator._leader_reports = {}
+                self._orchestrator._leader_reports[peer_info.node_id] = (peer_leader, time.time())
+
+                # Clean old reports (older than 60 seconds)
+                cutoff = time.time() - 60
+                self._orchestrator._leader_reports = {
+                    k: v for k, v in self._orchestrator._leader_reports.items()
+                    if v[1] > cutoff
+                }
+
+                # Check if we should switch leaders based on peer consensus
+                if self._leader_id and self._leader_id != peer_leader:
+                    leader_counts = {}
+                    for _, (reported_leader, _) in self._orchestrator._leader_reports.items():
+                        leader_counts[reported_leader] = leader_counts.get(reported_leader, 0) + 1
+
+                    if leader_counts.get(peer_leader, 0) >= 3:
+                        potential_leader = self._peers.get(peer_leader)
+                        if potential_leader and potential_leader.is_alive():
+                            logger.info(
+                                f"[ConsensusSwitch] Switching leader from {self._leader_id} to {peer_leader} "
+                                f"based on peer consensus ({leader_counts.get(peer_leader)} reports)"
+                            )
+                            self._set_leader(peer_leader, reason=f"consensus_switch_via_{peer_info.node_id}")
+
+            if peer_leader and not self._leader_id:
+                if peer_leader == self._node_id:
+                    # Peer thinks WE are leader - verify with lease before accepting
+                    if hasattr(self._orchestrator, "_is_leader_lease_valid") and self._orchestrator._is_leader_lease_valid():
+                        self._set_leader(self._node_id, reason=f"gossip_self_leader_discovery_via_{peer_info.node_id}")
+                        logger.info(f"Discovered we are leader from heartbeat via {peer_info.node_id}")
+                else:
+                    # Peer reports someone else as leader - adopt if valid
+                    potential_leader = self._peers.get(peer_leader)
+                    if potential_leader and potential_leader.is_alive() and potential_leader.role == NodeRole.LEADER:
+                        self._set_leader(peer_leader, reason=f"gossip_adopt_from_{peer_info.node_id}")
+                        logger.info(f"Adopted leader {peer_leader} from heartbeat via {peer_info.node_id}")
+
+            # Auto-populate capabilities from hardware if empty
+            if not getattr(peer_info, "capabilities", None):
+                has_gpu = getattr(peer_info, "has_gpu", False)
+                memory_gb = int(getattr(peer_info, "memory_gb", 0) or 0)
+                if has_gpu or memory_gb > 0:
+                    if hasattr(self._orchestrator, "_infer_capabilities_from_hardware"):
+                        inferred_caps = self._orchestrator._infer_capabilities_from_hardware(
+                            has_gpu=has_gpu,
+                            memory_gb=memory_gb,
+                            gpu_name=getattr(peer_info, "gpu_name", "") or "",
+                        )
+                        peer_info.capabilities = inferred_caps
+                        logger.info(
+                            f"[P2P] Inferred capabilities for {peer_info.node_id}: {inferred_caps} "
+                            f"(has_gpu={has_gpu}, memory_gb={memory_gb})"
+                        )
+
+            self._peers[peer_info.node_id] = peer_info
+
+        # Emit HOST_ONLINE for first-contact peers
+        if is_first_contact:
+            capabilities = getattr(peer_info, "capabilities", None) or []
+            if not capabilities:
+                if getattr(peer_info, "has_gpu", False):
+                    gpu_type = getattr(peer_info, "gpu_type", "") or "gpu"
+                    capabilities = [gpu_type]
+                else:
+                    capabilities = ["cpu"]
+            if hasattr(self._orchestrator, "_emit_host_online"):
+                await self._orchestrator._emit_host_online(peer_info.node_id, capabilities)
+            logger.info(f"First-contact peer registered: {peer_info.node_id} (caps: {capabilities})")
+
+        # Sync to lock-free snapshot after peer update
+        self._sync_peer_snapshot()
+
+        # Return our info
+        await self._update_self_info_async()
+        payload = self._self_info.to_dict() if self._self_info else {}
+        voter_node_ids = list(self._voter_node_ids or [])
+        if voter_node_ids:
+            payload["voter_node_ids"] = voter_node_ids
+            payload["voter_quorum_size"] = int(getattr(self._orchestrator, "voter_quorum_size", 0) or 0)
+            payload["voter_config_source"] = str(getattr(self._orchestrator, "voter_config_source", "") or "")
+
+        return payload
+
     def find_node_id_for_host(self, host: str) -> str | None:
         """Find node_id for a given host address.
 
@@ -778,6 +996,206 @@ class HeartbeatManager:
         if self._orchestrator and hasattr(self._orchestrator, "_load_bootstrap_seeds_from_config"):
             return self._orchestrator._load_bootstrap_seeds_from_config()
         return []
+
+    # =========================================================================
+    # Relay Heartbeat Methods
+    # =========================================================================
+
+    async def send_relay_heartbeat(self, relay_url: str) -> dict[str, Any]:
+        """Send heartbeat via relay endpoint for NAT-blocked nodes.
+
+        This is used when the peer URL is HTTPS (indicating a relay/proxy endpoint)
+        or when direct heartbeats fail consistently.
+
+        Args:
+            relay_url: The relay endpoint URL.
+
+        Returns:
+            dict with:
+            - success: bool
+            - peers_received: count of peers in response
+            - leader_id: current leader
+            - commands_received: count of relay commands
+
+        Jan 27, 2026: Phase 16A - Migrated from p2p_orchestrator.py.
+        """
+        if aiohttp is None:
+            return {"success": False, "error": "aiohttp not available"}
+
+        from scripts.p2p.models import NodeInfo
+        from scripts.p2p.network import get_client_session
+
+        try:
+            await self._update_self_info_async()
+
+            timeout = ClientTimeout(total=15)
+            async with get_client_session(timeout) as session:
+                # Use /relay/heartbeat endpoint
+                url = f"{relay_url.rstrip('/')}/relay/heartbeat"
+                payload = self._self_info.to_dict() if self._self_info else {}
+
+                # Include pending relay acks/results
+                pending_relay_acks = getattr(self._orchestrator, "pending_relay_acks", set())
+                pending_relay_results = getattr(self._orchestrator, "pending_relay_results", [])
+                if pending_relay_acks:
+                    payload["relay_ack"] = sorted(pending_relay_acks)
+                if pending_relay_results:
+                    payload["relay_results"] = list(pending_relay_results)
+
+                async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
+                    if resp.status != 200:
+                        self._stats.relay_heartbeat_failures += 1
+                        return {"success": False, "error": f"HTTP {resp.status}"}
+
+                    data = await resp.json()
+                    if not data.get("success"):
+                        self._stats.relay_heartbeat_failures += 1
+                        return {"success": False, "error": data.get("error", "Unknown error")}
+
+                    # Adopt voter node IDs if provided
+                    incoming_voters = data.get("voter_node_ids") or data.get("voters") or None
+                    if incoming_voters:
+                        voters_list: list[str] = []
+                        if isinstance(incoming_voters, list):
+                            voters_list = [str(v).strip() for v in incoming_voters if str(v).strip()]
+                        elif isinstance(incoming_voters, str):
+                            voters_list = [t.strip() for t in incoming_voters.split(",") if t.strip()]
+                        if voters_list:
+                            self._maybe_adopt_voter_node_ids(voters_list, source="learned")
+
+                    # Clear pending acks/results only after a successful round-trip
+                    if pending_relay_acks:
+                        pending_relay_acks.clear()
+                    if pending_relay_results:
+                        pending_relay_results.clear()
+
+                    # Update our peer list with all peers from relay
+                    peers_data = data.get("peers", {})
+                    if self._peers_lock:
+                        with self._peers_lock:
+                            for node_id, peer_dict in peers_data.items():
+                                if node_id != self._node_id:
+                                    peer_info = NodeInfo.from_dict(peer_dict)
+                                    existing = self._peers.get(node_id)
+                                    if existing:
+                                        # Preserve NAT-blocked status
+                                        if getattr(existing, "nat_blocked", False) and not getattr(peer_info, "nat_blocked", False):
+                                            peer_info.nat_blocked = True
+                                            peer_info.nat_blocked_since = float(getattr(existing, "nat_blocked_since", 0.0) or 0.0) or time.time()
+                                            peer_info.last_nat_probe = float(getattr(existing, "last_nat_probe", 0.0) or 0.0)
+                                        # Preserve relay_via
+                                        if (getattr(existing, "relay_via", "") or "") and not (getattr(peer_info, "relay_via", "") or ""):
+                                            peer_info.relay_via = str(getattr(existing, "relay_via", "") or "")
+                                        # Preserve retired status
+                                        if getattr(existing, "retired", False):
+                                            peer_info.retired = True
+                                            peer_info.retired_at = float(getattr(existing, "retired_at", 0.0) or 0.0)
+                                        # Preserve failure tracking
+                                        peer_info.consecutive_failures = int(getattr(existing, "consecutive_failures", 0) or 0)
+                                        peer_info.last_failure_time = float(getattr(existing, "last_failure_time", 0.0) or 0.0)
+                                    self._peers[node_id] = peer_info
+
+                    # Execute any queued commands addressed to us
+                    commands = data.get("commands") or []
+                    if isinstance(commands, list) and commands:
+                        await self._execute_relay_commands(commands)
+
+                    # Update leader if provided
+                    leader_id = data.get("leader_id")
+                    if leader_id and leader_id != self._node_id:
+                        if self._leader_id != leader_id:
+                            logger.info(f"Adopted leader from relay: {leader_id}")
+                        self._set_leader(leader_id, reason="relay_poll_adopt_leader", save_state=False)
+
+                    self._stats.relay_heartbeats_sent += 1
+                    self._last_relay_heartbeat = time.time()
+
+                    return {
+                        "success": True,
+                        "peers_received": len(peers_data) if isinstance(peers_data, dict) else 0,
+                        "leader_id": leader_id,
+                        "commands_received": len(commands) if isinstance(commands, list) else 0,
+                    }
+        except Exception as e:  # noqa: BLE001
+            self._stats.relay_heartbeat_failures += 1
+            return {"success": False, "error": str(e)}
+
+    async def _execute_relay_commands(self, commands: list[dict[str, Any]]) -> None:
+        """Execute relay commands addressed to this node.
+
+        Delegates to orchestrator's implementation.
+        """
+        if self._orchestrator and hasattr(self._orchestrator, "_execute_relay_commands"):
+            await self._orchestrator._execute_relay_commands(commands)
+
+    # =========================================================================
+    # Voter Heartbeat Methods
+    # =========================================================================
+
+    async def send_voter_heartbeat(self, voter_peer: Any) -> bool:
+        """Send a heartbeat to a voter peer with shorter timeout.
+
+        Voter heartbeats are critical for quorum stability, so they use
+        shorter timeouts and try alternative endpoints on failure.
+
+        Args:
+            voter_peer: The voter peer NodeInfo to send heartbeat to.
+
+        Returns:
+            True if heartbeat succeeded, False otherwise.
+
+        Jan 27, 2026: Phase 16A - Migrated from p2p_orchestrator.py.
+        """
+        from scripts.p2p.models import NodeRole
+
+        VOTER_HEARTBEAT_TIMEOUT = int(self.config.voter_heartbeat_timeout)
+
+        try:
+            peer_scheme = getattr(voter_peer, "scheme", "http") or "http"
+
+            # Use Tailscale IP if available (more reliable for cross-provider)
+            target_host = voter_peer.host
+            ts_ip = self._get_tailscale_ip_for_peer(voter_peer.node_id)
+            if ts_ip:
+                target_host = ts_ip
+
+            info = await self.send_heartbeat_to_peer(
+                target_host,
+                voter_peer.port,
+                scheme=peer_scheme,
+                timeout=VOTER_HEARTBEAT_TIMEOUT
+            )
+
+            if info:
+                if self._peers_lock:
+                    with self._peers_lock:
+                        info.last_heartbeat = time.time()
+                        info.consecutive_failures = 0
+                        self._peers[info.node_id] = info
+
+                # Update leader if this voter claims leadership
+                leader_lease_duration = getattr(self._orchestrator, "LEADER_LEASE_DURATION", 300)
+                if info.role == NodeRole.LEADER and info.node_id != self._node_id and self._leader_id != info.node_id:
+                    logger.info(f"Discovered leader from voter heartbeat: {info.node_id}")
+                    self._set_leader(info.node_id, reason="voter_heartbeat_discover_leader", save_state=False)
+                    if self._orchestrator:
+                        self._orchestrator.leader_lease_expires = time.time() + leader_lease_duration
+
+                self._stats.voter_heartbeats_sent += 1
+                return True
+        except (aiohttp.ClientError, asyncio.TimeoutError, json.JSONDecodeError, KeyError, AttributeError) as e:
+            # Log voter coordination failures for debugging cluster connectivity issues
+            logger.debug(f"Voter heartbeat failed for {voter_peer.node_id if voter_peer else 'unknown'}: {type(e).__name__}: {e}")
+        return False
+
+    def _get_tailscale_ip_for_peer(self, node_id: str) -> str | None:
+        """Get Tailscale IP for a peer.
+
+        Delegates to orchestrator's implementation.
+        """
+        if self._orchestrator and hasattr(self._orchestrator, "_get_tailscale_ip_for_peer"):
+            return self._orchestrator._get_tailscale_ip_for_peer(node_id)
+        return None
 
     # =========================================================================
     # Health Check

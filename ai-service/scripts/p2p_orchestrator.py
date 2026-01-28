@@ -9006,217 +9006,22 @@ class P2POrchestrator(
     # ============================================
 
     async def handle_heartbeat(self, request: web.Request) -> web.Response:
-        """Handle heartbeat from peer node."""
+        """Handle heartbeat from peer node.
+
+        Jan 28, 2026: Phase 18B - Delegates to HeartbeatManager.process_incoming_heartbeat().
+        """
         try:
             data = await request.json()
-            incoming_voters = data.get("voter_node_ids") or data.get("voters") or None
-            if incoming_voters:
-                voters_list: list[str] = []
-                if isinstance(incoming_voters, list):
-                    voters_list = [str(v).strip() for v in incoming_voters if str(v).strip()]
-                elif isinstance(incoming_voters, str):
-                    voters_list = [t.strip() for t in incoming_voters.split(",") if t.strip()]
-                if voters_list:
-                    self._maybe_adopt_voter_node_ids(voters_list, source="learned")
-            peer_info = NodeInfo.from_dict(data)
-            # Ignore self-heartbeats so NAT detection + leader election aren't
-            # distorted when COORDINATOR_URL includes this node's own endpoint(s).
-            if peer_info.node_id == self.node_id:
-                # Jan 23, 2026: Use async version to avoid blocking event loop
-                await self._update_self_info_async()
-                payload = self.self_info.to_dict()
-                voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
-                if voter_node_ids:
-                    payload["voter_node_ids"] = voter_node_ids
-                    payload["voter_quorum_size"] = int(getattr(self, "voter_quorum_size", 0) or 0)
-                    payload["voter_config_source"] = str(getattr(self, "voter_config_source", "") or "")
-                return web.json_response(payload)
-            # Receiving any inbound heartbeat implies we're reachable inbound.
-            self.last_inbound_heartbeat = time.time()
-            # Preserve the node's self-reported endpoint for multi-path retries.
-            if not peer_info.reported_host:
-                peer_info.reported_host = peer_info.host
-            if not peer_info.reported_port:
-                peer_info.reported_port = peer_info.port
-            peer_info.last_heartbeat = time.time()
-            # Prefer the remote socket address over self-reported host so that
-            # nodes behind overlays (e.g., Tailscale) use a reachable address.
             forwarded_for = (
                 request.headers.get("X-Forwarded-For")
                 or request.headers.get("X-Real-IP")
                 or request.headers.get("CF-Connecting-IP")
             )
-            if forwarded_for:
-                peer_info.host = forwarded_for.split(",")[0].strip()
-            elif request.remote:
-                peer_info.host = request.remote
-
-            # Preserve local reachability diagnostics: a peer can be "alive" (it can
-            # send us heartbeats) while still being unreachable for inbound HTTP
-            # (e.g. NAT/firewall). Our outbound heartbeat failures track that.
-            # Use AsyncLockWrapper to avoid blocking event loop under high load
-            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
-                existing = self.peers.get(peer_info.node_id)
-                # Dec 2025: Track first-contact for HOST_ONLINE emission
-                is_first_contact = existing is None
-                if existing:
-                    # Dec 29, 2025: Merge alternate IPs for peer deduplication
-                    all_ips = set(existing.alternate_ips) if existing.alternate_ips else set()
-                    if existing.host:
-                        all_ips.add(existing.host)
-                    if peer_info.host and peer_info.host != existing.host:
-                        all_ips.add(peer_info.host)
-                    all_ips.discard("")
-                    # Remove primary host from alternates
-                    all_ips.discard(peer_info.host)
-                    peer_info.alternate_ips = all_ips
-                    peer_info.consecutive_failures = int(getattr(existing, "consecutive_failures", 0) or 0)
-                    peer_info.last_failure_time = float(getattr(existing, "last_failure_time", 0.0) or 0.0)
-                    # Sticky NAT/relay routing with recovery:
-                    # - Receiving a direct heartbeat does NOT imply the peer is reachable inbound.
-                    # - If a peer has ever registered via /relay/heartbeat, preserve nat_blocked
-                    #   and relay_via so leaders can continue routing commands through the relay hub.
-                    # - BUT: allow recovery after NAT_BLOCKED_RECOVERY_TIMEOUT if peer becomes reachable
-                    existing_nat_blocked = getattr(existing, "nat_blocked", False)
-                    existing_nat_blocked_since = float(getattr(existing, "nat_blocked_since", 0.0) or 0.0)
-                    existing_last_nat_probe = float(getattr(existing, "last_nat_probe", 0.0) or 0.0)
-
-                    if existing_nat_blocked and not getattr(peer_info, "nat_blocked", False):
-                        # Peer was NAT-blocked, incoming says not blocked - preserve unless recovery triggered
-                        peer_info.nat_blocked = True
-                        peer_info.nat_blocked_since = existing_nat_blocked_since or time.time()
-                        peer_info.last_nat_probe = existing_last_nat_probe
-                    elif peer_info.nat_blocked and not existing_nat_blocked:
-                        # Peer newly marked as NAT-blocked - record timestamp
-                        peer_info.nat_blocked_since = time.time()
-                    elif existing_nat_blocked and peer_info.nat_blocked:
-                        # Both agree NAT-blocked - preserve original timestamp
-                        peer_info.nat_blocked_since = existing_nat_blocked_since or time.time()
-                        peer_info.last_nat_probe = existing_last_nat_probe
-
-                    if (getattr(existing, "relay_via", "") or "") and not (getattr(peer_info, "relay_via", "") or ""):
-                        peer_info.relay_via = str(getattr(existing, "relay_via", "") or "")
-                    # Preserve retirement state across updates.
-                    if getattr(existing, "retired", False):
-                        peer_info.retired = True
-                        peer_info.retired_at = float(getattr(existing, "retired_at", 0.0) or 0.0)
-
-                # STABILITY FIX: Correct stale leader role claims
-                # If a peer claims to be leader but we have an elected leader that's different,
-                # downgrade their role to follower to prevent split-brain confusion.
-                # This prevents stale leader info from propagating through gossip.
-                if peer_info.role == NodeRole.LEADER and peer_info.node_id != self.node_id:
-                    actual_leader = self.leader_id
-                    if actual_leader and actual_leader != peer_info.node_id:
-                        # Peer claims leader but we have a different elected leader
-                        peer_info.role = NodeRole.FOLLOWER
-
-                # Dec 2025: Leader discovery from peer heartbeats
-                # If we don't have a leader but peer reports one, consider adopting it
-                # Jan 3, 2026: CRITICAL FIX - Handle case where peer reports US as leader
-                # Jan 23, 2026: Enhanced to also track consensus when we have a different leader
-                peer_leader = getattr(peer_info, "leader_id", "") or ""
-
-                # Track leader reports for consensus building (Jan 23, 2026)
-                if peer_leader:
-                    if not hasattr(self, "_leader_reports"):
-                        self._leader_reports = {}
-                    self._leader_reports[peer_info.node_id] = (peer_leader, time.time())
-
-                    # Clean old reports (older than 60 seconds)
-                    cutoff = time.time() - 60
-                    self._leader_reports = {
-                        k: v for k, v in self._leader_reports.items()
-                        if v[1] > cutoff
-                    }
-
-                    # Check if we should switch leaders based on peer consensus
-                    if self.leader_id and self.leader_id != peer_leader:
-                        # Count how many peers report the same leader
-                        leader_counts = {}
-                        for _, (reported_leader, _) in self._leader_reports.items():
-                            leader_counts[reported_leader] = leader_counts.get(reported_leader, 0) + 1
-
-                        # If 3+ peers report a different leader, consider switching
-                        if leader_counts.get(peer_leader, 0) >= 3:
-                            potential_leader = self.peers.get(peer_leader)
-                            if potential_leader and potential_leader.is_alive():
-                                logger.info(
-                                    f"[ConsensusSwitch] Switching leader from {self.leader_id} to {peer_leader} "
-                                    f"based on peer consensus ({leader_counts.get(peer_leader)} reports)"
-                                )
-                                self._set_leader(peer_leader, reason=f"consensus_switch_via_{peer_info.node_id}")
-
-                if peer_leader and not self.leader_id:
-                    # CRITICAL FIX (Jan 3, 2026): Check if peer reports US as leader
-                    # This fixes the leader self-recognition desync bug where leader_id
-                    # gets set to self.node_id but role stays FOLLOWER.
-                    if peer_leader == self.node_id:
-                        # Peer thinks WE are leader - verify with lease before accepting
-                        if self._is_leader_lease_valid():
-                            self._set_leader(self.node_id, reason=f"gossip_self_leader_discovery_via_{peer_info.node_id}")
-                            logger.info(f"Discovered we are leader from heartbeat via {peer_info.node_id}")
-                        else:
-                            logger.debug(
-                                f"Peer {peer_info.node_id} reports us as leader but lease invalid; "
-                                f"lease_expires={self.leader_lease_expires}, now={time.time()}"
-                            )
-                    else:
-                        # Peer reports someone else as leader - adopt if valid
-                        potential_leader = self.peers.get(peer_leader)
-                        if potential_leader and potential_leader.is_alive() and potential_leader.role == NodeRole.LEADER:
-                            self._set_leader(peer_leader, reason=f"gossip_adopt_from_{peer_info.node_id}")
-                            logger.info(f"Adopted leader {peer_leader} from heartbeat via {peer_info.node_id}")
-
-                # Dec 30, 2025: Auto-populate capabilities from hardware if empty
-                # This handles nodes that have coordinator flag set incorrectly
-                if not getattr(peer_info, "capabilities", None):
-                    has_gpu = getattr(peer_info, "has_gpu", False)
-                    memory_gb = int(getattr(peer_info, "memory_gb", 0) or 0)
-                    if has_gpu or memory_gb > 0:
-                        inferred_caps = self._infer_capabilities_from_hardware(
-                            has_gpu=has_gpu,
-                            memory_gb=memory_gb,
-                            gpu_name=getattr(peer_info, "gpu_name", "") or "",
-                        )
-                        peer_info.capabilities = inferred_caps
-                        logger.info(
-                            f"[P2P] Inferred capabilities for {peer_info.node_id}: {inferred_caps} "
-                            f"(has_gpu={has_gpu}, memory_gb={memory_gb})"
-                        )
-
-                self.peers[peer_info.node_id] = peer_info
-
-            # Dec 2025: Emit HOST_ONLINE for first-contact peers
-            # This enables SelfplayScheduler, SyncRouter, and DataPipelineOrchestrator
-            # to detect newly available nodes for work distribution
-            # Dec 30, 2025: Use capabilities from heartbeat instead of computing minimal list
-            # This preserves the full capability set (selfplay, training, cmaes, large_boards)
-            if is_first_contact:
-                # Prefer capabilities from peer_info (advertised by the peer itself)
-                capabilities = getattr(peer_info, "capabilities", None) or []
-                if not capabilities:
-                    # Fallback: compute minimal caps if peer didn't advertise any
-                    if getattr(peer_info, "has_gpu", False):
-                        gpu_type = getattr(peer_info, "gpu_type", "") or "gpu"
-                        capabilities = [gpu_type]
-                    else:
-                        capabilities = ["cpu"]
-                await self._emit_host_online(peer_info.node_id, capabilities)
-                logger.info(f"First-contact peer registered: {peer_info.node_id} (caps: {capabilities})")
-
-            # Jan 12, 2026: Sync to lock-free snapshot after peer update
-            self._sync_peer_snapshot()
-
-            # Return our info
-            # Jan 23, 2026: Use async version to avoid blocking event loop
-            await self._update_self_info_async()
-            payload = self.self_info.to_dict()
-            voter_node_ids = list(getattr(self, "voter_node_ids", []) or [])
-            if voter_node_ids:
-                payload["voter_node_ids"] = voter_node_ids
-                payload["voter_quorum_size"] = int(getattr(self, "voter_quorum_size", 0) or 0)
-                payload["voter_config_source"] = str(getattr(self, "voter_config_source", "") or "")
+            payload = await self.heartbeat_manager.process_incoming_heartbeat(
+                data=data,
+                remote_addr=request.remote,
+                forwarded_for=forwarded_for,
+            )
             return web.json_response(payload)
         except json.JSONDecodeError as e:
             logger.warning(f"[heartbeat] JSON parse error from {request.remote}: {e}")
