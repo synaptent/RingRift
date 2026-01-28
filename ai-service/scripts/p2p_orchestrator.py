@@ -3511,26 +3511,6 @@ class P2POrchestrator(
             )
         return False
 
-    def _subscribe_single(
-        self,
-        event_name: str,
-        handler: Any,
-        is_critical: bool = False,
-    ) -> bool:
-        """Synchronous single subscription attempt.
-
-        Used for initial subscription setup. Returns True on success.
-        For retry logic, use _subscribe_with_retry in async context.
-        """
-        try:
-            from app.coordination.event_router import subscribe
-            subscribe(event_name, handler)
-            return True
-        except Exception as e:  # noqa: BLE001
-            level = logger.error if is_critical else logger.debug
-            level(f"[P2P] Failed to subscribe to {event_name}: {e}")
-            return False
-
     def _subscribe_to_daemon_events(self) -> bool:
         """Subscribe to daemon status events for observability.
 
@@ -4794,35 +4774,6 @@ class P2POrchestrator(
         """Record a process spawn for rate limiting."""
         self.spawn_timestamps.append(time.time())
 
-    async def _check_coordinator_available(self) -> bool:
-        """Check if the unified coordinator is available.
-
-        SAFEGUARD: In agent mode, defer job decisions to coordinator.
-
-        Returns:
-            True if coordinator is reachable
-        """
-        if not self.coordinator_url:
-            return False
-
-        # Cache check for 30 seconds
-        now = time.time()
-        if now - self.last_coordinator_check < 30:
-            return self.coordinator_available
-
-        self.last_coordinator_check = now
-
-        try:
-            async with get_client_session(timeout=ClientTimeout(total=5)) as session:
-                async with session.get(f"{self.coordinator_url}/api/health") as resp:
-                    self.coordinator_available = resp.status == 200
-                    if self.coordinator_available:
-                        logger.info(f"Coordinator available at {self.coordinator_url}")
-                    return self.coordinator_available
-        except (aiohttp.ClientError, asyncio.TimeoutError, AttributeError):
-            self.coordinator_available = False
-            return False
-
     def _can_spawn_process(self, reason: str = "job") -> tuple[bool, str]:
         """Combined safeguard check before spawning any process.
 
@@ -5463,14 +5414,6 @@ class P2POrchestrator(
                 if ssh_host and not any(c.isalpha() for c in ssh_host.replace(".", "")):
                     ip_to_node[ssh_host] = node_id
         return ip_to_node
-
-    def _resolve_peer_id_to_node_name(self, peer_id: str) -> str:
-        """Translate a SWIM peer ID (IP:port) to a node name if possible."""
-        if ":" not in peer_id or not peer_id.split(":")[0].replace(".", "").isdigit():
-            return peer_id
-        ip = peer_id.split(":")[0]
-        ip_map = getattr(self, "_ip_to_node_map", {})
-        return ip_map.get(ip, peer_id)
 
     def _get_cached_peer_snapshot(self, max_age_seconds: float = 1.0) -> list:
         """Get cached peer snapshot to reduce lock acquisitions.
@@ -8240,10 +8183,6 @@ class P2POrchestrator(
 
         return external
 
-    async def _scan_owc_metadata(self) -> dict | None:
-        """Scan OWC external drive. Delegates to DataSyncCoordinator."""
-        return await self.data_sync_coordinator.scan_owc_metadata()
-
     def _scan_owc_local(self, base_path: str) -> dict:
         """Scan OWC drive locally. Delegates to DataSyncCoordinator."""
         return self.data_sync_coordinator._scan_owc_local(base_path)
@@ -8253,10 +8192,7 @@ class P2POrchestrator(
         return self.data_sync_coordinator.extract_config_from_path(db_path)
 
     # Jan 27, 2026: Phase 17B - Removed _get_s3_bucket_from_config (unused delegation wrapper)
-
-    async def _scan_s3_metadata(self) -> dict | None:
-        """Scan S3 bucket. Delegates to DataSyncCoordinator."""
-        return await self.data_sync_coordinator.scan_s3_metadata()
+    # Jan 28, 2026: Phase 18 - Removed _scan_s3_metadata (unused delegation wrapper)
 
     # Phase 2: P2P Rsync Coordination - using SyncPlanner
 
@@ -8642,121 +8578,6 @@ class P2POrchestrator(
 
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to start auto-training: {e}")
-
-    async def _request_data_from_peers(self):
-        """Sync training data (NPZ files) from peers with large datasets.
-
-        This ensures training data is distributed across the cluster so any
-        GPU node can run training jobs.
-        """
-        try:
-            # Check disk capacity before requesting data
-            has_capacity, disk_pct = check_disk_has_capacity(DISK_CRITICAL_THRESHOLD)
-            if not has_capacity:
-                if self.verbose:
-                    logger.info(f"Skipping data sync request: disk at {disk_pct:.1f}% (limit {DISK_CRITICAL_THRESHOLD}%)")
-                return
-
-            # Only sync if we're a GPU node (training capable)
-            if not self.self_info.is_gpu_node():
-                return
-
-            # Rate limit: only sync every 10 minutes
-            last_sync = getattr(self, "_last_training_data_sync", 0)
-            if time.time() - last_sync < 600:
-                return
-
-            # Load hosts config to get SSH details
-            if not HAS_HOSTS_FOR_SYNC:
-                return
-
-            hosts = load_remote_hosts()
-            if not hosts:
-                return
-
-            local_training_dir = Path(self._get_ai_service_path()) / "data" / "training"
-            local_training_dir.mkdir(parents=True, exist_ok=True)
-
-            # Calculate local training data size
-            local_training_mb = sum(
-                f.stat().st_size for f in local_training_dir.glob("*.npz")
-            ) / (1024 * 1024) if local_training_dir.exists() else 0
-
-            # Find peers with more training data
-            synced_from = []
-            for host_name, host_config in hosts.items():
-                if host_name == self.node_id:
-                    continue
-
-                # Skip hosts without SSH access
-                ssh_host = host_config.ssh_host
-                if not ssh_host:
-                    continue
-
-                # Check if host is alive via P2P
-                with self.peers_lock:
-                    peer = self.peers.get(host_name)
-                if not peer or not peer.is_alive():
-                    continue
-
-                # Get remote training data size via SSH
-                # Jan 2026: Use asyncio.to_thread() to avoid blocking event loop
-                try:
-                    ssh_user = getattr(host_config, 'ssh_user', 'ubuntu')
-                    remote_path = getattr(host_config, 'ringrift_path', '/home/ubuntu/ringrift')
-                    if remote_path.startswith('~'):
-                        remote_path = remote_path.replace('~', f'/home/{ssh_user}')
-
-                    # Check remote training data size
-                    cmd = [
-                        "ssh", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=no",
-                        f"{ssh_user}@{ssh_host}",
-                        f"du -sb {remote_path}/ai-service/data/training/*.npz 2>/dev/null | awk '{{sum+=$1}}END{{print sum}}'"
-                    ]
-                    returncode, stdout, _stderr = await self._run_subprocess_async(cmd, timeout=30)
-                    remote_size = int(stdout.strip() or 0) if returncode == 0 else 0
-                    remote_mb = remote_size / (1024 * 1024)
-
-                    # Sync if remote has significantly more data (>20MB more)
-                    if remote_mb > local_training_mb + 20:
-                        logger.info(f"Syncing training data from {host_name}: {remote_mb:.1f}MB -> local {local_training_mb:.1f}MB")
-
-                        # Use rsync to sync NPZ files
-                        rsync_cmd = [
-                            "rsync", "-avz", "--progress",
-                            "-e", "ssh -o ConnectTimeout=30 -o StrictHostKeyChecking=no",
-                            f"{ssh_user}@{ssh_host}:{remote_path}/ai-service/data/training/*.npz",
-                            str(local_training_dir) + "/"
-                        ]
-
-                        sync_returncode, _sync_stdout, sync_stderr = await self._run_subprocess_async(
-                            rsync_cmd, timeout=300
-                        )
-
-                        if sync_returncode == 0:
-                            synced_from.append(host_name)
-                            logger.info(f"Successfully synced training data from {host_name}")
-                        else:
-                            logger.error(f"Failed to sync from {host_name}: {sync_stderr[:200]}")
-
-                except subprocess.TimeoutExpired:
-                    logger.info(f"Timeout checking training data on {host_name}")
-                except Exception as e:  # noqa: BLE001
-                    logger.error(f"syncing from {host_name}: {e}")
-
-            if synced_from:
-                # Recalculate local size after sync
-                new_local_mb = sum(
-                    f.stat().st_size for f in local_training_dir.glob("*.npz")
-                ) / (1024 * 1024)
-                logger.info(f"Training data sync complete: {local_training_mb:.1f}MB -> {new_local_mb:.1f}MB")
-
-            self._last_training_data_sync = time.time()
-
-        except Exception as e:  # noqa: BLE001
-            logger.info(f"Data sync request error: {e}")
-            import traceback
-            traceback.print_exc()
 
     # ============================================
     # Git Auto-Update Methods (async - Jan 19, 2026)
@@ -10920,190 +10741,12 @@ class P2POrchestrator(
     ) -> None:
         """Monitor GPU selfplay completion and run CPU validation.
 
-        When GPU selfplay completes, this runs import_gpu_selfplay_to_db.py to:
-        1. Replay each game with CPU GameEngine
-        2. Validate all moves against legal move lists
-        3. Discard games with invalid moves
-        4. Store only validated games in canonical DB format
-
-        This ensures GPU-generated games are safe for training.
+        Jan 28, 2026: Phase 18C - Thin wrapper delegating to JobCoordinationManager.
         """
-        try:
-            # Wait for GPU selfplay to complete (with timeout)
-            return_code = await asyncio.wait_for(
-                asyncio.to_thread(proc.wait),
-                timeout=7200,  # 2 hour max
+        if self.job_coordination_manager:
+            await self.job_coordination_manager.monitor_gpu_selfplay_and_validate(
+                job_id, proc, output_dir, board_type, num_players
             )
-
-            # Update job status
-            with self.jobs_lock:
-                job = self.local_jobs.get(job_id)
-                if job:
-                    job.status = "completed" if return_code == 0 else "failed"
-                    job.completed_at = time.time()
-
-            if return_code != 0:
-                logger.info(f"GPU selfplay job {job_id} failed (exit code {return_code})")
-                return
-
-            # Find the generated JSONL file
-            jsonl_files = list(output_dir.glob("*.jsonl"))
-            if not jsonl_files:
-                logger.warning(f"GPU selfplay job {job_id}: No JSONL output found")
-                with self.jobs_lock:
-                    job = self.local_jobs.get(job_id)
-                    if job:
-                        job.status = "failed"
-                        job.completed_at = time.time()
-                        job.error_message = "missing_jsonl_output"
-                self._record_gpu_job_result(success=False)
-                self._update_gpu_job_count(-1)
-                return
-
-            input_jsonl = jsonl_files[0]
-            try:
-                if input_jsonl.stat().st_size == 0:
-                    logger.warning(f"GPU selfplay job {job_id}: JSONL output is empty ({input_jsonl})")
-                    with self.jobs_lock:
-                        job = self.local_jobs.get(job_id)
-                        if job:
-                            job.status = "failed"
-                            job.completed_at = time.time()
-                            job.error_message = "empty_jsonl_output"
-                    self._record_gpu_job_result(success=False)
-                    self._update_gpu_job_count(-1)
-                    return
-            except OSError as e:
-                logger.warning(f"GPU selfplay job {job_id}: Failed to stat JSONL output ({input_jsonl}): {e}")
-                with self.jobs_lock:
-                    job = self.local_jobs.get(job_id)
-                    if job:
-                        job.status = "failed"
-                        job.completed_at = time.time()
-                        job.error_message = "jsonl_stat_failed"
-                self._record_gpu_job_result(success=False)
-                self._update_gpu_job_count(-1)
-                return
-            validated_db = output_dir / "validated_games.db"
-
-            logger.info(f"GPU selfplay job {job_id} completed, running CPU validation...")
-
-            # Run CPU validation import
-            validate_cmd = [
-                sys.executable,  # Use venv Python
-                self._get_script_path("import_gpu_selfplay_to_db.py"),
-                "--input", str(input_jsonl),
-                "--output", str(validated_db),
-            ]
-
-            env = os.environ.copy()
-            env["PYTHONPATH"] = self._get_ai_service_path()
-
-            validate_proc = await asyncio.create_subprocess_exec(
-                *validate_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-                cwd=self.ringrift_path,
-            )
-
-            stdout, stderr = await asyncio.wait_for(
-                validate_proc.communicate(),
-                timeout=1800,  # 30 min validation timeout
-            )
-
-            if validate_proc.returncode == 0:
-                # Parse validation results from output
-                output_text = stdout.decode()
-                imported = 0
-                failed = 0
-                for line in output_text.split("\n"):
-                    if "Successfully imported:" in line:
-                        imported = int(line.split(":")[-1].strip())
-                    elif "Failed:" in line:
-                        failed = int(line.split(":")[-1].strip())
-
-                validation_rate = imported / (imported + failed) * 100 if (imported + failed) > 0 else 0
-
-                logger.info(f"GPU selfplay {job_id} CPU validation complete:")
-                logger.info(f"  Valid games: {imported}, Invalid: {failed}, Validation rate: {validation_rate:.1f}%")
-
-                # Track validation metrics for diversity reporting
-                if hasattr(self, 'diversity_metrics'):
-                    if "gpu_validation_stats" not in self.diversity_metrics:
-                        self.diversity_metrics["gpu_validation_stats"] = {
-                            "total_generated": 0,
-                            "total_validated": 0,
-                            "total_failed": 0,
-                        }
-                    self.diversity_metrics["gpu_validation_stats"]["total_generated"] += imported + failed
-                    self.diversity_metrics["gpu_validation_stats"]["total_validated"] += imported
-                    self.diversity_metrics["gpu_validation_stats"]["total_failed"] += failed
-
-                # Record validation rate metric for observability
-                self.record_metric(
-                    "validation_rate",
-                    validation_rate,
-                    board_type=board_type,
-                    num_players=num_players,
-                    metadata={
-                        "job_id": job_id,
-                        "imported": imported,
-                        "failed": failed,
-                    },
-                )
-
-                # Auto-import to canonical database if validation rate is high enough
-                if validation_rate >= 95 and imported > 0:
-                    asyncio.create_task(self._import_gpu_selfplay_to_canonical(
-                        validated_db, board_type, num_players, imported
-                    ))
-                    # Jan 7, 2026: Track GPU job success
-                    self._record_gpu_job_result(success=True)
-                    self._update_gpu_job_count(-1)
-                elif validation_rate < 95:
-                    logger.info(f"WARNING: GPU selfplay validation rate {validation_rate:.1f}% is below 95%")
-                    logger.info("  This indicates potential GPU/CPU rule divergence")
-                    logger.info("  Skipping auto-import to canonical database")
-                    # Jan 7, 2026: Low validation rate is a failure
-                    self._record_gpu_job_result(success=False)
-                    self._update_gpu_job_count(-1)
-                    # Alert on low validation rate
-                    asyncio.create_task(self.notifier.send(
-                        title="Low GPU Validation Rate",
-                        message=f"GPU selfplay validation rate {validation_rate:.1f}% is below 95% threshold",
-                        level="warning",
-                        fields={
-                            "Config": f"{board_type}_{num_players}p",
-                            "Valid": str(imported),
-                            "Invalid": str(failed),
-                            "Rate": f"{validation_rate:.1f}%",
-                        },
-                        node_id=self.node_id,
-                    ))
-
-            else:
-                logger.info(f"GPU selfplay {job_id} CPU validation failed:")
-                logger.info(f"  {stderr.decode()[:500]}")
-                self._record_gpu_job_result(success=False)
-                self._update_gpu_job_count(-1)
-
-        except asyncio.TimeoutError:
-            logger.info(f"GPU selfplay job {job_id} timed out")
-            with self.jobs_lock:
-                job = self.local_jobs.get(job_id)
-                if job:
-                    job.status = "failed"
-            self._record_gpu_job_result(success=False)
-            self._update_gpu_job_count(-1)
-        except Exception as e:  # noqa: BLE001
-            logger.info(f"GPU selfplay monitor error for {job_id}: {e}")
-            with self.jobs_lock:
-                job = self.local_jobs.get(job_id)
-                if job:
-                    job.status = "failed"
-            self._record_gpu_job_result(success=False)
-            self._update_gpu_job_count(-1)
 
     async def _monitor_selfplay_process(
         self,
@@ -18975,144 +18618,14 @@ print(json.dumps({{
     async def _check_and_resolve_split_brain(self) -> bool:
         """Check for split-brain (multiple leaders) and resolve by stepping down if needed.
 
-        LEARNED LESSONS - This addresses the cluster status showing multiple leaders.
-        Uses Bully algorithm: highest node_id wins.
-
-        Returns True if we stepped down (caller should skip leadership duties).
+        Jan 28, 2026: Phase 18C - Thin wrapper delegating to QuorumManager.
         """
-        if self.role != NodeRole.LEADER:
-            return False
-
-        with self.peers_lock:
-            peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
-
-        conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
-
-        # Gather all peers claiming to be leader.
-        other_leaders = [peer for peer in peers_snapshot if peer.role == NodeRole.LEADER and peer.is_alive()]
-
-        voter_ids = list(getattr(self, "voter_node_ids", []) or [])
-
-        # PROACTIVE VOTER ACK VERIFICATION: Even when no other leaders are visible,
-        # periodically verify that voters still acknowledge us as leader.
-        # This catches split-brain where we can't see the other partition's leader.
-        if not other_leaders and voter_ids:
-            now = time.time()
-            last_voter_check = float(getattr(self, "_last_voter_ack_check", 0) or 0)
-            # Check every 30 seconds (more frequent than lease renewal)
-            if now - last_voter_check >= 30:
-                self._last_voter_ack_check = now
-                leased_leader = await self._determine_leased_leader_from_voters()
-                if leased_leader and leased_leader != self.node_id:
-                    logger.info(f"VOTER ACK CHECK: Voters grant to {leased_leader}, not us; stepping down")
-                    # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
-                    self._set_leader(leased_leader, reason="voter_ack_check_other_leader", save_state=True)
-                    self.leader_lease_id = ""
-                    self.leader_lease_expires = 0.0
-                    self._release_voter_grant_if_self()
-                    return True
-            return False  # No split-brain detected
-
-        if not other_leaders:
-            return False  # No split-brain
-        if voter_ids:
-            # In quorum-gated clusters, only voters may safely lead.
-            if self.node_id not in voter_ids:
-                print(
-                    f"[P2P] SPLIT-BRAIN detected, but {self.node_id} is not a voter; stepping down."
-                )
-                # December 2025: Emit SPLIT_BRAIN_DETECTED event
-                leaders_detected = [p.node_id for p in other_leaders] + [self.node_id]
-                await self._emit_split_brain_detected(
-                    detected_leaders=leaders_detected,
-                    resolution_action="step_down_non_voter",
-                )
-                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
-                self._set_leader(None, reason="split_brain_non_voter", save_state=True)
-                self.leader_lease_id = ""
-                self.leader_lease_expires = 0.0
-                self._release_voter_grant_if_self()
-                return True
-
-            leased_leader = await self._determine_leased_leader_from_voters()
-            if leased_leader and leased_leader != self.node_id:
-                print(
-                    f"[P2P] SPLIT-BRAIN resolved by voter quorum: stepping down for lease-holder {leased_leader}"
-                )
-                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
-                self._set_leader(leased_leader, reason="split_brain_voter_quorum", save_state=True)
-                self.leader_lease_id = ""
-                self.leader_lease_expires = 0.0
-                self._release_voter_grant_if_self()
-                return True
-
-        # Find the highest-priority *eligible* leader (including ourselves).
-        considered_leaders = other_leaders
-        if voter_ids:
-            # Prefer voter leaders when resolving conflicts; non-voter leaders
-            # are treated as noise from older configs/versions.
-            voter_leaders = [p for p in other_leaders if p.node_id in voter_ids]
-            if voter_leaders:
-                considered_leaders = voter_leaders
-
-        eligible_leaders = [p for p in considered_leaders if self._is_leader_eligible(p, conflict_keys)]
-        if self._is_leader_eligible(self.self_info, conflict_keys):
-            eligible_leaders.append(self.self_info)
-
-        # If none are eligible, fall back to bully ordering (best-effort).
-        candidates = eligible_leaders or ([*considered_leaders, self.self_info])
-        highest_leader = max(candidates, key=lambda p: p.node_id)
-
-        if highest_leader.node_id != self.node_id:
-            # We're not the highest-priority leader - step down
-            logger.info(f"SPLIT-BRAIN detected! Found leaders: {[p.node_id for p in other_leaders]}")
-            logger.info(f"Stepping down in favor of higher-priority leader: {highest_leader.node_id}")
-            # December 2025: Emit SPLIT_BRAIN_DETECTED event
-            leaders_detected = [p.node_id for p in other_leaders] + [self.node_id]
-            await self._emit_split_brain_detected(
-                detected_leaders=leaders_detected,
-                resolution_action="step_down_bully",
-            )
-            # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
-            self._set_leader(highest_leader.node_id, reason="split_brain_resolution", save_state=False)
-            self.leader_lease_id = ""
-            self.leader_lease_expires = 0.0
-            # Jan 1, 2026: Phase 3B-C - notify voters before releasing local grant
-            await self._notify_voters_lease_revoked()
-            self._release_voter_grant_if_self()
-            self._save_state()
-            return True
-
-        # We are the highest - other leaders should step down
-        # Send coordinator message to assert our leadership
-        logger.info(f"SPLIT-BRAIN detected! Asserting leadership over: {[p.node_id for p in other_leaders]}")
-
-        # Emit SPLIT_BRAIN_DETECTED event for this case (asserting leadership)
-        leaders_detected = [p.node_id for p in other_leaders] + [self.node_id]
-        await self._emit_split_brain_detected(
-            detected_leaders=leaders_detected,
-            resolution_action="assert_leadership",
-        )
-
-        timeout = ClientTimeout(total=5)
-        async with get_client_session(timeout) as session:
-            for peer in other_leaders:
-                try:
-                    url = self._url_for_peer(peer, "/coordinator")
-                    await session.post(
-                        url,
-                        json={
-                            "leader_id": self.node_id,
-                            "lease_id": self.leader_lease_id,
-                            "lease_expires": self.leader_lease_expires,
-                            "voter_node_ids": list(getattr(self, "voter_node_ids", []) or []),
-                        },
-                        headers=self._auth_headers(),
-                    )
-                except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, IndexError, AttributeError):
-                    pass  # Network errors expected during step-down notifications
-
-        return False  # We remain leader
+        if self.quorum_manager:
+            # Ensure orchestrator reference is set (for late binding)
+            if not getattr(self.quorum_manager, "_orchestrator", None):
+                self.quorum_manager.set_orchestrator(self)
+            return await self.quorum_manager.check_and_resolve_split_brain()
+        return False
 
     async def _job_management_loop(self):
         """Manage jobs - leader coordinates cluster, all nodes handle local operations."""
