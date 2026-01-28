@@ -321,7 +321,8 @@ class HeartbeatManager:
             return None
 
         from scripts.p2p.models import NodeInfo
-        from scripts.p2p.network import get_client_session, safe_json_response
+        from scripts.p2p.network import get_client_session
+        from scripts.p2p.utils import safe_json_response
         from app.distributed.circuit_breaker import CircuitState
 
         target = f"{peer_host}:{peer_port}"
