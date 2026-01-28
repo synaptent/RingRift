@@ -616,8 +616,8 @@ class NodeInfo:
         # This ensures nodes get work even if they didn't explicitly advertise capabilities
         if not d.get('capabilities'):
             if d.get('has_gpu'):
-                # GPU nodes can do selfplay, training, and cmaes optimization
-                d['capabilities'] = ['selfplay', 'training', 'cmaes']
+                # GPU nodes can do selfplay, training, cmaes, gauntlet, and tournament
+                d['capabilities'] = ['selfplay', 'training', 'cmaes', 'gauntlet', 'tournament']
             else:
                 # CPU nodes can at least do selfplay (heuristic-based)
                 d['capabilities'] = ['selfplay']

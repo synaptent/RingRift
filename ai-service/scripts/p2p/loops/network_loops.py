@@ -1262,8 +1262,8 @@ class HeartbeatLoop(BaseLoop):
                     capabilities = ["selfplay"]
                     if getattr(info, "has_gpu", False):
                         gpu_type = getattr(info, "gpu_type", "") or "gpu"
-                        # GPU nodes can also do training and cmaes
-                        capabilities.extend(["training", "cmaes", gpu_type])
+                        # GPU nodes can also do training, cmaes, gauntlet, and tournament
+                        capabilities.extend(["training", "cmaes", "gauntlet", "tournament", gpu_type])
                     else:
                         capabilities.append("cpu")
                     await self._emit_host_online(info.node_id, capabilities)

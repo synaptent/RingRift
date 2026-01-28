@@ -6841,7 +6841,7 @@ class P2POrchestrator(
         else:
             capabilities = ["selfplay"]
             if has_gpu:
-                capabilities.extend(["training", "cmaes"])
+                capabilities.extend(["training", "cmaes", "gauntlet", "tournament"])
             if memory_gb >= 64:
                 capabilities.append("large_boards")
 
