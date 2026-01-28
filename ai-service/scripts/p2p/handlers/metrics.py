@@ -919,3 +919,197 @@ class MetricsHandlersMixin:
             "is_leader": self._is_leader(),
             "current_job": pipeline_status,
         })
+
+    async def handle_games_analytics(self, request: web.Request) -> web.Response:
+        """GET /games/analytics - Game statistics for dashboards.
+
+        January 2026: Moved from p2p_orchestrator.py to MetricsHandlersMixin.
+
+        Returns aggregated game analytics including:
+        - Average game length by config
+        - Victory type distribution
+        - Games per hour throughput
+        - Opening move diversity
+        """
+        import json
+        from collections import defaultdict
+
+        try:
+            from scripts.lib.file_formats import open_jsonl_file
+        except ImportError:
+            # Fallback for missing module
+            def open_jsonl_file(path):
+                return open(path, "r")
+
+        try:
+            # Skip JSONL scanning during startup grace period
+            if self._is_in_startup_grace_period():
+                return web.json_response({"configs": {}, "message": "Startup in progress"})
+
+            hours = int(request.query.get("hours", "24"))
+            cutoff = time.time() - (hours * 3600)
+
+            ai_root = Path(self._get_ai_service_path())
+            data_dirs = [
+                ai_root / "data" / "games" / "daemon_sync",
+                ai_root / "data" / "selfplay",
+            ]
+
+            # Aggregation containers
+            game_lengths: dict[str, list[int]] = defaultdict(list)
+            victory_types: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+            games_by_hour: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+            opening_moves: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+            total_games = 0
+
+            for data_dir in data_dirs:
+                if not data_dir.exists():
+                    continue
+                for jsonl_path in data_dir.rglob("*.jsonl"):
+                    try:
+                        if jsonl_path.stat().st_mtime < cutoff:
+                            continue
+                        with open_jsonl_file(jsonl_path) as f:
+                            for line in f:
+                                try:
+                                    game = json.loads(line)
+                                    board_type = game.get("board_type", "unknown")
+                                    num_players = game.get("num_players", 0)
+                                    config = f"{board_type}_{num_players}p"
+
+                                    # Game length
+                                    length = game.get("length", 0)
+                                    if length > 0:
+                                        game_lengths[config].append(length)
+
+                                    # Victory type
+                                    vt = game.get("victory_type", "unknown")
+                                    if vt:
+                                        victory_types[config][vt] += 1
+
+                                    # Games by hour (for throughput)
+                                    moves = game.get("moves", [])
+                                    if moves and len(moves) > 0:
+                                        hour_bucket = int(jsonl_path.stat().st_mtime // 3600)
+                                        games_by_hour[config][hour_bucket] += 1
+
+                                    # Opening moves (first 3 moves)
+                                    if moves and len(moves) >= 1:
+                                        first_move = str(moves[0].get("action", ""))[:20]
+                                        if first_move:
+                                            opening_moves[config][first_move] += 1
+
+                                    total_games += 1
+                                except json.JSONDecodeError:
+                                    continue
+                    except (OSError, ValueError, KeyError):
+                        continue
+
+            # Build response
+            analytics = {
+                "period_hours": hours,
+                "total_games": total_games,
+                "configs": {}
+            }
+
+            for config in set(list(game_lengths.keys()) + list(victory_types.keys())):
+                lengths = game_lengths.get(config, [])
+                vt = dict(victory_types.get(config, {}))
+                openings = dict(opening_moves.get(config, {}))
+
+                # Calculate throughput (games/hour)
+                hourly = games_by_hour.get(config, {})
+                throughput = sum(hourly.values()) / max(len(hourly), 1) if hourly else 0
+
+                analytics["configs"][config] = {
+                    "games": len(lengths),
+                    "avg_length": round(sum(lengths) / len(lengths), 1) if lengths else 0,
+                    "min_length": min(lengths) if lengths else 0,
+                    "max_length": max(lengths) if lengths else 0,
+                    "victory_types": vt,
+                    "throughput_per_hour": round(throughput, 1),
+                    "opening_diversity": len(openings),
+                    "top_openings": dict(sorted(openings.items(), key=lambda x: -x[1])[:5]),
+                }
+
+            return web.json_response(analytics)
+
+        except Exception as e:  # noqa: BLE001
+            return web.json_response({"error": str(e)})
+
+    async def handle_training_metrics(self, request: web.Request) -> web.Response:
+        """GET /training/metrics - Training loss and accuracy metrics.
+
+        January 2026: Moved from p2p_orchestrator.py to MetricsHandlersMixin.
+
+        Returns recent training metrics from log files.
+        """
+        import json
+        import re
+
+        try:
+            ai_root = Path(self._get_ai_service_path())
+            logs_dir = ai_root / "logs" / "training"
+
+            metrics = {
+                "configs": {},
+                "latest_training": None,
+            }
+
+            if not logs_dir.exists():
+                return web.json_response(metrics)
+
+            # Find recent training logs
+            log_files = sorted(logs_dir.glob("*.log"), key=lambda f: f.stat().st_mtime, reverse=True)[:10]
+
+            for log_file in log_files:
+                try:
+                    content = log_file.read_text()
+
+                    # Extract config from filename (e.g., train_square8_2p_20251214.log)
+                    config_match = re.search(r"(square\d+|hexagonal|hex)_(\d+)p", log_file.name)
+                    if not config_match:
+                        continue
+                    config = f"{config_match.group(1)}_{config_match.group(2)}p"
+
+                    # Parse training metrics from log
+                    loss_pattern = re.compile(
+                        r"[Ee]poch\s+(\d+).*?loss[=:]\s*([\d.]+).*?"
+                        r"(?:policy[_\s]?loss[=:]\s*([\d.]+))?.*?"
+                        r"(?:value[_\s]?loss[=:]\s*([\d.]+))?"
+                    )
+
+                    epochs = []
+                    for match in loss_pattern.finditer(content):
+                        epoch = int(match.group(1))
+                        total_loss = float(match.group(2))
+                        policy_loss = float(match.group(3)) if match.group(3) else None
+                        value_loss = float(match.group(4)) if match.group(4) else None
+                        epochs.append({
+                            "epoch": epoch,
+                            "loss": total_loss,
+                            "policy_loss": policy_loss,
+                            "value_loss": value_loss,
+                        })
+
+                    if epochs:
+                        metrics["configs"][config] = {
+                            "log_file": log_file.name,
+                            "epochs": epochs[-20:],  # Last 20 epochs
+                            "latest_loss": epochs[-1]["loss"] if epochs else None,
+                            "latest_epoch": epochs[-1]["epoch"] if epochs else None,
+                        }
+                        if not metrics["latest_training"]:
+                            metrics["latest_training"] = {
+                                "config": config,
+                                "file": log_file.name,
+                                "mtime": log_file.stat().st_mtime,
+                            }
+
+                except (OSError, ValueError, KeyError):
+                    continue
+
+            return web.json_response(metrics)
+
+        except Exception as e:  # noqa: BLE001
+            return web.json_response({"error": str(e)})
