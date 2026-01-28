@@ -35,11 +35,19 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
+import sqlite3
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 # Add ai-service to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# S3 configuration
+S3_BUCKET = os.getenv("RINGRIFT_S3_BUCKET", "ringrift-models-20251214")
+S3_GAMES_PREFIX = os.getenv("RINGRIFT_S3_GAMES_PREFIX", "consolidated/games/")
 
 
 def format_size(size_bytes: int) -> str:
@@ -60,11 +68,140 @@ def format_number(num: int) -> str:
     return str(num)
 
 
-def get_cluster_data_status(config_filter: str | None = None) -> dict:
+def scan_s3_games(verbose: bool = False) -> dict[str, int]:
+    """Scan S3 bucket for canonical game databases and count games.
+
+    Downloads each canonical database header to count games without
+    downloading the entire file.
+
+    Returns:
+        Dict mapping config_key -> game count
+    """
+    result = {}
+
+    # List canonical databases in S3
+    try:
+        cmd = ["aws", "s3", "ls", f"s3://{S3_BUCKET}/{S3_GAMES_PREFIX}"]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if proc.returncode != 0:
+            if verbose:
+                print(f"S3 list failed: {proc.stderr}")
+            return result
+
+        # Parse S3 listing for canonical databases
+        canonical_dbs = []
+        for line in proc.stdout.strip().split("\n"):
+            if not line:
+                continue
+            parts = line.split()
+            if len(parts) >= 4:
+                filename = parts[3]
+                # Match canonical_<board>_<n>p.db pattern
+                if filename.startswith("canonical_") and filename.endswith(".db"):
+                    # Extract config key from filename
+                    # canonical_hex8_2p.db -> hex8_2p
+                    config_key = filename.replace("canonical_", "").replace(".db", "")
+                    # Validate it's a proper config (board_Np format)
+                    if config_key.endswith(("_2p", "_3p", "_4p")):
+                        canonical_dbs.append((filename, config_key))
+
+        if verbose:
+            print(f"Found {len(canonical_dbs)} canonical databases in S3")
+
+        # For each canonical DB, download just enough to count games
+        for filename, config_key in canonical_dbs:
+            try:
+                s3_path = f"s3://{S3_BUCKET}/{S3_GAMES_PREFIX}{filename}"
+
+                # Use aws s3 cp with range to get just the header
+                # SQLite databases have the table info near the start
+                # Download first 1MB to query game count
+                with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+                    tmp_path = tmp.name
+
+                # Download full file (needed for SQLite query)
+                # For efficiency, we could use sqlite3 remote access or
+                # just estimate based on file size, but for accuracy let's
+                # download the smaller DBs and estimate larger ones
+
+                # Get file size first
+                size_cmd = ["aws", "s3", "ls", s3_path]
+                size_proc = subprocess.run(size_cmd, capture_output=True, text=True, timeout=10)
+                if size_proc.returncode != 0:
+                    continue
+
+                size_parts = size_proc.stdout.strip().split()
+                if len(size_parts) >= 3:
+                    file_size = int(size_parts[2])
+                else:
+                    continue
+
+                # For files > 100MB, estimate based on size (~4KB per game average)
+                if file_size > 100_000_000:
+                    # Estimation: average game record is ~4KB
+                    game_estimate = file_size // 4096
+                    result[config_key] = game_estimate
+                    if verbose:
+                        print(f"  {config_key}: ~{game_estimate:,} games (estimated from {file_size:,} bytes)")
+                else:
+                    # Download and count for smaller files
+                    dl_cmd = ["aws", "s3", "cp", s3_path, tmp_path, "--quiet"]
+                    dl_proc = subprocess.run(dl_cmd, capture_output=True, timeout=120)
+
+                    if dl_proc.returncode == 0:
+                        try:
+                            conn = sqlite3.connect(tmp_path)
+                            # Try different schema variants (game_status vs status)
+                            for query in [
+                                "SELECT COUNT(*) FROM games WHERE game_status='completed'",
+                                "SELECT COUNT(*) FROM games WHERE status='completed'",
+                                "SELECT COUNT(*) FROM games",  # Fallback: count all
+                            ]:
+                                try:
+                                    cursor = conn.execute(query)
+                                    count = cursor.fetchone()[0]
+                                    break
+                                except sqlite3.OperationalError:
+                                    continue
+                            else:
+                                count = 0
+                            conn.close()
+                            if count > 0:
+                                result[config_key] = count
+                                if verbose:
+                                    print(f"  {config_key}: {count:,} games (actual)")
+                        except sqlite3.Error:
+                            pass
+                        finally:
+                            try:
+                                os.unlink(tmp_path)
+                            except OSError:
+                                pass
+
+            except (subprocess.TimeoutExpired, OSError, ValueError):
+                continue
+
+    except subprocess.TimeoutExpired:
+        if verbose:
+            print("S3 scan timed out")
+    except Exception as e:
+        if verbose:
+            print(f"S3 scan error: {e}")
+
+    return result
+
+
+def get_cluster_data_status(
+    config_filter: str | None = None,
+    scan_s3: bool = False,
+    verbose: bool = False,
+) -> dict:
     """Get unified data status from registry.
 
     Args:
         config_filter: Optional config key to filter (e.g., "hex8_2p")
+        scan_s3: If True, directly scan S3 bucket for game counts
+        verbose: If True, print progress during S3 scan
 
     Returns:
         Dict with status, configs, totals, and metadata
@@ -73,6 +210,22 @@ def get_cluster_data_status(config_filter: str | None = None) -> dict:
 
     registry = get_data_registry()
     status = registry.get_cluster_status()
+
+    # Optionally scan S3 directly for game counts
+    if scan_s3:
+        if verbose:
+            print("Scanning S3 bucket for game counts...")
+        s3_counts = scan_s3_games(verbose=verbose)
+        for config_key, count in s3_counts.items():
+            if config_key not in status:
+                status[config_key] = {"local": 0, "cluster": 0, "owc": 0, "s3": 0, "total": 0}
+            status[config_key]["s3"] = count
+            status[config_key]["total"] = (
+                status[config_key]["local"]
+                + status[config_key]["cluster"]
+                + status[config_key]["owc"]
+                + status[config_key]["s3"]
+            )
 
     # Filter if requested
     if config_filter:
@@ -258,6 +411,16 @@ def main() -> int:
         action="store_true",
         help="Disable automatic refresh when manifest is stale",
     )
+    parser.add_argument(
+        "--scan-s3",
+        action="store_true",
+        help="Directly scan S3 bucket for game counts (slower but accurate)",
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Show verbose output during S3 scan",
+    )
 
     args = parser.parse_args()
 
@@ -275,7 +438,11 @@ def main() -> int:
             # Run async refresh
             asyncio.run(refresh_manifest(verbose=args.format == "table"))
 
-        data = get_cluster_data_status(config_filter=args.config)
+        data = get_cluster_data_status(
+            config_filter=args.config,
+            scan_s3=args.scan_s3,
+            verbose=args.verbose or (args.scan_s3 and args.format == "table"),
+        )
 
         if args.format == "json":
             print_json(data)
