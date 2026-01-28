@@ -1202,9 +1202,13 @@ class FeedbackLoopController(SelfplayFeedbackMixin, RegressionHandlingMixin, Eva
             # This allows computing Elo gain after evaluation for bandit feedback
             state.elo_before_training = state.last_elo
 
+            # January 28, 2026: Enhanced observability logging for gauntlet dispatch debugging
+            from app.config.env import env
             logger.info(
-                f"[FeedbackLoopController] Training complete for {config_key}: "
-                f"policy_acc={policy_accuracy:.2%}, value_acc={value_accuracy:.2%}"
+                f"[FeedbackLoopController] TRAINING_COMPLETED received: config={config_key}, "
+                f"model_path={'present' if model_path else 'MISSING'}, "
+                f"policy_acc={policy_accuracy:.2%}, value_acc={value_accuracy:.2%}, "
+                f"gauntlet_enabled={env.gauntlet_enabled}"
             )
 
             # Always trigger evaluation for newly trained models (January 21, 2026 fix)
@@ -1212,12 +1216,22 @@ class FeedbackLoopController(SelfplayFeedbackMixin, RegressionHandlingMixin, Eva
             # when policy_accuracy wasn't reported in the training event (defaulted to 0.0).
             # Gauntlet evaluation provides the definitive quality assessment.
             if model_path:
+                logger.info(
+                    f"[FeedbackLoopController] Triggering gauntlet evaluation for {config_key} "
+                    f"(will dispatch to cluster if gauntlet_enabled=false)"
+                )
                 self._trigger_evaluation(config_key, model_path)
             elif policy_accuracy >= self.policy_accuracy_threshold:
                 # Fallback: trigger based on accuracy if no model path available
                 logger.warning(
                     f"[FeedbackLoopController] No model_path in training event for {config_key}, "
                     f"using policy_accuracy threshold fallback"
+                )
+            else:
+                # January 28, 2026: Log when gauntlet is skipped due to missing model_path
+                logger.warning(
+                    f"[FeedbackLoopController] Cannot trigger gauntlet for {config_key}: "
+                    f"model_path is empty and policy_accuracy={policy_accuracy:.2%} below threshold"
                 )
 
             # Record training in curriculum

@@ -85,6 +85,9 @@ class EvaluationFeedbackMixin:
         The gauntlet results determine whether the model should be promoted
         to production or if more training is needed. Multi-harness evaluation
         enables finding the best (model, harness) combination for deployment.
+
+        January 28, 2026: On coordinator nodes (gauntlet_enabled=false), dispatches
+        gauntlet to work queue for cluster execution instead of running locally.
         """
         logger.info(f"[EvaluationFeedback] Triggering multi-harness evaluation for {config_key}")
 
@@ -97,6 +100,22 @@ class EvaluationFeedbackMixin:
             board_type = parsed.board_type
             num_players = parsed.num_players
 
+            # January 28, 2026: Check gauntlet_enabled FIRST
+            # On coordinator nodes (gauntlet_enabled=false), dispatch to cluster work queue
+            # instead of running heavy gauntlet workloads locally
+            from app.config.env import env
+            if not env.gauntlet_enabled:
+                logger.info(
+                    f"[EvaluationFeedback] Coordinator mode (gauntlet_enabled=false): "
+                    f"dispatching gauntlet to cluster for {config_key}"
+                )
+                _safe_create_task(
+                    self._dispatch_gauntlet_to_work_queue(config_key, model_path, board_type, num_players),
+                    f"dispatch_gauntlet({config_key})"
+                )
+                return
+
+            # GPU node - run gauntlet locally
             # Launch multi-harness gauntlet evaluation asynchronously
             async def run_multi_harness_gauntlet():
                 """Run multi-harness gauntlet evaluation for the trained model.
@@ -242,6 +261,58 @@ class EvaluationFeedbackMixin:
             logger.debug("[EvaluationFeedback] trigger_evaluation not available for fallback")
         except Exception as e:
             logger.error(f"[EvaluationFeedback] Single-harness fallback failed: {e}")
+
+    async def _dispatch_gauntlet_to_work_queue(
+        self, config_key: str, model_path: str, board_type: str, num_players: int
+    ) -> None:
+        """Dispatch gauntlet to work queue for cluster execution (coordinator nodes).
+
+        January 28, 2026: Added to enable coordinator nodes to dispatch gauntlet
+        evaluations to GPU cluster nodes instead of running them locally.
+        This follows the same pattern as EvaluationDaemon._dispatch_gauntlet_to_cluster().
+
+        Args:
+            config_key: Configuration key (e.g., "hex8_2p")
+            model_path: Path to model checkpoint
+            board_type: Board type string
+            num_players: Number of players
+        """
+        try:
+            from app.coordination.work_distributor import (
+                get_work_distributor,
+                DistributedWorkConfig,
+            )
+
+            distributor = get_work_distributor()
+            # Priority 85: Higher than selfplay (50) but lower than critical training (100)
+            config = DistributedWorkConfig(priority=85, require_gpu=True)
+
+            work_id = await distributor.submit_evaluation(
+                candidate_model=model_path,
+                baseline_model=None,
+                games=200,  # Standard gauntlet size
+                board=board_type,
+                num_players=num_players,
+                evaluation_type="gauntlet",
+                config=config,
+            )
+
+            if work_id:
+                logger.info(
+                    f"[EvaluationFeedback] Gauntlet dispatched to cluster: {work_id} "
+                    f"for {config_key} (model={model_path})"
+                )
+            else:
+                logger.error(
+                    f"[EvaluationFeedback] Failed to dispatch gauntlet to cluster for {config_key}"
+                )
+
+        except ImportError:
+            logger.warning(
+                "[EvaluationFeedback] WorkDistributor not available, cannot dispatch gauntlet"
+            )
+        except Exception as e:
+            logger.error(f"[EvaluationFeedback] Gauntlet dispatch failed for {config_key}: {e}")
 
     def _trigger_gauntlet_all_baselines(self, config_key: str) -> None:
         """Trigger gauntlet evaluation against all baselines after regression.
