@@ -2509,13 +2509,20 @@ class P2POrchestrator(
         # January 28, 2026: Sub-Orchestrators (Composition Pattern)
         # These orchestrators handle specific domains and delegate to managers
         # =====================================================================
-        from scripts.p2p.orchestrators import LeadershipOrchestrator, PeerNetworkOrchestrator
+        from scripts.p2p.orchestrators import (
+            LeadershipOrchestrator,
+            PeerNetworkOrchestrator,
+            SyncOrchestrator,
+        )
 
         self.leadership = LeadershipOrchestrator(self)
         logger.info("[P2P] LeadershipOrchestrator initialized")
 
         self.network = PeerNetworkOrchestrator(self)
         logger.info("[P2P] PeerNetworkOrchestrator initialized")
+
+        self.sync_orch = SyncOrchestrator(self)
+        logger.info("[P2P] SyncOrchestrator initialized")
 
         # Future orchestrators (to be added):
         # self.network = PeerNetworkOrchestrator(self)
