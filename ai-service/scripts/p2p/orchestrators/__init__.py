@@ -17,13 +17,14 @@ from scripts.p2p.orchestrators.base_orchestrator import (
     HealthCheckResult,
 )
 from scripts.p2p.orchestrators.leadership_orchestrator import LeadershipOrchestrator
+from scripts.p2p.orchestrators.peer_network_orchestrator import PeerNetworkOrchestrator
 
 __all__ = [
     "BaseOrchestrator",
     "HealthCheckResult",
     "LeadershipOrchestrator",
+    "PeerNetworkOrchestrator",
     # Future exports:
-    # "PeerNetworkOrchestrator",
     # "SyncOrchestrator",
     # "JobOrchestrator",
 ]

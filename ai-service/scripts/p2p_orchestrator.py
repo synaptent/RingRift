@@ -2509,10 +2509,13 @@ class P2POrchestrator(
         # January 28, 2026: Sub-Orchestrators (Composition Pattern)
         # These orchestrators handle specific domains and delegate to managers
         # =====================================================================
-        from scripts.p2p.orchestrators import LeadershipOrchestrator
+        from scripts.p2p.orchestrators import LeadershipOrchestrator, PeerNetworkOrchestrator
 
         self.leadership = LeadershipOrchestrator(self)
         logger.info("[P2P] LeadershipOrchestrator initialized")
+
+        self.network = PeerNetworkOrchestrator(self)
+        logger.info("[P2P] PeerNetworkOrchestrator initialized")
 
         # Future orchestrators (to be added):
         # self.network = PeerNetworkOrchestrator(self)
@@ -4688,31 +4691,9 @@ class P2POrchestrator(
     def _get_cached_peer_snapshot(self, max_age_seconds: float = 1.0) -> list:
         """Get cached peer snapshot to reduce lock acquisitions.
 
-        Jan 12, 2026: Added to reduce lock contention in read-only contexts.
-        Returns cached copy if < max_age_seconds old, otherwise takes new snapshot.
-
-        Args:
-            max_age_seconds: Maximum age of cached snapshot before refreshing (default 1.0s)
-
-        Returns:
-            List of peer NodeInfo objects (may be up to max_age_seconds stale)
+        Jan 29, 2026: Delegates to self.network orchestrator.
         """
-        now = time.time()
-        cache_key = "_peer_snapshot_cache"
-        cache_time_key = "_peer_snapshot_cache_time"
-
-        cached = getattr(self, cache_key, None)
-        cached_time = getattr(self, cache_time_key, 0)
-
-        if cached is not None and (now - cached_time) < max_age_seconds:
-            return cached
-
-        # Jan 2026: Use lock-free PeerSnapshot for read-only access
-        snapshot = list(self._peer_snapshot.get_snapshot().values())
-
-        setattr(self, cache_key, snapshot)
-        setattr(self, cache_time_key, now)
-        return snapshot
+        return self.network.get_cached_peer_snapshot(max_age_seconds)
 
     # NOTE: _find_voter_peer_by_ip() removed - delegated to QuorumManager (Jan 2026 Phase 1)
     # NOTE: _count_alive_voters(), _is_peer_alive(), _is_swim_peer_id()
@@ -4721,62 +4702,16 @@ class P2POrchestrator(
     def _on_swim_member_alive(self, member_id: str) -> None:
         """Handle SWIM member becoming alive - sync to gossip layer.
 
-        Jan 22, 2026: Wire SWIM failure detection to gossip layer.
-
-        When SWIM detects a member is alive (via ping/ack or indirect probe),
-        this callback syncs the state to the HTTP gossip layer by:
-        1. Updating the peer's last_heartbeat timestamp
-        2. Clearing any retired status
-
-        This ensures membership consistency between SWIM and HTTP layers.
-
-        Args:
-            member_id: SWIM member identifier (usually "IP:7947")
+        Jan 29, 2026: Delegates to self.network orchestrator.
         """
-        logger.info(f"[SWIM->Gossip] Member {member_id} ALIVE")
-        # Extract host from member_id (format: "IP:7947")
-        host = member_id.rsplit(":", 1)[0] if ":" in member_id else member_id
-
-        with self.peers_lock:
-            for node_id, peer in self.peers.items():
-                peer_host = getattr(peer, "host", "")
-                peer_tailscale = getattr(peer, "tailscale_ip", "")
-                if peer_host == host or peer_tailscale == host:
-                    peer.last_heartbeat = time.time()
-                    if getattr(peer, "retired", False):
-                        peer.retired = False
-                        logger.info(f"[SWIM->Gossip] Unretired peer {node_id} via SWIM alive")
-                    break
+        self.network.on_swim_member_alive(member_id)
 
     def _on_swim_member_failed(self, member_id: str) -> None:
         """Handle SWIM member failure - mark as suspect in gossip layer.
 
-        Jan 22, 2026: Wire SWIM failure detection to gossip layer.
-
-        When SWIM detects a member has failed (via suspicion timeout),
-        this callback records the failure in the health tracker. This allows
-        the gossip layer to factor in SWIM's faster failure detection when
-        making membership decisions.
-
-        Note: This does NOT immediately retire the peer - the gossip layer
-        uses its own timeout (PEER_TIMEOUT) for final retirement decisions.
-        This just records the SWIM signal as an early warning.
-
-        Args:
-            member_id: SWIM member identifier (usually "IP:7947")
+        Jan 29, 2026: Delegates to self.network orchestrator.
         """
-        logger.warning(f"[SWIM->Gossip] Member {member_id} FAILED")
-        host = member_id.rsplit(":", 1)[0] if ":" in member_id else member_id
-
-        # Record failure in gossip health tracker if available
-        if hasattr(self, "_gossip_health_tracker") and self._gossip_health_tracker:
-            with self.peers_lock:
-                for node_id, peer in self.peers.items():
-                    peer_host = getattr(peer, "host", "")
-                    if peer_host == host:
-                        self._gossip_health_tracker.record_gossip_failure(node_id)
-                        logger.info(f"[SWIM->Gossip] Recorded failure for {node_id}")
-                        break
+        self.network.on_swim_member_failed(member_id)
 
     def _cache_local_ips(self) -> set[str]:
         """Cache all local IPs at startup to avoid DNS blocking in health endpoints.
