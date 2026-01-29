@@ -734,3 +734,154 @@ class PeerNetworkOrchestrator(BaseOrchestrator):
                 "raft_fallback_active": not raft_status.get("initialized", False) and CONSENSUS_MODE != "bully",
             },
         }
+
+    # =========================================================================
+    # Self Registration
+    # =========================================================================
+
+    def register_self_in_peers(self) -> None:
+        """Register this node in the peers dict.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._register_self_in_peers().
+
+        Jan 5, 2026: Ensures the leader (and any node) is visible in self.peers
+        for components that iterate over peers directly. This fixes an issue
+        where the leader was not in its own peers dict after becoming leader.
+
+        This is idempotent - calling multiple times is safe.
+        """
+        import asyncio
+
+        # Update self_info first
+        if hasattr(self._p2p, "_update_self_info"):
+            self._p2p._update_self_info()
+
+        node_id = getattr(self._p2p, "node_id", "")
+        self_info = getattr(self._p2p, "self_info", None)
+        peers_lock = getattr(self._p2p, "peers_lock", None)
+        peers = getattr(self._p2p, "peers", {})
+
+        was_present = False
+        if peers_lock is not None and self_info is not None:
+            with peers_lock:
+                was_present = node_id in peers
+                peers[node_id] = self_info
+                if not was_present:
+                    self._log_info(f"Registered self in peers: {node_id}")
+
+        # Sync to lock-free snapshot
+        if hasattr(self._p2p, "_sync_peer_snapshot"):
+            self._p2p._sync_peer_snapshot()
+
+        # Emit HOST_ONLINE if this is first registration
+        if not was_present:
+            try:
+                asyncio.create_task(self._emit_host_online_for_self())
+            except RuntimeError:
+                # No event loop running
+                pass
+
+    async def _emit_host_online_for_self(self) -> None:
+        """Emit HOST_ONLINE event for self-registration."""
+        try:
+            from app.distributed.data_events import DataEventType
+            from app.coordination.event_router import emit_event
+
+            node_id = getattr(self._p2p, "node_id", "")
+            self_info = getattr(self._p2p, "self_info", None)
+            if self_info is None:
+                return
+
+            emit_event(DataEventType.HOST_ONLINE.value, {
+                "node_id": node_id,
+                "host": getattr(self_info, "host", ""),
+                "port": getattr(self_info, "port", 0),
+                "has_gpu": getattr(self_info, "has_gpu", False),
+                "gpu_name": getattr(self_info, "gpu_name", ""),
+                "capabilities": list(self_info.capabilities) if getattr(self_info, "capabilities", None) else [],
+                "source": "leader_self_registration",
+            })
+            self._log_debug(f"Emitted HOST_ONLINE for self: {node_id}")
+        except ImportError:
+            pass
+        except Exception as e:  # noqa: BLE001
+            self._log_debug(f"Failed to emit HOST_ONLINE: {e}")
+
+    # =========================================================================
+    # Peer Deduplication
+    # =========================================================================
+
+    def deduplicate_peers(self) -> int:
+        """Periodic deduplication of peers dict.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._deduplicate_peers().
+
+        Dec 29, 2025: Scans for any duplicate entries that may have been
+        created before deduplication was implemented, and merges them.
+
+        Jan 13, 2026: Now actually removes duplicates instead of just logging.
+        Keeps the most recently active node per IP (by last_heartbeat).
+
+        Returns:
+            Number of duplicates removed
+        """
+        removed = 0
+        node_id = getattr(self._p2p, "node_id", "")
+        peers_lock = getattr(self._p2p, "peers_lock", None)
+        peers = getattr(self._p2p, "peers", {})
+
+        if peers_lock is None:
+            return 0
+
+        with peers_lock:
+            # Build IP -> node_id mapping to detect duplicates
+            ip_to_nodes: dict[str, list[str]] = {}
+            for peer_id, peer in peers.items():
+                # Skip self
+                if peer_id == node_id:
+                    continue
+                # Prefer reported_host (Tailscale IPv6) for dedup - most stable identifier
+                dedup_key = getattr(peer, "reported_host", None) or getattr(peer, "effective_host", None) or getattr(peer, "host", None)
+                if dedup_key and dedup_key not in ("127.0.0.1", ""):
+                    ip_to_nodes.setdefault(dedup_key, []).append(peer_id)
+
+            # Find IPs shared by multiple node_ids (duplicates)
+            nodes_to_remove: set[str] = set()
+            for ip, node_ids in ip_to_nodes.items():
+                if len(node_ids) <= 1:
+                    continue
+
+                # Multiple nodes claim the same IP - keep the freshest one
+                node_freshness = []
+                for nid in node_ids:
+                    peer = peers.get(nid)
+                    if peer:
+                        freshness = getattr(peer, "last_heartbeat", 0) or getattr(peer, "last_seen", 0) or 0
+                        node_freshness.append((nid, freshness))
+
+                if not node_freshness:
+                    continue
+
+                # Sort by freshness (most recent first)
+                node_freshness.sort(key=lambda x: x[1], reverse=True)
+                keeper = node_freshness[0][0]
+                stale = [nid for nid, _ in node_freshness[1:]]
+
+                if stale:
+                    self._log_info(
+                        f"IP {ip}: keeping {keeper} (freshest), "
+                        f"removing {len(stale)} stale entries: {stale}"
+                    )
+                    nodes_to_remove.update(stale)
+
+            # Actually remove the duplicate nodes
+            for peer_id in nodes_to_remove:
+                if peer_id in peers:
+                    del peers[peer_id]
+                    removed += 1
+                    self._log_info(f"Removed duplicate peer: {peer_id}")
+
+        if removed > 0:
+            self._log_info(f"Removed {removed} duplicate peer entries")
+
+        return removed
