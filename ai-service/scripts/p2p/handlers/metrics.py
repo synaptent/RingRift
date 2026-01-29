@@ -754,7 +754,8 @@ class MetricsHandlersMixin:
             lines.append("# HELP ringrift_tournament_active Active distributed tournaments")
             lines.append("# TYPE ringrift_tournament_active gauge")
             try:
-                tourney = self._get_distributed_tournament_summary()
+                # Jan 28, 2026: Uses tournament_manager directly
+                tourney = self.tournament_manager.get_distributed_tournament_summary()
                 lines.append(f'ringrift_tournament_proposals_pending {tourney.get("pending_proposals", 0)}')
                 lines.append(f'ringrift_tournament_active {tourney.get("active_tournaments", 0)}')
             except (AttributeError):

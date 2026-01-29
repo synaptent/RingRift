@@ -56,7 +56,9 @@ class TournamentHandlersMixin(BaseP2PHandler):
     - peers_lock: threading.Lock
     - distributed_tournament_state: dict
     - job_manager: JobManager (with run_distributed_tournament method)
-    - _play_tournament_match() method
+    - tournament_manager: TournamentManager instance
+
+    January 2026: Updated to use tournament_manager directly instead of wrapper methods.
     """
 
     # Type hints for IDE support
@@ -199,7 +201,8 @@ class TournamentHandlersMixin(BaseP2PHandler):
 
             # Run match synchronously and return result
             # The coordinator expects results in the response
-            result = await self._play_tournament_match(job_id, match_info)
+            # Jan 2026: uses tournament_manager directly
+            result = await self.tournament_manager.play_tournament_match(job_id, match_info)
 
             return self.json_response({
                 "success": True,

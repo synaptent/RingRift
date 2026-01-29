@@ -438,20 +438,24 @@ class NATManagementLoop(BaseLoop):
         ):
             self._last_stun_probe = now
             self._stun_probes_count += 1
-            await self._detect_nat_type()
+            # Jan 28, 2026: Uses recovery_manager directly
+            await self.recovery_manager.detect_nat_type()
 
         # Probe NAT-blocked peers for recovery
         self._nat_recovery_attempts += 1
-        await self._probe_nat_blocked_peers()
+        # Jan 28, 2026: Uses recovery_manager directly
+        await self.recovery_manager.probe_nat_blocked_peers()
 
         # Update relay preferences based on connectivity
         self._relay_updates_count += 1
-        await self._update_relay_preferences()
+        # Jan 28, 2026: Uses recovery_manager directly
+        await self.recovery_manager.update_relay_preferences()
 
         # Dec 30, 2025: Validate existing relay assignments are healthy
-        if self._validate_relay_assignments:
+        # Jan 28, 2026: Uses recovery_manager directly
+        if hasattr(self, "recovery_manager") and self.recovery_manager:
             self._relay_validations_count += 1
-            await self._validate_relay_assignments()
+            await self.recovery_manager.validate_relay_assignments()
 
     def get_nat_stats(self) -> dict[str, Any]:
         """Get NAT management statistics."""

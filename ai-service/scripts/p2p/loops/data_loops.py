@@ -515,8 +515,9 @@ class DataManagementLoop(BaseLoop):
         training_dir.mkdir(parents=True, exist_ok=True)
 
         # 3. JSONL→DB conversion
+        # Jan 28, 2026: Uses data_pipeline_manager directly
         try:
-            converted = await self._convert_jsonl_to_db(data_dir, games_dir)
+            converted = await self.data_pipeline_manager.convert_jsonl_to_db(data_dir, games_dir)
             if converted > 0:
                 self._data_stats["jsonl_to_db_conversions"] += converted
                 logger.debug(f"[{self.name}] JSONL→DB: {converted} games converted")

@@ -2142,8 +2142,9 @@ class GossipProtocolMixin(P2PMixinBase):
             local_state["peer_reputation"] = self._get_peer_reputation_summary()
 
         # DISTRIBUTED TOURNAMENT: Share tournament proposals and active tournaments
-        if hasattr(self, "_get_tournament_gossip_state"):
-            local_state["tournament"] = self._get_tournament_gossip_state()
+        # Jan 28, 2026: Uses tournament_manager directly
+        if hasattr(self, "tournament_manager") and self.tournament_manager:
+            local_state["tournament"] = self.tournament_manager.get_tournament_gossip_state()
 
         # Include manifest summary if available
         local_manifest = getattr(self, "local_data_manifest", None)
@@ -3120,8 +3121,11 @@ class GossipProtocolMixin(P2PMixinBase):
                     self._gossip_peer_manifests[node_id] = NodeDataManifest.from_dict(manifest_data)
 
     def _process_tournament_states(self, known_states: dict[str, dict]) -> None:
-        """Process tournament gossip for distributed scheduling."""
-        if not hasattr(self, "_process_tournament_gossip"):
+        """Process tournament gossip for distributed scheduling.
+
+        Jan 28, 2026: Uses tournament_manager directly.
+        """
+        if not hasattr(self, "tournament_manager") or not self.tournament_manager:
             return
 
         for node_id, state in known_states.items():
@@ -3130,12 +3134,11 @@ class GossipProtocolMixin(P2PMixinBase):
             tournament_state = state.get("tournament")
             if tournament_state:
                 with contextlib.suppress(Exception):
-                    self._process_tournament_gossip(node_id, tournament_state)
+                    self.tournament_manager.process_tournament_gossip(node_id, tournament_state)
 
         # Check for tournament consensus after processing gossip
-        if hasattr(self, "_check_tournament_consensus"):
-            with contextlib.suppress(Exception):
-                self._check_tournament_consensus()
+        with contextlib.suppress(Exception):
+            self.tournament_manager.check_tournament_consensus()
 
     def _process_model_locations(self, model_locations: list[dict]) -> None:
         """December 2025 Phase 3D: Process model locations from gossip for distribution tracking.

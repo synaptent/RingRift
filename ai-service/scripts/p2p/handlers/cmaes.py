@@ -60,8 +60,9 @@ class CMAESHandlersMixin(BaseP2PHandler):
     - peers: dict
     - peers_lock: threading.Lock
     - distributed_cmaes_state: dict
-    - _run_distributed_cmaes() method
-    - _evaluate_cmaes_weights() method
+    - cmaes_coordinator: CMAESCoordinator instance
+
+    January 2026: Updated to use cmaes_coordinator directly instead of wrapper methods.
     """
 
     # Type hints for IDE support
@@ -135,8 +136,8 @@ class CMAESHandlersMixin(BaseP2PHandler):
 
             logger.info(f"Started distributed CMA-ES job {job_id} with {len(state.worker_nodes)} workers")
 
-            # Launch coordinator task
-            asyncio.create_task(self._run_distributed_cmaes(job_id))
+            # Launch coordinator task (Jan 2026: uses cmaes_coordinator directly)
+            asyncio.create_task(self.cmaes_coordinator.run_distributed_cmaes(job_id))
 
             return self.json_response({
                 "success": True,
@@ -178,8 +179,8 @@ class CMAESHandlersMixin(BaseP2PHandler):
             # Store evaluation task for local processing
             logger.info(f"Received CMA-ES evaluation request: job={job_id}, gen={generation}, idx={individual_idx}")
 
-            # Start evaluation in background
-            asyncio.create_task(self._evaluate_cmaes_weights(
+            # Start evaluation in background (Jan 2026: uses cmaes_coordinator directly)
+            asyncio.create_task(self.cmaes_coordinator.evaluate_weights(
                 job_id, weights, generation, individual_idx,
                 games_per_eval=games_per_eval, board_type=board_type, num_players=num_players
             ))
@@ -296,8 +297,8 @@ class CMAESHandlersMixin(BaseP2PHandler):
                 )
                 self.distributed_cmaes_state[cmaes_job_id] = state
 
-                # Launch distributed coordinator task
-                asyncio.create_task(self._run_distributed_cmaes(cmaes_job_id))
+                # Launch distributed coordinator task (Jan 2026: uses cmaes_coordinator directly)
+                asyncio.create_task(self.cmaes_coordinator.run_distributed_cmaes(cmaes_job_id))
 
                 # Track as training job
                 with self.training_lock:

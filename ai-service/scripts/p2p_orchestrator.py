@@ -8141,15 +8141,8 @@ class P2POrchestrator(
 
     # Dec 2025: _training_sync_loop moved to LoopManager (TrainingSyncLoop)
 
-    async def _force_ip_refresh_all_sources(self) -> int:
-        """Force immediate refresh of IPs from all CLI sources (Tailscale, Vast, AWS).
-
-        Jan 2026: Delegated to IPDiscoveryManager for better modularity.
-
-        Returns:
-            Total number of IPs updated across all sources
-        """
-        return await self.ip_discovery_manager.force_ip_refresh_all_sources()
+    # NOTE: _force_ip_refresh_all_sources() removed Jan 28, 2026 (~9 LOC)
+    # Use self.ip_discovery_manager.force_ip_refresh_all_sources() directly.
 
     # Jan 2026: IP update loops moved to IPDiscoveryManager
     # Jan 27, 2026: Phase 17A - Deprecated wrappers removed (14 LOC)
@@ -8186,12 +8179,8 @@ class P2POrchestrator(
             node_id=self.node_id,
         )
 
-    async def _convert_jsonl_to_db(self, data_dir: Path, games_dir: Path) -> int:
-        """Convert JSONL selfplay files to SQLite DB format.
-
-        Jan 2026: Delegated to DataPipelineManager.
-        """
-        return await self.data_pipeline_manager.convert_jsonl_to_db(data_dir, games_dir)
+    # NOTE: _convert_jsonl_to_db() removed Jan 28, 2026 (~6 LOC)
+    # Use self.data_pipeline_manager.convert_jsonl_to_db() directly.
 
     async def _convert_jsonl_to_npz_for_training(self, data_dir: Path, training_dir: Path) -> int:
         """Convert JSONL selfplay files directly to NPZ.
@@ -8204,14 +8193,8 @@ class P2POrchestrator(
 
     # Dec 2025: Data/model sync loops moved to LoopManager (323 LOC)
 
-    async def _consolidate_selfplay_data(self):
-        """Consolidate siloed job databases AND JSONL files into training DB.
-
-        Jan 2026: Delegated to DataPipelineManager.
-        """
-        await self.data_pipeline_manager.consolidate_selfplay_data(
-            dispatch_export_job_callback=self._dispatch_export_job,
-        )
+    # NOTE: _consolidate_selfplay_data() removed Jan 28, 2026 (~8 LOC)
+    # Use self.data_pipeline_manager.consolidate_selfplay_data() directly.
 
     async def _start_auto_training(self, data_path: str):
         """Start automatic training job on local node."""
@@ -10605,12 +10588,8 @@ class P2POrchestrator(
             logger.error(f"Error executing work {work_id}: {e}")
             return False
 
-    async def _report_work_result(self, work_item: dict[str, Any], success: bool) -> None:
-        """Report work completion/failure to the leader.
-
-        Jan 2026: Delegated to WorkerPullController for better modularity.
-        """
-        await self.worker_pull_controller.report_work_result(work_item, success)
+    # NOTE: _report_work_result() removed Jan 28, 2026 (~6 LOC, dead code)
+    # Use self.worker_pull_controller.report_work_result() directly if needed.
 
     # Dec 2025: Work queue and idle detection loops moved to LoopManager (170 LOC)
 
@@ -12273,7 +12252,8 @@ print(json.dumps({{
                     last_refresh = getattr(self, "_last_partition_ip_refresh", 0)
                     if time.time() - last_refresh > 60:  # Refresh at most once per minute
                         self._last_partition_ip_refresh = time.time()
-                        asyncio.create_task(self._force_ip_refresh_all_sources())
+                        # Jan 28, 2026: Uses ip_discovery_manager directly
+                        asyncio.create_task(self.ip_discovery_manager.force_ip_refresh_all_sources())
 
                     # Jan 13, 2026: Exponential backoff during isolation
                     # Check if we're completely isolated (no alive peers)
@@ -12496,12 +12476,8 @@ print(json.dumps({{
     # Now runs via LoopManager as NATManagementLoop.
     # See scripts/p2p/loops/network_loops.py for implementation.
 
-    async def _detect_nat_type(self):
-        """Detect NAT type using STUN-like probing.
-
-        Jan 2026: Delegated to RecoveryManager (Phase 12 decomposition).
-        """
-        self._nat_type = await self.recovery_manager.detect_nat_type()
+    # NOTE: _detect_nat_type() removed Jan 28, 2026 (~6 LOC)
+    # Use self.recovery_manager.detect_nat_type() directly.
 
     # NOTE: _probe_nat_blocked_peers() removed Jan 28, 2026 (~6 LOC)
     # Use self.recovery_manager.probe_nat_blocked_peers() directly.
@@ -16120,7 +16096,10 @@ print(json.dumps({{
                 # Makes the cluster resilient to leader instability
 
                 # Local data consolidation: merge siloed job DBs to main selfplay.db
-                await self._consolidate_selfplay_data()
+                # Jan 28, 2026: Uses data_pipeline_manager directly
+                await self.data_pipeline_manager.consolidate_selfplay_data(
+                    dispatch_export_job_callback=self._dispatch_export_job,
+                )
 
                 # Local stuck job detection: each node monitors its own processes
                 # Jan 28, 2026: Uses job_lifecycle_manager directly
