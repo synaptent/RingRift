@@ -6094,12 +6094,18 @@ class P2POrchestrator(
             logger.debug(f"[P2P] Failed to emit HOST_ONLINE for {node_id}: {e}")
 
     def _emit_host_online_sync(self, node_id: str, capabilities: list[str] | None = None) -> None:
-        """Sync version of _emit_host_online for non-async contexts."""
+        """Sync version of _emit_host_online for non-async contexts.
+
+        Jan 29, 2026: Delegated to PeerNetworkOrchestrator.
+        """
+        # Delegate to PeerNetworkOrchestrator
+        if hasattr(self, "network") and self.network is not None:
+            return self.network.emit_host_online_sync(node_id, capabilities)
+        # Fallback implementation
         try:
             from app.distributed.data_events import DataEventType
             from app.coordination.event_router import emit_event
 
-            # Jan 22, 2026: Use lock-free snapshot to prevent race conditions
             peer_info = self._peer_snapshot.get_snapshot().get(node_id)
             emit_event(DataEventType.HOST_ONLINE.value, {
                 "node_id": node_id,
@@ -6113,7 +6119,7 @@ class P2POrchestrator(
             logger.debug(f"[P2P] Emitted HOST_ONLINE (sync) for peer: {node_id}")
         except ImportError:
             pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.debug(f"[P2P] Failed to emit HOST_ONLINE (sync) for {node_id}: {e}")
 
     async def _emit_host_offline(self, node_id: str, reason: str, last_heartbeat: float | None) -> None:
@@ -14909,89 +14915,22 @@ print(json.dumps({{
     def _get_swim_raft_status(self) -> dict[str, Any]:
         """Get SWIM/Raft protocol status summary.
 
+        Jan 29, 2026: Delegated to PeerNetworkOrchestrator.
+
         Returns status of the new P2P protocols (Phase 5, Dec 26, 2025):
         - SWIM: Gossip-based membership with 5s failure detection
         - Raft: Replicated work queue with sub-second failover
-
-        These protocols are enabled via feature flags and provide
-        gradual migration from HTTP/Bully to SWIM/Raft.
         """
-        try:
-            from scripts.p2p.constants import (  # noqa: I001
-                SWIM_ENABLED, RAFT_ENABLED, MEMBERSHIP_MODE, CONSENSUS_MODE
-            )
-        except ImportError:
-            SWIM_ENABLED = False
-            RAFT_ENABLED = False
-            MEMBERSHIP_MODE = "http"
-            CONSENSUS_MODE = "bully"
-
-        # Check SWIM status
-        swim_status = {
-            "enabled": SWIM_ENABLED,
-            "available": False,
-            "started": getattr(self, "_swim_started", False),
-            "alive_count": 0,
-        }
-        try:
-            from app.p2p.swim_adapter import SWIM_AVAILABLE
-            swim_status["available"] = SWIM_AVAILABLE
-
-            # Get membership summary if SWIM is active
-            if hasattr(self, "get_swim_membership_summary"):
-                summary = self.get_swim_membership_summary()
-                swim_status.update({
-                    "started": summary.get("swim_started", False),
-                    "alive_count": summary.get("swim", {}).get("alive", 0),
-                    "suspected_count": summary.get("swim", {}).get("suspected", 0),
-                    "failed_count": summary.get("swim", {}).get("failed", 0),
-                })
-        except ImportError:
-            pass
-        except Exception as e:  # noqa: BLE001
-            swim_status["error"] = str(e)
-
-        # Check Raft status
-        raft_status = {
-            "enabled": RAFT_ENABLED,
-            "available": False,
-            "initialized": getattr(self, "_raft_initialized", False),
-            "is_leader": False,
-        }
-        try:
-            from scripts.p2p.consensus_mixin import PYSYNCOBJ_AVAILABLE
-            raft_status["available"] = PYSYNCOBJ_AVAILABLE
-
-            # Get Raft consensus status if available
-            if hasattr(self, "get_raft_status"):
-                raft_info = self.get_raft_status()
-                raft_status.update({
-                    "initialized": raft_info.get("raft_initialized", False),
-                    "is_leader": raft_info.get("is_raft_leader", False),
-                    "leader_address": raft_info.get("raft_leader", ""),
-                    "should_use_raft": raft_info.get("should_use_raft", False),
-                })
-                if "work_queue_status" in raft_info:
-                    wq = raft_info["work_queue_status"]
-                    raft_status["work_queue"] = {
-                        "pending": wq.get("by_status", {}).get("pending", 0),
-                        "claimed": wq.get("by_status", {}).get("claimed", 0),
-                        "completed": wq.get("by_status", {}).get("completed", 0),
-                    }
-        except ImportError:
-            pass
-        except Exception as e:  # noqa: BLE001
-            raft_status["error"] = str(e)
-
+        # Delegate to PeerNetworkOrchestrator
+        if hasattr(self, "network") and self.network is not None:
+            return self.network.get_swim_raft_status()
+        # Fallback - return minimal status
         return {
-            "membership_mode": MEMBERSHIP_MODE,
-            "consensus_mode": CONSENSUS_MODE,
-            "swim": swim_status,
-            "raft": raft_status,
-            "hybrid_status": {
-                "swim_fallback_active": not swim_status.get("started", False) and MEMBERSHIP_MODE != "http",
-                "raft_fallback_active": not raft_status.get("initialized", False) and CONSENSUS_MODE != "bully",
-            },
+            "membership_mode": "http",
+            "consensus_mode": "bully",
+            "swim": {"enabled": False, "available": False},
+            "raft": {"enabled": False, "available": False},
+            "hybrid_status": {"swim_fallback_active": False, "raft_fallback_active": False},
         }
 
     def _get_cluster_observability(self) -> dict[str, Any]:
