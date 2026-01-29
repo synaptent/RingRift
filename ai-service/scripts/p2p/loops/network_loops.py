@@ -2779,6 +2779,189 @@ class TailscaleDaemonHealthLoop(BaseLoop):
         )
 
 
+@dataclass
+class ReconnectDeadPeersConfig:
+    """Configuration for dead peer reconnection loop."""
+
+    check_interval_seconds: float = 15.0  # Check every 15 seconds
+    startup_delay_seconds: float = 30.0   # Wait before starting reconnections
+    heartbeat_timeout_seconds: float = 15.0  # Timeout for heartbeat probes
+
+    def __post_init__(self) -> None:
+        """Validate configuration values."""
+        if self.check_interval_seconds <= 0:
+            raise ValueError("check_interval_seconds must be > 0")
+        if self.startup_delay_seconds < 0:
+            raise ValueError("startup_delay_seconds must be >= 0")
+
+
+class ReconnectDeadPeersLoop(BaseLoop):
+    """Background loop that reconnects dead (but not retired) peers.
+
+    Jan 2026: Extracted from p2p_orchestrator.py
+
+    Problem: When a peer goes "dead" (after 60-90s with no heartbeat), there's
+    NO reconnection logic until it's "retired" (1800s). Dead nodes just stay dead
+    in the peer list, causing cluster fragmentation.
+
+    Solution: This loop actively probes dead peers with exponential backoff:
+    - First 60s after death: retry every 15s (fast recovery for transient issues)
+    - 60-120s: retry every 30s
+    - 120-300s: retry every 60s
+    - 300s+: retry every 120s (slow probing until retirement)
+    """
+
+    def __init__(
+        self,
+        get_peers_snapshot: Callable[[], list[tuple[str, Any]]],
+        get_node_id: Callable[[], str],
+        get_cached_jittered_timeout: Callable[[], float],
+        send_heartbeat_to_peer: Callable[[str, int, str, float], Coroutine[Any, Any, Any]],
+        get_tailscale_ip_for_peer: Callable[[str], str | None],
+        emit_host_online: Callable[[str, list[str]], None],
+        update_peer_on_success: Callable[[str], Coroutine[Any, Any, None]],
+        config: ReconnectDeadPeersConfig | None = None,
+    ) -> None:
+        super().__init__(
+            name="reconnect_dead_peers",
+            interval=config.check_interval_seconds if config else 15.0,
+        )
+        self._get_peers_snapshot = get_peers_snapshot
+        self._get_node_id = get_node_id
+        self._get_cached_jittered_timeout = get_cached_jittered_timeout
+        self._send_heartbeat_to_peer = send_heartbeat_to_peer
+        self._get_tailscale_ip_for_peer = get_tailscale_ip_for_peer
+        self._emit_host_online = emit_host_online
+        self._update_peer_on_success = update_peer_on_success
+        self.config = config or ReconnectDeadPeersConfig()
+        self._reconnect_attempts = 0
+        self._reconnect_successes = 0
+        self._started = False
+
+    async def run_iteration(self) -> None:
+        """Run one iteration of dead peer reconnection."""
+        if not self._started:
+            # Wait for startup to complete
+            await asyncio.sleep(self.config.startup_delay_seconds)
+            self._started = True
+            logger.info("Starting dead peer reconnection loop (Phase 1 P2P stability fix)")
+
+        now = time.time()
+        peers_snapshot = self._get_peers_snapshot()
+        node_id = self._get_node_id()
+
+        reconnect_attempts = 0
+        reconnect_successes = 0
+
+        for peer_node_id, peer in peers_snapshot:
+            if peer_node_id == node_id:
+                continue
+
+            # Skip alive or retired peers
+            if peer.is_alive():
+                continue
+            if getattr(peer, "retired", False):
+                continue
+
+            # Calculate time since death
+            dead_since = now - peer.last_heartbeat
+
+            # Skip if not actually dead yet (within timeout window)
+            if dead_since < self._get_cached_jittered_timeout():
+                continue
+
+            # Exponential backoff: 15s, 30s, 60s, 120s based on time since death
+            if dead_since < 60:
+                retry_interval = 15
+            elif dead_since < 120:
+                retry_interval = 30
+            elif dead_since < 300:
+                retry_interval = 60
+            else:
+                retry_interval = 120
+
+            # Check if it's time to retry this peer
+            last_retry = getattr(peer, "last_reconnect_attempt", 0.0)
+            if now - last_retry < retry_interval:
+                continue
+
+            # Mark the attempt time before trying
+            peer.last_reconnect_attempt = now
+            reconnect_attempts += 1
+
+            # Try multiple paths to reach the peer
+            success = await self._try_reconnect_paths(peer_node_id, peer)
+
+            if success:
+                reconnect_successes += 1
+                await self._update_peer_on_success(peer_node_id)
+                logger.info(f"Reconnected to dead peer {peer_node_id} (was dead for {dead_since:.0f}s)")
+
+                # Emit HOST_ONLINE event for recovered peer
+                try:
+                    self._emit_host_online(peer_node_id, ["recovered"])
+                except Exception:
+                    pass
+            else:
+                logger.debug(f"Reconnect to {peer_node_id} failed (dead for {dead_since:.0f}s, retry in {retry_interval}s)")
+
+        if reconnect_attempts > 0:
+            logger.debug(f"Reconnect loop: {reconnect_successes}/{reconnect_attempts} attempts succeeded")
+
+        self._reconnect_attempts += reconnect_attempts
+        self._reconnect_successes += reconnect_successes
+
+    async def _try_reconnect_paths(self, node_id: str, peer: Any) -> bool:
+        """Try multiple paths to reconnect to a peer."""
+        peer_scheme = getattr(peer, "scheme", "http") or "http"
+        timeout = self.config.heartbeat_timeout_seconds
+
+        # Path 1: Primary endpoint
+        try:
+            result = await self._send_heartbeat_to_peer(peer.host, peer.port, peer_scheme, timeout)
+            if result:
+                return True
+        except Exception:
+            pass
+
+        # Path 2: Tailscale IP fallback
+        ts_ip = self._get_tailscale_ip_for_peer(node_id)
+        if ts_ip and ts_ip != peer.host:
+            try:
+                result = await self._send_heartbeat_to_peer(ts_ip, peer.port, peer_scheme, timeout)
+                if result:
+                    logger.info(f"Reconnected to {node_id} via Tailscale ({ts_ip})")
+                    return True
+            except Exception:
+                pass
+
+        # Path 3: Reported host fallback
+        reported_host = getattr(peer, "reported_host", "")
+        reported_port = getattr(peer, "reported_port", 0)
+        if reported_host and reported_port and (reported_host != peer.host or reported_port != peer.port):
+            try:
+                result = await self._send_heartbeat_to_peer(reported_host, reported_port, peer_scheme, timeout)
+                if result:
+                    logger.info(f"Reconnected to {node_id} via reported endpoint ({reported_host}:{reported_port})")
+                    return True
+            except Exception:
+                pass
+
+        return False
+
+    def get_health_stats(self) -> dict[str, Any]:
+        """Get health statistics for this loop."""
+        return {
+            "reconnect_attempts": self._reconnect_attempts,
+            "reconnect_successes": self._reconnect_successes,
+            "success_rate": (
+                self._reconnect_successes / self._reconnect_attempts
+                if self._reconnect_attempts > 0
+                else 0.0
+            ),
+        }
+
+
 __all__ = [
     # IP Discovery
     "IpDiscoveryConfig",
@@ -2808,4 +2991,7 @@ __all__ = [
     # Tailscale Daemon Health (January 2026)
     "TailscaleDaemonHealthConfig",
     "TailscaleDaemonHealthLoop",
+    # Reconnect Dead Peers (January 2026)
+    "ReconnectDeadPeersConfig",
+    "ReconnectDeadPeersLoop",
 ]

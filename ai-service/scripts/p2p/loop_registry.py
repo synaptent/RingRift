@@ -143,6 +143,7 @@ def register_all_loops(
         loops_registered += _register_peer_recovery(orchestrator, manager, loops_failed)
         loops_registered += _register_git_update(orchestrator, manager, loops_failed)
         loops_registered += _register_voter_heartbeat(orchestrator, manager, loops_failed)
+        loops_registered += _register_reconnect_dead_peers(orchestrator, manager, loops_failed)
 
         logger.info(f"LoopRegistry: registered {loops_registered} loops")
         if loops_failed:
@@ -2061,4 +2062,74 @@ def _register_voter_heartbeat(
     except (ImportError, TypeError) as e:
         logger.debug(f"VoterHeartbeatLoop: not available: {e}")
         failed.append("VoterHeartbeatLoop")
+        return 0
+
+
+def _register_reconnect_dead_peers(
+    orchestrator: "P2POrchestrator",
+    manager: "LoopManager",
+    failed: list[str],
+) -> int:
+    """Register ReconnectDeadPeersLoop.
+
+    January 2026: Replaces inline _reconnect_dead_peers_loop in p2p_orchestrator.py (~138 LOC saved).
+    """
+    try:
+        from scripts.p2p.loops.network_loops import ReconnectDeadPeersLoop, ReconnectDeadPeersConfig
+        from scripts.p2p.async_lock import NonBlockingAsyncLockWrapper
+
+        def _get_peers_snapshot() -> list[tuple[str, Any]]:
+            """Get a snapshot of all peers."""
+            try:
+                # Use the async lock in blocking mode for this sync function
+                with orchestrator.peers_lock:
+                    return list(orchestrator.peers.items())
+            except Exception:
+                return []
+
+        def _get_node_id() -> str:
+            return orchestrator.node_id
+
+        def _get_cached_jittered_timeout() -> float:
+            return orchestrator._get_cached_jittered_timeout()
+
+        async def _send_heartbeat_to_peer(host: str, port: int, scheme: str, timeout: float) -> Any:
+            return await orchestrator._send_heartbeat_to_peer(host, port, scheme=scheme, timeout=timeout)
+
+        def _get_tailscale_ip_for_peer(node_id: str) -> str | None:
+            return orchestrator._get_tailscale_ip_for_peer(node_id)
+
+        def _emit_host_online(node_id: str, capabilities: list[str]) -> None:
+            try:
+                orchestrator._emit_host_online_sync(node_id, capabilities)
+            except Exception:
+                pass
+
+        async def _update_peer_on_success(node_id: str) -> None:
+            """Update peer state after successful reconnection."""
+            try:
+                async with NonBlockingAsyncLockWrapper(orchestrator.peers_lock, "peers_lock", timeout=5.0):
+                    if node_id in orchestrator.peers:
+                        orchestrator.peers[node_id].consecutive_failures = 0
+                        orchestrator.peers[node_id].last_heartbeat = time.time()
+            except Exception:
+                pass
+
+        reconnect_loop = ReconnectDeadPeersLoop(
+            get_peers_snapshot=_get_peers_snapshot,
+            get_node_id=_get_node_id,
+            get_cached_jittered_timeout=_get_cached_jittered_timeout,
+            send_heartbeat_to_peer=_send_heartbeat_to_peer,
+            get_tailscale_ip_for_peer=_get_tailscale_ip_for_peer,
+            emit_host_online=_emit_host_online,
+            update_peer_on_success=_update_peer_on_success,
+            config=ReconnectDeadPeersConfig(),
+        )
+        manager.register(reconnect_loop)
+        orchestrator._reconnect_dead_peers_loop = reconnect_loop
+        logger.info("[LoopRegistry] ReconnectDeadPeersLoop registered")
+        return 1
+    except (ImportError, TypeError) as e:
+        logger.debug(f"ReconnectDeadPeersLoop: not available: {e}")
+        failed.append("ReconnectDeadPeersLoop")
         return 0
