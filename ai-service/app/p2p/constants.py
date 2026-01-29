@@ -4,13 +4,28 @@ This module contains configuration constants used throughout the P2P orchestrato
 Many constants are configurable via environment variables for cluster tuning.
 
 The scripts/p2p/constants.py module re-exports this file for legacy compatibility.
+
+Jan 29, 2026: Migrated to use TimeoutProfile for unified timeout management.
+See app/config/timeout_profile.py for the single source of truth.
 """
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import os
 from pathlib import Path
+
+# Import unified timeout profile
+try:
+    from app.config.timeout_profile import (
+        get_timeout_profile,
+        get_jittered_timeout,
+        get_jittered_peer_timeout as _profile_jittered_peer_timeout,
+    )
+    _TIMEOUT_PROFILE_AVAILABLE = True
+except ImportError:
+    _TIMEOUT_PROFILE_AVAILABLE = False
 
 # Import canonical Elo constants
 try:
@@ -136,22 +151,45 @@ PEER_TIMEOUT_JITTER_FACTOR = float(
 )
 
 
-def get_jittered_peer_timeout(base_timeout: int | None = None) -> float:
-    """Get peer timeout with random jitter to prevent synchronized death cascades.
+def get_jittered_peer_timeout(base_timeout: int | None = None, node_id: str = "") -> float:
+    """Get peer timeout with deterministic jitter to prevent synchronized death cascades.
+
+    Jan 29, 2026: Changed from random to deterministic jitter based on node_id.
+    All nodes now calculate the SAME jittered timeout for a given peer, eliminating
+    the 18-second disagreement window that caused split-brain.
 
     When multiple nodes mark the same peer as dead at exactly the same time,
     they all gossip this death simultaneously, causing network storms.
-    Adding ±10% jitter desynchronizes these decisions.
+    Deterministic jitter based on node_id ensures all nodes agree on timeouts.
 
     Args:
         base_timeout: Base timeout in seconds (defaults to PEER_TIMEOUT)
+        node_id: Node identifier for deterministic jitter (required for new code)
 
     Returns:
-        Timeout with ±PEER_TIMEOUT_JITTER_FACTOR (default ±10%) random jitter
-    """
-    import random
+        Timeout with deterministic ±PEER_TIMEOUT_JITTER_FACTOR jitter
 
-    timeout = base_timeout if base_timeout is not None else PEER_TIMEOUT
+    Note:
+        If node_id is empty, falls back to random jitter for backward compatibility.
+        New code should always pass node_id for deterministic behavior.
+    """
+    timeout = float(base_timeout if base_timeout is not None else PEER_TIMEOUT)
+
+    if node_id and _TIMEOUT_PROFILE_AVAILABLE:
+        # Use deterministic jitter from TimeoutProfile
+        return get_jittered_timeout(timeout, node_id, PEER_TIMEOUT_JITTER_FACTOR)
+
+    # Fallback: deterministic jitter using hashlib directly
+    if node_id:
+        hash_bytes = hashlib.md5(node_id.encode()).digest()
+        hash_int = int.from_bytes(hash_bytes[:4], "big")
+        normalized = hash_int / 0xFFFFFFFF  # 0.0 to 1.0
+        jitter_range = timeout * PEER_TIMEOUT_JITTER_FACTOR * 2
+        offset = (normalized * jitter_range) - (jitter_range / 2)
+        return timeout + offset
+
+    # Legacy fallback: random jitter (deprecated - pass node_id!)
+    import random
     jitter = timeout * PEER_TIMEOUT_JITTER_FACTOR
     return timeout + random.uniform(-jitter, jitter)
 
@@ -741,7 +779,10 @@ ARBITER_URL = os.environ.get("RINGRIFT_ARBITER_URL", "") or COORDINATOR_URL
 # Raft Consensus (optional)
 # ============================================
 
-RAFT_ENABLED = os.environ.get("RINGRIFT_RAFT_ENABLED", "").lower() in {"1", "true", "yes", "on"}
+# Jan 29, 2026: Changed default from disabled to enabled for Raft consensus.
+# Raft provides stronger consistency guarantees than Bully algorithm.
+# Use RINGRIFT_RAFT_ENABLED=false to disable if needed.
+RAFT_ENABLED = os.environ.get("RINGRIFT_RAFT_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
 RAFT_BIND_PORT = int(os.environ.get("RINGRIFT_RAFT_BIND_PORT", "4321") or 4321)
 RAFT_COMPACTION_MIN_ENTRIES = int(os.environ.get("RINGRIFT_RAFT_COMPACTION_MIN_ENTRIES", "1000") or 1000)
 RAFT_AUTO_UNLOCK_TIME = float(os.environ.get("RINGRIFT_RAFT_AUTO_UNLOCK_TIME", "300") or 300)
@@ -854,7 +895,10 @@ def get_swim_timeouts_for_node(nat_blocked: bool = False, force_relay: bool = Fa
 # conflicting gossip states and peer count fluctuations (11-20 instead of stable 20+).
 # HTTP-only mode ensures consistent timeout behavior across all nodes.
 MEMBERSHIP_MODE = os.environ.get("RINGRIFT_MEMBERSHIP_MODE", "http")
-CONSENSUS_MODE = os.environ.get("RINGRIFT_CONSENSUS_MODE", "bully")
+# Jan 29, 2026: Changed default from "bully" to "raft" for stronger consensus guarantees.
+# Raft provides quorum-based leader election preventing split-brain.
+# Use RINGRIFT_CONSENSUS_MODE=bully for legacy behavior, or =hybrid for migration.
+CONSENSUS_MODE = os.environ.get("RINGRIFT_CONSENSUS_MODE", "raft")
 
 # ============================================
 # Aggressive Failover Mode (Dec 2025)

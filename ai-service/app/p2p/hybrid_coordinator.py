@@ -613,20 +613,34 @@ class HybridCoordinator:
     def is_leader(self) -> bool:
         """Check if this node is the current leader.
 
+        Jan 29, 2026: Raft is now the AUTHORITATIVE source for leader determination.
+        Bully fallback is only used in hybrid mode during migration. In raft mode,
+        if Raft is not ready, this returns False (no leader during initialization).
+
         Routes to Raft or Bully based on CONSENSUS_MODE.
 
         Returns:
             True if this node is the leader
         """
-        # Try Raft first if configured
-        if self._consensus_mode in ("raft", "hybrid") and not self._raft_fallback_active:
+        # Raft mode: Raft is authoritative, no Bully fallback
+        if self._consensus_mode == "raft":
+            if self._raft_queue and self._raft_queue.is_ready:
+                try:
+                    return self._raft_queue.is_leader
+                except Exception as e:
+                    logger.warning(f"Raft is_leader failed, no leader during recovery: {e}")
+            # Raft not ready = no leader (prevents split-brain during init)
+            return False
+
+        # Hybrid mode: Try Raft first, fall back to Bully
+        if self._consensus_mode == "hybrid" and not self._raft_fallback_active:
             if self._raft_queue and self._raft_queue.is_ready:
                 try:
                     return self._raft_queue.is_leader
                 except Exception as e:
                     self._log_fallback("Raft", "is_leader", str(e))
 
-        # Fall back to Bully (via orchestrator)
+        # Bully mode or hybrid fallback
         return self._is_bully_leader()
 
     def _is_bully_leader(self) -> bool:
@@ -652,11 +666,24 @@ class HybridCoordinator:
     def get_leader_id(self) -> str:
         """Get the current leader's node ID.
 
+        Jan 29, 2026: Raft is now the AUTHORITATIVE source for leader identity.
+
         Returns:
             Leader node ID, or empty string if unknown
         """
-        # Try Raft first
-        if self._consensus_mode in ("raft", "hybrid") and not self._raft_fallback_active:
+        # Raft mode: Raft is authoritative
+        if self._consensus_mode == "raft":
+            if self._raft_queue and self._raft_queue.is_ready:
+                try:
+                    addr = self._raft_queue.leader_address
+                    if addr:
+                        return addr
+                except Exception as e:
+                    logger.warning(f"Raft get_leader_id failed: {e}")
+            return ""  # No leader during Raft initialization
+
+        # Hybrid mode: Try Raft first
+        if self._consensus_mode == "hybrid" and not self._raft_fallback_active:
             if self._raft_queue and self._raft_queue.is_ready:
                 try:
                     addr = self._raft_queue.leader_address
@@ -665,7 +692,7 @@ class HybridCoordinator:
                 except Exception as e:
                     self._log_fallback("Raft", "get_leader_id", str(e))
 
-        # Fall back to Bully
+        # Bully mode or hybrid fallback
         if self._orchestrator:
             try:
                 if hasattr(self._orchestrator, "leader_id"):

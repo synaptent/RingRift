@@ -500,15 +500,27 @@ class SwimMembershipManager:
                 logger.error(f"Error in on_member_alive callback: {e}")
 
     def _handle_member_failed(self, member: SwimMember):
-        """Handle member failure detection."""
+        """Handle member failure detection.
+
+        Jan 29, 2026: SWIM failure detection is now INFORMATIONAL ONLY.
+        Raft is the authoritative source for peer liveness. SWIM still
+        tracks failure state internally but does NOT emit liveness events.
+        This prevents split-brain from SWIM detecting failure at 30-50s
+        while Raft/HTTP uses 180s timeout.
+
+        SWIM is still used for peer DISCOVERY (on_member_alive).
+        """
         member_id = self._get_member_id(member)
         self._members[member_id] = "failed"
-        logger.warning(f"SWIM: {member_id} is now FAILED")
-        if self.on_member_failed:
-            try:
-                self.on_member_failed(member_id)
-            except (TypeError, AttributeError, ValueError) as e:
-                logger.error(f"Error in on_member_failed callback: {e}")
+        # Log only - Raft is authoritative for liveness
+        logger.debug(f"SWIM: {member_id} detected as FAILED (informational only, Raft is authoritative)")
+        # Jan 29, 2026: DISABLED callback - causes split-brain when SWIM timeout (30-50s)
+        # disagrees with Raft/HTTP timeout (180s). Raft handles liveness authoritatively.
+        # if self.on_member_failed:
+        #     try:
+        #         self.on_member_failed(member_id)
+        #     except (TypeError, AttributeError, ValueError) as e:
+        #         logger.error(f"Error in on_member_failed callback: {e}")
 
     @staticmethod
     def _get_member_id(member) -> str:

@@ -3,6 +3,8 @@
 Sprint 10 (Jan 3, 2026): Centralized loop timing and threshold constants.
 Reduces ~80 LOC of scattered magic numbers across loop files.
 
+Jan 29, 2026: Key timeouts now derived from app.config.timeout_profile for consistency.
+
 Usage:
     from scripts.p2p.loops.loop_constants import (
         LoopIntervals,
@@ -25,6 +27,16 @@ from dataclasses import dataclass
 
 # Jan 16, 2026: Use centralized provider timeout configuration
 from app.config.provider_timeouts import ProviderTimeouts
+
+# Jan 29, 2026: Import unified timeout profile for derived values
+try:
+    from app.config.timeout_profile import get_timeout_profile
+    _profile = get_timeout_profile()
+    _PEER_DEAD_TIMEOUT_FROM_PROFILE = _profile.PEER_TIMEOUT
+    _HEALTH_CHECK_FROM_PROFILE = _profile.HEALTH_CHECK_TIMEOUT
+except ImportError:
+    _PEER_DEAD_TIMEOUT_FROM_PROFILE = 180.0  # Fallback
+    _HEALTH_CHECK_FROM_PROFILE = 8.0  # Fallback
 
 
 @dataclass(frozen=True)
@@ -202,12 +214,10 @@ class LoopTimeouts:
     PARTITION_DISCOVERY: float = 30.0        # Peer discovery during healing
 
     # Peer management
-    # Jan 24, 2026: Increased from 60.0 to 90.0 to match PEER_TIMEOUT in app/p2p/constants.py
-    # Jan 25, 2026: Further increased to 120.0 to match actual PEER_TIMEOUT (120s) in constants.py
-    # The 30s mismatch caused nodes to be marked dead too quickly, leading to network instability
-    # Jan 25, 2026 (PM): Increased to 150.0 to match new PEER_TIMEOUT=150s for stable 20+ node connectivity
-    # Jan 28, 2026: Increased to 180.0 to handle DERP relay latency (126ms+ to Helsinki)
-    PEER_DEAD_TIMEOUT: float = 180.0         # Peer considered dead after this (matches PEER_TIMEOUT=180s)
+    # Jan 29, 2026: Now derived from app.config.timeout_profile.TimeoutProfile for consistency.
+    # This eliminates timeout mismatches that caused split-brain (18s disagreement window).
+    # Previously: manual updates from 60s → 90s → 120s → 150s → 180s caused drift.
+    PEER_DEAD_TIMEOUT: float = _PEER_DEAD_TIMEOUT_FROM_PROFILE  # Derived from TimeoutProfile
 
     # Sync and transfer
     SYNC_LOCK: float = 120.0                 # Sync operation lock
