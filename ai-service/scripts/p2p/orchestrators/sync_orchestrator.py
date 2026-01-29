@@ -242,3 +242,98 @@ class SyncOrchestrator(BaseOrchestrator):
         """Record a sync error."""
         self._sync_count += 1
         self._sync_errors += 1
+
+    # =========================================================================
+    # Cleanup Operations
+    # =========================================================================
+
+    async def cleanup_synced_files(self, node_id: str, files: list[str]) -> bool:
+        """Delete synced files from source node to free disk space.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._cleanup_synced_files().
+
+        Only called after successful sync to training nodes.
+
+        Args:
+            node_id: The node ID to cleanup files on.
+            files: List of file paths to delete.
+
+        Returns:
+            True if cleanup was successful or enqueued.
+        """
+        # Import aiohttp types here to avoid circular imports
+        try:
+            from aiohttp import ClientTimeout
+            from app.core.http_client import get_client_session
+        except ImportError:
+            self._log_warning("Cannot cleanup files: aiohttp not available")
+            return False
+
+        # Get peer info from P2P
+        peers_lock = getattr(self._p2p, "peers_lock", None)
+        peers = getattr(self._p2p, "peers", {})
+
+        if peers_lock is None:
+            return False
+
+        with peers_lock:
+            node = peers.get(node_id)
+
+        if not node or not node.is_alive():
+            return False
+
+        try:
+            # Check for NAT-blocked nodes - use relay command
+            if getattr(node, "nat_blocked", False):
+                if hasattr(self._p2p, "_enqueue_relay_command_for_peer"):
+                    cmd_id = await self._p2p._enqueue_relay_command_for_peer(
+                        node,
+                        "cleanup_files",
+                        {"files": list(files or []), "reason": "post_sync_cleanup"},
+                    )
+                    if cmd_id:
+                        self._log_info(f"Enqueued relay cleanup_files for {node_id} ({len(files)} files)")
+                        return True
+                    self._log_info(f"Relay queue full for {node_id}; skipping cleanup_files enqueue")
+                    return False
+                return False
+
+            # Direct HTTP request
+            timeout = ClientTimeout(total=60)
+            async with get_client_session(timeout) as session:
+                last_err: str | None = None
+
+                # Get URLs from P2P
+                urls_method = getattr(self._p2p, "_urls_for_peer", None)
+                auth_headers_method = getattr(self._p2p, "_auth_headers", None)
+
+                if urls_method is None:
+                    self._log_warning("Cannot cleanup files: _urls_for_peer not available")
+                    return False
+
+                for url in urls_method(node, "/cleanup/files"):
+                    try:
+                        headers = auth_headers_method() if auth_headers_method else {}
+                        async with session.post(
+                            url,
+                            json={"files": files, "reason": "post_sync_cleanup"},
+                            headers=headers,
+                        ) as resp:
+                            if resp.status != 200:
+                                last_err = f"http_{resp.status}"
+                                continue
+                            result = await resp.json()
+                            freed_bytes = result.get("freed_bytes", 0)
+                            self._log_info(f"Cleanup on {node_id}: freed {freed_bytes / 1e6:.1f}MB")
+                            return True
+                    except Exception as e:  # noqa: BLE001
+                        last_err = str(e)
+                        continue
+
+                if last_err:
+                    self._log_info(f"Cleanup files request failed on {node_id}: {last_err}")
+
+        except Exception as e:  # noqa: BLE001
+            self._log_error(f"Failed to cleanup files on {node_id}: {e}")
+
+        return False

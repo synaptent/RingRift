@@ -7435,8 +7435,14 @@ class P2POrchestrator(
     async def _cleanup_synced_files(self, node_id: str, files: list[str]) -> bool:
         """Delete synced files from source node to free disk space.
 
+        Jan 29, 2026: Delegates to SyncOrchestrator.cleanup_synced_files().
+
         Only called after successful sync to training nodes.
         """
+        if hasattr(self, "sync") and self.sync is not None:
+            return await self.sync.cleanup_synced_files(node_id, files)
+
+        # Fallback: original implementation for when orchestrator not available
         with self.peers_lock:
             node = self.peers.get(node_id)
         if not node or not node.is_alive():
