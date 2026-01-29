@@ -832,6 +832,14 @@ class GossipProtocolMixin(P2PMixinBase):
                 return
 
         try:
+            # Jan 29, 2026: Ensure gossip state attributes exist to prevent AttributeError
+            if not hasattr(self, "_gossip_peer_states"):
+                self._gossip_peer_states = {}
+            if not hasattr(self, "_gossip_peer_manifests"):
+                self._gossip_peer_manifests = {}
+            if not hasattr(self, "_gossip_learned_endpoints"):
+                self._gossip_learned_endpoints = {}
+
             cleaned_states = 0
             cleaned_manifests = 0
             cleaned_endpoints = 0
@@ -2022,8 +2030,10 @@ class GossipProtocolMixin(P2PMixinBase):
 
         for peer_id in selected_ids:
             # Jan 3, 2026: Skip peers in backoff period (exponential backoff for failures)
-            if self.health_tracker.should_skip_peer(peer_id):
-                backoff_remaining = self.health_tracker.get_backoff_seconds(peer_id)
+            # Jan 29, 2026: Fixed AttributeError - use _gossip_health_tracker
+            tracker = getattr(self, "_gossip_health_tracker", None)
+            if tracker and tracker.should_skip_peer(peer_id):
+                backoff_remaining = tracker.get_backoff_seconds(peer_id)
                 self._log_debug(
                     f"[Gossip] Skipping {peer_id} - in backoff ({backoff_remaining:.1f}s remaining)"
                 )
