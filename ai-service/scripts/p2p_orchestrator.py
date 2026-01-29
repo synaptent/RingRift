@@ -4080,7 +4080,7 @@ class P2POrchestrator(
     def _can_spawn_process(self, reason: str = "job") -> tuple[bool, str]:
         """Combined safeguard check before spawning any process.
 
-        SAFEGUARD: Checks load average, rate limit, and agent mode.
+        Jan 29, 2026: Delegates to JobOrchestrator.can_spawn_process().
 
         Args:
             reason: Description of why we want to spawn (for logging)
@@ -4088,6 +4088,10 @@ class P2POrchestrator(
         Returns:
             (can_spawn, explanation) - True if all checks pass
         """
+        if hasattr(self, "jobs") and self.jobs is not None:
+            return self.jobs.can_spawn_process(reason)
+
+        # Fallback: original implementation for when orchestrator not available
         # Check 1: Load average
         load_ok, load_reason = self.self_info.check_load_average_safe()
         if not load_ok:

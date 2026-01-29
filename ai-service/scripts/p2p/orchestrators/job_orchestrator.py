@@ -164,24 +164,94 @@ class JobOrchestrator(BaseOrchestrator):
     def can_spawn_process(self, reason: str = "job") -> tuple[bool, str]:
         """Combined safeguard check before spawning any process.
 
-        Jan 29, 2026: Wrapper for P2POrchestrator._can_spawn_process().
+        Jan 29, 2026: Implementation moved from P2POrchestrator._can_spawn_process().
 
-        Checks:
-        1. Load average (system resources)
-        2. Rate limit (spawn frequency)
-        3. Agent mode (if applicable)
+        SAFEGUARD: Checks load average, rate limit, agent mode, backpressure,
+        and graceful degradation.
 
         Args:
-            reason: Description of why we want to spawn
+            reason: Description of why we want to spawn (for logging)
 
         Returns:
-            (can_spawn, reason) - True if spawning is allowed
+            (can_spawn, explanation) - True if all checks pass
         """
-        if hasattr(self._p2p, "_can_spawn_process"):
-            return self._p2p._can_spawn_process(reason)
+        # Check 1: Load average
+        self_info = getattr(self._p2p, "self_info", None)
+        if self_info is not None and hasattr(self_info, "check_load_average_safe"):
+            load_ok, load_reason = self_info.check_load_average_safe()
+            if not load_ok:
+                self._log_info(f"BLOCKED spawn ({reason}): {load_reason}")
+                return False, load_reason
 
-        # Fallback: just check rate limit
-        return self.check_spawn_rate_limit()
+        # Check 2: Rate limit
+        rate_ok, rate_reason = self.check_spawn_rate_limit()
+        if not rate_ok:
+            self._log_info(f"BLOCKED spawn ({reason}): {rate_reason}")
+            return False, rate_reason
+
+        # Check 3: Agent mode - if coordinator is available and we're in agent mode,
+        # we should not autonomously spawn jobs (let coordinator decide)
+        agent_mode = getattr(self._p2p, "agent_mode", False)
+        coordinator_available = getattr(self._p2p, "coordinator_available", False)
+        if agent_mode and coordinator_available:
+            msg = "Agent mode: deferring to coordinator"
+            self._log_info(f"BLOCKED spawn ({reason}): {msg}")
+            return False, msg
+
+        # Check 4: Backpressure (new coordination) - if training queue is saturated,
+        # don't spawn more selfplay jobs that would produce more data
+        try:
+            from app.coordination.backpressure import (
+                QueueType,
+                should_stop_production,
+                should_throttle_production,
+                get_throttle_factor,
+            )
+            HAS_NEW_COORDINATION = True
+        except ImportError:
+            HAS_NEW_COORDINATION = False
+
+        if HAS_NEW_COORDINATION and "selfplay" in reason.lower():
+            if should_stop_production(QueueType.TRAINING_DATA):
+                msg = "Backpressure: training queue at STOP level"
+                self._log_info(f"BLOCKED spawn ({reason}): {msg}")
+                return False, msg
+            if should_throttle_production(QueueType.TRAINING_DATA):
+                throttle = get_throttle_factor(QueueType.TRAINING_DATA)
+                import random
+                if random.random() > throttle:
+                    msg = f"Backpressure: throttled (factor={throttle:.2f})"
+                    self._log_info(f"BLOCKED spawn ({reason}): {msg}")
+                    return False, msg
+
+        # Check 5: Graceful degradation - don't spawn under heavy resource pressure
+        try:
+            from app.coordination.resource_guard import (
+                get_degradation_level,
+                should_proceed_with_priority,
+                OperationPriority,
+            )
+            HAS_RESOURCE_GUARD = True
+        except ImportError:
+            HAS_RESOURCE_GUARD = False
+            get_degradation_level = None
+            should_proceed_with_priority = None
+            OperationPriority = None
+
+        if HAS_RESOURCE_GUARD and get_degradation_level is not None:
+            degradation = get_degradation_level()
+            if degradation >= 4:  # CRITICAL - resources at/above limits
+                msg = f"Graceful degradation: critical resource pressure (level {degradation})"
+                self._log_info(f"BLOCKED spawn ({reason}): {msg}")
+                return False, msg
+            elif degradation >= 3:  # HEAVY - only critical ops proceed
+                # Selfplay is NORMAL priority, blocked under heavy pressure
+                if should_proceed_with_priority is not None and not should_proceed_with_priority(OperationPriority.NORMAL):
+                    msg = f"Graceful degradation: heavy resource pressure (level {degradation})"
+                    self._log_info(f"BLOCKED spawn ({reason}): {msg}")
+                    return False, msg
+
+        return True, "All safeguards passed"
 
     # =========================================================================
     # Task Management
