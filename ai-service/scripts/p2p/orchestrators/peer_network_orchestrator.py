@@ -338,15 +338,49 @@ class PeerNetworkOrchestrator(BaseOrchestrator):
     # =========================================================================
 
     def detect_network_partition(self) -> bool:
-        """Detect if this node is in a network partition.
+        """Detect if we're in a network partition (>50% peers unreachable via primary IP).
 
-        Jan 29, 2026: Wrapper for P2POrchestrator's detection logic.
+        Jan 29, 2026: Implementation moved from P2POrchestrator._detect_network_partition().
+
+        Used to trigger Tailscale-first connectivity mode when the public network
+        is fragmented but mesh connectivity remains intact.
 
         Returns:
-            True if a partition is detected.
+            True if partition detected (majority of peers unreachable)
         """
-        if hasattr(self._p2p, "_detect_network_partition"):
-            return self._p2p._detect_network_partition()
+        # Get peer snapshot from P2P
+        peer_snapshot = getattr(self._p2p, "_peer_snapshot", None)
+        if peer_snapshot is None:
+            return False
+
+        node_id = getattr(self._p2p, "node_id", "")
+        peers_snapshot = [
+            p for p in peer_snapshot.get_snapshot().values()
+            if p.node_id != node_id
+        ]
+
+        if len(peers_snapshot) < 2:
+            return False
+
+        # Count peers with recent heartbeat failures
+        # Use jittered timeout if available
+        now = time.time()
+        jittered_timeout = 90.0  # Default timeout
+        if hasattr(self._p2p, "_get_cached_jittered_timeout"):
+            jittered_timeout = self._p2p._get_cached_jittered_timeout()
+
+        unreachable = 0
+        for peer in peers_snapshot:
+            if peer.consecutive_failures >= 3 or (now - peer.last_heartbeat > jittered_timeout):
+                unreachable += 1
+
+        partition_ratio = unreachable / len(peers_snapshot)
+        if partition_ratio > 0.5:
+            self._log_info(
+                f"Network partition detected: {unreachable}/{len(peers_snapshot)} "
+                f"peers unreachable ({partition_ratio:.0%})"
+            )
+            return True
         return False
 
     # =========================================================================
@@ -354,16 +388,69 @@ class PeerNetworkOrchestrator(BaseOrchestrator):
     # =========================================================================
 
     def get_eligible_voters(self) -> list[str]:
-        """Get list of eligible voter node IDs.
+        """Get list of nodes eligible to be voters (GPU nodes with good health).
 
-        Jan 29, 2026: Wrapper for P2POrchestrator's voter logic.
+        Jan 29, 2026: Implementation moved from P2POrchestrator._get_eligible_voters().
 
         Returns:
             List of node IDs that are eligible to vote.
         """
-        if hasattr(self._p2p, "_get_eligible_voters"):
-            return self._p2p._get_eligible_voters()
-        return list(getattr(self._p2p, "voter_node_ids", []))
+        import time
+
+        # Import constants - do it here to avoid circular imports at module level
+        try:
+            from scripts.p2p.constants import (
+                VOTER_PROMOTION_UPTIME,
+                VOTER_DEMOTION_FAILURES,
+            )
+        except ImportError:
+            VOTER_PROMOTION_UPTIME = 300  # 5 minutes default
+            VOTER_DEMOTION_FAILURES = 5
+
+        # Get peer snapshot from P2P
+        peer_snapshot = getattr(self._p2p, "_peer_snapshot", None)
+        if peer_snapshot is None:
+            return list(getattr(self._p2p, "voter_node_ids", []))
+
+        peers = peer_snapshot.get_snapshot()
+        eligible = []
+        now = time.time()
+        node_id = getattr(self._p2p, "node_id", "")
+
+        for peer_id, peer in peers.items():
+            # Skip retired or NAT-blocked without relay
+            if getattr(peer, "retired", False):
+                continue
+
+            # Must be alive
+            if not peer.is_alive():
+                continue
+
+            # Must have GPU (CUDA or MPS)
+            has_gpu = getattr(peer, "has_gpu", False)
+            gpu_name = str(getattr(peer, "gpu_name", "") or "")
+            if not has_gpu and "GH200" not in gpu_name and "H100" not in gpu_name and "A10" not in gpu_name and "aws" not in peer_id.lower():
+                continue
+
+            # Must have been up for minimum time
+            first_seen = getattr(peer, "first_seen", 0) or peer.last_heartbeat
+            if now - first_seen < VOTER_PROMOTION_UPTIME:
+                continue
+
+            # Check health score (response rate)
+            failures = getattr(peer, "consecutive_failures", 0)
+            if failures >= VOTER_DEMOTION_FAILURES:
+                continue
+
+            eligible.append(peer_id)
+
+        # Always include self if we have GPU
+        if node_id and node_id not in eligible:
+            self_gpu = getattr(self._p2p, "has_gpu", False)
+            if self_gpu or "aws" in node_id.lower() or "lambda" in node_id.lower():
+                eligible.append(node_id)
+
+        return sorted(eligible)
 
     def get_voter_count(self) -> tuple[int, int]:
         """Get total and alive voter counts.

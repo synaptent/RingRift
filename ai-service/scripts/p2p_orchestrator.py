@@ -4904,7 +4904,14 @@ class P2POrchestrator(
         return False
 
     def _get_eligible_voters(self) -> list[str]:
-        """Get list of nodes eligible to be voters (GPU nodes with good health)."""
+        """Get list of nodes eligible to be voters (GPU nodes with good health).
+
+        Jan 29, 2026: Delegates to PeerNetworkOrchestrator.get_eligible_voters().
+        """
+        if hasattr(self, "network") and self.network is not None:
+            return self.network.get_eligible_voters()
+
+        # Fallback: original implementation for when orchestrator not available
         # Jan 2026: Use lock-free PeerSnapshot for read-only access
         peers = self._peer_snapshot.get_snapshot()
 
@@ -6250,12 +6257,15 @@ class P2POrchestrator(
     def _detect_network_partition(self) -> bool:
         """Detect if we're in a network partition (>50% peers unreachable via primary IP).
 
-        Used to trigger Tailscale-first connectivity mode when the public network
-        is fragmented but mesh connectivity remains intact.
+        Jan 29, 2026: Delegates to PeerNetworkOrchestrator.detect_network_partition().
 
         Returns:
             True if partition detected (majority of peers unreachable)
         """
+        if hasattr(self, "network") and self.network is not None:
+            return self.network.detect_network_partition()
+
+        # Fallback: original implementation for when orchestrator not available
         # Jan 2026: Use lock-free PeerSnapshot for read-only access
         peers_snapshot = [p for p in self._peer_snapshot.get_snapshot().values() if p.node_id != self.node_id]
 
