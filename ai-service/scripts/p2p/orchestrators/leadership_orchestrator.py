@@ -157,35 +157,78 @@ class LeadershipOrchestrator(BaseOrchestrator):
     def get_fence_token(self) -> str:
         """Get the current fence token for split-brain prevention.
 
+        Jan 28, 2026: Implementation moved from P2POrchestrator.
+
         Returns:
-            The current fence token string.
+            The current fence token string, or empty if not leader.
         """
-        if hasattr(self._p2p, "get_fence_token"):
-            return self._p2p.get_fence_token()
-        return ""
+        # Try NodeRole import for role check
+        try:
+            from scripts.p2p.node_info import NodeRole
+            if getattr(self._p2p, "role", None) != NodeRole.LEADER:
+                return ""
+        except ImportError:
+            # Fallback: check role string
+            role = getattr(self._p2p, "role", None)
+            if role is None or str(role) != "leader":
+                return ""
+
+        return getattr(self._p2p, "_fence_token", "")
 
     def get_lease_epoch(self) -> int:
         """Get the current leader lease epoch.
 
+        Jan 28, 2026: Implementation moved from P2POrchestrator.
+
         Returns:
-            The current lease epoch number.
+            The current lease epoch number (0 if never been leader).
         """
-        if hasattr(self._p2p, "get_lease_epoch"):
-            return self._p2p.get_lease_epoch()
-        return 0
+        return getattr(self._p2p, "_lease_epoch", 0)
 
     def validate_fence_token(self, token: str) -> tuple[bool, str]:
-        """Validate a fence token.
+        """Validate an incoming fence token from a claimed leader.
+
+        Jan 28, 2026: Implementation moved from P2POrchestrator.
+
+        Workers use this to reject commands from stale leaders.
+        A token is valid if:
+        1. It's from the current known leader
+        2. Its epoch is >= our known epoch
 
         Args:
-            token: The fence token to validate.
+            token: Fence token to validate (format: node_id:epoch:timestamp)
 
         Returns:
             Tuple of (is_valid, reason).
         """
-        if hasattr(self._p2p, "validate_fence_token"):
-            return self._p2p.validate_fence_token(token)
-        return (False, "Fence token validation not available")
+        if not token:
+            return False, "empty_fence_token"
+
+        try:
+            parts = token.split(":")
+            if len(parts) != 3:
+                return False, "malformed_token"
+
+            token_node_id = parts[0]
+            token_epoch = int(parts[1])
+
+            # Check if token is from known leader
+            leader_id = getattr(self._p2p, "leader_id", None)
+            if leader_id and token_node_id != leader_id:
+                return False, f"token_from_unknown_leader:{token_node_id}"
+
+            # Check epoch - reject if lower than what we've seen
+            last_seen_epoch = getattr(self._p2p, "_last_seen_epoch", 0)
+            if token_epoch < last_seen_epoch:
+                return False, f"stale_epoch:{token_epoch}<{last_seen_epoch}"
+
+            # Update last seen epoch on P2P
+            self._p2p._last_seen_epoch = max(last_seen_epoch, token_epoch)
+
+            return True, "valid"
+
+        except (ValueError, IndexError) as e:
+            return False, f"parse_error:{e}"
 
     def _is_leader_lease_valid(self) -> bool:
         """Check if the current leader lease is valid.
@@ -204,33 +247,234 @@ class LeadershipOrchestrator(BaseOrchestrator):
     # =========================================================================
 
     def get_consistency_metrics(self) -> dict[str, Any]:
-        """Get leadership consistency metrics.
+        """Get metrics for detecting leadership state desyncs.
+
+        Jan 28, 2026: Implementation moved from P2POrchestrator.
+        Used to monitor and debug the leader self-recognition bug
+        where leader_id is set correctly but role doesn't match.
 
         Returns:
-            Dictionary with consistency status and details.
+            Dictionary with consistency check results for monitoring.
         """
-        if hasattr(self._p2p, "_get_leadership_consistency_metrics"):
-            return self._p2p._get_leadership_consistency_metrics()
-        return {"is_consistent": True, "reason": "No metrics available"}
+        try:
+            from scripts.p2p.leadership_state_machine import LeaderState
+        except ImportError:
+            LeaderState = None
+
+        try:
+            from scripts.p2p.node_info import NodeRole
+        except ImportError:
+            NodeRole = None
+
+        # Get ULSM state if available
+        ulsm_state = None
+        ulsm_leader = None
+        leadership_sm = getattr(self._p2p, "_leadership_sm", None)
+        if leadership_sm is not None:
+            if LeaderState is not None:
+                ulsm_state = (
+                    leadership_sm._state.value
+                    if hasattr(leadership_sm._state, "value")
+                    else str(leadership_sm._state)
+                )
+            ulsm_leader = leadership_sm._leader_id
+
+        # Check for inconsistencies
+        role_ulsm_mismatch = False
+        leader_ulsm_mismatch = False
+
+        role = getattr(self._p2p, "role", None)
+        leader_id = getattr(self._p2p, "leader_id", None)
+        node_id = getattr(self._p2p, "node_id", "")
+
+        if leadership_sm is not None and LeaderState is not None and NodeRole is not None:
+            # Role should match ULSM state
+            local_is_leader = role in (NodeRole.LEADER, NodeRole.PROVISIONAL_LEADER)
+            ulsm_is_leader = leadership_sm._state == LeaderState.LEADER
+            role_ulsm_mismatch = (
+                (local_is_leader != ulsm_is_leader)
+                and leadership_sm._state != LeaderState.STEPPING_DOWN
+            )
+            # Leader IDs should match
+            leader_ulsm_mismatch = leadership_sm._leader_id != leader_id
+
+        # Self-recognition check: If we're the elected leader, do we recognize it?
+        leader_id_is_self = leader_id == node_id
+        role_is_leader = False
+        if NodeRole is not None:
+            role_is_leader = role in (NodeRole.LEADER, NodeRole.PROVISIONAL_LEADER)
+        is_leader_call = self.is_leader()
+
+        # Desync conditions
+        gossip_desync = leader_id_is_self and not role_is_leader
+        role_desync = role_is_leader and not leader_id_is_self
+
+        return {
+            "role": role.value if hasattr(role, "value") else str(role),
+            "leader_id": leader_id,
+            "node_id": node_id,
+            "is_leader_call": is_leader_call,
+            "leader_id_is_self": leader_id_is_self,
+            "role_is_leader": role_is_leader,
+            "ulsm_state": ulsm_state,
+            "ulsm_leader_id": ulsm_leader,
+            "role_ulsm_mismatch": role_ulsm_mismatch,
+            "leader_ulsm_mismatch": leader_ulsm_mismatch,
+            "gossip_desync": gossip_desync,
+            "role_desync": role_desync,
+            "self_recognition_ok": leader_id_is_self == is_leader_call,
+            "is_consistent": not (gossip_desync or role_desync or role_ulsm_mismatch),
+        }
 
     def recover_leadership_desync(self) -> bool:
-        """Attempt to recover from leadership desync.
+        """Auto-recover from leadership state desynchronization.
+
+        Jan 28, 2026: Implementation moved from P2POrchestrator.
+
+        Recovery actions:
+        1. gossip_desync (leader_id=self but role!=LEADER):
+           → Accept leadership since other nodes already see us as leader
+        2. role_desync (role=LEADER but leader_id!=self):
+           → Step down since another node is the recognized leader
 
         Returns:
-            True if recovery was successful.
+            True if recovery action was taken, False if state was consistent.
         """
-        if hasattr(self._p2p, "_recover_leadership_desync"):
-            return self._p2p._recover_leadership_desync()
-        return False
+        try:
+            from scripts.p2p.node_info import NodeRole
+        except ImportError:
+            self._log_warning("Cannot recover desync: NodeRole not available")
+            return False
+
+        leader_id = getattr(self._p2p, "leader_id", None)
+        node_id = getattr(self._p2p, "node_id", "")
+        role = getattr(self._p2p, "role", None)
+
+        leader_id_is_self = leader_id == node_id
+        role_is_leader = role in (NodeRole.LEADER, NodeRole.PROVISIONAL_LEADER)
+
+        # Case 1: gossip_desync - leader_id=self but role!=LEADER
+        if leader_id_is_self and not role_is_leader:
+            self._log_warning(
+                f"[LeadershipRecovery] Fixing gossip_desync: "
+                f"leader_id={leader_id}, role={role} -> LEADER"
+            )
+            self._p2p.role = NodeRole.LEADER
+            # Update state machine if available
+            leadership_sm = getattr(self._p2p, "_leadership_sm", None)
+            if leadership_sm:
+                try:
+                    from scripts.p2p.leadership_state_machine import LeaderState
+                    leadership_sm._state = LeaderState.LEADER
+                    leadership_sm._leader_id = node_id
+                except Exception as e:
+                    self._log_warning(f"[LeadershipRecovery] Failed to update state machine: {e}")
+            return True
+
+        # Case 2: role_desync - role=LEADER but leader_id!=self
+        if role_is_leader and not leader_id_is_self:
+            self._log_warning(
+                f"[LeadershipRecovery] Fixing role_desync: "
+                f"role={role}, leader_id={leader_id} -> FOLLOWER"
+            )
+            self._p2p.role = NodeRole.FOLLOWER
+            # Update state machine if available
+            leadership_sm = getattr(self._p2p, "_leadership_sm", None)
+            if leadership_sm:
+                try:
+                    from scripts.p2p.leadership_state_machine import LeaderState
+                    leadership_sm._state = LeaderState.FOLLOWER
+                    leadership_sm._leader_id = leader_id
+                except Exception as e:
+                    self._log_warning(f"[LeadershipRecovery] Failed to update state machine: {e}")
+            return True
+
+        return False  # State was consistent
 
     def reconcile_leadership_state(self) -> bool:
-        """Reconcile leadership state across subsystems.
+        """Reconcile ULSM state with gossip consensus.
+
+        Jan 28, 2026: Implementation moved from P2POrchestrator.
+
+        Addresses the issue where gossip leader_consensus disagrees with ULSM state.
+        Called periodically from heartbeat loop.
 
         Returns:
-            True if reconciliation was needed and successful.
+            True if reconciliation action was taken, False otherwise.
         """
-        if hasattr(self._p2p, "_reconcile_leadership_state"):
-            return self._p2p._reconcile_leadership_state()
+        leadership_sm = getattr(self._p2p, "_leadership_sm", None)
+        if not leadership_sm:
+            return False
+
+        try:
+            from scripts.p2p.leadership_state_machine import LeaderState
+            from scripts.p2p.node_info import NodeRole
+        except ImportError:
+            return False
+
+        # Get gossip consensus on who the leader is
+        if hasattr(self._p2p, "_get_cluster_leader_consensus"):
+            consensus_info = self._p2p._get_cluster_leader_consensus()
+        else:
+            return False
+
+        consensus_leader = consensus_info.get("consensus_leader")
+        total_voters = consensus_info.get("total_voters", 0)
+        agreement = consensus_info.get("leader_agreement", 0)
+
+        # Need at least 2 voters for meaningful consensus
+        if total_voters < 2:
+            return False
+
+        consensus_ratio = agreement / total_voters if total_voters > 0 else 0
+        MIN_CONSENSUS_THRESHOLD = 0.50
+
+        node_id = getattr(self._p2p, "node_id", "")
+        ulsm_state = leadership_sm._state
+
+        # Low consensus - try to help build it
+        if consensus_ratio < MIN_CONSENSUS_THRESHOLD:
+            if ulsm_state == LeaderState.LEADER:
+                self._log_info(
+                    f"[LeaderReconciliation] Low consensus ({consensus_ratio:.0%}), "
+                    f"proactively announcing leadership"
+                )
+                self.broadcast_leadership_claim()
+            return False
+
+        # Case 1: Gossip says we're leader, ULSM doesn't know
+        if consensus_leader == node_id and ulsm_state != LeaderState.LEADER:
+            if self._is_leader_lease_valid():
+                self._log_info(
+                    f"[LeaderReconciliation] Accepting leadership from gossip "
+                    f"(agreement={agreement}/{total_voters}={consensus_ratio:.0%})"
+                )
+                leadership_sm._state = LeaderState.LEADER
+                leadership_sm._leader_id = node_id
+                self._p2p.role = NodeRole.LEADER
+                self._p2p.leader_id = node_id
+                return True
+            else:
+                self._log_warning(
+                    "[LeaderReconciliation] Gossip says we're leader but lease invalid"
+                )
+                self._p2p.leader_id = None
+                return True
+
+        # Case 2: ULSM says leader, gossip disagrees
+        if ulsm_state == LeaderState.LEADER and consensus_leader and consensus_leader != node_id:
+            self._log_warning(
+                f"[LeaderReconciliation] Gossip says {consensus_leader} is leader "
+                f"(agreement={agreement}/{total_voters}={consensus_ratio:.0%}); stepping down"
+            )
+            if hasattr(self._p2p, "_schedule_step_down_sync"):
+                try:
+                    from scripts.p2p.leadership_state_machine import TransitionReason
+                    self._p2p._schedule_step_down_sync(TransitionReason.HIGHER_EPOCH_SEEN)
+                except ImportError:
+                    self._p2p.role = NodeRole.FOLLOWER
+            return True
+
         return False
 
     # =========================================================================
@@ -254,24 +498,42 @@ class LeadershipOrchestrator(BaseOrchestrator):
     # =========================================================================
 
     def was_recently_leader(self) -> bool:
-        """Check if this node was recently the leader.
+        """Check if this node was the cluster leader within RECENT_LEADER_WINDOW.
+
+        Jan 28, 2026: Implementation moved from P2POrchestrator.
+        Leader stickiness - allows previous leader to reclaim leadership
+        with preference during elections, reducing oscillation.
 
         Returns:
-            True if the node was leader within RECENT_LEADER_WINDOW_SECONDS.
+            True if we were leader and stepped down within RECENT_LEADER_WINDOW_SECONDS.
         """
-        if hasattr(self._p2p, "_was_recently_leader"):
-            return self._p2p._was_recently_leader()
-        return False
+        now = time.time()
+        # Check if we became leader at some point
+        last_become_leader = getattr(self._p2p, "_last_become_leader_time", 0.0)
+        if last_become_leader <= 0:
+            return False
+        # Check if we stepped down recently (within window)
+        last_step_down = getattr(self._p2p, "_last_step_down_time", 0.0)
+        if last_step_down <= 0:
+            return False
+        time_since_step_down = now - last_step_down
+        return time_since_step_down < self.RECENT_LEADER_WINDOW_SECONDS
 
     def in_incumbent_grace_period(self) -> bool:
-        """Check if we're in the incumbent grace period.
+        """Check if we're within the incumbent grace period after stepping down.
+
+        Jan 28, 2026: Implementation moved from P2POrchestrator.
+        During this period, the previous leader gets priority to reclaim
+        leadership without competition.
 
         Returns:
-            True if within grace period (leader stickiness).
+            True if within INCUMBENT_GRACE_PERIOD_SECONDS of step-down.
         """
-        if hasattr(self._p2p, "_in_incumbent_grace_period"):
-            return self._p2p._in_incumbent_grace_period()
-        return False
+        last_step_down = getattr(self._p2p, "_last_step_down_time", 0.0)
+        if last_step_down <= 0:
+            return False
+        time_since_step_down = time.time() - last_step_down
+        return time_since_step_down < self.INCUMBENT_GRACE_PERIOD_SECONDS
 
     # =========================================================================
     # Election Management

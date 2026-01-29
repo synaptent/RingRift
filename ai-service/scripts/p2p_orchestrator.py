@@ -4011,233 +4011,20 @@ class P2POrchestrator(
         return self._is_leader()
 
     def _get_leadership_consistency_metrics(self) -> dict:
-        """Get metrics for detecting leadership state desyncs.
-
-        Jan 3, 2026: Added to monitor and debug the leader self-recognition bug
-        where leader_id is set correctly but role doesn't match.
-
-        Returns:
-            Dictionary with consistency check results for monitoring.
-        """
-        try:
-            from scripts.p2p.leadership_state_machine import LeaderState
-        except ImportError:
-            LeaderState = None
-
-        # Get ULSM state if available
-        ulsm_state = None
-        ulsm_leader = None
-        if hasattr(self, "_leadership_sm") and self._leadership_sm is not None:
-            if LeaderState is not None:
-                ulsm_state = self._leadership_sm._state.value if hasattr(self._leadership_sm._state, "value") else str(self._leadership_sm._state)
-            ulsm_leader = self._leadership_sm._leader_id
-
-        # Check for inconsistencies
-        role_ulsm_mismatch = False
-        leader_ulsm_mismatch = False
-
-        if hasattr(self, "_leadership_sm") and self._leadership_sm is not None and LeaderState is not None:
-            # Role should match ULSM state
-            local_is_leader = self.role in (NodeRole.LEADER, NodeRole.PROVISIONAL_LEADER)
-            ulsm_is_leader = self._leadership_sm._state == LeaderState.LEADER
-            role_ulsm_mismatch = (local_is_leader != ulsm_is_leader) and self._leadership_sm._state != LeaderState.STEPPING_DOWN
-            # Leader IDs should match
-            leader_ulsm_mismatch = (self._leadership_sm._leader_id != self.leader_id)
-
-        # Self-recognition check: If we're the elected leader, do we recognize it?
-        leader_id_is_self = (self.leader_id == self.node_id)
-        role_is_leader = self.role in (NodeRole.LEADER, NodeRole.PROVISIONAL_LEADER)
-        is_leader_call = self._is_leader()
-
-        # Desync conditions
-        # Case 1: leader_id=self but role!=LEADER (gossip bug)
-        gossip_desync = leader_id_is_self and not role_is_leader
-        # Case 2: role=LEADER but leader_id!=self (should not happen)
-        role_desync = role_is_leader and not leader_id_is_self
-
-        return {
-            "role": self.role.value if hasattr(self.role, "value") else str(self.role),
-            "leader_id": self.leader_id,
-            "node_id": self.node_id,
-            "is_leader_call": is_leader_call,
-            "leader_id_is_self": leader_id_is_self,
-            "role_is_leader": role_is_leader,
-            "ulsm_state": ulsm_state,
-            "ulsm_leader_id": ulsm_leader,
-            "role_ulsm_mismatch": role_ulsm_mismatch,
-            "leader_ulsm_mismatch": leader_ulsm_mismatch,
-            "gossip_desync": gossip_desync,  # leader_id=self but role!=LEADER
-            "role_desync": role_desync,  # role=LEADER but leader_id!=self
-            "self_recognition_ok": leader_id_is_self == is_leader_call,  # Quick health check
-        }
+        """Jan 28, 2026: Delegates to self.leadership."""
+        return self.leadership.get_consistency_metrics()
 
     def _recover_leadership_desync(self) -> bool:
-        """Auto-recover from leadership state desynchronization.
-
-        Jan 20, 2026: Added to fix the root cause of cluster instability where
-        nodes get stuck in inconsistent states (candidate claiming to be leader,
-        or leader_id set but role not matching).
-
-        Recovery actions:
-        1. gossip_desync (leader_id=self but role!=LEADER):
-           → Accept leadership since other nodes already see us as leader
-        2. role_desync (role=LEADER but leader_id!=self):
-           → Step down since another node is the recognized leader
-
-        Returns:
-            True if recovery action was taken, False if state was consistent.
-        """
-        leader_id_is_self = (self.leader_id == self.node_id)
-        role_is_leader = self.role in (NodeRole.LEADER, NodeRole.PROVISIONAL_LEADER)
-
-        # Case 1: gossip_desync - leader_id=self but role!=LEADER
-        # Other nodes see us as leader, but we don't recognize it
-        if leader_id_is_self and not role_is_leader:
-            logger.warning(
-                f"[LeadershipRecovery] Fixing gossip_desync: leader_id={self.leader_id}, "
-                f"role={self.role} -> LEADER"
-            )
-            self.role = NodeRole.LEADER
-            # Update state machine if available
-            if hasattr(self, "_leadership_sm") and self._leadership_sm:
-                try:
-                    from scripts.p2p.leadership_state_machine import LeaderState
-                    # Direct state update (bypassing normal transition) for recovery
-                    self._leadership_sm._state = LeaderState.LEADER
-                    self._leadership_sm._leader_id = self.node_id
-                except Exception as e:
-                    logger.warning(f"[LeadershipRecovery] Failed to update state machine: {e}")
-            return True
-
-        # Case 2: role_desync - role=LEADER but leader_id!=self
-        # We think we're leader, but leader_id points elsewhere
-        if role_is_leader and not leader_id_is_self:
-            logger.warning(
-                f"[LeadershipRecovery] Fixing role_desync: role={self.role}, "
-                f"leader_id={self.leader_id} -> FOLLOWER"
-            )
-            self.role = NodeRole.FOLLOWER
-            # Update state machine if available
-            if hasattr(self, "_leadership_sm") and self._leadership_sm:
-                try:
-                    from scripts.p2p.leadership_state_machine import LeaderState
-                    self._leadership_sm._state = LeaderState.FOLLOWER
-                    self._leadership_sm._leader_id = self.leader_id
-                except Exception as e:
-                    logger.warning(f"[LeadershipRecovery] Failed to update state machine: {e}")
-            return True
-
-        return False  # State was consistent
+        """Jan 28, 2026: Delegates to self.leadership."""
+        return self.leadership.recover_leadership_desync()
 
     def _reconcile_leadership_state(self) -> bool:
-        """Reconcile ULSM state with gossip consensus.
-
-        Jan 23, 2026: Phase 2 fix for P2P stability plan.
-        Addresses the issue where gossip leader_consensus disagrees with ULSM state,
-        causing nodes like vultr-a100-20gb to be consensus leader but not claim leadership.
-
-        This method is called every 30 seconds from the heartbeat loop and handles:
-        - Case 1: Gossip says we're leader, ULSM doesn't know -> Accept leadership
-        - Case 2: ULSM says leader, gossip disagrees -> Step down
-
-        Returns:
-            True if reconciliation action was taken, False otherwise.
-        """
-        if not hasattr(self, "_leadership_sm") or not self._leadership_sm:
-            return False
-
-        try:
-            from scripts.p2p.leadership_state_machine import LeaderState
-        except ImportError:
-            return False
-
-        # Get gossip consensus on who the leader is
-        consensus_info = self._get_cluster_leader_consensus()
-        consensus_leader = consensus_info.get("consensus_leader")
-        total_voters = consensus_info.get("total_voters", 0)
-        agreement = consensus_info.get("leader_agreement", 0)
-
-        # Need at least 2 voters to have meaningful consensus
-        if total_voters < 2:
-            return False
-
-        # Calculate consensus ratio
-        consensus_ratio = agreement / total_voters if total_voters > 0 else 0
-
-        ulsm_state = self._leadership_sm._state
-        ulsm_leader = self._leadership_sm._leader_id
-
-        # Jan 23, 2026: Lowered threshold from 50% to 25% to help build consensus
-        # Jan 24, 2026: Raised back to 50% to prevent split-brain - require majority agreement
-        MIN_CONSENSUS_THRESHOLD = 0.50
-
-        # If very low consensus (<25%), try to help build it by broadcasting our leader view
-        if consensus_ratio < MIN_CONSENSUS_THRESHOLD:
-            # If we know who the leader is, proactively announce it
-            if self.leader_id and self.leader_id != self.node_id:
-                # We're a follower with a known leader - this is normal, no action needed
-                pass
-            elif ulsm_state == LeaderState.LEADER:
-                # We think we're leader but consensus doesn't agree
-                # Proactively send leadership claim to help convergence
-                logger.info(
-                    f"[LeaderReconciliation] Low consensus ({consensus_ratio:.0%}), "
-                    f"proactively announcing leadership to help convergence"
-                )
-                self._broadcast_leadership_claim()
-            return False
-
-        # Case 1: Gossip says we're leader, ULSM doesn't know
-        if consensus_leader == self.node_id and ulsm_state != LeaderState.LEADER:
-            if self._is_leader_lease_valid():
-                logger.info(
-                    f"[LeaderReconciliation] Accepting leadership from gossip consensus "
-                    f"(agreement={agreement}/{total_voters}={consensus_ratio:.0%})"
-                )
-                # Update ULSM state to match gossip
-                self._leadership_sm._state = LeaderState.LEADER
-                self._leadership_sm._leader_id = self.node_id
-                # Update local state
-                self.role = NodeRole.LEADER
-                self.leader_id = self.node_id
-                return True
-            else:
-                logger.warning(
-                    f"[LeaderReconciliation] Gossip says we're leader but lease invalid; "
-                    f"clearing leader_id to trigger election"
-                )
-                self.leader_id = None
-                return True
-
-        # Case 2: ULSM says leader, gossip disagrees (another node is consensus leader)
-        if ulsm_state == LeaderState.LEADER and consensus_leader and consensus_leader != self.node_id:
-            logger.warning(
-                f"[LeaderReconciliation] Gossip consensus says {consensus_leader} is leader "
-                f"(agreement={agreement}/{total_voters}={consensus_ratio:.0%}); stepping down"
-            )
-            self._schedule_step_down_sync(TransitionReason.HIGHER_EPOCH_SEEN)
-            return True
-
-        return False
+        """Jan 28, 2026: Delegates to self.leadership."""
+        return self.leadership.reconcile_leadership_state()
 
     def _broadcast_leadership_claim(self) -> None:
-        """Proactively broadcast leadership claim to help consensus convergence.
-
-        Jan 23, 2026: Added to help build consensus when agreement is low.
-        Sends a leadership claim heartbeat to all peers.
-        """
-        if not self.leader_id:
-            return
-
-        # Schedule async broadcast using the event loop
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # Create a small heartbeat-like message announcing our leader view
-                asyncio.create_task(self._async_broadcast_leader_claim())
-        except RuntimeError:
-            # No event loop available
-            pass
+        """Jan 28, 2026: Delegates to self.leadership."""
+        self.leadership.broadcast_leadership_claim()
 
     async def _async_broadcast_leader_claim(self) -> None:
         """Async helper to broadcast leadership claim."""
@@ -4328,37 +4115,12 @@ class P2POrchestrator(
         }
 
     def _was_recently_leader(self) -> bool:
-        """Check if this node was the cluster leader within RECENT_LEADER_WINDOW.
-
-        Jan 2, 2026: Leader stickiness - allows previous leader to reclaim
-        leadership with preference during elections, reducing oscillation.
-
-        Returns:
-            True if we were leader and stepped down within RECENT_LEADER_WINDOW seconds.
-        """
-        now = time.time()
-        # Check if we became leader at some point
-        if self._last_become_leader_time <= 0:
-            return False
-        # Check if we stepped down recently (within window)
-        if self._last_step_down_time <= 0:
-            return False
-        time_since_step_down = now - self._last_step_down_time
-        return time_since_step_down < RECENT_LEADER_WINDOW
+        """Jan 28, 2026: Delegates to self.leadership."""
+        return self.leadership.was_recently_leader()
 
     def _in_incumbent_grace_period(self) -> bool:
-        """Check if we're within the incumbent grace period after stepping down.
-
-        Jan 2, 2026: During this period, the previous leader gets priority
-        to reclaim leadership without competition.
-
-        Returns:
-            True if within INCUMBENT_LEADER_GRACE_PERIOD seconds of step-down.
-        """
-        if self._last_step_down_time <= 0:
-            return False
-        time_since_step_down = time.time() - self._last_step_down_time
-        return time_since_step_down < INCUMBENT_LEADER_GRACE_PERIOD
+        """Jan 28, 2026: Delegates to self.leadership."""
+        return self.leadership.in_incumbent_grace_period()
 
     # =========================================================================
     # UNIFIED LEADERSHIP STATE MACHINE (ULSM) - Jan 2026
@@ -5713,73 +5475,20 @@ class P2POrchestrator(
 
     # =========================================================================
     # Phase 15.1.1: Fence Token Helpers (December 29, 2025)
+    # Jan 28, 2026: Delegated to LeadershipOrchestrator
     # =========================================================================
 
     def get_fence_token(self) -> str:
-        """Get the current fence token for including in leader operations.
-
-        Phase 15.1.1: Fence tokens provide split-brain protection by ensuring
-        workers can reject commands from stale leaders.
-
-        Returns:
-            Current fence token or empty string if not leader
-        """
-        if self.role != NodeRole.LEADER:
-            return ""
-        return self._fence_token
+        """Get fence token. Jan 28, 2026: Delegates to self.leadership."""
+        return self.leadership.get_fence_token()
 
     def get_lease_epoch(self) -> int:
-        """Get the current lease epoch.
-
-        Phase 15.1.1: The epoch is monotonically increasing and helps
-        resolve split-brain by allowing workers to compare epochs.
-
-        Returns:
-            Current lease epoch (0 if never been leader)
-        """
-        return self._lease_epoch
+        """Get lease epoch. Jan 28, 2026: Delegates to self.leadership."""
+        return self.leadership.get_lease_epoch()
 
     def validate_fence_token(self, token: str) -> tuple[bool, str]:
-        """Validate an incoming fence token from a claimed leader.
-
-        Phase 15.1.1: Workers use this to reject commands from stale leaders.
-        A token is valid if:
-        1. It's from the current known leader
-        2. Its epoch is >= our known epoch
-
-        Args:
-            token: Fence token to validate (format: node_id:epoch:timestamp)
-
-        Returns:
-            (valid, reason) tuple
-        """
-        if not token:
-            return False, "empty_fence_token"
-
-        try:
-            parts = token.split(":")
-            if len(parts) != 3:
-                return False, "malformed_token"
-
-            token_node_id = parts[0]
-            token_epoch = int(parts[1])
-
-            # Check if token is from known leader
-            if self.leader_id and token_node_id != self.leader_id:
-                return False, f"token_from_unknown_leader:{token_node_id}"
-
-            # Check epoch - reject if lower than what we've seen
-            if hasattr(self, "_last_seen_epoch"):
-                if token_epoch < self._last_seen_epoch:
-                    return False, f"stale_epoch:{token_epoch}<{self._last_seen_epoch}"
-                self._last_seen_epoch = max(self._last_seen_epoch, token_epoch)
-            else:
-                self._last_seen_epoch = token_epoch
-
-            return True, "valid"
-
-        except (ValueError, IndexError) as e:
-            return False, f"parse_error:{e}"
+        """Validate fence token. Jan 28, 2026: Delegates to self.leadership."""
+        return self.leadership.validate_fence_token(token)
 
     # NOTE: update_fence_token_from_leader() moved to LeadershipHealthMixin (Jan 26, 2026)
 
