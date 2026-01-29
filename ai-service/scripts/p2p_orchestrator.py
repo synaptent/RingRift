@@ -4027,45 +4027,8 @@ class P2POrchestrator(
         self.leadership.broadcast_leadership_claim()
 
     async def _async_broadcast_leader_claim(self) -> None:
-        """Async helper to broadcast leadership claim."""
-        try:
-            peers_snapshot = self._peer_snapshot.get_snapshot()
-            tasks = []
-
-            for peer_id, peer_info in peers_snapshot.items():
-                if not peer_info.is_alive():
-                    continue
-
-                url = f"http://{peer_info.host}:{peer_info.port}/heartbeat"
-                payload = {
-                    "node_id": self.node_id,
-                    "leader_id": self.leader_id,
-                    "role": self.role.value if hasattr(self.role, "value") else str(self.role),
-                    "timestamp": time.time(),
-                    "is_leadership_claim": True,  # Flag to indicate this is proactive
-                }
-                tasks.append(self._broadcast_leader_claim_to_peer(url, payload, peer_id))
-
-            if tasks:
-                results = await asyncio.gather(*tasks, return_exceptions=True)
-                success = sum(1 for r in results if r is True)
-                logger.debug(f"[LeaderReconciliation] Broadcast leadership claim to {success}/{len(tasks)} peers")
-        except Exception as e:
-            logger.debug(f"[LeaderReconciliation] Failed to broadcast leadership claim: {e}")
-
-    async def _broadcast_leader_claim_to_peer(self, url: str, payload: dict, peer_id: str) -> bool:
-        """Broadcast leadership claim to a single peer via HTTP POST.
-
-        Jan 27, 2026: Renamed from _send_heartbeat_to_peer to fix shadowing bug.
-        This is a simple broadcast helper distinct from the full heartbeat exchange
-        in HeartbeatManager.send_heartbeat_to_peer().
-        """
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=5)) as response:
-                    return response.status == 200
-        except Exception:
-            return False
+        """Jan 28, 2026: Delegates to self.leadership."""
+        await self.leadership.async_broadcast_leader_claim()
 
     def _get_config_version(self) -> dict:
         """Get config file version info for drift detection.
@@ -4124,7 +4087,7 @@ class P2POrchestrator(
 
     # =========================================================================
     # UNIFIED LEADERSHIP STATE MACHINE (ULSM) - Jan 2026
-    # Broadcast callback for state machine step-down notifications
+    # Jan 28, 2026: Broadcast methods delegated to LeadershipOrchestrator
     # =========================================================================
 
     async def _broadcast_leader_state_change(
@@ -4133,66 +4096,8 @@ class P2POrchestrator(
         epoch: int,
         reason: "TransitionReason",
     ) -> None:
-        """Broadcast leadership state change to all peers.
-
-        Called by LeadershipStateMachine.transition_to() when stepping down.
-        This ensures peers learn about step-down BEFORE local state mutation.
-
-        Args:
-            new_state: New leadership state (e.g., "stepping_down")
-            epoch: Current leadership epoch
-            reason: Reason for the transition
-        """
-        message = {
-            "node_id": self.node_id,
-            "new_state": new_state,
-            "epoch": epoch,
-            "reason": reason.value if hasattr(reason, "value") else str(reason),
-            "timestamp": time.time(),
-        }
-
-        tasks = []
-        # Jan 2026: Use lock-free PeerSnapshot for read-only access
-        peers_snapshot = self._peer_snapshot.get_snapshot()
-
-        for peer_id, peer_info in peers_snapshot.items():
-            if not peer_info.is_alive():
-                continue
-
-            # Build URL for peer
-            # Jan 10, 2026: Fixed - NodeInfo uses host/port, not advertise_host/advertise_port
-            url = f"http://{peer_info.host}:{peer_info.port}/leader-state-change"
-            tasks.append(self._broadcast_to_peer(url, message, peer_id))
-
-        if tasks:
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            success = sum(1 for r in results if r is True)
-            logger.info(
-                f"Broadcast step-down to {success}/{len(tasks)} peers "
-                f"(epoch={epoch}, reason={reason.value if hasattr(reason, 'value') else reason})"
-            )
-
-    async def _broadcast_to_peer(
-        self,
-        url: str,
-        message: dict[str, Any],
-        peer_id: str,
-    ) -> bool:
-        """Send state change message to a single peer with timeout."""
-        try:
-            async with get_client_session(timeout=2.0) as session:
-                async with session.post(
-                    url,
-                    json=message,
-                    headers=self._auth_headers(),
-                ) as resp:
-                    if resp.status == 200:
-                        return True
-                    logger.debug(f"Broadcast to {peer_id} returned {resp.status}")
-                    return False
-        except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
-            logger.debug(f"Broadcast to {peer_id} failed: {e}")
-            return False
+        """Jan 28, 2026: Delegates to self.leadership."""
+        await self.leadership.broadcast_leader_state_change(new_state, epoch, reason)
 
     # NOTE: _schedule_step_down_sync() and _complete_step_down_async()
     # moved to LeadershipTransitionsMixin (Jan 26, 2026)

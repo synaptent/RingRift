@@ -482,16 +482,160 @@ class LeadershipOrchestrator(BaseOrchestrator):
     # =========================================================================
 
     def broadcast_leadership_claim(self) -> None:
-        """Broadcast a leadership claim to all peers."""
-        if hasattr(self._p2p, "_broadcast_leadership_claim"):
-            self._p2p._broadcast_leadership_claim()
-            self._leader_claim_broadcast_count += 1
+        """Broadcast a leadership claim to all peers.
+
+        Jan 28, 2026: Implementation moved from P2POrchestrator.
+        Schedules async broadcast via event loop.
+        """
+        leader_id = getattr(self._p2p, "leader_id", None)
+        if not leader_id:
+            return
+
+        # Schedule async broadcast using the event loop
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(self.async_broadcast_leader_claim())
+                self._leader_claim_broadcast_count += 1
+        except RuntimeError:
+            # No event loop available
+            pass
 
     async def async_broadcast_leader_claim(self) -> None:
-        """Asynchronously broadcast a leadership claim to all peers."""
-        if hasattr(self._p2p, "_async_broadcast_leader_claim"):
-            await self._p2p._async_broadcast_leader_claim()
-            self._leader_claim_broadcast_count += 1
+        """Asynchronously broadcast a leadership claim to all peers.
+
+        Jan 28, 2026: Implementation moved from P2POrchestrator.
+        """
+        try:
+            # Access peer snapshot via P2P
+            peer_snapshot = getattr(self._p2p, "_peer_snapshot", None)
+            if peer_snapshot is None:
+                self._log_debug("No peer snapshot available for broadcast")
+                return
+
+            peers_snapshot = peer_snapshot.get_snapshot()
+            tasks = []
+
+            node_id = getattr(self._p2p, "node_id", "")
+            leader_id = getattr(self._p2p, "leader_id", None)
+            role = getattr(self._p2p, "role", None)
+
+            for peer_id, peer_info in peers_snapshot.items():
+                if not peer_info.is_alive():
+                    continue
+
+                url = f"http://{peer_info.host}:{peer_info.port}/heartbeat"
+                payload = {
+                    "node_id": node_id,
+                    "leader_id": leader_id,
+                    "role": role.value if hasattr(role, "value") else str(role),
+                    "timestamp": time.time(),
+                    "is_leadership_claim": True,
+                }
+                tasks.append(self._broadcast_claim_to_peer(url, payload, peer_id))
+
+            if tasks:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                success = sum(1 for r in results if r is True)
+                self._log_debug(
+                    f"[LeaderReconciliation] Broadcast leadership claim to {success}/{len(tasks)} peers"
+                )
+        except Exception as e:
+            self._log_debug(f"[LeaderReconciliation] Failed to broadcast leadership claim: {e}")
+
+    async def _broadcast_claim_to_peer(self, url: str, payload: dict, peer_id: str) -> bool:
+        """Broadcast leadership claim to a single peer via HTTP POST.
+
+        Jan 28, 2026: Implementation moved from P2POrchestrator.
+        """
+        try:
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url, json=payload, timeout=aiohttp.ClientTimeout(total=5)
+                ) as response:
+                    return response.status == 200
+        except Exception:
+            return False
+
+    async def broadcast_leader_state_change(
+        self,
+        new_state: str,
+        epoch: int,
+        reason: Any,
+    ) -> None:
+        """Broadcast leadership state change to all peers.
+
+        Jan 28, 2026: Implementation moved from P2POrchestrator.
+        Called when stepping down. Ensures peers learn about step-down
+        BEFORE local state mutation.
+
+        Args:
+            new_state: New leadership state (e.g., "stepping_down")
+            epoch: Current leadership epoch
+            reason: Reason for the transition (TransitionReason)
+        """
+        message = {
+            "node_id": getattr(self._p2p, "node_id", ""),
+            "new_state": new_state,
+            "epoch": epoch,
+            "reason": reason.value if hasattr(reason, "value") else str(reason),
+            "timestamp": time.time(),
+        }
+
+        # Access peer snapshot via P2P
+        peer_snapshot = getattr(self._p2p, "_peer_snapshot", None)
+        if peer_snapshot is None:
+            return
+
+        peers_snapshot = peer_snapshot.get_snapshot()
+        tasks = []
+
+        for peer_id, peer_info in peers_snapshot.items():
+            if not peer_info.is_alive():
+                continue
+
+            url = f"http://{peer_info.host}:{peer_info.port}/leader-state-change"
+            tasks.append(self._broadcast_state_to_peer(url, message, peer_id))
+
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            success = sum(1 for r in results if r is True)
+            self._log_info(
+                f"Broadcast step-down to {success}/{len(tasks)} peers "
+                f"(epoch={epoch}, reason={reason.value if hasattr(reason, 'value') else reason})"
+            )
+
+    async def _broadcast_state_to_peer(
+        self,
+        url: str,
+        message: dict[str, Any],
+        peer_id: str,
+    ) -> bool:
+        """Send state change message to a single peer with timeout.
+
+        Jan 28, 2026: Implementation moved from P2POrchestrator.
+        """
+        try:
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                auth_headers = {}
+                if hasattr(self._p2p, "_auth_headers"):
+                    auth_headers = self._p2p._auth_headers()
+
+                async with session.post(
+                    url,
+                    json=message,
+                    headers=auth_headers,
+                    timeout=aiohttp.ClientTimeout(total=2),
+                ) as resp:
+                    if resp.status == 200:
+                        return True
+                    self._log_debug(f"Broadcast to {peer_id} returned {resp.status}")
+                    return False
+        except Exception as e:
+            self._log_debug(f"Broadcast to {peer_id} failed: {e}")
+            return False
 
     # =========================================================================
     # Grace Period Management
