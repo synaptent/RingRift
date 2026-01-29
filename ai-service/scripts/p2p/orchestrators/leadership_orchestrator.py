@@ -1140,19 +1140,6 @@ class LeadershipOrchestrator(BaseOrchestrator):
             return await self._p2p._determine_leased_leader_from_voters()
         return None
 
-    def count_peers_reporting_leader(self, leader_id: str) -> int:
-        """Count how many peers report a specific node as leader.
-
-        Args:
-            leader_id: The leader ID to check.
-
-        Returns:
-            Number of peers reporting this node as leader.
-        """
-        if hasattr(self._p2p, "_count_peers_reporting_leader"):
-            return self._p2p._count_peers_reporting_leader(leader_id)
-        return 0
-
     # =========================================================================
     # Utility Methods
     # =========================================================================
@@ -1209,11 +1196,109 @@ class LeadershipOrchestrator(BaseOrchestrator):
         return hint
 
     def get_cluster_leader_consensus(self) -> dict[str, Any]:
-        """Get cluster-wide leader consensus information.
+        """Get cluster consensus on leader from gossip hints.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._get_cluster_leader_consensus().
+
+        LEADER CONSENSUS: Aggregate leader hints from all nodes to determine
+        if there's agreement on who the leader is/should be.
 
         Returns:
             Dictionary with consensus status and voting details.
         """
-        if hasattr(self._p2p, "_get_cluster_leader_consensus"):
-            return self._p2p._get_cluster_leader_consensus()
-        return {"leader_id": self.get_leader_id(), "consensus": "unknown"}
+        import asyncio
+
+        leader_votes: dict[str, int] = {}
+        successor_votes: dict[str, int] = {}
+        gossip_states = getattr(self._p2p, "_gossip_peer_states", {})
+        now = time.time()
+
+        # Count our vote
+        our_hint = self.get_leader_hint()
+        if our_hint.get("current_leader"):
+            leader_votes[our_hint["current_leader"]] = leader_votes.get(our_hint["current_leader"], 0) + 1
+        if our_hint.get("preferred_successor"):
+            successor_votes[our_hint["preferred_successor"]] = successor_votes.get(our_hint["preferred_successor"], 0) + 1
+
+        # Count votes from gossip
+        for _node_id, state in gossip_states.items():
+            if state.get("timestamp", 0) < now - 120:  # Skip stale states
+                continue
+
+            hint = state.get("leader_hint", {})
+            leader = hint.get("current_leader")
+            successor = hint.get("preferred_successor")
+
+            if leader:
+                leader_votes[leader] = leader_votes.get(leader, 0) + 1
+            if successor:
+                successor_votes[successor] = successor_votes.get(successor, 0) + 1
+
+        # Find consensus leader and successor
+        consensus_leader = max(leader_votes.items(), key=lambda x: x[1])[0] if leader_votes else None
+        consensus_successor = max(successor_votes.items(), key=lambda x: x[1])[0] if successor_votes else None
+
+        result = {
+            "consensus_leader": consensus_leader,
+            "leader_agreement": leader_votes.get(consensus_leader, 0) if consensus_leader else 0,
+            "consensus_successor": consensus_successor,
+            "successor_agreement": successor_votes.get(consensus_successor, 0) if consensus_successor else 0,
+            "total_voters": len(gossip_states) + 1,
+        }
+
+        # ALERTING: Check for low leader consensus (only leader alerts, rate limited)
+        try:
+            from scripts.p2p.types import NodeRole
+            role = getattr(self._p2p, "role", None)
+            if role == NodeRole.LEADER and result["total_voters"] >= 3:
+                agreement_ratio = result["leader_agreement"] / result["total_voters"]
+                last_low_consensus_alert = getattr(self, "_last_low_consensus_alert", 0)
+                if agreement_ratio < 0.5 and now - last_low_consensus_alert > 3600:  # Alert once per hour max
+                    self._last_low_consensus_alert = now
+                    notifier = getattr(self._p2p, "notifier", None)
+                    if notifier is not None:
+                        node_id = getattr(self._p2p, "node_id", "")
+                        asyncio.create_task(notifier.send(
+                            title="Low Leader Consensus",
+                            message=f"Only {result['leader_agreement']}/{result['total_voters']} nodes agree on leader",
+                            level="warning",
+                            fields={
+                                "Agreement": f"{agreement_ratio*100:.0f}%",
+                                "Consensus Leader": str(consensus_leader),
+                                "Total Voters": str(result["total_voters"]),
+                                "Action": "Check for network partitions or stale nodes",
+                            },
+                            node_id=node_id,
+                        ))
+        except ImportError:
+            pass
+
+        return result
+
+    def count_peers_reporting_leader(self, leader_id: str, peers_snapshot: list | None = None) -> int:
+        """Count how many peers report the same leader_id.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._count_peers_reporting_leader().
+
+        Args:
+            leader_id: The leader ID to check for consensus
+            peers_snapshot: List of peer NodeInfo objects (optional, will get from P2P if not provided)
+
+        Returns:
+            Number of peers reporting this leader_id
+        """
+        if peers_snapshot is None:
+            peer_snapshot = getattr(self._p2p, "_peer_snapshot", None)
+            if peer_snapshot is None:
+                return 0
+            peers_snapshot = list(peer_snapshot.get_snapshot().values())
+
+        count = 0
+        for peer in peers_snapshot:
+            if not peer.is_alive():
+                continue
+            # Check if peer reports this leader
+            peer_leader = getattr(peer, "leader_id", None)
+            if peer_leader == leader_id:
+                count += 1
+        return count

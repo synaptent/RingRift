@@ -5354,24 +5354,33 @@ class P2POrchestrator(
         return None
 
     def _count_peers_reporting_leader(
-        self, leader_id: str, peers_snapshot: list[NodeInfo]
+        self, leader_id: str, peers_snapshot: list[NodeInfo] | None = None
     ) -> int:
         """Count how many peers report the same leader_id.
 
         Jan 8, 2026: Added for leader consensus validation.
+        Jan 29, 2026: Delegated to LeadershipOrchestrator.
 
         Args:
             leader_id: The leader ID to check for consensus
-            peers_snapshot: List of peer NodeInfo objects
+            peers_snapshot: List of peer NodeInfo objects (optional)
 
         Returns:
             Number of peers reporting this leader_id
         """
+        # Delegate to LeadershipOrchestrator
+        if hasattr(self, "leadership") and self.leadership is not None:
+            return self.leadership.count_peers_reporting_leader(leader_id, peers_snapshot)
+        # Fallback implementation
+        if peers_snapshot is None:
+            if self._peer_snapshot is not None:
+                peers_snapshot = list(self._peer_snapshot.get_snapshot().values())
+            else:
+                return 0
         count = 0
         for peer in peers_snapshot:
             if not peer.is_alive():
                 continue
-            # Check if peer reports this leader
             peer_leader = getattr(peer, "leader_id", None)
             if peer_leader == leader_id:
                 count += 1
@@ -14402,11 +14411,17 @@ print(json.dumps({{
     def _get_cluster_leader_consensus(self) -> dict:
         """Get cluster consensus on leader from gossip hints.
 
+        Jan 29, 2026: Delegated to LeadershipOrchestrator.
+
         LEADER CONSENSUS: Aggregate leader hints from all nodes to determine
         if there's agreement on who the leader is/should be.
         """
-        leader_votes = {}
-        successor_votes = {}
+        # Delegate to LeadershipOrchestrator
+        if hasattr(self, "leadership") and self.leadership is not None:
+            return self.leadership.get_cluster_leader_consensus()
+        # Fallback implementation
+        leader_votes: dict[str, int] = {}
+        successor_votes: dict[str, int] = {}
         gossip_states = getattr(self, "_gossip_peer_states", {})
         now = time.time()
 
@@ -14435,34 +14450,13 @@ print(json.dumps({{
         consensus_leader = max(leader_votes.items(), key=lambda x: x[1])[0] if leader_votes else None
         consensus_successor = max(successor_votes.items(), key=lambda x: x[1])[0] if successor_votes else None
 
-        result = {
+        return {
             "consensus_leader": consensus_leader,
             "leader_agreement": leader_votes.get(consensus_leader, 0) if consensus_leader else 0,
             "consensus_successor": consensus_successor,
             "successor_agreement": successor_votes.get(consensus_successor, 0) if consensus_successor else 0,
             "total_voters": len(gossip_states) + 1,
         }
-
-        # ALERTING: Check for low leader consensus (only leader alerts, rate limited)
-        if self.role == NodeRole.LEADER and result["total_voters"] >= 3:
-            agreement_ratio = result["leader_agreement"] / result["total_voters"]
-            last_low_consensus_alert = getattr(self, "_last_low_consensus_alert", 0)
-            if agreement_ratio < 0.5 and now - last_low_consensus_alert > 3600:  # Alert once per hour max
-                self._last_low_consensus_alert = now
-                asyncio.create_task(self.notifier.send(
-                    title="Low Leader Consensus",
-                    message=f"Only {result['leader_agreement']}/{result['total_voters']} nodes agree on leader",
-                    level="warning",
-                    fields={
-                        "Agreement": f"{agreement_ratio*100:.0f}%",
-                        "Consensus Leader": str(consensus_leader),
-                        "Total Voters": str(result["total_voters"]),
-                        "Action": "Check for network partitions or stale nodes",
-                    },
-                    node_id=self.node_id,
-                ))
-
-        return result
 
     # =========================================================================
     # PEER REPUTATION TRACKING
