@@ -35,13 +35,14 @@ gpu_heavy:
     - gpu_cmaes
     - tournament
     - selfplay
+    - gauntlet # Jan 29, 2026: Gauntlet requires GPU for neural network evaluation
   denied:
     - cpu_cmaes # Never run CPU CMA-ES on GPU-heavy nodes
-    - gauntlet # Gauntlets should run on CPU nodes
     - data_merge # Data work should run on CPU nodes
   priorities:
     training: 100 # Highest priority
     gpu_cmaes: 95
+    gauntlet: 90 # Run gauntlet on GPU for fast NN evaluation
     tournament: 80
     selfplay: 60
 
@@ -117,12 +118,13 @@ vast_gpu:
     - gpu_cmaes
     - selfplay
     - tournament
+    - gauntlet # Jan 29, 2026: Gauntlet requires GPU for neural network evaluation
   denied:
     - cpu_cmaes # Use Vast GPUs for GPU work
-    - gauntlet # Don't waste Vast GPU money on CPU work
   priorities:
     training: 100
     gpu_cmaes: 95
+    gauntlet: 90 # Run gauntlet on GPU for fast NN evaluation
     tournament: 85
     selfplay: 75
 
