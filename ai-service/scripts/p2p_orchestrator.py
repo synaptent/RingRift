@@ -4718,55 +4718,15 @@ class P2POrchestrator(
     def _cache_local_ips(self) -> set[str]:
         """Cache all local IPs at startup to avoid DNS blocking in health endpoints.
 
-        Jan 26, 2026: Called once at initialization and cached in self._cached_local_ips.
-        This eliminates per-request DNS lookups that were blocking Lambda health endpoints.
+        Jan 29, 2026: Delegated to PeerNetworkOrchestrator.
 
-        Returns:
-            Set of local IP addresses.
+        Jan 26, 2026: Called once at initialization and cached.
         """
-        import socket
-        import subprocess
-
-        local_ips: set[str] = set()
-
-        # Method 1: Hostname resolution
-        try:
-            hostname = socket.gethostname()
-            for addr in socket.getaddrinfo(hostname, None):
-                local_ips.add(addr[4][0])
-        except (socket.gaierror, socket.herror, OSError, UnicodeError):
-            pass
-
-        # Method 2: Localhost variations
-        try:
-            for addr in socket.getaddrinfo("localhost", None):
-                local_ips.add(addr[4][0])
-        except (socket.gaierror, socket.herror, OSError):
-            pass
-
-        # Method 3: Subprocess fallback for containers
-        try:
-            result = subprocess.run(
-                ["hostname", "-I"],
-                capture_output=True, text=True, timeout=5
-            )
-            if result.returncode == 0:
-                for ip in result.stdout.strip().split():
-                    local_ips.add(ip)
-        except Exception:
-            pass
-
-        # Method 4: Add advertise_host if configured
-        advertise_host = os.environ.get("RINGRIFT_ADVERTISE_HOST", "").strip()
-        if advertise_host:
-            local_ips.add(advertise_host)
-
-        # Method 5: Add Tailscale IP from environment
-        ts_ip = os.environ.get("TAILSCALE_IP", "").strip()
-        if ts_ip:
-            local_ips.add(ts_ip)
-
-        return local_ips
+        # Delegate to PeerNetworkOrchestrator
+        if hasattr(self, "network") and self.network is not None:
+            return self.network.cache_local_ips()
+        # Fallback - return empty set
+        return set()
 
     # NOTE: _is_self_voter(), _check_voter_health(), _log_cluster_health_snapshot()
     # moved to LeadershipHealthMixin (Jan 26, 2026)
@@ -10042,24 +10002,15 @@ class P2POrchestrator(
     def _get_pending_jobs_for_node(self, node_id: str) -> int:
         """Get count of pending/running jobs assigned to a specific node.
 
-        Used by PredictiveScalingLoop to skip nodes that already have
-        work pending, avoiding over-allocation.
+        Jan 29, 2026: Delegated to JobOrchestrator.
 
-        Args:
-            node_id: The node identifier to check.
-
-        Returns:
-            Number of pending/running jobs for this node.
+        Used by PredictiveScalingLoop to skip nodes with pending work.
         """
-        try:
-            if self.job_manager is None:
-                return 0
-            # Count jobs that are pending or running for this node
-            jobs = self.job_manager.get_jobs_for_node(node_id)
-            return len([j for j in jobs if j.get("status") in ("pending", "running", "claimed")])
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"Failed to get pending jobs for {node_id}: {e}")
-            return 0
+        # Delegate to JobOrchestrator
+        if hasattr(self, "jobs") and self.jobs is not None:
+            return self.jobs.get_pending_jobs_for_node(node_id)
+        # Fallback - return 0
+        return 0
 
     async def _spawn_preemptive_selfplay_job(self, peer_info: dict[str, Any]) -> bool:
         """Spawn a preemptive selfplay job on a node approaching idle.
@@ -14506,72 +14457,18 @@ print(json.dumps({{
     def _calculate_cluster_activity_factor(self) -> float:
         """Calculate cluster activity factor for sync interval adjustment.
 
+        Jan 29, 2026: Delegated to SyncOrchestrator.
+
         CLUSTER ACTIVITY FACTOR:
         - < 1.0: Active cluster (training, selfplay) = faster sync
         - 1.0: Normal activity
         - > 1.0: Idle cluster = slower sync
-
-        Returns:
-            Activity factor (0.5 to 2.0)
         """
-        now = time.time()
-
-        # Check training activity (with defensive checks)
-        training_active = False
-        training_lock = getattr(self, "training_lock", None)
-        training_jobs = getattr(self, "training_jobs", {})
-        if training_lock and training_jobs:
-            try:
-                with training_lock:
-                    for job in training_jobs.values():
-                        if getattr(job, "status", None) == "running":
-                            training_active = True
-                            break
-            except (AttributeError):
-                pass
-
-        # Check selfplay activity (count active jobs)
-        selfplay_count = 0
-        jobs_lock = getattr(self, "jobs_lock", None)
-        selfplay_jobs = getattr(self, "selfplay_jobs", {})
-        if jobs_lock and selfplay_jobs:
-            try:
-                with jobs_lock:
-                    for job in selfplay_jobs.values():
-                        if getattr(job, "status", None) == "running":
-                            selfplay_count += 1
-            except (AttributeError):
-                pass
-
-        # Check recent data generation from gossip
-        recent_data = False
-        gossip_states = getattr(self, "_gossip_node_states", {}) or {}
-        for _node_id, state in gossip_states.items():
-            if not isinstance(state, dict):
-                continue
-            last_game = state.get("last_game_time", 0)
-            if now - last_game < 300:  # Game in last 5 min
-                recent_data = True
-                break
-
-        # Calculate factor
-        factor = 1.0
-
-        if training_active:
-            factor *= 0.5  # Much faster sync during training
-        elif selfplay_count >= 5:
-            factor *= 0.7  # Faster sync with active selfplay
-        elif selfplay_count > 0:
-            factor *= 0.85  # Slightly faster with some activity
-
-        if recent_data:
-            factor *= 0.9  # Faster sync when new data available
-
-        # If completely idle (no jobs, stale data), slow down
-        if selfplay_count == 0 and not training_active and not recent_data:
-            factor *= 1.5
-
-        return max(0.5, min(2.0, factor))
+        # Delegate to SyncOrchestrator
+        if hasattr(self, "sync") and self.sync is not None:
+            return self.sync.calculate_cluster_activity_factor()
+        # Fallback - return normal activity
+        return 1.0
 
     def _record_sync_result_for_adaptive(self, sync_type: str, success: bool):
         """Record sync result to adjust adaptive intervals.

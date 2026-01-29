@@ -885,3 +885,63 @@ class PeerNetworkOrchestrator(BaseOrchestrator):
             self._log_info(f"Removed {removed} duplicate peer entries")
 
         return removed
+
+    # =========================================================================
+    # Local IP Caching
+    # =========================================================================
+
+    def cache_local_ips(self) -> set[str]:
+        """Cache all local IPs at startup to avoid DNS blocking in health endpoints.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._cache_local_ips().
+
+        Jan 26, 2026: Called once at initialization and cached.
+        This eliminates per-request DNS lookups that were blocking Lambda health endpoints.
+
+        Returns:
+            Set of local IP addresses.
+        """
+        import os
+        import socket
+        import subprocess
+
+        local_ips: set[str] = set()
+
+        # Method 1: Hostname resolution
+        try:
+            hostname = socket.gethostname()
+            for addr in socket.getaddrinfo(hostname, None):
+                local_ips.add(addr[4][0])
+        except (socket.gaierror, socket.herror, OSError, UnicodeError):
+            pass
+
+        # Method 2: Localhost variations
+        try:
+            for addr in socket.getaddrinfo("localhost", None):
+                local_ips.add(addr[4][0])
+        except (socket.gaierror, socket.herror, OSError):
+            pass
+
+        # Method 3: Subprocess fallback for containers
+        try:
+            result = subprocess.run(
+                ["hostname", "-I"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.returncode == 0:
+                for ip in result.stdout.strip().split():
+                    local_ips.add(ip)
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Method 4: Add advertise_host if configured
+        advertise_host = os.environ.get("RINGRIFT_ADVERTISE_HOST", "").strip()
+        if advertise_host:
+            local_ips.add(advertise_host)
+
+        # Method 5: Add Tailscale IP from environment
+        ts_ip = os.environ.get("TAILSCALE_IP", "").strip()
+        if ts_ip:
+            local_ips.add(ts_ip)
+
+        return local_ips

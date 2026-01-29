@@ -514,3 +514,79 @@ class SyncOrchestrator(BaseOrchestrator):
             result["cluster_job_distribution"] = {"error": str(e)}
 
         return result
+
+    # =========================================================================
+    # Cluster Activity
+    # =========================================================================
+
+    def calculate_cluster_activity_factor(self) -> float:
+        """Calculate cluster activity factor for sync interval adjustment.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._calculate_cluster_activity_factor().
+
+        CLUSTER ACTIVITY FACTOR:
+        - < 1.0: Active cluster (training, selfplay) = faster sync
+        - 1.0: Normal activity
+        - > 1.0: Idle cluster = slower sync
+
+        Returns:
+            Activity factor (0.5 to 2.0)
+        """
+        now = time.time()
+
+        # Check training activity (with defensive checks)
+        training_active = False
+        training_lock = getattr(self._p2p, "training_lock", None)
+        training_jobs = getattr(self._p2p, "training_jobs", {})
+        if training_lock and training_jobs:
+            try:
+                with training_lock:
+                    for job in training_jobs.values():
+                        if getattr(job, "status", None) == "running":
+                            training_active = True
+                            break
+            except AttributeError:
+                pass
+
+        # Check selfplay activity (count active jobs)
+        selfplay_count = 0
+        jobs_lock = getattr(self._p2p, "jobs_lock", None)
+        selfplay_jobs = getattr(self._p2p, "selfplay_jobs", {})
+        if jobs_lock and selfplay_jobs:
+            try:
+                with jobs_lock:
+                    for job in selfplay_jobs.values():
+                        if getattr(job, "status", None) == "running":
+                            selfplay_count += 1
+            except AttributeError:
+                pass
+
+        # Check recent data generation from gossip
+        recent_data = False
+        gossip_states = getattr(self._p2p, "_gossip_node_states", {}) or {}
+        for _node_id, state in gossip_states.items():
+            if not isinstance(state, dict):
+                continue
+            last_game = state.get("last_game_time", 0)
+            if now - last_game < 300:  # Game in last 5 min
+                recent_data = True
+                break
+
+        # Calculate factor
+        factor = 1.0
+
+        if training_active:
+            factor *= 0.5  # Much faster sync during training
+        elif selfplay_count >= 5:
+            factor *= 0.7  # Faster sync with active selfplay
+        elif selfplay_count > 0:
+            factor *= 0.85  # Slightly faster with some activity
+
+        if recent_data:
+            factor *= 0.9  # Faster sync when new data available
+
+        # If completely idle (no jobs, stale data), slow down
+        if selfplay_count == 0 and not training_active and not recent_data:
+            factor *= 1.5
+
+        return max(0.5, min(2.0, factor))

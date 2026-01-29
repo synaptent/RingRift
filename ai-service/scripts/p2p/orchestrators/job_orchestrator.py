@@ -442,6 +442,37 @@ class JobOrchestrator(BaseOrchestrator):
             return False
 
     # =========================================================================
+    # Job Queries
+    # =========================================================================
+
+    def get_pending_jobs_for_node(self, node_id: str) -> int:
+        """Get count of pending/running jobs assigned to a specific node.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._get_pending_jobs_for_node().
+
+        Used by PredictiveScalingLoop to skip nodes that already have
+        work pending, avoiding over-allocation.
+
+        Args:
+            node_id: The node identifier to check.
+
+        Returns:
+            Number of pending/running jobs for this node.
+        """
+        try:
+            job_manager = getattr(self._p2p, "job_manager", None)
+            if job_manager is None:
+                return 0
+            # Count jobs that are pending or running for this node
+            if hasattr(job_manager, "get_jobs_for_node"):
+                jobs = job_manager.get_jobs_for_node(node_id)
+                return len([j for j in jobs if j.get("status") in ("pending", "running", "claimed")])
+            return 0
+        except Exception as e:  # noqa: BLE001
+            self._log_debug(f"Failed to get pending jobs for {node_id}: {e}")
+            return 0
+
+    # =========================================================================
     # Job Spawning
     # =========================================================================
 
