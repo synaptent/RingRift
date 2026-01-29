@@ -30,6 +30,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import sys
 import time
 import uuid
 from typing import TYPE_CHECKING, Any
@@ -69,6 +71,9 @@ class CMAESHandlersMixin(BaseP2PHandler):
     peers: dict
     peers_lock: Any
     distributed_cmaes_state: dict
+    self_info: Any  # SelfInfo
+    training_lock: Any  # threading.Lock
+    training_jobs: dict
 
     @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_cmaes_start(self, request: web.Request) -> web.Response:
@@ -241,4 +246,114 @@ class CMAESHandlersMixin(BaseP2PHandler):
                 "job_id": job_id,
             })
         except Exception as e:
+            return self.error_response(str(e), status=500)
+
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
+    async def handle_cmaes_start_auto(self, request: web.Request) -> web.Response:
+        """Handle CMA-ES optimization start request.
+
+        Uses distributed GPU CMA-ES across all cluster GPU nodes for maximum throughput.
+        Falls back to local GPU CMA-ES if no remote workers available.
+
+        January 2026: Moved from p2p_orchestrator.py to CMAESHandlersMixin.
+        """
+        from scripts.p2p.models import DistributedCMAESState
+
+        try:
+            data = await request.json()
+            job_id = data.get("job_id")
+            board_type = data.get("board_type", "square8")
+            num_players = data.get("num_players", 2)
+
+            # Check for available GPU workers in the cluster
+            gpu_workers = []
+            with self.peers_lock:
+                for peer in self.peers.values():
+                    if peer.is_healthy() and peer.has_gpu and peer.node_id != self.node_id:
+                        gpu_workers.append(peer)
+
+            # Include self if we have GPU
+            if self.self_info.has_gpu:
+                gpu_workers.append(self.self_info)
+
+            if len(gpu_workers) >= 2:
+                # DISTRIBUTED MODE: Use P2P distributed CMA-ES across cluster
+                logger.info(f"Starting DISTRIBUTED GPU CMA-ES with {len(gpu_workers)} workers")
+
+                # Create distributed CMA-ES state
+                cmaes_job_id = f"cmaes_auto_{job_id}_{int(time.time())}"
+                state = DistributedCMAESState(
+                    job_id=cmaes_job_id,
+                    board_type=board_type,
+                    num_players=num_players,
+                    generations=100,  # More generations for better optimization
+                    population_size=max(32, len(gpu_workers) * 8),  # Scale with workers
+                    games_per_eval=100,  # More games for accurate fitness
+                    status="running",
+                    started_at=time.time(),
+                    last_update=time.time(),
+                    worker_nodes=[w.node_id for w in gpu_workers],
+                )
+                self.distributed_cmaes_state[cmaes_job_id] = state
+
+                # Launch distributed coordinator task
+                asyncio.create_task(self._run_distributed_cmaes(cmaes_job_id))
+
+                # Track as training job
+                with self.training_lock:
+                    if job_id in self.training_jobs:
+                        self.training_jobs[job_id].status = "running"
+                        self.training_jobs[job_id].started_at = time.time()
+
+                return self.json_response({
+                    "success": True,
+                    "mode": "distributed",
+                    "job_id": cmaes_job_id,
+                    "workers": [w.node_id for w in gpu_workers],
+                })
+
+            else:
+                # LOCAL MODE: Run GPU CMA-ES on this node only
+                logger.info("Starting LOCAL GPU CMA-ES (no remote workers available)")
+
+                output_dir = os.path.join(
+                    self._get_ai_service_path(), "data", "cmaes",
+                    f"{board_type}_{num_players}p_auto_{int(time.time())}"
+                )
+                os.makedirs(output_dir, exist_ok=True)
+
+                cmd = [
+                    sys.executable,
+                    os.path.join(self._get_ai_service_path(), "scripts", "run_gpu_cmaes.py"),
+                    "--board", board_type,
+                    "--num-players", str(num_players),
+                    "--generations", "100",
+                    "--population-size", "32",
+                    "--games-per-eval", "100",
+                    "--max-moves", "10000",
+                    "--output-dir", output_dir,
+                    "--multi-gpu",
+                ]
+
+                env = os.environ.copy()
+                env["PYTHONPATH"] = self._get_ai_service_path()
+                env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
+
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env,
+                )
+
+                logger.info(f"Started local GPU CMA-ES (PID {proc.pid}) for job {job_id}")
+                asyncio.create_task(self._monitor_training_process(job_id, proc, output_dir))
+
+                return self.json_response({
+                    "success": True,
+                    "mode": "local",
+                    "pid": proc.pid,
+                })
+
+        except Exception as e:  # noqa: BLE001
             return self.error_response(str(e), status=500)
