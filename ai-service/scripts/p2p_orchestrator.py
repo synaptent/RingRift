@@ -2623,7 +2623,8 @@ class P2POrchestrator(
         # December 27, 2025: Validate manager health at startup
         # This catches initialization issues early rather than at first use
         # NOTE: Must be called AFTER _loop_manager is initialized (was causing AttributeError)
-        self._manager_health_status = self._validate_manager_health()
+        # Jan 28, 2026: Uses health_metrics_manager directly
+        self._manager_health_status = self.health_metrics_manager.validate_manager_health()
 
     def _get_loop_manager(self) -> "LoopManager | None":
         """Get the LoopManager, initializing if needed."""
@@ -3252,12 +3253,8 @@ class P2POrchestrator(
             logger.warning(f"Feedback loops: failed to wire: {e}")
             return False
 
-    def _validate_manager_health(self) -> dict[str, Any]:
-        """Validate health of all P2P managers at startup.
-
-        Jan 2026: Delegated to HealthMetricsManager (Phase 9 decomposition).
-        """
-        return self.health_metrics_manager.validate_manager_health()
+    # NOTE: _validate_manager_health() removed Jan 28, 2026 (~5 LOC)
+    # Use self.health_metrics_manager.validate_manager_health() directly.
 
     def health_check(self) -> "HealthCheckResult":
         """Return health check result for daemon protocol compliance.
@@ -3272,8 +3269,8 @@ class P2POrchestrator(
         # Import from contracts (zero-dependency module)
         from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 
-        # Get manager health status
-        manager_health = self._validate_manager_health()
+        # Get manager health status (Jan 28, 2026: uses health_metrics_manager directly)
+        manager_health = self.health_metrics_manager.validate_manager_health()
 
         # Calculate cluster metrics
         uptime_seconds = time.time() - getattr(self, "start_time", time.time())
@@ -5352,19 +5349,11 @@ class P2POrchestrator(
     # NOTE: _is_self_voter(), _check_voter_health(), _log_cluster_health_snapshot()
     # moved to LeadershipHealthMixin (Jan 26, 2026)
 
-    async def _cluster_health_snapshot_loop(self) -> None:
-        """Periodically log cluster health snapshots for debugging.
+    # NOTE: _cluster_health_snapshot_loop() removed Jan 28, 2026 (~6 LOC)
+    # Use self.health_metrics_manager.cluster_health_snapshot_loop() directly.
 
-        Jan 2026: Delegated to HealthMetricsManager (Phase 9 decomposition).
-        """
-        await self.health_metrics_manager.cluster_health_snapshot_loop()
-
-    async def _event_loop_latency_monitor(self) -> None:
-        """Monitor event loop responsiveness to detect blocking operations.
-
-        Jan 2026: Delegated to HealthMetricsManager (Phase 9 decomposition).
-        """
-        await self.health_metrics_manager.event_loop_latency_monitor()
+    # NOTE: _event_loop_latency_monitor() removed Jan 28, 2026 (~6 LOC)
+    # Use self.health_metrics_manager.event_loop_latency_monitor() directly.
 
     # NOTE: _maybe_adopt_voter_node_ids() removed - delegated to QuorumManager (Jan 2026 Phase 1)
     # _has_voter_quorum: Provided by LeaderElectionMixin
@@ -6183,10 +6172,11 @@ class P2POrchestrator(
                 logger.info("[P2P] Startup state validation passed")
 
             # Dec 28, 2025 (Phase 7): Load persisted peer health state
+            # Jan 28, 2026: Uses health_metrics_manager directly
             try:
                 peer_health_states = self.state_manager.load_all_peer_health(max_age_seconds=3600.0)
                 if peer_health_states:
-                    self._apply_loaded_peer_health(peer_health_states)
+                    self.health_metrics_manager.apply_loaded_peer_health(peer_health_states)
                     logger.info(f"[P2P] Loaded {len(peer_health_states)} peer health records")
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"[P2P] Failed to load peer health state: {e}")
@@ -6200,12 +6190,8 @@ class P2POrchestrator(
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to load state: {e}")
 
-    def _apply_loaded_peer_health(self, peer_health_states: dict) -> None:
-        """Apply loaded peer health state to circuit breakers and gossip tracker.
-
-        Jan 2026: Delegated to HealthMetricsManager (Phase 9 decomposition).
-        """
-        self.health_metrics_manager.apply_loaded_peer_health(peer_health_states)
+    # NOTE: _apply_loaded_peer_health() removed Jan 28, 2026 (~5 LOC)
+    # Use self.health_metrics_manager.apply_loaded_peer_health() directly.
 
     # NOTE: _collect_peer_health_states() inlined at call site (Jan 2026 Phase 2)
 
@@ -8659,7 +8645,8 @@ class P2POrchestrator(
             _safe_metric("leader_consensus", self._get_cluster_leader_consensus),
             _safe_metric("peer_reputation", self._get_cluster_peer_reputation),
             _safe_metric("sync_intervals", self._get_sync_interval_summary),
-            _safe_metric("tournament_scheduling", self._get_distributed_tournament_summary),
+            # Jan 28, 2026: Uses tournament_manager directly
+            _safe_metric("tournament_scheduling", self.tournament_manager.get_distributed_tournament_summary),
             _safe_metric("data_dedup", self._get_dedup_summary),
             # Jan 19, 2026: Added these to parallel gather (were sequential before)
             _safe_metric("swim_raft", self._get_swim_raft_status),
@@ -8938,21 +8925,14 @@ class P2POrchestrator(
     # - handle_cmaes_start, handle_cmaes_evaluate
     # - handle_cmaes_status, handle_cmaes_result
 
-    async def _run_distributed_cmaes(self, job_id: str):
-        """Main coordinator loop for distributed CMA-ES. Delegates to CMAESCoordinator."""
-        await self.cmaes_coordinator.run_distributed_cmaes(job_id)
+    # NOTE: _run_distributed_cmaes() removed Jan 28, 2026 (~4 LOC)
+    # Use self.cmaes_coordinator.run_distributed_cmaes() directly.
 
     # NOTE: _evaluate_cmaes_weights_local removed Jan 28, 2026 (dead code)
     # Use self.cmaes_coordinator.evaluate_weights_local() directly.
 
-    async def _evaluate_cmaes_weights(
-        self, job_id: str, weights: dict, generation: int, individual_idx: int,
-        games_per_eval: int = 5, board_type: str = "square8", num_players: int = 2
-    ):
-        """Evaluate weights locally and report result to coordinator. Delegates to CMAESCoordinator."""
-        await self.cmaes_coordinator.evaluate_weights(
-            job_id, weights, generation, individual_idx, games_per_eval, board_type, num_players
-        )
+    # NOTE: _evaluate_cmaes_weights() removed Jan 28, 2026 (~9 LOC)
+    # Use self.cmaes_coordinator.evaluate_weights() directly.
 
     # Tournament Handlers moved to scripts/p2p/handlers/tournament.py
     # Inherited from TournamentHandlersMixin:
@@ -8978,12 +8958,8 @@ class P2POrchestrator(
 
     # NOTE: _send_match_to_worker removed Jan 28, 2026 (dead code, never called)
 
-    async def _play_tournament_match(self, job_id: str, match_info: dict) -> dict | None:
-        """Play a tournament match locally.
-
-        Jan 2026: Delegated to TournamentManager (Phase 11 decomposition).
-        """
-        return await self.tournament_manager.play_tournament_match(job_id, match_info)
+    # NOTE: _play_tournament_match() removed Jan 28, 2026 (~7 LOC)
+    # Use self.tournament_manager.play_tournament_match() directly.
 
     # NOTE: _calculate_tournament_ratings removed Dec 27, 2025 (dead code, never called)
     # Elo rating calculation is now handled in JobManager.run_distributed_tournament()
@@ -9258,9 +9234,9 @@ class P2POrchestrator(
         # Also check for CMA-ES optimization opportunities
         cmaes_ready = self.improvement_cycle_manager.check_cmaes_needed()
         for board_type, num_players in cmaes_ready:
-            # Trigger distributed CMA-ES
+            # Trigger distributed CMA-ES (Jan 2026: uses cmaes_coordinator directly)
             logger.info(f"CMA-ES optimization ready for {board_type}_{num_players}p")
-            asyncio.create_task(self._trigger_auto_cmaes(board_type, num_players))
+            asyncio.create_task(self.cmaes_coordinator.trigger_auto_cmaes(board_type, num_players))
 
         # Check for rollback needs (consecutive training failures)
         for key, cycle in self.improvement_cycle_manager.state.cycles.items():
@@ -9394,9 +9370,8 @@ class P2POrchestrator(
     # Includes: handle_training_start, handle_training_status, handle_training_progress, handle_training_update,
     #           handle_training_trigger, handle_training_trigger_decision, handle_training_trigger_configs, handle_nnue_start
 
-    async def _trigger_auto_cmaes(self, board_type: str, num_players: int):
-        """Automatically trigger CMA-ES optimization for a configuration. Delegates to CMAESCoordinator."""
-        await self.cmaes_coordinator.trigger_auto_cmaes(board_type, num_players)
+    # NOTE: _trigger_auto_cmaes() removed Jan 28, 2026 (~4 LOC)
+    # Use self.cmaes_coordinator.trigger_auto_cmaes() directly.
 
     # NOTE: handle_cmaes_start_auto moved to CMAESHandlersMixin (Jan 2026 - P2P Modularization Phase 8c)
 
@@ -9509,7 +9484,8 @@ class P2POrchestrator(
                             job.completed_at = time.time()
                             job.output_model_path = output_path
                             # LEARNED LESSONS - Schedule tournament to compare new model against baseline
-                            asyncio.create_task(self._schedule_model_comparison(job, output_path))
+                            # Jan 28, 2026: Uses tournament_manager directly
+                            asyncio.create_task(self.tournament_manager.schedule_model_comparison(job, output_path))
                             # Update improvement cycle manager with training completion
                             if self.improvement_cycle_manager:
                                 self.improvement_cycle_manager.handle_training_complete(
@@ -9544,22 +9520,8 @@ class P2POrchestrator(
         except Exception as e:  # noqa: BLE001
             logger.info(f"Training monitor error for {job_id}: {e}")
 
-    async def _monitor_gpu_selfplay_and_validate(
-        self,
-        job_id: str,
-        proc: subprocess.Popen,
-        output_dir: Path,
-        board_type: str,
-        num_players: int,
-    ) -> None:
-        """Monitor GPU selfplay completion and run CPU validation.
-
-        Jan 28, 2026: Phase 18C - Thin wrapper delegating to JobCoordinationManager.
-        """
-        if self.job_coordination_manager:
-            await self.job_coordination_manager.monitor_gpu_selfplay_and_validate(
-                job_id, proc, output_dir, board_type, num_players
-            )
+    # NOTE: _monitor_gpu_selfplay_and_validate() removed Jan 28, 2026 (~17 LOC)
+    # Use self.job_coordination_manager.monitor_gpu_selfplay_and_validate() directly.
 
     async def _monitor_selfplay_process(
         self,
@@ -9674,12 +9636,8 @@ class P2POrchestrator(
                     job.completed_at = time.time()
                     job.error_message = str(e)
 
-    async def _schedule_model_comparison(self, job: TrainingJob, new_model_path: str):
-        """Schedule a tournament to compare new model against current baseline.
-
-        Jan 2026: Delegated to TournamentManager (Phase 11 decomposition).
-        """
-        await self.tournament_manager.schedule_model_comparison(job, new_model_path)
+    # NOTE: _schedule_model_comparison() removed Jan 28, 2026 (~6 LOC)
+    # Use self.tournament_manager.schedule_model_comparison() directly.
 
     # NOTE: _run_model_comparison_tournament removed Jan 28, 2026 (dead code)
     # Use self.tournament_manager.run_model_comparison_tournament() directly.
@@ -9733,8 +9691,8 @@ class P2POrchestrator(
                 logger.info(f"[CMA-ES] Elo plateau detected for {config_key} (Elo: {best_elo:.0f})")
                 logger.info("[CMA-ES] Triggering auto hyperparameter optimization...")
 
-                # Trigger CMA-ES via existing distributed infrastructure
-                await self._trigger_auto_cmaes(board_type, num_players)
+                # Trigger CMA-ES via existing distributed infrastructure (Jan 2026: uses cmaes_coordinator directly)
+                await self.cmaes_coordinator.trigger_auto_cmaes(board_type, num_players)
 
         except Exception as e:  # noqa: BLE001
             logger.info(f"[CMA-ES] Auto-tuning check error for {config_key}: {e}")
@@ -9774,26 +9732,13 @@ class P2POrchestrator(
     # NOTE: _handle_tournament_completion removed Jan 28, 2026 (dead code)
     # Use self.tournament_manager.handle_tournament_completion() directly.
 
-    async def _boost_selfplay_for_config(self, board_type: str, num_players: int):
-        """Temporarily boost selfplay for a configuration after model promotion.
-
-        Jan 2026: Delegated to TournamentManager (Phase 11 decomposition).
-        """
-        await self.tournament_manager.boost_selfplay_for_config(board_type, num_players)
+    # NOTE: _boost_selfplay_for_config() removed Jan 28, 2026 (~6 LOC)
+    # Use self.tournament_manager.boost_selfplay_for_config() directly (no callers found).
 
     # NOTE: _propagate_cmaes_weights removed Jan 28, 2026 (dead code)
     # Use self.cmaes_coordinator.propagate_weights() directly.
 
-    async def _stop_local_job(self, job_id: str):
-        """Stop a local job by job ID."""
-        try:
-            with self.jobs_lock:
-                job = self.local_jobs.get(job_id)
-                if job and hasattr(job, 'process') and job.process:
-                    job.process.terminate()
-                    job.status = "stopped"
-        except Exception as e:  # noqa: BLE001
-            logger.error(f"stopping job {job_id}: {e}")
+    # NOTE: _stop_local_job() removed Jan 28, 2026 (~11 LOC, no callers found)
 
     async def _import_gpu_selfplay_to_canonical(
         self, validated_db: Path, board_type: str, num_players: int, game_count: int
@@ -10582,13 +10527,13 @@ class P2POrchestrator(
 
             elif work_type == "gauntlet":
                 # January 27, 2026: Added gauntlet work execution
-                # Prevents coordinator from running gauntlets locally
+                # January 28, 2026: Return False when skipping so work can be reassigned
                 from app.config.env import env
                 if not env.gauntlet_enabled:
-                    logger.info(
-                        f"Skipping gauntlet work {work_id}: gauntlet_enabled=false for this node"
+                    logger.warning(
+                        f"Rejecting gauntlet work {work_id}: gauntlet_enabled=false for this node"
                     )
-                    return True  # Return True to indicate "handled" (just skipped)
+                    return False  # Return False so work can be reassigned to a GPU node
 
                 # Execute gauntlet via quick_gauntlet script
                 board_type = config.get("board_type", "square8")
@@ -10714,12 +10659,8 @@ class P2POrchestrator(
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Error killing zombie processes on {node_id}: {e}")
 
-    async def _auto_start_selfplay(self, peer, idle_duration: float):
-        """Auto-start diverse hybrid selfplay on an idle node.
-
-        Jan 28, 2026: Phase 18A - Delegates to SelfplayScheduler.
-        """
-        await self.selfplay_scheduler.auto_start_selfplay(peer, idle_duration)
+    # NOTE: _auto_start_selfplay() removed Jan 28, 2026 (~6 LOC, no callers found)
+    # Use self.selfplay_scheduler.auto_start_selfplay() directly.
 
     # =========================================================================
     # PREDICTIVE SCALING HELPERS (January 2026 Sprint 6)
@@ -12562,42 +12503,22 @@ print(json.dumps({{
         """
         self._nat_type = await self.recovery_manager.detect_nat_type()
 
-    async def _probe_nat_blocked_peers(self):
-        """Probe NAT-blocked peers to see if they've become reachable.
+    # NOTE: _probe_nat_blocked_peers() removed Jan 28, 2026 (~6 LOC)
+    # Use self.recovery_manager.probe_nat_blocked_peers() directly.
 
-        Jan 2026: Delegated to RecoveryManager (Phase 12 decomposition).
-        """
-        await self.recovery_manager.probe_nat_blocked_peers()
+    # NOTE: _update_relay_preferences() removed Jan 28, 2026 (~6 LOC)
+    # Use self.recovery_manager.update_relay_preferences() directly.
 
-    async def _update_relay_preferences(self):
-        """Update relay preferences based on connectivity patterns.
-
-        Jan 2026: Delegated to RecoveryManager (Phase 12 decomposition).
-        """
-        await self.recovery_manager.update_relay_preferences()
-
-    async def _validate_relay_assignments(self) -> None:
-        """Validate and update relay assignments for NAT-blocked peers.
-
-        Jan 2026: Delegated to RecoveryManager (Phase 12 decomposition).
-        """
-        await self.recovery_manager.validate_relay_assignments()
+    # NOTE: _validate_relay_assignments() removed Jan 28, 2026 (~6 LOC)
+    # Use self.recovery_manager.validate_relay_assignments() directly.
 
     # NOTE: _select_best_relay() inlined at call site (Jan 2026 Phase 2)
 
-    def _is_valid_relay(self, peer: "NodeInfo") -> bool:
-        """Check if a peer is a valid relay candidate.
+    # NOTE: _is_valid_relay() removed Jan 28, 2026 (~6 LOC)
+    # Use self.recovery_manager._is_valid_relay() directly.
 
-        Jan 2026: Delegated to RecoveryManager (Phase 12 decomposition).
-        """
-        return self.recovery_manager._is_valid_relay(peer)
-
-    def _get_configured_relays(self, peer_id: str) -> list[str]:
-        """Get configured relay nodes for a peer from distributed_hosts.yaml.
-
-        Jan 2026: Delegated to RecoveryManager (Phase 12 decomposition).
-        """
-        return self.recovery_manager._get_configured_relays(peer_id)
+    # NOTE: _get_configured_relays() removed Jan 28, 2026 (~6 LOC)
+    # Use self.recovery_manager._get_configured_relays() directly.
 
     # NOTE: _manifest_collection_loop removed Dec 27, 2025
     # Now handled by ManifestCollectionLoop via LoopManager
@@ -12660,19 +12581,11 @@ print(json.dumps({{
             counts[key] = counts.get(key, 0) + 1
         return {k for k, v in counts.items() if v > 1}
 
-    async def _probe_nat_blocked_peer(self, peer: NodeInfo) -> bool:
-        """Probe a NAT-blocked peer to check if it's now directly reachable.
+    # NOTE: _probe_nat_blocked_peer() removed Jan 28, 2026 (~6 LOC)
+    # Use self.recovery_manager.probe_nat_blocked_peer() directly.
 
-        Jan 2026: Delegated to RecoveryManager (Phase 12 decomposition).
-        """
-        return await self.recovery_manager.probe_nat_blocked_peer(peer)
-
-    async def _sweep_nat_recovery(self) -> int:
-        """Periodically probe NAT-blocked peers to check if they've become reachable.
-
-        Jan 2026: Delegated to RecoveryManager (Phase 12 decomposition).
-        """
-        return await self.recovery_manager.sweep_nat_recovery()
+    # NOTE: _sweep_nat_recovery() removed Jan 28, 2026 (~6 LOC)
+    # Use self.recovery_manager.sweep_nat_recovery() directly.
 
     # NOTE: _compute_connectivity_score() inlined at call site (Jan 2026 Phase 2)
 
@@ -14812,19 +14725,14 @@ print(json.dumps({{
     # (service restart) to maintain cluster health without manual intervention.
     # =========================================================================
 
-    async def _check_node_recovery(self):
-        """Jan 2026: Delegated to RecoveryManager (Phase 12 decomposition)."""
-        await self.recovery_manager.check_node_recovery()
+    # NOTE: _check_node_recovery() removed Jan 28, 2026 (~3 LOC)
+    # Use self.recovery_manager.check_node_recovery() directly.
 
-    async def _attempt_node_recovery(self, node_id: str, peer) -> bool:
-        """Jan 2026: Delegated to RecoveryManager (Phase 12 decomposition)."""
-        return await self.recovery_manager.attempt_node_recovery(node_id, peer)
+    # NOTE: _attempt_node_recovery() removed Jan 28, 2026 (~3 LOC)
+    # Use self.recovery_manager.attempt_node_recovery() directly.
 
-    def _get_node_recovery_metrics(self) -> dict:
-        """Jan 2026: Delegated to RecoveryManager (Phase 12 decomposition)."""
-        from dataclasses import asdict
-        metrics = self.recovery_manager.get_node_recovery_metrics()
-        return asdict(metrics)
+    # NOTE: _get_node_recovery_metrics() removed Jan 28, 2026 (~5 LOC)
+    # Use self.recovery_manager.get_node_recovery_metrics() directly.
 
     # =========================================================================
     # STABILITY CONTROLLER CALLBACKS (Jan 2026 - Self-Healing Architecture)
@@ -15964,36 +15872,20 @@ print(json.dumps({{
 
     # Jan 27, 2026: Phase 17B - Removed _init_distributed_tournament_scheduling (unused delegation wrapper)
 
-    def _get_tournament_gossip_state(self) -> dict:
-        """Get tournament state for gossip propagation.
+    # NOTE: _get_tournament_gossip_state() removed Jan 28, 2026 (~5 LOC)
+    # Use self.tournament_manager.get_tournament_gossip_state() directly.
 
-        Jan 2026: Delegated to TournamentManager (Phase 11 decomposition).
-        """
-        return self.tournament_manager.get_tournament_gossip_state()
+    # NOTE: _process_tournament_gossip() removed Jan 28, 2026 (~5 LOC)
+    # Use self.tournament_manager.process_tournament_gossip() directly.
 
-    def _process_tournament_gossip(self, node_id: str, tournament_state: dict):
-        """Process tournament info received via gossip.
-
-        Jan 2026: Delegated to TournamentManager (Phase 11 decomposition).
-        """
-        self.tournament_manager.process_tournament_gossip(node_id, tournament_state)
-
-    def _check_tournament_consensus(self):
-        """Check if any tournament proposals have reached consensus.
-
-        Jan 2026: Delegated to TournamentManager (Phase 11 decomposition).
-        """
-        self.tournament_manager.check_tournament_consensus()
+    # NOTE: _check_tournament_consensus() removed Jan 28, 2026 (~5 LOC)
+    # Use self.tournament_manager.check_tournament_consensus() directly.
 
     # NOTE: _start_tournament_from_proposal removed Jan 28, 2026 (dead code)
     # Use self.tournament_manager.start_tournament_from_proposal() directly.
 
-    def _get_distributed_tournament_summary(self) -> dict:
-        """Get summary of distributed tournament scheduling for status endpoint.
-
-        Jan 2026: Delegated to TournamentManager (Phase 11 decomposition).
-        """
-        return self.tournament_manager.get_distributed_tournament_summary()
+    # NOTE: _get_distributed_tournament_summary() removed Jan 28, 2026 (~5 LOC)
+    # Use self.tournament_manager.get_distributed_tournament_summary() directly.
 
     async def _start_monitoring_if_leader(self):
         """Start Prometheus/Grafana when we become leader (P2P monitoring resilience)."""
@@ -16231,16 +16123,19 @@ print(json.dumps({{
                 await self._consolidate_selfplay_data()
 
                 # Local stuck job detection: each node monitors its own processes
-                await self._check_local_stuck_jobs()
+                # Jan 28, 2026: Uses job_lifecycle_manager directly
+                await self.job_lifecycle_manager.check_local_stuck_jobs()
 
                 # Local resource cleanup: handle disk/memory pressure independently
-                await self._local_resource_cleanup()
+                # Jan 28, 2026: Uses job_coordination_manager directly
+                await self.job_coordination_manager.local_resource_cleanup()
 
                 # Local job management: start/stop jobs based on node capacity
                 await self._manage_local_jobs_decentralized()
 
                 # Local GPU auto-scaling: optimize GPU utilization independently
-                await self._local_gpu_auto_scale()
+                # Jan 28, 2026: Uses job_coordination_manager directly
+                await self.job_coordination_manager.local_gpu_auto_scale()
 
                 # Leaderless training fallback: trigger local training if no leader for too long
                 await self._check_local_training_fallback()
@@ -16279,42 +16174,31 @@ print(json.dumps({{
                     # Phase 5: Check improvement cycles for automated training
                     await self._check_improvement_cycles()
                     # Cluster-wide stuck job detection (remote nodes)
-                    await self._check_and_kill_stuck_jobs()
+                    # Jan 28, 2026: Uses job_lifecycle_manager directly
+                    await self.job_lifecycle_manager.check_and_kill_stuck_jobs()
                     # Work queue rebalancing: assign queued work to idle nodes
                     await self._auto_rebalance_from_work_queue()
                     # Self-healing: auto-scale GPU utilization toward 60-80% target
                     await self._auto_scale_gpu_utilization()
                     # Self-healing: probe NAT-blocked peers to check if they've become reachable
-                    await self._sweep_nat_recovery()
+                    # Jan 28, 2026: Uses recovery_manager directly
+                    await self.recovery_manager.sweep_nat_recovery()
                     # Self-healing: detect and recover stuck nodes via SSH restart
-                    await self._check_node_recovery()
+                    # Jan 28, 2026: Uses recovery_manager directly
+                    await self.recovery_manager.check_node_recovery()
             except Exception as e:  # noqa: BLE001
                 logger.info(f"Job management error: {e}")
 
             await asyncio.sleep(JOB_CHECK_INTERVAL)
 
-    async def _check_and_kill_stuck_jobs(self) -> int:
-        """Detect and terminate stuck training/selfplay jobs.
+    # NOTE: _check_and_kill_stuck_jobs() removed Jan 28, 2026 (~5 LOC)
+    # Use self.job_lifecycle_manager.check_and_kill_stuck_jobs() directly.
 
-        Jan 2026: Delegated to JobLifecycleManager.
-        """
-        return await self.job_lifecycle_manager.check_and_kill_stuck_jobs()
+    # NOTE: _check_local_stuck_jobs() removed Jan 28, 2026 (~5 LOC)
+    # Use self.job_lifecycle_manager.check_local_stuck_jobs() directly.
 
-    async def _check_local_stuck_jobs(self) -> int:
-        """DECENTRALIZED: Detect and kill stuck processes on THIS node only.
-
-        Jan 2026: Delegated to JobLifecycleManager.
-        """
-        return await self.job_lifecycle_manager.check_local_stuck_jobs()
-
-    async def _remote_kill_stuck_job(self, target_node: str, job_id: str, job_type: str) -> bool:
-        """Send kill command to remote node for stuck job.
-
-        Jan 2026: Delegated to JobLifecycleManager.
-        """
-        return await self.job_lifecycle_manager.remote_kill_stuck_job(
-            target_node, job_id, job_type
-        )
+    # NOTE: _remote_kill_stuck_job() removed Jan 28, 2026 (~7 LOC)
+    # Use self.job_lifecycle_manager.remote_kill_stuck_job() directly.
 
     async def _manage_local_jobs_decentralized(self) -> int:
         """DECENTRALIZED: Each node manages its own job count based on gossip state.
@@ -16518,19 +16402,11 @@ print(json.dumps({{
             logger.info(f"LOCAL job management: {changes} change(s)")
         return changes
 
-    async def _local_gpu_auto_scale(self) -> int:
-        """DECENTRALIZED: Each GPU node manages its own GPU utilization.
+    # NOTE: _local_gpu_auto_scale() removed Jan 28, 2026 (~5 LOC)
+    # Use self.job_coordination_manager.local_gpu_auto_scale() directly.
 
-        Jan 28, 2026: Phase 18A - Delegates to JobCoordinationManager.
-        """
-        return await self.job_coordination_manager.local_gpu_auto_scale()
-
-    async def _local_resource_cleanup(self):
-        """DECENTRALIZED: Each node handles its own resource pressure.
-
-        Jan 27, 2026: Phase 16B - Delegates to JobCoordinationManager.
-        """
-        await self.job_coordination_manager.local_resource_cleanup()
+    # NOTE: _local_resource_cleanup() removed Jan 28, 2026 (~5 LOC)
+    # Use self.job_coordination_manager.local_resource_cleanup() directly.
 
     # Dec 2025: Job/selfplay methods delegated to job_manager and selfplay_scheduler
 
@@ -16640,8 +16516,8 @@ print(json.dumps({{
 
             for _ in range(new_jobs):
                 try:
-                    # Schedule selfplay job (type selected by _schedule_diverse_selfplay_on_node)
-                    job = await self._schedule_diverse_selfplay_on_node(node_id)
+                    # Schedule selfplay job (Jan 28, 2026: uses job_coordination_manager directly)
+                    job = await self.job_coordination_manager.schedule_diverse_selfplay_on_node(node_id)
                     if job:
                         started += 1
                 except Exception as e:  # noqa: BLE001
@@ -16765,8 +16641,8 @@ print(json.dumps({{
                 f"assigning {work_type_str} work ({work_id})"
             )
 
-            # Dispatch work to the node
-            success = await self._dispatch_queued_work(node_info["peer"], work_item)
+            # Dispatch work to the node (Jan 28, 2026: uses job_coordination_manager directly)
+            success = await self.job_coordination_manager.dispatch_queued_work(node_info["peer"], work_item)
             if success:
                 # Mark work as started using distributed method for Raft consistency
                 self.start_work_distributed(work_id)
@@ -16784,22 +16660,13 @@ print(json.dumps({{
 
         return dispatched
 
-    async def _dispatch_queued_work(self, peer: NodeInfo, work_item: dict) -> bool:
-        """Dispatch a work queue item to a specific node.
+    # NOTE: _dispatch_queued_work() removed Jan 28, 2026 (~5 LOC)
+    # Use self.job_coordination_manager.dispatch_queued_work() directly.
 
-        Jan 27, 2026: Phase 16B - Delegates to JobCoordinationManager.
-        """
-        return await self.job_coordination_manager.dispatch_queued_work(peer, work_item)
+    # NOTE: _schedule_diverse_selfplay_on_node() removed Jan 28, 2026 (~5 LOC)
+    # Use self.job_coordination_manager.schedule_diverse_selfplay_on_node() directly.
 
-    async def _schedule_diverse_selfplay_on_node(self, node_id: str) -> dict | None:
-        """Schedule a diverse selfplay job on a specific node.
-
-        Jan 27, 2026: Phase 16C - Delegates to JobCoordinationManager.
-        """
-        return await self.job_coordination_manager.schedule_diverse_selfplay_on_node(node_id)
-
-    # Backward compatibility alias (GPU selfplay now redirects to diverse/hybrid)
-    _schedule_gpu_selfplay_on_node = _schedule_diverse_selfplay_on_node
+    # NOTE: _schedule_gpu_selfplay_on_node alias removed Jan 28, 2026 (used same impl)
 
     # Dec 2025: Selfplay target methods delegated to selfplay_scheduler
 
@@ -17247,12 +17114,8 @@ print(json.dumps({{
                             engine_mode=config["engine_mode"],
                         )
 
-    def _emergency_memory_cleanup(self) -> None:
-        """Emergency memory cleanup when memory is critical.
-
-        Jan 2026: Delegated to MemoryDiskManager (Phase 10 decomposition).
-        """
-        self.memory_disk_manager.emergency_memory_cleanup()
+    # NOTE: _emergency_memory_cleanup() removed Jan 28, 2026 (~5 LOC)
+    # Use self.memory_disk_manager.emergency_memory_cleanup() directly (no callers found).
 
     async def _cleanup_local_disk(self):
         """Clean up disk space on local node.
@@ -17672,9 +17535,11 @@ print(json.dumps({{
                 })
 
                 # Monitor GPU selfplay and trigger CPU validation when complete
-                asyncio.create_task(self._monitor_gpu_selfplay_and_validate(
-                    job_id, proc, output_dir, board_type, num_players
-                ))
+                # Jan 28, 2026: Uses job_coordination_manager directly
+                if self.job_coordination_manager:
+                    asyncio.create_task(self.job_coordination_manager.monitor_gpu_selfplay_and_validate(
+                        job_id, proc, output_dir, board_type, num_players
+                    ))
 
                 return job
 
@@ -19011,14 +18876,18 @@ print(json.dumps({{
 
         # Jan 22, 2026: Periodic cluster health snapshots for Phase 2 P2P stability instrumentation
         # Logs detailed peer counts, voter health, and election state every 60 seconds
+        # Jan 28, 2026: Uses health_metrics_manager directly
         tasks.append(self._create_safe_task(
-            self._cluster_health_snapshot_loop(), "cluster_health_snapshot", factory=self._cluster_health_snapshot_loop
+            self.health_metrics_manager.cluster_health_snapshot_loop(), "cluster_health_snapshot",
+            factory=self.health_metrics_manager.cluster_health_snapshot_loop
         ))
 
         # Jan 23, 2026: Event loop latency monitor for diagnosing HTTP unresponsiveness
         # Detects when synchronous operations block the event loop, causing health checks to fail
+        # Jan 28, 2026: Uses health_metrics_manager directly
         tasks.append(self._create_safe_task(
-            self._event_loop_latency_monitor(), "event_loop_monitor", factory=self._event_loop_latency_monitor
+            self.health_metrics_manager.event_loop_latency_monitor(), "event_loop_monitor",
+            factory=self.health_metrics_manager.event_loop_latency_monitor
         ))
 
         # Dec 2025: 11 loops extracted to LoopManager - see scripts/p2p/loops/

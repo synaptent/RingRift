@@ -246,6 +246,8 @@ class WorkDistributor:
             "games": games,
             "board_type": board,
             "num_players": num_players,
+            # Jan 28, 2026: Gauntlet/evaluation requires GPU - prevents coordinator from claiming
+            "requires_gpu": config.require_gpu if config.require_gpu else True,
         }
 
         item = _WorkItem(

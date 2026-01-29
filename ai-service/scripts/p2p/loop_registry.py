@@ -136,6 +136,7 @@ def register_all_loops(
         loops_registered += _register_autonomous_queue_population(orchestrator, manager, loops_failed)
         loops_registered += _register_http_server_health(orchestrator, manager, loops_failed)
         loops_registered += _register_comprehensive_evaluation(orchestrator, manager, loops_failed)
+        loops_registered += _register_evaluation_worker(orchestrator, manager, loops_failed)
         loops_registered += _register_tournament_data_pipeline(orchestrator, manager, loops_failed)
         loops_registered += _register_circuit_breaker_decay(orchestrator, manager, loops_failed)
         loops_registered += _register_voter_config_sync(orchestrator, manager, loops_failed)
@@ -1753,6 +1754,113 @@ def _register_comprehensive_evaluation(
     except (ImportError, TypeError) as e:
         logger.debug(f"ComprehensiveEvaluationLoop: not available: {e}")
         failed.append("ComprehensiveEvaluationLoop")
+        return 0
+
+
+def _register_evaluation_worker(
+    orchestrator: "P2POrchestrator",
+    manager: "LoopManager",
+    failed: list[str],
+) -> int:
+    """Register EvaluationWorkerLoop for GPU nodes to claim gauntlet jobs.
+
+    January 28, 2026: Added to fix gauntlet job claiming.
+    Only runs on nodes with gauntlet_enabled=True (i.e., not coordinator).
+    Claims evaluation/gauntlet jobs via /work/claim_evaluation endpoint.
+    """
+    try:
+        from app.config.env import env
+
+        # Skip on coordinator nodes - they dispatch but don't execute
+        if not env.gauntlet_enabled:
+            logger.debug("[LoopRegistry] EvaluationWorkerLoop: skipped (gauntlet_enabled=False)")
+            return 0
+
+        from scripts.p2p.loops import (
+            EvaluationWorkerLoop,
+            EvaluationWorkerConfig,
+        )
+
+        async def claim_evaluation_callback(
+            node_id: str, capabilities: list[str] | None
+        ) -> dict[str, Any] | None:
+            """Claim evaluation work from leader via HTTP."""
+            leader_url = orchestrator._get_leader_base_url()
+            if not leader_url:
+                return None
+            caps_str = ",".join(capabilities) if capabilities else "gpu,nn,nnue"
+            url = f"{leader_url}/work/claim_evaluation?node_id={node_id}&capabilities={caps_str}"
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=ClientTimeout(total=30)) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            if data.get("status") == "claimed":
+                                return data.get("job")
+                        return None
+            except Exception as e:
+                logger.debug(f"[EvaluationWorkerLoop] Claim error: {e}")
+                return None
+
+        async def report_result_callback(job_id: str, results: dict[str, Any]) -> bool:
+            """Report evaluation result to leader."""
+            leader_url = orchestrator._get_leader_base_url()
+            if not leader_url:
+                return False
+            url = f"{leader_url}/evaluation/result"
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        url,
+                        json={"job_id": job_id, "results": results},
+                        timeout=ClientTimeout(total=30),
+                    ) as resp:
+                        return resp.status in (200, 201, 204)
+            except Exception as e:
+                logger.debug(f"[EvaluationWorkerLoop] Report error: {e}")
+                return False
+
+        async def report_failure_callback(job_id: str, error: str) -> bool:
+            """Report evaluation failure to leader."""
+            leader_url = orchestrator._get_leader_base_url()
+            if not leader_url:
+                return False
+            url = f"{leader_url}/evaluation/failure"
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        url,
+                        json={"job_id": job_id, "error": error},
+                        timeout=ClientTimeout(total=30),
+                    ) as resp:
+                        return resp.status in (200, 201, 204)
+            except Exception as e:
+                logger.debug(f"[EvaluationWorkerLoop] Failure report error: {e}")
+                return False
+
+        eval_worker = EvaluationWorkerLoop(
+            node_id=orchestrator.node_id,
+            config=EvaluationWorkerConfig(
+                interval=30.0,
+                claim_timeout=30.0,
+                evaluation_timeout=3600.0,
+                model_sync_timeout=300.0,
+                capabilities=["gpu", "nn", "nnue", "gauntlet"],
+            ),
+            claim_evaluation_callback=claim_evaluation_callback,
+            report_result_callback=report_result_callback,
+            report_failure_callback=report_failure_callback,
+        )
+        manager.register(eval_worker)
+        logger.info("[LoopRegistry] EvaluationWorkerLoop registered")
+        return 1
+    except ImportError as e:
+        logger.debug(f"EvaluationWorkerLoop: import failed: {e}")
+        failed.append("EvaluationWorkerLoop")
+        return 0
+    except Exception as e:
+        logger.debug(f"EvaluationWorkerLoop: not available: {e}")
+        failed.append("EvaluationWorkerLoop")
         return 0
 
 
