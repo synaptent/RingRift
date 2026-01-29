@@ -191,7 +191,7 @@ def _register_queue_populator(
         manager.register(queue_populator)
         orchestrator._queue_populator_loop = queue_populator
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"QueuePopulatorLoop: not available: {e}")
         failed.append("QueuePopulatorLoop")
         return 0
@@ -215,7 +215,7 @@ def _register_elo_sync(
             manager.register(elo_sync)
             return 1
         return 0
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"EloSyncLoop: not available: {e}")
         failed.append("EloSyncLoop")
         return 0
@@ -238,7 +238,7 @@ def _register_job_reaper(
         )
         manager.register(job_reaper)
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"JobReaperLoop: not available: {e}")
         failed.append("JobReaperLoop")
         return 0
@@ -274,7 +274,7 @@ def _register_orphan_detection(
         manager.register(orphan_detection)
         logger.info("[LoopRegistry] OrphanProcessDetectionLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"OrphanProcessDetectionLoop: not available: {e}")
         failed.append("OrphanProcessDetectionLoop")
         return 0
@@ -299,7 +299,7 @@ def _register_idle_detection(
         )
         manager.register(idle_detection)
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"IdleDetectionLoop: not available: {e}")
         failed.append("IdleDetectionLoop")
         return 0
@@ -329,7 +329,7 @@ def _register_spawn_verification(
             logger.info("[LoopRegistry] SpawnVerificationLoop enabled")
             return 1
         return 0
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"SpawnVerificationLoop: not available: {e}")
         failed.append("SpawnVerificationLoop")
         return 0
@@ -355,7 +355,7 @@ def _register_predictive_scaling(
         manager.register(predictive_scaling)
         logger.info("[LoopRegistry] PredictiveScalingLoop enabled")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"PredictiveScalingLoop: not available: {e}")
         failed.append("PredictiveScalingLoop")
         return 0
@@ -381,7 +381,7 @@ def _register_job_reassignment(
             logger.info("[LoopRegistry] JobReassignmentLoop enabled")
             return 1
         return 0
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"JobReassignmentLoop: not available: {e}")
         failed.append("JobReassignmentLoop")
         return 0
@@ -419,7 +419,7 @@ def _register_auto_scaling(
         manager.register(auto_scaling)
         logger.info("[LoopRegistry] AutoScalingLoop enabled")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"AutoScalingLoop: not available: {e}")
         orchestrator._scale_adapter = None
         failed.append("AutoScalingLoop")
@@ -447,7 +447,7 @@ def _register_work_queue_maintenance(
         )
         manager.register(work_queue_maint)
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"WorkQueueMaintenanceLoop: not available: {e}")
         failed.append("WorkQueueMaintenanceLoop")
         return 0
@@ -499,7 +499,7 @@ def _register_manifest_collection(
         )
         manager.register(manifest_collection)
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"ManifestCollectionLoop: not available: {e}")
         failed.append("ManifestCollectionLoop")
         return 0
@@ -552,7 +552,7 @@ def _register_data_management(
         )
         manager.register(data_management)
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"DataManagementLoop: not available: {e}")
         failed.append("DataManagementLoop")
         return 0
@@ -613,7 +613,7 @@ def _register_model_sync(
         )
         manager.register(model_sync)
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"ModelSyncLoop: not available: {e}")
         failed.append("ModelSyncLoop")
         return 0
@@ -697,7 +697,7 @@ def _register_validation(
         )
         manager.register(validation)
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"ValidationLoop: not available: {e}")
         failed.append("ValidationLoop")
         return 0
@@ -745,7 +745,7 @@ def _register_tailscale_peer_discovery(
         manager.register(ts_peer_discovery)
         logger.info("[LoopRegistry] TailscalePeerDiscoveryLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.warning(f"TailscalePeerDiscoveryLoop: not available: {e}")
         failed.append("TailscalePeerDiscoveryLoop")
         return 0
@@ -979,7 +979,7 @@ def _register_worker_pull(
         manager.register(worker_pull)
         logger.info("[LoopRegistry] WorkerPullLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.error(f"[LoopRegistry] WorkerPullLoop registration FAILED: {e}")
         failed.append("WorkerPullLoop")
         return 0
@@ -1042,7 +1042,7 @@ def _register_follower_discovery(
         )
         manager.register(follower_discovery)
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.warning(f"FollowerDiscoveryLoop: not available: {e}")
         failed.append("FollowerDiscoveryLoop")
         return 0
@@ -1075,7 +1075,7 @@ def _register_self_healing(
         )
         manager.register(self_healing)
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"SelfHealingLoop: not available: {e}")
         failed.append("SelfHealingLoop")
         return 0
@@ -1103,7 +1103,7 @@ def _register_remote_p2p_recovery(
         manager.register(remote_recovery)
         logger.info(f"[LoopRegistry] RemoteP2PRecoveryLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"RemoteP2PRecoveryLoop: not available: {e}")
         failed.append("RemoteP2PRecoveryLoop")
         return 0
@@ -1121,7 +1121,7 @@ def _register_leader_probe(
         manager.register(leader_probe)
         logger.info("[LoopRegistry] LeaderProbeLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"LeaderProbeLoop: not available: {e}")
         failed.append("LeaderProbeLoop")
         return 0
@@ -1139,7 +1139,7 @@ def _register_leader_maintenance(
         manager.register(leader_maintenance)
         logger.info("[LoopRegistry] LeaderMaintenanceLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"LeaderMaintenanceLoop: not available: {e}")
         failed.append("LeaderMaintenanceLoop")
         return 0
@@ -1207,7 +1207,7 @@ def _register_relay_health(
         manager.register(relay_health)
         logger.info("[LoopRegistry] RelayHealthLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"RelayHealthLoop: not available: {e}")
         failed.append("RelayHealthLoop")
         return 0
@@ -1260,7 +1260,7 @@ def _register_predictive_monitoring(
         )
         manager.register(predictive_monitoring)
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"PredictiveMonitoringLoop: not available: {e}")
         failed.append("PredictiveMonitoringLoop")
         return 0
@@ -1286,7 +1286,7 @@ def _register_training_sync(
         manager.register(training_sync)
         logger.info("[LoopRegistry] TrainingSyncLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.warning(f"TrainingSyncLoop: not available: {e}")
         failed.append("TrainingSyncLoop")
         return 0
@@ -1332,7 +1332,7 @@ def _register_data_aggregation(
         manager.register(data_aggregation)
         logger.info("[LoopRegistry] DataAggregationLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.warning(f"DataAggregationLoop: not available: {e}")
         failed.append("DataAggregationLoop")
         return 0
@@ -1393,7 +1393,7 @@ def _register_health_aggregation(
         manager.register(health_aggregation)
         logger.info("[LoopRegistry] HealthAggregationLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.warning(f"HealthAggregationLoop: not available: {e}")
         failed.append("HealthAggregationLoop")
         return 0
@@ -1435,7 +1435,7 @@ def _register_ip_discovery(
         manager.register(ip_discovery)
         logger.info("[LoopRegistry] IpDiscoveryLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"IpDiscoveryLoop: not available: {e}")
         failed.append("IpDiscoveryLoop")
         return 0
@@ -1484,7 +1484,7 @@ def _register_tailscale_recovery(
         manager.register(tailscale_recovery)
         logger.info("[LoopRegistry] TailscaleRecoveryLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"TailscaleRecoveryLoop: not available: {e}")
         failed.append("TailscaleRecoveryLoop")
         return 0
@@ -1537,7 +1537,7 @@ def _register_tailscale_keepalive(
             f"(userspace_mode={is_userspace})"
         )
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"TailscaleKeepaliveLoop: not available: {e}")
         failed.append("TailscaleKeepaliveLoop")
         return 0
@@ -1585,7 +1585,7 @@ def _register_cluster_healing(
         manager.register(cluster_healing)
         logger.info("[LoopRegistry] ClusterHealingLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"ClusterHealingLoop: not available: {e}")
         failed.append("ClusterHealingLoop")
         return 0
@@ -1629,7 +1629,7 @@ def _register_udp_discovery(
         manager.register(udp_discovery)
         logger.info("[LoopRegistry] UdpDiscoveryLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"UdpDiscoveryLoop: not available: {e}")
         failed.append("UdpDiscoveryLoop")
         return 0
@@ -1672,7 +1672,7 @@ def _register_split_brain_detection(
         manager.register(split_brain_detection)
         logger.info("[LoopRegistry] SplitBrainDetectionLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"SplitBrainDetectionLoop: not available: {e}")
         failed.append("SplitBrainDetectionLoop")
         return 0
@@ -1695,7 +1695,7 @@ def _register_autonomous_queue_population(
         orchestrator._autonomous_queue_loop = autonomous_queue
         logger.info("[LoopRegistry] AutonomousQueuePopulationLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"AutonomousQueuePopulationLoop: not available: {e}")
         orchestrator._autonomous_queue_loop = None
         failed.append("AutonomousQueuePopulationLoop")
@@ -1718,7 +1718,7 @@ def _register_http_server_health(
         manager.register(http_health)
         logger.info("[LoopRegistry] HttpServerHealthLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"HttpServerHealthLoop: not available: {e}")
         failed.append("HttpServerHealthLoop")
         return 0
@@ -1751,7 +1751,7 @@ def _register_comprehensive_evaluation(
         manager.register(comp_eval_loop)
         logger.info("[LoopRegistry] ComprehensiveEvaluationLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"ComprehensiveEvaluationLoop: not available: {e}")
         failed.append("ComprehensiveEvaluationLoop")
         return 0
@@ -1888,7 +1888,7 @@ def _register_tournament_data_pipeline(
         manager.register(tournament_pipeline)
         logger.info("[LoopRegistry] TournamentDataPipelineLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"TournamentDataPipelineLoop: not available: {e}")
         failed.append("TournamentDataPipelineLoop")
         return 0
@@ -1918,7 +1918,7 @@ def _register_circuit_breaker_decay(
         orchestrator._cb_decay_loop = cb_decay_loop
         logger.info(f"[LoopRegistry] CircuitBreakerDecayLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"CircuitBreakerDecayLoop: not available: {e}")
         failed.append("CircuitBreakerDecayLoop")
         return 0
@@ -1938,7 +1938,7 @@ def _register_voter_config_sync(
         orchestrator._voter_config_sync_loop = voter_config_sync
         logger.info("[LoopRegistry] VoterConfigSyncLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"VoterConfigSyncLoop: not available: {e}")
         failed.append("VoterConfigSyncLoop")
         return 0
@@ -2048,7 +2048,7 @@ def _register_peer_recovery(
         orchestrator._peer_recovery_loop = peer_recovery
         logger.info("[LoopRegistry] PeerRecoveryLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"PeerRecoveryLoop: not available: {e}")
         failed.append("PeerRecoveryLoop")
         return 0
@@ -2077,7 +2077,7 @@ def _register_git_update(
         orchestrator._git_update_loop = git_update
         logger.info("[LoopRegistry] GitUpdateLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"GitUpdateLoop: not available: {e}")
         failed.append("GitUpdateLoop")
         return 0
@@ -2168,7 +2168,7 @@ def _register_voter_heartbeat(
         orchestrator._voter_heartbeat_loop = voter_heartbeat
         logger.info("[LoopRegistry] VoterHeartbeatLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"VoterHeartbeatLoop: not available: {e}")
         failed.append("VoterHeartbeatLoop")
         return 0
@@ -2238,7 +2238,7 @@ def _register_reconnect_dead_peers(
         orchestrator._reconnect_dead_peers_loop = reconnect_loop
         logger.info("[LoopRegistry] ReconnectDeadPeersLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"ReconnectDeadPeersLoop: not available: {e}")
         failed.append("ReconnectDeadPeersLoop")
         return 0
@@ -2292,7 +2292,7 @@ def _register_swim_membership(
         orchestrator._swim_membership_loop = swim_loop
         logger.info("[LoopRegistry] SwimMembershipLoop registered")
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"SwimMembershipLoop: not available: {e}")
         failed.append("SwimMembershipLoop")
         return 0
