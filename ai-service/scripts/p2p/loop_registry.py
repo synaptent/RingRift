@@ -470,7 +470,7 @@ def _register_nat_management(
         )
         manager.register(nat_management)
         return 1
-    except (ImportError, TypeError) as e:
+    except (ImportError, TypeError, AttributeError) as e:
         logger.debug(f"NATManagementLoop: not available: {e}")
         failed.append("NATManagementLoop")
         return 0
