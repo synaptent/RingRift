@@ -3814,16 +3814,9 @@ class P2POrchestrator(
         """Jan 28, 2026: Delegates to self.leadership."""
         return self.leadership.get_consistency_metrics()
 
-    def _recover_leadership_desync(self) -> bool:
-        """Jan 28, 2026: Delegates to self.leadership."""
-        return self.leadership.recover_leadership_desync()
-
-    def _reconcile_leadership_state(self) -> bool:
-        """Jan 28, 2026: Delegates to self.leadership."""
-        return self.leadership.reconcile_leadership_state()
-
-    # Jan 30, 2026: Removed dead wrappers _broadcast_leadership_claim, _async_broadcast_leader_claim
-    # Callers should use self.leadership.broadcast_leadership_claim() directly
+    # Jan 30, 2026: Removed wrappers _recover_leadership_desync, _reconcile_leadership_state,
+    # _broadcast_leadership_claim, _async_broadcast_leader_claim
+    # Callers now use self.leadership.X() directly
 
     def _get_config_version(self) -> dict:
         """Get config file version info for drift detection.
@@ -3872,13 +3865,8 @@ class P2POrchestrator(
             "searched_paths": [str(p) for p in config_paths],
         }
 
-    def _was_recently_leader(self) -> bool:
-        """Jan 28, 2026: Delegates to self.leadership."""
-        return self.leadership.was_recently_leader()
-
-    def _in_incumbent_grace_period(self) -> bool:
-        """Jan 28, 2026: Delegates to self.leadership."""
-        return self.leadership.in_incumbent_grace_period()
+    # Jan 30, 2026: Removed wrappers _was_recently_leader, _in_incumbent_grace_period
+    # Callers now use self.leadership.X() directly
 
     # =========================================================================
     # UNIFIED LEADERSHIP STATE MACHINE (ULSM) - Jan 2026
@@ -10358,7 +10346,7 @@ print(json.dumps({{
                 # Jan 20, 2026: Check for and fix leadership state desync every heartbeat
                 # This recovers from gossip race conditions where leader_id/role diverge
                 try:
-                    if self._recover_leadership_desync():
+                    if self.leadership.recover_leadership_desync():
                         logger.info("[HeartbeatLoop] Recovered from leadership desync")
                 except Exception as e:
                     logger.debug(f"[HeartbeatLoop] Desync check failed: {e}")
@@ -10370,7 +10358,7 @@ print(json.dumps({{
                 if now - last_reconcile >= 30.0:
                     self._last_leadership_reconcile = now
                     try:
-                        if self._reconcile_leadership_state():
+                        if self.leadership.reconcile_leadership_state():
                             logger.info("[HeartbeatLoop] Reconciled leadership state with gossip consensus")
                     except Exception as e:
                         logger.debug(f"[HeartbeatLoop] Leadership reconciliation failed: {e}")
@@ -11230,7 +11218,7 @@ print(json.dumps({{
         # If we recently were the leader, try to reclaim immediately.
         # If we're not the recent leader, check if any peer was and give them priority.
         # =========================================================================
-        if self._was_recently_leader() and self._in_incumbent_grace_period():
+        if self.leadership.was_recently_leader() and self.leadership.in_incumbent_grace_period():
             # We recently stepped down - try to reclaim leadership immediately
             logger.info(
                 f"Incumbent advantage: attempting immediate leadership reclaim "
