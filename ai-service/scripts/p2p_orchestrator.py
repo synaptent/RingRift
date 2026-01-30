@@ -3822,13 +3822,8 @@ class P2POrchestrator(
         """Jan 28, 2026: Delegates to self.leadership."""
         return self.leadership.reconcile_leadership_state()
 
-    def _broadcast_leadership_claim(self) -> None:
-        """Jan 28, 2026: Delegates to self.leadership."""
-        self.leadership.broadcast_leadership_claim()
-
-    async def _async_broadcast_leader_claim(self) -> None:
-        """Jan 28, 2026: Delegates to self.leadership."""
-        await self.leadership.async_broadcast_leader_claim()
+    # Jan 30, 2026: Removed dead wrappers _broadcast_leadership_claim, _async_broadcast_leader_claim
+    # Callers should use self.leadership.broadcast_leadership_claim() directly
 
     def _get_config_version(self) -> dict:
         """Get config file version info for drift detection.
