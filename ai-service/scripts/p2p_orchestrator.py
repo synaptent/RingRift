@@ -4659,99 +4659,16 @@ class P2POrchestrator(
     def _enable_partition_local_election(self) -> bool:
         """Enable local leader election for partitioned nodes.
 
-        When a partition is detected and no voters are reachable, this method
-        temporarily adds reachable nodes to the voter set so they can elect a
-        local leader and continue operating autonomously.
-
-        This is a self-healing mechanism for network splits. When connectivity
-        is restored, the partition will merge back with the main cluster.
-
-        Returns:
-            True if local election was enabled
+        Jan 29, 2026: Delegated to LeadershipOrchestrator.enable_partition_local_election().
         """
-        # Don't override env-configured voters
-        if (os.environ.get("RINGRIFT_P2P_VOTERS") or "").strip():
-            return False
-
-        # Check if we have any voters configured
-        voters = list(getattr(self, "voter_node_ids", []) or [])
-
-        # Count how many voters are reachable
-        # Jan 2026: Use lock-free PeerSnapshot for read-only access
-        peers_by_id = self._peer_snapshot.get_snapshot()
-        reachable_voters = 0
-        for voter_id in voters:
-            if voter_id == self.node_id:
-                reachable_voters += 1
-                continue
-            peer = peers_by_id.get(voter_id)
-            if peer and peer.is_alive():
-                reachable_voters += 1
-
-        # If we have quorum (simplified: 3 voters), no need for partition election
-        quorum = min(VOTER_MIN_QUORUM, len(voters)) if voters else 1
-        if reachable_voters >= quorum:
-            return False
-
-        # Build local partition voter set from reachable nodes
-        local_voters = [self.node_id]  # Always include self
-        for node_id, peer in peers_by_id.items():
-            if peer.is_alive() and node_id not in local_voters:
-                local_voters.append(node_id)
-
-        if len(local_voters) < 2:
-            # Need at least 2 nodes for meaningful election
-            return False
-
-        # Store original voters for restoration
-        if not hasattr(self, "_original_voters"):
-            self._original_voters = voters.copy()
-            self._partition_election_started = time.time()
-
-        # Enable partition-local election
-        self.voter_node_ids = sorted(local_voters)
-        self.voter_quorum_size = min(VOTER_MIN_QUORUM, len(local_voters))
-        self.voter_config_source = "partition-local"
-        print(
-            f"[P2P] PARTITION: Enabling local election with {len(local_voters)} nodes: "
-            f"{', '.join(local_voters)} (quorum={self.voter_quorum_size})"
-        )
-        return True
+        return self.leadership.enable_partition_local_election()
 
     def _restore_original_voters(self) -> bool:
         """Restore original voter configuration after partition heals.
 
-        Called when connectivity to the main cluster is restored.
-
-        Returns:
-            True if voters were restored
+        Jan 29, 2026: Delegated to LeadershipOrchestrator.restore_original_voters().
         """
-        if not hasattr(self, "_original_voters"):
-            return False
-
-        original = getattr(self, "_original_voters", [])
-        if not original:
-            return False
-
-        # Check if we can reach any original voters
-        # Jan 2026: Use lock-free PeerSnapshot for read-only access
-        peers_by_id = self._peer_snapshot.get_snapshot()
-        for voter_id in original:
-            if voter_id == self.node_id:
-                continue
-            peer = peers_by_id.get(voter_id)
-            if peer and peer.is_alive():
-                # We can reach at least one original voter, restore config
-                self.voter_node_ids = original.copy()
-                # SIMPLIFIED QUORUM: Fixed at 3 voters (or less if fewer voters exist)
-                self.voter_quorum_size = min(VOTER_MIN_QUORUM, len(original))
-                self.voter_config_source = "restored"
-                delattr(self, "_original_voters")
-                if hasattr(self, "_partition_election_started"):
-                    delattr(self, "_partition_election_started")
-                logger.info(f"Partition healed: restored original voters {', '.join(original)}")
-                return True
-        return False
+        return self.leadership.restore_original_voters()
 
     def _get_eligible_voters(self) -> list[str]:
         """Get list of nodes eligible to be voters (GPU nodes with good health).
