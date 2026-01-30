@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sqlite3
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from scripts.p2p.orchestrators.base_orchestrator import BaseOrchestrator, HealthCheckResult
@@ -826,3 +828,133 @@ class SyncOrchestrator(BaseOrchestrator):
             if hasattr(p2p, "_record_p2p_sync_result"):
                 p2p._record_p2p_sync_result(best_peer, False)
             p2p.sync_in_progress = False
+
+    # =========================================================================
+    # GPU Selfplay Import
+    # =========================================================================
+
+    def import_gpu_selfplay_sync(self, validated_db: Path, canonical_db: Path) -> int:
+        """Synchronous helper for importing GPU selfplay data to canonical database.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._import_gpu_selfplay_sync().
+
+        This method copies games and moves from a validated selfplay database
+        to the canonical training database, avoiding duplicates.
+
+        Args:
+            validated_db: Path to the source validated selfplay database.
+            canonical_db: Path to the destination canonical database.
+
+        Returns:
+            Number of games imported.
+        """
+        try:
+            from app.coordination.database_utils import safe_db_connection
+        except ImportError:
+            # Fallback context manager if database_utils not available
+            from contextlib import contextmanager
+
+            @contextmanager
+            def safe_db_connection(db_path: Path):
+                conn = sqlite3.connect(str(db_path), timeout=30.0)
+                try:
+                    yield conn
+                finally:
+                    conn.close()
+
+        # Phase 3.4 Dec 29, 2025: Use context managers to prevent connection leaks
+        with safe_db_connection(validated_db) as src_conn, \
+             safe_db_connection(canonical_db) as dst_conn:
+
+            # Ensure destination tables exist
+            dst_conn.execute("""
+                CREATE TABLE IF NOT EXISTS games (
+                    game_id TEXT PRIMARY KEY,
+                    board_type TEXT NOT NULL,
+                    num_players INTEGER NOT NULL,
+                    winner INTEGER,
+                    move_count INTEGER,
+                    game_time_ms INTEGER,
+                    created_at REAL,
+                    source TEXT DEFAULT 'selfplay'
+                )
+            """)
+            dst_conn.execute("""
+                CREATE TABLE IF NOT EXISTS moves (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    game_id TEXT NOT NULL,
+                    move_number INTEGER NOT NULL,
+                    player INTEGER NOT NULL,
+                    move_type TEXT NOT NULL,
+                    from_pos TEXT,
+                    to_pos TEXT,
+                    direction TEXT,
+                    captured_pos TEXT,
+                    state_before TEXT,
+                    policy_probs TEXT,
+                    value_est REAL,
+                    FOREIGN KEY (game_id) REFERENCES games(game_id)
+                )
+            """)
+            dst_conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_moves_game_id ON moves(game_id)
+            """)
+            dst_conn.commit()
+
+            # Check source schema and copy games
+            src_cursor = src_conn.cursor()
+            src_cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            src_tables = {row[0] for row in src_cursor.fetchall()}
+
+            imported = 0
+            if "games" in src_tables:
+                # Get existing game IDs in destination to avoid duplicates
+                dst_cursor = dst_conn.cursor()
+                dst_cursor.execute("SELECT game_id FROM games")
+                existing_ids = {row[0] for row in dst_cursor.fetchall()}
+
+                # Copy games that don't already exist
+                src_cursor.execute("SELECT * FROM games")
+                src_columns = [desc[0] for desc in src_cursor.description]
+
+                for row in src_cursor.fetchall():
+                    game_id_idx = src_columns.index("game_id") if "game_id" in src_columns else 0
+                    game_id = row[game_id_idx]
+
+                    if game_id in existing_ids:
+                        continue
+
+                    # Insert game with proper column mapping
+                    placeholders = ", ".join(["?"] * len(row))
+                    columns = ", ".join(src_columns)
+                    try:
+                        dst_conn.execute(
+                            f"INSERT OR IGNORE INTO games ({columns}) VALUES ({placeholders})",
+                            row
+                        )
+                        imported += 1
+                    except AttributeError:
+                        continue
+
+                # Copy moves for new games
+                if "moves" in src_tables and imported > 0:
+                    src_cursor.execute("SELECT * FROM moves")
+                    move_columns = [desc[0] for desc in src_cursor.description]
+                    move_placeholders = ", ".join(["?"] * len(move_columns))
+                    move_col_str = ", ".join(move_columns)
+
+                    for row in src_cursor.fetchall():
+                        game_id_idx = move_columns.index("game_id") if "game_id" in move_columns else 1
+                        game_id = row[game_id_idx]
+                        if game_id not in existing_ids:
+                            try:
+                                dst_conn.execute(
+                                    f"INSERT OR IGNORE INTO moves ({move_col_str}) VALUES ({move_placeholders})",
+                                    row
+                                )
+                            except AttributeError:
+                                continue
+
+                dst_conn.commit()
+
+        return imported
