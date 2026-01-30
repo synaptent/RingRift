@@ -10559,7 +10559,7 @@ print(json.dumps({{
                 if now - last_probe >= PEER_RECOVERY_RETRY_INTERVAL:
                     self._last_retired_probe = now
                     try:
-                        await self._probe_retired_peers_async()
+                        await self.network.probe_retired_peers_async()
                     except Exception as e:
                         logger.warning(f"Error in retired peer probe: {e}")
 
@@ -10963,134 +10963,8 @@ print(json.dumps({{
         # Delegate to PeerNetworkOrchestrator if available
         return await self.network.check_dead_peers_async()
 
-    async def _probe_retired_peers_async(self) -> None:
-        """Actively probe retired peers to detect recovery.
-
-        Dec 30, 2025: Added to fix cluster connectivity after restart.
-        Retired nodes don't send heartbeats, so we must probe them.
-        This runs periodically (every PEER_RECOVERY_RETRY_INTERVAL) to
-        detect nodes that have come back online after being retired.
-        """
-        # Collect retired peers (excluding self)
-        async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
-            retired = [
-                p for p in self.peers.values()
-                if getattr(p, "retired", False) and p.node_id != self.node_id
-            ]
-
-        if not retired:
-            return
-
-        logger.debug(f"Probing {len(retired)} retired peers for recovery")
-
-        # Use a short timeout for health checks
-        timeout = aiohttp.ClientTimeout(total=5)
-
-        for peer in retired:
-            try:
-                # Try to reach the peer's health endpoint
-                url = f"http://{peer.host}:{peer.port}/health"
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(url) as resp:
-                        if resp.status == 200:
-                            # Node is alive - un-retire it
-                            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
-                                if peer.node_id in self.peers:
-                                    self.peers[peer.node_id].retired = False
-                                    self.peers[peer.node_id].retired_at = 0.0
-                                    self.peers[peer.node_id].last_heartbeat = time.time()
-
-                            logger.info(f"Recovered retired peer via probe: {peer.node_id}")
-
-                            # Jan 21, 2026: Track successful probe for diagnostics
-                            if self._probe_tracker:
-                                try:
-                                    self._probe_tracker.record_probe(
-                                        node_id=peer.node_id,
-                                        success=True,
-                                        latency_ms=None,  # Could measure this
-                                        transport="http",
-                                    )
-                                except Exception:
-                                    pass
-
-                            # Jan 21, 2026: Track state transition for diagnostics
-                            if self._peer_state_tracker:
-                                try:
-                                    from scripts.p2p.diagnostics import PeerState
-                                    self._peer_state_tracker.record_transition(
-                                        node_id=peer.node_id,
-                                        to_state=PeerState.ALIVE,
-                                        reason=None,
-                                        details={"recovery_type": "probe_success"},
-                                    )
-                                except Exception:
-                                    pass
-
-                            # Emit HOST_ONLINE event
-                            caps = []
-                            if hasattr(peer, "gpu_type") and peer.gpu_type:
-                                caps.append(f"gpu:{peer.gpu_type}")
-                            await self._emit_host_online(peer.node_id, caps)
-
-                            # Emit CLUSTER_CAPACITY_CHANGED
-                            async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
-                                alive_count = sum(
-                                    1 for p in self.peers.values()
-                                    if p.is_alive() and not getattr(p, "retired", False)
-                                )
-                                gpu_count = sum(
-                                    1 for p in self.peers.values()
-                                    if p.is_alive() and not getattr(p, "retired", False)
-                                    and getattr(p, "gpu_type", None)
-                                )
-                                training_count = sum(
-                                    1 for p in self.peers.values()
-                                    if p.is_alive() and not getattr(p, "retired", False)
-                                    and getattr(p, "training_enabled", False)
-                                )
-                            asyncio.create_task(self._emit_cluster_capacity_changed(
-                                total_nodes=len(self.peers),
-                                alive_nodes=alive_count,
-                                gpu_nodes=gpu_count,
-                                training_nodes=training_count,
-                                change_type="node_added",
-                                change_details={"node_id": peer.node_id, "reason": "peer_recovered_via_probe"},
-                            ))
-
-            except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
-                # Still unreachable - remain retired
-                logger.debug(f"Retired peer {peer.node_id} still unreachable: {e}")
-
-                # Jan 21, 2026: Track failed probe for diagnostics
-                if self._probe_tracker:
-                    try:
-                        self._probe_tracker.record_probe(
-                            node_id=peer.node_id,
-                            success=False,
-                            latency_ms=None,
-                            transport="http",
-                        )
-                    except Exception:
-                        pass
-
-                # Jan 21, 2026: Track connection failure for diagnostics
-                if self._conn_failure_tracker:
-                    try:
-                        self._conn_failure_tracker.record_failure(
-                            node_id=peer.node_id,
-                            error=e,
-                            transport="http",
-                            host=peer.host,
-                            port=peer.port,
-                        )
-                    except Exception:
-                        pass
-                continue
-            except Exception as e:
-                # Unexpected error - log but don't crash
-                logger.warning(f"Error probing retired peer {peer.node_id}: {e}")
-                continue
+    # Jan 30, 2026: _probe_retired_peers_async() moved to PeerNetworkOrchestrator
+    # Callers now use self.network.probe_retired_peers_async()
 
     # NOTE: _check_dead_peers() sync method removed Jan 27, 2026 - Phase 3.2 cleanup
     # The async version _check_dead_peers_async() is the only active implementation.

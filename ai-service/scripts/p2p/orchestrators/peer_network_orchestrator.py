@@ -21,6 +21,8 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+import aiohttp
+
 from scripts.p2p.orchestrators.base_orchestrator import BaseOrchestrator, HealthCheckResult
 
 if TYPE_CHECKING:
@@ -1550,3 +1552,150 @@ class PeerNetworkOrchestrator(BaseOrchestrator):
             "reliable_peers": [{"peer": p, "score": round(s)} for p, s in scores[:5] if s >= 70],
             "unreliable_peers": [{"peer": p, "score": round(s)} for p, s in scores[-3:] if s < 30],
         }
+
+    # ==========================================================================
+    # RETIRED PEER PROBING (Jan 30, 2026)
+    # ==========================================================================
+    # Actively probe retired peers to detect recovery.
+    # Retired nodes don't send heartbeats, so we must probe them periodically.
+    # ==========================================================================
+
+    async def probe_retired_peers_async(self) -> None:
+        """Actively probe retired peers to detect recovery.
+
+        Jan 30, 2026: Moved from P2POrchestrator._probe_retired_peers_async().
+
+        Dec 30, 2025: Added to fix cluster connectivity after restart.
+        Retired nodes don't send heartbeats, so we must probe them.
+        This runs periodically (every PEER_RECOVERY_RETRY_INTERVAL) to
+        detect nodes that have come back online after being retired.
+        """
+        p2p = self._p2p
+
+        # Import NonBlockingAsyncLockWrapper (may not be available in all contexts)
+        try:
+            from scripts.p2p.non_blocking_lock import NonBlockingAsyncLockWrapper
+        except ImportError:
+            self._log_debug("NonBlockingAsyncLockWrapper not available, skipping probe")
+            return
+
+        # Collect retired peers (excluding self)
+        async with NonBlockingAsyncLockWrapper(p2p.peers_lock, "peers_lock", timeout=5.0):
+            retired = [
+                p for p in p2p.peers.values()
+                if getattr(p, "retired", False) and p.node_id != p2p.node_id
+            ]
+
+        if not retired:
+            return
+
+        logger.debug(f"Probing {len(retired)} retired peers for recovery")
+
+        # Use a short timeout for health checks
+        timeout = aiohttp.ClientTimeout(total=5)
+
+        for peer in retired:
+            try:
+                # Try to reach the peer's health endpoint
+                url = f"http://{peer.host}:{peer.port}/health"
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get(url) as resp:
+                        if resp.status == 200:
+                            # Node is alive - un-retire it
+                            async with NonBlockingAsyncLockWrapper(p2p.peers_lock, "peers_lock", timeout=5.0):
+                                if peer.node_id in p2p.peers:
+                                    p2p.peers[peer.node_id].retired = False
+                                    p2p.peers[peer.node_id].retired_at = 0.0
+                                    p2p.peers[peer.node_id].last_heartbeat = time.time()
+
+                            logger.info(f"Recovered retired peer via probe: {peer.node_id}")
+
+                            # Jan 21, 2026: Track successful probe for diagnostics
+                            if hasattr(p2p, "_probe_tracker") and p2p._probe_tracker:
+                                try:
+                                    p2p._probe_tracker.record_probe(
+                                        node_id=peer.node_id,
+                                        success=True,
+                                        latency_ms=None,  # Could measure this
+                                        transport="http",
+                                    )
+                                except Exception:
+                                    pass
+
+                            # Jan 21, 2026: Track state transition for diagnostics
+                            if hasattr(p2p, "_peer_state_tracker") and p2p._peer_state_tracker:
+                                try:
+                                    from scripts.p2p.diagnostics import PeerState
+                                    p2p._peer_state_tracker.record_transition(
+                                        node_id=peer.node_id,
+                                        to_state=PeerState.ALIVE,
+                                        reason=None,
+                                        details={"recovery_type": "probe_success"},
+                                    )
+                                except Exception:
+                                    pass
+
+                            # Emit HOST_ONLINE event
+                            caps = []
+                            if hasattr(peer, "gpu_type") and peer.gpu_type:
+                                caps.append(f"gpu:{peer.gpu_type}")
+                            await p2p._emit_host_online(peer.node_id, caps)
+
+                            # Emit CLUSTER_CAPACITY_CHANGED
+                            async with NonBlockingAsyncLockWrapper(p2p.peers_lock, "peers_lock", timeout=5.0):
+                                alive_count = sum(
+                                    1 for p in p2p.peers.values()
+                                    if p.is_alive() and not getattr(p, "retired", False)
+                                )
+                                gpu_count = sum(
+                                    1 for p in p2p.peers.values()
+                                    if p.is_alive() and not getattr(p, "retired", False)
+                                    and getattr(p, "gpu_type", None)
+                                )
+                                training_count = sum(
+                                    1 for p in p2p.peers.values()
+                                    if p.is_alive() and not getattr(p, "retired", False)
+                                    and getattr(p, "training_enabled", False)
+                                )
+                            asyncio.create_task(p2p._emit_cluster_capacity_changed(
+                                total_nodes=len(p2p.peers),
+                                alive_nodes=alive_count,
+                                gpu_nodes=gpu_count,
+                                training_nodes=training_count,
+                                change_type="node_added",
+                                change_details={"node_id": peer.node_id, "reason": "peer_recovered_via_probe"},
+                            ))
+
+            except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+                # Still unreachable - remain retired
+                logger.debug(f"Retired peer {peer.node_id} still unreachable: {e}")
+
+                # Jan 21, 2026: Track failed probe for diagnostics
+                if hasattr(p2p, "_probe_tracker") and p2p._probe_tracker:
+                    try:
+                        p2p._probe_tracker.record_probe(
+                            node_id=peer.node_id,
+                            success=False,
+                            latency_ms=None,
+                            transport="http",
+                        )
+                    except Exception:
+                        pass
+
+                # Jan 21, 2026: Track connection failure for diagnostics
+                if hasattr(p2p, "_conn_failure_tracker") and p2p._conn_failure_tracker:
+                    try:
+                        p2p._conn_failure_tracker.record_failure(
+                            node_id=peer.node_id,
+                            error=e,
+                            transport="http",
+                            host=peer.host,
+                            port=peer.port,
+                        )
+                    except Exception:
+                        pass
+                continue
+            except Exception as e:
+                # Unexpected error - log but don't crash
+                logger.warning(f"Error probing retired peer {peer.node_id}: {e}")
+                continue
