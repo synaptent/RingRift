@@ -12644,35 +12644,9 @@ print(json.dumps({{
     def _get_stability_metrics(self) -> dict:
         """Get current stability metrics for effectiveness tracking.
 
-        Returns metrics used to evaluate whether recovery actions helped.
+        Jan 29, 2026: Delegated to MonitoringOrchestrator.get_stability_metrics().
         """
-        alive_count = self._peer_query.alive_count(exclude_self=False).unwrap_or(0)
-        total_count = len(self.peers) + 1  # Include self
-
-        # Calculate stability score (0-100)
-        stability_score = 0.0
-        if total_count > 0:
-            alive_ratio = alive_count / total_count
-            stability_score = alive_ratio * 100
-
-            # Bonus for having a leader
-            if self.leader_id:
-                stability_score += 10
-
-            # Penalty for flapping peers
-            if self._peer_state_tracker:
-                try:
-                    diag = self._peer_state_tracker.get_diagnostics()
-                    flapping_count = len(diag.get("flapping_peers", []))
-                    stability_score -= flapping_count * 5
-                except Exception:
-                    pass
-
-        return {
-            "alive_count": alive_count,
-            "total_count": total_count,
-            "stability_score": max(0, min(100, stability_score)),
-        }
+        return self.monitoring.get_stability_metrics()
 
     async def _action_increase_timeout(
         self, nodes: list[str], symptom: Any

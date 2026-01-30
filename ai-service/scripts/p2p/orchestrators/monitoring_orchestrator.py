@@ -536,3 +536,42 @@ class MonitoringOrchestrator(BaseOrchestrator):
             add_if_new(ip)
 
         return addresses
+
+    def get_stability_metrics(self) -> dict:
+        """Get current stability metrics for effectiveness tracking.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._get_stability_metrics().
+
+        Returns metrics used to evaluate whether recovery actions helped:
+        - alive_count: Number of alive peers
+        - total_count: Total peers in cluster
+        - stability_score: 0-100 score based on alive ratio, leader presence, flapping
+        """
+        p2p = self._p2p
+        alive_count = p2p._peer_query.alive_count(exclude_self=False).unwrap_or(0)
+        total_count = len(p2p.peers) + 1  # Include self
+
+        # Calculate stability score (0-100)
+        stability_score = 0.0
+        if total_count > 0:
+            alive_ratio = alive_count / total_count
+            stability_score = alive_ratio * 100
+
+            # Bonus for having a leader
+            if p2p.leader_id:
+                stability_score += 10
+
+            # Penalty for flapping peers
+            if p2p._peer_state_tracker:
+                try:
+                    diag = p2p._peer_state_tracker.get_diagnostics()
+                    flapping_count = len(diag.get("flapping_peers", []))
+                    stability_score -= flapping_count * 5
+                except Exception:
+                    pass
+
+        return {
+            "alive_count": alive_count,
+            "total_count": total_count,
+            "stability_score": max(0, min(100, stability_score)),
+        }
