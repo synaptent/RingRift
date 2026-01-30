@@ -696,7 +696,7 @@ class MetricsHandlersMixin:
             lines.append("# HELP ringrift_sync_activity_factor Cluster activity factor (lower = more active)")
             lines.append("# TYPE ringrift_sync_activity_factor gauge")
             try:
-                sync_summary = self._get_sync_interval_summary()
+                sync_summary = self.sync.get_sync_interval_summary()
                 lines.append(f'ringrift_sync_interval_data {sync_summary.get("data_interval", 300)}')
                 lines.append(f'ringrift_sync_interval_model {sync_summary.get("model_interval", 180)}')
                 lines.append(f'ringrift_sync_activity_factor {sync_summary.get("activity_factor", 1.0)}')

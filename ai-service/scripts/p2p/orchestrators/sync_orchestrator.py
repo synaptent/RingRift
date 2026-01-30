@@ -22,6 +22,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from scripts.p2p.orchestrators.base_orchestrator import BaseOrchestrator, HealthCheckResult
+from scripts.p2p.constants import (
+    P2P_DATA_SYNC_BASE,
+    P2P_DATA_SYNC_MAX,
+    P2P_DATA_SYNC_MIN,
+    P2P_MODEL_SYNC_BASE,
+    P2P_MODEL_SYNC_MAX,
+    P2P_MODEL_SYNC_MIN,
+    P2P_SYNC_BACKOFF_FACTOR,
+    P2P_SYNC_SPEEDUP_FACTOR,
+    P2P_TRAINING_DB_SYNC_BASE,
+    P2P_TRAINING_DB_SYNC_MAX,
+    P2P_TRAINING_DB_SYNC_MIN,
+)
 
 if TYPE_CHECKING:
     from scripts.p2p_orchestrator import P2POrchestrator
@@ -65,6 +78,9 @@ class SyncOrchestrator(BaseOrchestrator):
         self._last_sync_time: float = 0.0
         self._sync_count: int = 0
         self._sync_errors: int = 0
+
+        # Adaptive sync interval tracking (Jan 30, 2026)
+        self._init_adaptive_sync_intervals()
 
     @property
     def name(self) -> str:
@@ -620,7 +636,7 @@ class SyncOrchestrator(BaseOrchestrator):
 
         # ADAPTIVE INTERVAL: Uses activity-aware interval instead of fixed 5 min
         if hasattr(p2p, "_get_adaptive_sync_interval"):
-            interval = p2p._get_adaptive_sync_interval("data")
+            interval = self.get_adaptive_sync_interval("data")
         else:
             interval = 300  # 5 min default
         last_check = getattr(p2p, "_last_p2p_sync_check", 0)
@@ -798,7 +814,7 @@ class SyncOrchestrator(BaseOrchestrator):
                 if hasattr(p2p, "_record_p2p_sync_result"):
                     p2p._record_p2p_sync_result(best_peer, success)
                 if hasattr(p2p, "_record_sync_result_for_adaptive"):
-                    p2p._record_sync_result_for_adaptive("data", success)  # ADAPTIVE INTERVAL
+                    self.record_sync_result_for_adaptive("data", success)  # ADAPTIVE INTERVAL
 
                 if success:
                     logger.info(f"P2P SYNC: Completed {len(files_to_request)} files from {best_peer}")
@@ -824,7 +840,7 @@ class SyncOrchestrator(BaseOrchestrator):
         except Exception as e:  # noqa: BLE001
             logger.info(f"P2P SYNC: Error: {e}")
             if hasattr(p2p, "_record_sync_result_for_adaptive"):
-                p2p._record_sync_result_for_adaptive("data", False)  # ADAPTIVE: record failure
+                self.record_sync_result_for_adaptive("data", False)  # ADAPTIVE: record failure
             if hasattr(p2p, "_record_p2p_sync_result"):
                 p2p._record_p2p_sync_result(best_peer, False)
             p2p.sync_in_progress = False
@@ -1077,7 +1093,7 @@ class SyncOrchestrator(BaseOrchestrator):
         now = time.time()
 
         # ADAPTIVE INTERVAL: Uses activity-aware interval (faster during training)
-        interval = p2p._get_adaptive_sync_interval("training_db")
+        interval = self.get_adaptive_sync_interval("training_db")
         last_check = getattr(p2p, "_last_p2p_training_db_sync", 0)
         if now - last_check < interval:
             return
@@ -1175,14 +1191,14 @@ class SyncOrchestrator(BaseOrchestrator):
             try:
                 success = await p2p._request_node_sync(job)
                 p2p._record_p2p_sync_result(best_peer, success)
-                p2p._record_sync_result_for_adaptive("training_db", success)
+                self.record_sync_result_for_adaptive("training_db", success)
                 if success:
                     self._log_info(f"TRAINING DB SYNC: Got {len(dbs_to_sync)} training DBs from {best_peer}")
             finally:
                 p2p.sync_in_progress = False
         except Exception as e:
             self._log_info(f"TRAINING DB SYNC: Error: {e}")
-            p2p._record_sync_result_for_adaptive("training_db", False)
+            self.record_sync_result_for_adaptive("training_db", False)
             p2p.sync_in_progress = False
 
     async def p2p_model_sync(self) -> None:
@@ -1204,7 +1220,7 @@ class SyncOrchestrator(BaseOrchestrator):
         now = time.time()
 
         # ADAPTIVE INTERVAL: Uses activity-aware interval (faster during training)
-        interval = p2p._get_adaptive_sync_interval("model")
+        interval = self.get_adaptive_sync_interval("model")
         last_check = getattr(p2p, "_last_p2p_model_sync", 0)
         if now - last_check < interval:
             return
@@ -1278,12 +1294,154 @@ class SyncOrchestrator(BaseOrchestrator):
             try:
                 success = await p2p._request_node_sync(job)
                 p2p._record_p2p_sync_result(best_peer, success)
-                p2p._record_sync_result_for_adaptive("model", success)
+                self.record_sync_result_for_adaptive("model", success)
                 if success:
                     self._log_info(f"MODEL SYNC: Got {len(models_to_sync)} models from {best_peer}")
             finally:
                 p2p.sync_in_progress = False
         except Exception as e:
             self._log_info(f"MODEL SYNC: Error: {e}")
-            p2p._record_sync_result_for_adaptive("model", False)
+            self.record_sync_result_for_adaptive("model", False)
             p2p.sync_in_progress = False
+
+    # ==========================================================================
+    # ADAPTIVE SYNC INTERVALS (Jan 30, 2026)
+    # ==========================================================================
+    # Dynamically adjust sync intervals based on:
+    # - Cluster activity (training = more frequent model sync)
+    # - Success/failure streaks (failures = back off, successes = speed up)
+    # - Data freshness (new data in cluster = more frequent sync)
+    # ==========================================================================
+
+    def _init_adaptive_sync_intervals(self):
+        """Initialize adaptive sync interval tracking."""
+        self._adaptive_intervals = {
+            "data": P2P_DATA_SYNC_BASE,
+            "model": P2P_MODEL_SYNC_BASE,
+            "training_db": P2P_TRAINING_DB_SYNC_BASE,
+        }
+        self._sync_success_streak = {
+            "data": 0,
+            "model": 0,
+            "training_db": 0,
+        }
+        self._sync_failure_streak = {
+            "data": 0,
+            "model": 0,
+            "training_db": 0,
+        }
+        self._last_interval_adjustment = 0
+
+    def get_adaptive_sync_interval(self, sync_type: str) -> float:
+        """Get the current adaptive interval for a sync type.
+
+        ADAPTIVE SYNC INTERVALS: Intervals adjust based on:
+        1. Cluster activity (training = faster sync for models)
+        2. Success rate (failures = back off)
+        3. Base/min/max bounds per sync type
+
+        Args:
+            sync_type: One of "data", "model", "training_db"
+
+        Returns:
+            Current interval in seconds
+        """
+        if not hasattr(self, "_adaptive_intervals"):
+            self._init_adaptive_sync_intervals()
+
+        # Get current interval
+        current = self._adaptive_intervals.get(sync_type, P2P_DATA_SYNC_BASE)
+
+        # Apply activity-based adjustment
+        activity_factor = self.calculate_cluster_activity_factor()
+
+        # Get bounds for this sync type
+        if sync_type == "data":
+            min_interval = P2P_DATA_SYNC_MIN
+            max_interval = P2P_DATA_SYNC_MAX
+        elif sync_type == "model":
+            min_interval = P2P_MODEL_SYNC_MIN
+            max_interval = P2P_MODEL_SYNC_MAX
+        elif sync_type == "training_db":
+            min_interval = P2P_TRAINING_DB_SYNC_MIN
+            max_interval = P2P_TRAINING_DB_SYNC_MAX
+        else:
+            min_interval = 120
+            max_interval = 600
+
+        # Apply activity factor (0.5-1.0 = active cluster, 1.0-2.0 = idle cluster)
+        adjusted = current * activity_factor
+
+        # Clamp to bounds
+        return max(min_interval, min(max_interval, adjusted))
+
+    def record_sync_result_for_adaptive(self, sync_type: str, success: bool):
+        """Record sync result to adjust adaptive intervals.
+
+        ADAPTIVE INTERVAL ADJUSTMENT:
+        - On success: reduce interval (speed up) up to min
+        - On failure: increase interval (back off) up to max
+
+        Args:
+            sync_type: One of "data", "model", "training_db"
+            success: Whether sync succeeded
+        """
+        if not hasattr(self, "_adaptive_intervals"):
+            self._init_adaptive_sync_intervals()
+
+        if success:
+            self._sync_success_streak[sync_type] = self._sync_success_streak.get(sync_type, 0) + 1
+            self._sync_failure_streak[sync_type] = 0
+
+            # After 3 consecutive successes, speed up
+            if self._sync_success_streak[sync_type] >= 3:
+                current = self._adaptive_intervals[sync_type]
+                new_interval = current * P2P_SYNC_SPEEDUP_FACTOR
+
+                # Get min bound
+                if sync_type == "data":
+                    min_interval = P2P_DATA_SYNC_MIN
+                elif sync_type == "model":
+                    min_interval = P2P_MODEL_SYNC_MIN
+                else:
+                    min_interval = P2P_TRAINING_DB_SYNC_MIN
+
+                self._adaptive_intervals[sync_type] = max(min_interval, new_interval)
+                self._sync_success_streak[sync_type] = 0  # Reset streak
+        else:
+            self._sync_failure_streak[sync_type] = self._sync_failure_streak.get(sync_type, 0) + 1
+            self._sync_success_streak[sync_type] = 0
+
+            # On any failure, back off
+            current = self._adaptive_intervals[sync_type]
+            new_interval = current * P2P_SYNC_BACKOFF_FACTOR
+
+            # Get max bound
+            if sync_type == "data":
+                max_interval = P2P_DATA_SYNC_MAX
+            elif sync_type == "model":
+                max_interval = P2P_MODEL_SYNC_MAX
+            else:
+                max_interval = P2P_TRAINING_DB_SYNC_MAX
+
+            self._adaptive_intervals[sync_type] = min(max_interval, new_interval)
+
+    def get_sync_interval_summary(self) -> dict:
+        """Get summary of current adaptive sync intervals for monitoring."""
+        if not hasattr(self, "_adaptive_intervals"):
+            self._init_adaptive_sync_intervals()
+
+        return {
+            "data_interval": round(self.get_adaptive_sync_interval("data")),
+            "model_interval": round(self.get_adaptive_sync_interval("model")),
+            "training_db_interval": round(self.get_adaptive_sync_interval("training_db")),
+            "activity_factor": round(self.calculate_cluster_activity_factor(), 2),
+            "data_streak": {
+                "success": self._sync_success_streak.get("data", 0),
+                "failure": self._sync_failure_streak.get("data", 0),
+            },
+            "model_streak": {
+                "success": self._sync_success_streak.get("model", 0),
+                "failure": self._sync_failure_streak.get("model", 0),
+            },
+        }
