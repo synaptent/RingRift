@@ -478,6 +478,12 @@ class BaseLoop(ABC):
                 name=f"loop_{self.name}",
             )
 
+        # Jan 29, 2026: Yield to event loop immediately after task creation
+        # to allow the task to start before we poll for _running. Without this,
+        # there's a race condition where start_background_async returns None
+        # because _running hasn't been set yet.
+        await asyncio.sleep(0)
+
         # Phase 1.5: Wait for loop to actually start with timeout protection
         start_time = time.time()
         while time.time() - start_time < timeout:
