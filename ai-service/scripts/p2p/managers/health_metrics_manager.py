@@ -629,8 +629,9 @@ class HealthMetricsManager:
         breaker = self._p2p_circuit_breaker.get(peer_id, {"failures": 0, "open_until": 0})
 
         # Record for reputation tracking (if orchestrator available)
-        if self._orchestrator and hasattr(self._orchestrator, "_record_peer_interaction"):
-            self._orchestrator._record_peer_interaction(peer_id, success, "sync")
+        # Jan 30, 2026: Use network orchestrator directly
+        if self._orchestrator and hasattr(self._orchestrator, "network"):
+            self._orchestrator.network.record_peer_interaction(peer_id, success, "sync")
 
         if success:
             breaker["failures"] = 0

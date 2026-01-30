@@ -2148,8 +2148,9 @@ class GossipProtocolMixin(P2PMixinBase):
             local_state["leader_hint"] = self._get_leader_hint()
 
         # PEER REPUTATION: Share peer reliability scores
-        if hasattr(self, "_get_peer_reputation_summary"):
-            local_state["peer_reputation"] = self._get_peer_reputation_summary()
+        # Jan 30, 2026: Use network orchestrator directly
+        if hasattr(self, "network") and self.network:
+            local_state["peer_reputation"] = self.network.get_peer_reputation_summary()
 
         # DISTRIBUTED TOURNAMENT: Share tournament proposals and active tournaments
         # Jan 28, 2026: Uses tournament_manager directly

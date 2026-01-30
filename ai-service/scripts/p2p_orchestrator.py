@@ -12219,16 +12219,8 @@ print(json.dumps({{
     # gossip, and other distributed operations.
     # =========================================================================
 
-    def _record_peer_interaction(self, peer_id: str, success: bool, interaction_type: str = "general"):
-        """Jan 29, 2026: Delegated to PeerNetworkOrchestrator.record_peer_interaction()."""
-        return self.network.record_peer_interaction(peer_id, success, interaction_type)
-
-    # Jan 30, 2026: Removed dead wrapper _get_peer_reputation_score
-    # Callers should use self.network.get_peer_reputation_score() directly
-
-    def _get_peer_reputation_summary(self) -> dict:
-        """Jan 29, 2026: Delegated to PeerNetworkOrchestrator.get_peer_reputation_summary()."""
-        return self.network.get_peer_reputation_summary()
+    # Jan 30, 2026: Removed wrappers _record_peer_interaction, _get_peer_reputation_summary
+    # Callers now use self.network.record_peer_interaction() and self.network.get_peer_reputation_summary() directly
 
     def _get_cluster_peer_reputation(self) -> dict:
         """Aggregate peer reputation from gossip for cluster-wide view."""
@@ -12237,7 +12229,8 @@ print(json.dumps({{
         now = time.time()
 
         # Include our own reputation data
-        local_summary = self._get_peer_reputation_summary()
+        # Jan 30, 2026: Use network orchestrator directly
+        local_summary = self.network.get_peer_reputation_summary()
         for peer_info in local_summary.get("reliable_peers", []):
             peer_id = peer_info["peer"]
             if peer_id not in all_scores:
