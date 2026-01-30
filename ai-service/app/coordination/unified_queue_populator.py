@@ -114,14 +114,24 @@ class QueuePopulatorConfig:
 
     # Minimum queue depth to maintain
     # December 29, 2025: Increased from 50 to 200 for steadier queue state
-    min_queue_depth: int = 200
+    # January 30, 2026: Reduced from 200 to 100 to reduce backlog (2,686 pending)
+    min_queue_depth: int = 100
 
-    # Maximum pending items before stopping generation
+    # Maximum pending items before stopping generation (unused legacy setting)
     max_pending_items: int = 50
+
+    # === Per-Type Pending Limits (January 30, 2026) ===
+    # Prevent backlog accumulation by limiting pending items per work type
+    # These limits are checked before adding new items to prevent runaway queues
+    max_pending_selfplay: int = 500
+    max_pending_training: int = 300
+    max_pending_tournament: int = 200
+    max_pending_hyperparam_sweep: int = 50
 
     # Target queue depth to aim for (queue will fill to this level)
     # December 29, 2025: Added to reduce queue variance from 2,170% to <50%
-    target_queue_depth: int = 300
+    # January 30, 2026: Reduced from 300 to 150 to reduce backlog (2,686 pending)
+    target_queue_depth: int = 150
 
     # Maximum items to add per populate cycle (prevents burst releases)
     # December 29, 2025: Added to prevent queue variance spikes
@@ -791,6 +801,55 @@ class UnifiedQueuePopulator:
         pending = len(status.get("pending", []))
         running = len(status.get("running", []))
         return pending + running
+
+    def get_pending_by_type(self) -> dict[str, int]:
+        """Get pending counts grouped by work type.
+
+        January 30, 2026: Added for per-type limit enforcement to prevent
+        backlog accumulation (e.g., 2,686 pending jobs).
+
+        Returns:
+            Dict mapping work_type to pending count
+        """
+        if self._work_queue is None:
+            return {}
+        try:
+            # Use direct SQL for efficiency
+            db_path = getattr(self._work_queue, "db_path", None)
+            if db_path:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.execute(
+                    "SELECT work_type, COUNT(*) FROM work_items "
+                    "WHERE status = 'pending' GROUP BY work_type"
+                )
+                result = {row[0]: row[1] for row in cursor.fetchall()}
+                conn.close()
+                return result
+            # Fallback to status dict
+            status = self._work_queue.get_queue_status()
+            pending_items = status.get("pending", [])
+            counts: dict[str, int] = {}
+            for item in pending_items:
+                wtype = getattr(item, "work_type", "unknown")
+                counts[wtype] = counts.get(wtype, 0) + 1
+            return counts
+        except Exception as e:
+            logger.debug(f"[QueuePopulator] Failed to get pending by type: {e}")
+            return {}
+
+    def _is_type_over_limit(self, work_type: str, pending_by_type: dict[str, int]) -> bool:
+        """Check if a work type is over its pending limit.
+
+        January 30, 2026: Per-type limits prevent backlog accumulation.
+        """
+        current = pending_by_type.get(work_type, 0)
+        limit = {
+            "selfplay": self.config.max_pending_selfplay,
+            "training": self.config.max_pending_training,
+            "tournament": self.config.max_pending_tournament,
+            "hyperparam_sweep": self.config.max_pending_hyperparam_sweep,
+        }.get(work_type, 100)
+        return current >= limit
 
     def calculate_items_needed(self) -> int:
         """Calculate how many items to add to reach target depth.
@@ -1797,10 +1856,47 @@ class UnifiedQueuePopulator:
         # Get scheduler priorities
         scheduler_priorities = self._get_scheduler_priorities()
 
+        # === January 30, 2026: Per-type limit enforcement ===
+        # Get current pending counts by type to prevent backlog accumulation
+        pending_by_type = self.get_pending_by_type()
+
         # Calculate distribution
         selfplay_count = int(items_needed * self.config.selfplay_ratio)
         training_count = int(items_needed * self.config.training_ratio)
         tournament_count = items_needed - selfplay_count - training_count
+
+        # Reduce counts if over per-type limits
+        pending_selfplay = pending_by_type.get("selfplay", 0)
+        pending_training = pending_by_type.get("training", 0)
+        pending_tournament = pending_by_type.get("tournament", 0)
+
+        if pending_selfplay >= self.config.max_pending_selfplay:
+            logger.info(
+                f"[QueuePopulator] Selfplay over limit ({pending_selfplay}/{self.config.max_pending_selfplay}), skipping"
+            )
+            selfplay_count = 0
+
+        if pending_training >= self.config.max_pending_training:
+            logger.info(
+                f"[QueuePopulator] Training over limit ({pending_training}/{self.config.max_pending_training}), skipping"
+            )
+            training_count = 0
+
+        if pending_tournament >= self.config.max_pending_tournament:
+            logger.info(
+                f"[QueuePopulator] Tournament over limit ({pending_tournament}/{self.config.max_pending_tournament}), skipping"
+            )
+            tournament_count = 0
+
+        # Early exit if all types are over limit
+        if selfplay_count == 0 and training_count == 0 and tournament_count == 0:
+            logger.info(
+                f"[QueuePopulator] All work types over limits: "
+                f"selfplay={pending_selfplay}/{self.config.max_pending_selfplay}, "
+                f"training={pending_training}/{self.config.max_pending_training}, "
+                f"tournament={pending_tournament}/{self.config.max_pending_tournament}"
+            )
+            return 0
 
         # Get unmet targets sorted by priority
         unmet = self.get_unmet_targets()

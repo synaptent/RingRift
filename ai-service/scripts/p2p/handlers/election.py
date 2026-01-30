@@ -472,6 +472,46 @@ class ElectionHandlersMixin(BaseP2PHandler):
             return self.error_response(str(e), status=500)
 
     @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
+    async def handle_election_start(self, request: web.Request) -> web.Response:
+        """Start a new leader election.
+
+        POST /election/start
+        Body (optional): {"reason": "manual"}
+        """
+        try:
+            data = await self.parse_json_body(request) or {}
+            reason = data.get("reason", "manual_http_trigger")
+
+            if getattr(self, "election_in_progress", False):
+                return self.json_response({
+                    "accepted": True,
+                    "started": False,
+                    "reason": "election_already_in_progress",
+                    "node_id": self.node_id,
+                })
+
+            logger.info(f"[Election] Manual election start requested: reason={reason}")
+            asyncio.create_task(self._start_election())
+
+            return self.json_response({
+                "accepted": True,
+                "started": True,
+                "reason": reason,
+                "node_id": self.node_id,
+            })
+        except Exception as e:
+            logger.error(f"[Election] Failed to start election: {e}")
+            return self.error_response(str(e), status=500)
+
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
+    async def handle_election_trigger(self, request: web.Request) -> web.Response:
+        """Trigger election (alias for /election/start).
+
+        POST /election/trigger
+        """
+        return await self.handle_election_start(request)
+
+    @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_election_force_leader(self, request: web.Request) -> web.Response:
         """Force a specific node to become leader (emergency override).
 

@@ -105,6 +105,8 @@ ELECTION_ROUTES = [
     Route("POST", "/election/force_leader", "handle_election_force_leader"),
     Route("POST", "/election/commitment-ack", "handle_commitment_ack"),  # Jan 2026: Two-phase commit
     Route("POST", "/leader_announcement", "handle_leader_announcement"),  # Jan 9, 2026: Fast leader propagation (<2s vs 30s gossip)
+    Route("POST", "/election/start", "handle_election_start"),  # Jan 2026: Manual election trigger
+    Route("POST", "/election/trigger", "handle_election_trigger"),  # Jan 2026: Alias for /election/start
 ]
 
 # ===========================================================================
