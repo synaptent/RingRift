@@ -11131,40 +11131,8 @@ print(json.dumps({{
         return self.network.deduplicate_peers()
 
     def _maybe_adopt_leader_from_peers(self) -> bool:
-        """If we can already see a healthy leader, adopt it and avoid elections."""
-        if self.role == NodeRole.LEADER:
-            return False
-
-        # Jan 12, 2026: Use lock-free PeerSnapshot for read-only access
-        peers = [p for p in self._peer_snapshot.get_snapshot().values() if p.node_id != self.node_id]
-
-        conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers])
-        leaders = [
-            p for p in peers
-            if p.role == NodeRole.LEADER and self._is_leader_eligible(p, conflict_keys)
-        ]
-
-        voter_ids = list(getattr(self, "voter_node_ids", []) or [])
-        if voter_ids:
-            leaders = [p for p in leaders if p.node_id in voter_ids]
-
-        if not leaders:
-            return False
-
-        # If multiple leaders exist (split brain), pick the lexicographically highest
-        # ID (matches bully ordering) to converge.
-        leader = sorted(leaders, key=lambda p: p.node_id)[-1]
-
-        if self.leader_id != leader.node_id:
-            logger.info(f"Adopted existing leader from peers: {leader.node_id}")
-            # Jan 3, 2026 Sprint 13.3: Record election latency for "adopted" outcome
-            # Only record if we were in an election (started_at > 0)
-            if getattr(self, "_election_started_at", 0) > 0:
-                self._record_election_latency("adopted")
-        # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
-        self._set_leader(leader.node_id, reason="join_existing_leader", save_state=True)
-        self.last_leader_seen = time.time()  # Track when we last had a functioning leader
-        return True
+        """Jan 29, 2026: Delegated to LeadershipOrchestrator.maybe_adopt_leader_from_peers()."""
+        return self.leadership.maybe_adopt_leader_from_peers()
 
     async def _check_dead_peers_async(self):
         """Check for peers that have stopped responding (async version).

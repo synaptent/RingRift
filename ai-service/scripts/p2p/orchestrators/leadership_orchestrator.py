@@ -1533,3 +1533,52 @@ class LeadershipOrchestrator(BaseOrchestrator):
         if not accepted:
             logger.warning(f"No voters accepted election request from {self.node_id}")
         return accepted
+
+    def maybe_adopt_leader_from_peers(self) -> bool:
+        """If we can already see a healthy leader, adopt it and avoid elections.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._maybe_adopt_leader_from_peers().
+
+        Returns:
+            True if a leader was adopted from peers, False otherwise.
+        """
+        import time
+        from scripts.p2p.protocols import NodeRole
+
+        p2p = self._p2p
+        if p2p.role == NodeRole.LEADER:
+            return False
+
+        # Use lock-free PeerSnapshot for read-only access
+        peers = [
+            p for p in p2p._peer_snapshot.get_snapshot().values()
+            if p.node_id != p2p.node_id
+        ]
+
+        conflict_keys = p2p._endpoint_conflict_keys([p2p.self_info, *peers])
+        leaders = [
+            p for p in peers
+            if p.role == NodeRole.LEADER and p2p._is_leader_eligible(p, conflict_keys)
+        ]
+
+        voter_ids = list(getattr(p2p, "voter_node_ids", []) or [])
+        if voter_ids:
+            leaders = [p for p in leaders if p.node_id in voter_ids]
+
+        if not leaders:
+            return False
+
+        # If multiple leaders exist (split brain), pick the lexicographically highest
+        # ID (matches bully ordering) to converge.
+        leader = sorted(leaders, key=lambda p: p.node_id)[-1]
+
+        if p2p.leader_id != leader.node_id:
+            self._log_info(f"Adopted existing leader from peers: {leader.node_id}")
+            # Record election latency for "adopted" outcome if we were in an election
+            if getattr(p2p, "_election_started_at", 0) > 0:
+                p2p._record_election_latency("adopted")
+
+        # Use _set_leader() for atomic leadership assignment
+        p2p._set_leader(leader.node_id, reason="join_existing_leader", save_state=True)
+        p2p.last_leader_seen = time.time()
+        return True
