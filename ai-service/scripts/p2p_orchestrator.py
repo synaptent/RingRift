@@ -5470,9 +5470,73 @@ class P2POrchestrator(
     def _create_self_info(self) -> NodeInfo:
         """Create NodeInfo for this node.
 
-        Jan 29, 2026: Delegated to MonitoringOrchestrator.create_self_info().
+        Jan 29, 2026: Delegated to MonitoringOrchestrator.create_self_info() when available.
+        Falls back to inline implementation during __init__ when self.monitoring doesn't exist.
         """
-        return self.monitoring.create_self_info()
+        # Check if monitoring orchestrator is available (may not be during early __init__)
+        if hasattr(self, "monitoring") and self.monitoring is not None:
+            return self.monitoring.create_self_info()
+
+        # Fallback: inline implementation for early __init__ call
+        # This runs before self.monitoring is created, so we do it inline
+        from scripts.p2p.models import NodeInfo
+
+        has_gpu, gpu_name = self._detect_gpu()
+        cpu_count = int(os.cpu_count() or 0)
+        memory_gb = self._detect_memory()
+
+        # Detect coordinator mode
+        is_coordinator = os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() in ("true", "1", "yes")
+
+        if not is_coordinator:
+            try:
+                from app.config.cluster_config import load_cluster_config
+                config = load_cluster_config()
+                nodes = getattr(config, "hosts_raw", {}) or {}
+                node_cfg = nodes.get(self.node_id, {})
+                if node_cfg.get("role") == "coordinator":
+                    is_coordinator = True
+                elif node_cfg.get("selfplay_enabled") is False and node_cfg.get("training_enabled") is False:
+                    is_coordinator = True
+            except Exception:
+                pass
+
+        if is_coordinator:
+            capabilities = []
+        else:
+            capabilities = ["selfplay"]
+            if has_gpu:
+                capabilities.extend(["training", "cmaes", "gauntlet", "tournament"])
+            if memory_gb >= 64:
+                capabilities.append("large_boards")
+
+        info = NodeInfo(
+            node_id=self.node_id,
+            host=self.advertise_host,
+            port=self.advertise_port,
+            role=self.role,
+            last_heartbeat=time.time(),
+            cpu_count=cpu_count,
+            has_gpu=has_gpu,
+            gpu_name=gpu_name,
+            memory_gb=memory_gb,
+            capabilities=capabilities,
+            version=self.build_version,
+        )
+
+        # Add Tailscale IP for NAT traversal
+        ts_ip = self._get_tailscale_ip()
+        if ts_ip and ts_ip != info.host:
+            info.reported_host = ts_ip
+            info.reported_port = int(self.port)
+
+        info.alternate_ips = self._discover_all_ips(exclude_primary=info.host)
+        info.tailscale_ip = ts_ip or ""
+        info.addresses = [ts_ip] if ts_ip else []  # Simplified for early init
+        info.visible_peers = 0  # No peers during early init
+        info.effective_timeout = 180.0  # Default timeout
+
+        return info
 
     def _collect_all_addresses(
         self, tailscale_ip: str | None, primary_host: str
