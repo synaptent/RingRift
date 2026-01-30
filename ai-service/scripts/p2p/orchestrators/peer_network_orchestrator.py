@@ -16,6 +16,7 @@ Responsibilities:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from typing import TYPE_CHECKING, Any
@@ -1292,3 +1293,85 @@ class PeerNetworkOrchestrator(BaseOrchestrator):
             p2p._election_retry_count = 0
             # Jan 1, 2026: Reset probabilistic claim probability when we have a leader
             p2p._provisional_claim_probability = PROVISIONAL_LEADER_INITIAL_PROBABILITY
+
+    # =========================================================================
+    # Network Health Methods (January 29, 2026)
+    # Cross-verification of P2P vs Tailscale connectivity
+    # =========================================================================
+
+    async def get_tailscale_status(self) -> dict[str, bool]:
+        """Query Tailscale status and return peer online status.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._get_tailscale_status().
+
+        Returns:
+            Dict mapping Tailscale IP to online status {ip: is_online}
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "tailscale",
+                "status",
+                "--json",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=10.0,
+            )
+
+            if proc.returncode != 0:
+                logger.debug(f"Tailscale status failed: {stderr.decode()[:100]}")
+                return {}
+
+            data = json.loads(stdout.decode())
+
+            # Extract peer IPs and online status
+            result: dict[str, bool] = {}
+            for peer_key, peer_data in data.get("Peer", {}).items():
+                is_online = peer_data.get("Online", False)
+                # Extract Tailscale IPs
+                for ip in peer_data.get("TailscaleIPs", []):
+                    result[ip] = is_online
+
+            return result
+
+        except asyncio.TimeoutError:
+            logger.debug("Tailscale status timed out")
+            return {}
+        except json.JSONDecodeError as e:
+            logger.debug(f"Failed to parse Tailscale status JSON: {e}")
+            return {}
+        except FileNotFoundError:
+            logger.debug("Tailscale command not found")
+            return {}
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Error querying Tailscale status: {e}")
+            return {}
+
+    def disable_tailscale_priority(self) -> None:
+        """Disable Tailscale-first mode when connectivity recovers.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._disable_tailscale_priority().
+        """
+        p2p = self._p2p
+        if getattr(p2p, "_tailscale_priority", False):
+            self._log_info("Disabling Tailscale-priority mode (connectivity recovered)")
+            p2p._tailscale_priority = False
+
+    def enable_tailscale_priority(self) -> None:
+        """Enable Tailscale-first mode when HTTP connectivity is poor.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._enable_tailscale_priority().
+        """
+        p2p = self._p2p
+        if not getattr(p2p, "_tailscale_priority", False):
+            self._log_info("Enabling Tailscale-priority mode (HTTP connectivity issues)")
+            p2p._tailscale_priority = True
+
+    def get_tailscale_priority_mode(self) -> bool:
+        """Check if Tailscale-priority mode is enabled.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._get_tailscale_priority_mode().
+        """
+        return getattr(self._p2p, "_tailscale_priority", False)

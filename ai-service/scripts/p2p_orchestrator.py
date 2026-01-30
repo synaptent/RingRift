@@ -5792,21 +5792,16 @@ class P2POrchestrator(
         return self.network.detect_network_partition()
 
     def _get_tailscale_priority_mode(self) -> bool:
-        """Check if Tailscale-first mode is enabled (partition recovery)."""
-        return getattr(self, "_tailscale_priority", False)
+        """Jan 29, 2026: Delegated to PeerNetworkOrchestrator.get_tailscale_priority_mode()."""
+        return self.network.get_tailscale_priority_mode()
 
     def _enable_tailscale_priority(self) -> None:
-        """Enable Tailscale-first mode for heartbeats during partition recovery."""
-        if not getattr(self, "_tailscale_priority", False):
-            logger.info("Enabling Tailscale-priority mode for partition recovery")
-            self._tailscale_priority = True
-            self._tailscale_priority_until = time.time() + 300  # 5 minutes
+        """Jan 29, 2026: Delegated to PeerNetworkOrchestrator.enable_tailscale_priority()."""
+        return self.network.enable_tailscale_priority()
 
     def _disable_tailscale_priority(self) -> None:
-        """Disable Tailscale-first mode when connectivity recovers."""
-        if getattr(self, "_tailscale_priority", False):
-            logger.info("Disabling Tailscale-priority mode (connectivity recovered)")
-            self._tailscale_priority = False
+        """Jan 29, 2026: Delegated to PeerNetworkOrchestrator.disable_tailscale_priority()."""
+        return self.network.disable_tailscale_priority()
 
     # =========================================================================
     # Network Health Methods (December 30, 2025)
@@ -5814,52 +5809,8 @@ class P2POrchestrator(
     # =========================================================================
 
     async def _get_tailscale_status(self) -> dict[str, bool]:
-        """Query Tailscale status and return peer online status.
-
-        Returns:
-            Dict mapping Tailscale IP to online status {ip: is_online}
-        """
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "tailscale",
-                "status",
-                "--json",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(),
-                timeout=10.0,
-            )
-
-            if proc.returncode != 0:
-                logger.debug(f"Tailscale status failed: {stderr.decode()[:100]}")
-                return {}
-
-            data = json.loads(stdout.decode())
-
-            # Extract peer IPs and online status
-            result: dict[str, bool] = {}
-            for peer_key, peer_data in data.get("Peer", {}).items():
-                is_online = peer_data.get("Online", False)
-                # Extract Tailscale IPs
-                for ip in peer_data.get("TailscaleIPs", []):
-                    result[ip] = is_online
-
-            return result
-
-        except asyncio.TimeoutError:
-            logger.debug("Tailscale status timed out")
-            return {}
-        except json.JSONDecodeError as e:
-            logger.debug(f"Failed to parse Tailscale status JSON: {e}")
-            return {}
-        except FileNotFoundError:
-            logger.debug("Tailscale command not found")
-            return {}
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"Error querying Tailscale status: {e}")
-            return {}
+        """Jan 29, 2026: Delegated to PeerNetworkOrchestrator.get_tailscale_status()."""
+        return await self.network.get_tailscale_status()
 
     async def _reconnect_discovered_peer(
         self, node_id: str, host: str, port: int
