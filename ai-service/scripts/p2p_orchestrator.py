@@ -3146,11 +3146,7 @@ class P2POrchestrator(
         Returns True if initialization succeeded, False otherwise.
         """
         # Delegate to JobOrchestrator
-        if hasattr(self, "jobs") and self.jobs is not None:
-            return self.jobs.initialize_work_discovery_manager()
-        # Fallback - minimal implementation
-        logger.debug("WorkDiscoveryManager: JobOrchestrator not available")
-        return False
+        return self.jobs.initialize_work_discovery_manager()
 
     async def _query_peer_for_work(
         self, peer_id: str, capabilities: list[str]
@@ -4064,59 +4060,7 @@ class P2POrchestrator(
         Returns:
             (can_spawn, explanation) - True if all checks pass
         """
-        if hasattr(self, "jobs") and self.jobs is not None:
-            return self.jobs.can_spawn_process(reason)
-
-        # Fallback: original implementation for when orchestrator not available
-        # Check 1: Load average
-        load_ok, load_reason = self.self_info.check_load_average_safe()
-        if not load_ok:
-            logger.info(f"BLOCKED spawn ({reason}): {load_reason}")
-            return False, load_reason
-
-        # Check 2: Rate limit
-        rate_ok, rate_reason = self._check_spawn_rate_limit()
-        if not rate_ok:
-            logger.info(f"BLOCKED spawn ({reason}): {rate_reason}")
-            return False, rate_reason
-
-        # Check 3: Agent mode - if coordinator is available and we're in agent mode,
-        # we should not autonomously spawn jobs (let coordinator decide)
-        if self.agent_mode and self.coordinator_available:
-            msg = "Agent mode: deferring to coordinator"
-            logger.info(f"BLOCKED spawn ({reason}): {msg}")
-            return False, msg
-
-        # Check 4: Backpressure (new coordination) - if training queue is saturated,
-        # don't spawn more selfplay jobs that would produce more data
-        if HAS_NEW_COORDINATION and "selfplay" in reason.lower():
-            if should_stop_production(QueueType.TRAINING_DATA):
-                msg = "Backpressure: training queue at STOP level"
-                logger.info(f"BLOCKED spawn ({reason}): {msg}")
-                return False, msg
-            if should_throttle_production(QueueType.TRAINING_DATA):
-                throttle = get_throttle_factor(QueueType.TRAINING_DATA)
-                import random
-                if random.random() > throttle:
-                    msg = f"Backpressure: throttled (factor={throttle:.2f})"
-                    logger.info(f"BLOCKED spawn ({reason}): {msg}")
-                    return False, msg
-
-        # Check 5: Graceful degradation - don't spawn under heavy resource pressure
-        if HAS_RESOURCE_GUARD and get_degradation_level is not None:
-            degradation = get_degradation_level()
-            if degradation >= 4:  # CRITICAL - resources at/above limits
-                msg = f"Graceful degradation: critical resource pressure (level {degradation})"
-                logger.info(f"BLOCKED spawn ({reason}): {msg}")
-                return False, msg
-            elif degradation >= 3:  # HEAVY - only critical ops proceed
-                # Selfplay is NORMAL priority, blocked under heavy pressure
-                if should_proceed_with_priority is not None and not should_proceed_with_priority(OperationPriority.NORMAL):
-                    msg = f"Graceful degradation: heavy resource pressure (level {degradation})"
-                    logger.info(f"BLOCKED spawn ({reason}): {msg}")
-                    return False, msg
-
-        return True, "All safeguards passed"
+        return self.jobs.can_spawn_process(reason)
 
     def _spawn_and_track_job(
         self,
@@ -4152,93 +4096,19 @@ class P2POrchestrator(
         Returns:
             Tuple of (ClusterJob, Popen) if successful, None if blocked or failed
         """
-        if hasattr(self, "jobs") and self.jobs is not None:
-            return self.jobs.spawn_and_track_job(
-                job_id=job_id,
-                job_type=job_type,
-                board_type=board_type,
-                num_players=num_players,
-                engine_mode=engine_mode,
-                cmd=cmd,
-                output_dir=output_dir,
-                log_filename=log_filename,
-                cuda_visible_devices=cuda_visible_devices,
-                extra_env=extra_env,
-                safeguard_reason=safeguard_reason,
-            )
-
-        # Fallback: original implementation for when orchestrator not available
-        # Build safeguard check reason
-        if safeguard_reason is None:
-            safeguard_reason = f"{job_type.value}-{board_type}-{num_players}p"
-
-        # SAFEGUARD: Final check before spawning
-        can_spawn, spawn_reason = self._can_spawn_process(safeguard_reason)
-        if not can_spawn:
-            logger.info(f"BLOCKED {job_type.value} spawn: {spawn_reason}")
-            return None
-
-        # Build environment
-        env = os.environ.copy()
-        env["PYTHONPATH"] = self._get_ai_service_path()
-        env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
-        env["RINGRIFT_JOB_ORIGIN"] = "p2p_orchestrator"
-
-        # Handle CUDA_VISIBLE_DEVICES
-        if cuda_visible_devices is not None:
-            env["CUDA_VISIBLE_DEVICES"] = str(cuda_visible_devices).strip()
-
-        # Apply extra environment variables
-        if extra_env:
-            env.update(extra_env)
-
-        # Ensure output directory exists
-        output_dir.mkdir(parents=True, exist_ok=True)
-        log_path = output_dir / log_filename
-
-        # Spawn subprocess
-        try:
-            log_handle = open(log_path, "a")  # noqa: SIM115
-            try:
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=log_handle,
-                    stderr=subprocess.STDOUT,
-                    env=env,
-                    cwd=self.ringrift_path,
-                )
-                self._record_spawn()
-            finally:
-                log_handle.close()
-        except (OSError, subprocess.SubprocessError) as e:
-            logger.error(f"Failed to spawn {job_type.value}: {e}")
-            return None
-
-        # Create ClusterJob
-        job = ClusterJob(
+        return self.jobs.spawn_and_track_job(
             job_id=job_id,
             job_type=job_type,
-            node_id=self.node_id,
             board_type=board_type,
             num_players=num_players,
             engine_mode=engine_mode,
-            pid=proc.pid,
-            started_at=time.time(),
-            status="running",
+            cmd=cmd,
+            output_dir=output_dir,
+            log_filename=log_filename,
+            cuda_visible_devices=cuda_visible_devices,
+            extra_env=extra_env,
+            safeguard_reason=safeguard_reason,
         )
-
-        # Track in local_jobs
-        with self.jobs_lock:
-            self.local_jobs[job_id] = job
-
-        logger.info(f"Started {job_type.value} job {job_id} (PID {proc.pid})")
-        self._save_state()
-
-        # Track via JobOrchestrationManager
-        if hasattr(self, "job_orchestration") and self.job_orchestration:
-            self.job_orchestration.record_job_started(job_type.value)
-
-        return job, proc
 
     def _detect_build_version(self) -> str:
         env_version = (os.environ.get(BUILD_VERSION_ENV, "") or "").strip()
@@ -4728,10 +4598,7 @@ class P2POrchestrator(
         Jan 26, 2026: Called once at initialization and cached.
         """
         # Delegate to PeerNetworkOrchestrator
-        if hasattr(self, "network") and self.network is not None:
-            return self.network.cache_local_ips()
-        # Fallback - return empty set
-        return set()
+        return self.network.cache_local_ips()
 
     # NOTE: _is_self_voter(), _check_voter_health(), _log_cluster_health_snapshot()
     # moved to LeadershipHealthMixin (Jan 26, 2026)
@@ -4848,50 +4715,7 @@ class P2POrchestrator(
 
         Jan 29, 2026: Delegates to PeerNetworkOrchestrator.get_eligible_voters().
         """
-        if hasattr(self, "network") and self.network is not None:
-            return self.network.get_eligible_voters()
-
-        # Fallback: original implementation for when orchestrator not available
-        # Jan 2026: Use lock-free PeerSnapshot for read-only access
-        peers = self._peer_snapshot.get_snapshot()
-
-        eligible = []
-        now = time.time()
-
-        for node_id, peer in peers.items():
-            # Skip retired or NAT-blocked without relay
-            if getattr(peer, "retired", False):
-                continue
-
-            # Must be alive
-            if not peer.is_alive():
-                continue
-
-            # Must have GPU (CUDA or MPS)
-            has_gpu = getattr(peer, "has_gpu", False)
-            gpu_name = str(getattr(peer, "gpu_name", "") or "")
-            if not has_gpu and "GH200" not in gpu_name and "H100" not in gpu_name and "A10" not in gpu_name and "aws" not in node_id.lower():
-                continue
-
-            # Must have been up for minimum time
-            first_seen = getattr(peer, "first_seen", 0) or peer.last_heartbeat
-            if now - first_seen < VOTER_PROMOTION_UPTIME:
-                continue
-
-            # Check health score (response rate)
-            failures = getattr(peer, "consecutive_failures", 0)
-            if failures >= VOTER_DEMOTION_FAILURES:
-                continue
-
-            eligible.append(node_id)
-
-        # Always include self if we have GPU
-        if self.node_id not in eligible:
-            self_gpu = getattr(self, "has_gpu", False)
-            if self_gpu or "aws" in self.node_id.lower() or "lambda" in self.node_id.lower():
-                eligible.append(self.node_id)
-
-        return sorted(eligible)
+        return self.network.get_eligible_voters()
 
     def _manage_dynamic_voters(self) -> bool:
         """Manage dynamic voter pool - promote/demote voters as needed.
@@ -4900,74 +4724,7 @@ class P2POrchestrator(
 
         Returns True if voter set was changed.
         """
-        if hasattr(self, "network") and self.network is not None:
-            return self.network.manage_dynamic_voters()
-
-        # Fallback: original implementation for when orchestrator not available
-        if not DYNAMIC_VOTER_ENABLED:
-            return False
-
-        # Don't override env-configured voters
-        if (os.environ.get("RINGRIFT_P2P_VOTERS") or "").strip():
-            return False
-
-        current_voters = list(getattr(self, "voter_node_ids", []) or [])
-        eligible = self._get_eligible_voters()
-
-        # Count how many current voters are healthy
-        # Jan 2026: Use lock-free PeerSnapshot for read-only access
-        peers = self._peer_snapshot.get_snapshot()
-
-        healthy_voters = []
-        unhealthy_voters = []
-
-        for voter_id in current_voters:
-            if voter_id == self.node_id:
-                healthy_voters.append(voter_id)
-                continue
-            peer = peers.get(voter_id)
-            if peer and peer.is_alive():
-                failures = getattr(peer, "consecutive_failures", 0)
-                if failures < VOTER_DEMOTION_FAILURES:
-                    healthy_voters.append(voter_id)
-                else:
-                    unhealthy_voters.append(voter_id)
-            else:
-                unhealthy_voters.append(voter_id)
-
-        changed = False
-        new_voters = healthy_voters.copy()
-
-        # Demote unhealthy voters
-        if unhealthy_voters:
-            logger.info(f"Dynamic voters: demoting unhealthy voters: {unhealthy_voters}")
-            changed = True
-
-        # Promote new voters if below target
-        if len(new_voters) < DYNAMIC_VOTER_TARGET:
-            candidates = [n for n in eligible if n not in new_voters]
-            # Sort by reliability (fewer failures = better)
-            candidates.sort(key=lambda n: getattr(peers.get(n), "consecutive_failures", 0) if peers.get(n) else 999)
-
-            needed = DYNAMIC_VOTER_TARGET - len(new_voters)
-            for candidate in candidates[:needed]:
-                new_voters.append(candidate)
-                logger.info(f"Dynamic voters: promoting {candidate} to voter")
-                changed = True
-
-        if changed and new_voters:
-            new_voters = sorted(set(new_voters))
-            self.voter_node_ids = new_voters
-            # SIMPLIFIED QUORUM: Fixed at 3 voters (or less if fewer voters exist)
-            self.voter_quorum_size = min(VOTER_MIN_QUORUM, len(new_voters))
-            self.voter_config_source = "dynamic"
-            print(
-                f"[P2P] Dynamic voter set updated: {len(new_voters)} voters, "
-                f"quorum={self.voter_quorum_size} ({', '.join(new_voters)})"
-            )
-            return True
-
-        return False
+        return self.network.manage_dynamic_voters()
 
     # NOTE: _check_leader_health() moved to LeadershipHealthMixin (Jan 26, 2026)
 
@@ -5305,22 +5062,7 @@ class P2POrchestrator(
             Number of peers reporting this leader_id
         """
         # Delegate to LeadershipOrchestrator
-        if hasattr(self, "leadership") and self.leadership is not None:
-            return self.leadership.count_peers_reporting_leader(leader_id, peers_snapshot)
-        # Fallback implementation
-        if peers_snapshot is None:
-            if self._peer_snapshot is not None:
-                peers_snapshot = list(self._peer_snapshot.get_snapshot().values())
-            else:
-                return 0
-        count = 0
-        for peer in peers_snapshot:
-            if not peer.is_alive():
-                continue
-            peer_leader = getattr(peer, "leader_id", None)
-            if peer_leader == leader_id:
-                count += 1
-        return count
+        return self.leadership.count_peers_reporting_leader(leader_id, peers_snapshot)
 
     async def _proxy_to_leader(self, request: web.Request) -> web.StreamResponse:
         """Best-effort proxy for leader-only APIs when the dashboard hits a follower."""
@@ -5960,16 +5702,7 @@ class P2POrchestrator(
         for components that iterate over peers directly.
         """
         # Delegate to PeerNetworkOrchestrator
-        if hasattr(self, "network") and self.network is not None:
-            return self.network.register_self_in_peers()
-        # Fallback implementation
-        self._update_self_info()
-        with self.peers_lock:
-            was_present = self.node_id in self.peers
-            self.peers[self.node_id] = self.self_info
-            if not was_present:
-                logger.info(f"[SelfReg] Registered self in peers: {self.node_id}")
-        self._sync_peer_snapshot()
+        return self.network.register_self_in_peers()
 
     # =========================================================================
     # H2 fix: Lifecycle event emission methods (Jan 12, 2026)
@@ -6006,28 +5739,7 @@ class P2POrchestrator(
         Jan 29, 2026: Delegated to PeerNetworkOrchestrator.
         """
         # Delegate to PeerNetworkOrchestrator
-        if hasattr(self, "network") and self.network is not None:
-            return self.network.emit_host_online_sync(node_id, capabilities)
-        # Fallback implementation
-        try:
-            from app.distributed.data_events import DataEventType
-            from app.coordination.event_router import emit_event
-
-            peer_info = self._peer_snapshot.get_snapshot().get(node_id)
-            emit_event(DataEventType.HOST_ONLINE.value, {
-                "node_id": node_id,
-                "host": getattr(peer_info, "host", "") if peer_info else "",
-                "port": getattr(peer_info, "port", 0) if peer_info else 0,
-                "has_gpu": getattr(peer_info, "has_gpu", False) if peer_info else False,
-                "gpu_name": getattr(peer_info, "gpu_name", "") if peer_info else "",
-                "capabilities": capabilities or [],
-                "source": "peer_recovery_sync",
-            })
-            logger.debug(f"[P2P] Emitted HOST_ONLINE (sync) for peer: {node_id}")
-        except ImportError:
-            pass
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"[P2P] Failed to emit HOST_ONLINE (sync) for {node_id}: {e}")
+        return self.network.emit_host_online_sync(node_id, capabilities)
 
     async def _emit_host_offline(self, node_id: str, reason: str, last_heartbeat: float | None) -> None:
         """Emit HOST_OFFLINE event for a peer going offline."""
@@ -6188,31 +5900,7 @@ class P2POrchestrator(
         Returns:
             True if partition detected (majority of peers unreachable)
         """
-        if hasattr(self, "network") and self.network is not None:
-            return self.network.detect_network_partition()
-
-        # Fallback: original implementation for when orchestrator not available
-        # Jan 2026: Use lock-free PeerSnapshot for read-only access
-        peers_snapshot = [p for p in self._peer_snapshot.get_snapshot().values() if p.node_id != self.node_id]
-
-        if len(peers_snapshot) < 2:
-            return False
-
-        # Count peers with recent heartbeat failures
-        # Jan 19, 2026: Use jittered timeout to prevent synchronized partition detection
-        # Jan 22, 2026: Use cached jittered timeout to ensure consistent death detection
-        now = time.time()
-        jittered_timeout = self._get_cached_jittered_timeout()
-        unreachable = 0
-        for peer in peers_snapshot:
-            if peer.consecutive_failures >= 3 or (now - peer.last_heartbeat > jittered_timeout):
-                unreachable += 1
-
-        partition_ratio = unreachable / len(peers_snapshot)
-        if partition_ratio > 0.5:
-            logger.info(f"Network partition detected: {unreachable}/{len(peers_snapshot)} peers unreachable ({partition_ratio:.0%})")
-            return True
-        return False
+        return self.network.detect_network_partition()
 
     def _get_tailscale_priority_mode(self) -> bool:
         """Check if Tailscale-first mode is enabled (partition recovery)."""
@@ -7391,53 +7079,7 @@ class P2POrchestrator(
 
         Only called after successful sync to training nodes.
         """
-        if hasattr(self, "sync") and self.sync is not None:
-            return await self.sync.cleanup_synced_files(node_id, files)
-
-        # Fallback: original implementation for when orchestrator not available
-        with self.peers_lock:
-            node = self.peers.get(node_id)
-        if not node or not node.is_alive():
-            return False
-
-        try:
-            if getattr(node, "nat_blocked", False):
-                cmd_id = await self._enqueue_relay_command_for_peer(
-                    node,
-                    "cleanup_files",
-                    {"files": list(files or []), "reason": "post_sync_cleanup"},
-                )
-                if cmd_id:
-                    logger.info(f"Enqueued relay cleanup_files for {node_id} ({len(files)} files)")
-                    return True
-                logger.info(f"Relay queue full for {node_id}; skipping cleanup_files enqueue")
-                return False
-
-            timeout = ClientTimeout(total=60)
-            async with get_client_session(timeout) as session:
-                last_err: str | None = None
-                for url in self._urls_for_peer(node, "/cleanup/files"):
-                    try:
-                        async with session.post(
-                            url,
-                            json={"files": files, "reason": "post_sync_cleanup"},
-                            headers=self._auth_headers(),
-                        ) as resp:
-                            if resp.status != 200:
-                                last_err = f"http_{resp.status}"
-                                continue
-                            result = await resp.json()
-                            freed_bytes = result.get("freed_bytes", 0)
-                            logger.info(f"Cleanup on {node_id}: freed {freed_bytes / 1e6:.1f}MB")
-                            return True
-                    except Exception as e:  # noqa: BLE001
-                        last_err = str(e)
-                        continue
-                if last_err:
-                    logger.info(f"Cleanup files request failed on {node_id}: {last_err}")
-        except Exception as e:  # noqa: BLE001
-            logger.error(f"Failed to cleanup files on {node_id}: {e}")
-        return False
+        return await self.sync.cleanup_synced_files(node_id, files)
 
     async def _sync_selfplay_to_training_nodes(self) -> dict[str, Any]:
         """Sync selfplay data to training primary nodes.
@@ -10012,10 +9654,7 @@ class P2POrchestrator(
         Used by PredictiveScalingLoop to skip nodes with pending work.
         """
         # Delegate to JobOrchestrator
-        if hasattr(self, "jobs") and self.jobs is not None:
-            return self.jobs.get_pending_jobs_for_node(node_id)
-        # Fallback - return 0
-        return 0
+        return self.jobs.get_pending_jobs_for_node(node_id)
 
     async def _spawn_preemptive_selfplay_job(self, peer_info: dict[str, Any]) -> bool:
         """Spawn a preemptive selfplay job on a node approaching idle.
@@ -11950,10 +11589,7 @@ print(json.dumps({{
             Number of duplicates removed
         """
         # Delegate to PeerNetworkOrchestrator
-        if hasattr(self, "network") and self.network is not None:
-            return self.network.deduplicate_peers()
-        # Fallback - no deduplication
-        return 0
+        return self.network.deduplicate_peers()
 
     def _maybe_adopt_leader_from_peers(self) -> bool:
         """If we can already see a healthy leader, adopt it and avoid elections."""
@@ -13412,10 +13048,7 @@ print(json.dumps({{
         nodes have visibility into model performance without querying the DB.
         """
         # Delegate to SyncOrchestrator
-        if hasattr(self, "sync") and self.sync is not None:
-            return self.sync.get_local_elo_summary()
-        # Fallback - return empty summary
-        return {"top_models": [], "total_models": 0, "last_update": 0}
+        return self.sync.get_local_elo_summary()
 
     def _get_cluster_elo_summary(self) -> dict:
         """Get cluster-wide ELO summary from gossip state.
@@ -13718,37 +13351,7 @@ print(json.dumps({{
 
         Jan 29, 2026: Delegates to LeadershipOrchestrator.get_leader_hint().
         """
-        if hasattr(self, "leadership") and self.leadership is not None:
-            return self.leadership.get_leader_hint()
-
-        # Fallback: original implementation for when orchestrator not available
-        hint = {
-            "current_leader": self.leader_id,
-            "lease_expires": getattr(self, "leader_lease_expires", 0),
-            "preferred_successor": None,
-            "my_priority": 0,
-        }
-
-        # Calculate this node's priority (lower is better for Bully algorithm)
-        # But we want to express it as a score (higher is better)
-        with self.peers_lock:
-            all_nodes = [self.node_id] + [p.node_id for p in self.peers.values() if p.is_alive()]
-
-        all_nodes_sorted = sorted(all_nodes, reverse=True)  # Bully: higher ID wins
-        if self.node_id in all_nodes_sorted:
-            hint["my_priority"] = len(all_nodes_sorted) - all_nodes_sorted.index(self.node_id)
-
-        # Find preferred successor (highest priority eligible node that's not current leader)
-        voter_ids = list(getattr(self, "voter_node_ids", []) or [])
-        for node_id in all_nodes_sorted:
-            if node_id == self.leader_id:
-                continue
-            if voter_ids and node_id not in voter_ids:
-                continue
-            hint["preferred_successor"] = node_id
-            break
-
-        return hint
+        return self.leadership.get_leader_hint()
 
     def _get_cluster_leader_consensus(self) -> dict:
         """Get cluster consensus on leader from gossip hints.
@@ -13759,46 +13362,7 @@ print(json.dumps({{
         if there's agreement on who the leader is/should be.
         """
         # Delegate to LeadershipOrchestrator
-        if hasattr(self, "leadership") and self.leadership is not None:
-            return self.leadership.get_cluster_leader_consensus()
-        # Fallback implementation
-        leader_votes: dict[str, int] = {}
-        successor_votes: dict[str, int] = {}
-        gossip_states = getattr(self, "_gossip_peer_states", {})
-        now = time.time()
-
-        # Count our vote
-        our_hint = self._get_leader_hint()
-        if our_hint["current_leader"]:
-            leader_votes[our_hint["current_leader"]] = leader_votes.get(our_hint["current_leader"], 0) + 1
-        if our_hint["preferred_successor"]:
-            successor_votes[our_hint["preferred_successor"]] = successor_votes.get(our_hint["preferred_successor"], 0) + 1
-
-        # Count votes from gossip
-        for _node_id, state in gossip_states.items():
-            if state.get("timestamp", 0) < now - 120:  # Skip stale states
-                continue
-
-            hint = state.get("leader_hint", {})
-            leader = hint.get("current_leader")
-            successor = hint.get("preferred_successor")
-
-            if leader:
-                leader_votes[leader] = leader_votes.get(leader, 0) + 1
-            if successor:
-                successor_votes[successor] = successor_votes.get(successor, 0) + 1
-
-        # Find consensus leader and successor
-        consensus_leader = max(leader_votes.items(), key=lambda x: x[1])[0] if leader_votes else None
-        consensus_successor = max(successor_votes.items(), key=lambda x: x[1])[0] if successor_votes else None
-
-        return {
-            "consensus_leader": consensus_leader,
-            "leader_agreement": leader_votes.get(consensus_leader, 0) if consensus_leader else 0,
-            "consensus_successor": consensus_successor,
-            "successor_agreement": successor_votes.get(consensus_successor, 0) if consensus_successor else 0,
-            "total_voters": len(gossip_states) + 1,
-        }
+        return self.leadership.get_cluster_leader_consensus()
 
     # =========================================================================
     # PEER REPUTATION TRACKING
@@ -14030,10 +13594,7 @@ print(json.dumps({{
         - > 1.0: Idle cluster = slower sync
         """
         # Delegate to SyncOrchestrator
-        if hasattr(self, "sync") and self.sync is not None:
-            return self.sync.calculate_cluster_activity_factor()
-        # Fallback - return normal activity
-        return 1.0
+        return self.sync.calculate_cluster_activity_factor()
 
     def _record_sync_result_for_adaptive(self, sync_type: str, success: bool):
         """Record sync result to adjust adaptive intervals.
@@ -14204,16 +13765,7 @@ print(json.dumps({{
         - Raft: Replicated work queue with sub-second failover
         """
         # Delegate to PeerNetworkOrchestrator
-        if hasattr(self, "network") and self.network is not None:
-            return self.network.get_swim_raft_status()
-        # Fallback - return minimal status
-        return {
-            "membership_mode": "http",
-            "consensus_mode": "bully",
-            "swim": {"enabled": False, "available": False},
-            "raft": {"enabled": False, "available": False},
-            "hybrid_status": {"swim_fallback_active": False, "raft_fallback_active": False},
-        }
+        return self.network.get_swim_raft_status()
 
     def _get_cluster_observability(self) -> dict[str, Any]:
         """Get cluster observability metrics for debugging.
@@ -14224,14 +13776,7 @@ print(json.dumps({{
         peer visibility discrepancies across the cluster.
         """
         # Delegate to SyncOrchestrator
-        if hasattr(self, "sync") and self.sync is not None:
-            return self.sync.get_cluster_observability()
-        # Fallback - return empty result
-        return {
-            "unhealthy_nodes": {"error": "SyncOrchestrator not available"},
-            "gossip_discovered_peers": {"error": "SyncOrchestrator not available"},
-            "cluster_job_distribution": {"error": "SyncOrchestrator not available"},
-        }
+        return self.sync.get_cluster_observability()
 
     def _get_data_summary_cached(self) -> dict[str, Any]:
         """Get cached data summary for /status endpoint.
@@ -14631,23 +14176,7 @@ print(json.dumps({{
 
         Jan 29, 2026: Delegates to LeadershipOrchestrator.is_leader_lease_valid().
         """
-        if hasattr(self, "leadership") and self.leadership is not None:
-            return self.leadership.is_leader_lease_valid()
-
-        # Fallback: original implementation for when orchestrator not available
-        if not self.leader_id:
-            return False
-
-        # Jan 13, 2026: Reject proxy_only leaders - they should never have been elected
-        if self._is_node_proxy_only(self.leader_id):
-            logger.warning(
-                f"[LeaderValidation] Current leader {self.leader_id} is proxy_only - invalidating lease"
-            )
-            return False
-
-        # Jan 19, 2026: Use symmetric grace period for both leader and followers
-        grace = 30  # Same grace for leader and followers
-        return time.time() < self.leader_lease_expires + grace
+        return self.leadership.is_leader_lease_valid()
 
     async def _check_and_resolve_split_brain(self) -> bool:
         """Check for split-brain (multiple leaders) and resolve by stepping down if needed.
