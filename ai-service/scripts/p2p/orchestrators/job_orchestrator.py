@@ -15,6 +15,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import shutil
+import subprocess
 import time
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
@@ -639,3 +642,264 @@ class JobOrchestrator(BaseOrchestrator):
                 job_orchestration.record_job_started(job_type_val)
 
         return job, proc
+
+    # =========================================================================
+    # Local Job Counting
+    # =========================================================================
+
+    def count_local_jobs(self) -> tuple[int, int]:
+        """Count running selfplay and training jobs on this node.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._count_local_jobs().
+
+        Returns:
+            Tuple of (selfplay_count, training_count).
+        """
+        def _pid_alive(pid: int) -> bool:
+            try:
+                os.kill(pid, 0)
+                return True
+            except ProcessLookupError:
+                return False
+            except PermissionError:
+                return True
+            except AttributeError:
+                return False
+
+        # Primary source of truth: jobs we started and are tracking.
+        selfplay_pids: set[str] = set()
+        training_pids: set[str] = set()
+
+        stale_job_ids: list[str] = []
+
+        # Get JobType enum - try from P2P or import directly
+        JobType = None
+        try:
+            from scripts.p2p.job_types import JobType
+        except ImportError:
+            pass
+
+        try:
+            jobs_lock = getattr(self._p2p, "jobs_lock", None)
+            local_jobs = getattr(self._p2p, "local_jobs", {})
+
+            if jobs_lock is not None:
+                with jobs_lock:
+                    jobs_snapshot = list(local_jobs.items())
+            else:
+                jobs_snapshot = list(local_jobs.items())
+
+            for job_id, job in jobs_snapshot:
+                if getattr(job, "status", None) != "running":
+                    continue
+                pid = int(getattr(job, "pid", 0) or 0)
+                if pid <= 0:
+                    continue
+                if not _pid_alive(pid):
+                    stale_job_ids.append(job_id)
+                    continue
+
+                job_type = getattr(job, "job_type", None)
+                if JobType is not None:
+                    if job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY, JobType.GUMBEL_SELFPLAY):
+                        selfplay_pids.add(str(pid))
+                    elif job_type == JobType.TRAINING:
+                        training_pids.add(str(pid))
+                else:
+                    # Fallback: check string representation
+                    job_type_str = str(job_type).lower()
+                    if "selfplay" in job_type_str:
+                        selfplay_pids.add(str(pid))
+                    elif "training" in job_type_str:
+                        training_pids.add(str(pid))
+
+            if stale_job_ids and jobs_lock is not None:
+                with jobs_lock:
+                    for job_id in stale_job_ids:
+                        local_jobs.pop(job_id, None)
+        except (ValueError, AttributeError):
+            pass
+
+        # Secondary check: best-effort process scan for untracked jobs (e.g. manual runs).
+        # IMPORTANT: never return (0,0) just because `pgrep` is missing or fails;
+        # that can cause the leader to spawn runaway selfplay processes until disk fills.
+        try:
+            if shutil.which("pgrep"):
+                # Jan 12, 2026: Helper to filter out non-Python processes
+                # SSH processes and shell wrappers (zsh, bash) with "selfplay" in their args
+                # were being counted as local jobs - only count actual Python processes
+                def _get_excluded_pids() -> set[str]:
+                    """Get PIDs of SSH and shell processes (to exclude from local job counts)."""
+                    excluded_pids: set[str] = set()
+                    # Exclude SSH processes (dispatchers to remote nodes)
+                    for pattern in ("^ssh", "ssh "):
+                        try:
+                            out = subprocess.run(
+                                ["pgrep", "-f", pattern],
+                                capture_output=True,
+                                text=True,
+                                timeout=5,
+                            )
+                            if out.returncode == 0 and out.stdout.strip():
+                                excluded_pids.update(out.stdout.strip().split())
+                        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
+                            pass
+                    # Exclude shell processes (Claude wrappers that contain "selfplay" in args)
+                    for shell_pattern in ("/bin/zsh", "/bin/bash", "/bin/sh"):
+                        try:
+                            out = subprocess.run(
+                                ["pgrep", "-f", shell_pattern],
+                                capture_output=True,
+                                text=True,
+                                timeout=5,
+                            )
+                            if out.returncode == 0 and out.stdout.strip():
+                                excluded_pids.update(out.stdout.strip().split())
+                        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError):
+                            pass
+                    return excluded_pids
+
+                excluded_pids = _get_excluded_pids()
+
+                # December 2025: Added selfplay.py pattern - the current unified selfplay entry point
+                # December 2025: Added gumbel_selfplay and SelfplayRunner patterns for module invocations
+                for pattern in (
+                    "selfplay.py",
+                    "run_self_play_soak.py",
+                    "run_gpu_selfplay.py",
+                    "run_hybrid_selfplay.py",
+                    "gumbel_selfplay",  # screen session name
+                    "SelfplayRunner",   # class-based invocation
+                    "selfplay_runner",  # module invocation
+                    "-m app.training.selfplay",  # module mode
+                ):
+                    out = subprocess.run(
+                        ["pgrep", "-f", pattern],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if out.returncode == 0 and out.stdout.strip():
+                        # Jan 12, 2026: Filter out excluded PIDs (SSH, shells) - not local jobs
+                        pids = [p for p in out.stdout.strip().split() if p and p not in excluded_pids]
+                        selfplay_pids.update(pids)
+
+                for pattern in ("train_", "train.py", "-m app.training.train"):
+                    out = subprocess.run(
+                        ["pgrep", "-f", pattern],
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    if out.returncode == 0 and out.stdout.strip():
+                        # Jan 12, 2026: Filter out excluded PIDs (SSH, shells)
+                        pids = [p for p in out.stdout.strip().split() if p and p not in excluded_pids]
+                        training_pids.update(pids)
+        except (subprocess.SubprocessError, subprocess.TimeoutExpired, OSError, KeyError, IndexError, AttributeError, ImportError):
+            pass
+
+        return len(selfplay_pids), len(training_pids)
+
+    # =========================================================================
+    # Stale Process Cleanup
+    # =========================================================================
+
+    def cleanup_stale_processes(self) -> int:
+        """Kill processes that have been running too long.
+
+        Jan 29, 2026: Implementation moved from P2POrchestrator._cleanup_stale_processes().
+
+        Scans for known process patterns (tournaments, gauntlets, selfplay)
+        and kills any that exceed their maximum runtime threshold.
+
+        Returns:
+            Number of processes killed.
+        """
+        if not shutil.which("pgrep") or not shutil.which("ps"):
+            return 0
+
+        killed_count = 0
+
+        # Runtime thresholds (in seconds)
+        MAX_TOURNAMENT_RUNTIME = 4 * 3600  # 4 hours
+        MAX_GAUNTLET_RUNTIME = 6 * 3600    # 6 hours
+        MAX_SELFPLAY_RUNTIME = 8 * 3600    # 8 hours
+        MAX_TRAINING_RUNTIME = 24 * 3600   # 24 hours
+
+        # Map patterns to their max runtimes
+        # December 2025: Added selfplay.py - the current unified selfplay entry point
+        pattern_max_runtime = {
+            "run_model_elo_tournament.py": MAX_TOURNAMENT_RUNTIME,
+            "run_gauntlet.py": MAX_GAUNTLET_RUNTIME,
+            "selfplay.py": MAX_SELFPLAY_RUNTIME,  # Unified selfplay script
+            "run_self_play_soak.py": MAX_SELFPLAY_RUNTIME,
+            "run_gpu_selfplay.py": MAX_SELFPLAY_RUNTIME,
+            "run_hybrid_selfplay.py": MAX_SELFPLAY_RUNTIME,
+            "train_nnue.py": MAX_TRAINING_RUNTIME,
+            "train.py": MAX_TRAINING_RUNTIME,
+        }
+
+        for pattern, max_runtime in pattern_max_runtime.items():
+            try:
+                # Get PIDs matching the pattern
+                pgrep_result = subprocess.run(
+                    ["pgrep", "-f", pattern],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if pgrep_result.returncode != 0 or not pgrep_result.stdout.strip():
+                    continue
+
+                pids = [p.strip() for p in pgrep_result.stdout.strip().split() if p.strip()]
+
+                for pid in pids:
+                    try:
+                        # Get process start time using ps
+                        ps_result = subprocess.run(
+                            ["ps", "-o", "etimes=", "-p", pid],
+                            capture_output=True,
+                            text=True,
+                            timeout=5,
+                        )
+                        if ps_result.returncode != 0:
+                            continue
+
+                        elapsed_seconds = int(ps_result.stdout.strip())
+
+                        if elapsed_seconds > max_runtime:
+                            # Process has exceeded max runtime - kill it
+                            self._log_warning(
+                                f"Killing stale process {pid} ({pattern}): "
+                                f"running for {elapsed_seconds/3600:.1f}h, max={max_runtime/3600:.1f}h"
+                            )
+                            subprocess.run(
+                                ["kill", "-9", pid],
+                                capture_output=True,
+                                timeout=5,
+                            )
+                            killed_count += 1
+
+                            # Send alert via notifier if available
+                            notifier = getattr(self._p2p, "notifier", None)
+                            if notifier is not None:
+                                asyncio.create_task(
+                                    notifier.send(
+                                        title="Stale Process Killed",
+                                        message=f"Killed {pattern} (PID {pid}) after {elapsed_seconds/3600:.1f} hours",
+                                        level="warning",
+                                        node_id=self.node_id,
+                                    )
+                                )
+
+                    except (ValueError, subprocess.TimeoutExpired):
+                        continue
+
+            except Exception as e:  # noqa: BLE001
+                self._log_debug(f"Error checking pattern {pattern}: {e}")
+                continue
+
+        if killed_count > 0:
+            self._log_info(f"Stale process cleanup: killed {killed_count} processes")
+
+        return killed_count
