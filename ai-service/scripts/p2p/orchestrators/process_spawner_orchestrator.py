@@ -1379,3 +1379,271 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
                 if member.name == name_upper or member.value == name:
                     return member
         return name
+
+    # =========================================================================
+    # Decentralized Local Job Management
+    # =========================================================================
+
+    async def manage_local_jobs_decentralized(self) -> int:
+        """DECENTRALIZED: Each node manages its own job count based on gossip state.
+
+        Jan 29, 2026: Extracted from P2POrchestrator._manage_local_jobs_decentralized().
+
+        Runs on ALL nodes to ensure selfplay continues even during leader elections.
+        Each node autonomously:
+        1. Checks its own resource pressure (disk, memory, CPU)
+        2. Uses gossip state to calculate proportional job count
+        3. Starts or stops local jobs as needed
+
+        PHASE 3 DECENTRALIZATION (Dec 2025):
+        - With Serf providing reliable failure detection, we can act quickly
+        - Proportional allocation based on gossip cluster capacity
+        - 30-second timeout for faster leader-failure recovery
+
+        Returns:
+            Number of jobs started/stopped
+        """
+        import random
+
+        # Import constants lazily to avoid circular imports
+        try:
+            from scripts.p2p.config.p2p_constants import (
+                DISK_WARNING_THRESHOLD,
+                LEADER_WORK_DISPATCH_TIMEOUT,
+                LEADERLESS_TRAINING_TIMEOUT,
+                MEMORY_WARNING_THRESHOLD,
+            )
+        except ImportError:
+            DISK_WARNING_THRESHOLD = 85
+            LEADER_WORK_DISPATCH_TIMEOUT = 300
+            LEADERLESS_TRAINING_TIMEOUT = 180
+            MEMORY_WARNING_THRESHOLD = 90
+
+        try:
+            from scripts.p2p.node_info import NodeRole
+        except ImportError:
+            NodeRole = None
+
+        p2p = self._p2p
+        changes = 0
+        now = time.time()
+
+        # Rate limit: check every 30 seconds (reduced from 60s for faster response)
+        last_check = getattr(p2p, "_last_local_job_manage", 0)
+        if now - last_check < 30:
+            return 0
+        p2p._last_local_job_manage = now
+
+        # Skip if leader is managing (avoid conflicts)
+        # But continue if leaderless for > 30 seconds (reduced from 60s for Serf reliability)
+        # Dec 30, 2025: Also allow self-assignment if leader exists but isn't dispatching work
+        if NodeRole is not None and getattr(p2p, "role", None) == NodeRole.LEADER:
+            return 0  # Leader uses centralized management
+        if p2p.leader_id:
+            leaderless_duration = now - getattr(p2p, "last_leader_seen", now)
+            work_dispatch_gap = now - getattr(p2p, "last_work_from_leader", now)
+
+            # Defer to leader only if BOTH conditions are met:
+            # 1. Leader was seen recently (alive)
+            # 2. Leader has been dispatching work recently (active)
+            if leaderless_duration < LEADERLESS_TRAINING_TIMEOUT:
+                if work_dispatch_gap < LEADER_WORK_DISPATCH_TIMEOUT:
+                    return 0  # Have a functioning leader that's actively dispatching
+                else:
+                    # Leader is present but not dispatching work - allow self-assignment
+                    logger.info(
+                        f"LOCAL: Leader present but no work dispatched in {work_dispatch_gap:.0f}s "
+                        f"(timeout={LEADER_WORK_DISPATCH_TIMEOUT}s) - self-assigning"
+                    )
+
+        # Update self info
+        if hasattr(p2p, "_update_self_info"):
+            p2p._update_self_info()
+        node = p2p.self_info
+
+        # Check resource pressure - don't start jobs if under pressure
+        if node.disk_percent >= DISK_WARNING_THRESHOLD:
+            logger.info(f"LOCAL: Disk at {node.disk_percent:.0f}% - skipping job starts")
+            if hasattr(p2p, "_cleanup_local_disk"):
+                await p2p._cleanup_local_disk()
+            return 0
+
+        if node.memory_percent >= MEMORY_WARNING_THRESHOLD:
+            logger.info(f"LOCAL: Memory at {node.memory_percent:.0f}% - skipping job starts")
+            return 0
+
+        # Calculate target jobs for this node (delegated to SelfplayScheduler Dec 2025)
+        selfplay_scheduler = getattr(p2p, "selfplay_scheduler", None)
+        if selfplay_scheduler is None:
+            return 0
+        target_selfplay = selfplay_scheduler.get_target_jobs_for_node(node)
+        current_jobs = int(getattr(node, "selfplay_jobs", 0) or 0)
+
+        # Dec 30, 2025: Cluster-aware job balancing
+        # Prevent job concentration on a few nodes by checking cluster average
+        # Skip spawning if we're already above average + 2 to give idle nodes a chance
+        try:
+            # Jan 10, 2026: Copy-on-read pattern - minimize lock hold time
+            peers_lock = getattr(p2p, "peers_lock", None)
+            peers = getattr(p2p, "peers", {})
+            if peers_lock:
+                with peers_lock:
+                    peers_snapshot = list(peers.values())
+            else:
+                peers_snapshot = list(peers.values())
+            # Compute job counts outside lock (is_alive() can be slow)
+            peer_job_counts = [
+                int(getattr(p, "selfplay_jobs", 0) or 0)
+                for p in peers_snapshot
+                if p.is_alive() and hasattr(p, "selfplay_jobs")
+            ]
+            if peer_job_counts:
+                avg_jobs = sum(peer_job_counts) / len(peer_job_counts)
+                if current_jobs > avg_jobs + 2:
+                    logger.info(
+                        f"LOCAL: Skipping job spawn - {current_jobs} jobs > cluster avg {avg_jobs:.1f}+2 "
+                        f"(letting underutilized nodes catch up)"
+                    )
+                    return 0
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Cluster balance check error: {e}")
+
+        # Start jobs if below target
+        if current_jobs < target_selfplay:
+            needed = min(target_selfplay - current_jobs, 3)  # Max 3 per cycle
+            logger.info(f"LOCAL: Starting {needed} selfplay job(s) ({current_jobs}/{target_selfplay})")
+
+            # Dec 27, 2025: Generate batch ID and emit BATCH_SCHEDULED
+            batch_id = f"selfplay_{p2p.node_id}_{int(time.time())}"
+            first_config = selfplay_scheduler.pick_weighted_config(node)
+            config_key = f"{first_config['board_type']}_{first_config['num_players']}p" if first_config else "mixed"
+            if hasattr(p2p, "_emit_batch_scheduled"):
+                await p2p._emit_batch_scheduled(
+                    batch_id=batch_id,
+                    batch_type="selfplay",
+                    config_key=config_key,
+                    job_count=needed,
+                    target_nodes=[p2p.node_id],
+                    reason="local_job_management",
+                )
+
+            jobs_dispatched = 0
+            jobs_failed = 0
+
+            # Jan 2026 fix: Detect GPU tier for proper job type selection
+            # High-end GPUs (GH200, H100, H200, A100, 5090, 4090) get GPU_SELFPLAY/GUMBEL_SELFPLAY
+            # Mid-tier GPUs get HYBRID_SELFPLAY (CPU rules + GPU eval)
+            gpu_name_raw = getattr(node, "gpu_name", "") or ""
+            gpu_name = gpu_name_raw.upper()
+            has_gpu = bool(getattr(node, "has_gpu", False))
+
+            # Session 17.50: YAML fallback when runtime GPU detection fails
+            # Runtime detection can fail on some nodes (vGPU, containers, driver issues)
+            if not has_gpu or not gpu_name:
+                if hasattr(p2p, "_check_yaml_gpu_config"):
+                    yaml_has_gpu, yaml_gpu_name, yaml_vram = p2p._check_yaml_gpu_config()
+                    if yaml_has_gpu:
+                        logger.info(
+                            f"LOCAL: Runtime GPU detection failed but YAML shows GPU "
+                            f"({yaml_gpu_name}, {yaml_vram}GB). Using YAML config."
+                        )
+                        has_gpu = True
+                        gpu_name_raw = yaml_gpu_name
+                        gpu_name = yaml_gpu_name.upper()
+
+            is_high_end_gpu = any(tag in gpu_name for tag in ("H100", "H200", "GH200", "A100", "5090", "4090"))
+            is_apple_gpu = "MPS" in gpu_name or "APPLE" in gpu_name
+
+            # Log GPU tier detection for visibility
+            if has_gpu and is_high_end_gpu:
+                logger.info(f"LOCAL: High-end GPU detected ({gpu_name_raw}) - using GPU/Gumbel selfplay")
+            elif has_gpu and not is_apple_gpu:
+                logger.info(f"LOCAL: Mid-tier GPU detected ({gpu_name_raw}) - using hybrid selfplay")
+
+            for _ in range(needed):
+                try:
+                    # Pick a config weighted by priority (using SelfplayScheduler manager)
+                    config = selfplay_scheduler.pick_weighted_config(node)
+                    if config:
+                        # Jan 2026: Select job type based on GPU tier (consistent with cluster dispatch)
+                        if has_gpu and is_high_end_gpu and not is_apple_gpu:
+                            # High-end GPUs: 50% GUMBEL (quality) / 50% GPU_SELFPLAY (volume)
+                            if random.random() < 0.5:
+                                job_type = self._get_job_type("GUMBEL_SELFPLAY")
+                                engine_mode = "gumbel-mcts"
+                            else:
+                                job_type = self._get_job_type("GPU_SELFPLAY")
+                                engine_mode = "gpu"
+                        elif has_gpu and not is_apple_gpu:
+                            # Mid-tier GPUs: HYBRID mode for rule fidelity
+                            job_type = self._get_job_type("HYBRID_SELFPLAY")
+                            engine_mode = "mixed"
+                        else:
+                            # CPU-only or Apple MPS: CPU selfplay
+                            job_type = self._get_job_type("SELFPLAY")
+                            engine_mode = config.get("engine_mode", "gumbel-mcts")
+
+                        job = await self._start_local_job_via_p2p(
+                            job_type,
+                            board_type=config["board_type"],
+                            num_players=config["num_players"],
+                            engine_mode=engine_mode,
+                        )
+                        if job:
+                            changes += 1
+                            jobs_dispatched += 1
+                        else:
+                            jobs_failed += 1
+                except Exception as e:  # noqa: BLE001
+                    logger.info(f"LOCAL: Failed to start selfplay: {e}")
+                    jobs_failed += 1
+                    break
+
+            # Dec 27, 2025: Emit BATCH_DISPATCHED after loop completes
+            if hasattr(p2p, "_emit_batch_dispatched"):
+                await p2p._emit_batch_dispatched(
+                    batch_id=batch_id,
+                    batch_type="selfplay",
+                    config_key=config_key,
+                    jobs_dispatched=jobs_dispatched,
+                    jobs_failed=jobs_failed,
+                    target_nodes=[p2p.node_id],
+                )
+
+        # Stop jobs if way over target (2x or more)
+        elif current_jobs > target_selfplay * 2:
+            excess = current_jobs - target_selfplay
+            logger.info(f"LOCAL: Reducing selfplay jobs by {excess} ({current_jobs}/{target_selfplay})")
+            if hasattr(p2p, "_reduce_local_selfplay_jobs"):
+                await p2p._reduce_local_selfplay_jobs(target_selfplay, reason="over_target")
+            changes += excess
+
+        if changes > 0:
+            logger.info(f"LOCAL job management: {changes} change(s)")
+        return changes
+
+    async def _start_local_job_via_p2p(
+        self,
+        job_type: Any,
+        board_type: str = "",
+        num_players: int = 2,
+        engine_mode: str = "",
+    ) -> Any:
+        """Start a local job via P2P orchestrator's _start_local_job.
+
+        This is a thin wrapper that delegates to the P2P orchestrator's
+        existing _start_local_job method (which itself delegates to this
+        orchestrator's start_local_job).
+
+        Returns:
+            Job object if started, None otherwise.
+        """
+        p2p = self._p2p
+        if hasattr(p2p, "_start_local_job"):
+            return await p2p._start_local_job(
+                job_type,
+                board_type=board_type,
+                num_players=num_players,
+                engine_mode=engine_mode,
+            )
+        return None

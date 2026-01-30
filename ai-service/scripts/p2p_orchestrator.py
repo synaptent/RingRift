@@ -15213,9 +15213,15 @@ print(json.dumps({{
         - Proportional allocation based on gossip cluster capacity
         - 30-second timeout for faster leader-failure recovery
 
+        January 29, 2026: Delegated to ProcessSpawnerOrchestrator.manage_local_jobs_decentralized().
+
         Returns:
             Number of jobs started/stopped
         """
+        # Delegate to ProcessSpawnerOrchestrator if available
+        if hasattr(self, "process_spawner") and self.process_spawner is not None:
+            return await self.process_spawner.manage_local_jobs_decentralized()
+
         changes = 0
         now = time.time()
 
