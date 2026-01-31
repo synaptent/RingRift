@@ -9542,7 +9542,7 @@ print(json.dumps({{
 
         # Run blocking operations in thread pool
         usage = await self._get_resource_usage_async()
-        selfplay, training = await asyncio.to_thread(self._count_local_jobs)
+        selfplay, training = await asyncio.to_thread(self.jobs.count_local_jobs)
 
         # NAT/relay detection (fast, no subprocess)
         now = time.time()
