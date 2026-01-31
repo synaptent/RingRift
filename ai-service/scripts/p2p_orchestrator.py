@@ -5542,13 +5542,7 @@ class P2POrchestrator(
         except Exception as e:
             logger.debug(f"[P2P] Failed to emit HOST_ONLINE for {node_id}: {e}")
 
-    def _emit_host_online_sync(self, node_id: str, capabilities: list[str] | None = None) -> None:
-        """Sync version of _emit_host_online for non-async contexts.
-
-        Jan 29, 2026: Delegated to PeerNetworkOrchestrator.
-        """
-        # Delegate to PeerNetworkOrchestrator
-        return self.network.emit_host_online_sync(node_id, capabilities)
+    # Jan 30, 2026: Removed _emit_host_online_sync - callers use self.network.emit_host_online_sync() directly
 
     async def _emit_host_offline(self, node_id: str, reason: str, last_heartbeat: float | None) -> None:
         """Emit HOST_OFFLINE event for a peer going offline."""
@@ -8199,14 +8193,8 @@ class P2POrchestrator(
             import traceback
             traceback.print_exc()
 
-    def _import_gpu_selfplay_sync(self, validated_db: Path, canonical_db: Path) -> int:
-        """Synchronous helper for _import_gpu_selfplay_to_canonical().
-
-        Jan 29, 2026: Delegated to SyncOrchestrator.import_gpu_selfplay_sync().
-        """
-        return self.sync.import_gpu_selfplay_sync(validated_db, canonical_db)
-
-    # =========================================================================
+    # Jan 30, 2026: Removed _import_gpu_selfplay_sync (dead code - no callers)
+    # Use self.sync.import_gpu_selfplay_sync() directly if needed
 
     # =========================================================================
     # NOTE: Improvement Cycle handlers moved to ImprovementHandlersMixin
@@ -10107,7 +10095,8 @@ print(json.dumps({{
             return
 
         # Convert Raft address (ip:port) to node_id
-        leader_node_id = self._resolve_raft_address_to_node_id(leader_address)
+        # Jan 30, 2026: Use network orchestrator directly
+        leader_node_id = self.network.resolve_raft_address_to_node_id(leader_address)
         if leader_node_id:
             # Update orchestrator's leader_id via _set_leader for consistency
             self._set_leader(leader_node_id, reason="raft_election")
@@ -10117,9 +10106,7 @@ print(json.dumps({{
                 f"[Raft] Leader elected at {leader_address} but cannot resolve to node_id"
             )
 
-    def _resolve_raft_address_to_node_id(self, raft_address: str) -> str | None:
-        """Jan 29, 2026: Delegated to PeerNetworkOrchestrator.resolve_raft_address_to_node_id()."""
-        return self.network.resolve_raft_address_to_node_id(raft_address)
+    # Jan 30, 2026: Removed _resolve_raft_address_to_node_id - callers use self.network.* directly
 
     async def _send_startup_peer_announcements(self) -> None:
         """Send immediate announcements to all known peers on startup.

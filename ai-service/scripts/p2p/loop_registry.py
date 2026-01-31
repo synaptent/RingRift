@@ -2209,8 +2209,9 @@ def _register_reconnect_dead_peers(
             return orchestrator._get_tailscale_ip_for_peer(node_id)
 
         def _emit_host_online(node_id: str, capabilities: list[str]) -> None:
+            # Jan 30, 2026: Use network orchestrator directly
             try:
-                orchestrator._emit_host_online_sync(node_id, capabilities)
+                orchestrator.network.emit_host_online_sync(node_id, capabilities)
             except Exception:
                 pass
 
