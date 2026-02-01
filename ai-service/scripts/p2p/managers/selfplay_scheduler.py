@@ -37,10 +37,6 @@ except ImportError:
             return 64
         elif game_count < 500:
             return 150
-
-    def get_board_adjusted_budget(board_type: str, budget: int, game_count: int) -> int:
-        """Fallback: no board adjustment when calculator not available."""
-        return budget
         elif game_count < 1000:
             return 200
         elif elo >= 2000:
@@ -49,6 +45,10 @@ except ImportError:
             return 1600
         else:
             return 800
+
+    def get_board_adjusted_budget(board_type: str, budget: int, game_count: int) -> int:
+        """Fallback: no board adjustment when calculator not available."""
+        return budget
 
     def get_budget_tier_name(budget: int) -> str:
         """Fallback tier name when calculator not available."""

@@ -277,6 +277,7 @@ class DataEventType(Enum):
     P2P_ZOMBIE_DETECTED = "p2p_zombie_detected"  # Jan 7, 2026: HTTP server crashed but process continues, terminating
     P2P_LOOP_STARTUP_FAILED = "p2p_loop_startup_failed"  # Jan 7, 2026: P2P background loop failed to start within timeout
     P2P_LOOP_PERFORMANCE_DEGRADED = "p2p_loop_performance_degraded"  # Jan 7, 2026: Loop avg run duration exceeds 50% of interval
+    P2P_LOOP_TIMEOUT = "p2p_loop_timeout"  # Feb 1, 2026: Loop _run_once() exceeded run_timeout, potential zombie
     EVENT_LOOP_BLOCKED = "event_loop_blocked"  # Jan 24, 2026: Event loop blocked by sync operation, affects responsiveness
     GOSSIP_STATE_CLEANUP_COMPLETED = "gossip_state_cleanup_completed"  # Jan 7, 2026: Gossip state TTL cleanup completed
     BACKUP_CANDIDATES_PROBED = "backup_candidates_probed"  # Jan 10, 2026: Backup leader candidates health probed

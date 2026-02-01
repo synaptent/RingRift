@@ -49,6 +49,8 @@ class LoopStats:
     successful_runs: int = 0
     failed_runs: int = 0
     consecutive_errors: int = 0
+    consecutive_timeouts: int = 0  # Feb 2026: Track consecutive timeouts for self-recovery
+    total_timeouts: int = 0  # Feb 2026: Track total timeouts
     last_run_time: float = 0.0
     last_success_time: float = 0.0
     last_error_time: float = 0.0
@@ -78,6 +80,8 @@ class LoopStats:
             "successful_runs": self.successful_runs,
             "failed_runs": self.failed_runs,
             "consecutive_errors": self.consecutive_errors,
+            "consecutive_timeouts": self.consecutive_timeouts,
+            "total_timeouts": self.total_timeouts,
             "last_run_time": self.last_run_time,
             "last_success_time": self.last_success_time,
             "last_error_time": self.last_error_time,
@@ -165,6 +169,7 @@ class BaseLoop(ABC):
         enabled: bool = True,
         depends_on: list[str] | None = None,
         executor_category: str | None = None,
+        run_timeout: float | None = None,
     ):
         """Initialize the base loop.
 
@@ -178,6 +183,9 @@ class BaseLoop(ABC):
             executor_category: Thread pool category for heavy operations (Jan 2026)
                 Categories: network, sync, jobs, health, compute
                 If None, uses default asyncio.to_thread()
+            run_timeout: Maximum time for _run_once() to complete (Feb 2026)
+                If None, defaults to max(interval * 10, 300) seconds.
+                Prevents zombie processes when operations hang indefinitely.
         """
         self.name = name
         self.interval = interval
@@ -186,6 +194,9 @@ class BaseLoop(ABC):
         self.enabled = enabled
         self.depends_on = depends_on or []
         self.executor_category = executor_category
+        # Feb 2026: Timeout protection to prevent indefinite hangs
+        # Default: 10x interval or 300s (5 min), whichever is larger
+        self.run_timeout = run_timeout if run_timeout is not None else max(interval * 10, 300.0)
 
         # Lifecycle state
         self._running = False
@@ -291,13 +302,17 @@ class BaseLoop(ABC):
                 run_start = time.time()
 
                 try:
-                    await self._run_once()
+                    # Feb 2026: Wrap _run_once() with timeout protection
+                    # This prevents zombie processes when operations hang indefinitely
+                    async with asyncio.timeout(self.run_timeout):
+                        await self._run_once()
 
                     # Success - update stats
                     run_duration = time.time() - run_start
                     self._stats.total_runs += 1
                     self._stats.successful_runs += 1
                     self._stats.consecutive_errors = 0
+                    self._stats.consecutive_timeouts = 0  # Reset on success
                     self._stats.last_run_time = run_start
                     self._stats.last_success_time = time.time()
                     self._stats.last_run_duration = run_duration
@@ -320,6 +335,44 @@ class BaseLoop(ABC):
                     # Task was cancelled - exit cleanly
                     logger.info(f"[{self.name}] Loop cancelled")
                     raise
+
+                except TimeoutError:
+                    # Feb 2026: _run_once() timed out - track separately from errors
+                    run_duration = time.time() - run_start
+                    self._stats.total_runs += 1
+                    self._stats.failed_runs += 1
+                    self._stats.consecutive_timeouts += 1
+                    self._stats.total_timeouts += 1
+                    self._stats.last_run_time = run_start
+                    self._stats.last_error_time = time.time()
+                    self._stats.last_error_message = f"Timeout after {self.run_timeout}s"
+
+                    logger.warning(
+                        f"[{self.name}] _run_once() timed out after {self.run_timeout}s "
+                        f"(consecutive: {self._stats.consecutive_timeouts})"
+                    )
+
+                    # Record timeout metric
+                    if self.metrics_manager:
+                        self.metrics_manager.record_metric(
+                            f"loop_{self.name}_timeouts",
+                            1,
+                            metadata={"timeout_seconds": self.run_timeout},
+                        )
+
+                    # Emit timeout event for observability
+                    self._emit_timeout_event()
+
+                    # Check if we should trigger self-recovery
+                    if self._stats.consecutive_timeouts >= 3:
+                        logger.error(
+                            f"[{self.name}] {self._stats.consecutive_timeouts} consecutive timeouts, "
+                            "triggering self-recovery"
+                        )
+                        await self._on_consecutive_timeouts()
+
+                    # Apply shorter backoff for timeouts (just the normal interval)
+                    await self._interruptible_sleep(self.interval)
 
                 except Exception as e:
                     # Error - update stats and apply backoff
@@ -722,6 +775,39 @@ class BaseLoop(ABC):
             error: The exception that was raised
         """
         pass
+
+    async def _on_consecutive_timeouts(self) -> None:
+        """Called when _run_once() times out 3+ consecutive times.
+
+        Feb 2026: Override this to implement self-recovery behavior.
+        Default implementation logs a warning. Subclasses can override
+        to restart connections, clear caches, or take other recovery actions.
+        """
+        pass
+
+    def _emit_timeout_event(self) -> None:
+        """Emit event when _run_once() times out (Feb 2026).
+
+        Emits P2P_LOOP_TIMEOUT event for observability and alerting.
+        """
+        try:
+            from app.coordination.event_router import emit_event
+            from app.distributed.data_events import DataEventType
+
+            emit_event(
+                DataEventType.P2P_LOOP_TIMEOUT,
+                {
+                    "loop_name": self.name,
+                    "timeout_seconds": self.run_timeout,
+                    "consecutive_timeouts": self._stats.consecutive_timeouts,
+                    "total_timeouts": self._stats.total_timeouts,
+                    "interval": self.interval,
+                },
+            )
+        except ImportError:
+            logger.debug(f"[{self.name}] Event system not available for timeout event")
+        except Exception as e:
+            logger.warning(f"[{self.name}] Failed to emit timeout event: {e}")
 
     # Jan 2026: Phase 2 - Thread pool helper for heavy operations
 

@@ -190,19 +190,21 @@ class SyncOrchestrator(BaseOrchestrator):
         return False
 
     def should_cleanup_source(self, node: Any) -> bool:
-        """Check if source data should be cleaned up after sync.
+        """Check if source node needs disk cleanup after sync.
 
-        Jan 29, 2026: Wrapper for P2POrchestrator._should_cleanup_source().
+        Feb 1, 2026: Inlined from removed P2POrchestrator._should_cleanup_source().
 
         Args:
             node: NodeInfo of the source node
 
         Returns:
-            True if source cleanup is allowed.
+            True if source cleanup is allowed (disk usage >= threshold).
         """
-        if hasattr(self._p2p, "_should_cleanup_source"):
-            return self._p2p._should_cleanup_source(node)
-        return False
+        try:
+            from scripts.p2p.managers.memory_disk_manager import DISK_CLEANUP_THRESHOLD
+        except ImportError:
+            DISK_CLEANUP_THRESHOLD = 80  # noqa: N806 - Fallback
+        return getattr(node, "disk_percent", 0) >= DISK_CLEANUP_THRESHOLD
 
     # =========================================================================
     # Sync Execution

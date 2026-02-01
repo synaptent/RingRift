@@ -227,3 +227,75 @@ groups:
         annotations:
           summary: 'Relay transport active on {{ $labels.node }}'
           description: 'Node {{ $labels.node }} is using relay transport. Direct connectivity may be impaired.'
+
+  # ==========================================================================
+  # Circuit Breaker Alerts (Feb 2026)
+  # ==========================================================================
+  - name: circuit_breakers
+    interval: 30s
+    rules:
+      # Warning: Single circuit breaker open for extended period
+      - alert: CircuitBreakerOpen
+        expr: |
+          ringrift_circuit_breaker_state{state="open"} == 1
+        for: 5m
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: 'Circuit breaker {{ $labels.name }} is open on {{ $labels.node }}'
+          description: 'Circuit breaker {{ $labels.name }} has been open for 5+ minutes. Operations to the protected resource are failing.'
+
+      # Critical: Multiple circuit breakers open - cascade risk
+      - alert: CircuitBreakerCascade
+        expr: |
+          count by (node) (ringrift_circuit_breaker_state{state="open"} == 1) > 5
+        for: 2m
+        labels:
+          severity: critical
+          team: infrastructure
+        annotations:
+          summary: 'Circuit breaker cascade on {{ $labels.node }}'
+          description: '{{ $value }} circuit breakers are open simultaneously on {{ $labels.node }}. Possible cascading failure.'
+
+      # Warning: Circuit breaker half-open (recovering)
+      - alert: CircuitBreakerRecovering
+        expr: |
+          ringrift_circuit_breaker_state{state="half_open"} == 1
+        for: 10m
+        labels:
+          severity: info
+          team: infrastructure
+        annotations:
+          summary: 'Circuit breaker {{ $labels.name }} recovering on {{ $labels.node }}'
+          description: 'Circuit breaker {{ $labels.name }} has been in half-open state for 10+ minutes. Recovery may be slow.'
+
+  # ==========================================================================
+  # Loop Health Alerts (Feb 2026)
+  # ==========================================================================
+  - name: loop_health
+    interval: 30s
+    rules:
+      # Warning: Background loop has high timeout rate
+      - alert: LoopTimeoutRateHigh
+        expr: |
+          increase(ringrift_loop_timeouts_total[30m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: 'Loop {{ $labels.loop_name }} timing out frequently'
+          description: 'Loop {{ $labels.loop_name }} has timed out {{ $value }} times in the last 30 minutes. Operations may be hanging.'
+
+      # Critical: Background loop stopped unexpectedly
+      - alert: LoopStopped
+        expr: |
+          ringrift_loop_running == 0 and ringrift_loop_enabled == 1
+        for: 5m
+        labels:
+          severity: warning
+          team: infrastructure
+        annotations:
+          summary: 'Background loop {{ $labels.loop_name }} stopped unexpectedly'
+          description: 'Loop {{ $labels.loop_name }} is enabled but not running. It may have crashed.'

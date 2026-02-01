@@ -2239,7 +2239,7 @@ class P2POrchestrator(
             get_peers=lambda: self.peers,
             get_self_info=lambda: self.self_info,
             peers_lock=self.peers_lock,
-            is_leader=lambda: self._is_leader(),
+            is_leader=lambda: self.leadership.check_is_leader(),
             request_peer_manifest=lambda peer_id: self._request_peer_manifest_sync(peer_id),
             check_disk_capacity=lambda: check_disk_has_capacity(),
             config=SyncPlannerConfig(),
@@ -3766,19 +3766,13 @@ class P2POrchestrator(
         )
 
     def _is_leader(self) -> bool:
-        """Check if this node is the current cluster leader with valid lease.
-
-        Jan 29, 2026: Delegates to self.leadership orchestrator.
-
-        Returns:
-            True if this node is the leader with a valid lease.
-        """
+        """Check if this node is the current cluster leader with valid lease."""
         return self.leadership.check_is_leader()
 
     @property
     def is_leader(self) -> bool:
         """Property alias for _is_leader() - required by WorkQueueHandlersMixin."""
-        return self._is_leader()
+        return self.leadership.check_is_leader()
 
     # Jan 30, 2026: Removed wrappers _get_leadership_consistency_metrics, _recover_leadership_desync,
     # _reconcile_leadership_state, _broadcast_leadership_claim, _async_broadcast_leader_claim
@@ -4879,7 +4873,7 @@ class P2POrchestrator(
         return {"Authorization": f"Bearer {self.auth_token}"}
 
     def _get_leader_peer(self) -> NodeInfo | None:
-        if self._is_leader():
+        if self.leadership.check_is_leader():
             return self.self_info
 
         # Jan 2026: Use lock-free PeerSnapshot for read-only access
@@ -6285,10 +6279,6 @@ class P2POrchestrator(
 
         return external
 
-    def _scan_owc_local(self, base_path: str) -> dict:
-        """Scan OWC drive locally. Delegates to DataSyncCoordinator."""
-        return self.data_sync_coordinator._scan_owc_local(base_path)
-
     def _extract_config_from_path(self, db_path: Path) -> str | None:
         """Extract config from path. Delegates to DataSyncCoordinator."""
         return self.data_sync_coordinator.extract_config_from_path(db_path)
@@ -6439,7 +6429,7 @@ class P2POrchestrator(
         Leader initiates a full cluster data sync.
         Returns status of the sync operation.
         """
-        if not self._is_leader():
+        if not self.leadership.check_is_leader():
             return {"success": False, "error": "Not the leader"}
 
         # First, collect fresh manifests
@@ -6479,25 +6469,12 @@ class P2POrchestrator(
             logger.warning(f"{node.node_id} disk at {node.disk_percent:.1f}%")
         return True
 
-    def _should_cleanup_source(self, node: NodeInfo) -> bool:
-        """Check if source node needs disk cleanup after sync."""
-        return node.disk_percent >= DISK_CLEANUP_THRESHOLD
-
-    async def _cleanup_synced_files(self, node_id: str, files: list[str]) -> bool:
-        """Delete synced files from source node to free disk space.
-
-        Jan 29, 2026: Delegates to SyncOrchestrator.cleanup_synced_files().
-
-        Only called after successful sync to training nodes.
-        """
-        return await self.sync.cleanup_synced_files(node_id, files)
-
     async def _sync_selfplay_to_training_nodes(self) -> dict[str, Any]:
         """Sync selfplay data to training primary nodes.
 
         December 2025: Delegated to SyncPlanner.sync_selfplay_to_training_nodes()
         """
-        if not self._is_leader():
+        if not self.leadership.check_is_leader():
             return {"success": False, "error": "Not the leader"}
 
         # Use stale manifest if available, otherwise will be collected fresh
@@ -6509,10 +6486,10 @@ class P2POrchestrator(
         result = await self.sync_planner.sync_selfplay_to_training_nodes(
             get_training_nodes=self.node_selector.get_training_primary_nodes,
             should_sync_to_node=self._should_sync_to_node,
-            should_cleanup_source=self._should_cleanup_source,
+            should_cleanup_source=lambda node: node.disk_percent >= DISK_CLEANUP_THRESHOLD,
             collect_manifest=self._collect_cluster_manifest,
             execute_sync_job=self._request_node_sync,
-            cleanup_synced_files=self._cleanup_synced_files,
+            cleanup_synced_files=self.sync.cleanup_synced_files,
             get_sync_router=self._get_sync_router,
             cluster_manifest=manifest,
         )
@@ -7142,7 +7119,7 @@ class P2POrchestrator(
             # is set correctly but role doesn't match.
             # Jan 30, 2026: Use leadership orchestrator directly
             "leadership_consistency": self.leadership.get_consistency_metrics(),
-            "is_leader": self._is_leader(),  # Explicit field for quick checks
+            "is_leader": self.leadership.check_is_leader(),  # Explicit field for quick checks
             # Jan 13, 2026: Config version for drift detection (P2P Cluster Stability Plan Phase 1)
             "config_version": self._get_config_version(),
             # Jan 13, 2026: Unified data summary across all sources (LOCAL, CLUSTER, S3, OWC)
@@ -7162,6 +7139,37 @@ class P2POrchestrator(
     # Provides: handle_progress, handle_stability, handle_p2p_diagnostics, handle_swim_status
     # See DiagnosticsHandlersMixin
     # -------------------------------------------------------------------------
+
+    # -------------------------------------------------------------------------
+    # Loop Health Endpoint - Feb 2026
+    # -------------------------------------------------------------------------
+
+    async def handle_loops_health(self, request: web.Request) -> web.Response:
+        """Return health status of all background loops.
+
+        Feb 1, 2026: Added for operational visibility into loop health.
+        Exposes loop running state, error counts, and timeout stats.
+        """
+        loop_manager = self._get_loop_manager()
+        if loop_manager is None:
+            return web.json_response(
+                {"error": "LoopManager not initialized", "loops": {}, "total": 0},
+                status=503,
+            )
+
+        all_status = loop_manager.get_all_status()
+        unhealthy = [
+            name for name, status in all_status.items()
+            if status.get("status") in ("error", "degraded", "stopped")
+        ]
+
+        return web.json_response({
+            "loops": all_status,
+            "total_count": len(all_status),
+            "unhealthy_count": len(unhealthy),
+            "unhealthy_loops": unhealthy,
+            "manager_health": loop_manager.health_check(),
+        })
 
     # -------------------------------------------------------------------------
     # Peer Health Handlers - EXTRACTED to scripts/p2p/handlers/status.py
@@ -8293,7 +8301,7 @@ class P2POrchestrator(
                 "--num-players", str(num_players),
                 "--skip-eval",  # Already evaluated
             ]
-            if self._is_leader():
+            if self.leadership.check_is_leader():
                 cmd_args.append("--sync-cluster")
 
             # Run deployment script
@@ -12365,7 +12373,7 @@ print(json.dumps({{
                 "leader_unreachable_duration": round(leader_unreachable_duration, 1),
                 "is_leaderless": self.leader_id is None or self.leader_id == "",
                 "current_leader_id": self.leader_id,
-                "is_self_leader": self._is_leader(),
+                "is_self_leader": self.leadership.check_is_leader(),
             }
         except Exception as e:  # noqa: BLE001
             result["leader_status"] = {"error": str(e)}

@@ -65,6 +65,7 @@ CORE_ROUTES = [
     Route("GET", "/game_counts", "handle_game_counts"),  # Jan 5, 2026: Session 17.41 - P2P game count seeding
     Route("POST", "/refresh_game_counts", "handle_refresh_game_counts"),  # Jan 6, 2026: Session 17.48 - manual/periodic refresh
     Route("GET", "/data/summary", "handle_data_summary"),  # Jan 13, 2026: Unified data discovery across all sources
+    Route("GET", "/loops/health", "handle_loops_health"),  # Feb 1, 2026: Background loop health for observability
     Route("GET", "/", "handle_root"),
 ]
 
