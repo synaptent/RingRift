@@ -299,9 +299,28 @@ class UniversalAI(BaseAI):
                     sig = inspect.signature(model.forward)
                     params = list(sig.parameters.keys())
 
-                    if len(params) >= 2 and params[1] in ('globals', 'globals_vec', 'g'):
+                    # Feb 2026: Check for v5_heavy models that expect heuristics
+                    heuristics_tensor = None
+                    if hasattr(model, 'num_heuristics') and getattr(model, 'num_heuristics', 0) > 0:
+                        try:
+                            num_h = model.num_heuristics
+                            player = game_state.current_player if hasattr(game_state, 'current_player') else 1
+                            if num_h >= 49:
+                                from app.training.fast_heuristic_features import extract_full_heuristic_features
+                                h = extract_full_heuristic_features(game_state, player, normalize=True)
+                            else:
+                                from app.training.fast_heuristic_features import extract_heuristic_features
+                                h = extract_heuristic_features(game_state, player, normalize=True)
+                            heuristics_tensor = torch.tensor(h, dtype=torch.float32, device=device).unsqueeze(0)
+                        except Exception as e:
+                            logger.debug(f"Failed to extract heuristics: {e}")
+
+                    if len(params) >= 2 and params[1] in ('globals', 'globals_vec', 'g', 'globals_'):
                         # Model expects globals as second argument
-                        output = model(x, g)
+                        if heuristics_tensor is not None and 'heuristics' in params:
+                            output = model(x, g, heuristics_tensor)
+                        else:
+                            output = model(x, g)
                     else:
                         # Legacy model without globals
                         output = model(x)
