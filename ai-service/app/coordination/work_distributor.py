@@ -379,11 +379,20 @@ class WorkDistributor:
             "requires_gpu": config.require_gpu if config.require_gpu else True,
         }
 
+        # Feb 1, 2026: Use graduated timeouts for evaluation based on board size.
+        # Large boards (hexagonal, square19) take much longer per game.
+        _board_timeouts = {
+            "hex8": 3600, "square8": 7200, "square19": 10800, "hexagonal": 14400,
+        }
+        base_timeout = _board_timeouts.get(board, config.timeout_seconds)
+        player_mult = {2: 1.0, 3: 1.5, 4: 2.0}.get(num_players, 1.0)
+        eval_timeout = base_timeout * player_mult
+
         item = _WorkItem(
             work_type=work_type,
             priority=config.priority,
             config=work_config,
-            timeout_seconds=config.timeout_seconds,
+            timeout_seconds=eval_timeout,
             max_attempts=config.max_attempts,
             depends_on=config.depends_on or [],
         )
@@ -404,7 +413,7 @@ class WorkDistributor:
             work_type=work_type.value if hasattr(work_type, "value") else str(work_type),
             priority=config.priority,
             config=work_config,
-            timeout_seconds=config.timeout_seconds,
+            timeout_seconds=eval_timeout,
         )
 
         return work_id

@@ -1658,6 +1658,26 @@ class UnifiedQueuePopulator:
             },
         )
 
+    # Feb 1, 2026: Graduated timeouts for tournament work items.
+    # Large boards (hexagonal, square19) were timing out with the fixed 1-hour
+    # default, causing evaluation stalls for 14+ days. These match the timeouts
+    # in evaluation_daemon.py:board_timeout_seconds.
+    _BOARD_TOURNAMENT_TIMEOUTS: dict[str, float] = {
+        "hex8": 3600,       # 1 hour
+        "square8": 7200,    # 2 hours
+        "square19": 10800,  # 3 hours
+        "hexagonal": 14400, # 4 hours
+    }
+
+    # Feb 1, 2026: Reduced game counts for large boards to keep evaluation
+    # feasible within timeout windows. hexagonal games are ~5x longer than hex8.
+    _BOARD_TOURNAMENT_GAMES: dict[str, int] = {
+        "hex8": 50,
+        "square8": 50,
+        "square19": 30,
+        "hexagonal": 20,
+    }
+
     def _create_tournament_item(
         self, board_type: str, num_players: int
     ) -> "WorkItem":
@@ -1670,14 +1690,26 @@ class UnifiedQueuePopulator:
         # This allows Hetzner CPU nodes to contribute to evaluation work
         requires_gpu = board_type not in ("hex8", "square8")
 
+        # Feb 1, 2026: Use graduated timeouts based on board size.
+        # 4-player games need 2x time, 3-player needs 1.5x.
+        base_timeout = self._BOARD_TOURNAMENT_TIMEOUTS.get(board_type, 3600)
+        player_multiplier = {2: 1.0, 3: 1.5, 4: 2.0}.get(num_players, 1.0)
+        timeout = base_timeout * player_multiplier
+
+        # Feb 1, 2026: Reduce game count for large boards to fit within timeout.
+        games = self._BOARD_TOURNAMENT_GAMES.get(
+            board_type, self.config.tournament_games
+        )
+
         return WorkItem(
             work_id=work_id,
             work_type=WorkType.TOURNAMENT,
             priority=self.config.tournament_priority,
+            timeout_seconds=timeout,
             config={
                 "board_type": board_type,
                 "num_players": num_players,
-                "games": self.config.tournament_games,
+                "games": games,
                 "source": "queue_populator",
                 "requires_gpu": requires_gpu,
             },
