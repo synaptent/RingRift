@@ -297,10 +297,9 @@ class SyncPlanner(EventSubscriptionMixin):
                 logger.debug(f"Emitted {actual_event_type} (from {event_type.name})")
                 return True  # Success
             except (OSError, ConnectionError, TimeoutError) as e:
-                # Transient errors - retry once
+                # Transient errors - retry once (no sleep to avoid blocking event loop)
                 if attempt < max_retries - 1:
                     logger.debug(f"Retry emit {actual_event_type}: {e}")
-                    time.sleep(0.1)
                     continue
                 # Final failure
                 self.stats.events_failed += 1
