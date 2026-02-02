@@ -218,6 +218,78 @@ async def emit_elo_updated(
         ))
 
 
+def emit_elo_updated_sync(
+    config: str,
+    model_id: str,
+    new_elo: float,
+    old_elo: float,
+    games_played: int,
+    source: str = "",
+) -> None:
+    """Synchronous version of emit_elo_updated.
+
+    Feb 2026: Use this in sync contexts (gauntlet evaluation, tournament daemon)
+    where no async event loop is running. This ensures ELO_UPDATED events are
+    always emitted, enabling elo_progression tracking.
+
+    Args:
+        config: Config key (e.g., "hex8_2p")
+        model_id: Participant ID
+        new_elo: New Elo rating
+        old_elo: Previous Elo rating
+        games_played: Number of games played
+        source: Component emitting this event
+    """
+    elo_change = new_elo - old_elo
+
+    try:
+        bus = get_event_bus()
+        if bus:
+            bus.publish_sync(DataEvent(
+                event_type=DataEventType.ELO_UPDATED,
+                payload={
+                    "config": config,
+                    "model_id": model_id,
+                    "new_elo": new_elo,
+                    "old_elo": old_elo,
+                    "elo_change": elo_change,
+                    "games_played": games_played,
+                },
+                source=source,
+            ))
+    except (AttributeError, RuntimeError):
+        # Event bus not available - non-critical
+        pass
+
+    # Check for significant change (threshold from unified config)
+    try:
+        from app.config.unified_config import get_config
+        config_obj = get_config()
+        threshold = config_obj.curriculum.elo_change_threshold
+        should_rebalance = config_obj.curriculum.rebalance_on_elo_change
+    except ImportError:
+        threshold = 20
+        should_rebalance = True
+
+    if should_rebalance and abs(elo_change) >= threshold:
+        try:
+            bus = get_event_bus()
+            if bus:
+                bus.publish_sync(DataEvent(
+                    event_type=DataEventType.ELO_SIGNIFICANT_CHANGE,
+                    payload={
+                        "config": config,
+                        "model_id": model_id,
+                        "elo_change": elo_change,
+                        "new_elo": new_elo,
+                        "threshold": threshold,
+                    },
+                    source=source,
+                ))
+        except (AttributeError, RuntimeError):
+            pass
+
+
 async def emit_elo_velocity_changed(
     config_key: str,
     velocity: float,

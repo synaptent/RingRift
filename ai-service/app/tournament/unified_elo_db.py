@@ -1138,8 +1138,9 @@ class EloDatabase:
             # dual-write and double rating updates. Instead, we emit events directly.
             # The EloDatabase is the SSoT for tournament ratings; EloService is for
             # training pipeline integration and event emission only.
+            # Feb 2026: Use sync version as fallback for gauntlet/tournament evaluation
             try:
-                from app.coordination.event_router import emit_elo_updated
+                from app.distributed.data_events import emit_elo_updated, emit_elo_updated_sync
                 import asyncio
 
                 config_key = f"{board_type}_{num_players}p"
@@ -1156,10 +1157,18 @@ class EloDatabase:
                             source="unified_elo_db",
                         ))
                     except RuntimeError:
-                        pass  # No event loop - skip event emission in sync context
+                        # No event loop - use sync version
+                        emit_elo_updated_sync(
+                            config=config_key,
+                            model_id=pid,
+                            new_elo=new_ratings[pid],
+                            old_elo=old_rating,
+                            games_played=1,
+                            source="unified_elo_db",
+                        )
             except ImportError:
                 pass  # Event system not available
-            except Exception as e:
+            except (AttributeError, TypeError, ValueError) as e:
                 logger.debug(f"Event emission failed (non-fatal): {e}")
 
             return match_id, new_ratings

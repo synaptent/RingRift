@@ -206,12 +206,14 @@ def get_raft_elo_store() -> Any:
 
 # Event emission for ELO updates
 # Jan 5, 2026: Fixed import path - emit_elo_updated is in data_events, not event_router
+# Feb 2026: Added sync version for use in sync contexts (gauntlet evaluation)
 try:
-    from app.distributed.data_events import emit_elo_updated
+    from app.distributed.data_events import emit_elo_updated, emit_elo_updated_sync
     HAS_ELO_EVENTS = True
 except ImportError:
     HAS_ELO_EVENTS = False
     emit_elo_updated = None
+    emit_elo_updated_sync = None
 
 # Event emission for Elo velocity/significant changes (December 2025 - training pipeline fix)
 try:
@@ -1561,16 +1563,16 @@ class EloService:
         config_key = f"{board_type}_{num_players}p"
 
         # Emit ELO_UPDATED events for both participants
-        if HAS_ELO_EVENTS and emit_elo_updated is not None:
-            try:
-                # Try to get running event loop
+        # Feb 2026: Use sync version as fallback when no event loop is available
+        if HAS_ELO_EVENTS:
+            for pid, old_elo, new_elo in [
+                (participant_a, elo_before[participant_a], elo_after[participant_a]),
+                (participant_b, elo_before[participant_b], elo_after[participant_b]),
+            ]:
                 try:
+                    # Try async version if event loop is running
                     asyncio.get_running_loop()
-                    # Schedule coroutines in the running loop
-                    for pid, old_elo, new_elo in [
-                        (participant_a, elo_before[participant_a], elo_after[participant_a]),
-                        (participant_b, elo_before[participant_b], elo_after[participant_b]),
-                    ]:
+                    if emit_elo_updated is not None:
                         asyncio.ensure_future(emit_elo_updated(
                             config=config_key,
                             model_id=pid,
@@ -1580,10 +1582,18 @@ class EloService:
                             source="elo_service",
                         ))
                 except RuntimeError:
-                    # No running loop - create one for sync context
-                    pass  # Skip in pure sync context to avoid blocking
-            except (RuntimeError, AttributeError, TypeError, ValueError):
-                pass  # Don't let event emission break match recording
+                    # No running loop - use sync version
+                    if emit_elo_updated_sync is not None:
+                        emit_elo_updated_sync(
+                            config=config_key,
+                            model_id=pid,
+                            new_elo=new_elo,
+                            old_elo=old_elo,
+                            games_played=1,
+                            source="elo_service",
+                        )
+                except (AttributeError, TypeError, ValueError):
+                    pass  # Don't let event emission break match recording
 
         # Emit composite ELO events for composite participants (Sprint 5)
         if HAS_COMPOSITE_EVENTS and publish_composite_elo_updated_sync is not None:
