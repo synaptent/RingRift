@@ -87,7 +87,7 @@ from app.game_engine import GameEngine
 from app.models import GameState, Move, MoveType, Position
 from app.models.core import BoardType
 from app.training.initial_state import create_initial_state
-from app.training.selfplay_config import SelfplayConfig, create_argument_parser
+from app.training.selfplay_config import SelfplayConfig, create_argument_parser, _get_batch_size
 from app.training.temperature_scheduling import (
     TemperatureSchedule,
     LinearDecaySchedule,
@@ -2005,11 +2005,12 @@ def main():
         engine_mode = "heuristic-only"
 
     # Create SelfplayConfig from parsed args
+    # Note: Use _get_batch_size() to handle None (auto-calculate) vs explicit batch_size
     selfplay_config = SelfplayConfig(
         board_type=parsed.board,
         num_players=parsed.num_players,
         num_games=parsed.num_games,
-        batch_size=parsed.batch_size,
+        batch_size=_get_batch_size(parsed, parsed.board),
         output_dir=parsed.output_dir or "data/selfplay/gpu",
         seed=parsed.seed or 42,
         temperature=parsed.temperature,
