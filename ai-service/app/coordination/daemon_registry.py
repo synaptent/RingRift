@@ -919,6 +919,42 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         category="evaluation",
         health_check_interval=300.0,
     ),
+    # =========================================================================
+    # Consolidated Daemons (January 2026)
+    # These replace multiple deprecated daemons with unified implementations
+    # =========================================================================
+    DaemonType.CONFIG_VALIDATOR: DaemonSpec(
+        runner_name="create_config_validator",
+        depends_on=(DaemonType.EVENT_ROUTER,),
+        category="misc",
+        health_check_interval=300.0,
+    ),
+    DaemonType.ONLINE_MERGE: DaemonSpec(
+        runner_name="create_online_merge",
+        depends_on=(DaemonType.EVENT_ROUTER,),
+        category="training",
+        health_check_interval=120.0,
+    ),
+    DaemonType.OWC_SYNC_MANAGER: DaemonSpec(
+        runner_name="create_owc_sync_manager",
+        depends_on=(DaemonType.EVENT_ROUTER,),
+        soft_depends_on=(DaemonType.AUTO_SYNC,),
+        category="sync",
+        health_check_interval=300.0,
+    ),
+    DaemonType.PRODUCTION_GAME_IMPORT: DaemonSpec(
+        runner_name="create_production_game_import",
+        depends_on=(DaemonType.EVENT_ROUTER,),
+        category="sync",
+        health_check_interval=300.0,
+    ),
+    DaemonType.S3_SYNC: DaemonSpec(
+        runner_name="create_s3_sync",
+        depends_on=(DaemonType.EVENT_ROUTER,),
+        soft_depends_on=(DaemonType.AUTO_SYNC,),
+        category="sync",
+        health_check_interval=120.0,
+    ),
 }
 
 

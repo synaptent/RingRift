@@ -3383,6 +3383,82 @@ async def create_online_merge() -> None:
         raise
 
 
+async def create_owc_sync_manager() -> None:
+    """Create and run OWC external drive sync manager daemon.
+
+    February 2026: Consolidated OWC sync daemon that replaces:
+    - EXTERNAL_DRIVE_SYNC
+    - OWC_PUSH
+    - DUAL_BACKUP
+    - UNIFIED_BACKUP
+    """
+    try:
+        from app.coordination.external_drive_sync import get_external_drive_sync_daemon
+
+        daemon = get_external_drive_sync_daemon()
+        await daemon.start()
+        await daemon.wait_until_stopped()
+    except ImportError as e:
+        logger.warning(f"OWC Sync Manager not available (likely not on coordinator): {e}")
+        # Don't raise - OWC sync is optional for non-coordinator nodes
+        await asyncio.sleep(float("inf"))
+
+
+async def create_s3_sync() -> None:
+    """Create and run unified S3 sync daemon.
+
+    February 2026: Consolidated S3 sync daemon that replaces:
+    - S3_BACKUP
+    - S3_PUSH
+    - S3_NODE_SYNC
+    """
+    try:
+        from app.coordination.s3_sync_daemon import get_s3_sync_daemon
+
+        daemon = get_s3_sync_daemon()
+        await daemon.start()
+        await daemon.wait_until_stopped()
+    except ImportError as e:
+        logger.warning(f"S3 Sync Daemon not available: {e}")
+        await asyncio.sleep(float("inf"))
+
+
+async def create_production_game_import() -> None:
+    """Create and run production game import daemon.
+
+    February 2026: Imports games from production ringrift.ai server
+    into the training pipeline.
+    """
+    try:
+        from app.coordination.production_game_import_daemon import (
+            get_production_game_import_daemon,
+        )
+
+        daemon = get_production_game_import_daemon()
+        await daemon.start()
+        await daemon.wait_until_stopped()
+    except ImportError as e:
+        logger.warning(f"Production Game Import daemon not available: {e}")
+        await asyncio.sleep(float("inf"))
+
+
+async def create_reanalysis() -> None:
+    """Create and run reanalysis daemon.
+
+    Re-evaluates historical games with improved models.
+    Subscribes to MODEL_PROMOTED, triggers reanalysis on Elo improvements.
+    """
+    try:
+        from app.coordination.reanalysis_daemon import get_reanalysis_daemon
+
+        daemon = get_reanalysis_daemon()
+        await daemon.start()
+        await daemon.wait_until_stopped()
+    except ImportError as e:
+        logger.warning(f"Reanalysis daemon not available: {e}")
+        await asyncio.sleep(float("inf"))
+
+
 # =============================================================================
 # Runner Registry
 # =============================================================================
@@ -3525,6 +3601,11 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.NODE_DATA_AGENT.name: create_node_data_agent,
         # Online model merge daemon (January 2026)
         DaemonType.ONLINE_MERGE.name: create_online_merge,
+        # Sync and import daemons (February 2026)
+        DaemonType.OWC_SYNC_MANAGER.name: create_owc_sync_manager,
+        DaemonType.S3_SYNC.name: create_s3_sync,
+        DaemonType.PRODUCTION_GAME_IMPORT.name: create_production_game_import,
+        DaemonType.REANALYSIS.name: create_reanalysis,
     }
 
 
