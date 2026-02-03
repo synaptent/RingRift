@@ -230,6 +230,10 @@ class LeadershipHealthMixin(P2PMixinBase):
         (e.g., "135.181.39.239:7947") but voter_node_ids are proper names
         (e.g., "hetzner-cpu1"). This method checks both.
 
+        Feb 3, 2026: Added is_alive() result caching to prevent O(N²) behavior.
+        Previously calling is_alive() for each voter×peer combination caused
+        11+ second blocking on /status endpoint.
+
         Returns:
             Number of alive voters (including self if we are a voter)
         """
@@ -248,6 +252,31 @@ class LeadershipHealthMixin(P2PMixinBase):
             for ip in ips:
                 ip_to_voter[ip] = voter_id
 
+        # Cache is_alive() results once to avoid O(N²) repeated calls
+        # Feb 3, 2026: This prevents /status endpoint from blocking for 11+ seconds
+        peer_alive_cache: dict[str, bool] = {}
+        peer_host_cache: dict[str, str | None] = {}
+        peer_addresses_cache: dict[str, set[str]] = {}
+        for peer_id, peer in self.peers.items():
+            if isinstance(peer, dict):
+                peer_alive_cache[peer_id] = self._is_peer_alive(peer)
+                peer_host_cache[peer_id] = peer.get("host", "")
+                addrs = set(peer.get("addresses", []))
+                if peer.get("tailscale_ip"):
+                    addrs.add(peer["tailscale_ip"])
+                if peer.get("host"):
+                    addrs.add(peer["host"])
+                peer_addresses_cache[peer_id] = addrs
+            elif hasattr(peer, "is_alive"):
+                peer_alive_cache[peer_id] = peer.is_alive()
+                peer_host_cache[peer_id] = getattr(peer, "host", None)
+                addrs = set(getattr(peer, "addresses", []) or [])
+                if getattr(peer, "tailscale_ip", None):
+                    addrs.add(peer.tailscale_ip)
+                if getattr(peer, "host", None):
+                    addrs.add(peer.host)
+                peer_addresses_cache[peer_id] = addrs
+
         # Track which voters we've counted to avoid double-counting
         counted_voters: set[str] = set()
 
@@ -264,112 +293,82 @@ class LeadershipHealthMixin(P2PMixinBase):
                 logger.info(f"[VoterCount] Self recognized as voter: {voter_id}")
                 continue
 
-            # Check 2: Direct node_id match in peers
-            peer = self.peers.get(voter_id)
-            if peer and peer.is_alive():
+            # Check 2: Direct node_id match in peers (use cache)
+            if voter_id in peer_alive_cache and peer_alive_cache[voter_id]:
                 alive_count += 1
                 counted_voters.add(voter_id)
                 continue
 
-            # Check 3: Peer info 'host' field match
+            # Check 3: Peer info 'host' field match (use cache)
             voter_ips = voter_ip_map.get(voter_id, set())
-            for peer_id, peer in self.peers.items():
+            for peer_id in peer_alive_cache:
                 if voter_id in counted_voters:
                     break
                 if self._is_swim_peer_id(peer_id):
                     continue
-                if isinstance(peer, dict):
-                    peer_host = peer.get("host", "")
-                    if peer_host in voter_ips and self._is_peer_alive(peer):
-                        alive_count += 1
-                        counted_voters.add(voter_id)
-                        break
-                elif hasattr(peer, "host") and peer.host in voter_ips:
-                    if peer.is_alive():
-                        alive_count += 1
-                        counted_voters.add(voter_id)
-                        break
+                if not peer_alive_cache[peer_id]:
+                    continue  # Skip dead peers early
+                peer_host = peer_host_cache.get(peer_id, "")
+                if peer_host and peer_host in voter_ips:
+                    alive_count += 1
+                    counted_voters.add(voter_id)
+                    break
 
             if voter_id in counted_voters:
                 continue
 
-            # Check 4: Multi-address matching
-            for peer_id, peer in self.peers.items():
+            # Check 4: Multi-address matching (use cache)
+            for peer_id in peer_alive_cache:
                 if voter_id in counted_voters:
                     break
                 if self._is_swim_peer_id(peer_id):
                     continue
+                if not peer_alive_cache[peer_id]:
+                    continue  # Skip dead peers early
 
-                peer_addresses: set[str] = set()
-                if isinstance(peer, dict):
-                    peer_addresses.update(peer.get("addresses", []))
-                    if peer.get("tailscale_ip"):
-                        peer_addresses.add(peer["tailscale_ip"])
-                    if peer.get("host"):
-                        peer_addresses.add(peer["host"])
-                elif hasattr(peer, "addresses"):
-                    peer_addresses.update(getattr(peer, "addresses", []) or [])
-                    if getattr(peer, "tailscale_ip", None):
-                        peer_addresses.add(peer.tailscale_ip)
-                    if getattr(peer, "host", None):
-                        peer_addresses.add(peer.host)
-
+                peer_addresses = peer_addresses_cache.get(peer_id, set())
                 if peer_addresses & voter_ips:
-                    is_alive = (
-                        peer.is_alive()
-                        if hasattr(peer, "is_alive")
-                        else self._is_peer_alive(peer)
-                    )
-                    if is_alive:
-                        alive_count += 1
-                        counted_voters.add(voter_id)
-                        break
+                    alive_count += 1
+                    counted_voters.add(voter_id)
+                    break
 
             if voter_id in counted_voters:
                 continue
 
-            # Check 5: IP:port extraction from peer_id
-            for peer_id, peer in self.peers.items():
+            # Check 5: IP:port extraction from peer_id (use cache)
+            for peer_id in peer_alive_cache:
                 if voter_id in counted_voters:
                     break
                 if self._is_swim_peer_id(peer_id):
                     continue
+                if not peer_alive_cache[peer_id]:
+                    continue  # Skip dead peers early
                 if ":" in peer_id:
                     peer_ip = peer_id.rsplit(":", 1)[0]
                     if peer_ip in voter_ips:
-                        is_alive = (
-                            peer.is_alive()
-                            if hasattr(peer, "is_alive")
-                            else self._is_peer_alive(peer)
-                        )
-                        if is_alive:
-                            alive_count += 1
-                            counted_voters.add(voter_id)
-                            break
+                        alive_count += 1
+                        counted_voters.add(voter_id)
+                        break
 
             if voter_id in counted_voters:
                 continue
 
-            # Check 6: SWIM-discovered voters
-            for peer_id, peer in self.peers.items():
+            # Check 6: SWIM-discovered voters (use cache)
+            for peer_id in peer_alive_cache:
                 if voter_id in counted_voters:
                     break
                 if not self._is_swim_peer_id(peer_id):
                     continue
+                if not peer_alive_cache[peer_id]:
+                    continue  # Skip dead peers early
                 swim_ip = peer_id.rsplit(":", 1)[0]
                 if swim_ip in voter_ips:
-                    is_alive = (
-                        peer.is_alive()
-                        if hasattr(peer, "is_alive")
-                        else self._is_peer_alive(peer)
+                    alive_count += 1
+                    counted_voters.add(voter_id)
+                    logger.info(
+                        f"[VoterSwim] Counted voter {voter_id} via SWIM IP {swim_ip}"
                     )
-                    if is_alive:
-                        alive_count += 1
-                        counted_voters.add(voter_id)
-                        logger.info(
-                            f"[VoterSwim] Counted voter {voter_id} via SWIM IP {swim_ip}"
-                        )
-                        break
+                    break
 
         return alive_count
 
@@ -406,6 +405,15 @@ class LeadershipHealthMixin(P2PMixinBase):
         prev_offline = set(getattr(self, "_last_offline_voters", []))
         self_host = getattr(self, "advertise_host", None) or getattr(self, "host", None)
 
+        # Cache is_alive() results once to avoid O(N²) repeated calls
+        # This prevents /status endpoint from blocking for 11+ seconds
+        peer_alive_cache: dict[str, bool] = {}
+        peer_host_cache: dict[str, str | None] = {}
+        for peer_id, p in self.peers.items():
+            if not self._is_swim_peer_id(peer_id):
+                peer_alive_cache[peer_id] = p.is_alive()
+                peer_host_cache[peer_id] = getattr(p, "host", None) or (p.get("host") if isinstance(p, dict) else None)
+
         for voter_id in voter_ids:
             is_alive = False
             status_detail = "unknown"
@@ -419,25 +427,24 @@ class LeadershipHealthMixin(P2PMixinBase):
                 is_alive = True
                 status_detail = "self_via_ip"
             else:
-                # Check 2: Direct node_id match in peers
-                peer = self.peers.get(voter_id)
-                if peer and peer.is_alive():
+                # Check 2: Direct node_id match in peers (use cache if available)
+                if voter_id in peer_alive_cache and peer_alive_cache[voter_id]:
                     is_alive = True
                     status_detail = "direct"
                 else:
-                    # Check 3: Peer host or IP:port match
+                    # Check 3: Peer host or IP:port match (using cached is_alive results)
                     voter_ips = voter_ip_map.get(voter_id, set())
-                    for peer_id, p in self.peers.items():
-                        if self._is_swim_peer_id(peer_id):
-                            continue
-                        peer_host = getattr(p, "host", None) or (p.get("host") if isinstance(p, dict) else None)
-                        if peer_host and peer_host in voter_ips and p.is_alive():
+                    for peer_id in peer_alive_cache:
+                        if not peer_alive_cache[peer_id]:
+                            continue  # Skip dead peers early
+                        peer_host = peer_host_cache.get(peer_id)
+                        if peer_host and peer_host in voter_ips:
                             is_alive = True
                             status_detail = f"host_match:{peer_host}"
                             break
                         if ":" in peer_id:
                             peer_ip = peer_id.split(":")[0]
-                            if peer_ip in voter_ips and p.is_alive():
+                            if peer_ip in voter_ips:
                                 is_alive = True
                                 status_detail = f"ip_match:{peer_ip}"
                                 break

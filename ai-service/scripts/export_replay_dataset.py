@@ -1819,6 +1819,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--skip-remote-check",
+        action="store_true",
+        help=(
+            "Skip the remote data source check when using --use-discovery. "
+            "This avoids file handle exhaustion with many databases (500+). "
+            "Use this flag for local-only exports or when remote sources are unavailable."
+        ),
+    )
+    parser.add_argument(
         "--board-type",
         type=str,
         choices=["square8", "square19", "hex8", "hexagonal"],
@@ -2295,7 +2304,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[DISCOVERY] Total: {len(db_paths)} databases")
 
         # Check remote sources for additional data (January 2026 enhancement)
-        _check_remote_data_sources(args.board_type, args.num_players, db_paths)
+        # Skip if --skip-remote-check is set (avoids file handle exhaustion with 500+ DBs)
+        if not getattr(args, 'skip_remote_check', False):
+            _check_remote_data_sources(args.board_type, args.num_players, db_paths)
+        else:
+            print("[DISCOVERY] Skipping remote data source check (--skip-remote-check)")
 
     # January 2026: Fetch from remote sources if requested
     if getattr(args, 'include_remote', False) or getattr(args, 'include_s3', False) or getattr(args, 'include_owc', False):
