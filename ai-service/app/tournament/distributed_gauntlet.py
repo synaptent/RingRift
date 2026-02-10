@@ -1320,9 +1320,13 @@ class DistributedNNGauntlet:
 
                 conn.execute(f"""
                     UPDATE elo_ratings
-                    SET rating = ?, games_played = ?
+                    SET rating = ?,
+                        games_played = ?,
+                        peak_rating = MAX(peak_rating, ?),
+                        last_update = ?
                     WHERE {id_col} = ? AND board_type = ? AND num_players = ?
-                """, (new_rating, new_games, model_id, board_type, num_players))
+                """, (new_rating, new_games, new_rating, time.time(),
+                      model_id, board_type, num_players))
 
             conn.commit()
             logger.info(f"[Gauntlet] Updated Elo for {len(elo_changes)} models")

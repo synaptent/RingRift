@@ -21,7 +21,7 @@ import subprocess
 import time
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
-from scripts.p2p.orchestrators.base_orchestrator import BaseOrchestrator, HealthCheckResult
+from scripts.p2p.orchestrators.base_orchestrator import BaseOrchestrator, HealthCheckResult, get_job_attr
 
 if TYPE_CHECKING:
     from scripts.p2p_orchestrator import P2POrchestrator
@@ -469,7 +469,7 @@ class JobOrchestrator(BaseOrchestrator):
             # Count jobs that are pending or running for this node
             if hasattr(job_manager, "get_jobs_for_node"):
                 jobs = job_manager.get_jobs_for_node(node_id)
-                return len([j for j in jobs if j.get("status") in ("pending", "running", "claimed")])
+                return len([j for j in jobs if get_job_attr(j, "status") in ("pending", "running", "claimed")])
             return 0
         except Exception as e:  # noqa: BLE001
             self._log_debug(f"Failed to get pending jobs for {node_id}: {e}")
@@ -702,16 +702,16 @@ class JobOrchestrator(BaseOrchestrator):
                     jobs_snapshot = list(local_jobs.items())
 
             for job_id, job in jobs_snapshot:
-                if getattr(job, "status", None) != "running":
+                if get_job_attr(job, "status") != "running":
                     continue
-                pid = int(getattr(job, "pid", 0) or 0)
+                pid = int(get_job_attr(job, "pid", 0) or 0)
                 if pid <= 0:
                     continue
                 if not _pid_alive(pid):
                     stale_job_ids.append(job_id)
                     continue
 
-                job_type = getattr(job, "job_type", None)
+                job_type = get_job_attr(job, "job_type")
                 if JobType is not None:
                     if job_type in (JobType.SELFPLAY, JobType.GPU_SELFPLAY, JobType.HYBRID_SELFPLAY, JobType.CPU_SELFPLAY, JobType.GUMBEL_SELFPLAY):
                         selfplay_pids.add(str(pid))

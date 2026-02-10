@@ -46,7 +46,7 @@ except ImportError:
         else:
             return 800
 
-    def get_board_adjusted_budget(board_type: str, budget: int, game_count: int) -> int:
+    def get_board_adjusted_budget(board_type: str, budget: int, game_count: int, num_players: int = 2) -> int:
         """Fallback: no board adjustment when calculator not available."""
         return budget
 
@@ -3610,9 +3610,9 @@ class SelfplayScheduler(EventSubscriptionMixin):
                 # Jan 2026: Get adaptive budget based on game count and Elo
                 # This replaces static budgets with dynamic calculation
                 adaptive_budget = self.get_adaptive_selfplay_budget(config_key)
-                # Jan 2026: Apply large board budget caps for faster bootstrap
+                # Feb 2026: Apply large board budget caps scaled by player count
                 game_count = self._get_game_counts_per_config().get(config_key, 0)
-                adaptive_budget = get_board_adjusted_budget(board_type, adaptive_budget, game_count)
+                adaptive_budget = get_board_adjusted_budget(board_type, adaptive_budget, game_count, num_players)
 
                 # Jan 2026 Sprint 10: Check for quality boost - forces high-quality modes
                 quality_boost = self.get_quality_boost(config_key)

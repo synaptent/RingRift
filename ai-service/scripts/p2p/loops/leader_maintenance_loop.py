@@ -253,8 +253,25 @@ class LeaderMaintenanceLoop(BaseLoop):
 
         # Check if we're currently the leader
         if self._is_currently_leader():
-            # All good - we're the leader
-            logger.debug("[LeaderMaintenance] Leadership verified, no action needed")
+            # Renew our lease to prevent it from expiring
+            # Without this, the lease expires after LEADER_LEASE_DURATION
+            # and gossip can then override our leadership
+            try:
+                from app.p2p.constants import LEADER_LEASE_DURATION
+                lease_expires = getattr(self._orchestrator, "leader_lease_expires", 0)
+                remaining = lease_expires - time.time()
+                # Renew when less than 50% of lease remaining
+                if remaining < LEADER_LEASE_DURATION * 0.5:
+                    self._orchestrator.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
+                    self._orchestrator.last_leader_seen = time.time()
+                    if hasattr(self._orchestrator, "_save_state"):
+                        self._orchestrator._save_state()
+                    logger.debug(
+                        f"[LeaderMaintenance] Renewed lease "
+                        f"(was {remaining:.0f}s remaining, now {LEADER_LEASE_DURATION}s)"
+                    )
+            except (ImportError, AttributeError) as e:
+                logger.debug(f"[LeaderMaintenance] Lease renewal skipped: {e}")
             return
 
         # We should be leader but we're not - gossip has overwritten us

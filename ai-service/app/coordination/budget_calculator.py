@@ -88,19 +88,32 @@ MAX_TARGET_GAMES = 500_000
 
 
 # =============================================================================
-# Large Board Budget Caps (January 2026)
+# Large Board Budget Caps (February 2026)
 # =============================================================================
-# High-budget MCTS (3200 sims) is too slow on large boards during bootstrap.
-# Cap budgets to enable 10x faster data generation for data-starved configs.
+# High-budget MCTS is too slow on large boards, especially with 3-4 players.
+# Cap budgets based on board size AND player count to ensure games complete
+# in reasonable time (~5-10 min target).
 #
-# Rationale:
-# - hexagonal (469 cells): 30+ min/game at 3200 sims → cap at 300-600 sims
-# - square19 (361 cells): 25+ min/game at 3200 sims → cap at 400-800 sims
-# - hex8/square8 (61-64 cells): Fast enough at any budget, no cap needed
+# Feb 2026: Lowered caps dramatically and added player scaling.
+# Previous caps (300/400) matched bootstrap tier2 (300), providing no reduction.
+# hexagonal_4p at budget 300 took 28+ min/game and games were killed mid-play,
+# producing 159 empty run directories on gh200-3.
+#
+# New approach: base cap per board, scaled down by player count.
+# More players = longer games = need lower budget to keep game duration sane.
 
 LARGE_BOARD_BUDGET_CAPS: dict[str, dict[str, int]] = {
-    "square19": {"bootstrap": 400, "mature": 800},   # 361 cells - ~3-5 min/game
-    "hexagonal": {"bootstrap": 300, "mature": 600},  # 469 cells - ~3-5 min/game
+    "square19": {"bootstrap": 100, "mature": 300},   # 361 cells
+    "hexagonal": {"bootstrap": 64, "mature": 200},   # 469 cells
+}
+
+# Player count scaling for budget caps.
+# More players = exponentially more moves per game = need lower budget.
+# 4p hexagonal averages 1233 moves vs ~300 for 2p.
+PLAYER_BUDGET_SCALING: dict[int, float] = {
+    2: 1.0,    # 2-player: baseline
+    3: 0.67,   # 3-player: ~50% more moves per game
+    4: 0.5,    # 4-player: ~4x more moves per game
 }
 
 # Game count threshold for "mature" vs "bootstrap" phase
@@ -111,30 +124,33 @@ def get_board_adjusted_budget(
     board_type: str,
     base_budget: int,
     game_count: int,
+    num_players: int = 2,
 ) -> int:
-    """Apply board-specific budget caps for large boards during bootstrap.
+    """Apply board-specific budget caps for large boards, scaled by player count.
 
-    Large boards (square19, hexagonal) are too slow with MASTER/ULTIMATE budgets
-    during the bootstrap phase. This function caps the budget to enable faster
-    data generation while maintaining reasonable game quality.
-
-    Once a config reaches 2000+ games, the cap increases to allow higher quality
-    games for fine-tuning.
+    Large boards (square19, hexagonal) are too slow with high budgets,
+    especially in 3-4 player games where move counts are 2-4x higher.
+    This caps the budget to keep game duration at ~5-10 minutes.
 
     Args:
         board_type: Board type string (e.g., "hex8", "square19", "hexagonal")
         base_budget: Budget from Elo-based or game-count-based selection
         game_count: Current number of games for this config
+        num_players: Number of players (2, 3, or 4). More players = lower cap.
 
     Returns:
         Budget capped to board-appropriate level, or original if no cap applies
 
     Examples:
-        >>> get_board_adjusted_budget("hexagonal", 3200, 150)  # Bootstrap phase
-        300
-        >>> get_board_adjusted_budget("hexagonal", 3200, 3000)  # Mature phase
-        600
-        >>> get_board_adjusted_budget("hex8", 3200, 150)  # No cap for small boards
+        >>> get_board_adjusted_budget("hexagonal", 300, 150, 2)  # 2p bootstrap
+        64
+        >>> get_board_adjusted_budget("hexagonal", 300, 150, 4)  # 4p bootstrap
+        32
+        >>> get_board_adjusted_budget("hexagonal", 800, 3000, 2)  # 2p mature
+        200
+        >>> get_board_adjusted_budget("hexagonal", 800, 3000, 4)  # 4p mature
+        100
+        >>> get_board_adjusted_budget("hex8", 3200, 150, 4)  # Small board, no cap
         3200
     """
     caps = LARGE_BOARD_BUDGET_CAPS.get(board_type)
@@ -142,11 +158,18 @@ def get_board_adjusted_budget(
         # No cap for small boards (hex8, square8)
         return base_budget
 
-    # Select cap based on maturity
+    # Select base cap based on maturity
     if game_count >= LARGE_BOARD_MATURITY_THRESHOLD:
         cap = caps["mature"]
     else:
         cap = caps["bootstrap"]
+
+    # Scale cap by player count
+    player_scale = PLAYER_BUDGET_SCALING.get(num_players, 1.0)
+    cap = int(cap * player_scale)
+
+    # Floor at 16 to maintain minimum viable search
+    cap = max(16, cap)
 
     return min(base_budget, cap)
 
@@ -414,6 +437,7 @@ __all__ = [
     "PLAYER_COUNT_MULTIPLIERS",
     "INTENSITY_BUDGET_MULTIPLIERS",  # Sprint 10: Intensity multipliers
     "LARGE_BOARD_BUDGET_CAPS",  # Jan 2026: Large board caps
+    "PLAYER_BUDGET_SCALING",  # Feb 2026: Player count scaling for budget caps
     "LARGE_BOARD_MATURITY_THRESHOLD",  # Jan 2026: Game count for mature phase
     "ELO_TIER_MASTER",
     "ELO_TIER_ULTIMATE",

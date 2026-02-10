@@ -361,6 +361,19 @@ class WorkItem:
                 d["depends_on"] = json.loads(d["depends_on"]) if d["depends_on"] else []
             except (json.JSONDecodeError, TypeError):
                 d["depends_on"] = []
+        # Feb 2026: Cast numeric fields to prevent type errors from JSON/gossip
+        for float_field in ("created_at", "claimed_at", "started_at", "completed_at", "timeout_seconds"):
+            if float_field in d and not isinstance(d[float_field], (int, float)):
+                try:
+                    d[float_field] = float(d[float_field])
+                except (ValueError, TypeError):
+                    d[float_field] = 0.0
+        for int_field in ("priority", "attempts", "max_attempts"):
+            if int_field in d and not isinstance(d[int_field], int):
+                try:
+                    d[int_field] = int(d[int_field])
+                except (ValueError, TypeError):
+                    d[int_field] = 0
         return cls(**d)
 
     def is_claimable(self) -> bool:
@@ -1032,20 +1045,22 @@ class WorkQueue:
                 except (json.JSONDecodeError, TypeError):
                     depends_on = []
 
+                # Feb 2026: Cast numeric fields to prevent type errors from
+                # manually inserted rows with string timestamps or priorities.
                 item = WorkItem(
                     work_id=row["work_id"],
                     work_type=WorkType(row["work_type"]),
-                    priority=row["priority"],
+                    priority=int(row["priority"]),
                     config=json.loads(row["config"]),
-                    created_at=row["created_at"],
-                    claimed_at=row["claimed_at"],
-                    started_at=row["started_at"],
-                    completed_at=row["completed_at"],
+                    created_at=float(row["created_at"]),
+                    claimed_at=float(row["claimed_at"]),
+                    started_at=float(row["started_at"]),
+                    completed_at=float(row["completed_at"]),
                     status=WorkStatus(row["status"]),
                     claimed_by=row["claimed_by"],
-                    attempts=row["attempts"],
-                    max_attempts=row["max_attempts"],
-                    timeout_seconds=row["timeout_seconds"],
+                    attempts=int(row["attempts"]),
+                    max_attempts=int(row["max_attempts"]),
+                    timeout_seconds=float(row["timeout_seconds"]),
                     result=json.loads(row["result"]),
                     error=row["error"],
                     depends_on=depends_on,

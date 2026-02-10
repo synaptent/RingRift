@@ -745,18 +745,29 @@ class SplitBrainDetectionLoop(BaseLoop):
         # Check for split-brain: multiple distinct leaders
         unique_leaders = list(leaders_seen.keys())
 
-        if len(unique_leaders) > 1:
+        # Feb 2026: Filter out leaders reported by tiny minorities (likely stale gossip).
+        # A leader must be reported by at least 3 nodes (or 25% of responding peers,
+        # whichever is smaller) to be considered a real partition participant.
+        total_responding = sum(len(v) for v in leaders_seen.values())
+        min_reporters = min(3, max(1, total_responding // 4))
+        significant_leaders = {
+            leader: reporters
+            for leader, reporters in leaders_seen.items()
+            if len(reporters) >= min_reporters
+        }
+
+        if len(significant_leaders) > 1:
             self._detections += 1
             self._last_detection_time = time.time()
-            self._last_leaders_seen = unique_leaders
+            self._last_leaders_seen = list(significant_leaders.keys())
 
             logger.critical(
-                f"[SplitBrain] DETECTED: {len(unique_leaders)} leaders in cluster! "
-                f"Leaders: {unique_leaders}"
+                f"[SplitBrain] DETECTED: {len(significant_leaders)} leaders in cluster! "
+                f"Leaders: {list(significant_leaders.keys())}"
             )
 
             # Log which nodes report which leader
-            for leader_id, reporters in leaders_seen.items():
+            for leader_id, reporters in significant_leaders.items():
                 logger.warning(
                     f"[SplitBrain] Leader '{leader_id}' reported by: {reporters}"
                 )
@@ -768,8 +779,8 @@ class SplitBrainDetectionLoop(BaseLoop):
                 event = DataEvent(
                     event_type=DataEventType.SPLIT_BRAIN_DETECTED,
                     payload={
-                        "leaders_seen": unique_leaders,
-                        "leader_reporters": {k: v for k, v in leaders_seen.items()},
+                        "leaders_seen": list(significant_leaders.keys()),
+                        "leader_reporters": {k: v for k, v in significant_leaders.items()},
                         "cluster_epoch": self._get_cluster_epoch(),
                         "total_peers_polled": len(peers),
                         "detection_time": self._last_detection_time,
@@ -781,7 +792,6 @@ class SplitBrainDetectionLoop(BaseLoop):
                     from app.coordination.event_router import get_event_bus
                     bus = get_event_bus()
                     if bus:
-                        # bus.publish() is async, create task to avoid blocking
                         asyncio.create_task(bus.publish(event))
                 except ImportError:
                     pass
@@ -791,12 +801,32 @@ class SplitBrainDetectionLoop(BaseLoop):
             # Call callback if provided
             if self._on_split_brain_detected:
                 try:
-                    await self._on_split_brain_detected(unique_leaders, self._get_cluster_epoch())
+                    await self._on_split_brain_detected(
+                        list(significant_leaders.keys()), self._get_cluster_epoch()
+                    )
                 except Exception as e:
                     logger.error(f"[SplitBrain] Callback error: {e}")
 
             # December 29, 2025: Track partition duration and emit alerts
             await self._track_partition_duration()
+
+        elif len(unique_leaders) > 1:
+            # Feb 2026: Stale gossip - some peers report old leader, not a real partition
+            stale_leaders = {
+                leader: reporters
+                for leader, reporters in leaders_seen.items()
+                if len(reporters) < min_reporters
+            }
+            if stale_leaders:
+                logger.info(
+                    f"[SplitBrain] Stale gossip detected (not a partition): "
+                    f"{len(unique_leaders)} leader views, but minority leaders "
+                    f"{list(stale_leaders.keys())} only reported by "
+                    f"{sum(len(v) for v in stale_leaders.values())} peers "
+                    f"(threshold={min_reporters})"
+                )
+            # Heal any in-progress partition tracking since this isn't a real split
+            await self._handle_partition_healed()
 
         else:
             # Cluster is healthy (single leader)

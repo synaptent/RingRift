@@ -121,6 +121,7 @@ from urllib.parse import urlparse
 
 # P2P Managers - Phase 1 Consolidation (Jan 2026)
 from scripts.p2p.managers.quorum_manager import QuorumManager, QuorumConfig
+from scripts.p2p.orchestrators.base_orchestrator import get_job_attr, set_job_attr
 
 if TYPE_CHECKING:
     from app.coordination.unified_queue_populator import UnifiedQueuePopulator as QueuePopulator
@@ -7047,6 +7048,48 @@ class P2POrchestrator(
 
         # Jan 19, 2026: voter_health now computed in parallel gather above
 
+        # Feb 4, 2026: Pre-compute potentially blocking metrics with fallbacks
+        # These were causing /status timeouts when called inline in the response dict
+        try:
+            cluster_observability = self.sync.get_cluster_observability()
+        except Exception:  # noqa: BLE001
+            cluster_observability = {"error": "unavailable"}
+
+        try:
+            fallback_status = self._get_fallback_status()
+        except Exception:  # noqa: BLE001
+            fallback_status = {"error": "unavailable"}
+
+        try:
+            leadership_consistency = self.leadership.get_consistency_metrics()
+        except Exception:  # noqa: BLE001
+            leadership_consistency = {"error": "unavailable"}
+
+        try:
+            is_leader_val = self.leadership.check_is_leader()
+        except Exception:  # noqa: BLE001
+            is_leader_val = False
+
+        try:
+            config_version = self._get_config_version()
+        except Exception:  # noqa: BLE001
+            config_version = {"error": "unavailable"}
+
+        try:
+            data_summary = self._get_data_summary_cached()
+        except Exception:  # noqa: BLE001
+            data_summary = {"error": "unavailable"}
+
+        try:
+            cooldown_stats = self._get_cooldown_stats()
+        except Exception:  # noqa: BLE001
+            cooldown_stats = {"error": "unavailable"}
+
+        try:
+            peer_health_summary = self.health_metrics_manager.get_peer_health_summary()
+        except Exception:  # noqa: BLE001
+            peer_health_summary = {"error": "unavailable"}
+
         return web.json_response({
             "node_id": self.node_id,
             "role": self.role.value,
@@ -7075,7 +7118,8 @@ class P2POrchestrator(
             "peers": peers,
             "all_peers": all_peers,  # Jan 5, 2026: All peers regardless of alive status for job dispatch
             "local_jobs": jobs,
-            "alive_peers": len([p for p in self.peers.values() if p.is_alive()]),
+            # Feb 3, 2026: Use lock-free peers_snapshot instead of self.peers to prevent blocking
+            "alive_peers": len([p for p in peers_snapshot if p.is_alive()]),
             "improvement_cycle_manager": improvement_status,
             "diversity_metrics": diversity_metrics,
             "gossip_metrics": gossip_metrics,
@@ -7094,9 +7138,11 @@ class P2POrchestrator(
             "partition": partition_status,
             "background_loops": background_loops,
             # December 30, 2025: Cluster observability for debugging idle nodes
-            "cluster_observability": self.sync.get_cluster_observability(),
+            # Feb 4, 2026: Now pre-computed with fallback to avoid blocking
+            "cluster_observability": cluster_observability,
             # Session 17.41 (Jan 6, 2026): Fallback mechanism status for partition debugging
-            "fallback_status": self._get_fallback_status(),
+            # Feb 4, 2026: Now pre-computed with fallback to avoid blocking
+            "fallback_status": fallback_status,
             # December 30, 2025: Lock acquisition status for debugging
             "_lock_status": {
                 "peers_lock_acquired": peers_snapshot is not None,
@@ -7120,17 +7166,21 @@ class P2POrchestrator(
             # This enables detection of the leader self-recognition bug where leader_id
             # is set correctly but role doesn't match.
             # Jan 30, 2026: Use leadership orchestrator directly
-            "leadership_consistency": self.leadership.get_consistency_metrics(),
-            "is_leader": self.leadership.check_is_leader(),  # Explicit field for quick checks
+            # Feb 4, 2026: Now pre-computed with fallback to avoid blocking
+            "leadership_consistency": leadership_consistency,
+            "is_leader": is_leader_val,  # Explicit field for quick checks
             # Jan 13, 2026: Config version for drift detection (P2P Cluster Stability Plan Phase 1)
-            "config_version": self._get_config_version(),
+            # Feb 4, 2026: Now pre-computed with fallback to avoid blocking
+            "config_version": config_version,
             # Jan 13, 2026: Unified data summary across all sources (LOCAL, CLUSTER, S3, OWC)
-            "data_summary": self._get_data_summary_cached(),
+            # Feb 4, 2026: Now pre-computed with fallback to avoid blocking
+            "data_summary": data_summary,
             # Jan 20, 2026: Adaptive dead peer cooldown stats
-            "cooldown_stats": self._get_cooldown_stats(),
+            # Feb 4, 2026: Now pre-computed with fallback to avoid blocking
+            "cooldown_stats": cooldown_stats,
             # Jan 25, 2026: Peer health summary for P2P stability monitoring (Phase 3)
-            # Inline: was _get_peer_health_summary()
-            "peer_health_summary": self.health_metrics_manager.get_peer_health_summary(),
+            # Feb 4, 2026: Now pre-computed with fallback to avoid blocking
+            "peer_health_summary": peer_health_summary,
         })
 
     # NOTE: handle_progress moved to DiagnosticsHandlersMixin (Jan 28, 2026 - P2P Modularization Phase 8f)
@@ -7896,17 +7946,17 @@ class P2POrchestrator(
             with self.jobs_lock:
                 job = self.local_jobs.get(job_id)
                 if job:
-                    duration = time.time() - job.started_at
+                    # Feb 2026: Use get/set_job_attr to handle both ClusterJob objects and dict fallbacks
+                    started = get_job_attr(job, "started_at", 0.0)
+                    duration = time.time() - started
                     if return_code == 0:
-                        job.status = "completed"
-                        job.completed_at = time.time()
+                        set_job_attr(job, "status", "completed")
+                        set_job_attr(job, "completed_at", time.time())
                         logger.info(
                             f"Selfplay job {job_id} completed successfully "
                             f"(duration: {duration:.1f}s)"
                         )
                     else:
-                        job.status = "failed"
-                        job.completed_at = time.time()
                         # Try to get error message from run.log
                         error_msg = f"exit_code={return_code}"
                         log_file = output_dir / "run.log"
@@ -7918,7 +7968,9 @@ class P2POrchestrator(
                                     error_msg = content[-500:].strip()
                             except OSError:
                                 pass
-                        job.error_message = error_msg
+                        set_job_attr(job, "status", "failed")
+                        set_job_attr(job, "completed_at", time.time())
+                        set_job_attr(job, "error_message", error_msg)
                         logger.warning(
                             f"Selfplay job {job_id} failed (exit code {return_code}): "
                             f"{error_msg[:200]}..."
@@ -7956,9 +8008,9 @@ class P2POrchestrator(
             with self.jobs_lock:
                 job = self.local_jobs.get(job_id)
                 if job:
-                    job.status = "timeout"
-                    job.completed_at = time.time()
-                    job.error_message = "timeout_2_hours"
+                    set_job_attr(job, "status", "timeout")
+                    set_job_attr(job, "completed_at", time.time())
+                    set_job_attr(job, "error_message", "timeout_2_hours")
             # Kill the process
             try:
                 proc.terminate()
@@ -7973,9 +8025,9 @@ class P2POrchestrator(
             with self.jobs_lock:
                 job = self.local_jobs.get(job_id)
                 if job:
-                    job.status = "error"
-                    job.completed_at = time.time()
-                    job.error_message = str(e)
+                    set_job_attr(job, "status", "error")
+                    set_job_attr(job, "completed_at", time.time())
+                    set_job_attr(job, "error_message", str(e))
 
     # NOTE: _schedule_model_comparison() removed Jan 28, 2026 (~6 LOC)
     # Use self.tournament_manager.schedule_model_comparison() directly.
@@ -10309,6 +10361,9 @@ print(json.dumps({{
                                 and info.node_id <= self.leader_id
                             ):
                                 continue
+                            # Feb 2026: Skip leader adoption if we have forced leader override
+                            if getattr(self, "_forced_leader_override", False) and self.leader_id == self.node_id:
+                                continue
                             if self.leader_id != info.node_id or self.role != NodeRole.FOLLOWER:
                                 logger.info(f"Following configured leader from heartbeat: {info.node_id}")
                             prev_leader = self.leader_id
@@ -10399,14 +10454,18 @@ print(json.dumps({{
                                     and info.node_id <= self.leader_id
                                 ):
                                     continue
-                                if self.leader_id != info.node_id:
-                                    logger.info(f"Adopted leader from heartbeat: {info.node_id}")
-                                prev_leader = self.leader_id
-                                if prev_leader != info.node_id or not self._is_leader_lease_valid():
-                                    self.leader_lease_id = ""
-                                    self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
-                                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
-                                self._set_leader(info.node_id, reason="heartbeat_adopt_leader", save_state=False)
+                                # Feb 2026: Skip leader adoption if we have forced leader override
+                                if getattr(self, "_forced_leader_override", False) and self.leader_id == self.node_id:
+                                    pass
+                                else:
+                                    if self.leader_id != info.node_id:
+                                        logger.info(f"Adopted leader from heartbeat: {info.node_id}")
+                                    prev_leader = self.leader_id
+                                    if prev_leader != info.node_id or not self._is_leader_lease_valid():
+                                        self.leader_lease_id = ""
+                                        self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
+                                    # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                                    self._set_leader(info.node_id, reason="heartbeat_adopt_leader", save_state=False)
                         else:
                             async with NonBlockingAsyncLockWrapper(self.peers_lock, "peers_lock", timeout=5.0):
                                 existing = self.peers.get(peer.node_id)
@@ -12567,9 +12626,13 @@ print(json.dumps({{
                 lease_expires = now + LEADER_LEASE_DURATION / 2  # Shorter lease until quorum recovers
             elif arbiter_leader:
                 # Arbiter says someone else is leader - defer to arbiter
-                logger.info(f"Arbiter reports different leader ({arbiter_leader}); stepping down")
-                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
-                self._set_leader(arbiter_leader, reason="arbiter_override", save_state=False)
+                # Feb 2026: Skip arbiter override if forced leader is active
+                if getattr(self, "_forced_leader_override", False):
+                    logger.warning(f"Arbiter reports {arbiter_leader} but forced leader override active; ignoring")
+                else:
+                    logger.info(f"Arbiter reports different leader ({arbiter_leader}); stepping down")
+                    # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                    self._set_leader(arbiter_leader, reason="arbiter_override", save_state=False)
                 self.leader_lease_id = ""
                 self.leader_lease_expires = 0.0
                 self.last_lease_renewal = 0.0
@@ -12578,6 +12641,10 @@ print(json.dumps({{
                 return
             else:
                 # Arbiter also unreachable - step down to be safe
+                # Feb 2026: Skip step-down if forced leader override is active
+                if getattr(self, "_forced_leader_override", False):
+                    logger.warning(f"Arbiter unreachable but forced leader override active; maintaining leadership: {self.node_id}")
+                    return
                 logger.error(f"Failed to renew voter lease quorum and arbiter unreachable; stepping down: {self.node_id}")
                 # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
                 self._set_leader(None, reason="arbiter_unreachable", save_state=False)

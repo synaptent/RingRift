@@ -177,6 +177,49 @@ class LeadershipOrchestrator(BaseOrchestrator):
         with leader_state_lock:
             return self._set_leader_unlocked(new_leader_id, reason, sync_to_ulsm, save_state)
 
+    # Reasons that are authoritative and CAN override an active leader.
+    # All other reasons are treated as gossip and will NOT override a leader
+    # with a valid lease. This prevents leadership ping-pong from gossip.
+    _AUTHORITATIVE_REASONS = frozenset({
+        # Election outcomes
+        "become_leader",
+        "raft_election",
+        # Self step-down (health/lease issues)
+        "degraded_health",
+        "stale_self_lease",
+        "serf_leader_failed",
+        # Admin / emergency
+        "forced_leader",
+        "emergency_coordinator",
+        # Arbiter (centralized authority)
+        "arbiter_override",
+        "arbiter_unreachable",
+        # Clearing stale state
+        "stale_ineligible_leader",
+        "election_failed_no_quorum",
+        # Startup
+        "startup_restore_leadership",
+        # Provisional promotion
+    })
+
+    @classmethod
+    def _is_authoritative_reason(cls, reason: str) -> bool:
+        """Check if a reason is authoritative (can override active leader).
+
+        Reasons not in the authoritative set are treated as gossip-based
+        discovery and will NOT override a leader with a valid lease.
+        """
+        # Check exact match first
+        if reason in cls._AUTHORITATIVE_REASONS:
+            return True
+        # Check prefix patterns for dynamic reasons like "promote_provisional_*"
+        # or "leader_*" (cleanup of dead/ineligible leaders)
+        if reason.startswith("promote_provisional_"):
+            return True
+        if reason.startswith("leader_"):
+            return True
+        return False
+
     def _set_leader_unlocked(
         self,
         new_leader_id: str | None,
@@ -187,6 +230,10 @@ class LeadershipOrchestrator(BaseOrchestrator):
         """Internal implementation of set_leader (called with lock held).
 
         Jan 29, 2026: Helper for set_leader().
+        Feb 2026: Added leader stickiness - gossip-based reasons cannot
+        override a leader with a valid lease. This prevents leadership
+        ping-pong caused by different parts of the network reporting
+        different leaders via gossip.
         """
         try:
             from scripts.p2p.types import NodeRole
@@ -196,6 +243,45 @@ class LeadershipOrchestrator(BaseOrchestrator):
         old_leader_id = getattr(self._p2p, "leader_id", None)
         old_role = getattr(self._p2p, "role", None)
         node_id = getattr(self._p2p, "node_id", "")
+
+        # Leader stickiness: if this node IS the leader with a valid lease,
+        # reject gossip-based attempts to set a DIFFERENT leader. Only
+        # authoritative reasons (elections, admin, health) can override.
+        if (
+            old_leader_id == node_id
+            and old_role is not None
+            and getattr(old_role, "value", old_role) == "leader"
+            and new_leader_id != node_id
+            and new_leader_id is not None
+            and not self._is_authoritative_reason(reason)
+        ):
+            # Check if our own lease is still valid
+            if self._is_leader_lease_valid():
+                self._log_warning(
+                    f"[LeaderSticky] Rejecting gossip-based leader change "
+                    f"{node_id}->{new_leader_id} reason={reason} "
+                    f"(we are leader with valid lease)"
+                )
+                return True  # We're still the leader
+            else:
+                self._log_info(
+                    f"[LeaderSticky] Allowing leader change {node_id}->{new_leader_id} "
+                    f"reason={reason} (our lease has expired)"
+                )
+
+        # Also protect against forced leader override flag
+        forced_override = getattr(self._p2p, "_forced_leader_override", False)
+        if (
+            forced_override
+            and old_leader_id == node_id
+            and new_leader_id != node_id
+            and new_leader_id is not None
+        ):
+            self._log_warning(
+                f"[LeaderSticky] Rejecting leader change {node_id}->{new_leader_id} "
+                f"reason={reason} (forced leader override active)"
+            )
+            return True  # We're still the leader
 
         # Determine new role based on leader_id
         if new_leader_id is None:

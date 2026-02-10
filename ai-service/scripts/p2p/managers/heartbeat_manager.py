@@ -1181,7 +1181,9 @@ class HeartbeatManager:
 
                 # Update leader if this voter claims leadership
                 leader_lease_duration = getattr(self._orchestrator, "LEADER_LEASE_DURATION", 300)
-                if info.role == NodeRole.LEADER and info.node_id != self._node_id and self._leader_id != info.node_id:
+                # Feb 2026: Skip leader adoption if we have a forced leader override active
+                forced_override = getattr(self._orchestrator, "_forced_leader_override", False)
+                if info.role == NodeRole.LEADER and info.node_id != self._node_id and self._leader_id != info.node_id and not forced_override:
                     logger.info(f"Discovered leader from voter heartbeat: {info.node_id}")
                     self._set_leader(info.node_id, reason="voter_heartbeat_discover_leader", save_state=False)
                     if self._orchestrator:

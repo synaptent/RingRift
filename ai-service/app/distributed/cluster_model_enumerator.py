@@ -386,10 +386,13 @@ class ClusterModelEnumerator:
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
-                        peers = data.get("alive_peers", {})
+                        peers = data.get("peers", {})
+                        if not isinstance(peers, dict):
+                            return []
                         return [
                             {"node_id": node_id, **info}
                             for node_id, info in peers.items()
+                            if isinstance(info, dict) and info.get("alive")
                         ]
         except Exception as e:
             logger.warning(f"[ClusterModelEnumerator] Failed to get peers: {e}")

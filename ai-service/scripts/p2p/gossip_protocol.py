@@ -2826,7 +2826,7 @@ class GossipProtocolMixin(P2PMixinBase):
             return False
         parts = peer_id.split(":")
         if len(parts) == 2 and parts[1] == "7947":
-            logger.debug(f"[Gossip] Rejecting SWIM peer: {peer_id}")
+            self._log_debug(f"[Gossip] Rejecting SWIM peer: {peer_id}")
             return True
         return False
 
@@ -2841,16 +2841,20 @@ class GossipProtocolMixin(P2PMixinBase):
             return
 
         # Jan 3, 2026: Use sync lock to prevent race with cleanup
+        # Feb 2026: Use timeout to prevent event loop deadlock with asyncio.to_thread()
         lock = getattr(self, "_gossip_state_sync_lock", None)
+        lock_acquired = False
         if lock is not None:
-            lock.acquire()
+            lock_acquired = lock.acquire(blocking=True, timeout=2.0)
+            if not lock_acquired:
+                return  # Skip update rather than block event loop
         try:
             existing = self._gossip_peer_states.get(sender_id, {})
             # Last-write-wins conflict resolution
             if sender_state.get("version", 0) > existing.get("version", 0):
                 self._gossip_peer_states[sender_id] = sender_state
         finally:
-            if lock is not None:
+            if lock is not None and lock_acquired:
                 lock.release()
 
         # Jan 4, 2026: Process cluster_leader entry from RelayLeaderPropagator
@@ -2885,15 +2889,15 @@ class GossipProtocolMixin(P2PMixinBase):
                             from scripts.p2p.models import NodeRole
                             if hasattr(self, "role") and self.role != NodeRole.FOLLOWER:
                                 self.role = NodeRole.FOLLOWER
-                                logger.debug(f"Gossip: Updated role to FOLLOWER (accepted leader {claimed_leader})")
+                                self._log_debug(f"Gossip: Updated role to FOLLOWER (accepted leader {claimed_leader})")
                         except ImportError:
                             pass
                     if current_lease_expired:
-                        logger.info(f"Gossip: Updated expired leader to {claimed_leader} epoch={claimed_epoch}")
+                        self._log_info(f"Gossip: Updated expired leader to {claimed_leader} epoch={claimed_epoch}")
                     else:
-                        logger.debug(f"Gossip: Accepted leader claim {claimed_leader} epoch={claimed_epoch}")
+                        self._log_debug(f"Gossip: Accepted leader claim {claimed_leader} epoch={claimed_epoch}")
                 else:
-                    logger.debug(f"Gossip: Rejected leader claim {claimed_leader} epoch={claimed_epoch}")
+                    self._log_debug(f"Gossip: Rejected leader claim {claimed_leader} epoch={claimed_epoch}")
             else:
                 # Fallback: simple lease expiry check (pre-ULSM behavior)
                 if lease_expires > now:
@@ -2911,9 +2915,13 @@ class GossipProtocolMixin(P2PMixinBase):
     def _process_known_states(self, known_states: dict[str, dict]) -> None:
         """Process known states from gossip propagation."""
         # Jan 3, 2026: Use sync lock to prevent race with cleanup
+        # Feb 2026: Use timeout to prevent event loop deadlock with asyncio.to_thread()
         lock = getattr(self, "_gossip_state_sync_lock", None)
+        lock_acquired = False
         if lock is not None:
-            lock.acquire()
+            lock_acquired = lock.acquire(blocking=True, timeout=2.0)
+            if not lock_acquired:
+                return  # Skip update rather than block event loop
         try:
             for node_id, state in known_states.items():
                 if node_id == self.node_id:
@@ -2925,7 +2933,7 @@ class GossipProtocolMixin(P2PMixinBase):
                 if state.get("version", 0) > existing.get("version", 0):
                     self._gossip_peer_states[node_id] = state
         finally:
-            if lock is not None:
+            if lock is not None and lock_acquired:
                 lock.release()
 
         # Jan 4, 2026: Process cluster_leader entries from forwarded states
@@ -2987,9 +2995,13 @@ class GossipProtocolMixin(P2PMixinBase):
         peers_reporting_us_as_leader = 0
         total_peers_with_leader_info = 0
 
+        # Feb 2026: Use timeout to prevent event loop deadlock with asyncio.to_thread()
         lock = getattr(self, "_gossip_state_sync_lock", None)
+        lock_acquired = False
         if lock is not None:
-            lock.acquire()
+            lock_acquired = lock.acquire(blocking=True, timeout=2.0)
+            if not lock_acquired:
+                return  # Skip check rather than block event loop
         try:
             for node_id, state in self._gossip_peer_states.items():
                 if node_id == self.node_id:
@@ -3000,7 +3012,7 @@ class GossipProtocolMixin(P2PMixinBase):
                     if peer_leader == self.node_id:
                         peers_reporting_us_as_leader += 1
         finally:
-            if lock is not None:
+            if lock is not None and lock_acquired:
                 lock.release()
 
         # Require at least 3 peers to report us as leader (minimum quorum)
@@ -3029,9 +3041,14 @@ class GossipProtocolMixin(P2PMixinBase):
 
         # Jan 5, 2026: Atomic update of leader_id, role, and lease info
         # Prevents gossip desync where leader_id and role get updated separately
+        # Feb 2026: Use timeout to prevent event loop deadlock with asyncio.to_thread()
         lock = getattr(self, "_gossip_state_sync_lock", None)
+        lock_acquired = False
         if lock is not None:
-            lock.acquire()
+            lock_acquired = lock.acquire(blocking=True, timeout=2.0)
+            if not lock_acquired:
+                self._log_warning("Gossip lock timeout during leadership acceptance")
+                return  # Skip rather than block event loop
         try:
             # Set leadership state atomically
             self.leader_id = self.node_id
@@ -3046,7 +3063,7 @@ class GossipProtocolMixin(P2PMixinBase):
             self.leader_lease_id = lease_id
             self.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
         finally:
-            if lock is not None:
+            if lock is not None and lock_acquired:
                 lock.release()
 
         # Update leadership state machine if available
@@ -3309,11 +3326,11 @@ class GossipProtocolMixin(P2PMixinBase):
             return []
         except (sqlite3.DatabaseError, sqlite3.OperationalError) as e:
             # Database query errors - log and return empty
-            logger.debug(f"Database error in get_active_checkpoint_peers: {e}")
+            self._log_debug(f"Database error in get_active_checkpoint_peers: {e}")
             return []
         except (TypeError, KeyError) as e:
             # Malformed row data - log and return empty
-            logger.debug(f"Data format error in get_active_checkpoint_peers: {e}")
+            self._log_debug(f"Data format error in get_active_checkpoint_peers: {e}")
             return []
 
     def _process_gossip_peer_endpoints(self, peer_endpoints: list[dict]) -> None:
@@ -3576,9 +3593,13 @@ class GossipProtocolMixin(P2PMixinBase):
         updates = 0
 
         # Jan 3, 2026: Use sync lock to prevent race with cleanup
+        # Feb 2026: Use timeout to prevent event loop deadlock with asyncio.to_thread()
         lock = getattr(self, "_gossip_state_sync_lock", None)
+        lock_acquired = False
         if lock is not None:
-            lock.acquire()
+            lock_acquired = lock.acquire(blocking=True, timeout=2.0)
+            if not lock_acquired:
+                return 0  # Skip update rather than block event loop
         try:
             for node_id, state in peer_states.items():
                 if node_id == self.node_id:
@@ -3608,7 +3629,7 @@ class GossipProtocolMixin(P2PMixinBase):
                 if stale_state.get("timestamp", 0) < now - stale_threshold:
                     self._record_gossip_metrics("stale", stale_node)
         finally:
-            if lock is not None:
+            if lock is not None and lock_acquired:
                 lock.release()
 
         return updates
@@ -3706,33 +3727,42 @@ class GossipProtocolMixin(P2PMixinBase):
         # Long-dead threshold: peers dead for >5 minutes are excluded from calculation
         LONG_DEAD_THRESHOLD = 300  # 5 minutes
 
-        with self.peers_lock:
-            if len(self.peers) == 0:
-                # No peers known at all - we're isolated
-                return ("isolated", 0.0)
+        # Feb 2026: Use lock-free PeerSnapshot for read-only access to avoid
+        # lock contention that was causing /status endpoint timeouts.
+        peer_snapshot = getattr(self, "_peer_snapshot", None)
+        if peer_snapshot:
+            peers_dict = peer_snapshot.get_snapshot()
+        else:
+            # Fallback to lock if snapshot not available (shouldn't happen)
+            with self.peers_lock:
+                peers_dict = dict(self.peers)
 
-            now = time.time()
-            alive_peers = 0
-            relevant_peers = 0
+        if len(peers_dict) == 0:
+            # No peers known at all - we're isolated
+            return ("isolated", 0.0)
 
-            for p in self.peers.values():
-                # Skip retired peers entirely - they're intentionally offline
-                if getattr(p, 'retired', False):
-                    continue
+        now = time.time()
+        alive_peers = 0
+        relevant_peers = 0
 
-                time_since_heartbeat = now - p.last_heartbeat
+        for p in peers_dict.values():
+            # Skip retired peers entirely - they're intentionally offline
+            if getattr(p, 'retired', False):
+                continue
 
-                if p.is_alive():
-                    alive_peers += 1
-                    relevant_peers += 1
-                elif time_since_heartbeat < LONG_DEAD_THRESHOLD:
-                    # Recently dead - still count in denominator (may recover)
-                    relevant_peers += 1
-                # else: long-dead peer, exclude from both counts
+            time_since_heartbeat = now - p.last_heartbeat
 
-            if relevant_peers == 0:
-                # All peers are long-dead or retired - we're isolated
-                return ("isolated", 0.0)
+            if p.is_alive():
+                alive_peers += 1
+                relevant_peers += 1
+            elif time_since_heartbeat < LONG_DEAD_THRESHOLD:
+                # Recently dead - still count in denominator (may recover)
+                relevant_peers += 1
+            # else: long-dead peer, exclude from both counts
+
+        if relevant_peers == 0:
+            # All peers are long-dead or retired - we're isolated
+            return ("isolated", 0.0)
 
         health_ratio = alive_peers / relevant_peers
 
@@ -3747,17 +3777,25 @@ class GossipProtocolMixin(P2PMixinBase):
         """Get detailed partition status information.
 
         December 2025 (Phase 2.3): Extended partition info for monitoring.
+        Feb 2026: Use lock-free PeerSnapshot to avoid endpoint timeouts.
 
         Returns:
             Dict with partition status, counts, and peer details.
         """
         status, ratio = self.detect_partition_status()
 
-        with self.peers_lock:
-            total_peers = len(self.peers)
-            alive_peers = [p.node_id for p in self.peers.values() if p.is_alive()]
-            dead_peers = [p.node_id for p in self.peers.values() if not p.is_alive()]
-            suspected_peers = list(self.get_gossip_suspected_peers())
+        # Use lock-free PeerSnapshot for read-only access
+        peer_snapshot = getattr(self, "_peer_snapshot", None)
+        if peer_snapshot:
+            peers_dict = peer_snapshot.get_snapshot()
+        else:
+            with self.peers_lock:
+                peers_dict = dict(self.peers)
+
+        total_peers = len(peers_dict)
+        alive_peers = [p.node_id for p in peers_dict.values() if p.is_alive()]
+        dead_peers = [p.node_id for p in peers_dict.values() if not p.is_alive()]
+        suspected_peers = list(self.get_gossip_suspected_peers())
 
         return {
             "status": status,

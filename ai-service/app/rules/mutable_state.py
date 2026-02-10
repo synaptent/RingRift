@@ -684,6 +684,16 @@ class MutableGameState:
     def lps_exclusive_player_for_completed_round(self, value: int | None) -> None:
         self._lps_exclusive_player_for_completed_round = value
 
+    @property
+    def num_players(self) -> int:
+        """Number of players in the game."""
+        return self._max_players
+
+    @property
+    def max_players(self) -> int:
+        """Maximum number of players in the game."""
+        return self._max_players
+
     # =========================================================================
     # Helper Methods
     # =========================================================================
@@ -1421,10 +1431,51 @@ class MutableGameState:
         """Check if victory conditions are met and update state.
 
         Called after each move to determine if the game has ended.
+        Mirrors the checks in GameEngine._check_victory to prevent games
+        from continuing past valid endpoints in the search tree.
+
+        Victory conditions checked (in order, matching GameEngine):
+        1. Ring elimination threshold (RR-CANON-R061)
+        2. Territory victory (RR-CANON-R062-v2)
+        3. Last player standing (all others eliminated)
 
         Returns:
             True if game is over, False otherwise.
         """
+        # 1. Ring Elimination Victory (RR-CANON-R061)
+        # Check if any player has eliminated enough rings to win.
+        # Matches GameEngine._check_victory lines 1264-1270.
+        for ps in self._players.values():
+            if ps.eliminated_rings >= self._victory_threshold:
+                self._winner = ps.player_number
+                self._game_status = GameStatus.COMPLETED
+                return True
+
+        # 2. Territory Victory (RR-CANON-R062-v2)
+        # Victory requires BOTH:
+        #   a) Territory >= territory_victory_minimum (floor(totalSpaces/numPlayers) + 1)
+        #   b) Territory > sum of all opponent territories
+        # Matches GameEngine._check_victory lines 1272-1308.
+        if self._collapsed:
+            territory_counts: dict[int, int] = {}
+            for p_id in self._collapsed.values():
+                territory_counts[p_id] = territory_counts.get(p_id, 0) + 1
+
+            total_spaces = self._board_size * self._board_size
+            territory_minimum = total_spaces // self._max_players + 1
+
+            for pn, player_territory in territory_counts.items():
+                if player_territory < territory_minimum:
+                    continue
+                opponent_territory = sum(
+                    tc for op, tc in territory_counts.items() if op != pn
+                )
+                if player_territory > opponent_territory:
+                    self._winner = pn
+                    self._game_status = GameStatus.COMPLETED
+                    return True
+
+        # 3. Last Player Standing / All Eliminated
         active_players = self._get_active_player_numbers()
 
         if len(active_players) == 0:

@@ -33,6 +33,25 @@ class HealthCheckResult:
         }
 
 
+def get_job_attr(job: Any, attr: str, default: Any = None) -> Any:
+    """Get attribute from a job entry that may be a ClusterJob object or a plain dict.
+
+    Feb 2026: Some code paths store jobs as ClusterJob objects, others as plain dicts.
+    This helper handles both transparently.
+    """
+    if isinstance(job, dict):
+        return job.get(attr, default)
+    return getattr(job, attr, default)
+
+
+def set_job_attr(job: Any, attr: str, value: Any) -> None:
+    """Set attribute on a job entry that may be a ClusterJob object or a plain dict."""
+    if isinstance(job, dict):
+        job[attr] = value
+    else:
+        setattr(job, attr, value)
+
+
 class BaseOrchestrator(ABC):
     """Base class for P2P sub-orchestrators.
 

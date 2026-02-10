@@ -85,16 +85,29 @@ def _detect_model_version_from_checkpoint(model_path: str | Path | None) -> str 
                 if v_lower.startswith("v4"):
                     return "v4"
                 elif v_lower.startswith("v5"):
-                    # v5-heavy or v5-heavy-large
-                    if "heavy" in v_lower:
-                        if "large" in v_lower:
-                            return "v5-heavy-large"
-                        return "v5-heavy"
-                    return None  # Unknown v5 variant
+                    # All v5.* versions are v5-heavy (non-heavy v5 removed Dec 2025)
+                    # Check for "large" variant first
+                    if "large" in v_lower:
+                        return "v5-heavy-large"
+                    # Default all v5.* to v5-heavy
+                    return "v5-heavy"
                 elif v_lower.startswith("v3"):
                     return "v3"
                 elif v_lower.startswith("v2") or v_lower == "v0.0.0-legacy":
                     return None  # v2 is the default, no need to specify
+
+            # Fallback: check model_class field for architecture hints
+            model_class = getattr(metadata, 'model_class', None)
+            if model_class:
+                mc_lower = model_class.lower()
+                if 'v5' in mc_lower and 'heavy' in mc_lower:
+                    if 'large' in mc_lower:
+                        return "v5-heavy-large"
+                    return "v5-heavy"
+                elif 'v4' in mc_lower:
+                    return "v4"
+                elif 'v3' in mc_lower:
+                    return "v3"
 
             logger.debug(f"Detected model version {version} from {model_path}")
             return None  # Unknown version, use default

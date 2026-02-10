@@ -658,9 +658,10 @@ class SelfplayScheduler(
                 game_count = priority.game_count
                 # Sprint 10: Use intensity-coupled budget calculation
                 new_budget = self._get_budget_with_intensity(game_count, current_elo, config_key)
-                # Jan 2026: Apply large board budget caps for faster bootstrap
+                # Feb 2026: Apply large board budget caps scaled by player count
                 board_type = config_key.split("_")[0]  # e.g., "hexagonal" from "hexagonal_2p"
-                new_budget = get_board_adjusted_budget(board_type, new_budget, game_count)
+                num_players = int(config_key.split("_")[1].rstrip("p"))
+                new_budget = get_board_adjusted_budget(board_type, new_budget, game_count, num_players)
                 old_budget = priority.search_budget
                 if new_budget != old_budget:
                     priority.search_budget = new_budget
@@ -2401,10 +2402,11 @@ class SelfplayScheduler(
                 # Dec 28 2025: Apply search budget from velocity feedback
                 if search_budget > 0 and reason == "velocity_feedback":
                     old_budget = getattr(priority, "search_budget", 400)
-                    # Jan 2026: Apply large board budget caps
+                    # Feb 2026: Apply large board budget caps scaled by player count
                     board_type = config_key.split("_")[0]
+                    num_players = int(config_key.split("_")[1].rstrip("p"))
                     game_count = getattr(priority, "game_count", 0)
-                    search_budget = get_board_adjusted_budget(board_type, search_budget, game_count)
+                    search_budget = get_board_adjusted_budget(board_type, search_budget, game_count, num_players)
                     priority.search_budget = search_budget
                     logger.info(
                         f"[SelfplayScheduler] Updating {config_key} search budget: "
