@@ -1000,7 +1000,23 @@ def base64_push(
     file_size = local_path.stat().st_size
     start_time = time.time()
 
-    # For very large files (>100MB), warn about memory usage
+    # Feb 2026: Hard limit to prevent OOM - base64 reads entire file into memory
+    # plus 33% overhead for encoding. Use chunked_push for large files instead.
+    max_base64_size = 500 * 1024 * 1024  # 500MB
+    if file_size > max_base64_size:
+        return TransferResult(
+            success=False,
+            error=(
+                f"File too large for base64_push ({file_size / 1024 / 1024:.0f}MB > "
+                f"{max_base64_size / 1024 / 1024:.0f}MB limit). "
+                "Use chunked_push or rsync instead to avoid OOM."
+            ),
+            method="base64_push",
+            source=str(local_path),
+            destination=f"{host}:{remote_path}",
+        )
+
+    # For large files (>100MB), warn about memory usage
     if file_size > 100 * 1024 * 1024:
         logger.warning(
             f"base64_push: Large file ({file_size / 1024 / 1024:.1f}MB) - "
@@ -1473,12 +1489,27 @@ def robust_push(
             destination=f"{host}:{remote_path}",
         )
 
-    # Try methods in order
-    methods = [
-        ("rsync", lambda: rsync_push(local_path, host, port, remote_path, config)),
-        ("scp", lambda: scp_push(local_path, host, port, remote_path, config)),
-        ("base64", lambda: base64_push(local_path, host, port, remote_path, config)),
-    ]
+    file_size = local_path.stat().st_size
+    large_file_threshold = 500 * 1024 * 1024  # 500MB
+
+    # Feb 2026: For large files, use chunked_push instead of base64_push
+    # to avoid OOM. base64_push reads entire file into memory + 33% overhead.
+    if file_size > large_file_threshold:
+        methods = [
+            ("rsync", lambda: rsync_push(local_path, host, port, remote_path, config)),
+            ("scp", lambda: scp_push(local_path, host, port, remote_path, config)),
+            ("chunked", lambda: chunked_push(local_path, host, port, remote_path, config, chunk_size_mb=config.chunk_size_mb)),
+        ]
+        logger.info(
+            f"robust_push: Large file ({file_size / 1024 / 1024:.0f}MB), "
+            "using chunked_push instead of base64 to avoid OOM"
+        )
+    else:
+        methods = [
+            ("rsync", lambda: rsync_push(local_path, host, port, remote_path, config)),
+            ("scp", lambda: scp_push(local_path, host, port, remote_path, config)),
+            ("base64", lambda: base64_push(local_path, host, port, remote_path, config)),
+        ]
 
     for method_name, method_fn in methods:
         logger.debug(f"robust_push: Trying {method_name}...")
@@ -1489,9 +1520,10 @@ def robust_push(
         logger.debug(f"robust_push: {method_name} failed: {result.error}")
 
     # All methods failed
+    methods_tried = ", ".join(name for name, _ in methods)
     return TransferResult(
         success=False,
-        error="All transfer methods failed (rsync, scp, base64)",
+        error=f"All transfer methods failed ({methods_tried})",
         method="robust_push",
         source=str(local_path),
         destination=f"{host}:{remote_path}",

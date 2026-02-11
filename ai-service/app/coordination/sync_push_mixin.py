@@ -490,7 +490,8 @@ class SyncPushMixin(SyncMixinBase):
         """Fallback to robust_push when rsync fails.
 
         December 2025: Added for improved sync reliability.
-        Uses multi-transport fallback: rsync → scp → base64
+        Uses multi-transport fallback: rsync → scp → chunked/base64
+        February 2026: Added file size guard to prevent OOM on large files.
 
         Args:
             source: Source database path
@@ -502,6 +503,30 @@ class SyncPushMixin(SyncMixinBase):
         Returns:
             Sync result dict with success, bytes_transferred, duration, error
         """
+        # Feb 2026: Guard against OOM from transferring multi-GB database files.
+        # rsync was already tried as the primary method and failed. The fallback
+        # chain (scp → base64) can cause OOM for files > 2GB because base64_push
+        # reads the entire file into memory. Skip fallback for very large files.
+        max_fallback_size = 2 * 1024 * 1024 * 1024  # 2GB
+        try:
+            file_size = source.stat().st_size
+        except OSError:
+            file_size = 0
+
+        if file_size > max_fallback_size:
+            logger.warning(
+                f"[AutoSyncDaemon] Skipping fallback for {source.name} "
+                f"({file_size / 1024 / 1024 / 1024:.1f}GB > 2GB limit) "
+                f"to {target['node_id']} - rsync is the only safe method for files this large"
+            )
+            return {
+                "source": str(source),
+                "target": target["node_id"],
+                "success": False,
+                "duration_seconds": time.time() - start_time,
+                "error": f"File too large for fallback transfer ({file_size / 1024 / 1024 / 1024:.1f}GB)",
+            }
+
         try:
             from scripts.lib.transfer import robust_push, TransferConfig
 
