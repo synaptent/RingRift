@@ -394,7 +394,12 @@ class OWCMirror:
             cmd.extend(["--storage-class", self.config.archival_storage_class])
 
         # Delete files in S3 that don't exist locally
+        # WARNING: This can cause data loss if local files were cleaned up
         if delete:
+            logger.warning(
+                f"--delete enabled for {sync_dir.local_path}. "
+                "S3 files not present locally will be REMOVED from S3."
+            )
             cmd.append("--delete")
 
         # Dry run
@@ -617,7 +622,8 @@ Examples:
     parser.add_argument(
         "--delete",
         action="store_true",
-        help="Delete files in S3 that don't exist locally",
+        help="Delete files in S3 that don't exist locally. DANGEROUS: if local files "
+             "were cleaned up, this will delete the S3 backups too. Use with --dry-run first.",
     )
     parser.add_argument(
         "--estimate",

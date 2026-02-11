@@ -105,11 +105,12 @@ def sync_to_s3(
         return 0, 0
 
     # Build aws s3 sync command with includes
+    # NOTE: --delete intentionally omitted to prevent S3 data loss when
+    # local files are cleaned up. S3 should be append-only backup.
     cmd = [
         "aws", "s3", "sync",
         str(local_path),
         f"s3://{S3_BUCKET}/{s3_prefix}/",
-        "--delete",  # Remove files in S3 that don't exist locally
     ]
 
     # Add exclude patterns
