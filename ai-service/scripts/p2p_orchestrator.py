@@ -12589,20 +12589,27 @@ print(json.dumps({{
             # Jan 2, 2026: Use _count_alive_voters() to check IP:port matches
             voters_alive = self._count_alive_voters()
             quorum_size = getattr(self, "voter_quorum_size", 0)
-            # Use ULSM QuorumHealth - same tracker as _is_leader() uses
-            threshold_exceeded = self._leadership_sm.quorum_health.record_failure(voters_alive)
-            fail_count = self._leadership_sm.quorum_health.consecutive_failures
-            threshold = self._leadership_sm.quorum_health.failure_threshold
-            logger.warning(
-                f"[LeaseRenewal] Voter quorum check failed ({fail_count}/{threshold}): "
-                f"voters_alive={voters_alive}, quorum_size={quorum_size}"
-            )
-            if threshold_exceeded:
-                logger.info(f"Lost voter quorum ({threshold} consecutive failures via ULSM); stepping down: {self.node_id}")
-                # Jan 2026: Use ULSM step-down which broadcasts to peers BEFORE local mutation
-                self._schedule_step_down_sync(TransitionReason.QUORUM_LOST)
-                self._release_voter_grant_if_self()
-            return
+            # Feb 2026: Skip quorum step-down if forced leader override is active
+            if getattr(self, "_forced_leader_override", False):
+                logger.debug(
+                    f"[LeaseRenewal] Voter quorum check failed (voters_alive={voters_alive}, "
+                    f"quorum_size={quorum_size}) but forced leader override active; continuing"
+                )
+            else:
+                # Use ULSM QuorumHealth - same tracker as _is_leader() uses
+                threshold_exceeded = self._leadership_sm.quorum_health.record_failure(voters_alive)
+                fail_count = self._leadership_sm.quorum_health.consecutive_failures
+                threshold = self._leadership_sm.quorum_health.failure_threshold
+                logger.warning(
+                    f"[LeaseRenewal] Voter quorum check failed ({fail_count}/{threshold}): "
+                    f"voters_alive={voters_alive}, quorum_size={quorum_size}"
+                )
+                if threshold_exceeded:
+                    logger.info(f"Lost voter quorum ({threshold} consecutive failures via ULSM); stepping down: {self.node_id}")
+                    # Jan 2026: Use ULSM step-down which broadcasts to peers BEFORE local mutation
+                    self._schedule_step_down_sync(TransitionReason.QUORUM_LOST)
+                    self._release_voter_grant_if_self()
+                return
         else:
             # Reset ULSM quorum health counter on success
             voters_alive = self._count_alive_voters()
@@ -12617,43 +12624,48 @@ print(json.dumps({{
             lease_id = f"{self.node_id}_{int(time.time())}_{uuid.uuid4().hex[:8]}"
         lease_expires = await self._acquire_voter_lease_quorum(lease_id, int(LEADER_LEASE_DURATION))
         if getattr(self, "voter_node_ids", []) and not lease_expires:
-            # Voter quorum failed - try arbiter fallback before stepping down
-            logger.info("Voter lease quorum failed; checking arbiter...")
-            arbiter_leader = await self._query_arbiter_for_leader()
-            if arbiter_leader == self.node_id:
-                # Arbiter still recognizes us as leader - extend lease provisionally
-                logger.info("Arbiter confirms us as leader despite quorum failure; continuing with provisional lease")
-                lease_expires = now + LEADER_LEASE_DURATION / 2  # Shorter lease until quorum recovers
-            elif arbiter_leader:
-                # Arbiter says someone else is leader - defer to arbiter
-                # Feb 2026: Skip arbiter override if forced leader is active
-                if getattr(self, "_forced_leader_override", False):
-                    logger.warning(f"Arbiter reports {arbiter_leader} but forced leader override active; ignoring")
-                else:
-                    logger.info(f"Arbiter reports different leader ({arbiter_leader}); stepping down")
-                    # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
-                    self._set_leader(arbiter_leader, reason="arbiter_override", save_state=False)
-                self.leader_lease_id = ""
-                self.leader_lease_expires = 0.0
-                self.last_lease_renewal = 0.0
-                self._release_voter_grant_if_self()
-                self._save_state()
-                return
+            # Feb 2026: If forced leader override is active, self-renew without quorum
+            if getattr(self, "_forced_leader_override", False):
+                logger.info("Voter lease quorum failed but forced leader override active; self-renewing lease")
+                lease_expires = now + LEADER_LEASE_DURATION
             else:
-                # Arbiter also unreachable - step down to be safe
-                # Feb 2026: Skip step-down if forced leader override is active
-                if getattr(self, "_forced_leader_override", False):
-                    logger.warning(f"Arbiter unreachable but forced leader override active; maintaining leadership: {self.node_id}")
+                # Voter quorum failed - try arbiter fallback before stepping down
+                logger.info("Voter lease quorum failed; checking arbiter...")
+                arbiter_leader = await self._query_arbiter_for_leader()
+                if arbiter_leader == self.node_id:
+                    # Arbiter still recognizes us as leader - extend lease provisionally
+                    logger.info("Arbiter confirms us as leader despite quorum failure; continuing with provisional lease")
+                    lease_expires = now + LEADER_LEASE_DURATION / 2  # Shorter lease until quorum recovers
+                elif arbiter_leader:
+                    # Arbiter says someone else is leader - defer to arbiter
+                    # Feb 2026: Skip arbiter override if forced leader is active
+                    if getattr(self, "_forced_leader_override", False):
+                        logger.warning(f"Arbiter reports {arbiter_leader} but forced leader override active; ignoring")
+                    else:
+                        logger.info(f"Arbiter reports different leader ({arbiter_leader}); stepping down")
+                        # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                        self._set_leader(arbiter_leader, reason="arbiter_override", save_state=False)
+                    self.leader_lease_id = ""
+                    self.leader_lease_expires = 0.0
+                    self.last_lease_renewal = 0.0
+                    self._release_voter_grant_if_self()
+                    self._save_state()
                     return
-                logger.error(f"Failed to renew voter lease quorum and arbiter unreachable; stepping down: {self.node_id}")
-                # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
-                self._set_leader(None, reason="arbiter_unreachable", save_state=False)
-                self.leader_lease_id = ""
-                self.leader_lease_expires = 0.0
-                self.last_lease_renewal = 0.0
-                self._release_voter_grant_if_self()
-                self._save_state()
-                return
+                else:
+                    # Arbiter also unreachable - step down to be safe
+                    # Feb 2026: Skip step-down if forced leader override is active
+                    if getattr(self, "_forced_leader_override", False):
+                        logger.warning(f"Arbiter unreachable but forced leader override active; maintaining leadership: {self.node_id}")
+                        return
+                    logger.error(f"Failed to renew voter lease quorum and arbiter unreachable; stepping down: {self.node_id}")
+                    # Jan 3, 2026: Use _set_leader() for atomic leadership assignment (Phase 4)
+                    self._set_leader(None, reason="arbiter_unreachable", save_state=False)
+                    self.leader_lease_id = ""
+                    self.leader_lease_expires = 0.0
+                    self.last_lease_renewal = 0.0
+                    self._release_voter_grant_if_self()
+                    self._save_state()
+                    return
 
         self.leader_lease_id = lease_id
         self.leader_lease_expires = float(lease_expires or (now + LEADER_LEASE_DURATION))

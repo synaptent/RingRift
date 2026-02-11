@@ -3262,7 +3262,7 @@ class GossipProtocolMixin(P2PMixinBase):
                     # Don't re-apply preemptive failures if already applied within TTL
                     cb_key = f"{op_type}:{target}"
                     last_applied = self._preemptive_cb_applied.get(cb_key, 0.0)
-                    if now - last_applied < PREEMPTIVE_CB_TTL_SECONDS:
+                    if now - last_applied < self.PREEMPTIVE_CB_TTL_SECONDS:
                         # Already applied recently, skip to avoid stacking failures
                         continue
 
