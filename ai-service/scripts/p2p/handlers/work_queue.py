@@ -1107,11 +1107,11 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     if board_type and num_players:
                         populator.increment_training(board_type, num_players)
 
-            # Feb 2026: Emit EVALUATION_COMPLETED for gauntlet work so the
+            # Feb 2026: Emit EVALUATION_COMPLETED for evaluation work so the
             # auto-promotion pipeline can process results from GPU nodes.
-            # Previously gauntlet results were silently dropped because
-            # handle_work_complete had no handler for WorkType.GAUNTLET.
-            if success and work_type == WorkType.GAUNTLET:
+            # Previously results were silently dropped because
+            # handle_work_complete had no event emission for these types.
+            if success and work_type in (WorkType.GAUNTLET, WorkType.TOURNAMENT):
                 config_key = f"{config.get('board_type', '')}_{config.get('num_players', 0)}p"
                 model_path = config.get("candidate_model", "")
                 try:
@@ -1133,16 +1133,16 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                             "vs_heuristic_rate": result.get("vs_heuristic_rate"),
                             "work_id": work_id,
                             "evaluated_by": assigned_to,
-                            "source": "distributed_gauntlet",
+                            "source": f"distributed_{work_type.value}",
                         },
-                        context="work_queue_gauntlet_complete",
+                        context=f"work_queue_{work_type.value}_complete",
                     )
                     logger.info(
-                        f"Emitted EVALUATION_COMPLETED for gauntlet {work_id}: "
+                        f"Emitted EVALUATION_COMPLETED for {work_type.value} {work_id}: "
                         f"{config_key} model={model_path}"
                     )
                 except ImportError:
-                    logger.debug("Event emission not available for gauntlet completion")
+                    logger.debug(f"Event emission not available for {work_type.value} completion")
 
             return self.json_response({
                 "status": "completed" if success else "failed",
