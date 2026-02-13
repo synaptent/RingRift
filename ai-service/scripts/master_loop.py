@@ -96,6 +96,7 @@ from app.config.unified_config import get_config
 # This is critical for feedback loops to function properly
 from app.coordination.coordination_bootstrap import bootstrap_coordination
 from app.config.coordination_defaults import DataFreshnessDefaults
+from app.utils.sqlite_utils import connect_safe
 
 # January 2026: Use rotating file logger for long-running operation
 # This provides automatic rotation at 500 MB with 5 backups (2.5 GB max)
@@ -605,7 +606,7 @@ class MasterLoopController:
         """
         try:
             self._db_path.parent.mkdir(parents=True, exist_ok=True)
-            with contextlib.closing(sqlite3.connect(self._db_path)) as conn:
+            with contextlib.closing(connect_safe(self._db_path, row_factory=None)) as conn:
                 conn.execute("""
                     CREATE TABLE IF NOT EXISTS config_state (
                         config_key TEXT PRIMARY KEY,
@@ -648,7 +649,7 @@ class MasterLoopController:
             """
             with self._state_lock:
                 try:
-                    with contextlib.closing(sqlite3.connect(self._db_path)) as conn:
+                    with contextlib.closing(connect_safe(self._db_path, row_factory=None)) as conn:
                         rows = conn.execute("""
                             SELECT config_key, exploration_boost, training_intensity, last_quality_score
                             FROM config_state
@@ -685,7 +686,7 @@ class MasterLoopController:
             """
             with self._state_lock:
                 try:
-                    with contextlib.closing(sqlite3.connect(self._db_path)) as conn:
+                    with contextlib.closing(connect_safe(self._db_path, row_factory=None)) as conn:
                         now = time.time()
 
                         # Use BEGIN IMMEDIATE for SQLite-level write lock
@@ -807,7 +808,7 @@ class MasterLoopController:
         """
         try:
             self._loop_iteration += 1
-            with contextlib.closing(sqlite3.connect(self._db_path)) as conn:
+            with contextlib.closing(connect_safe(self._db_path, row_factory=None)) as conn:
                 conn.execute("""
                     UPDATE heartbeat
                     SET last_beat = ?, loop_iteration = ?, active_configs = ?, status = ?
@@ -917,7 +918,7 @@ class MasterLoopController:
             if not db_path.exists():
                 return {"healthy": False, "error": "State DB not found"}
 
-            with contextlib.closing(sqlite3.connect(db_path)) as conn:
+            with contextlib.closing(connect_safe(db_path, row_factory=None)) as conn:
                 row = conn.execute("""
                     SELECT last_beat, loop_iteration, active_configs, status
                     FROM heartbeat WHERE id = 1
@@ -1115,7 +1116,7 @@ class MasterLoopController:
         # 5. Validate state database access
         # Jan 12, 2026: Fixed to use context manager for proper connection cleanup.
         try:
-            with contextlib.closing(sqlite3.connect(self._db_path)) as conn:
+            with contextlib.closing(connect_safe(self._db_path, row_factory=None)) as conn:
                 # Quick read test
                 cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
                 tables = cursor.fetchall()
@@ -1375,6 +1376,12 @@ class MasterLoopController:
                             logger.warning(
                                 f"[MasterLoop] Queue populator stuck: {watchdog_result.get('stuck_reason')}"
                             )
+
+                    # 12. OOM watchdog (February 2026)
+                    # Hard safety valve: if RAM usage exceeds threshold, aggressively
+                    # kill non-essential daemons. This catches cases where
+                    # MemoryPressureController's graduated response is too slow.
+                    await self._oom_watchdog_check()
 
                 except asyncio.CancelledError:
                     # Allow cancellation to propagate for clean shutdown
@@ -2335,6 +2342,76 @@ class MasterLoopController:
         except Exception:
             # Any other error - assume healthy
             return True
+
+    # =========================================================================
+    # OOM Watchdog (February 2026)
+    # =========================================================================
+
+    async def _oom_watchdog_check(self) -> None:
+        """Hard OOM safety valve - runs every loop iteration.
+
+        February 2026: Added after repeated kernel panics on 128 GB coordinator.
+        This is a last-resort check that catches memory issues even if the
+        MemoryPressureController is slow to react (it requires consecutive
+        samples and has cooldowns).
+
+        At 85% usage (108 GB on 128 GB), we have ~20 GB free. That's enough
+        for the coordinator to operate but not enough to absorb a spike from
+        consolidation daemons opening multi-GB databases. We aggressively
+        stop heavy daemons at this threshold.
+        """
+        try:
+            from app.utils.resource_guard import get_memory_usage
+
+            used_percent, available_gb, total_gb = get_memory_usage()
+            oom_threshold = float(os.environ.get(
+                "RINGRIFT_OOM_WATCHDOG_THRESHOLD", "85"
+            ))
+
+            if used_percent < oom_threshold:
+                return
+
+            logger.warning(
+                f"[MasterLoop] OOM watchdog triggered: {used_percent:.1f}% RAM used "
+                f"(threshold: {oom_threshold}%), available: {available_gb:.1f} GB / "
+                f"{total_gb:.0f} GB. Stopping heavy daemons."
+            )
+
+            # Stop memory-heavy daemons in order of impact
+            heavy_daemons = [
+                "CLUSTER_CONSOLIDATION",
+                "COMPREHENSIVE_CONSOLIDATION",
+                "DATA_CONSOLIDATION",
+                "NPZ_COMBINATION",
+                "AUTO_EXPORT",
+                "REANALYSIS",
+                "UNIFIED_BACKUP",
+            ]
+
+            stopped = 0
+            for daemon_name in heavy_daemons:
+                try:
+                    from app.coordination.daemon_manager import DaemonType
+                    dtype = DaemonType(daemon_name.lower())
+                    await self.daemon_manager.stop(dtype)
+                    stopped += 1
+                    logger.warning(f"[MasterLoop] OOM watchdog stopped: {daemon_name}")
+                except (ValueError, Exception) as e:
+                    logger.debug(f"[MasterLoop] OOM watchdog: could not stop {daemon_name}: {e}")
+
+            # Force garbage collection
+            import gc
+            gc.collect()
+
+            logger.warning(
+                f"[MasterLoop] OOM watchdog: stopped {stopped} daemons, forced GC. "
+                f"Daemons will restart on next cycle when memory recovers."
+            )
+
+        except ImportError:
+            pass  # resource_guard not available
+        except Exception as e:
+            logger.debug(f"[MasterLoop] OOM watchdog error: {e}")
 
     # =========================================================================
     # Training coordination

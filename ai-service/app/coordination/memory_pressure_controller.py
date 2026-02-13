@@ -402,11 +402,26 @@ class MemoryPressureController(HandlerBase):
             logger.warning(f"[MemoryPressure] Gossip emergency cleanup failed: {e}")
 
     async def _handle_emergency_tier(self) -> None:
-        """Handle EMERGENCY tier - prepare for failover."""
+        """Handle EMERGENCY tier - aggressive memory recovery.
+
+        February 2026: No longer just emits events. Now actively kills the
+        largest memory consumers and all non-essential daemons. On a 128 GB
+        coordinator, 90% usage means only ~12.8 GB free which is dangerously
+        close to kernel OOM kill territory.
+        """
         logger.critical(
             f"[MemoryPressure] EMERGENCY: RAM at {self._pressure_state.ram_percent:.1f}% - "
-            "Initiating graceful shutdown"
+            "Killing all non-essential daemons and largest processes"
         )
+
+        # First: kill all non-essential daemons (from CRITICAL tier)
+        await self._kill_non_essential_daemons()
+
+        # Second: kill large Python child processes by RSS
+        await self._kill_largest_processes()
+
+        # Force aggressive garbage collection
+        gc.collect()
 
         # Notify callbacks (e.g., StandbyCoordinator)
         for callback in self._on_emergency:
@@ -421,15 +436,64 @@ class MemoryPressureController(HandlerBase):
             {
                 "tier": "EMERGENCY",
                 "ram_percent": self._pressure_state.ram_percent,
-                "action": "graceful_shutdown",
+                "action": "emergency_kill",
                 "node_id": os.environ.get("RINGRIFT_NODE_ID", "local"),
             },
         )
 
-        self._record_action("emergency_shutdown_requested")
+        self._record_action("emergency_kill")
 
-        # Final attempt at memory recovery
-        gc.collect()
+    async def _kill_largest_processes(self, max_kills: int = 3) -> None:
+        """Kill the largest child processes by RSS to free memory.
+
+        February 2026: Added as last resort when EMERGENCY tier is reached.
+        Only kills Python processes that are children of master_loop (our own
+        processes), never system processes.
+        """
+        if psutil is None:
+            return
+
+        try:
+            import signal as sig
+
+            current_pid = os.getpid()
+            candidates = []
+
+            for proc in psutil.process_iter(["pid", "name", "cmdline", "memory_info", "ppid"]):
+                try:
+                    info = proc.info
+                    # Only kill our own children or grandchildren
+                    if info.get("ppid") != current_pid and info.get("pid") != current_pid:
+                        # Check if it's a grandchild (parent's parent is us)
+                        try:
+                            parent = psutil.Process(info.get("ppid", 0))
+                            if parent.ppid() != current_pid:
+                                continue
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            continue
+
+                    mem = info.get("memory_info")
+                    if mem and mem.rss > 500 * 1024 * 1024:  # Only processes > 500 MB
+                        candidates.append((info["pid"], mem.rss, info.get("cmdline", [])))
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+            # Sort by RSS descending, kill the biggest ones
+            candidates.sort(key=lambda x: x[1], reverse=True)
+
+            for pid, rss, cmdline in candidates[:max_kills]:
+                cmd_str = " ".join(cmdline[:3]) if cmdline else "unknown"
+                logger.critical(
+                    f"[MemoryPressure] EMERGENCY: Killing PID {pid} "
+                    f"(RSS: {rss / 1024**3:.1f} GB, cmd: {cmd_str})"
+                )
+                try:
+                    os.kill(pid, sig.SIGTERM)
+                except OSError as e:
+                    logger.error(f"[MemoryPressure] Failed to kill PID {pid}: {e}")
+
+        except Exception as e:
+            logger.error(f"[MemoryPressure] Error in emergency process kill: {e}")
 
     async def _pause_selfplay(self) -> None:
         """Pause selfplay job spawning."""
@@ -465,7 +529,12 @@ class MemoryPressureController(HandlerBase):
             logger.warning(f"[MemoryPressure] Failed to resume selfplay: {e}")
 
     async def _kill_non_essential_daemons(self) -> None:
-        """Kill non-essential daemons to free memory."""
+        """Kill non-essential daemons to free memory.
+
+        February 2026: Expanded kill list to include memory-heavy consolidation
+        and sync daemons that open multi-GB SQLite databases. Ordered by
+        memory impact (heaviest first).
+        """
         if self._daemon_manager is None:
             try:
                 from app.coordination.daemon_manager import get_daemon_manager
@@ -475,21 +544,47 @@ class MemoryPressureController(HandlerBase):
                 logger.warning("[MemoryPressure] DaemonManager not available")
                 return
 
-        # List of non-essential daemon types (can be killed under memory pressure)
+        # Non-essential daemon types ordered by memory impact (heaviest first).
+        # Consolidation daemons open multi-GB game databases and are the biggest
+        # memory consumers on the coordinator.
         non_essential = [
+            # Tier 1: Heavy memory consumers (consolidation opens 5-11 GB DBs)
+            "CLUSTER_CONSOLIDATION",
+            "COMPREHENSIVE_CONSOLIDATION",
+            "DATA_CONSOLIDATION",
+            "NPZ_COMBINATION",
+            "AUTO_EXPORT",
+            # Tier 2: Moderate memory consumers
+            "REANALYSIS",
+            "UNIFIED_BACKUP",
+            "EXTERNAL_DRIVE_SYNC",
+            "OWC_IMPORT",
+            "CASCADE_TRAINING",
+            # Tier 3: Light but non-essential
             "METRICS_ANALYSIS",
-            "TOURNAMENT",
-            "ARCHIVE",
-            "ORPHAN_DETECTION",
+            "TOURNAMENT_DAEMON",
             "STALE_EVALUATION",
+            "ELO_PROGRESS",
+            "ARCHITECTURE_FEEDBACK",
+            "CURRICULUM_INTEGRATION",
         ]
 
+        stopped = 0
         for daemon_type in non_essential:
             try:
                 await self._daemon_manager.stop(daemon_type)
+                stopped += 1
                 logger.info(f"[MemoryPressure] Stopped daemon: {daemon_type}")
             except Exception as e:
                 logger.debug(f"[MemoryPressure] Could not stop {daemon_type}: {e}")
+
+        if stopped > 0:
+            # Force GC after stopping daemons to reclaim their memory
+            gc.collect()
+            logger.info(
+                f"[MemoryPressure] Stopped {stopped} non-essential daemons, "
+                f"forced GC to reclaim memory"
+            )
 
     async def _handle_tier_change(
         self, old_tier: MemoryPressureTier, new_tier: MemoryPressureTier
