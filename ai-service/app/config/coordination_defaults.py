@@ -3081,6 +3081,7 @@ def build_ssh_options(
 
     if key_path:
         parts.extend(["-i", key_path])
+        parts.extend(["-o", "IdentitiesOnly=yes"])
 
     if port:
         parts.extend(["-p", str(port)])
@@ -3140,6 +3141,7 @@ def build_ssh_options_list(
 
     if key_path:
         parts.extend(["-i", key_path])
+        parts.extend(["-o", "IdentitiesOnly=yes"])
 
     if port:
         parts.extend(["-p", str(port)])

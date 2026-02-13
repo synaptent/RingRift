@@ -881,6 +881,7 @@ class SSHClient:
             key_path = os.path.expanduser(self._config.key_path)
             if os.path.exists(key_path):
                 cmd.extend(["-i", key_path])
+                cmd.extend(["-o", "IdentitiesOnly=yes"])
 
         # SSH target
         target_host = self._config.tailscale_ip if use_tailscale else self._config.host
@@ -1216,6 +1217,7 @@ class SSHClient:
             key_path = os.path.expanduser(self._config.key_path)
             if os.path.exists(key_path):
                 cmd.extend(["-i", key_path])
+                cmd.extend(["-o", "IdentitiesOnly=yes"])
         cmd.extend([f"{target}:{remote_path}", local_path])
 
         try:
@@ -1268,6 +1270,7 @@ class SSHClient:
             key_path = os.path.expanduser(self._config.key_path)
             if os.path.exists(key_path):
                 cmd.extend(["-i", key_path])
+                cmd.extend(["-o", "IdentitiesOnly=yes"])
         cmd.extend([local_path, f"{target}:{remote_path}"])
 
         try:
