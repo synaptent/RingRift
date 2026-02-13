@@ -1152,7 +1152,9 @@ class S3ConsolidationHandler(HandlerBase):
 
     async def _on_training_completed(self, event: dict) -> None:
         """Handle training completion."""
-        config_key = event.get("config_key", "unknown")
+        from app.coordination.event_router import get_event_payload
+        payload = get_event_payload(event)
+        config_key = payload.get("config_key", "unknown")
         logger.info(f"[S3ConsolidationHandler] Training completed for {config_key}")
 
     def health_check(self) -> "HealthCheckResult":

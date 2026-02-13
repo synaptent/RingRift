@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from app.coordination.event_router import DataEventType, safe_emit_event
+from app.coordination.event_router import DataEventType, get_event_payload, safe_emit_event
 from app.coordination.event_utils import make_config_key
 from app.coordination.evaluation_queue import (
     PersistentEvaluationQueue,
@@ -239,14 +239,16 @@ class UnevaluatedModelScannerDaemon(HandlerBase):
             event: Event payload with model_path, board_type, num_players, etc.
         """
         try:
-            model_path = event.get("model_path")
+            # Feb 2026: Extract payload from RouterEvent (was crashing with AttributeError)
+            payload = get_event_payload(event)
+            model_path = payload.get("model_path")
             if not model_path:
                 logger.warning("[Scanner] MODEL_IMPORTED event missing model_path")
                 return
 
-            board_type = event.get("board_type")
-            num_players = event.get("num_players")
-            config_key = event.get("config_key")
+            board_type = payload.get("board_type")
+            num_players = payload.get("num_players")
+            config_key = payload.get("config_key")
 
             if not board_type or not num_players:
                 logger.debug(

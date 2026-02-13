@@ -36,6 +36,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from app.coordination.event_router import get_event_payload
 from app.coordination.handler_base import HandlerBase
 
 if TYPE_CHECKING:
@@ -199,8 +200,10 @@ class UnderutilizationRecoveryHandler(HandlerBase):
         if not self._config.enabled:
             return
 
-        idle_percent = event.get("idle_percent", 0.0)
-        idle_nodes = event.get("idle_nodes", [])
+        # Feb 2026: Extract payload from RouterEvent (was crashing with AttributeError)
+        payload = get_event_payload(event)
+        idle_percent = payload.get("idle_percent", 0.0)
+        idle_nodes = payload.get("idle_nodes", [])
 
         logger.warning(
             f"[UnderutilizationRecovery] Cluster underutilized: "
@@ -229,9 +232,11 @@ class UnderutilizationRecoveryHandler(HandlerBase):
 
         # Queue recovery if cooldown has passed
         if self._can_attempt_recovery():
+            # Feb 2026: Extract payload from RouterEvent
+            wq_payload = get_event_payload(event)
             self._pending_recovery_event = {
                 "reason": "work_queue_exhausted",
-                "queue_depth": event.get("queue_depth", 0),
+                "queue_depth": wq_payload.get("queue_depth", 0),
                 "timestamp": time.time(),
             }
 

@@ -36,6 +36,7 @@ from app.config.thresholds import NPZ_COMBINATION_MIN_QUALITY
 from app.coordination.contracts import HealthCheckResult
 from app.coordination.event_handler_utils import extract_config_key
 from app.coordination.event_emission_helpers import safe_emit_event
+from app.coordination.event_router import get_event_payload
 from app.coordination.handler_base import HandlerBase, HandlerStats
 from app.coordination.singleton_mixin import SingletonMixin
 from app.distributed.data_events import DataEventType
@@ -167,7 +168,7 @@ class NPZCombinationDaemon(SingletonMixin, HandlerBase):
             logger.debug("Skipping duplicate NPZ_EXPORT_COMPLETE event")
             return
 
-        config_key = extract_config_key(event)
+        config_key = extract_config_key(get_event_payload(event))
         if not config_key:
             logger.warning("NPZ_EXPORT_COMPLETE event missing config_key")
             return

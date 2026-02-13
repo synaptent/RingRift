@@ -369,16 +369,27 @@ class EvaluationDaemon(BaseEventHandler):
             "oom_exhausted": 0,
         }
 
+        # Feb 2026: Track dispatched cluster evaluations for completion callback
+        # Maps work_id -> persistent_request_id so WORK_COMPLETED events can
+        # update the persistent queue (was causing 88% stuck evaluation timeout)
+        self._dispatched_evaluations: dict[str, str] = {}
+
     def _get_subscriptions(self) -> Dict[Any, Callable]:
         """Return event subscriptions for BaseEventHandler.
 
         Returns:
             Dict mapping event types to handler methods.
         """
-        return {
+        subs: Dict[Any, Callable] = {
             DataEventType.TRAINING_COMPLETED: self._on_training_complete,
             DataEventType.EVALUATION_REQUESTED: self._on_evaluation_requested,
         }
+        # Feb 2026: Subscribe to WORK_COMPLETED/WORK_FAILED to track cluster evaluations
+        if hasattr(DataEventType, "WORK_COMPLETED"):
+            subs[DataEventType.WORK_COMPLETED] = self._on_work_completed
+        if hasattr(DataEventType, "WORK_FAILED"):
+            subs[DataEventType.WORK_FAILED] = self._on_work_failed
+        return subs
 
     async def start(self) -> bool:
         """Start the evaluation daemon.
@@ -737,6 +748,77 @@ class EvaluationDaemon(BaseEventHandler):
             logger.warning(f"[EvaluationDaemon] Invalid EVALUATION_REQUESTED data: {e}")
         except OSError as e:
             logger.error(f"[EvaluationDaemon] I/O error handling evaluation requested: {e}")
+
+    async def _on_work_completed(self, event: Any) -> None:
+        """Handle WORK_COMPLETED event from cluster work queue.
+
+        Feb 2026: Closes the loop for evaluations dispatched to cluster nodes.
+        Without this, dispatched evaluations stay in RUNNING state until they
+        time out as STUCK (was causing 88% evaluation failure rate).
+        """
+        from app.coordination.event_router import get_event_payload
+
+        payload = get_event_payload(event)
+        work_id = payload.get("work_id", "")
+        work_type = payload.get("work_type", "")
+
+        # Only handle evaluation work items we dispatched
+        if work_type != "evaluation" or work_id not in self._dispatched_evaluations:
+            return
+
+        persistent_request_id = self._dispatched_evaluations.pop(work_id)
+        result = payload.get("result", {})
+        estimated_elo = result.get("estimated_elo", result.get("best_elo", 0.0))
+
+        logger.info(
+            f"[EvaluationDaemon] Cluster evaluation completed: work_id={work_id}, "
+            f"elo={estimated_elo:.0f}"
+        )
+
+        # Update persistent queue
+        if self._persistent_queue and persistent_request_id:
+            self._persistent_queue.complete(persistent_request_id, elo=estimated_elo)
+
+        self._eval_stats.evaluations_completed += 1
+
+        # Emit EVALUATION_COMPLETED so the promotion pipeline can proceed
+        board_type = payload.get("board_type", "")
+        num_players = payload.get("num_players", 2)
+        model_path = result.get("model_path", payload.get("config", {}).get("candidate_model", ""))
+        if board_type and num_players and model_path:
+            await self._emit_evaluation_completed(
+                model_path=model_path,
+                board_type=board_type,
+                num_players=num_players,
+                result=result,
+            )
+
+    async def _on_work_failed(self, event: Any) -> None:
+        """Handle WORK_FAILED event from cluster work queue.
+
+        Feb 2026: Marks dispatched evaluations as failed in persistent queue.
+        """
+        from app.coordination.event_router import get_event_payload
+
+        payload = get_event_payload(event)
+        work_id = payload.get("work_id", "")
+        work_type = payload.get("work_type", "")
+
+        if work_type != "evaluation" or work_id not in self._dispatched_evaluations:
+            return
+
+        persistent_request_id = self._dispatched_evaluations.pop(work_id)
+        error = payload.get("error", "cluster_work_failed")
+
+        logger.warning(
+            f"[EvaluationDaemon] Cluster evaluation failed: work_id={work_id}, "
+            f"error={error}"
+        )
+
+        if self._persistent_queue and persistent_request_id:
+            self._persistent_queue.fail(persistent_request_id, error)
+
+        self._eval_stats.evaluations_failed += 1
 
     async def _evaluation_worker(self) -> None:
         """Worker that processes evaluation requests from the queue."""
@@ -1760,6 +1842,11 @@ class EvaluationDaemon(BaseEventHandler):
                     f"for {model_path}"
                 )
                 self._eval_stats.evaluations_triggered += 1
+
+                # Feb 2026: Track work_id → persistent_request_id for completion callback
+                persistent_request_id = request.get("_persistent_request_id")
+                if persistent_request_id:
+                    self._dispatched_evaluations[work_id] = persistent_request_id
             else:
                 logger.warning(
                     f"[EvaluationDaemon] Failed to dispatch gauntlet to cluster: {model_path}"

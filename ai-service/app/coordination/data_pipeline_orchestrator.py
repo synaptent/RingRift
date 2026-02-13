@@ -3384,7 +3384,8 @@ if HAS_HANDLER_BASE:
 
         async def _on_force_advance(self, event: dict) -> None:
             """Handle force advance request."""
-            target_stage = event.get("target_stage")
+            from app.coordination.event_router import get_event_payload
+            target_stage = get_event_payload(event).get("target_stage")
             if target_stage:
                 logger.info(f"[DataPipelineHandler] Force advance to {target_stage}")
 

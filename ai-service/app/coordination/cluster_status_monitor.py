@@ -1218,14 +1218,18 @@ if HAS_HANDLER_BASE:
 
         async def _on_node_failed(self, event: dict) -> None:
             """Handle node failure - trigger immediate status check."""
-            node_id = event.get("node_id", "unknown")
+            from app.coordination.event_router import get_event_payload
+            payload = get_event_payload(event)
+            node_id = payload.get("node_id", "unknown")
             logger.info(f"[ClusterMonitorHandler] Node {node_id} failed, scheduling check")
             # Schedule immediate cycle
             await self._run_cycle()
 
         async def _on_node_recovered(self, event: dict) -> None:
             """Handle node recovery - update status."""
-            node_id = event.get("node_id", "unknown")
+            from app.coordination.event_router import get_event_payload
+            payload = get_event_payload(event)
+            node_id = payload.get("node_id", "unknown")
             logger.info(f"[ClusterMonitorHandler] Node {node_id} recovered")
 
         def health_check(self) -> HBHealthCheckResult:

@@ -828,15 +828,21 @@ if HAS_HANDLER_BASE:
         async def _on_job_stuck(self, event: dict) -> None:
             """Handle job stuck event - trigger immediate reap check."""
             if self._daemon:
-                job_id = event.get("job_id", "unknown")
+                # Feb 2026: Extract payload from RouterEvent
+                from app.coordination.event_router import get_event_payload
+                payload = get_event_payload(event)
+                job_id = payload.get("job_id", "unknown")
                 logger.info(f"[JobReaperHandler] Triggered by JOB_STUCK event: {job_id}")
                 # Run cycle will handle it
 
         async def _on_node_failed(self, event: dict) -> None:
             """Handle node failed event - blacklist the node."""
             if self._daemon:
-                node_id = event.get("node_id", "")
-                reason = event.get("reason", "NODE_FAILED event")
+                # Feb 2026: Extract payload from RouterEvent
+                from app.coordination.event_router import get_event_payload
+                payload = get_event_payload(event)
+                node_id = payload.get("node_id", "")
+                reason = payload.get("reason", "NODE_FAILED event")
                 if node_id:
                     self._daemon.blacklist_node(node_id, reason)
 

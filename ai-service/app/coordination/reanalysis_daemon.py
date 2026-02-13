@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from app.coordination.event_router import get_event_payload
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 
 logger = logging.getLogger(__name__)
@@ -210,9 +211,11 @@ class ReanalysisDaemon(HandlerBase):
         if self._is_duplicate_event(event):
             return
 
-        config_key = event.get("config_key", "")
-        new_elo = event.get("elo", event.get("new_elo", 0))
-        model_path = event.get("model_path", "")
+        # Feb 2026: Extract payload from RouterEvent (was crashing with AttributeError)
+        payload = get_event_payload(event)
+        config_key = payload.get("config_key", "")
+        new_elo = payload.get("elo", payload.get("new_elo", 0))
+        model_path = payload.get("model_path", "")
 
         if not config_key:
             logger.warning("[ReanalysisDaemon] MODEL_PROMOTED missing config_key")
@@ -248,8 +251,10 @@ class ReanalysisDaemon(HandlerBase):
         if not self.config.enabled:
             return
 
-        config_key = event.get("config_key", "")
-        elo = event.get("elo", 0)
+        # Feb 2026: Extract payload from RouterEvent (was crashing with AttributeError)
+        payload = get_event_payload(event)
+        config_key = payload.get("config_key", "")
+        elo = payload.get("elo", 0)
 
         if not config_key:
             return

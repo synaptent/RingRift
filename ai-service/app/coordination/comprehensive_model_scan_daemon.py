@@ -42,7 +42,7 @@ from app.ai.harness.harness_registry import (
     is_harness_valid_for_player_count,
 )
 from app.coordination.contracts import HealthCheckResult
-from app.coordination.event_router import DataEventType, safe_emit_event
+from app.coordination.event_router import DataEventType, get_event_payload, safe_emit_event
 from app.coordination.event_utils import make_config_key
 from app.coordination.evaluation_queue import (
     PersistentEvaluationQueue,
@@ -285,9 +285,11 @@ class ComprehensiveModelScanDaemon(HandlerBase):
     async def _on_model_imported(self, event: dict[str, Any]) -> None:
         """Handle MODEL_IMPORTED events - immediately queue for evaluation."""
         try:
-            model_path = event.get("model_path")
-            board_type = event.get("board_type")
-            num_players = event.get("num_players")
+            # Feb 2026: Extract payload from RouterEvent (was crashing with AttributeError)
+            payload = get_event_payload(event)
+            model_path = payload.get("model_path")
+            board_type = payload.get("board_type")
+            num_players = payload.get("num_players")
 
             if not model_path or not board_type or not num_players:
                 return
@@ -298,7 +300,7 @@ class ComprehensiveModelScanDaemon(HandlerBase):
                 board_type=board_type,
                 num_players=num_players,
                 model_type="nn",  # Assume NN for imported models
-                architecture_version=event.get("architecture_version"),
+                architecture_version=payload.get("architecture_version"),
                 source="import_event",
                 is_canonical="canonical" in model_path.lower(),
             )
@@ -313,9 +315,11 @@ class ComprehensiveModelScanDaemon(HandlerBase):
     async def _on_model_promoted(self, event: dict[str, Any]) -> None:
         """Handle MODEL_PROMOTED events - queue promoted model for evaluation."""
         try:
-            model_path = event.get("model_path")
-            board_type = event.get("board_type")
-            num_players = event.get("num_players")
+            # Feb 2026: Extract payload from RouterEvent (was crashing with AttributeError)
+            payload = get_event_payload(event)
+            model_path = payload.get("model_path")
+            board_type = payload.get("board_type")
+            num_players = payload.get("num_players")
 
             if not model_path or not board_type or not num_players:
                 return
@@ -326,7 +330,7 @@ class ComprehensiveModelScanDaemon(HandlerBase):
                 board_type=board_type,
                 num_players=num_players,
                 model_type="nn",
-                architecture_version=event.get("model_version"),
+                architecture_version=payload.get("model_version"),
                 source="promotion_event",
                 is_canonical="canonical" in model_path.lower(),
             )

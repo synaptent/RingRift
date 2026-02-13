@@ -569,7 +569,14 @@ class ModelLifecycleCoordinator:
                         # Get training metadata
                         training_samples = payload.get("training_samples", 0)
                         training_games = payload.get("training_games", 0)
-                        model_path = payload.get("model_path", model_id)
+                        # Feb 2026: Construct canonical path when payload lacks model_path
+                        # (98.7% of generations had empty model_path, blocking evaluation)
+                        model_path = (
+                            payload.get("model_path")
+                            or payload.get("checkpoint_path")
+                            or model_id
+                            or f"models/canonical_{board_type}_{num_players}p.pth"
+                        )
 
                         # Find parent generation (latest for this config)
                         latest = tracker.get_latest_generation(board_type, num_players)
