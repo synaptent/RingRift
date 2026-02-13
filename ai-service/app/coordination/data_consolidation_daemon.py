@@ -549,7 +549,7 @@ class DataConsolidationDaemon(HandlerBase):
         """Check if a database has games for the specified config."""
         # December 27, 2025: Use context manager to prevent connection leaks
         try:
-            with sqlite3.connect(str(db_path), timeout=SQLITE_CONNECT_TIMEOUT) as conn:
+            with connect_safe(db_path, timeout=SQLITE_CONNECT_TIMEOUT, row_factory=None) as conn:
                 cursor = conn.execute("""
                     SELECT COUNT(*) FROM games
                     WHERE board_type = ? AND num_players = ?
@@ -571,7 +571,7 @@ class DataConsolidationDaemon(HandlerBase):
 
         # December 27, 2025: Use context manager to prevent connection leaks
         try:
-            with sqlite3.connect(str(db_path), timeout=SQLITE_TIMEOUT) as conn:
+            with connect_safe(db_path, timeout=SQLITE_TIMEOUT, row_factory=None) as conn:
                 cursor = conn.execute("SELECT game_id FROM games")
                 game_ids = {row[0] for row in cursor.fetchall()}
                 return game_ids
@@ -584,7 +584,7 @@ class DataConsolidationDaemon(HandlerBase):
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
         # December 27, 2025: Use context manager to prevent connection leaks
-        with sqlite3.connect(str(db_path), timeout=SQLITE_TIMEOUT) as conn:
+        with connect_safe(db_path, timeout=SQLITE_TIMEOUT, row_factory=None) as conn:
             # Main games table - January 2026: Use canonical SCHEMA_VERSION
             conn.execute(f"""
                 CREATE TABLE IF NOT EXISTS games (

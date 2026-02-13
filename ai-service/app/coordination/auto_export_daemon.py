@@ -38,6 +38,7 @@ from app.core.async_context import safe_create_task
 from app.coordination.event_handler_utils import extract_config_key
 from app.coordination.event_utils import make_config_key, parse_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
+from app.utils.sqlite_utils import connect_safe
 
 # Sprint 4 (Jan 2, 2026): Export validation defaults
 try:
@@ -233,7 +234,7 @@ class AutoExportDaemon(HandlerBase):
             db_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Use context manager to ensure connection is always closed
-            with sqlite3.connect(db_path) as conn:
+            with connect_safe(db_path, row_factory=None) as conn:
                 cursor = conn.cursor()
 
                 cursor.execute("""
@@ -272,8 +273,7 @@ class AutoExportDaemon(HandlerBase):
 
         try:
             # Use context manager to ensure connection is always closed
-            with sqlite3.connect(self.config.state_db_path) as conn:
-                conn.row_factory = sqlite3.Row
+            with connect_safe(self.config.state_db_path) as conn:
                 cursor = conn.cursor()
 
                 cursor.execute("SELECT * FROM export_state")
@@ -318,7 +318,7 @@ class AutoExportDaemon(HandlerBase):
 
         try:
             # Use context manager to ensure connection is always closed
-            with sqlite3.connect(self.config.state_db_path) as conn:
+            with connect_safe(self.config.state_db_path, row_factory=None) as conn:
                 cursor = conn.cursor()
 
                 cursor.execute("""
@@ -546,7 +546,7 @@ class AutoExportDaemon(HandlerBase):
                     if not db_path.is_file():
                         continue
                     try:
-                        with sqlite3.connect(db_path) as conn:
+                        with connect_safe(db_path, row_factory=None) as conn:
                             cursor = conn.execute("""
                                 SELECT board_type, num_players, COUNT(DISTINCT game_id) as game_count
                                 FROM games

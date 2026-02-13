@@ -50,6 +50,7 @@ from app.coordination.contracts import CoordinatorStatus
 from app.coordination.event_utils import make_config_key
 from app.coordination.event_emission_helpers import safe_emit_event
 from app.config.thresholds import SQLITE_TIMEOUT, SQLITE_MERGE_TIMEOUT
+from app.utils.sqlite_utils import connect_safe
 
 logger = logging.getLogger(__name__)
 
@@ -707,7 +708,7 @@ class ClusterConsolidationDaemon(HandlerBase):
 
         target_conn = None
         try:
-            target_conn = sqlite3.connect(str(canonical_db), timeout=SQLITE_MERGE_TIMEOUT)
+            target_conn = connect_safe(canonical_db, timeout=SQLITE_MERGE_TIMEOUT, row_factory=None)
 
             for source_db in synced_dbs:
                 try:
@@ -762,8 +763,7 @@ class ClusterConsolidationDaemon(HandlerBase):
 
         source_conn = None
         try:
-            source_conn = sqlite3.connect(str(source_db), timeout=SQLITE_TIMEOUT)
-            source_conn.row_factory = sqlite3.Row
+            source_conn = connect_safe(source_db, timeout=SQLITE_TIMEOUT)
 
             # Query games for this config
             cursor = source_conn.execute("""
@@ -902,7 +902,7 @@ class ClusterConsolidationDaemon(HandlerBase):
         """Ensure canonical database has correct schema."""
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with sqlite3.connect(str(db_path), timeout=SQLITE_TIMEOUT) as conn:
+        with connect_safe(db_path, timeout=SQLITE_TIMEOUT, row_factory=None) as conn:
             # Main games table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS games (
@@ -1001,7 +1001,7 @@ class ClusterConsolidationDaemon(HandlerBase):
             return set()
 
         try:
-            with sqlite3.connect(str(db_path), timeout=SQLITE_TIMEOUT) as conn:
+            with connect_safe(db_path, timeout=SQLITE_TIMEOUT, row_factory=None) as conn:
                 cursor = conn.execute("SELECT game_id FROM games")
                 return {row[0] for row in cursor.fetchall()}
         except sqlite3.Error:

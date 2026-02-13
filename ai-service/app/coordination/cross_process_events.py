@@ -272,6 +272,10 @@ class CrossProcessEventQueue:
                     self._local.conn.execute('PRAGMA journal_mode=WAL')
                     self._local.conn.execute(f'PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_LONG_MS}')
                     self._local.conn.execute('PRAGMA synchronous=NORMAL')
+                    # Feb 2026: Memory-limiting pragmas to prevent OOM on coordinator
+                    self._local.conn.execute('PRAGMA cache_size=-65536')  # 64 MB max
+                    self._local.conn.execute('PRAGMA mmap_size=67108864')  # 64 MB max
+                    self._local.conn.execute('PRAGMA wal_autocheckpoint=4000')
                     # Increased checkpoint interval for better concurrency
                     self._local.conn.execute('PRAGMA wal_autocheckpoint=500')
                     self._local.conn.execute('PRAGMA cache_size=-4000')  # 4MB cache

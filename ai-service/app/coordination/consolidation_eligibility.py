@@ -37,6 +37,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from app.utils.sqlite_utils import connect_safe
+
 if TYPE_CHECKING:
     from typing import Any
 
@@ -392,7 +394,7 @@ class ConsolidationEligibilityManager:
 
                 # Quick check: does it have any games?
                 try:
-                    conn = sqlite3.connect(str(db_path), timeout=2)
+                    conn = connect_safe(db_path, timeout=2.0, row_factory=None)
                     cursor = conn.execute("SELECT 1 FROM games LIMIT 1")
                     has_games = cursor.fetchone() is not None
                     conn.close()

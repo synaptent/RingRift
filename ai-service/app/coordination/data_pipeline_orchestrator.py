@@ -130,6 +130,7 @@ from app.coordination.pipeline_metrics_mixin import PipelineMetricsMixin
 from app.coordination.pipeline_stage_mixin import PipelineStageMixin
 from app.coordination.pipeline_trigger_mixin import PipelineTriggerMixin
 from app.utils.async_utils import fire_and_forget
+from app.utils.sqlite_utils import connect_safe
 
 logger = logging.getLogger(__name__)
 
@@ -387,7 +388,7 @@ class PipelineCircuitBreaker:
         """Initialize SQLite database for state persistence."""
         try:
             self._db_path.parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(str(self._db_path))
+            conn = connect_safe(self._db_path, row_factory=None)
             cursor = conn.cursor()
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS circuit_breaker_state (
@@ -419,7 +420,7 @@ class PipelineCircuitBreaker:
                 self._breaker.get_status(self.PIPELINE_TARGET).last_failure_time or 0.0
             )
 
-            conn = sqlite3.connect(str(self._db_path))
+            conn = connect_safe(self._db_path, row_factory=None)
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO circuit_breaker_state (id, state, failure_count, success_count, last_failure_time, failures_by_stage, updated_at)
@@ -452,7 +453,7 @@ class PipelineCircuitBreaker:
                 logger.debug("[PipelineCircuitBreaker] No persisted state found")
                 return
 
-            conn = sqlite3.connect(str(self._db_path))
+            conn = connect_safe(self._db_path, row_factory=None)
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT state, failure_count, success_count, last_failure_time, failures_by_stage, updated_at
@@ -2740,7 +2741,7 @@ class DataPipelineOrchestrator(
                 }
 
             # Connect and check quality metrics
-            conn = sqlite3.connect(db_path)
+            conn = connect_safe(db_path, row_factory=None)
             cursor = conn.cursor()
 
             # Check 1: Game completion rate (finished games / total games)

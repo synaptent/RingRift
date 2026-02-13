@@ -44,6 +44,7 @@ from typing import Any, Callable, Awaitable
 from app.core.async_context import safe_create_task
 from app.coordination.contracts import HealthCheckResult
 from app.coordination.protocols import CoordinatorStatus
+from app.utils.sqlite_utils import connect_safe
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +138,7 @@ class DeadLetterQueue:
         """Initialize SQLite database schema."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        with sqlite3.connect(self.db_path) as conn:
+        with connect_safe(self.db_path, row_factory=None) as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS dead_letter (
                     event_id TEXT PRIMARY KEY,
@@ -189,7 +190,7 @@ class DeadLetterQueue:
         event_id = str(uuid.uuid4())
         now = datetime.now().isoformat()
 
-        with sqlite3.connect(self.db_path) as conn:
+        with connect_safe(self.db_path, row_factory=None) as conn:
             conn.execute(
                 """
                 INSERT INTO dead_letter
@@ -221,7 +222,7 @@ class DeadLetterQueue:
         Returns:
             List of failed events
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with connect_safe(self.db_path, row_factory=None) as conn:
             conn.row_factory = sqlite3.Row
             if event_type:
                 rows = conn.execute(
@@ -260,7 +261,7 @@ class DeadLetterQueue:
         Returns:
             List of event dictionaries
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with connect_safe(self.db_path, row_factory=None) as conn:
             conn.row_factory = sqlite3.Row
             if include_abandoned:
                 rows = conn.execute(
@@ -309,7 +310,7 @@ class DeadLetterQueue:
             True if retry succeeded
         """
         def _fetch_event() -> dict[str, Any] | None:
-            with sqlite3.connect(self.db_path) as conn:
+            with connect_safe(self.db_path, row_factory=None) as conn:
                 conn.row_factory = sqlite3.Row
                 row = conn.execute(
                     "SELECT * FROM dead_letter WHERE event_id = ?",
@@ -346,7 +347,7 @@ class DeadLetterQueue:
 
         def _update_event_status() -> str:
             """Update event status in database. Returns: 'recovered', 'abandoned', or 'retrying'."""
-            with sqlite3.connect(self.db_path) as conn:
+            with connect_safe(self.db_path, row_factory=None) as conn:
                 if success:
                     conn.execute(
                         """
@@ -449,7 +450,7 @@ class DeadLetterQueue:
 
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
 
-        with sqlite3.connect(self.db_path) as conn:
+        with connect_safe(self.db_path, row_factory=None) as conn:
             cursor = conn.execute(
                 """
                 DELETE FROM dead_letter
@@ -469,7 +470,7 @@ class DeadLetterQueue:
         Returns:
             Dictionary with queue statistics
         """
-        with sqlite3.connect(self.db_path) as conn:
+        with connect_safe(self.db_path, row_factory=None) as conn:
             pending = conn.execute(
                 "SELECT COUNT(*) FROM dead_letter WHERE status = 'pending'"
             ).fetchone()[0]
@@ -772,7 +773,7 @@ class DLQRetryDaemon:
         Returns:
             Number of events abandoned
         """
-        with sqlite3.connect(self.dlq.db_path) as conn:
+        with connect_safe(self.dlq.db_path, row_factory=None) as conn:
             cursor = conn.execute(
                 """
                 UPDATE dead_letter
@@ -797,7 +798,7 @@ class DLQRetryDaemon:
             List of distinct event types
         """
         try:
-            with sqlite3.connect(self.dlq.db_path) as conn:
+            with connect_safe(self.dlq.db_path, row_factory=None) as conn:
                 rows = conn.execute(
                     """
                     SELECT DISTINCT event_type FROM dead_letter
@@ -830,7 +831,7 @@ class DLQRetryDaemon:
 
         cutoff = (datetime.now() - timedelta(hours=max_age_hours)).isoformat()
 
-        with sqlite3.connect(self.dlq.db_path) as conn:
+        with connect_safe(self.dlq.db_path, row_factory=None) as conn:
             cursor = conn.execute(
                 """
                 UPDATE dead_letter

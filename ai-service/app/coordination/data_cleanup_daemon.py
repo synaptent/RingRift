@@ -31,6 +31,7 @@ from typing import Any, Callable
 from app.coordination.handler_base import HandlerBase, HealthCheckResult, CoordinatorStatus
 # December 2025: Use consolidated daemon stats base class
 from app.coordination.daemon_stats import CleanupDaemonStats
+from app.utils.sqlite_utils import connect_safe
 
 logger = logging.getLogger(__name__)
 
@@ -353,8 +354,7 @@ class DataCleanupDaemon(HandlerBase):
                 issues=["Quality module not available"],
             )
 
-        conn = sqlite3.connect(str(db_path), timeout=10)
-        conn.row_factory = sqlite3.Row
+        conn = connect_safe(db_path, timeout=10.0)
 
         try:
             # Get total game count

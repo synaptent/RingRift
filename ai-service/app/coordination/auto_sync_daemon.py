@@ -117,6 +117,7 @@ from app.coordination.sync_push_mixin import SyncPushMixin
 from app.coordination.sync_pull_mixin import SyncPullMixin
 from app.coordination.sync_ephemeral_mixin import SyncEphemeralMixin
 from app.coordination.event_emission_helpers import safe_emit_event
+from app.utils.sqlite_utils import connect_safe
 
 # Circuit breaker for fault-tolerant sync operations (December 2025)
 try:
@@ -495,7 +496,7 @@ class AutoSyncDaemon(
 
         try:
             # December 27, 2025: Use context manager to prevent connection leaks
-            with sqlite3.connect(str(db_path), timeout=10.0) as conn:
+            with connect_safe(db_path, timeout=10.0, row_factory=None) as conn:
                 cursor = conn.cursor()
 
                 # Get games with their move counts
@@ -1433,8 +1434,7 @@ class AutoSyncDaemon(
             from app.quality.unified_quality import compute_game_quality_from_params
 
             # Dec 2025: Use context manager to ensure connection is closed
-            with sqlite3.connect(str(db_path), timeout=5) as conn:
-                conn.row_factory = sqlite3.Row
+            with connect_safe(db_path, timeout=5.0) as conn:
                 cursor = conn.execute("""
                     SELECT game_id, game_status, winner, termination_reason,
                            total_moves, board_type
@@ -1527,7 +1527,7 @@ class AutoSyncDaemon(
             try:
                 # December 2025: Run blocking SQLite operations in thread pool
                 def _query_games_sync(path: str) -> tuple:
-                    with sqlite3.connect(path, timeout=5) as conn:
+                    with connect_safe(path, timeout=5.0, row_factory=None) as conn:
                         cursor = conn.cursor()
                         cursor.execute(
                             "SELECT board_type, num_players FROM games LIMIT 1"
@@ -1599,7 +1599,7 @@ class AutoSyncDaemon(
             try:
                 # Dec 2025: Run blocking count query in thread pool
                 def _count_games_sync(path: str) -> int:
-                    with sqlite3.connect(path) as conn:
+                    with connect_safe(path, row_factory=None) as conn:
                         cursor = conn.execute("SELECT COUNT(*) FROM games")
                         return cursor.fetchone()[0]
 

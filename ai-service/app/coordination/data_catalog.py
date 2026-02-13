@@ -61,6 +61,7 @@ __all__ = [
 # Backward-compatible alias DataType retained for existing code
 from app.coordination.enums import CatalogDataType
 from app.coordination.event_handler_utils import extract_config_from_path
+from app.utils.sqlite_utils import connect_safe
 
 # Backward-compatible alias (deprecated, remove Q2 2026)
 DataType = CatalogDataType
@@ -254,8 +255,7 @@ class DataCatalog:
     @contextmanager
     def _get_connection(self) -> Iterator[sqlite3.Connection]:
         """Get a database connection with proper cleanup."""
-        conn = sqlite3.connect(str(self.config.db_path), timeout=30.0)
-        conn.row_factory = sqlite3.Row
+        conn = connect_safe(self.config.db_path, timeout=30.0)
         try:
             yield conn
         finally:
