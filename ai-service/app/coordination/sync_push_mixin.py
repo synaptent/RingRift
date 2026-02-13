@@ -263,6 +263,170 @@ class SyncPushMixin(SyncMixinBase):
             operation_name=f"Sync to {target_id}",
         )
 
+    async def _try_aria2_chunked_pull(
+        self,
+        source: Path,
+        target: dict[str, Any],
+        node_config: Any,
+        games_path: str,
+        ssh_user: str,
+        start_time: float,
+    ) -> dict[str, Any] | None:
+        """Tell remote node to pull file via aria2c from coordinator's HTTP server.
+
+        February 2026: Preferred transfer method. aria2c downloads in 1 MB chunks
+        with 16 parallel connections, using minimal memory on both sides. The
+        coordinator's P2P server streams files via GET /files/data/*.
+
+        Returns sync result dict on success, None if aria2c is not available
+        or the transfer failed.
+        """
+        try:
+            file_size = source.stat().st_size
+        except OSError:
+            return None
+
+        # Get coordinator's Tailscale IP for the HTTP URL
+        coordinator_ip = None
+        try:
+            from app.config.node_identity import get_tailscale_ip
+            coordinator_ip = get_tailscale_ip()
+        except ImportError:
+            pass
+        if not coordinator_ip:
+            return None
+
+        try:
+            from app.config.ports import P2P_DEFAULT_PORT
+        except ImportError:
+            P2P_DEFAULT_PORT = 8770
+
+        data_rel_path = f"games/{source.name}"
+        pull_url = f"http://{coordinator_ip}:{P2P_DEFAULT_PORT}/files/data/{data_rel_path}"
+        remote_dest = f"{games_path}/synced/{source.name}"
+
+        logger.info(
+            f"[AutoSyncDaemon] aria2c pull: {target['node_id']} pulling "
+            f"{source.name} ({file_size / 1024 / 1024:.0f} MB) via {pull_url}"
+        )
+
+        # SSH to remote node and run aria2c (chunked, 16 connections, low memory)
+        ssh_key = "~/.ssh/id_cluster"
+        if node_config and getattr(node_config, "ssh_key", None):
+            ssh_key = node_config.ssh_key
+
+        ssh_opts = [
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "BatchMode=yes",
+            "-o", "ConnectTimeout=10",
+        ]
+        key_path = os.path.expanduser(ssh_key)
+        if os.path.exists(key_path):
+            ssh_opts.extend(["-i", key_path])
+
+        # aria2c with: 16 connections, 1MB chunks, auto-resume, checksum after
+        # --file-allocation=none avoids pre-allocating disk (faster start)
+        # --max-overall-download-limit caps bandwidth to avoid saturating link
+        bw_limit = f"{self.get_bandwidth_for_node(target['node_id'])}K"
+        aria2_cmd = (
+            f"mkdir -p $(dirname '{remote_dest}') && "
+            f"which aria2c > /dev/null 2>&1 && "
+            f"aria2c --max-connection-per-server=16 --split=16 "
+            f"--min-split-size=1M --file-allocation=none "
+            f"--max-overall-download-limit={bw_limit} "
+            f"--connect-timeout=10 --timeout=300 --max-tries=3 "
+            f"--retry-wait=5 --auto-file-renaming=false "
+            f"--allow-overwrite=true --check-integrity=false "
+            f"-d $(dirname '{remote_dest}') -o $(basename '{remote_dest}') "
+            f"'{pull_url}'"
+        )
+
+        ssh_cmd = [
+            "ssh", *ssh_opts,
+            f"{ssh_user}@{target['host']}",
+            aria2_cmd,
+        ]
+
+        # Dynamic timeout: generous for large files
+        timeout_seconds = max(120, min(3600, int(60 + file_size / (1024 * 1024) * 3)))
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *ssh_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout_seconds,
+            )
+
+            if proc.returncode == 0:
+                duration = time.time() - start_time
+                # Verify size on remote
+                size_ok = await self._verify_remote_file_size(
+                    target["host"], ssh_user, ssh_opts, remote_dest, file_size,
+                )
+                if size_ok:
+                    logger.info(
+                        f"[AutoSyncDaemon] aria2c pull succeeded: {source.name} -> "
+                        f"{target['node_id']} ({file_size / 1024 / 1024:.0f} MB "
+                        f"in {duration:.1f}s)"
+                    )
+                    return {
+                        "source": str(source),
+                        "target": target["node_id"],
+                        "success": True,
+                        "bytes_transferred": file_size,
+                        "duration_seconds": duration,
+                        "method": "aria2c_pull",
+                    }
+                else:
+                    logger.warning(
+                        f"[AutoSyncDaemon] aria2c pull size mismatch for "
+                        f"{source.name} -> {target['node_id']}"
+                    )
+            else:
+                err = (stderr.decode().strip()[:200] if stderr else "")
+                logger.info(
+                    f"[AutoSyncDaemon] aria2c pull failed for {target['node_id']} "
+                    f"(rc={proc.returncode}): {err}"
+                )
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"[AutoSyncDaemon] aria2c pull timed out for {target['node_id']} "
+                f"after {timeout_seconds}s"
+            )
+        except (OSError, subprocess.SubprocessError) as e:
+            logger.info(f"[AutoSyncDaemon] aria2c pull error for {target['node_id']}: {e}")
+
+        return None  # Signal caller to try next method
+
+    async def _verify_remote_file_size(
+        self,
+        host: str,
+        ssh_user: str,
+        ssh_opts: list[str],
+        remote_path: str,
+        expected_size: int,
+    ) -> bool:
+        """Verify a file's size on a remote node via SSH stat."""
+        size_cmd = [
+            "ssh", *ssh_opts,
+            f"{ssh_user}@{host}",
+            f"stat -c%s '{remote_path}' 2>/dev/null || stat -f%z '{remote_path}'",
+        ]
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *size_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+            remote_size = int(stdout.decode().strip())
+            return remote_size == expected_size
+        except (asyncio.TimeoutError, ValueError, OSError):
+            return False
+
     async def broadcast_sync_to_target(
         self,
         source: Path,
@@ -320,56 +484,73 @@ class SyncPushMixin(SyncMixinBase):
         else:
             games_path = "~/ringrift/ai-service/data/games"
 
-        # Feb 2026: Memory-aware transfer - try remote pull if memory is high
+        # =====================================================================
+        # February 2026: Prefer lightweight transfer methods over rsync.
+        #
+        # Strategy (in order of preference):
+        #   1. aria2c HTTP chunked pull — remote node pulls from coordinator's
+        #      P2P file server in 1 MB chunks. Low coordinator memory usage.
+        #   2. Remote pull via /sync/pull endpoint — tells remote node to pull.
+        #   3. rsync push — only if memory gate allows (≥30% free) and file
+        #      is small enough. Uses --size-only for files >100 MB.
+        # =====================================================================
+
+        file_size_bytes = source.stat().st_size if source.exists() else 0
+        file_size_mb = file_size_bytes / (1024 * 1024)
+        ssh_user = node_config.ssh_user if node_config else "ubuntu"
+
+        # --- Method 1: aria2c HTTP chunked pull (preferred) ---
+        aria2_result = await self._try_aria2_chunked_pull(
+            source, target, node_config, games_path, ssh_user, start_time,
+        )
+        if aria2_result and aria2_result.get("success"):
+            return aria2_result
+
+        # --- Method 2: Remote pull via /sync/pull endpoint ---
         try:
-            from app.coordination.rsync_command_builder import should_use_rsync, trigger_remote_pull
-            if not should_use_rsync():
-                logger.info(
-                    f"[AutoSyncDaemon] Memory-aware: triggering remote pull on "
-                    f"{target['node_id']} instead of rsync push"
-                )
-                pull_ok = await trigger_remote_pull(
-                    target_host=target["host"],
-                    target_port=target.get("port", 8770),
-                    source_node_id=getattr(self, "node_id", "coordinator"),
-                    files=[str(source)],
-                )
-                if pull_ok:
-                    return {
-                        "source": str(source),
-                        "target": target["node_id"],
-                        "success": True,
-                        "bytes_transferred": source.stat().st_size if source.exists() else 0,
-                        "duration_seconds": time.time() - start_time,
-                        "method": "remote_pull",
-                    }
-                logger.info("[AutoSyncDaemon] Remote pull failed, falling back to rsync")
+            from app.coordination.rsync_command_builder import trigger_remote_pull
+            logger.info(
+                f"[AutoSyncDaemon] Trying remote pull on {target['node_id']} "
+                f"for {source.name} ({file_size_mb:.0f} MB)"
+            )
+            pull_ok = await trigger_remote_pull(
+                target_host=target["host"],
+                target_port=target.get("port", 8770),
+                source_node_id=getattr(self, "node_id", "coordinator"),
+                files=[str(source)],
+            )
+            if pull_ok:
+                return {
+                    "source": str(source),
+                    "target": target["node_id"],
+                    "success": True,
+                    "bytes_transferred": file_size_bytes,
+                    "duration_seconds": time.time() - start_time,
+                    "method": "remote_pull",
+                }
         except ImportError:
             pass
 
-        # Build rsync command
-        ssh_user = node_config.ssh_user if node_config else "ubuntu"
+        # --- Method 3: rsync push (fallback, memory-gated) ---
+        if not self._check_memory_for_sync(
+            f"rsync {source.name} ({file_size_mb:.0f} MB) -> {target['node_id']}"
+        ):
+            return {
+                "source": str(source),
+                "target": target["node_id"],
+                "success": False,
+                "duration_seconds": time.time() - start_time,
+                "error": "Memory too high for rsync, aria2/pull also failed",
+            }
+
         target_path = f"{ssh_user}@{target['host']}:{games_path}/synced/"
-        # December 30, 2025: Use centralized SSH config for consistent timeouts
-        # and per-provider adjustments (Vast/Hetzner get 15s, others 10s)
         ssh_opts = build_ssh_options(
             key_path="~/.ssh/id_cluster",
-            node_id=target.get("node_id"),  # Auto-detects provider from node ID
-            include_keepalive=True,  # Long-running transfers need keepalive
+            node_id=target.get("node_id"),
+            include_keepalive=True,
         )
-        # December 2025: Removed --partial to prevent corruption from stitched segments
-        # on connection resets. Fresh transfers are safer than resumed partial ones.
-        # December 27, 2025: Removed --inplace as it conflicts with --delay-updates
-        # --delay-updates provides atomic file updates (safer for databases)
-        # --inplace writes directly to file (faster but not atomic)
-        # These are mutually exclusive - choose safety over speed
-        # February 2026: Use --size-only instead of --checksum for large files.
-        # --checksum forces rsync to read the ENTIRE file to compute checksums,
-        # which for a 5 GB database means 5 GB of memory + I/O. --size-only
-        # skips files where the size matches, which is sufficient for append-only
-        # SQLite databases. For small files, --checksum is fine.
-        file_size_mb = source.stat().st_size / (1024 * 1024) if source.exists() else 100
-        use_checksum = file_size_mb < 100  # Only checksum files under 100 MB
+        # Use --size-only for files >100 MB to avoid reading entire file for checksum
+        use_checksum = file_size_mb < 100
 
         cmd = [
             "rsync",
@@ -872,6 +1053,46 @@ class SyncPushMixin(SyncMixinBase):
 
         return cleaned
 
+    def _check_memory_for_sync(self, context: str = "", log_skip: bool = True) -> bool:
+        """Check that at least 30% physical memory is free before syncing.
+
+        February 2026: Memory gate for broadcast sync. Each rsync of a multi-GB
+        database can consume RSS equal to the file size. Two concurrent rsyncs
+        of 5 GB files = 10 GB RSS instantly, which caused repeated OOM panics.
+
+        The threshold is configurable via RINGRIFT_RSYNC_MEMORY_THRESHOLD (default 70%,
+        meaning 30% must remain free). Uses the existing resource_guard infrastructure.
+
+        Returns:
+            True if memory is sufficient, False if sync should be skipped.
+        """
+        min_free_percent = float(os.environ.get("RINGRIFT_SYNC_MIN_FREE_PERCENT", "30"))
+        try:
+            from app.utils.resource_guard import get_memory_usage
+            used_percent, available_gb, total_gb = get_memory_usage()
+            free_percent = 100.0 - used_percent
+
+            if free_percent < min_free_percent:
+                if log_skip:
+                    logger.warning(
+                        f"[AutoSyncDaemon] Memory gate: {free_percent:.1f}% free "
+                        f"(need {min_free_percent:.0f}%), skipping {context}. "
+                        f"Available: {available_gb:.1f} GB / {total_gb:.0f} GB"
+                    )
+                return False
+
+            logger.debug(
+                f"[AutoSyncDaemon] Memory gate OK: {free_percent:.1f}% free "
+                f"({available_gb:.1f} GB), proceeding with {context}"
+            )
+            return True
+        except ImportError:
+            logger.debug("[AutoSyncDaemon] psutil/resource_guard not available, allowing sync")
+            return True
+        except (OSError, AttributeError) as e:
+            logger.warning(f"[AutoSyncDaemon] Memory check failed ({e}), allowing sync")
+            return True
+
     async def broadcast_sync_cycle(self) -> int:
         """Execute one broadcast sync cycle (leader-only).
 
@@ -883,17 +1104,11 @@ class SyncPushMixin(SyncMixinBase):
         if not self._is_broadcast:
             return 0
 
-        # February 2026: Skip broadcast sync on coordinator nodes entirely.
-        # The coordinator has 56 GB of game databases. Pushing them via rsync
-        # causes massive memory pressure (each rsync of a 5 GB file uses ~5 GB RSS).
-        # Remote nodes should pull from coordinator via HTTP or S3 instead.
-        if os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() == "true":
-            if os.environ.get("RINGRIFT_BROADCAST_SYNC_ENABLED", "").lower() != "true":
-                logger.info(
-                    "[AutoSyncDaemon] Skipping broadcast sync on coordinator node. "
-                    "Set RINGRIFT_BROADCAST_SYNC_ENABLED=true to override."
-                )
-                return 0
+        # February 2026: Memory-gated broadcast sync.
+        # Check that at least 30% physical memory is free before starting.
+        # This replaces the previous hard-disable on coordinator.
+        if not self._check_memory_for_sync("broadcast_sync_cycle"):
+            return 0
 
         logger.info("[AutoSyncDaemon] Starting broadcast sync cycle")
 
@@ -919,40 +1134,49 @@ class SyncPushMixin(SyncMixinBase):
             logger.info("[AutoSyncDaemon] No databases to sync")
             return 0
 
-        # Sync each database to each target (with concurrency limit and retry)
-        results: list[dict[str, Any]] = []
-        semaphore = asyncio.Semaphore(self.config.max_concurrent_syncs)
+        # Sync each database to each target, one at a time (serialized).
+        # February 2026: Changed from concurrent gather to serial loop with
+        # per-transfer memory checks. Each rsync of a multi-GB file can use
+        # as much RSS as the file itself, so we must check memory before each.
+        successful = 0
+        failed = 0
+        skipped_memory = 0
 
-        async def sync_with_limit(db: Path, target: dict[str, Any]) -> dict[str, Any]:
-            async with semaphore:
-                # December 2025: Use retry wrapper for improved reliability
-                return await self.sync_to_target_with_retry(db, target)
-
-        # Create all sync tasks
-        tasks = []
         for db in databases:
             for target in targets:
-                tasks.append(sync_with_limit(db, target))
+                # Per-transfer memory gate: require 30% free before each sync
+                if not self._check_memory_for_sync(
+                    f"sync {db.name} -> {target.get('node_id', '?')}",
+                    log_skip=False,
+                ):
+                    skipped_memory += 1
+                    logger.info(
+                        f"[AutoSyncDaemon] Pausing broadcast: memory too high, "
+                        f"skipping {db.name} -> {target.get('node_id', '?')}"
+                    )
+                    # If memory is tight, stop the entire cycle rather than
+                    # skipping individual transfers and continuing
+                    logger.info(
+                        f"[AutoSyncDaemon] Broadcast sync paused: {successful} done, "
+                        f"{skipped_memory} skipped (memory pressure)"
+                    )
+                    return successful
 
-        # Execute concurrently
-        if tasks:
-            task_results = await asyncio.gather(*tasks, return_exceptions=True)
+                try:
+                    result = await self.sync_to_target_with_retry(db, target)
+                    if isinstance(result, dict) and result.get("success"):
+                        successful += 1
+                    else:
+                        failed += 1
+                except Exception as e:
+                    logger.warning(f"[AutoSyncDaemon] Sync error {db.name}: {e}")
+                    failed += 1
 
-            # Filter out exceptions
-            results = [
-                r for r in task_results
-                if isinstance(r, dict)
-            ]
-
-            # Log summary
-            successful = sum(1 for r in results if r.get("success", False))
-            failed = len(results) - successful
-            logger.info(
-                f"[AutoSyncDaemon] Broadcast sync complete: {successful} successful, {failed} failed"
-            )
-
-            return successful
-
-        return 0
+        logger.info(
+            f"[AutoSyncDaemon] Broadcast sync complete: {successful} successful, "
+            f"{failed} failed"
+            + (f", {skipped_memory} skipped (memory)" if skipped_memory else "")
+        )
+        return successful
 
     # Note: _emit_sync_failure() and _emit_sync_stalled() are inherited from SyncMixinBase
