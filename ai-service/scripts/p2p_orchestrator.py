@@ -7027,16 +7027,19 @@ class P2POrchestrator(
         background_loops = metrics_dict.get("background_loops", {"error": "not_collected"})
         voter_health = metrics_dict.get("voter_health", {"error": "not_collected"})
 
-        # Jan 3, 2026: Transport latency stats for diagnosing slow transports
-        transport_latency: dict = {}
-        try:
-            from scripts.p2p.transport_cascade import get_transport_cascade
-            cascade = get_transport_cascade()
-            transport_latency = cascade.get_transport_latency_summary()
-        except ImportError:
-            transport_latency = {"available": False, "reason": "import_error"}
-        except Exception as e:  # noqa: BLE001
-            transport_latency = {"available": False, "error": str(e)}
+        # Feb 2026: All metrics now extracted from parallel collector results.
+        # Previously, 8+ metrics were computed sequentially after the collector,
+        # adding 10-30+ seconds. Now they run in parallel with 5s timeout each.
+        transport_latency = metrics_dict.get("transport_latency", {"error": "not_collected"})
+        cluster_observability = metrics_dict.get("cluster_observability", {"error": "not_collected"})
+        fallback_status = metrics_dict.get("fallback_status", {"error": "not_collected"})
+        leadership_consistency = metrics_dict.get("leadership_consistency", {"error": "not_collected"})
+        is_leader_result = metrics_dict.get("is_leader", {"value": False})
+        is_leader_val = is_leader_result.get("value", False) if isinstance(is_leader_result, dict) else False
+        config_version = metrics_dict.get("config_version", {"error": "not_collected"})
+        data_summary = metrics_dict.get("data_summary", {"error": "not_collected"})
+        cooldown_stats = metrics_dict.get("cooldown_stats", {"error": "not_collected"})
+        peer_health_summary = metrics_dict.get("peer_health_summary", {"error": "not_collected"})
 
         # Dec 2025: Get event subscription status for health monitoring
         event_subscriptions = getattr(self, "_event_subscription_status", {
@@ -7046,8 +7049,6 @@ class P2POrchestrator(
             "all_healthy": False,
             "timestamp": 0,
         })
-
-        # Jan 19, 2026: partition_status and background_loops now computed in parallel gather above
 
         # Jan 1, 2026: Work queue status for monitoring (Phase 4B fix)
         work_queue_size = 0
@@ -7080,50 +7081,6 @@ class P2POrchestrator(
             if isinstance(peer_data, dict):
                 cluster_selfplay_jobs += int(peer_data.get("selfplay_jobs", 0) or 0)
                 cluster_training_jobs += int(peer_data.get("training_jobs", 0) or 0)
-
-        # Jan 19, 2026: voter_health now computed in parallel gather above
-
-        # Feb 4, 2026: Pre-compute potentially blocking metrics with fallbacks
-        # These were causing /status timeouts when called inline in the response dict
-        try:
-            cluster_observability = self.sync.get_cluster_observability()
-        except Exception:  # noqa: BLE001
-            cluster_observability = {"error": "unavailable"}
-
-        try:
-            fallback_status = self._get_fallback_status()
-        except Exception:  # noqa: BLE001
-            fallback_status = {"error": "unavailable"}
-
-        try:
-            leadership_consistency = self.leadership.get_consistency_metrics()
-        except Exception:  # noqa: BLE001
-            leadership_consistency = {"error": "unavailable"}
-
-        try:
-            is_leader_val = self.leadership.check_is_leader()
-        except Exception:  # noqa: BLE001
-            is_leader_val = False
-
-        try:
-            config_version = self._get_config_version()
-        except Exception:  # noqa: BLE001
-            config_version = {"error": "unavailable"}
-
-        try:
-            data_summary = self._get_data_summary_cached()
-        except Exception:  # noqa: BLE001
-            data_summary = {"error": "unavailable"}
-
-        try:
-            cooldown_stats = self._get_cooldown_stats()
-        except Exception:  # noqa: BLE001
-            cooldown_stats = {"error": "unavailable"}
-
-        try:
-            peer_health_summary = self.health_metrics_manager.get_peer_health_summary()
-        except Exception:  # noqa: BLE001
-            peer_health_summary = {"error": "unavailable"}
 
         return {
             "node_id": self.node_id,

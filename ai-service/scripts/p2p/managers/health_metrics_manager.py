@@ -702,8 +702,13 @@ class HealthMetricsManager:
                 my_timeout = 180.0
 
             disagreements = []
-            peers = getattr(self._orchestrator, "peers", {})
-            for peer in peers.values():
+            # Feb 2026: Use lock-free PeerSnapshot to avoid peers_lock contention
+            peer_snapshot = getattr(self._orchestrator, "_peer_snapshot", None)
+            if peer_snapshot:
+                peers_values = peer_snapshot.get_snapshot().values()
+            else:
+                peers_values = getattr(self._orchestrator, "peers", {}).values()
+            for peer in peers_values:
                 if not (hasattr(peer, "is_alive") and peer.is_alive()):
                     continue
                 peer_timeout = getattr(peer, "effective_timeout", 0.0)

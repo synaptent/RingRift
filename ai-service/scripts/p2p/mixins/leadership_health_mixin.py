@@ -407,9 +407,12 @@ class LeadershipHealthMixin(P2PMixinBase):
 
         # Cache is_alive() results once to avoid O(N²) repeated calls
         # This prevents /status endpoint from blocking for 11+ seconds
+        # Feb 2026: Use lock-free PeerSnapshot to avoid peers_lock contention
         peer_alive_cache: dict[str, bool] = {}
         peer_host_cache: dict[str, str | None] = {}
-        for peer_id, p in self.peers.items():
+        peer_snapshot = getattr(self, "_peer_snapshot", None)
+        peers_iter = peer_snapshot.get_snapshot().items() if peer_snapshot else self.peers.items()
+        for peer_id, p in peers_iter:
             if not self._is_swim_peer_id(peer_id):
                 peer_alive_cache[peer_id] = p.is_alive()
                 peer_host_cache[peer_id] = getattr(p, "host", None) or (p.get("host") if isinstance(p, dict) else None)

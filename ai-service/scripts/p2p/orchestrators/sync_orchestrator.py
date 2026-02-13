@@ -488,29 +488,31 @@ class SyncOrchestrator(BaseOrchestrator):
             result["gossip_discovered_peers"] = {"error": str(e)}
 
         # 3. Cluster job distribution (for balance analysis)
+        # Feb 2026: Use lock-free PeerSnapshot instead of peers_lock to avoid
+        # blocking the event loop. peers_lock contention was contributing to
+        # /status endpoint taking 30-60+ seconds.
         try:
-            peers_lock = getattr(self._p2p, "peers_lock", None)
-            peers = getattr(self._p2p, "peers", {})
             node_id = getattr(self._p2p, "node_id", "")
             self_info = getattr(self._p2p, "self_info", None)
+            peer_snapshot = getattr(self._p2p, "_peer_snapshot", None)
 
-            if peers_lock:
-                with peers_lock:
-                    job_distribution = {}
-                    for pid, peer in peers.items():
-                        if peer.is_alive():
-                            job_distribution[pid] = {
-                                "selfplay_jobs": int(getattr(peer, "selfplay_jobs", 0) or 0),
-                                "training_jobs": int(getattr(peer, "training_jobs", 0) or 0),
-                                "gpu_percent": float(getattr(peer, "gpu_percent", 0) or 0),
-                            }
-                    # Add self
-                    if self_info:
-                        job_distribution[node_id] = {
-                            "selfplay_jobs": int(getattr(self_info, "selfplay_jobs", 0) or 0),
-                            "training_jobs": int(getattr(self_info, "training_jobs", 0) or 0),
-                            "gpu_percent": float(getattr(self_info, "gpu_percent", 0) or 0),
+            if peer_snapshot:
+                peers_dict = peer_snapshot.get_snapshot()
+                job_distribution = {}
+                for pid, peer in peers_dict.items():
+                    if peer.is_alive():
+                        job_distribution[pid] = {
+                            "selfplay_jobs": int(getattr(peer, "selfplay_jobs", 0) or 0),
+                            "training_jobs": int(getattr(peer, "training_jobs", 0) or 0),
+                            "gpu_percent": float(getattr(peer, "gpu_percent", 0) or 0),
                         }
+                # Add self
+                if self_info:
+                    job_distribution[node_id] = {
+                        "selfplay_jobs": int(getattr(self_info, "selfplay_jobs", 0) or 0),
+                        "training_jobs": int(getattr(self_info, "training_jobs", 0) or 0),
+                        "gpu_percent": float(getattr(self_info, "gpu_percent", 0) or 0),
+                    }
 
                 # Compute summary stats
                 if job_distribution:
@@ -530,7 +532,37 @@ class SyncOrchestrator(BaseOrchestrator):
                 else:
                     result["cluster_job_distribution"] = {"error": "no peers available"}
             else:
-                result["cluster_job_distribution"] = {"error": "peers_lock not available"}
+                # Fallback to lock-based access if snapshot not available
+                peers_lock = getattr(self._p2p, "peers_lock", None)
+                peers = getattr(self._p2p, "peers", {})
+                if peers_lock:
+                    with peers_lock:
+                        job_distribution = {}
+                        for pid, peer in peers.items():
+                            if peer.is_alive():
+                                job_distribution[pid] = {
+                                    "selfplay_jobs": int(getattr(peer, "selfplay_jobs", 0) or 0),
+                                    "training_jobs": int(getattr(peer, "training_jobs", 0) or 0),
+                                    "gpu_percent": float(getattr(peer, "gpu_percent", 0) or 0),
+                                }
+                        if self_info:
+                            job_distribution[node_id] = {
+                                "selfplay_jobs": int(getattr(self_info, "selfplay_jobs", 0) or 0),
+                                "training_jobs": int(getattr(self_info, "training_jobs", 0) or 0),
+                                "gpu_percent": float(getattr(self_info, "gpu_percent", 0) or 0),
+                            }
+                    if job_distribution:
+                        all_jobs = [d["selfplay_jobs"] for d in job_distribution.values()]
+                        avg_jobs = sum(all_jobs) / len(all_jobs) if all_jobs else 0
+                        result["cluster_job_distribution"] = {
+                            "node_count": len(job_distribution),
+                            "avg_selfplay_jobs": round(avg_jobs, 1),
+                            "per_node": job_distribution,
+                        }
+                    else:
+                        result["cluster_job_distribution"] = {"error": "no peers available"}
+                else:
+                    result["cluster_job_distribution"] = {"error": "peers_lock not available"}
         except Exception as e:  # noqa: BLE001
             result["cluster_job_distribution"] = {"error": str(e)}
 

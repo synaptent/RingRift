@@ -43,7 +43,12 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 # Default timeout for each metric call
-DEFAULT_METRIC_TIMEOUT = 5.0  # seconds
+# Feb 2026: Reduced from 5.0s to 2.0s. With 22+ metrics running in parallel,
+# a 5s timeout per metric meant worst case was still 5s wall-clock (due to
+# asyncio.gather parallelism), but thread pool congestion could cause queueing.
+# 2s is sufficient for in-memory metrics; truly slow metrics (SQLite, file I/O)
+# will timeout gracefully and return error markers.
+DEFAULT_METRIC_TIMEOUT = 2.0  # seconds
 
 
 # =============================================================================
@@ -424,6 +429,83 @@ def create_orchestrator_metric_tasks(orchestrator: Any) -> list[MetricTask]:
         tasks.append(MetricTask(
             name="voter_health",
             func=orchestrator._check_voter_health,
+        ))
+
+    # =========================================================================
+    # Feb 2026: Metrics previously computed sequentially after the parallel
+    # collector. Moved here to run in parallel for faster /status response.
+    # =========================================================================
+
+    # Cluster observability
+    if hasattr(orchestrator, "sync") and hasattr(orchestrator.sync, "get_cluster_observability"):
+        tasks.append(MetricTask(
+            name="cluster_observability",
+            func=orchestrator.sync.get_cluster_observability,
+        ))
+
+    # Fallback status
+    if hasattr(orchestrator, "_get_fallback_status"):
+        tasks.append(MetricTask(
+            name="fallback_status",
+            func=orchestrator._get_fallback_status,
+        ))
+
+    # Leadership consistency
+    if hasattr(orchestrator, "leadership") and hasattr(orchestrator.leadership, "get_consistency_metrics"):
+        tasks.append(MetricTask(
+            name="leadership_consistency",
+            func=orchestrator.leadership.get_consistency_metrics,
+        ))
+
+    # Config version (involves file I/O - reads YAML and computes SHA256)
+    if hasattr(orchestrator, "_get_config_version"):
+        tasks.append(MetricTask(
+            name="config_version",
+            func=orchestrator._get_config_version,
+        ))
+
+    # Data summary (cached)
+    if hasattr(orchestrator, "_get_data_summary_cached"):
+        tasks.append(MetricTask(
+            name="data_summary",
+            func=orchestrator._get_data_summary_cached,
+        ))
+
+    # Cooldown stats
+    if hasattr(orchestrator, "_get_cooldown_stats"):
+        tasks.append(MetricTask(
+            name="cooldown_stats",
+            func=orchestrator._get_cooldown_stats,
+        ))
+
+    # Peer health summary
+    if hasattr(orchestrator, "health_metrics_manager") and hasattr(orchestrator.health_metrics_manager, "get_peer_health_summary"):
+        tasks.append(MetricTask(
+            name="peer_health_summary",
+            func=orchestrator.health_metrics_manager.get_peer_health_summary,
+        ))
+
+    # Transport latency
+    def _get_transport_latency():
+        try:
+            from scripts.p2p.transport_cascade import get_transport_cascade
+            cascade = get_transport_cascade()
+            return cascade.get_transport_latency_summary()
+        except ImportError:
+            return {"available": False, "reason": "import_error"}
+
+    tasks.append(MetricTask(
+        name="transport_latency",
+        func=_get_transport_latency,
+    ))
+
+    # Is leader check
+    if hasattr(orchestrator, "leadership") and hasattr(orchestrator.leadership, "check_is_leader"):
+        def _check_is_leader():
+            return {"value": orchestrator.leadership.check_is_leader()}
+        tasks.append(MetricTask(
+            name="is_leader",
+            func=_check_is_leader,
         ))
 
     return tasks
