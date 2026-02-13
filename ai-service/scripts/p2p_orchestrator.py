@@ -1625,6 +1625,15 @@ class P2POrchestrator(
 
         if not token:
             token_file = (os.environ.get(AUTH_TOKEN_FILE_ENV, "")).strip()
+            if not token_file:
+                # Auto-discover token from standard locations
+                for candidate in [
+                    Path.home() / ".ringrift" / "cluster_auth_token",
+                    Path.home() / "Library" / "Application Support" / "RingRift" / "cluster_auth_token",
+                ]:
+                    if candidate.is_file():
+                        token_file = str(candidate)
+                        break
             if token_file:
                 try:
                     token = Path(token_file).read_text().strip()
