@@ -296,6 +296,33 @@ class SyncPushMixin(SyncMixinBase):
         else:
             games_path = "~/ringrift/ai-service/data/games"
 
+        # Feb 2026: Memory-aware transfer - try remote pull if memory is high
+        try:
+            from app.coordination.rsync_command_builder import should_use_rsync, trigger_remote_pull
+            if not should_use_rsync():
+                logger.info(
+                    f"[AutoSyncDaemon] Memory-aware: triggering remote pull on "
+                    f"{target['node_id']} instead of rsync push"
+                )
+                pull_ok = await trigger_remote_pull(
+                    target_host=target["host"],
+                    target_port=target.get("port", 8770),
+                    source_node_id=getattr(self, "node_id", "coordinator"),
+                    files=[str(source)],
+                )
+                if pull_ok:
+                    return {
+                        "source": str(source),
+                        "target": target["node_id"],
+                        "success": True,
+                        "bytes_transferred": source.stat().st_size if source.exists() else 0,
+                        "duration_seconds": time.time() - start_time,
+                        "method": "remote_pull",
+                    }
+                logger.info("[AutoSyncDaemon] Remote pull failed, falling back to rsync")
+        except ImportError:
+            pass
+
         # Build rsync command
         ssh_user = node_config.ssh_user if node_config else "ubuntu"
         target_path = f"{ssh_user}@{target['host']}:{games_path}/synced/"

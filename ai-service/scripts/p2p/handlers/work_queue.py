@@ -1107,6 +1107,43 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     if board_type and num_players:
                         populator.increment_training(board_type, num_players)
 
+            # Feb 2026: Emit EVALUATION_COMPLETED for gauntlet work so the
+            # auto-promotion pipeline can process results from GPU nodes.
+            # Previously gauntlet results were silently dropped because
+            # handle_work_complete had no handler for WorkType.GAUNTLET.
+            if success and work_type == WorkType.GAUNTLET:
+                config_key = f"{config.get('board_type', '')}_{config.get('num_players', 0)}p"
+                model_path = config.get("candidate_model", "")
+                try:
+                    from app.coordination.event_emission_helpers import safe_emit_event
+                    safe_emit_event(
+                        "EVALUATION_COMPLETED",
+                        {
+                            "config_key": config_key,
+                            "model_path": model_path,
+                            "board_type": config.get("board_type", ""),
+                            "num_players": config.get("num_players", 0),
+                            "success": True,
+                            "win_rates": result.get("win_rates", {}),
+                            "opponent_results": result.get("opponent_results", {}),
+                            "elo": result.get("elo") or result.get("estimated_elo") or result.get("best_elo"),
+                            "estimated_elo": result.get("estimated_elo") or result.get("elo") or result.get("best_elo"),
+                            "games_played": result.get("games_played", result.get("total_games", 0)),
+                            "vs_random_rate": result.get("vs_random_rate"),
+                            "vs_heuristic_rate": result.get("vs_heuristic_rate"),
+                            "work_id": work_id,
+                            "evaluated_by": assigned_to,
+                            "source": "distributed_gauntlet",
+                        },
+                        context="work_queue_gauntlet_complete",
+                    )
+                    logger.info(
+                        f"Emitted EVALUATION_COMPLETED for gauntlet {work_id}: "
+                        f"{config_key} model={model_path}"
+                    )
+                except ImportError:
+                    logger.debug("Event emission not available for gauntlet completion")
+
             return self.json_response({
                 "status": "completed" if success else "failed",
                 "work_id": work_id,

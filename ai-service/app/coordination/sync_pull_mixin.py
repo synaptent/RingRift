@@ -443,6 +443,26 @@ class SyncPullMixin(SyncMixinBase):
                 logger.debug(f"[AutoSyncDaemon] Could not check remote size, using rsync: {e}")
 
         local_path = local_dir / db_name
+
+        # Feb 2026: Memory-aware transfer - try aria2/HTTP if memory is high
+        try:
+            from app.coordination.rsync_command_builder import should_use_rsync, aria2_pull_file
+            if not should_use_rsync():
+                http_url = f"http://{ssh_host}:8766/games/{db_name}"
+                logger.info(
+                    f"[AutoSyncDaemon] Memory-aware: using aria2 for {db_name} from {ssh_host}"
+                )
+                success, _bytes_dl, error = await aria2_pull_file(
+                    http_url=http_url,
+                    local_path=local_dir,
+                    filename=db_name,
+                )
+                if success and (local_dir / db_name).exists():
+                    return local_dir / db_name
+                logger.info(f"[AutoSyncDaemon] aria2 fallback failed ({error}), using rsync")
+        except ImportError:
+            pass
+
         remote_full = f"{ssh_user}@{ssh_host}:{remote_path}/{db_name}"
 
         # Dec 30, 2025: Use centralized SSH config for rsync

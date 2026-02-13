@@ -234,6 +234,11 @@ class TrainingTriggerDaemon(HandlerBase):
         # When enabled, skips cluster GPU checks and uses only local NPZ files
         self._local_only_mode: bool = self._daemon_config.local_only_mode
         self._cluster_available: bool = True  # Assume available until checked
+        # Feb 2026: Periodic Elo sync from unified_elo.db to prevent stale last_elo values.
+        # Without this, configs that don't receive EVALUATION_COMPLETED events stay at
+        # default 1500 Elo, causing incorrect simulation budgets and training intensity.
+        self._last_elo_db_sync: float = 0.0
+        self._elo_db_sync_interval: float = 300.0  # Sync every 5 minutes
 
     def _init_state_db(self) -> None:
         """Initialize the SQLite state database (Phase 3 - December 2025).
@@ -3444,6 +3449,9 @@ class TrainingTriggerDaemon(HandlerBase):
         # December 29, 2025 (Phase 3): Process pending training retries
         await self._process_training_retry_queue()
 
+        # Feb 2026: Periodically sync Elo from unified_elo.db to prevent stale values
+        await self._sync_elo_from_unified_db()
+
         # Scan for training opportunities
         await self._scan_for_training_opportunities()
 
@@ -3456,6 +3464,62 @@ class TrainingTriggerDaemon(HandlerBase):
         if now - self._last_state_save >= self.config.state_save_interval_seconds:
             # January 2026 Sprint 17.4: Wrap blocking SQLite I/O with asyncio.to_thread()
             await asyncio.to_thread(self._save_state)
+
+    async def _sync_elo_from_unified_db(self) -> None:
+        """Periodically sync Elo ratings from unified_elo.db to training trigger state.
+
+        Feb 2026: Fixes stale last_elo values that caused incorrect simulation budgets.
+        The training_trigger_state only updates last_elo when EVALUATION_COMPLETED events
+        fire. If evaluations don't run for a config, last_elo stays at default 1500,
+        causing the budget calculator to use bootstrap-tier budgets even for strong models.
+        """
+        now = time.time()
+        if now - self._last_elo_db_sync < self._elo_db_sync_interval:
+            return
+
+        self._last_elo_db_sync = now
+
+        def _do_sync() -> int:
+            """Blocking sync (runs in thread)."""
+            import sqlite3
+
+            db_path = Path("data/unified_elo.db")
+            if not db_path.exists():
+                return 0
+
+            updated = 0
+            try:
+                conn = sqlite3.connect(str(db_path))
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute(
+                    "SELECT board_type || '_' || num_players || 'p' as config_key, "
+                    "MAX(rating) as best_rating "
+                    "FROM elo_ratings GROUP BY board_type, num_players"
+                ).fetchall()
+                conn.close()
+
+                for row in rows:
+                    config_key = row["config_key"]
+                    best_elo = row["best_rating"]
+                    if config_key in self._training_states:
+                        state = self._training_states[config_key]
+                        if best_elo > state.last_elo + 5.0:
+                            state.last_elo = best_elo
+                            updated += 1
+            except (sqlite3.Error, OSError) as e:
+                logger.debug(f"[TrainingTriggerDaemon] Elo DB sync failed: {e}")
+
+            return updated
+
+        try:
+            updated = await asyncio.to_thread(_do_sync)
+            if updated > 0:
+                logger.info(
+                    f"[TrainingTriggerDaemon] Synced Elo from unified_elo.db: "
+                    f"{updated} configs updated"
+                )
+        except Exception as e:
+            logger.debug(f"[TrainingTriggerDaemon] Elo sync error: {e}")
 
     async def _check_backpressure_recovery_timeout(self) -> None:
         """Check if evaluation backpressure has exceeded max duration and auto-release.

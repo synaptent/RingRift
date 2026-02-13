@@ -181,11 +181,30 @@ class ComprehensiveEvaluationLoop(BaseLoop):
             )
         return self._gauntlet
 
+    def _is_coordinator(self) -> bool:
+        """Check if this node is a coordinator (no local GPU evaluation)."""
+        try:
+            from app.config.env import env
+
+            return env.is_coordinator
+        except ImportError:
+            return False
+
     async def _run_once(self) -> None:
         """Execute one iteration of the comprehensive evaluation loop."""
         # Only run on leader
         if not self._is_leader():
             logger.debug(f"[{self.name}] Not leader, skipping evaluation cycle")
+            return
+
+        # On coordinator nodes, we can only dispatch evaluations to GPU nodes
+        # via WorkDistributor. If that's not available, skip the entire cycle
+        # to avoid wasting time on model enumeration that leads nowhere.
+        if self._is_coordinator() and not self._can_dispatch_to_cluster():
+            logger.debug(
+                f"[{self.name}] Coordinator without cluster dispatch capability, "
+                "skipping evaluation cycle"
+            )
             return
 
         logger.info(f"[{self.name}] Starting comprehensive evaluation cycle")
@@ -367,10 +386,37 @@ class ComprehensiveEvaluationLoop(BaseLoop):
 
         return result
 
+    def _can_dispatch_to_cluster(self) -> bool:
+        """Check if we can dispatch evaluations to GPU nodes.
+
+        Returns True if either the orchestrator work queue or the
+        WorkDistributor is available for dispatching evaluation jobs.
+        """
+        # Check orchestrator work queue
+        if self._get_orchestrator:
+            orchestrator = self._get_orchestrator()
+            if orchestrator and getattr(orchestrator, "work_queue", None) is not None:
+                return True
+
+        # Check WorkDistributor
+        try:
+            from app.coordination.work_distributor import get_work_distributor
+
+            distributor = get_work_distributor()
+            if distributor is not None:
+                return True
+        except ImportError:
+            pass
+
+        return False
+
     async def _dispatch_via_work_queue(
         self, combo: "EvaluationCombination", orchestrator: Any
     ) -> bool:
-        """Dispatch evaluation via the P2P work queue.
+        """Dispatch evaluation via the work queue or WorkDistributor.
+
+        Tries the orchestrator's work queue first, then falls back to
+        WorkDistributor which can route evaluation jobs to GPU nodes.
 
         Args:
             combo: Evaluation combination to dispatch
@@ -379,31 +425,58 @@ class ComprehensiveEvaluationLoop(BaseLoop):
         Returns:
             True if successfully queued, False otherwise
         """
+        # Strategy 1: Try orchestrator work queue
         try:
-            # Check if work_queue is available
             work_queue = getattr(orchestrator, "work_queue", None)
-            if work_queue is None:
-                return False
-
-            # Create evaluation job
-            job_id = f"eval_{combo.model_hash}_{combo.harness}_{int(time.time())}"
-
-            # Submit to work queue
-            await work_queue.submit_evaluation(
-                job_id=job_id,
-                model_path=combo.model_path,
-                harness=combo.harness,
-                config_key=combo.config_key,
-                games_per_harness=self.config.games_per_harness,
-                save_games=self.config.save_games,
-            )
-
-            logger.info(f"[{self.name}] Queued evaluation job: {job_id}")
-            return True
-
+            if work_queue is not None and hasattr(work_queue, "submit_evaluation"):
+                job_id = f"eval_{combo.model_hash}_{combo.harness}_{int(time.time())}"
+                await work_queue.submit_evaluation(
+                    job_id=job_id,
+                    model_path=combo.model_path,
+                    harness=combo.harness,
+                    config_key=combo.config_key,
+                    games_per_harness=self.config.games_per_harness,
+                    save_games=self.config.save_games,
+                )
+                logger.info(f"[{self.name}] Queued evaluation job via work queue: {job_id}")
+                return True
         except Exception as e:
             logger.debug(f"[{self.name}] Work queue dispatch failed: {e}")
-            return False
+
+        # Strategy 2: Try WorkDistributor (dispatches to GPU nodes)
+        try:
+            from app.coordination.work_distributor import get_work_distributor
+
+            distributor = get_work_distributor()
+            if distributor is not None:
+                # Extract board_type and num_players from config_key
+                parts = combo.config_key.split("_")
+                if len(parts) >= 2:
+                    board_type = parts[0]
+                    num_players = int(parts[1].rstrip("p"))
+                else:
+                    board_type = "square8"
+                    num_players = 2
+
+                work_id = await distributor.submit_evaluation(
+                    candidate_model=combo.model_path,
+                    games=self.config.games_per_harness,
+                    board=board_type,
+                    num_players=num_players,
+                    evaluation_type="gauntlet",
+                )
+                if work_id:
+                    logger.info(
+                        f"[{self.name}] Dispatched evaluation to cluster via "
+                        f"WorkDistributor: {work_id}"
+                    )
+                    return True
+        except ImportError:
+            logger.debug(f"[{self.name}] WorkDistributor not available")
+        except Exception as e:
+            logger.debug(f"[{self.name}] WorkDistributor dispatch failed: {e}")
+
+        return False
 
     def _emit_completion_event(self, stats: CycleStats) -> None:
         """Emit event when evaluation cycle completes."""

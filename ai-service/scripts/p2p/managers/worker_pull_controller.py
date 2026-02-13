@@ -304,7 +304,9 @@ class WorkerPullController:
         """Report work completion/failure to the leader.
 
         Args:
-            work_item: The work item that was processed
+            work_item: The work item that was processed. May contain a "result"
+                key with detailed results (e.g., gauntlet win_rates, Elo data)
+                that should be forwarded to the leader for downstream processing.
             success: Whether the work completed successfully
 
         Returns:
@@ -332,10 +334,19 @@ class WorkerPullController:
             async with get_client_session(timeout) as session:
                 if success:
                     url = self._url_for_peer(leader_peer, "/work/complete")
-                    payload = {"work_id": work_id, "result": {"node_id": node_id}}
+                    # Feb 2026: Include actual work result data (gauntlet win_rates,
+                    # Elo data, etc.) so the leader can emit proper EVALUATION_COMPLETED
+                    # events for the auto-promotion pipeline.
+                    # Previously only {"node_id": node_id} was sent, discarding all results.
+                    result_data = work_item.get("result", {})
+                    if not isinstance(result_data, dict):
+                        result_data = {}
+                    result_data["node_id"] = node_id
+                    payload = {"work_id": work_id, "result": result_data}
                 else:
                     url = self._url_for_peer(leader_peer, "/work/fail")
-                    payload = {"work_id": work_id, "error": "execution_failed"}
+                    error_msg = work_item.get("error", "execution_failed")
+                    payload = {"work_id": work_id, "error": error_msg}
 
                 async with session.post(url, json=payload, headers=self._auth_headers()) as resp:
                     if resp.status == 200:

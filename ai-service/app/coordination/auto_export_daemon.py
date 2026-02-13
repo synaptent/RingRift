@@ -60,7 +60,11 @@ class AutoExportConfig:
     # Reduced from 30min→5min→1min (Dec 2025) to minimize training data lag
     export_cooldown_seconds: int = 60  # 1 minute
     # Maximum concurrent exports - Jan 2026: Increased from 2 to 4 for better parallelism
-    max_concurrent_exports: int = 4
+    # Feb 2026: Made env-configurable, reduced default on coordinator to prevent OOM
+    max_concurrent_exports: int = int(os.environ.get("RINGRIFT_MAX_CONCURRENT_EXPORTS", "4"))
+    # Maximum workers per export subprocess (None = use export_replay_dataset default)
+    # Feb 2026: On coordinator nodes, cap workers to prevent multiprocessing fan-out OOM
+    max_export_workers: int | None = None
     # Timeout for export subprocess (seconds)
     export_timeout_seconds: int = 3600  # 1 hour
     # Whether to use incremental export (--use-cache)
@@ -957,6 +961,17 @@ class AutoExportDaemon(HandlerBase):
 
                 if self.config.include_tournaments:
                     cmd.append("--include-tournaments")
+
+                # February 2026: Cap per-export workers on coordinator to prevent
+                # multiprocessing fan-out OOM. Default is os.cpu_count()-1 which
+                # spawns 15 workers per export on a 16-core Mac Studio.
+                workers = self.config.max_export_workers
+                if workers is None:
+                    from app.config.env import env
+                    if env.is_coordinator:
+                        workers = 2  # Coordinator: minimal workers (I/O-bound anyway)
+                if workers is not None:
+                    cmd.extend(["--workers", str(workers)])
 
                 # Run export subprocess
                 start_time = time.time()

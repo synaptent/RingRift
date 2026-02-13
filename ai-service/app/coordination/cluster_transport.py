@@ -1067,6 +1067,40 @@ class ClusterTransport:
         ssh_port: int = 22,
     ) -> TransportResult:
         """Execute rsync transfer."""
+        # Feb 2026: Memory-aware transfer fallback
+        try:
+            from app.coordination.rsync_command_builder import (
+                should_use_rsync, aria2_pull_file, trigger_remote_pull,
+            )
+            if not should_use_rsync():
+                if direction == "pull" and "@" in remote_spec and ":" in remote_spec:
+                    host_part = remote_spec.split("@")[1].split(":")[0]
+                    file_part = remote_spec.split(":")[-1]
+                    filename = Path(file_part).name
+                    http_url = f"http://{host_part}:8766/games/{filename}"
+                    success, bytes_dl, error = await aria2_pull_file(
+                        http_url=http_url,
+                        local_path=local_path.parent,
+                        filename=filename,
+                    )
+                    if success:
+                        return TransportResult(success=True, bytes_transferred=bytes_dl)
+                    logger.debug(f"aria2 fallback failed ({error}), using rsync")
+                elif direction == "push" and "@" in remote_spec and ":" in remote_spec:
+                    host_part = remote_spec.split("@")[1].split(":")[0]
+                    pull_ok = await trigger_remote_pull(
+                        target_host=host_part,
+                        target_port=8770,
+                        source_node_id="coordinator",
+                        files=[str(local_path)],
+                    )
+                    if pull_ok:
+                        bytes_transferred = local_path.stat().st_size if local_path.exists() else 0
+                        return TransportResult(success=True, bytes_transferred=bytes_transferred)
+                    logger.debug("Remote pull failed, using rsync")
+        except ImportError:
+            pass
+
         if direction == "push":
             src, dst = str(local_path), remote_spec
         else:

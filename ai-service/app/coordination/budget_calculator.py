@@ -244,6 +244,13 @@ def get_adaptive_budget_for_games(game_count: int, elo: float) -> int:
         >>> get_adaptive_budget_for_games(2000, 1800) # Mature - uses Elo-based
         3200
     """
+    # Feb 2026: If Elo is already high (>1600), skip bootstrap tiers.
+    # This handles configs that have good models but were data-starved
+    # (e.g., after cluster downtime or DB loss). Low-budget bootstrap data
+    # is counterproductive when the model already plays at high level.
+    if elo >= 1600:
+        return get_adaptive_budget_for_elo(elo)
+
     # Bootstrap phase: prioritize game generation speed
     if game_count < BOOTSTRAP_TIER1_GAME_THRESHOLD:
         # Very starved (<100 games): maximum throughput

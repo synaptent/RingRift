@@ -103,6 +103,25 @@ class TransportDefaults:
 
 
 # =============================================================================
+# Transfer Memory Defaults
+# =============================================================================
+
+@dataclass(frozen=True)
+class TransferMemoryDefaults:
+    """Memory thresholds for rsync fallback to aria2/HTTP.
+
+    Feb 2026: When memory usage exceeds RSYNC_MEMORY_THRESHOLD on coordinator,
+    rsync transfers fall back to aria2/HTTP which use less memory.
+    """
+    # Memory usage % above which rsync falls back to aria2/HTTP
+    RSYNC_MEMORY_THRESHOLD: float = _env_float("RINGRIFT_RSYNC_MEMORY_THRESHOLD", 70.0)
+    # Enable/disable memory-aware transfer fallback
+    ENABLED: bool = _env_bool("RINGRIFT_MEMORY_AWARE_TRANSFER", True)
+    # Only apply memory checks on coordinator nodes
+    COORDINATOR_ONLY: bool = _env_bool("RINGRIFT_MEMORY_AWARE_COORDINATOR_ONLY", True)
+
+
+# =============================================================================
 # Sync Operation Defaults
 # =============================================================================
 

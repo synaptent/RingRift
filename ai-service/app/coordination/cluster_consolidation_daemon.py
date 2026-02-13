@@ -539,6 +539,28 @@ class ClusterConsolidationDaemon(HandlerBase):
         """
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Feb 2026: Memory-aware transfer - try aria2/HTTP if memory is high
+        try:
+            from app.coordination.rsync_command_builder import should_use_rsync, aria2_pull_file
+            if not should_use_rsync():
+                db_name = Path(remote_path).name
+                http_url = f"http://{host}:8766/games/{db_name}"
+                logger.info(
+                    f"[ClusterConsolidation] Memory-aware: using aria2 for {db_name} from {host}"
+                )
+                success, _bytes_dl, error = await aria2_pull_file(
+                    http_url=http_url,
+                    local_path=local_path.parent,
+                    filename=local_path.name,
+                )
+                if success:
+                    return True
+                logger.info(
+                    f"[ClusterConsolidation] aria2 fallback failed ({error}), using rsync"
+                )
+        except ImportError:
+            pass
+
         # Build rsync command
         ssh_opts = f"-o ConnectTimeout={self._daemon_config.ssh_connect_timeout} -o StrictHostKeyChecking=no"
         remote_spec = f"{user}@{host}:{remote_path}"

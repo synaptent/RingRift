@@ -358,3 +358,151 @@ def get_timeout(
         Timeout in seconds.
     """
     return TimeoutCalculator.calculate(file_size_mb, strategy)
+
+
+# =============================================================================
+# Memory-Aware Transfer Functions (Feb 2026)
+# =============================================================================
+
+
+def should_use_rsync() -> bool:
+    """Check if rsync should be used based on memory availability.
+
+    When memory usage exceeds the threshold on coordinator nodes,
+    returns False to signal callers to use aria2/HTTP fallback.
+
+    Returns:
+        True if rsync is safe to use, False if memory is too high.
+    """
+    from app.config.coordination_defaults import TransferMemoryDefaults
+
+    defaults = TransferMemoryDefaults()
+    if not defaults.ENABLED:
+        return True
+
+    if defaults.COORDINATOR_ONLY:
+        try:
+            from app.config.env import env
+            if not env.is_coordinator:
+                return True
+        except ImportError:
+            return True
+
+    try:
+        from app.utils.resource_guard import get_memory_usage
+        used_percent, _available_gb, _total_gb = get_memory_usage()
+        if used_percent > defaults.RSYNC_MEMORY_THRESHOLD:
+            logger.info(
+                f"Memory-aware transfer: {used_percent:.1f}% used "
+                f"(threshold {defaults.RSYNC_MEMORY_THRESHOLD}%), "
+                f"recommending aria2/HTTP fallback"
+            )
+            return False
+    except ImportError:
+        pass  # resource_guard not available, allow rsync
+
+    return True
+
+
+async def aria2_pull_file(
+    http_url: str,
+    local_path: Path,
+    filename: str | None = None,
+    expected_checksum: str | None = None,
+) -> tuple[bool, int, str]:
+    """Pull a file via aria2/HTTP as a lower-memory alternative to rsync.
+
+    Args:
+        http_url: HTTP URL to download from.
+        local_path: Local directory to save to.
+        filename: Optional filename override.
+        expected_checksum: Optional SHA256 checksum.
+
+    Returns:
+        Tuple of (success, bytes_downloaded, error_message).
+    """
+    try:
+        from app.distributed.aria2_transport import Aria2Transport
+
+        transport = Aria2Transport()
+        if not transport.is_available():
+            return False, 0, "aria2c not installed"
+
+        local_path.mkdir(parents=True, exist_ok=True)
+        success, bytes_dl, error = await transport.download_file(
+            sources=[http_url],
+            output_dir=local_path,
+            filename=filename,
+            expected_checksum=expected_checksum,
+        )
+        if success:
+            logger.info(
+                f"Memory-aware: aria2 downloaded {bytes_dl / 1024 / 1024:.1f}MB "
+                f"from {http_url}"
+            )
+        return success, bytes_dl, error
+    except ImportError:
+        return False, 0, "aria2_transport not available"
+    except (OSError, ConnectionError, asyncio.TimeoutError) as e:
+        return False, 0, f"aria2 download failed: {e}"
+
+
+async def trigger_remote_pull(
+    target_host: str,
+    target_port: int,
+    source_node_id: str,
+    files: list[str],
+    auth_token: str | None = None,
+    timeout: float = 30.0,
+) -> bool:
+    """Tell a remote node to pull files from this node via POST /sync/pull.
+
+    Uses the existing P2P /sync/pull endpoint to trigger a pull operation
+    on the target node, avoiding memory-intensive rsync on the coordinator.
+
+    Args:
+        target_host: Host/IP of the target node.
+        target_port: P2P port of the target node.
+        source_node_id: This node's ID (source of files).
+        files: List of file paths to pull.
+        auth_token: Optional auth token for the request.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        True if the remote node accepted the pull request.
+    """
+    try:
+        import aiohttp
+
+        url = f"http://{target_host}:{target_port}/sync/pull"
+        payload = {
+            "source_node_id": source_node_id,
+            "files": files,
+        }
+        headers = {}
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url, json=payload, headers=headers, timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as resp:
+                if resp.status == 200:
+                    logger.info(
+                        f"Memory-aware: triggered remote pull on {target_host}:{target_port} "
+                        f"for {len(files)} files"
+                    )
+                    return True
+                else:
+                    body = await resp.text()
+                    logger.warning(
+                        f"Remote pull rejected by {target_host}:{target_port}: "
+                        f"status={resp.status}, body={body[:200]}"
+                    )
+                    return False
+    except ImportError:
+        logger.warning("aiohttp not available for remote pull trigger")
+        return False
+    except (OSError, ConnectionError, asyncio.TimeoutError) as e:
+        logger.warning(f"Failed to trigger remote pull on {target_host}:{target_port}: {e}")
+        return False

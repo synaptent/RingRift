@@ -8863,6 +8863,9 @@ class P2POrchestrator(
             elif work_type == "gauntlet":
                 # January 27, 2026: Added gauntlet work execution
                 # January 28, 2026: Return False when skipping so work can be reassigned
+                # February 2026: Fixed to call run_baseline_gauntlet directly instead of
+                # deprecated quick_gauntlet.py subprocess, and properly report results
+                # back to leader with win_rate data for auto-promotion pipeline.
                 from app.config.env import env
                 if not env.gauntlet_enabled:
                     logger.warning(
@@ -8870,7 +8873,6 @@ class P2POrchestrator(
                     )
                     return False  # Return False so work can be reassigned to a GPU node
 
-                # Execute gauntlet via quick_gauntlet script
                 board_type = config.get("board_type", "square8")
                 num_players = config.get("num_players", 2)
                 model_path = config.get("candidate_model", "")
@@ -8880,57 +8882,109 @@ class P2POrchestrator(
                     logger.warning(f"Gauntlet work {work_id}: No model_path specified")
                     return False
 
+                # Check model exists locally
+                if not Path(model_path).exists():
+                    # Try canonical path
+                    config_key_check = f"{board_type}_{num_players}p"
+                    canonical_path = f"models/canonical_{config_key_check}.pth"
+                    if Path(canonical_path).exists():
+                        model_path = canonical_path
+                    else:
+                        logger.warning(f"Gauntlet work {work_id}: Model not found: {model_path}")
+                        return False
+
                 logger.info(
                     f"Executing gauntlet work {work_id}: {model_path} "
                     f"({board_type}/{num_players}p, {games} games)"
                 )
 
-                async def _run_gauntlet_subprocess():
-                    try:
-                        cmd = [
-                            sys.executable,
-                            "scripts/quick_gauntlet.py",
-                            "--board-type", board_type,
-                            "--num-players", str(num_players),
-                            "--model", model_path,
-                            "--games", str(games),
-                        ]
-                        proc = await asyncio.create_subprocess_exec(
-                            *cmd,
-                            stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.STDOUT,
-                            cwd=str(Path(__file__).parent.parent),  # ai-service directory
-                        )
-                        stdout, _ = await proc.communicate()
-                        if proc.returncode == 0:
-                            logger.info(
-                                f"Gauntlet completed: {model_path} (work_id={work_id})"
-                            )
-                            # Emit evaluation completed event
-                            try:
-                                from app.distributed.data_events import DataEventType
-                                from app.coordination.event_router import emit_event
-                                config_key = f"{board_type}_{num_players}p"
-                                emit_event(DataEventType.EVALUATION_COMPLETED, {
-                                    "config_key": config_key,
-                                    "board_type": board_type,
-                                    "num_players": num_players,
-                                    "model_path": model_path,
-                                    "work_id": work_id,
-                                })
-                            except ImportError:
-                                pass
-                        else:
-                            output = stdout.decode()[:2000] if stdout else "no output"
-                            logger.error(
-                                f"Gauntlet failed: {model_path}: "
-                                f"returncode={proc.returncode}, output={output}"
-                            )
-                    except Exception as e:
-                        logger.exception(f"Gauntlet subprocess error for {model_path}: {e}")
+                # Run gauntlet directly and store results in work_item for reporting.
+                # Unlike selfplay/training which run as fire-and-forget background tasks,
+                # gauntlet must run synchronously so results are available when the
+                # WorkerPullLoop calls _report_result(work_item, success).
+                config_key = f"{board_type}_{num_players}p"
+                try:
+                    from app.training.game_gauntlet import (
+                        run_baseline_gauntlet,
+                        BaselineOpponent,
+                    )
 
-                asyncio.create_task(_run_gauntlet_subprocess())
-                return True
+                    # Run gauntlet in thread to avoid blocking event loop
+                    gauntlet_result = await asyncio.to_thread(
+                        run_baseline_gauntlet,
+                        model_path=model_path,
+                        board_type=board_type,
+                        num_players=num_players,
+                        games_per_opponent=max(games // 4, 10),  # Divide by ~4 opponents
+                        opponents=[
+                            BaselineOpponent.RANDOM,
+                            BaselineOpponent.HEURISTIC,
+                        ],
+                        verbose=False,
+                        early_stopping=True,
+                        parallel_opponents=True,
+                    )
+
+                    # Build result dict with full win rate data
+                    result_data = {
+                        "config_key": config_key,
+                        "board_type": board_type,
+                        "num_players": num_players,
+                        "model_path": model_path,
+                        "work_id": work_id,
+                        "success": True,
+                        "win_rates": {},
+                        "opponent_results": {},
+                        "games_played": getattr(gauntlet_result, "total_games", 0),
+                        "total_games": getattr(gauntlet_result, "total_games", 0),
+                        "estimated_elo": getattr(gauntlet_result, "estimated_elo", 0.0),
+                        "elo": getattr(gauntlet_result, "estimated_elo", 0.0),
+                        "passed": getattr(gauntlet_result, "passed", False),
+                    }
+
+                    # Extract per-opponent results
+                    opponent_results = getattr(gauntlet_result, "opponent_results", {})
+                    for opp_name, opp_stats in opponent_results.items():
+                        opp_name_str = str(opp_name)
+                        if isinstance(opp_stats, dict):
+                            result_data["win_rates"][opp_name_str] = opp_stats.get("win_rate", 0.0)
+                            result_data["opponent_results"][opp_name_str] = opp_stats
+                        # Extract vs_random_rate/vs_heuristic_rate for auto-promotion
+                        if "random" in opp_name_str.lower():
+                            result_data["vs_random_rate"] = opp_stats.get("win_rate", 0.0) if isinstance(opp_stats, dict) else 0.0
+                        elif "heuristic" in opp_name_str.lower():
+                            result_data["vs_heuristic_rate"] = opp_stats.get("win_rate", 0.0) if isinstance(opp_stats, dict) else 0.0
+
+                    logger.info(
+                        f"Gauntlet completed: {model_path} (work_id={work_id}) "
+                        f"win_rate={getattr(gauntlet_result, 'win_rate', 0):.1%}, "
+                        f"elo={result_data['estimated_elo']}, "
+                        f"games={result_data['games_played']}"
+                    )
+
+                    # Store results in work_item so WorkerPullLoop._report_result
+                    # sends them to the leader via /work/complete
+                    work_item["result"] = result_data
+
+                    # Also emit EVALUATION_COMPLETED locally for any local subscribers
+                    try:
+                        from app.coordination.event_emission_helpers import safe_emit_event
+                        safe_emit_event(
+                            "EVALUATION_COMPLETED",
+                            result_data,
+                            context="gauntlet_worker",
+                        )
+                    except ImportError:
+                        pass
+
+                    return True
+
+                except ImportError as e:
+                    logger.error(f"Gauntlet modules not available: {e}")
+                    return False
+                except Exception as e:
+                    logger.exception(f"Gauntlet execution error for {model_path}: {e}")
+                    return False
 
             else:
                 logger.warning(f"Unknown work type: {work_type}")

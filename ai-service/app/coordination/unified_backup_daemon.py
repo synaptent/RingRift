@@ -301,6 +301,33 @@ class UnifiedBackupDaemon(HandlerBase):
                 subprocess.run, mkdir_cmd, check=True, capture_output=True, timeout=30
             )
 
+            # Feb 2026: Memory-aware transfer - use scp if memory is high
+            use_rsync = True
+            try:
+                from app.coordination.rsync_command_builder import should_use_rsync
+                use_rsync = should_use_rsync()
+            except ImportError:
+                pass
+
+            if not use_rsync:
+                # Use scp (less memory than rsync's delta algorithm)
+                scp_cmd = [
+                    "scp", "-i", ssh_key,
+                    "-o", "StrictHostKeyChecking=no",
+                    "-o", "ConnectTimeout=10",
+                    str(db_path), f"{ssh_target}:{remote_path}",
+                ]
+                result = await asyncio.to_thread(
+                    subprocess.run,
+                    scp_cmd,
+                    capture_output=True,
+                    timeout=self.config.rsync_timeout,
+                )
+                if result.returncode == 0:
+                    logger.debug(f"[UnifiedBackup] Memory-aware: scp'd {db_path.name} to OWC")
+                    return remote_path
+                logger.info("[UnifiedBackup] scp fallback failed, trying rsync")
+
             # Rsync the database
             rsync_cmd = [
                 "rsync", "-avz", "--progress",
