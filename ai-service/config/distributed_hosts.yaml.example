@@ -1,0 +1,172 @@
+# RingRift Distributed Hosts Configuration
+#
+# Copy this file to distributed_hosts.yaml and fill in your actual node details.
+# This file should NOT be committed to version control.
+#
+# See CLAUDE.md for cluster infrastructure documentation.
+
+sync_routing:
+  max_disk_usage_percent: 70
+  target_disk_usage_percent: 60
+  min_free_disk_percent: 15
+  replication_target: 3
+  excluded_hosts: []
+  s3:
+    enabled: true
+    bucket: your-s3-bucket-name
+    region: us-east-1
+    prefix: consolidated
+    pull_games: true
+    pull_training_npz: true
+    pull_models: true
+    push_enabled_hosts:
+      - coordinator-node
+    sync_interval: 300
+    primary_for_games: true
+    primary_for_models: true
+    primary_for_npz: true
+  allowed_external_storage:
+  - host: coordinator-node
+    path: /path/to/external/storage
+    receive_games: true
+    receive_npz: true
+    receive_models: true
+    subdirs:
+      games: selfplay_repository
+      npz: canonical_data
+      models: canonical_models
+  priority_hosts:
+  - gpu-node-1
+  - gpu-node-2
+  - gpu-node-3
+  underserved_configs:
+  - square19_4p
+  - square19_3p
+auto_sync:
+  enabled: true
+  interval_seconds: 60
+  gossip_interval_seconds: 15
+  skip_nfs_sync: true
+  max_concurrent_syncs: 1
+  min_games_to_sync: 10
+  bandwidth_limit_mbps: 100
+  exclude_hosts: []
+elo_sync:
+  coordinator: coordinator-node
+  sync_port: 8766
+  sync_interval: 300
+  divergence_threshold: 50
+  transports:
+  - tailscale
+  - aria2
+  - http
+p2p_voters:
+# Quorum: 4 of 6 required
+- coordinator-node-1
+- coordinator-node-2
+- cpu-voter-1
+- cpu-voter-2
+- cpu-voter-3
+- gpu-voter-1
+protocols:
+  swim:
+    enabled: false
+    bind_port: 7947
+    failure_timeout: 10.0
+    suspicion_timeout: 6.0
+    ping_interval: 1.0
+    indirect_ping_count: 7
+  raft:
+    enabled: true
+    bind_port: 4321
+    compaction_min_entries: 1000
+    auto_unlock_time: 300.0
+    use_manual_tick: true
+  membership_mode: raft
+  consensus_mode: raft
+
+provider_timeouts:
+  lambda:
+    peer_timeout: 120
+    heartbeat_interval: 15
+    reason: "NAT-blocked, relay-dependent"
+  vast:
+    peer_timeout: 90
+    heartbeat_interval: 15
+    reason: "CGNAT, P2PD hole punching"
+  nebius:
+    peer_timeout: 90
+    heartbeat_interval: 10
+    reason: "Direct connection"
+  hetzner:
+    peer_timeout: 60
+    heartbeat_interval: 10
+    reason: "Always-online CPU voters"
+  vultr:
+    peer_timeout: 60
+    heartbeat_interval: 10
+    reason: "Stable GPU nodes"
+  runpod:
+    peer_timeout: 90
+    heartbeat_interval: 15
+    reason: "Variable connectivity"
+  mac:
+    peer_timeout: 60
+    heartbeat_interval: 10
+    reason: "Local coordinator nodes"
+
+hosts:
+  # Coordinator node (local)
+  coordinator-node:
+    ssh_host: <coordinator-tailscale-ip>
+    tailscale_ip: <coordinator-tailscale-ip>
+    ssh_user: your-user
+    ssh_key: ~/.ssh/id_cluster
+    ringrift_path: ~/Development/RingRift/ai-service
+    memory_gb: 96
+    cpus: 14
+    gpu: M3 Max/Ultra (MPS)
+    gpu_vram_gb: 64
+    role: coordinator
+    status: ready
+    selfplay_enabled: false
+    training_enabled: false
+    p2p_enabled: true
+
+  # GPU training node template
+  gpu-node-1:
+    ssh_host: <public-ip>
+    tailscale_ip: <tailscale-ip>
+    ssh_user: ubuntu
+    ssh_key: ~/.ssh/id_cluster
+    ringrift_path: ~/ringrift/ai-service
+    venv_activate: source ~/ringrift/ai-service/venv/bin/activate
+    memory_gb: 432
+    cpus: 64
+    gpu: GH200 (96 GB)
+    gpu_vram_gb: 96
+    role: gpu_training_selfplay
+    status: ready
+    selfplay_enabled: true
+    training_enabled: true
+    p2p_enabled: true
+    nat_blocked: true
+    force_relay_mode: true
+    relay_primary: cpu-voter-1
+    relay_secondary: cpu-voter-2
+
+  # CPU voter node template
+  cpu-voter-1:
+    ssh_host: <public-ip>
+    tailscale_ip: <tailscale-ip>
+    ssh_user: root
+    ssh_key: ~/.ssh/id_cluster
+    ringrift_path: /root/ringrift/ai-service
+    venv_activate: source /root/ringrift/ai-service/venv/bin/activate
+    memory_gb: 16
+    cpus: 8
+    role: cpu_selfplay
+    status: ready
+    p2p_enabled: true
+    relay_capable: true
+    selfplay_enabled: true
