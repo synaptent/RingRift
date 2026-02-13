@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sqlite3
 import subprocess
 import time
@@ -71,8 +72,31 @@ class SyncPushMixin(SyncMixinBase):
         for pattern in sync_patterns:
             databases.extend(data_dir.glob(pattern))
 
-        # Filter out empty databases
-        databases = [db for db in databases if db.stat().st_size > 1024]
+        # Filter out empty databases and skip databases too large for rsync push.
+        # February 2026: Multi-GB databases (canonical_hex8_4p.db = 11 GB) cause OOM
+        # on the coordinator when rsync reads the entire file for --checksum.
+        # Large databases should be synced via HTTP pull or S3 instead.
+        broadcast_max_size = int(os.environ.get(
+            "RINGRIFT_BROADCAST_DB_MAX_SIZE_MB", "500"
+        )) * 1024 * 1024  # Default 500 MB
+        
+        filtered_databases = []
+        for db in databases:
+            try:
+                size = db.stat().st_size
+            except OSError:
+                continue
+            if size <= 1024:
+                continue  # Skip empty
+            if size > broadcast_max_size:
+                logger.info(
+                    f"[AutoSyncDaemon] Skipping {db.name} for broadcast sync "
+                    f"({size / 1024 / 1024:.0f} MB > {broadcast_max_size / 1024 / 1024:.0f} MB limit). "
+                    f"Use S3 or HTTP pull for large databases."
+                )
+                continue
+            filtered_databases.append(db)
+        databases = filtered_databases
 
         # Sort by priority (high-priority configs first)
         high_priority_configs = frozenset(self.config.broadcast_high_priority_configs)
@@ -339,6 +363,14 @@ class SyncPushMixin(SyncMixinBase):
         # --delay-updates provides atomic file updates (safer for databases)
         # --inplace writes directly to file (faster but not atomic)
         # These are mutually exclusive - choose safety over speed
+        # February 2026: Use --size-only instead of --checksum for large files.
+        # --checksum forces rsync to read the ENTIRE file to compute checksums,
+        # which for a 5 GB database means 5 GB of memory + I/O. --size-only
+        # skips files where the size matches, which is sufficient for append-only
+        # SQLite databases. For small files, --checksum is fine.
+        file_size_mb = source.stat().st_size / (1024 * 1024) if source.exists() else 100
+        use_checksum = file_size_mb < 100  # Only checksum files under 100 MB
+
         cmd = [
             "rsync",
             "-avz",
@@ -346,14 +378,12 @@ class SyncPushMixin(SyncMixinBase):
             f"--bwlimit={bandwidth_kbps}",
             "--timeout=60",
             "--delay-updates",
-            "--checksum",
-            "-e", ssh_opts,
-            str(source),
-            target_path,
         ]
-
-        # Dynamic timeout: 2 seconds per MB, minimum 120s, maximum 1800s
-        file_size_mb = source.stat().st_size / (1024 * 1024) if source.exists() else 100
+        if use_checksum:
+            cmd.append("--checksum")
+        else:
+            cmd.append("--size-only")
+        cmd.extend(["-e", ssh_opts, str(source), target_path])
         dynamic_timeout = max(120, min(1800, int(60 + file_size_mb * 2)))
 
         try:
@@ -852,6 +882,18 @@ class SyncPushMixin(SyncMixinBase):
         """
         if not self._is_broadcast:
             return 0
+
+        # February 2026: Skip broadcast sync on coordinator nodes entirely.
+        # The coordinator has 56 GB of game databases. Pushing them via rsync
+        # causes massive memory pressure (each rsync of a 5 GB file uses ~5 GB RSS).
+        # Remote nodes should pull from coordinator via HTTP or S3 instead.
+        if os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() == "true":
+            if os.environ.get("RINGRIFT_BROADCAST_SYNC_ENABLED", "").lower() != "true":
+                logger.info(
+                    "[AutoSyncDaemon] Skipping broadcast sync on coordinator node. "
+                    "Set RINGRIFT_BROADCAST_SYNC_ENABLED=true to override."
+                )
+                return 0
 
         logger.info("[AutoSyncDaemon] Starting broadcast sync cycle")
 
