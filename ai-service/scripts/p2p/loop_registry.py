@@ -963,6 +963,27 @@ def _register_worker_pull(
                 logger.debug(f"[WorkerPull] Leader {leader_id} probe failed: {e}")
                 return None
 
+        def _get_allowed_work_types_for_pull() -> list[str]:
+            """Return work types this node is allowed to claim.
+
+            Feb 2026: Prevents coordinator from claiming selfplay/training work
+            that it will then skip, wasting queue slots for GPU nodes.
+            """
+            from scripts.p2p.managers.work_discovery_manager import (
+                _is_selfplay_enabled_for_node,
+                _is_training_enabled_for_node,
+            )
+
+            all_types = ["selfplay", "training", "gpu_cmaes", "tournament", "gauntlet"]
+            allowed = []
+            for work_type in all_types:
+                if work_type == "selfplay" and not _is_selfplay_enabled_for_node():
+                    continue
+                if work_type in ("training", "gpu_cmaes") and not _is_training_enabled_for_node():
+                    continue
+                allowed.append(work_type)
+            return allowed
+
         worker_pull = WorkerPullLoop(
             is_leader=ctx.is_leader,
             get_leader_id=ctx.get_leader_id,
@@ -970,6 +991,7 @@ def _register_worker_pull(
             claim_work_from_leader=orchestrator._claim_work_from_leader,
             execute_work=orchestrator._execute_claimed_work,
             report_work_result=orchestrator._report_work_result,
+            get_allowed_work_types=_get_allowed_work_types_for_pull,
             pop_autonomous_work=_pop_autonomous_work_for_pull,
             get_work_discovery_manager=_get_work_discovery_manager_for_pull,
             claim_work_batch_from_leader=orchestrator._claim_work_batch_from_leader,

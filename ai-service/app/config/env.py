@@ -402,14 +402,17 @@ class RingRiftEnv:
 
     @cached_property
     def export_enabled(self) -> bool:
-        """Whether data export is enabled on this node."""
+        """Whether data export is enabled on this node.
+
+        Note: Coordinators NEED export enabled to convert consolidated game
+        data into NPZ training files. Without this, the training pipeline
+        stalls because no training data is ever generated.
+        """
         explicit = os.environ.get("RINGRIFT_EXPORT_ENABLED", "").lower()
         if explicit in ("0", "false", "no"):
             return False
         if explicit in ("1", "true", "yes"):
             return True
-        if self.is_coordinator:
-            return False
         return self._get_node_config_bool("export_enabled", default=True)
 
     @cached_property
