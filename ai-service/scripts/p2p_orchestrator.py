@@ -177,6 +177,18 @@ def _validate_preflight_dependencies() -> tuple[bool, list[str]]:
         except ImportError:
             warnings.append(f"Optional: Missing '{module_name}' - {purpose}")
 
+    # Venv detection: warn loudly if running with system Python instead of venv.
+    # Root cause of idle GPU nodes (Feb 2026): system Python lacks swim-p2p,
+    # causing silent fallback to HTTP-only heartbeats and broken mesh membership.
+    in_venv = sys.prefix != sys.base_prefix
+    if not in_venv:
+        venv_path = Path(sys.argv[0]).resolve().parent.parent / "venv" / "bin" / "python"
+        warnings.append(
+            f"WARNING: Running with system Python ({sys.executable}), not a virtualenv. "
+            f"This may be missing cluster dependencies (swim-p2p, torch, etc). "
+            f"Recommended: {venv_path}"
+        )
+
     # Log warnings
     for warn in warnings:
         print(f"[P2P] {warn}", file=sys.stderr)
