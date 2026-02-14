@@ -175,6 +175,10 @@
 }
 
 /* Custom styles */
+html, body {
+  background-color: var(--color-slate-950);
+}
+
 body {
   margin: 0;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',

@@ -1182,13 +1182,15 @@ export const BoardView: React.FC<BoardViewProps> = ({
     [animations]
   );
 
-  // Detect board changes and trigger animations
+  // Detect board changes and trigger animations.
+  // Uses a single useEffect to avoid race conditions between prevBoardRef
+  // updates and animation timeout cleanup.
   useEffect(() => {
     const prevBoard = prevBoardRef.current;
+    prevBoardRef.current = board;
 
     if (!prevBoard) {
       // First render - no animations needed
-      prevBoardRef.current = board;
       return undefined;
     }
 
@@ -1225,7 +1227,6 @@ export const BoardView: React.FC<BoardViewProps> = ({
       }
     });
 
-    // Update animations state
     if (newAnimations.length > 0) {
       debugLog(
         isSandboxAnimationDebugEnabled(),
@@ -1243,18 +1244,15 @@ export const BoardView: React.FC<BoardViewProps> = ({
         setAnimations([]);
       }, 450);
 
-      // Store timeout for cleanup
       return () => clearTimeout(timeoutId);
     }
 
-    // Update ref with current board state
-    prevBoardRef.current = board;
+    // No new animations detected on this board change. Clear any stale
+    // animations left over from a previous render whose cleanup timeout
+    // was cancelled by this re-run (race condition: board changes faster
+    // than the 450ms animation window).
+    setAnimations((prev) => (prev.length > 0 ? [] : prev));
     return undefined;
-  }, [board]);
-
-  // Update the ref after animations are processed
-  useEffect(() => {
-    prevBoardRef.current = board;
   }, [board]);
 
   // Square boards: simple grid using (x, y) coordinates.
@@ -2257,9 +2255,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
         {renderMovementOverlay()}
         {renderChainCapturePathOverlay()}
         {showCoordinateLabels ? renderSquareCoordinateLabels(size) : null}
-        {/* Move animation layer */}
+        {/* Move animation layer - key forces remount on new animation */}
         {pendingAnimation && (
           <MoveAnimationLayer
+            key={pendingAnimation.id}
             animation={pendingAnimation}
             cellRefs={cellRefs}
             containerRef={boardGeometryRef}
@@ -2752,9 +2751,10 @@ export const BoardView: React.FC<BoardViewProps> = ({
         {rows}
         {renderMovementOverlay()}
         {renderChainCapturePathOverlay()}
-        {/* Move animation layer */}
+        {/* Move animation layer - key forces remount on new animation */}
         {pendingAnimation && (
           <MoveAnimationLayer
+            key={pendingAnimation.id}
             animation={pendingAnimation}
             cellRefs={cellRefs}
             containerRef={boardGeometryRef}
