@@ -55,7 +55,7 @@ from threading import RLock
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
-    from scripts.p2p.gossip_protocol import GossipHealthTracker
+    from scripts.p2p.gossip_health import GossipHealthTracker
     from app.coordination.node_circuit_breaker import NodeCircuitBreaker, NodeCircuitState
 
 # Import circuit breaker registry for auto-integration
