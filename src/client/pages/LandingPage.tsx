@@ -1,35 +1,54 @@
 import { Link } from 'react-router-dom';
 import { ButtonLink } from '../components/ui/ButtonLink';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { HeroBoardIllustration } from '../components/landing/HeroBoardIllustration';
+import {
+  PlaceRingsIllustration,
+  FormLinesIllustration,
+  ClaimTerritoryIllustration,
+  MiniSquareGridIcon,
+  MiniHexClusterIcon,
+} from '../components/landing/GameStepIllustration';
 
 export default function LandingPage() {
   useDocumentTitle();
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 app-bg">
       {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div className="container mx-auto px-4 pt-20 pb-16 sm:pt-28 sm:pb-24 text-center">
-          <img
-            src="/ringrift-icon.png"
-            alt=""
-            aria-hidden="true"
-            className="mx-auto mb-6 w-20 h-20 sm:w-28 sm:h-28 drop-shadow-lg"
-          />
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight">
-            <span className="text-white">Ring</span>
-            <span className="text-emerald-400">Rift</span>
-          </h1>
-          <p className="mt-4 text-lg sm:text-xl text-slate-300 max-w-2xl mx-auto">
-            A multiplayer territory-control strategy game. Place rings, form lines, claim territory,
-            and outplay opponents on dynamic board geometries.
-          </p>
-          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <ButtonLink to="/sandbox" size="lg" className="min-w-[160px]">
-              Play Now
-            </ButtonLink>
-            <ButtonLink to="/login" variant="outline" size="lg" className="min-w-[160px]">
-              Sign In
-            </ButtonLink>
+      <section className="relative overflow-hidden bg-gradient-to-br from-emerald-950/40 via-slate-950 to-sky-950/30">
+        <div className="container mx-auto px-4 pt-20 pb-16 sm:pt-28 sm:pb-24">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-8 sm:gap-12">
+            {/* Text (left on desktop, top on mobile) */}
+            <div className="text-center sm:text-left max-w-lg">
+              <img
+                src="/ringrift-icon.png"
+                alt=""
+                aria-hidden="true"
+                className="mx-auto sm:mx-0 mb-6 w-16 h-16 sm:w-20 sm:h-20 drop-shadow-lg"
+              />
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight">
+                <span className="text-white">Ring</span>
+                <span className="text-emerald-400">Rift</span>
+              </h1>
+              <p className="mt-4 text-lg sm:text-xl text-slate-300">
+                A multiplayer territory-control strategy game. Place rings, form lines, claim
+                territory, and outplay opponents on dynamic board geometries.
+              </p>
+              <div className="mt-8 flex flex-col sm:flex-row items-center sm:items-start gap-3">
+                <ButtonLink to="/sandbox?preset=learn-basics" size="lg" className="min-w-[160px]">
+                  Play Now
+                </ButtonLink>
+                <ButtonLink to="/login" variant="outline" size="lg" className="min-w-[160px]">
+                  Sign In
+                </ButtonLink>
+              </div>
+              <p className="mt-3 text-xs text-slate-500">No account needed to start playing.</p>
+            </div>
+
+            {/* Board illustration (right on desktop, bottom on mobile) */}
+            <div className="flex-shrink-0">
+              <HeroBoardIllustration />
+            </div>
           </div>
         </div>
       </section>
@@ -43,20 +62,9 @@ export default function LandingPage() {
           {/* Board Geometries */}
           <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6 hover:border-emerald-500/50 transition-colors">
             <div className="mb-3 flex items-center gap-3">
-              <div className="flex-shrink-0 rounded-lg bg-emerald-500/10 p-2">
-                <svg
-                  className="w-6 h-6 text-emerald-400"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z"
-                  />
-                </svg>
+              <div className="flex-shrink-0 rounded-lg bg-emerald-500/10 p-2 flex gap-1">
+                <MiniSquareGridIcon />
+                <MiniHexClusterIcon />
               </div>
               <h3 className="text-lg font-semibold text-white">Board Geometries</h3>
             </div>
@@ -76,6 +84,7 @@ export default function LandingPage() {
                   viewBox="0 0 24 24"
                   stroke="currentColor"
                   strokeWidth={1.5}
+                  aria-hidden="true"
                 >
                   <path
                     strokeLinecap="round"
@@ -84,10 +93,10 @@ export default function LandingPage() {
                   />
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold text-white">Neural Network AI</h3>
+              <h3 className="text-lg font-semibold text-white">Smart AI Opponents</h3>
             </div>
             <p className="text-sm text-slate-300">
-              Challenge AI opponents trained via self-play with MCTS. Models range from
+              Play against AI trained through millions of games. Difficulty ranges from
               beginner-friendly to expert-level across all board types.
             </p>
           </div>
@@ -102,6 +111,7 @@ export default function LandingPage() {
                   viewBox="0 0 24 24"
                   stroke="currentColor"
                   strokeWidth={1.5}
+                  aria-hidden="true"
                 >
                   <path
                     strokeLinecap="round"
@@ -110,50 +120,57 @@ export default function LandingPage() {
                   />
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold text-white">Real-Time Multiplayer</h3>
+              <h3 className="text-lg font-semibold text-white">2-4 Player Multiplayer</h3>
             </div>
             <p className="text-sm text-slate-300">
-              Create or join live games supporting 2-4 players. Match with friends or random
-              opponents through the lobby with matchmaking.
+              Create or join live games with 2-4 players. Match with friends or find opponents
+              through the lobby with matchmaking.
             </p>
           </div>
         </div>
       </section>
 
-      {/* How It Works */}
+      {/* How to Play */}
       <section className="border-t border-slate-800 bg-slate-900/30">
         <div className="container mx-auto px-4 py-16 sm:py-20">
           <h2 className="text-center text-2xl sm:text-3xl font-bold text-white mb-10">
-            How It Works
+            How to Play
           </h2>
-          <div className="grid gap-8 sm:grid-cols-3 max-w-4xl mx-auto text-center">
-            <div>
-              <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-lg">
-                1
+          <div className="grid gap-8 sm:grid-cols-3 max-w-4xl mx-auto">
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="rounded-xl bg-slate-800/60 border border-slate-700/50 p-4 flex items-center justify-center">
+                <PlaceRingsIllustration />
               </div>
-              <h3 className="font-semibold text-white mb-1">Place Rings</h3>
-              <p className="text-sm text-slate-400">
-                Take turns placing rings on the board. Stack on top of opponents to capture them.
-              </p>
+              <div>
+                <h3 className="font-semibold text-white mb-1">Place Rings</h3>
+                <p className="text-sm text-slate-400">
+                  Take turns placing rings on the board. Stack on top of opponents to capture them.
+                </p>
+              </div>
             </div>
-            <div>
-              <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-lg">
-                2
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="rounded-xl bg-slate-800/60 border border-slate-700/50 p-4 flex items-center justify-center h-[88px]">
+                <FormLinesIllustration />
               </div>
-              <h3 className="font-semibold text-white mb-1">Form Lines</h3>
-              <p className="text-sm text-slate-400">
-                Connect rings in a row to score bonus points and trigger special collapse decisions.
-              </p>
+              <div>
+                <h3 className="font-semibold text-white mb-1">Form Lines</h3>
+                <p className="text-sm text-slate-400">
+                  Connect rings in a row to score bonus points and trigger special collapse
+                  decisions.
+                </p>
+              </div>
             </div>
-            <div>
-              <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-lg">
-                3
+            <div className="flex flex-col items-center text-center gap-3">
+              <div className="rounded-xl bg-slate-800/60 border border-slate-700/50 p-4 flex items-center justify-center">
+                <ClaimTerritoryIllustration />
               </div>
-              <h3 className="font-semibold text-white mb-1">Claim Territory</h3>
-              <p className="text-sm text-slate-400">
-                Surround regions of the board to earn territory points. The player with the most
-                points wins.
-              </p>
+              <div>
+                <h3 className="font-semibold text-white mb-1">Claim Territory</h3>
+                <p className="text-sm text-slate-400">
+                  Surround regions of the board to earn territory points. The player with the most
+                  points wins.
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -164,12 +181,12 @@ export default function LandingPage() {
         <div className="container mx-auto px-4 py-12 sm:py-16 text-center">
           <h2 className="text-xl sm:text-2xl font-bold text-white mb-4">Ready to play?</h2>
           <p className="text-slate-400 mb-6 max-w-md mx-auto">
-            Jump straight into the sandbox — no account required. Or sign up to play rated
-            multiplayer games.
+            Jump straight into a game — no account required. Or sign up to play rated multiplayer
+            matches.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
             <ButtonLink to="/sandbox" size="lg" className="min-w-[180px]">
-              Try the Sandbox
+              Try It Free
             </ButtonLink>
             <ButtonLink to="/register" variant="outline" size="lg" className="min-w-[180px]">
               Create Account
@@ -188,7 +205,7 @@ export default function LandingPage() {
           </Link>
           <span className="hidden sm:inline">&middot;</span>
           <Link to="/sandbox" className="hover:text-slate-300 transition-colors">
-            Sandbox
+            Practice
           </Link>
         </div>
       </footer>

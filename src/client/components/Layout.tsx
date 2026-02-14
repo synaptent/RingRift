@@ -76,7 +76,7 @@ export default function Layout() {
                 Leaderboard
               </NavLink>
               <NavLink to="/sandbox" className={navLinkClasses}>
-                Sandbox
+                Practice
               </NavLink>
               <NavLink to="/help" className={navLinkClasses}>
                 Help
@@ -188,7 +188,7 @@ export default function Layout() {
                 Leaderboard
               </NavLink>
               <NavLink to="/sandbox" className={mobileNavLinkClasses}>
-                Sandbox
+                Practice
               </NavLink>
               <NavLink to="/help" className={mobileNavLinkClasses}>
                 Help

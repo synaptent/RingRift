@@ -7,6 +7,16 @@ import {
   sendRulesUxEvent,
 } from '../utils/rulesUxTelemetry';
 import { Dialog } from './ui/Dialog';
+import {
+  WelcomeIllustration,
+  PlacementIllustration,
+  MovementIllustration,
+  CaptureIllustration,
+  EliminationIcon,
+  TerritoryIcon,
+  LastStandingIcon,
+  ReadyToPlayIllustration,
+} from './onboarding/OnboardingIllustrations';
 
 interface OnboardingModalProps {
   isOpen: boolean;
@@ -48,7 +58,7 @@ function WelcomeStep(_: StepProps) {
   const { title, body } = ONBOARDING_COPY.intro;
   return (
     <div className="text-center space-y-4">
-      <div className="text-6xl mb-4">🎮</div>
+      <WelcomeIllustration />
       <h2 className="text-2xl font-bold text-slate-100">{title}</h2>
       <p className="text-slate-300 max-w-md mx-auto">{body}</p>
     </div>
@@ -61,16 +71,16 @@ function WelcomeStep(_: StepProps) {
 function PhasesStep(_: StepProps) {
   const phases = ONBOARDING_COPY.phases;
 
-  const getPhaseIcon = (id: string) => {
+  const getPhaseIllustration = (id: string) => {
     switch (id) {
       case 'sandbox.phase.ring_placement':
-        return '🎯';
+        return <PlacementIllustration />;
       case 'sandbox.phase.movement':
-        return '⚡';
+        return <MovementIllustration />;
       case 'sandbox.phase.capture':
-        return '⚔️';
+        return <CaptureIllustration />;
       default:
-        return '⬤';
+        return null;
     }
   };
 
@@ -86,7 +96,7 @@ function PhasesStep(_: StepProps) {
       <div className="space-y-3">
         {phases.map((phase) => (
           <div key={phase.id} className="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3">
-            <span className="text-2xl">{getPhaseIcon(phase.id)}</span>
+            {getPhaseIllustration(phase.id)}
             <div>
               <div className="font-semibold text-slate-100">{phase.title}</div>
               <div className="text-sm text-slate-400">{phase.body}</div>
@@ -101,19 +111,28 @@ function PhasesStep(_: StepProps) {
 /**
  * Victory conditions step
  */
+const VICTORY_SHORT_DESCRIPTIONS: Record<string, string> = {
+  'onboarding.victory.elimination':
+    'Eliminate enough of your opponents\u2019 rings to hit the elimination threshold and win instantly.',
+  'onboarding.victory.territory':
+    'Control more territory than all opponents combined by collapsing lines and claiming regions.',
+  'onboarding.victory.lps':
+    'Be the last player who can still make moves for three consecutive rounds.',
+};
+
 function VictoryStep({ onVictoryConceptClick }: StepProps) {
   const concepts = ONBOARDING_COPY.victoryConcepts;
 
   const getConceptIcon = (id: string) => {
     switch (id) {
       case 'onboarding.victory.elimination':
-        return '💎';
+        return <EliminationIcon />;
       case 'onboarding.victory.territory':
-        return '🏰';
+        return <TerritoryIcon />;
       case 'onboarding.victory.lps':
-        return '👑';
+        return <LastStandingIcon />;
       default:
-        return '⭐';
+        return null;
     }
   };
 
@@ -128,10 +147,12 @@ function VictoryStep({ onVictoryConceptClick }: StepProps) {
             onClick={() => onVictoryConceptClick?.(concept.id)}
             className="w-full flex items-center gap-3 bg-slate-800/50 rounded-lg p-3 text-left hover:bg-slate-800/80 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900"
           >
-            <span className="text-2xl">{getConceptIcon(concept.id)}</span>
+            {getConceptIcon(concept.id)}
             <div>
               <div className="font-semibold text-slate-100">{concept.title}</div>
-              <div className="text-sm text-slate-400">{concept.body}</div>
+              <div className="text-sm text-slate-400">
+                {VICTORY_SHORT_DESCRIPTIONS[concept.id] ?? concept.body}
+              </div>
             </div>
           </button>
         ))}
@@ -146,16 +167,16 @@ function VictoryStep({ onVictoryConceptClick }: StepProps) {
 function ReadyStep(_: StepProps) {
   return (
     <div className="text-center space-y-4">
-      <div className="text-6xl mb-4">🚀</div>
+      <ReadyToPlayIllustration />
       <h2 className="text-2xl font-bold text-slate-100">Ready to Play!</h2>
       <p className="text-slate-300 max-w-md mx-auto">
         We recommend starting with{' '}
-        <span className="text-blue-400 font-semibold">"Learn the Basics"</span> - a quick game
+        <span className="text-blue-400 font-semibold">"Learn the Basics"</span> — a quick game
         against a beginner-friendly AI on a compact board.
       </p>
       <div className="bg-blue-900/30 border border-blue-700/50 rounded-lg p-4 mt-4">
         <p className="text-sm text-blue-200">
-          💡 <strong>Tip:</strong> Press{' '}
+          <strong>Tip:</strong> Press{' '}
           <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-xs">?</kbd> anytime during the
           game to see keyboard shortcuts and controls.
         </p>
@@ -319,7 +340,7 @@ export function OnboardingModal({ isOpen, onClose, onStartTutorial }: Onboarding
       labelledBy="onboarding-title"
       initialFocusRef={primaryButtonRef}
       backdropClassName="bg-black/70 backdrop-blur-sm"
-      className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-w-lg w-full mx-4 p-6 relative overflow-hidden"
+      className="bg-slate-900 border border-slate-700 rounded-xl shadow-2xl max-w-xl w-full mx-4 p-6 relative overflow-hidden"
     >
       <h2 id="onboarding-title" className="sr-only">
         RingRift onboarding

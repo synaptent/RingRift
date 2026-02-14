@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { GameResult, Player, GameState } from '../../shared/types/game';
 import {
   toVictoryViewModel,
@@ -665,6 +665,53 @@ function TrainingSubmissionSection({
 }
 
 /**
+ * Share button that copies a challenge link to clipboard
+ */
+function ShareChallengeButton() {
+  const [copied, setCopied] = useState(false);
+
+  const handleShare = useCallback(async () => {
+    const url = `${window.location.origin}/sandbox?preset=sq8-1h-1ai`;
+
+    // Try Web Share API first (mobile)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Play RingRift',
+          text: 'Challenge me to a game of RingRift!',
+          url,
+        });
+        return;
+      } catch {
+        // User cancelled or not supported, fall through to clipboard
+      }
+    }
+
+    // Clipboard fallback
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = url;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, []);
+
+  return (
+    <Button type="button" variant="secondary" size="lg" onClick={handleShare}>
+      {copied ? 'Link Copied!' : 'Challenge a Friend'}
+    </Button>
+  );
+}
+
+/**
  * Victory Modal Component
  */
 export function VictoryModal({
@@ -1032,6 +1079,8 @@ export function VictoryModal({
             <Button type="button" size="lg" onClick={onReturnToLobby}>
               Return to Lobby
             </Button>
+
+            <ShareChallengeButton />
 
             <Button type="button" variant="secondary" size="lg" onClick={onClose}>
               Close
