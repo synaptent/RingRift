@@ -15,7 +15,10 @@ interface SearchResult {
 }
 
 export default function LeaderboardPage() {
-  useDocumentTitle('Leaderboard');
+  useDocumentTitle(
+    'Leaderboard',
+    'Top RingRift players ranked by Elo rating. See who leads on every board type.'
+  );
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

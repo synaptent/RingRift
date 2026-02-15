@@ -8,6 +8,7 @@ import {
 import { StatusBanner } from '../components/ui/StatusBanner';
 import { Button } from '../components/ui/Button';
 import { ButtonLink } from '../components/ui/ButtonLink';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 function formatTopicLabel(topic: string): string {
   return topic
@@ -17,6 +18,10 @@ function formatTopicLabel(topic: string): string {
 }
 
 export default function HelpPage() {
+  useDocumentTitle(
+    'Help',
+    'Learn how to play RingRift. Rules, strategies, and tips for all board types.'
+  );
   const navigate = useNavigate();
   const { topic } = useParams<{ topic?: string }>();
   const [search, setSearch] = useState('');

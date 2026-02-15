@@ -326,6 +326,11 @@ class MaintenanceDaemon(HandlerBase):
         if not self.config.enabled:
             return
 
+        # February 2026: Block heavy maintenance when coordinator is low on RAM/disk
+        from app.utils.resource_guard import coordinator_resource_gate
+        if not coordinator_resource_gate("MAINTENANCE"):
+            return
+
         now = time.time()
         cycle_start = now
         tasks_run = []

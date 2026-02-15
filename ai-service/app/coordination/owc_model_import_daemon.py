@@ -523,6 +523,11 @@ class OWCModelImportDaemon(HandlerBase, ImportDaemonMixin):
 
     async def _run_cycle(self) -> None:
         """Run one import cycle."""
+        # February 2026: Block when coordinator is low on RAM/disk
+        from app.utils.resource_guard import coordinator_resource_gate
+        if not coordinator_resource_gate("OWC_MODEL_IMPORT"):
+            return
+
         cycle_start = time.time()
         self._stats.cycle_count += 1
 

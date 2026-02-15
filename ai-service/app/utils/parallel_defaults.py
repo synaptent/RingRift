@@ -97,9 +97,21 @@ R = TypeVar("R")
 FORCE_SEQUENTIAL = os.getenv("RINGRIFT_FORCE_SEQUENTIAL", "").lower() == "true"
 MAX_WORKERS_OVERRIDE = int(os.getenv("RINGRIFT_MAX_WORKERS", "0")) or None
 
+# February 2026: Cap worker counts on coordinator nodes to prevent OOM.
+# Coordinator runs 45+ daemons and shouldn't spawn heavy process pools.
+_IS_COORDINATOR = os.getenv("RINGRIFT_IS_COORDINATOR", "").lower() == "true"
+_COORDINATOR_MAX_PROCESS_WORKERS = 2
+_COORDINATOR_MAX_THREAD_WORKERS = 4
+
 # Default worker counts based on hardware
-DEFAULT_THREAD_WORKERS = min(32, (os.cpu_count() or 4) * 2)
-DEFAULT_PROCESS_WORKERS = os.cpu_count() or 4
+DEFAULT_THREAD_WORKERS = min(
+    _COORDINATOR_MAX_THREAD_WORKERS if _IS_COORDINATOR else 32,
+    (os.cpu_count() or 4) * 2,
+)
+DEFAULT_PROCESS_WORKERS = min(
+    _COORDINATOR_MAX_PROCESS_WORKERS if _IS_COORDINATOR else (os.cpu_count() or 4),
+    os.cpu_count() or 4,
+)
 
 
 def parallel_map_threads(

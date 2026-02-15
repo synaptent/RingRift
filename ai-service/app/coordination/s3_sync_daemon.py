@@ -316,6 +316,11 @@ class S3SyncDaemon(HandlerBase):
             logger.debug("[S3SyncDaemon] Disabled via config, skipping cycle")
             return
 
+        # February 2026: Block when coordinator is low on RAM/disk
+        from app.utils.resource_guard import coordinator_resource_gate
+        if not coordinator_resource_gate("S3_SYNC"):
+            return
+
         if not self._check_aws_credentials():
             logger.warning("[S3SyncDaemon] AWS credentials not configured, skipping")
             return

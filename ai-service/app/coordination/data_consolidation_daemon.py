@@ -217,6 +217,11 @@ class DataConsolidationDaemon(HandlerBase):
         except ImportError:
             pass
 
+        # February 2026: Block when coordinator is low on RAM/disk
+        from app.utils.resource_guard import coordinator_resource_gate
+        if not coordinator_resource_gate("DATA_CONSOLIDATION"):
+            return
+
         await self._process_pending_consolidations()
 
     async def _subscribe_to_events(self) -> None:

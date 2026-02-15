@@ -491,7 +491,10 @@ function sortGames(games: Game[], sortBy: SortOption): Game[] {
 }
 
 export default function LobbyPage() {
-  useDocumentTitle('Lobby');
+  useDocumentTitle(
+    'Lobby',
+    'Create or join live multiplayer RingRift games. Play rated matches on square and hexagonal boards.'
+  );
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(defaultForm);
   const [isSubmitting, setIsSubmitting] = useState(false);

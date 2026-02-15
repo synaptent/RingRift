@@ -45,7 +45,7 @@ export const securityHeaders: RequestHandler = helmet({
       // Production includes Cloudflare Insights for analytics (injected by Cloudflare proxy)
       scriptSrc: config.isDevelopment
         ? ["'self'", "'unsafe-inline'", "'unsafe-eval'"]
-        : ["'self'", 'https://static.cloudflareinsights.com'],
+        : ["'self'", 'https://static.cloudflareinsights.com', 'https://www.googletagmanager.com'],
 
       // Styles - allow inline for CSS-in-JS libraries (React Hot Toast, etc.)
       styleSrc: ["'self'", "'unsafe-inline'"],
@@ -59,7 +59,7 @@ export const securityHeaders: RequestHandler = helmet({
       // Connect (XHR, WebSocket, fetch) - self plus WebSocket protocols
       connectSrc: config.isDevelopment
         ? ["'self'", 'ws:', 'wss:', 'http://localhost:*', 'ws://localhost:*']
-        : ["'self'", 'wss:'],
+        : ["'self'", 'wss:', 'https://www.google-analytics.com'],
 
       // Media (audio/video) - none by default
       mediaSrc: ["'none'"],

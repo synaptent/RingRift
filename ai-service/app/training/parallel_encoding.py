@@ -625,6 +625,9 @@ class ParallelEncoder:
         # Determine worker count
         if num_workers is None:
             num_workers = max(1, mp.cpu_count() - 1)
+        # February 2026: Cap workers on coordinator to prevent OOM
+        if os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() == "true":
+            num_workers = min(num_workers, 2)
         self.num_workers = num_workers
 
         # Create process pool

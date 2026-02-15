@@ -70,7 +70,10 @@ const BOARD_LABELS: Record<string, string> = {
 
 export default function HomePage() {
   const { user } = useAuth();
-  useDocumentTitle('Home');
+  useDocumentTitle(
+    'Home',
+    'Play RingRift online. Practice against AI, join multiplayer games, or challenge a friend.'
+  );
 
   const [recentGames, setRecentGames] = useState<GameSummary[]>([]);
   const [gamesLoading, setGamesLoading] = useState(false);

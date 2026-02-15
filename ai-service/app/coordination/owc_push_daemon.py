@@ -203,6 +203,11 @@ class OWCPushDaemon(HandlerBase):
             logger.debug("[OWCPush] Disabled via config, skipping cycle")
             return
 
+        # February 2026: Block when coordinator is low on RAM/disk
+        from app.utils.resource_guard import coordinator_resource_gate
+        if not coordinator_resource_gate("OWC_PUSH"):
+            return
+
         # Check OWC availability
         if not await self._check_owc_available():
             if self._owc_available:
