@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useSiteStats } from '../hooks/useSiteStats';
 import { gameApi, GameSummary } from '../services/api';
 import { WelcomeBanner } from '../components/WelcomeBanner';
 
@@ -70,6 +71,7 @@ const BOARD_LABELS: Record<string, string> = {
 
 export default function HomePage() {
   const { user } = useAuth();
+  const stats = useSiteStats();
   useDocumentTitle(
     'Home',
     'Play RingRift online. Practice against AI, join multiplayer games, or challenge a friend.'
@@ -109,6 +111,23 @@ export default function HomePage() {
           Play online matches, practice against AI, or check out the leaderboard.
         </p>
       </header>
+
+      {stats && stats.gamesPlayed > 0 && (
+        <div className="flex items-center gap-4 text-xs text-slate-400">
+          {stats.playersOnline > 0 && (
+            <span className="flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              {stats.playersOnline} online
+            </span>
+          )}
+          {stats.activeGames > 0 && (
+            <span>
+              {stats.activeGames} active {stats.activeGames === 1 ? 'game' : 'games'}
+            </span>
+          )}
+          <span>{stats.gamesPlayed.toLocaleString()} games played</span>
+        </div>
+      )}
 
       {/* Quick play banner */}
       <Link

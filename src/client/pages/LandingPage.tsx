@@ -194,6 +194,40 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Self-Improving AI section */}
+      <section className="container mx-auto px-4 py-16 sm:py-20">
+        <h2 className="text-center text-2xl sm:text-3xl font-bold text-white mb-3">
+          Self-Improving AI
+        </h2>
+        <p className="text-center text-slate-400 max-w-2xl mx-auto mb-10">
+          RingRift's AI learns through continuous self-play across a distributed GPU cluster. No
+          hand-crafted heuristics — pure neural network training, improving around the clock.
+        </p>
+        <div className="grid gap-6 sm:grid-cols-3 max-w-4xl mx-auto">
+          <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5 text-center">
+            <div className="text-3xl font-bold text-emerald-400 mb-1">12</div>
+            <div className="text-sm text-slate-300">Board Configurations</div>
+            <p className="mt-2 text-xs text-slate-500">
+              Square and hexagonal boards, 2-4 players, each with a dedicated neural network.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5 text-center">
+            <div className="text-3xl font-bold text-sky-400 mb-1">1.5 TB</div>
+            <div className="text-sm text-slate-300">GPU Memory</div>
+            <p className="mt-2 text-xs text-slate-500">
+              Distributed training across a P2P mesh of GPU nodes running Gumbel MCTS self-play.
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-5 text-center">
+            <div className="text-3xl font-bold text-amber-400 mb-1">24/7</div>
+            <div className="text-sm text-slate-300">Autonomous Training</div>
+            <p className="mt-2 text-xs text-slate-500">
+              Continuous improvement loop: self-play, train, evaluate, promote — fully automated.
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* Footer CTA */}
       <section className="border-t border-slate-800">
         <div className="container mx-auto px-4 py-12 sm:py-16 text-center">

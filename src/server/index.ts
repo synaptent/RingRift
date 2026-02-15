@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/node';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { createServer } from 'http';
 import path from 'path';
@@ -22,6 +23,16 @@ import { config, enforceAppTopology } from './config';
 import { HealthCheckService, isServiceReady } from './services/HealthCheckService';
 import { getMetricsService } from './services/MetricsService';
 import { getServiceStatusManager } from './services/ServiceStatusManager';
+
+// Initialize Sentry for server-side error tracking (only when DSN is configured)
+const sentryDsn = process.env.SENTRY_DSN;
+if (sentryDsn) {
+  Sentry.init({
+    dsn: sentryDsn,
+    environment: config.isDevelopment ? 'development' : 'production',
+    tracesSampleRate: 0.1,
+  });
+}
 
 const app = express();
 const server = createServer(app);

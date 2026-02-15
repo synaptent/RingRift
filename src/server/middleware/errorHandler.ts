@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
+import * as Sentry from '@sentry/node';
 import { logger, withRequestContext } from '../utils/logger';
 import {
   ValidationError,
@@ -169,6 +170,10 @@ export const errorHandler = (
   // Log at appropriate level based on status code
   if (apiError.statusCode >= 500) {
     logger.error('Server Error:', logContext);
+    Sentry.captureException(apiError.cause ?? apiError, {
+      tags: { code: apiError.code, url: req.url },
+      extra: { requestId, method: req.method },
+    });
   } else if (apiError.statusCode >= 400) {
     logger.warn('Client Error:', logContext);
   } else {
