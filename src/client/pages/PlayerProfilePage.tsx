@@ -141,12 +141,13 @@ export default function PlayerProfilePage() {
         <section className="bg-slate-800 rounded-xl border border-slate-700 p-5">
           <h2 className="text-lg font-semibold text-white mb-4">Rating History</h2>
           <RatingHistoryChart
-            data={ratingHistory.map((e) => ({
+            history={ratingHistory.map((e) => ({
               date: e.date,
               rating: e.rating,
               change: e.change,
               gameId: null,
             }))}
+            currentRating={user.rating}
           />
         </section>
       )}

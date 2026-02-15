@@ -1307,6 +1307,131 @@ router.get(
 
 /**
  * @openapi
+ * /users/{userId}/public-profile:
+ *   get:
+ *     summary: Get public profile for a user
+ *     description: Returns public profile info, recent games, and rating history for any user.
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: The user's ID
+ *     responses:
+ *       200:
+ *         description: Public profile retrieved successfully
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
+router.get(
+  '/:userId/public-profile',
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { userId } = req.params;
+
+    const userIdResult = UUIDSchema.safeParse(userId);
+    if (!userIdResult.success) {
+      throw createError('Invalid user ID format', 400, 'INVALID_USER_ID');
+    }
+
+    const prisma = getDatabaseClient();
+    if (!prisma) {
+      throw createError('Database not available', 500, 'DATABASE_UNAVAILABLE');
+    }
+
+    const userResult = await withQueryTimeoutStrict(
+      prisma.user.findUnique({
+        where: { id: userId, isActive: true },
+        select: {
+          id: true,
+          username: true,
+          rating: true,
+          gamesPlayed: true,
+          gamesWon: true,
+          createdAt: true,
+        },
+      })
+    );
+
+    if (!userResult.success) {
+      throw createError('Database query timed out', 504, ErrorCodes.SERVER_GATEWAY_TIMEOUT);
+    }
+
+    const user = userResult.data;
+    if (!user) {
+      throw createError('User not found', 404, 'USER_NOT_FOUND');
+    }
+
+    // Recent completed games
+    const gamesResult = await withQueryTimeoutStrict(
+      prisma.game.findMany({
+        where: {
+          OR: [
+            { player1Id: userId },
+            { player2Id: userId },
+            { player3Id: userId },
+            { player4Id: userId },
+          ],
+          status: PrismaGameStatus.completed,
+        },
+        orderBy: { endedAt: 'desc' },
+        take: 10,
+        select: {
+          id: true,
+          boardType: true,
+          winnerId: true,
+          endedAt: true,
+          maxPlayers: true,
+          player1: { select: { id: true, username: true } },
+          player2: { select: { id: true, username: true } },
+          player3: { select: { id: true, username: true } },
+          player4: { select: { id: true, username: true } },
+        },
+      })
+    );
+
+    if (!gamesResult.success) {
+      throw createError('Database query timed out', 504, ErrorCodes.SERVER_GATEWAY_TIMEOUT);
+    }
+
+    // Rating history
+    const { history: ratingHistoryData } = await RatingService.getRatingHistory(userId, 30, 0);
+    const ratingHistory = ratingHistoryData.map((entry) => ({
+      date: entry.timestamp,
+      rating: entry.newRating,
+      change: entry.change,
+    }));
+
+    const winRate =
+      user.gamesPlayed > 0 ? Math.round((user.gamesWon / user.gamesPlayed) * 10000) / 100 : 0;
+
+    const isProvisional = user.gamesPlayed < 20;
+
+    res.json({
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          username: user.username,
+          rating: user.rating,
+          gamesPlayed: user.gamesPlayed,
+          gamesWon: user.gamesWon,
+          winRate,
+          isProvisional,
+          memberSince: user.createdAt,
+        },
+        recentGames: gamesResult.data,
+        ratingHistory,
+      },
+    });
+  })
+);
+
+/**
+ * @openapi
  * /users/me:
  *   delete:
  *     summary: Delete current user account

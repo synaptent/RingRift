@@ -87,7 +87,7 @@ export const setupRoutes = (wsServer: WebSocketServer): Router => {
   // Protected routes (require authentication)
   router.use('/games', authenticate, gameRoutes);
   router.use('/users', authenticate, userRoutes);
-  router.use('/admin', adminRoutes);
+  router.use('/admin', authenticate, adminRoutes);
 
   /**
    * @openapi

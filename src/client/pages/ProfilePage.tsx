@@ -5,7 +5,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { authApi, gameApi, userApi, type GameSummary } from '../services/api';
 import { User } from '../../shared/types/user';
 import { Game, GameResult } from '../../shared/types/game';
-import LoadingSpinner from '../components/LoadingSpinner';
+import { ProfileSkeleton } from '../components/Skeleton';
 import { InlineAlert } from '../components/ui/InlineAlert';
 import { Button } from '../components/ui/Button';
 import { extractErrorMessage } from '../utils/errorReporting';
@@ -69,12 +69,10 @@ export default function ProfilePage() {
         gameApi.getGames({ limit: 5 }).catch(() => ({ games: [] })),
         userApi.getStats().catch(() => ({ ratingHistory: [] })),
         userId
-          ? gameApi
-              .getUserGames(userId, { limit: 100, status: 'completed' })
-              .catch(() => ({
-                games: [],
-                pagination: { total: 0, limit: 100, offset: 0, hasMore: false },
-              }))
+          ? gameApi.getUserGames(userId, { limit: 100, status: 'completed' }).catch(() => ({
+              games: [],
+              pagination: { total: 0, limit: 100, offset: 0, hasMore: false },
+            }))
           : Promise.resolve({
               games: [] as GameSummary[],
               pagination: { total: 0, limit: 100, offset: 0, hasMore: false },
@@ -128,11 +126,7 @@ export default function ProfilePage() {
   };
 
   if (isLoading) {
-    return (
-      <div className="flex justify-center py-12">
-        <LoadingSpinner size="lg" />
-      </div>
-    );
+    return <ProfileSkeleton />;
   }
 
   if (!profile) {

@@ -1,7 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { gameApi, GameSummary } from '../services/api';
 
 function ChallengeLink() {
   const [copied, setCopied] = useState(false);
@@ -59,9 +60,39 @@ function ChallengeLink() {
   );
 }
 
+const BOARD_LABELS: Record<string, string> = {
+  square8: 'Square 8x8',
+  square19: 'Square 19x19',
+  hex8: 'Hex Small',
+  hexagonal: 'Hex Large',
+};
+
 export default function HomePage() {
   const { user } = useAuth();
   useDocumentTitle('Home');
+
+  const [recentGames, setRecentGames] = useState<GameSummary[]>([]);
+  const [gamesLoading, setGamesLoading] = useState(false);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    setGamesLoading(true);
+    gameApi
+      .getUserGames(user.id, { limit: 5, status: 'completed' })
+      .then((res) => {
+        if (!cancelled) setRecentGames(res.games);
+      })
+      .catch(() => {
+        // Silently ignore - recent games is not critical
+      })
+      .finally(() => {
+        if (!cancelled) setGamesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   return (
     <div className="container mx-auto px-4 py-10 space-y-8">
@@ -222,6 +253,66 @@ export default function HomePage() {
           <p className="mt-1 text-sm text-slate-300">Your game history, stats, and settings.</p>
         </Link>
       </section>
+
+      {/* Recent games */}
+      {user && recentGames.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-white">Recent Games</h2>
+            <Link
+              to="/history"
+              className="text-sm text-sky-400 hover:text-sky-300 transition-colors"
+            >
+              View all
+            </Link>
+          </div>
+          <div className="bg-slate-800 rounded-xl border border-slate-700 divide-y divide-slate-700 overflow-hidden">
+            {recentGames.map((game) => {
+              const won = game.winnerId === user.id;
+              const drew = !game.winnerId;
+              return (
+                <Link
+                  key={game.id}
+                  to={`/game/${game.id}`}
+                  className="flex items-center justify-between px-5 py-3 hover:bg-slate-700/30 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+                        won
+                          ? 'bg-emerald-500/20 text-emerald-400'
+                          : drew
+                            ? 'bg-slate-500/20 text-slate-400'
+                            : 'bg-red-500/20 text-red-400'
+                      }`}
+                    >
+                      {won ? 'W' : drew ? 'D' : 'L'}
+                    </span>
+                    <span className="text-sm text-white">
+                      {BOARD_LABELS[game.boardType] || game.boardType}
+                    </span>
+                    <span className="text-xs text-slate-500">{game.moveCount} moves</span>
+                  </div>
+                  <span className="text-xs text-slate-500">
+                    {game.endedAt ? new Date(game.endedAt).toLocaleDateString() : ''}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {user && !gamesLoading && recentGames.length === 0 && (
+        <section className="text-center py-4">
+          <p className="text-sm text-slate-500">
+            No games yet.{' '}
+            <Link to="/lobby" className="text-emerald-400 hover:text-emerald-300">
+              Play your first game!
+            </Link>
+          </p>
+        </section>
+      )}
     </div>
   );
 }

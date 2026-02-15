@@ -75,8 +75,14 @@ export default function Layout() {
               <NavLink to="/leaderboard" className={navLinkClasses}>
                 Leaderboard
               </NavLink>
+              <NavLink to="/history" className={navLinkClasses}>
+                History
+              </NavLink>
               <NavLink to="/sandbox" className={navLinkClasses}>
                 Practice
+              </NavLink>
+              <NavLink to="/profile" className={navLinkClasses}>
+                Profile
               </NavLink>
               <NavLink to="/help" className={navLinkClasses}>
                 Help
@@ -111,12 +117,15 @@ export default function Layout() {
 
             {user ? (
               <>
-                <div className="hidden flex-col items-end text-xs sm:flex">
+                <Link
+                  to="/profile"
+                  className="hidden flex-col items-end text-xs sm:flex hover:opacity-80 transition-opacity"
+                >
                   <span className="font-semibold text-slate-100">{user.username}</span>
                   {typeof user.rating === 'number' && (
                     <span className="text-slate-400">Rating {user.rating}</span>
                   )}
-                </div>
+                </Link>
                 <Button
                   type="button"
                   variant="secondary"
@@ -187,8 +196,14 @@ export default function Layout() {
               <NavLink to="/leaderboard" className={mobileNavLinkClasses}>
                 Leaderboard
               </NavLink>
+              <NavLink to="/history" className={mobileNavLinkClasses}>
+                History
+              </NavLink>
               <NavLink to="/sandbox" className={mobileNavLinkClasses}>
                 Practice
+              </NavLink>
+              <NavLink to="/profile" className={mobileNavLinkClasses}>
+                Profile
               </NavLink>
               <NavLink to="/help" className={mobileNavLinkClasses}>
                 Help
@@ -199,12 +214,12 @@ export default function Layout() {
             <div className="border-t border-slate-800 px-3 py-4">
               {user ? (
                 <div className="flex items-center justify-between">
-                  <div className="flex flex-col">
+                  <Link to="/profile" className="flex flex-col">
                     <span className="text-sm font-semibold text-slate-100">{user.username}</span>
                     {typeof user.rating === 'number' && (
                       <span className="text-xs text-slate-400">Rating {user.rating}</span>
                     )}
-                  </div>
+                  </Link>
                   <Button type="button" variant="secondary" size="sm" onClick={logout}>
                     Logout
                   </Button>

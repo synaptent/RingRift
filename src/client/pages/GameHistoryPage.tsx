@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { gameApi, type GameSummary } from '../services/api';
-import LoadingSpinner from '../components/LoadingSpinner';
+import { GameHistorySkeleton } from '../components/Skeleton';
 import { formatVictoryReason } from '../adapters/gameViewModels';
 import type { BoardType } from '../../shared/types/game';
 
@@ -68,6 +68,10 @@ export default function GameHistoryPage() {
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
 
+  if (isLoading) {
+    return <GameHistorySkeleton />;
+  }
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
       <div className="flex items-center justify-between mb-6">
@@ -108,11 +112,7 @@ export default function GameHistoryPage() {
         <span className="ml-auto text-sm text-slate-500 self-center">{total} total games</span>
       </div>
 
-      {isLoading ? (
-        <div className="flex justify-center py-12">
-          <LoadingSpinner size="lg" />
-        </div>
-      ) : filtered.length === 0 ? (
+      {filtered.length === 0 ? (
         <div className="text-center py-12 text-slate-500 bg-slate-800/50 rounded-xl border border-slate-700">
           {games.length === 0 ? 'No completed games yet' : 'No games match the selected filters'}
         </div>

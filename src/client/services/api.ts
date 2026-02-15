@@ -513,6 +513,24 @@ export const userApi = {
     return response.data;
   },
 
+  async searchUsers(
+    q: string,
+    limit?: number
+  ): Promise<{
+    users: Array<{
+      id: string;
+      username: string;
+      rating: number;
+      gamesPlayed: number;
+      gamesWon: number;
+    }>;
+  }> {
+    const params: Record<string, string | number> = { q };
+    if (limit) params.limit = limit;
+    const response = await api.get('/users/search', { params });
+    return response.data.data;
+  },
+
   async getPublicProfile(userId: string): Promise<{
     user: {
       id: string;

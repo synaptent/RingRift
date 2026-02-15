@@ -29,6 +29,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 // Suspense fallback component for lazy-loaded routes
 function PageLoader() {
@@ -171,7 +172,7 @@ function App() {
             </Route>
 
             {/* Catch all route */}
-            <Route path="*" element={<Navigate to="/" />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Suspense>
       </SoundProvider>
