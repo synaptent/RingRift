@@ -3,11 +3,16 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { SettingsModal } from '../../src/client/components/SettingsModal';
 import { SoundProvider } from '../../src/client/contexts/SoundContext';
+import { ThemeProvider } from '../../src/client/contexts/ThemeContext';
 import * as AccessibilityContext from '../../src/client/contexts/AccessibilityContext';
 
-// Wrapper that provides SoundContext for SettingsModal (which renders SoundSettingsPanel)
+// Wrapper that provides SoundContext and ThemeContext for SettingsModal
 function Wrapper({ children }: { children: React.ReactNode }) {
-  return <SoundProvider>{children}</SoundProvider>;
+  return (
+    <ThemeProvider>
+      <SoundProvider>{children}</SoundProvider>
+    </ThemeProvider>
+  );
 }
 
 // Mock the useAccessibility hook used by AccessibilitySettingsPanel
