@@ -1941,7 +1941,7 @@ class UnifiedQueuePopulator:
             for target in met_targets:
                 try:
                     item = self._create_tournament_item(target.board_type, target.num_players)
-                    item.priority = max(item.priority - 20, 1)
+                    item.priority = max(item.priority - 5, 1)  # Slight depriority only
                     self._work_queue.add_work(item)
                     self._queued_work_ids.add(item.work_id)
                     maintenance_added += 1
@@ -2103,7 +2103,7 @@ class UnifiedQueuePopulator:
             # One tournament item per met config per populate cycle
             try:
                 item = self._create_tournament_item(target.board_type, target.num_players)
-                item.priority = max(item.priority - 20, 1)  # Lower priority than unmet
+                item.priority = max(item.priority - 5, 1)  # Slight depriority only
                 self._work_queue.add_work(item)
                 self._queued_work_ids.add(item.work_id)
                 added += 1
