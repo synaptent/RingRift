@@ -52,7 +52,7 @@ describe('MoveInfo', () => {
     it('displays player and move type', () => {
       render(<MoveInfo {...defaultProps} />);
 
-      expect(screen.getByText('P0: Move Ring (legacy)')).toBeInTheDocument();
+      expect(screen.getByText('P0: Move (legacy)')).toBeInTheDocument();
     });
 
     it('displays think time when available', () => {
@@ -71,22 +71,22 @@ describe('MoveInfo', () => {
   describe('move type formatting', () => {
     const testCases = [
       { type: 'place_ring', expected: 'Place Ring' },
-      { type: 'skip_placement', expected: 'Skip Placement' },
-      { type: 'move_ring', expected: 'Move Ring (legacy)' },
-      { type: 'move_stack', expected: 'Move Stack' },
+      { type: 'skip_placement', expected: 'Pass' },
+      { type: 'move_ring', expected: 'Move (legacy)' },
+      { type: 'move_stack', expected: 'Move' },
       { type: 'build_stack', expected: 'Build Stack (legacy)' },
       { type: 'overtaking_capture', expected: 'Capture' },
       { type: 'continue_capture_segment', expected: 'Continue Capture' },
-      { type: 'process_line', expected: 'Process Line' },
-      { type: 'choose_line_option', expected: 'Line Option' },
+      { type: 'process_line', expected: 'Score Line' },
+      { type: 'choose_line_option', expected: 'Line Reward' },
       { type: 'choose_line_reward', expected: 'Line Reward (legacy)' },
-      { type: 'process_territory_region', expected: 'Territory Process (legacy)' },
-      { type: 'choose_territory_option', expected: 'Territory Option' },
-      { type: 'eliminate_rings_from_stack', expected: 'Eliminate Rings' },
-      { type: 'line_formation', expected: 'Line Formation (legacy)' },
-      { type: 'territory_claim', expected: 'Territory Claim (legacy)' },
+      { type: 'process_territory_region', expected: 'Claim Territory (legacy)' },
+      { type: 'choose_territory_option', expected: 'Claim Territory' },
+      { type: 'eliminate_rings_from_stack', expected: 'Remove Ring' },
+      { type: 'line_formation', expected: 'Line Scored (legacy)' },
+      { type: 'territory_claim', expected: 'Territory Claimed (legacy)' },
       { type: 'chain_capture', expected: 'Chain Capture' },
-      { type: 'forced_elimination', expected: 'Forced Elimination' },
+      { type: 'forced_elimination', expected: 'Sacrifice' },
       { type: 'swap_sides', expected: 'Swap Sides' },
       { type: 'recovery_slide', expected: 'Recovery' },
       { type: 'skip_recovery', expected: 'Skip Recovery' },

@@ -182,7 +182,9 @@ describe('Lobby difficulty UX and calibration integration', () => {
         isCalibrationOptIn: true,
       });
 
-      expect(mockNavigate).toHaveBeenCalledWith('/game/calibration-game-1');
+      expect(mockNavigate).toHaveBeenCalledWith('/game/calibration-game-1', {
+        state: { inviteCode: undefined },
+      });
     });
 
     it('offers a guided intro preset that starts a canonical calibration game vs AI', async () => {

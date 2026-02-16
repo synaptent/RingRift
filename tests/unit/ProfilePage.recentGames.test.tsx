@@ -8,6 +8,9 @@ import type { User } from '../../src/shared/types/user';
 import type { GameResult } from '../../src/shared/types/game';
 
 jest.mock('../../src/client/services/api');
+jest.mock('../../src/client/hooks/useDocumentTitle', () => ({
+  useDocumentTitle: jest.fn(),
+}));
 
 const mockUseAuth = jest.fn();
 jest.mock('../../src/client/contexts/AuthContext', () => ({
@@ -71,6 +74,10 @@ describe('ProfilePage recent games reason labels', () => {
         page: 1,
         totalPages: 1,
       });
+      (gameApi.getUserGames as jest.Mock).mockResolvedValue({
+        games: [],
+        pagination: { total: 0, limit: 100, offset: 0, hasMore: false },
+      });
       (userApi.getStats as jest.Mock).mockResolvedValue({ ratingHistory: [] });
 
       render(
@@ -83,8 +90,8 @@ describe('ProfilePage recent games reason labels', () => {
         expect(screen.getByText(/Recent Games/i)).toBeInTheDocument();
       });
 
-      // Victory/Defeat label still present
-      expect(screen.getByText(/Victory/i)).toBeInTheDocument();
+      // Victory/Defeat label still present (may also match "First Victory" achievement)
+      expect(screen.getAllByText(/Victory/i).length).toBeGreaterThanOrEqual(1);
 
       // Reason-specific label appears alongside board type
       expect(screen.getByText(expected)).toBeInTheDocument();

@@ -329,15 +329,15 @@ describe('MoveAnalysisPanel', () => {
       expect(screen.getByText('Capture')).toBeInTheDocument();
     });
 
-    it('displays "Line Processing" for line processing phase', () => {
+    it('displays "Line" for line processing phase', () => {
       const analysis = createMoveAnalysis({
         move: createMockMove('line_processing', 1),
       });
 
       render(<MoveAnalysisPanel analysis={analysis} players={players} />);
 
-      // process_line maps to 'Line Processing'
-      expect(screen.getByText('Line Processing')).toBeInTheDocument();
+      // process_line maps to 'Line'
+      expect(screen.getByText('Line')).toBeInTheDocument();
     });
 
     it('displays "Territory" for territory processing phase', () => {

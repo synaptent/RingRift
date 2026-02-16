@@ -1,5 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 
 // Mock the API
@@ -7,20 +8,13 @@ const mockGetLeaderboard = jest.fn();
 jest.mock('../../src/client/services/api', () => ({
   userApi: {
     getLeaderboard: (...args: unknown[]) => mockGetLeaderboard(...args),
+    searchUsers: jest.fn().mockResolvedValue({ users: [] }),
   },
 }));
 
-// Mock LoadingSpinner at module scope with mock prefix
-const mockLoadingSpinner = ({ size }: { size: string }) =>
-  React.createElement('div', {
-    'data-testid': 'loading-spinner',
-    'data-size': size,
-    children: 'Loading...',
-  });
-
-jest.mock('../../src/client/components/LoadingSpinner', () => ({
-  __esModule: true,
-  default: (props: { size: string }) => mockLoadingSpinner(props),
+// Mock useDocumentTitle
+jest.mock('../../src/client/hooks/useDocumentTitle', () => ({
+  useDocumentTitle: jest.fn(),
 }));
 
 // Import after mocks
@@ -55,19 +49,27 @@ describe('LeaderboardPage', () => {
     jest.clearAllMocks();
   });
 
-  it('shows loading spinner while fetching data', () => {
+  it('shows loading skeleton while fetching data', () => {
     mockGetLeaderboard.mockReturnValue(new Promise(() => {})); // Never resolves
 
-    render(<LeaderboardPage />);
+    render(
+      <MemoryRouter>
+        <LeaderboardPage />
+      </MemoryRouter>
+    );
 
-    expect(screen.getByTestId('loading-spinner')).toBeInTheDocument();
-    expect(screen.getByTestId('loading-spinner')).toHaveAttribute('data-size', 'lg');
+    // LeaderboardSkeleton renders pulse placeholders
+    expect(document.querySelector('.animate-pulse')).toBeInTheDocument();
   });
 
   it('displays leaderboard data after successful fetch', async () => {
     mockGetLeaderboard.mockResolvedValue({ users: mockUsers });
 
-    render(<LeaderboardPage />);
+    render(
+      <MemoryRouter>
+        <LeaderboardPage />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('TopPlayer')).toBeInTheDocument();
@@ -80,7 +82,11 @@ describe('LeaderboardPage', () => {
   it('displays ratings for each user', async () => {
     mockGetLeaderboard.mockResolvedValue({ users: mockUsers });
 
-    render(<LeaderboardPage />);
+    render(
+      <MemoryRouter>
+        <LeaderboardPage />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('2100')).toBeInTheDocument();
@@ -93,7 +99,11 @@ describe('LeaderboardPage', () => {
   it('calculates and displays win rates correctly', async () => {
     mockGetLeaderboard.mockResolvedValue({ users: mockUsers });
 
-    render(<LeaderboardPage />);
+    render(
+      <MemoryRouter>
+        <LeaderboardPage />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       // TopPlayer: 75/100 = 75%
@@ -109,7 +119,11 @@ describe('LeaderboardPage', () => {
   it('displays games played for each user', async () => {
     mockGetLeaderboard.mockResolvedValue({ users: mockUsers });
 
-    render(<LeaderboardPage />);
+    render(
+      <MemoryRouter>
+        <LeaderboardPage />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('100')).toBeInTheDocument();
@@ -122,7 +136,11 @@ describe('LeaderboardPage', () => {
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     mockGetLeaderboard.mockRejectedValue(new Error('Network error'));
 
-    render(<LeaderboardPage />);
+    render(
+      <MemoryRouter>
+        <LeaderboardPage />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Failed to load leaderboard data')).toBeInTheDocument();
@@ -135,7 +153,11 @@ describe('LeaderboardPage', () => {
   it('renders page header with title', async () => {
     mockGetLeaderboard.mockResolvedValue({ users: mockUsers });
 
-    render(<LeaderboardPage />);
+    render(
+      <MemoryRouter>
+        <LeaderboardPage />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /Leaderboard/i })).toBeInTheDocument();
@@ -147,7 +169,11 @@ describe('LeaderboardPage', () => {
   it('renders table headers correctly', async () => {
     mockGetLeaderboard.mockResolvedValue({ users: mockUsers });
 
-    render(<LeaderboardPage />);
+    render(
+      <MemoryRouter>
+        <LeaderboardPage />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('Rank')).toBeInTheDocument();
@@ -162,7 +188,11 @@ describe('LeaderboardPage', () => {
   it('displays correct rank numbers', async () => {
     mockGetLeaderboard.mockResolvedValue({ users: mockUsers });
 
-    render(<LeaderboardPage />);
+    render(
+      <MemoryRouter>
+        <LeaderboardPage />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByText('TopPlayer')).toBeInTheDocument();
@@ -179,7 +209,11 @@ describe('LeaderboardPage', () => {
   it('calls getLeaderboard with limit of 50', async () => {
     mockGetLeaderboard.mockResolvedValue({ users: [] });
 
-    render(<LeaderboardPage />);
+    render(
+      <MemoryRouter>
+        <LeaderboardPage />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(mockGetLeaderboard).toHaveBeenCalledWith({ limit: 50 });
@@ -189,14 +223,18 @@ describe('LeaderboardPage', () => {
   it('handles empty leaderboard gracefully', async () => {
     mockGetLeaderboard.mockResolvedValue({ users: [] });
 
-    render(<LeaderboardPage />);
+    render(
+      <MemoryRouter>
+        <LeaderboardPage />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(screen.getByRole('table')).toBeInTheDocument();
     });
 
-    // Table should exist but have no data rows
+    // Table should exist with header row + empty state row
     const rows = screen.getAllByRole('row');
-    expect(rows).toHaveLength(1); // Just the header row
+    expect(rows).toHaveLength(2); // Header row + "No players yet" row
   });
 });

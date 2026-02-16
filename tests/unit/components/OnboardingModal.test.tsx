@@ -44,19 +44,14 @@ describe('OnboardingModal – canonical copy & rules‑UX telemetry', () => {
     fireEvent.click(nextButton);
     fireEvent.click(nextButton);
 
-    // Victory step copy should come from ONBOARDING_COPY.victoryConcepts[0]:
-    // "Win by reaching the Ring Elimination victory threshold. In 2-player games it equals your
-    //  starting ring supply; in 3–4 player games it is higher (two thirds of your starting rings
-    //  plus one third of your opponents’ combined starting rings). Eliminated rings are permanently
-    //  removed; captured rings you carry in stacks do not count toward this threshold."
+    // Victory step now uses short descriptions from VICTORY_SHORT_DESCRIPTIONS
     const dialog = screen.getByRole('dialog');
     const text = dialog.textContent || '';
 
-    expect(text).toMatch(/Win by reaching the Ring Elimination victory threshold/i);
-    expect(text).toMatch(/2-player games it equals your starting ring supply/i);
-    expect(text).toMatch(/two thirds of your starting rings plus one third of your opponents/i);
-    expect(text).toMatch(/Eliminated rings are permanently removed/i);
-    expect(text).toMatch(/captured rings you carry in stacks do not count toward this threshold/i);
+    expect(text).toMatch(/Ring Elimination/i);
+    expect(text).toMatch(/elimination threshold/i);
+    expect(text).toMatch(/Territory Control/i);
+    expect(text).toMatch(/Last Player Standing/i);
   });
 
   it('emits a spec-aligned help_open and legacy rules_help_open event when opened', async () => {

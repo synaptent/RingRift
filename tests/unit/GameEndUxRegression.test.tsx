@@ -198,11 +198,18 @@ describe('GameEnd UX regression – VictoryModal & banners', () => {
     const dialog = screen.getByRole('dialog');
     const bannerText = getGameOverBannerText('game_completed');
 
+    // The VictoryModal description uses the full canonical phrasing including
+    // "structural stalemate" and the detailed tiebreak ladder.
     RulesUxPhrases.victory.structuralStalemate.forEach((snippet) => {
       const pattern = new RegExp(snippet, 'i');
       expect(dialog).toHaveTextContent(pattern);
-      expect(bannerText).toMatch(pattern);
     });
+
+    // The game-over banner uses a concise summary without "structural stalemate"
+    // phrasing; verify it describes the score-based resolution instead.
+    expect(bannerText).toMatch(/no moves remain/i);
+    expect(bannerText).toMatch(/territory/i);
+    expect(bannerText).toMatch(/rings eliminated/i);
 
     const modalText = dialog.textContent || '';
 

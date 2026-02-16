@@ -153,9 +153,9 @@ describe('Layout', () => {
       expect(screen.getByRole('link', { name: /leaderboard/i })).toBeInTheDocument();
     });
 
-    it('renders Sandbox navigation link', () => {
+    it('renders Practice navigation link', () => {
       renderWithRouter();
-      expect(screen.getByRole('link', { name: /sandbox/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /practice/i })).toBeInTheDocument();
     });
 
     it('renders RingRift brand link to home', () => {
