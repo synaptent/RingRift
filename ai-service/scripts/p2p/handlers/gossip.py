@@ -310,8 +310,12 @@ class GossipHandlersMixin(BaseP2PHandler):
 
             # Prepare our full state response
             now = time.time()
-            # Feb 2026: Use async version to prevent event loop blocking
-            await self._update_self_info_async()
+            # Feb 2026: Fire-and-forget self_info refresh (same pattern as handle_gossip)
+            # to prevent event loop blocking under high CPU load
+            try:
+                asyncio.create_task(self._update_self_info_async())
+            except Exception:
+                pass  # Don't block anti-entropy on self_info refresh failures
 
             all_known_states = {}
 

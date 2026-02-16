@@ -655,7 +655,47 @@ class SelfplayScheduler(
                         {"board_type": "hex8", "num_players": 2, "engine_mode": "gumbel-mcts", "profile": "balanced", "description": "default"},
                     ] * k
 
-            selected_profiles = select_diverse_profiles(k=num_processes)
+            # Feb 2026: Starvation-aware profile selection.
+            # The starvation enforcement (_get_enforced_minimum_allocation) was only
+            # wired into get_job_for_node() (PredictiveScalingLoop path), but the
+            # primary dispatch path (auto_start_selfplay) used purely random weights.
+            # This caused data-starved configs (hexagonal_2p: 210 games, hexagonal_4p:
+            # 323 games) to get the same allocation as well-served configs.
+            # Now: force at least half of processes to target the most starved configs.
+            forced_profiles: list[dict] = []
+            try:
+                underserved = self._get_underserved_configs()
+                if underserved:
+                    # Sort by game count (most starved first)
+                    underserved.sort(key=lambda x: x[1])
+                    # Force at least half the processes to target starved configs
+                    num_forced = max(1, num_processes // 2)
+                    for i in range(num_forced):
+                        config_key, game_count = underserved[i % len(underserved)]
+                        parts = config_key.split("_")
+                        board_type = "_".join(parts[:-1])
+                        n_players = int(parts[-1].rstrip("p"))
+                        forced_profiles.append({
+                            "engine_mode": "gumbel-mcts",
+                            "board_type": board_type,
+                            "num_players": n_players,
+                            "profile": "balanced",
+                            "description": f"Starvation-forced {config_key} ({game_count} games)",
+                        })
+                    if forced_profiles:
+                        forced_desc = ", ".join(
+                            f"{f['board_type']}_{f['num_players']}p" for f in forced_profiles
+                        )
+                        self._log_info(
+                            f"Starvation override: {len(forced_profiles)}/{num_processes} slots "
+                            f"forced to [{forced_desc}]"
+                        )
+            except Exception:
+                pass  # Fall through to random selection
+
+            remaining = num_processes - len(forced_profiles)
+            random_profiles = select_diverse_profiles(k=remaining) if remaining > 0 else []
+            selected_profiles = forced_profiles + random_profiles
 
             # Build job configs from selected profiles
             job_configs = []
