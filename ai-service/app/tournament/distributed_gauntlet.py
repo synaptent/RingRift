@@ -458,6 +458,46 @@ class DistributedNNGauntlet:
 
         return baselines
 
+    def _ensure_baselines_registered(
+        self, baselines: list[str], config_key: str
+    ) -> None:
+        """Auto-register heuristic/random baselines as participants.
+
+        Without registered baselines, Elo ratings are only relative to
+        neural net self-variants. Baselines provide absolute calibration.
+        """
+        BASELINE_TYPES = {
+            "heuristic": ("baseline", "HEURISTIC", 2, False),
+            "random_ai": ("baseline", "RANDOM", 1, False),
+        }
+
+        if not hasattr(self, "_elo_service") or self._elo_service is None:
+            try:
+                from app.training.elo_service import get_elo_service
+                self._elo_service = get_elo_service()
+            except (ImportError, Exception):
+                pass
+
+        elo_svc = getattr(self, "_elo_service", None)
+        if elo_svc is None:
+            return
+
+        for baseline_id in baselines:
+            meta = BASELINE_TYPES.get(baseline_id)
+            if meta is None:
+                continue
+            ptype, ai_type, difficulty, use_nn = meta
+            try:
+                elo_svc.elo_db.register_participant(
+                    participant_id=baseline_id,
+                    participant_type=ptype,
+                    ai_type=ai_type,
+                    difficulty=difficulty,
+                    use_neural_net=use_nn,
+                )
+            except Exception as e:
+                logger.debug(f"[Gauntlet] Baseline registration for {baseline_id}: {e}")
+
     def create_game_tasks(
         self,
         unrated_models: list[str],
@@ -556,6 +596,10 @@ class DistributedNNGauntlet:
         # Select baselines
         baselines = self.select_baselines(config_key)
         logger.info(f"[Gauntlet] Baselines: {baselines}")
+
+        # Auto-register baseline participants (heuristic/random) so they
+        # appear in unified_elo.db and provide absolute Elo calibration
+        self._ensure_baselines_registered(baselines, config_key)
 
         # Create game tasks
         tasks = self.create_game_tasks(unrated, baselines, config_key)

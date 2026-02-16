@@ -872,12 +872,11 @@ class GPUGumbelMCTS:
             # The policy tensor is indexed by tree action indices (from top_k_indices),
             # not by sequential valid_moves indices
             policy = self.tree.get_policy_distribution(tree_idx=0)
+            policy_list = policy.tolist()
             policy_dict = {}
             for i, move in enumerate(valid_moves):
                 move_key = self._move_to_key(move)
-                # i is the index into valid_moves, which is also the tree action index
-                # used when initializing the tree (top_k_indices are sampled from 0..len(valid_moves)-1)
-                policy_dict[move_key] = policy[i].item() if i < len(policy) else 0.0
+                policy_dict[move_key] = policy_list[i] if i < len(policy_list) else 0.0
 
             return best_move, policy_dict
 
@@ -954,11 +953,12 @@ class GPUGumbelMCTS:
 
             # Store prior policy for stats
             prior_probs = F.softmax(policy_logits, dim=-1)
+            prior_probs_list = prior_probs.tolist()
             prior_policy_dict = {}
             for i, move in enumerate(valid_moves):
                 move_key = self._move_to_key(move)
-                if i < len(prior_probs):
-                    prior_policy_dict[move_key] = prior_probs[i].item()
+                if i < len(prior_probs_list):
+                    prior_policy_dict[move_key] = prior_probs_list[i]
 
             # Initialize root with Gumbel-Top-K sampling
             num_sampled = min(self.config.num_sampled_actions, num_actions)
@@ -1056,10 +1056,11 @@ class GPUGumbelMCTS:
 
             # Build policy distribution
             policy = self.tree.get_policy_distribution(tree_idx=0)
+            policy_list = policy.tolist()
             policy_dict = {}
             for i, move in enumerate(valid_moves):
                 move_key = self._move_to_key(move)
-                policy_dict[move_key] = policy[i].item() if i < len(policy) else 0.0
+                policy_dict[move_key] = policy_list[i] if i < len(policy_list) else 0.0
 
             # Extract rich statistics
             stats = self._extract_search_stats(
@@ -1089,18 +1090,18 @@ class GPUGumbelMCTS:
         q_values = {}
         visit_counts = {}
 
-        # Get action values and visits from tree
-        action_values_tensor = self.tree.action_values[0]  # (num_actions,)
-        action_visits_tensor = self.tree.action_visits[0]  # (num_actions,)
+        # Get action values and visits from tree (batch to Python lists)
+        action_values_list = self.tree.action_values[0].tolist()  # (num_actions,)
+        action_visits_list = self.tree.action_visits[0].tolist()  # (num_actions,)
 
         total_sims = 0
         values_for_uncertainty = []
 
         for i, move in enumerate(valid_moves):
             move_key = self._move_to_key(move)
-            if i < len(action_values_tensor):
-                visits = int(action_visits_tensor[i].item())
-                total_value = action_values_tensor[i].item()
+            if i < len(action_values_list):
+                visits = int(action_visits_list[i])
+                total_value = action_values_list[i]
 
                 visit_counts[move_key] = visits
                 if visits > 0:
@@ -1766,10 +1767,11 @@ class MultiTreeMCTS:
 
                 # Build policy dict
                 policy = self.tree.get_policy_distribution(tree_idx=b)
+                policy_list = policy.tolist()
                 policy_dict = {}
                 for i, move in enumerate(valid_moves):
                     move_key = self._move_to_key(move)
-                    policy_dict[move_key] = policy[i].item() if i < len(policy) else 0.0
+                    policy_dict[move_key] = policy_list[i] if i < len(policy_list) else 0.0
                 result_policies.append(policy_dict)
 
             return result_moves, result_policies

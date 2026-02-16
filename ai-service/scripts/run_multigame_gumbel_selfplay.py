@@ -239,16 +239,25 @@ def run_multigame_selfplay(args):
     except ImportError:
         pass
 
+    # Resolve simulation budget (Elo-adaptive if model_elo provided)
+    simulation_budget = args.simulation_budget
+    if args.model_elo > 0:
+        from app.ai.gumbel_common import get_elo_adaptive_budget
+        simulation_budget = get_elo_adaptive_budget(args.model_elo)
+        logger.info(
+            f"Elo-adaptive budget: model_elo={args.model_elo} -> budget={simulation_budget}"
+        )
+
     logger.info(
         f"Starting multigame Gumbel selfplay: {args.board} {args.num_players}P, "
         f"{args.num_games} games, batch={args.batch_size}, "
-        f"budget={args.simulation_budget}, device={device}"
+        f"budget={simulation_budget}, device={device}"
     )
 
     # Create runner
     runner = MultiGameGumbelRunner(
         num_games=args.batch_size,
-        simulation_budget=args.simulation_budget,
+        simulation_budget=simulation_budget,
         num_sampled_actions=args.num_sampled_actions,
         board_type=board_type_enum,
         num_players=args.num_players,
@@ -413,6 +422,10 @@ def main():
     parser.add_argument(
         "--temperature-threshold", type=int, default=30,
         help="Move after which to reduce temperature (default: 30)",
+    )
+    parser.add_argument(
+        "--model-elo", type=float, default=0,
+        help="Current model Elo for adaptive budget (0 = use --simulation-budget)",
     )
     parser.add_argument(
         "--allow-fresh-weights", action="store_true",

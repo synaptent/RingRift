@@ -320,10 +320,19 @@ class GumbelMCTSAI(BaseAI):
             logger.warning(f"GumbelMCTSAI: failed to load neural net ({e})")
             self.neural_net = None
 
-        # GPU Tree-based Gumbel MCTS (experimental - for 10-20x speedup)
+        # GPU Tree-based Gumbel MCTS (for 10-20x speedup)
         # When enabled, uses fully GPU-accelerated tree search instead of
         # Python-based Sequential Halving. See tensor_gumbel_tree.py.
-        self._use_gpu_tree: bool = getattr(config, 'use_gpu_tree', False)
+        # Auto-enable on CUDA nodes unless explicitly disabled via config.
+        cfg_gpu_tree = getattr(config, 'use_gpu_tree', None)
+        if cfg_gpu_tree is not None:
+            self._use_gpu_tree: bool = cfg_gpu_tree
+        else:
+            try:
+                import torch
+                self._use_gpu_tree = torch.cuda.is_available()
+            except ImportError:
+                self._use_gpu_tree = False
         self._gpu_gumbel_mcts: "GPUGumbelMCTS | None" = None  # Lazy initialized
 
         if self._use_gpu_tree:

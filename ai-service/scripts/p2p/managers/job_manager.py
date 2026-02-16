@@ -2192,6 +2192,7 @@ class JobManager(EventSubscriptionMixin):
                 simulation_budget = engine_extra_args["budget"]
 
             batch_size = engine_extra_args.get("batch_size", 64) if engine_extra_args else 64
+            model_elo = engine_extra_args.get("model_elo", 0) if engine_extra_args else 0
 
             cmd = [
                 sys.executable,
@@ -2205,9 +2206,12 @@ class JobManager(EventSubscriptionMixin):
                 "--model-version", model_version,
                 "--seed", str(int(time.time() * 1000) % 2**31),
             ]
+            if model_elo > 0:
+                cmd.extend(["--model-elo", str(model_elo)])
             logger.info(
                 f"Using multigame Gumbel selfplay for {board_type}_{num_players}p "
                 f"(job {job_id}) - batch={batch_size}, budget={simulation_budget}"
+                f"{f', model_elo={model_elo}' if model_elo > 0 else ''}"
             )
 
         elif effective_mode in self.SEARCH_ENGINE_MODES:

@@ -197,15 +197,18 @@ class ComprehensiveEvaluationLoop(BaseLoop):
             logger.debug(f"[{self.name}] Not leader, skipping evaluation cycle")
             return
 
-        # On coordinator nodes, we can only dispatch evaluations to GPU nodes
-        # via WorkDistributor. If that's not available, skip the entire cycle
-        # to avoid wasting time on model enumeration that leads nowhere.
+        # On coordinator nodes, we dispatch evaluations to GPU nodes via
+        # the work queue. If dispatch fails for a specific evaluation, it's
+        # handled per-item in _dispatch_evaluation() (which already has a
+        # coordinator guard to skip local execution). We do NOT skip the
+        # entire cycle here — even if dispatch capability is temporarily
+        # unavailable, we still want to enumerate models and queue work
+        # items so they'll be picked up when GPU nodes pull work.
         if self._is_coordinator() and not self._can_dispatch_to_cluster():
-            logger.debug(
-                f"[{self.name}] Coordinator without cluster dispatch capability, "
-                "skipping evaluation cycle"
+            logger.info(
+                f"[{self.name}] Coordinator without direct dispatch - "
+                "will queue evaluations for GPU nodes to pull"
             )
-            return
 
         logger.info(f"[{self.name}] Starting comprehensive evaluation cycle")
         cycle_start = time.time()

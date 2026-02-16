@@ -755,8 +755,8 @@ class EloDatabase:
         conn.execute("""
             INSERT INTO elo_ratings
             (participant_id, board_type, num_players, rating, games_played,
-             wins, losses, draws, rating_deviation, last_update)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             wins, losses, draws, rating_deviation, peak_rating, last_update)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(participant_id, board_type, num_players) DO UPDATE SET
                 rating = excluded.rating,
                 games_played = excluded.games_played,
@@ -764,6 +764,7 @@ class EloDatabase:
                 losses = excluded.losses,
                 draws = excluded.draws,
                 rating_deviation = excluded.rating_deviation,
+                peak_rating = MAX(COALESCE(elo_ratings.peak_rating, 0), excluded.peak_rating),
                 last_update = excluded.last_update
         """, (
             rating.participant_id,
@@ -775,6 +776,7 @@ class EloDatabase:
             rating.losses,
             rating.draws,
             rating.calculated_rd,
+            rating.rating,
             time.time(),
         ))
         conn.commit()
@@ -791,8 +793,8 @@ class EloDatabase:
             conn.execute("""
                 INSERT INTO elo_ratings
                 (participant_id, board_type, num_players, rating, games_played,
-                 wins, losses, draws, rating_deviation, last_update)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 wins, losses, draws, rating_deviation, peak_rating, last_update)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(participant_id, board_type, num_players) DO UPDATE SET
                     rating = excluded.rating,
                     games_played = excluded.games_played,
@@ -800,10 +802,11 @@ class EloDatabase:
                     losses = excluded.losses,
                     draws = excluded.draws,
                     rating_deviation = excluded.rating_deviation,
+                    peak_rating = MAX(COALESCE(elo_ratings.peak_rating, 0), excluded.peak_rating),
                     last_update = excluded.last_update
             """, (
                 r.participant_id, r.board_type, r.num_players, r.rating,
-                r.games_played, r.wins, r.losses, r.draws, r.calculated_rd, now,
+                r.games_played, r.wins, r.losses, r.draws, r.calculated_rd, r.rating, now,
             ))
         conn.commit()
 

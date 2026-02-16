@@ -169,6 +169,21 @@ class MultiGameGumbelRunner:
         # Rules engine
         self.engine = DefaultRulesEngine()
 
+        # GPU tensor tree for accelerated search (auto-detected)
+        self._gpu_searcher = None
+        if device == "cuda":
+            try:
+                from app.ai.tensor_gumbel_tree import MultiTreeMCTS, MultiTreeMCTSConfig
+                self._gpu_searcher = MultiTreeMCTS(MultiTreeMCTSConfig(
+                    num_sampled_actions=num_sampled_actions,
+                    simulation_budget=simulation_budget,
+                    device=device,
+                    eval_mode="hybrid" if neural_net else "heuristic",
+                ))
+                logger.info("MultiGameGumbelRunner: GPU tensor tree enabled")
+            except (ImportError, RuntimeError) as e:
+                logger.info(f"MultiGameGumbelRunner: GPU tree unavailable ({e}), using CPU search")
+
         # Statistics
         self.total_nn_calls = 0
         self.total_leaves_evaluated = 0
@@ -205,16 +220,19 @@ class MultiGameGumbelRunner:
             if not games_needing_moves:
                 break
 
-            # Run synchronized Sequential Halving across all games
-            self._run_synchronized_search(games_needing_moves)
+            # Run search and apply moves
+            if self._gpu_searcher and self.neural_net:
+                self._run_gpu_tree_search(games_needing_moves)
+            else:
+                self._run_synchronized_search(games_needing_moves)
+                for game in games_needing_moves:
+                    if not game.done:
+                        self._apply_best_move(game)
 
-            # Apply selected moves
+            # Check for game end
             for game in games_needing_moves:
                 if game.done:
                     continue
-                self._apply_best_move(game)
-
-                # Check for game end
                 if game.game_state.is_game_over():
                     game.done = True
                     game.winner = game.game_state.winner
@@ -281,6 +299,49 @@ class MultiGameGumbelRunner:
             game_state=mstate,
             current_player=mstate.current_player,
         )
+
+    def _run_gpu_tree_search(self, games: list[GameSearchState]) -> None:
+        """Run GPU tensor tree search and apply moves for a batch of games.
+
+        Converts mutable states to immutable, runs MultiTreeMCTS.search_batch,
+        then applies returned moves back to mutable states with policy recording.
+        Falls back to CPU search on error.
+        """
+        # Convert mutable states to immutable for GPU search
+        immutable_states = [g.game_state.to_immutable() for g in games]
+
+        try:
+            moves, policies = self._gpu_searcher.search_batch(
+                immutable_states, self.neural_net
+            )
+            self.total_nn_calls += 1
+        except (RuntimeError, ValueError, AttributeError) as e:
+            logger.warning(f"GPU tree search failed, falling back to CPU: {e}")
+            self._run_synchronized_search(games)
+            for game in games:
+                if not game.done:
+                    self._apply_best_move(game)
+            return
+
+        # Apply moves and record policies
+        for game, move, policy in zip(games, moves, policies):
+            if game.done:
+                continue
+            try:
+                game.game_state.make_move(move)
+                game.move_count += 1
+
+                # Record move with policy for training data
+                move_data = move.model_dump(by_alias=True, exclude_none=True, mode="json")
+                move_data["moveNumber"] = game.move_count
+                move_data["mcts_policy"] = policy
+                game.moves_played.append(move_data)
+
+                # Update current player
+                game.current_player = game.game_state.current_player
+            except Exception as e:
+                logger.warning(f"GPU tree move apply failed for game {game.game_idx}: {e}")
+                game.done = True
 
     def _run_synchronized_search(self, games: list[GameSearchState]) -> None:
         """Run Gumbel MCTS search synchronized across all games.
@@ -413,9 +474,8 @@ class MultiGameGumbelRunner:
 
         # Apply move to get resulting state
         try:
-            # Copy state by converting to immutable and back
-            immutable_parent = game.game_state.to_immutable()
-            child_state = MutableGameState.from_immutable(immutable_parent)
+            # Fast mutable-to-mutable copy (avoids Pydantic round-trip)
+            child_state = game.game_state.copy()
             child_state.make_move(action.move)
             immutable = child_state.to_immutable()
         except Exception as e:

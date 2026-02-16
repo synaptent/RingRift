@@ -450,6 +450,69 @@ class MutableGameState:
 
         return mutable
 
+    def copy(self) -> "MutableGameState":
+        """Create a deep copy without going through immutable GameState.
+
+        ~2-3x faster than to_immutable() -> from_immutable() because it
+        avoids Pydantic model construction and validation overhead.
+        """
+        clone = MutableGameState()
+
+        # Copy board state (deep copy mutable containers)
+        clone._stacks = {k: v.copy() for k, v in self._stacks.items()}
+        clone._markers = {k: v.copy() for k, v in self._markers.items()}
+        clone._collapsed = dict(self._collapsed)
+        clone._board_eliminated_rings = dict(self._board_eliminated_rings)
+
+        # Copy player state (deep copy)
+        clone._players = {k: v.copy() for k, v in self._players.items()}
+
+        # Copy turn/phase state
+        clone._phase = self._phase
+        clone._active_player = self._active_player
+        clone._chain_capture_state = self._chain_capture_state
+        clone._must_move_from_stack_key = self._must_move_from_stack_key
+
+        # Copy aggregate tracking
+        clone._total_rings_eliminated = self._total_rings_eliminated
+        clone._zobrist_hash = self._zobrist_hash
+
+        # Copy LPS tracking
+        clone._lps_round_index = self._lps_round_index
+        clone._lps_current_round_actor_mask = dict(self._lps_current_round_actor_mask)
+        clone._lps_current_round_first_player = self._lps_current_round_first_player
+        clone._lps_exclusive_player_for_completed_round = self._lps_exclusive_player_for_completed_round
+        clone._lps_consecutive_exclusive_rounds = self._lps_consecutive_exclusive_rounds
+        clone._lps_consecutive_exclusive_player = self._lps_consecutive_exclusive_player
+        clone._lps_rounds_required = self._lps_rounds_required
+
+        # Copy immutable reference fields (shallow - these don't change)
+        clone._id = self._id
+        clone._board_type = self._board_type
+        clone._board_size = self._board_size
+        clone._rng_seed = self._rng_seed
+        clone._game_status = self._game_status
+        clone._winner = self._winner
+        clone._victory_threshold = self._victory_threshold
+        clone._territory_victory_threshold = self._territory_victory_threshold
+        clone._total_rings_in_play = self._total_rings_in_play
+        clone._time_control = self._time_control
+        clone._spectators = list(self._spectators)
+        clone._created_at = self._created_at
+        clone._last_move_at = self._last_move_at
+        clone._is_rated = self._is_rated
+        clone._max_players = self._max_players
+        clone._move_history = list(self._move_history)
+
+        # Copy lines and territories (shallow - rarely mutated during search)
+        clone._formed_lines = list(self._formed_lines)
+        clone._territories = dict(self._territories)
+
+        # Share Zobrist singleton
+        clone._zobrist = self._zobrist
+
+        return clone
+
     def to_immutable(self) -> GameState:
         """Convert back to immutable GameState.
 
