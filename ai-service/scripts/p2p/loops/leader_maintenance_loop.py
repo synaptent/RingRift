@@ -113,11 +113,12 @@ class LeaderMaintenanceLoop(BaseLoop):
     def _is_primary_leader_node(self) -> bool:
         """Check if this node is the designated primary leader.
 
-        The primary leader is the first node in the voter list.
-        This is typically the main coordinator (local-mac).
+        Uses RINGRIFT_IS_COORDINATOR env var as the primary signal,
+        falling back to voter list position. The coordinator node is
+        the designated leader since it runs the work queue.
 
         Returns:
-            True if this node is first in voter list
+            True if this node should be the primary leader
         """
         if self._is_primary_voter is not None:
             return self._is_primary_voter
@@ -126,11 +127,23 @@ class LeaderMaintenanceLoop(BaseLoop):
         if not node_id:
             return False
 
+        # Feb 2026: Use RINGRIFT_IS_COORDINATOR as the primary signal.
+        # The voter list order is unreliable (alphabetical, not priority-based).
+        import os
+        is_coordinator = os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() in ("true", "1", "yes")
+        if is_coordinator:
+            self._is_primary_voter = True
+            logger.info(
+                f"[LeaderMaintenance] This node ({node_id}) is the designated "
+                f"coordinator (RINGRIFT_IS_COORDINATOR=true)"
+            )
+            return self._is_primary_voter
+
+        # Fallback: check voter list position
         voters = self._get_voter_list()
         if not voters:
             return False
 
-        # First voter is the designated primary leader
         self._is_primary_voter = (voters[0] == node_id)
         if self._is_primary_voter:
             logger.info(
