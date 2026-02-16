@@ -1691,6 +1691,9 @@ class UnifiedQueuePopulator:
                 "enable_augmentation": True,
                 "use_integrated_enhancements": True,
                 "augment_hex_symmetry": is_hex,
+                # Feb 2026: Training requires GPU - prevents CPU-only nodes
+                # (hetzner-cpu*) from claiming training work they can't complete
+                "requires_gpu": True,
             },
         )
 
