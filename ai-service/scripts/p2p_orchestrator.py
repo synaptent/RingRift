@@ -2316,6 +2316,9 @@ class P2POrchestrator(
             is_emergency_active_fn=_safeguards.is_emergency_active if HAS_SAFEGUARDS and _safeguards else None,
             verbose=self.verbose,
         )
+        # Feb 2026: Wire orchestrator reference so auto_start_selfplay can make HTTP calls
+        # This was missing after SelfplayScheduler extraction from p2p_orchestrator.py
+        self.selfplay_scheduler._orchestrator = self
         # Subscribe to feedback loop events (December 2025)
         # Wave 7 Phase 1.1: Use retry mechanism for reliable subscription
         self.selfplay_scheduler.subscribe_to_events_with_retry()

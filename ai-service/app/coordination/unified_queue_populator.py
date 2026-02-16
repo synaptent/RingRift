@@ -837,6 +837,42 @@ class UnifiedQueuePopulator:
             logger.debug(f"[QueuePopulator] Failed to get pending by type: {e}")
             return {}
 
+    def _get_pending_tournament_by_config(self) -> dict[str, int]:
+        """Get pending tournament counts grouped by config key.
+
+        Feb 2026: Added to prevent evaluation starvation. When the global
+        tournament limit is reached, some configs may have 0 pending
+        tournaments while others have 40+. This enables per-config fairness.
+
+        Returns:
+            Dict mapping config_key (e.g. "hex8_2p") to pending tournament count
+        """
+        if self._work_queue is None:
+            return {}
+        try:
+            db_path = getattr(self._work_queue, "db_path", None)
+            if db_path:
+                conn = sqlite3.connect(db_path)
+                cursor = conn.execute(
+                    "SELECT json_extract(config, '$.board_type'), "
+                    "json_extract(config, '$.num_players'), COUNT(*) "
+                    "FROM work_items "
+                    "WHERE status = 'pending' AND work_type = 'tournament' "
+                    "GROUP BY json_extract(config, '$.board_type'), "
+                    "json_extract(config, '$.num_players')"
+                )
+                result = {}
+                for row in cursor.fetchall():
+                    if row[0] and row[1]:
+                        config_key = f"{row[0]}_{row[1]}p"
+                        result[config_key] = row[2]
+                conn.close()
+                return result
+            return {}
+        except Exception as e:
+            logger.debug(f"[QueuePopulator] Failed to get tournament by config: {e}")
+            return {}
+
     def _is_type_over_limit(self, work_type: str, pending_by_type: dict[str, int]) -> bool:
         """Check if a work type is over its pending limit.
 
@@ -1915,10 +1951,29 @@ class UnifiedQueuePopulator:
             training_count = 0
 
         if pending_tournament >= self.config.max_pending_tournament:
-            logger.info(
-                f"[QueuePopulator] Tournament over limit ({pending_tournament}/{self.config.max_pending_tournament}), skipping"
-            )
-            tournament_count = 0
+            # Feb 2026: Instead of blanket-blocking all tournaments, check per-config.
+            # Previously, configs like hex8/hexagonal got zero evaluation for days
+            # because sq8/sq19 had 40+ pending each, exceeding the 200 global limit.
+            per_config = self._get_pending_tournament_by_config()
+            all_config_keys = set()
+            for t in list(self._targets.values()):
+                all_config_keys.add(t.config_key)
+            starved = [k for k in all_config_keys if per_config.get(k, 0) == 0]
+            if starved:
+                tournament_count = len(starved)
+                self._tournament_starved_configs = set(starved)
+                logger.info(
+                    f"[QueuePopulator] Tournament over limit ({pending_tournament}/"
+                    f"{self.config.max_pending_tournament}), but {len(starved)} configs "
+                    f"have 0 pending - adding for: {sorted(starved)}"
+                )
+            else:
+                tournament_count = 0
+                self._tournament_starved_configs = None
+                logger.info(
+                    f"[QueuePopulator] Tournament over limit ({pending_tournament}/"
+                    f"{self.config.max_pending_tournament}), all configs have pending, skipping"
+                )
 
         # Early exit if all types are over limit
         if selfplay_count == 0 and training_count == 0 and tournament_count == 0:
@@ -2070,16 +2125,31 @@ class UnifiedQueuePopulator:
             )
 
         # Add tournament items
-        for i in range(tournament_count):
-            target = unmet[i % len(unmet)]
+        # Feb 2026: When global limit is hit but some configs are starved,
+        # only create tournaments for starved configs to ensure fair evaluation.
+        starved_configs = getattr(self, "_tournament_starved_configs", None)
+        if starved_configs and tournament_count > 0:
+            # Build target list from all targets (met + unmet) that are starved
+            tournament_targets = [
+                t for t in self._targets.values()
+                if t.config_key in starved_configs
+            ]
+        elif tournament_count > 0 and unmet:
+            tournament_targets = [unmet[i % len(unmet)] for i in range(tournament_count)]
+        else:
+            tournament_targets = []
+        # Reset starved config tracking
+        self._tournament_starved_configs = None
+
+        for target in tournament_targets:
             try:
                 item = self._create_tournament_item(target.board_type, target.num_players)
                 if scheduler_priorities:
                     item.priority = self._compute_work_priority(
                         item.priority, target.config_key, scheduler_priorities
                     )
-                # January 2026: Force-add for starved configs to bypass backpressure
-                force_add = self._should_force_queue_add(target.config_key)
+                # Force-add for starved configs to bypass backpressure
+                force_add = starved_configs is not None or self._should_force_queue_add(target.config_key)
                 self._work_queue.add_work(item, force=force_add)
                 self._queued_work_ids.add(item.work_id)
                 added += 1
