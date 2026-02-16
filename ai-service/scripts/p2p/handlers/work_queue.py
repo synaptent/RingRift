@@ -1113,6 +1113,44 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     if board_type and num_players:
                         populator.increment_training(board_type, num_players)
 
+            # Feb 2026: Emit TRAINING_COMPLETED for training work completions
+            # from GPU nodes. The result only contains {"node_id": "..."} because
+            # _execute_claimed_work fires off training as a background subprocess
+            # and reports completion immediately. We reconstruct model_path from
+            # the work config so the evaluation pipeline can find the model.
+            if success and work_type == WorkType.TRAINING:
+                board_type = config.get("board_type", "")
+                num_players = config.get("num_players", 0)
+                config_key = f"{board_type}_{num_players}p"
+                model_version = config.get("model_version", "v2")
+                if model_version and model_version != "v2":
+                    model_filename = f"canonical_{config_key}_{model_version}.pth"
+                else:
+                    model_filename = f"canonical_{config_key}.pth"
+                model_path = f"models/{model_filename}"
+                try:
+                    from app.coordination.event_emission_helpers import safe_emit_event
+                    safe_emit_event(
+                        "TRAINING_COMPLETED",
+                        {
+                            "config_key": config_key,
+                            "board_type": board_type,
+                            "num_players": num_players,
+                            "model_version": model_version,
+                            "model_path": model_path,
+                            "work_id": work_id,
+                            "trained_by": assigned_to,
+                            "source": "distributed_training",
+                        },
+                        context="work_queue_training_complete",
+                    )
+                    logger.info(
+                        f"Emitted TRAINING_COMPLETED for {work_id}: "
+                        f"{config_key} model={model_path} (trained by {assigned_to})"
+                    )
+                except ImportError:
+                    logger.debug("Event emission not available for training completion")
+
             # Feb 2026: Emit EVALUATION_COMPLETED for evaluation work so the
             # auto-promotion pipeline can process results from GPU nodes.
             # Previously results were silently dropped because
