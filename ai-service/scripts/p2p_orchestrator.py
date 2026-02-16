@@ -7904,11 +7904,13 @@ class P2POrchestrator(
 
                 # Build config key and model filename
                 config_key = f"{board_type}_{num_players}p"
-                # Only add version suffix for non-v2 versions (v2 models have no suffix)
+                # Feb 2026: Save to candidate_ instead of canonical_ to prevent
+                # overwriting the production model before evaluation confirms improvement.
+                # Promotion copies candidate_ → canonical_ after Elo gate passes.
                 if model_version and model_version != "v2":
-                    model_filename = f"canonical_{config_key}_{model_version}.pth"
+                    model_filename = f"candidate_{config_key}_{model_version}.pth"
                 else:
-                    model_filename = f"canonical_{config_key}.pth"
+                    model_filename = f"candidate_{config_key}.pth"
 
                 # Build training command
                 cmd = [
@@ -8163,10 +8165,13 @@ class P2POrchestrator(
 
                 # Check model exists locally
                 if not Path(model_path).exists():
-                    # Try canonical path
+                    # Try candidate or canonical path
                     config_key_check = f"{board_type}_{num_players}p"
+                    candidate_path = f"models/candidate_{config_key_check}.pth"
                     canonical_path = f"models/canonical_{config_key_check}.pth"
-                    if Path(canonical_path).exists():
+                    if Path(candidate_path).exists():
+                        model_path = candidate_path
+                    elif Path(canonical_path).exists():
                         model_path = canonical_path
                     else:
                         logger.warning(f"Gauntlet work {work_id}: Model not found: {model_path}")

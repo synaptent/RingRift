@@ -114,6 +114,7 @@ class PromotionType(Enum):
     TIER = "tier"                # Tier ladder promotion (D1→D2, etc.)
     CHAMPION = "champion"        # Tournament champion promotion
     ROLLBACK = "rollback"        # Rollback to previous version
+    ELO_IMPROVEMENT = "elo_improvement"  # Auto-promotion after Elo gain
 
 
 @dataclass
@@ -160,6 +161,9 @@ class PromotionDecision:
     games_played: int = 0
     win_rate: float | None = None
     confidence: float | None = None
+
+    # Model path (Feb 2026: used by ELO_IMPROVEMENT to find candidate file)
+    model_path: str | None = None
 
     # For tier promotions
     current_tier: str | None = None
@@ -919,6 +923,8 @@ class PromotionController:
                 success = self._execute_champion_promotion(decision)
             elif decision.promotion_type == PromotionType.ROLLBACK:
                 success = self._execute_rollback(decision)
+            elif decision.promotion_type == PromotionType.ELO_IMPROVEMENT:
+                success = self._execute_elo_promotion(decision)
             else:
                 logger.error(f"Unknown promotion type: {decision.promotion_type}")
                 success = False
@@ -1258,6 +1264,68 @@ class PromotionController:
         except Exception as e:
             # Symlink creation failure shouldn't fail the promotion
             logger.warning(f"[PromotionController] Failed to create inference symlink: {e}")
+
+    def _execute_elo_promotion(self, decision: PromotionDecision) -> bool:
+        """Execute Elo-based auto-promotion: copy candidate model to canonical.
+
+        Feb 2026: Training now saves to candidate_{config}.pth instead of
+        canonical_{config}.pth. This method copies candidate → canonical
+        after evaluation confirms the model is an improvement.
+        """
+        try:
+            import shutil
+            from pathlib import Path
+
+            config_key = self._extract_config_key(decision.model_id)
+            models_dir = Path(__file__).parent.parent.parent / "models"
+
+            # Use explicit model_path if available, else derive from config_key
+            if decision.model_path:
+                candidate_path = Path(decision.model_path)
+                if not candidate_path.is_absolute():
+                    candidate_path = models_dir.parent / candidate_path
+            else:
+                candidate_path = models_dir / f"candidate_{config_key}.pth"
+            canonical_path = models_dir / f"canonical_{config_key}.pth"
+
+            if not candidate_path.exists():
+                logger.warning(
+                    f"[PromotionController] Candidate model not found: {candidate_path}"
+                )
+                return False
+
+            # Back up current canonical before overwriting
+            if canonical_path.exists():
+                backup_path = models_dir / f"canonical_{config_key}.backup.pth"
+                shutil.copy2(str(canonical_path), str(backup_path))
+                logger.info(
+                    f"[PromotionController] Backed up canonical to {backup_path.name}"
+                )
+
+            # Atomic copy: write to temp, then rename
+            tmp_path = canonical_path.with_suffix(".tmp")
+            shutil.copy2(str(candidate_path), str(tmp_path))
+            tmp_path.rename(canonical_path)
+
+            logger.info(
+                f"[PromotionController] Promoted candidate → canonical for {config_key}"
+            )
+
+            # Create inference symlinks
+            self._create_inference_symlinks(decision)
+
+            # Update model registry if available
+            if self.model_registry:
+                try:
+                    from app.training.model_registry import ModelStage
+                    self.model_registry.promote_model(decision.model_id, ModelStage.PRODUCTION)
+                except Exception as e:
+                    logger.debug(f"[PromotionController] Registry update: {e}")
+
+            return True
+        except Exception as e:
+            logger.error(f"[PromotionController] Elo promotion failed: {e}")
+            return False
 
     def _execute_tier_promotion(self, decision: PromotionDecision) -> bool:
         """Execute tier promotion.

@@ -1238,6 +1238,7 @@ class AutoPromotionDaemon(HandlerBase):
                 win_rate=candidate.evaluation_results.get("HEURISTIC", 0.0),
                 current_elo=candidate.estimated_elo,
                 games_played=sum(candidate.evaluation_games.values()),
+                model_path=model_path,
             )
 
             # Note: execute_promotion is sync, run in thread to avoid blocking

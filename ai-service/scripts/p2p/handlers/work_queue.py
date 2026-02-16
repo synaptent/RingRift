@@ -1124,10 +1124,11 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 # Use result data from GPU node if available, else reconstruct
                 result_model_path = result.get("model_path", "")
                 if not result_model_path:
+                    # Feb 2026: Fallback uses candidate_ (training now saves there)
                     if model_version and model_version != "v2":
-                        model_filename = f"canonical_{config_key}_{model_version}.pth"
+                        model_filename = f"candidate_{config_key}_{model_version}.pth"
                     else:
-                        model_filename = f"canonical_{config_key}.pth"
+                        model_filename = f"candidate_{config_key}.pth"
                     result_model_path = f"models/{model_filename}"
                 final_loss = result.get("final_loss", 0.0)
                 training_samples = result.get("training_samples", 0)
