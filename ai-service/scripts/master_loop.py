@@ -1542,13 +1542,12 @@ class MasterLoopController:
             DaemonType.PROGRESS_WATCHDOG,
         ]
 
-        # S3 backup daemons - only if AWS credentials are configured (December 2025)
-        # Check both env vars AND credentials file (~/.aws/credentials)
+        # S3 sync daemon - only if AWS credentials are configured
+        # Feb 2026: Migrated from deprecated S3_BACKUP + S3_NODE_SYNC to unified S3_SYNC
         s3_daemons = []
         if self._has_aws_credentials():
             s3_daemons = [
-                DaemonType.S3_BACKUP,      # Auto-backup after MODEL_PROMOTED
-                DaemonType.S3_NODE_SYNC,   # Bi-directional sync with S3
+                DaemonType.S3_SYNC,  # Unified S3 sync (replaces S3_BACKUP, S3_NODE_SYNC, S3_PUSH)
             ]
 
         # Dec 30 2025: All deprecated daemons (from daemon_registry.py)
@@ -1565,6 +1564,10 @@ class MasterLoopController:
             DaemonType.LAMBDA_IDLE,           # GH200 nodes are dedicated (Dec 28)
             # VAST_IDLE now runs via unified_idle_shutdown_daemon - removed from skip list Dec 30
             DaemonType.CLUSTER_DATA_SYNC,     # Use AUTO_SYNC with strategy='broadcast'
+            DaemonType.S3_BACKUP,             # Use S3_SYNC (Feb 2026)
+            DaemonType.S3_NODE_SYNC,          # Use S3_SYNC (Feb 2026)
+            DaemonType.S3_PUSH,               # Use S3_SYNC (Feb 2026)
+            DaemonType.S3_CONSOLIDATION,      # Use S3_SYNC (Feb 2026)
         }
         full = [daemon for daemon in DaemonType if daemon not in deprecated]
 
@@ -1625,10 +1628,8 @@ class MasterLoopController:
                 DaemonType.PARITY_VALIDATION,         # Validate pending_gate DBs, store TS hashes (Dec 30)
             }
 
-            # December 2025: Add S3_CONSOLIDATION on coordinator if AWS is configured
-            # This merges data from all nodes into consolidated S3 view
-            if self._has_aws_credentials():
-                coordinator_daemons.add(DaemonType.S3_CONSOLIDATION)
+            # Feb 2026: S3_CONSOLIDATION replaced by S3_SYNC (which handles
+            # consolidated paths). S3_SYNC is already added via s3_daemons above.
             for daemon in coordinator_daemons:
                 if daemon not in daemons:
                     daemons.append(daemon)
