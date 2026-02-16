@@ -1941,6 +1941,15 @@ class UnifiedQueuePopulator:
                 reverse=True,
             )
 
+        # Feb 2026: Cap per-type counts at number of unique configs to prevent
+        # creating duplicate work items for the same config in a single cycle.
+        # Previously, when selfplay_count > len(unmet), the modulo wrap-around
+        # (unmet[i % len(unmet)]) created multiple identical items per config,
+        # leading to duplicate training/selfplay processes on the same node.
+        selfplay_count = min(selfplay_count, len(unmet))
+        training_count = min(training_count, len(unmet))
+        tournament_count = min(tournament_count, len(unmet))
+
         added = 0
 
         # Add selfplay items

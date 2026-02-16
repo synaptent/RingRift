@@ -1489,6 +1489,22 @@ class WorkQueue:
             # Sort by priority (descending)
             claimable.sort(key=lambda x: -x.priority)
 
+            # Feb 2026: Build set of (board_type, num_players, work_type) tuples
+            # already claimed by this node to prevent duplicate assignments.
+            # This fixes the bug where a node could claim multiple training or
+            # selfplay jobs for the same config, wasting GPU capacity.
+            node_active_configs: set[tuple[str, int, str]] = set()
+            for existing in self.items.values():
+                if (
+                    existing.status == WorkStatus.CLAIMED
+                    and existing.claimed_by == node_id
+                ):
+                    bt = existing.config.get("board_type", "")
+                    np_ = existing.config.get("num_players", 0)
+                    wt = existing.work_type.value
+                    if bt and np_:
+                        node_active_configs.add((bt, np_, wt))
+
             # Find work matching capabilities and policies
             for item in claimable:
                 work_type = item.work_type.value
@@ -1497,6 +1513,20 @@ class WorkQueue:
                 if capabilities and work_type not in capabilities:
                     self._claim_rejection_stats.rejected_by_capability += 1
                     continue
+
+                # Feb 2026: Prevent duplicate config+type assignments per node.
+                # Skip if this node already has a claimed item for the same
+                # (board_type, num_players, work_type) combination.
+                item_bt = item.config.get("board_type", "")
+                item_np = item.config.get("num_players", 0)
+                if item_bt and item_np:
+                    config_key = (item_bt, item_np, work_type)
+                    if config_key in node_active_configs:
+                        logger.debug(
+                            f"Node {node_id} already has {work_type} for "
+                            f"{item_bt}_{item_np}p, skipping {item.work_id}"
+                        )
+                        continue
 
                 # Check if this node is excluded (set by JobReaperDaemon for failed nodes)
                 excluded_nodes = item.config.get("_excluded_nodes", [])
@@ -1658,6 +1688,19 @@ class WorkQueue:
             claimable.sort(key=lambda x: -x.priority)
 
             # Session 17.50 (Jan 30, 2026): Optimized batch claiming
+            # Feb 2026: Build set of already-claimed configs for this node
+            node_active_configs: set[tuple[str, int, str]] = set()
+            for existing in self.items.values():
+                if (
+                    existing.status == WorkStatus.CLAIMED
+                    and existing.claimed_by == node_id
+                ):
+                    bt = existing.config.get("board_type", "")
+                    np_ = existing.config.get("num_players", 0)
+                    wt = existing.work_type.value
+                    if bt and np_:
+                        node_active_configs.add((bt, np_, wt))
+
             # First pass: filter candidates (no DB operations)
             candidates: list[str] = []
             candidate_items: dict[str, WorkItem] = {}
@@ -1674,6 +1717,16 @@ class WorkQueue:
                 # Check capabilities
                 if capabilities and work_type not in capabilities:
                     continue
+
+                # Feb 2026: Prevent duplicate config+type per node in batch
+                item_bt = item.config.get("board_type", "")
+                item_np = item.config.get("num_players", 0)
+                if item_bt and item_np:
+                    config_key = (item_bt, item_np, work_type)
+                    if config_key in node_active_configs:
+                        continue
+                    # Also prevent duplicates within this batch
+                    node_active_configs.add(config_key)
 
                 # Check if this node is excluded
                 excluded_nodes = item.config.get("_excluded_nodes", [])
