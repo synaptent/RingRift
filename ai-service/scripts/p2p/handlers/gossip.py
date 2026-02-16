@@ -145,8 +145,14 @@ class GossipHandlersMixin(BaseP2PHandler):
 
             # Prepare our response
             now = time.time()
-            # Feb 2026: Use async version to prevent event loop blocking
-            await self._update_self_info_async()
+            # Feb 2026: Fire-and-forget self_info refresh to prevent event loop blocking.
+            # Under high CPU (90%+), awaiting _update_self_info_async blocks for 50+ seconds
+            # due to subprocess-based resource detection competing for CPU time.
+            # Use cached self_info data for the response instead.
+            try:
+                asyncio.create_task(self._update_self_info_async())
+            except Exception:
+                pass  # Don't block gossip on self_info refresh failures
 
             our_state = {
                 "node_id": self.node_id,
