@@ -237,7 +237,10 @@ def get_cpu_adaptive_timeout(base_timeout: int | None = None, cpu_load: float | 
     if cpu_load is None:
         try:
             import psutil
-            cpu_load = psutil.cpu_percent(interval=0.1) / 100.0
+            # Feb 2026: Use interval=None (non-blocking) instead of interval=0.1
+            # which sleeps 100ms. Called per-peer in async event loop, this was
+            # blocking the event loop for seconds when iterating all peers.
+            cpu_load = psutil.cpu_percent(interval=None) / 100.0
         except ImportError:
             return timeout  # No psutil, use base timeout
 
