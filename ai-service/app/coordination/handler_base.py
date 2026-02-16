@@ -656,6 +656,18 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
         self._task = None
         logger.info(f"[{self._name}] Stopped")
 
+    async def wait_until_stopped(self) -> None:
+        """Wait until the handler's main loop task completes.
+
+        Used by daemon runners to keep the runner alive while the handler
+        is running its internal cycle loop.
+        """
+        if self._task is not None:
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+
     async def shutdown(self) -> None:
         """Alias for stop() for compatibility."""
         await self.stop()

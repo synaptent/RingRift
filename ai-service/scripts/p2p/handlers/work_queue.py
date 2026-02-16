@@ -521,7 +521,8 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 timeout_seconds=timeout,
                 depends_on=depends_on,
             )
-            work_id = wq.add_work(item, force=force)
+            # Feb 2026: Use async wrapper to avoid blocking event loop
+            work_id = await wq.add_work_async(item, force=force)
 
             return self.json_response({
                 "status": "added",
@@ -663,7 +664,8 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 if not has_capacity:
                     return self._insufficient_capacity_response(reason)
 
-                item = wq.claim_work(node_id, capabilities)
+                # Feb 2026: Use async wrapper to avoid blocking event loop
+                item = await wq.claim_work_async(node_id, capabilities)
                 if item is None:
                     return self.json_response({"status": "no_work_available"})
 
@@ -755,7 +757,8 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             except ValueError:
                 max_items = 5
 
-            items = wq.claim_work_batch(node_id, max_items, capabilities)
+            # Feb 2026: Use async wrapper to avoid blocking event loop
+            items = await wq.claim_work_batch_async(node_id, max_items, capabilities)
             if not items:
                 return self.json_response({"status": "no_work_available", "count": 0})
 
@@ -802,7 +805,9 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 wq = get_work_queue()
                 if wq is not None:
                     # Try to claim training work specifically
-                    item = wq.claim_work(node_id, capabilities, work_types=["training"])
+                    # Feb 2026: Use async wrapper to avoid blocking event loop
+                    import asyncio
+                    item = await asyncio.to_thread(wq.claim_work, node_id, capabilities, ["training"])
                     if item is not None:
                         return self.json_response({
                             "status": "claimed",
@@ -1057,7 +1062,8 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 config = dict(work_item.config) if work_item else {}
                 assigned_to = work_item.claimed_by if work_item else ""
 
-            success = wq.complete_work(work_id, result)
+            # Feb 2026: Use async wrapper to avoid blocking event loop
+            success = await wq.complete_work_async(work_id, result)
 
             # Emit event to coordination EventRouter (Dec 2025 consolidation)
             if success:
@@ -1220,8 +1226,9 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             if wq is None:
                 return self._work_queue_unavailable()
 
-            # Check for timeouts
-            timed_out = wq.check_timeouts()
+            # Check for timeouts (Feb 2026: async to avoid blocking event loop)
+            import asyncio
+            timed_out = await asyncio.to_thread(wq.check_timeouts)
 
             status = wq.get_queue_status()
             status["is_leader"] = self.is_leader
@@ -1346,7 +1353,9 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     one_hour_ago = time.time() - 3600
 
                     # Get recent completions/failures from history
-                    history = wq.get_history(limit=500, status_filter=None)
+                    # Feb 2026: async to avoid blocking event loop
+                    import asyncio
+                    history = await asyncio.to_thread(wq.get_history, 500, None)
                     completions_1h = 0
                     failures_1h = 0
                     total_duration = 0.0
@@ -1461,7 +1470,9 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             limit = int(request.query.get("limit", "50"))
             status_filter = request.query.get("status", None)
 
-            history = wq.get_history(limit=limit, status_filter=status_filter)
+            # Feb 2026: async to avoid blocking event loop
+            import asyncio
+            history = await asyncio.to_thread(wq.get_history, limit, status_filter)
             return self.json_response({
                 "history": history,
                 "count": len(history),
