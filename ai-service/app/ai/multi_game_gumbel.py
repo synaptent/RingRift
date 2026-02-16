@@ -102,6 +102,8 @@ class GumbelGameResult:
     December 2025: Renamed from GameResult to avoid collision with
     app.training.selfplay_runner.GameResult (canonical for selfplay) and
     app.execution.game_executor.GameResult (canonical for execution).
+
+    February 2026: Added mcts_policies for training data export.
     """
     game_idx: int
     winner: int | None
@@ -110,6 +112,7 @@ class GumbelGameResult:
     moves: list[dict]
     duration_ms: float
     initial_state: dict | None = None  # Serialized initial state for training
+    mcts_policies: list[dict[str, float]] = field(default_factory=list)  # Per-move visit distributions
 
 
 # Backward-compat alias (deprecated Dec 2025)
@@ -228,6 +231,10 @@ class MultiGameGumbelRunner:
 
         results = []
         for game in game_states:
+            # Extract per-move MCTS policies for training pipeline
+            policies = [
+                m.get("mcts_policy", {}) for m in game.moves_played
+            ]
             results.append(GameResult(
                 game_idx=game.game_idx,
                 winner=game.winner,
@@ -236,6 +243,7 @@ class MultiGameGumbelRunner:
                 moves=game.moves_played,
                 duration_ms=duration_ms / num_games,  # Approximate per-game
                 initial_state=game.initial_state_serialized,
+                mcts_policies=policies,
             ))
 
         logger.info(
@@ -316,9 +324,12 @@ class MultiGameGumbelRunner:
             if all_leaves:
                 values = self._batch_evaluate_leaves(all_leaves)
 
+                # Build game_idx -> game lookup (games list may be filtered)
+                game_lookup = {g.game_idx: g for g in active}
+
                 # Distribute values back to actions, weighted by simulation count
                 for leaf, value, sims in zip(all_leaves, values, leaf_sims):
-                    game = games[leaf.game_idx] if leaf.game_idx < len(games) else None
+                    game = game_lookup.get(leaf.game_idx)
                     if game and leaf.action_idx < len(game.remaining_actions):
                         action = game.remaining_actions[leaf.action_idx]
                         # Weight the value by simulation count
@@ -509,30 +520,24 @@ class MultiGameGumbelRunner:
             game.game_state.make_move(best.move)
             game.move_count += 1
 
-            # Record move with policy info
-            # Use JSON-serializable move representation as key
-            def move_key(m):
-                """Create a hashable, JSON-compatible key for a move."""
-                d = m.model_dump(mode="json")
-                # Create compact key from essential fields
-                pos = d.get("to") or d.get("from_pos")
-                pos_str = f"{pos['x']},{pos['y']}" if pos else "none"
-                return f"{d['type']}:{pos_str}"
+            # Build visit-fraction MCTS policy for training
+            # Key format matches generate_gumbel_selfplay.py for pipeline compatibility
+            total_visits = sum(a.visit_count for a in game.actions)
+            mcts_policy: dict[str, float] = {}
+            for a in game.actions:
+                if a.visit_count > 0 and total_visits > 0:
+                    key = a.move.type.value
+                    if a.move.from_pos:
+                        key += f"_{a.move.from_pos.x},{a.move.from_pos.y}"
+                    if a.move.to:
+                        key += f"_{a.move.to.x},{a.move.to.y}"
+                    mcts_policy[key] = a.visit_count / total_visits
 
-            policy_dict = {
-                move_key(a.move): {
-                    "visits": a.visit_count,
-                    "value": a.mean_value,
-                    "gumbel": a.perturbed_value,  # Combined logit + noise
-                    "move": a.move.model_dump(mode="json"),  # Full move data
-                }
-                for a in game.actions
-            }
-            game.moves_played.append({
-                "move": best.move.model_dump(),
-                "move_number": game.move_count,
-                "policy": policy_dict,
-            })
+            # Record move with full policy info (format matches generate_gumbel_selfplay.py)
+            move_data = best.move.model_dump(by_alias=True, exclude_none=True, mode="json")
+            move_data["moveNumber"] = game.move_count
+            move_data["mcts_policy"] = mcts_policy
+            game.moves_played.append(move_data)
 
             # Update current player
             game.current_player = game.game_state.current_player

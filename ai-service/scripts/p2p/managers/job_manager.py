@@ -391,6 +391,7 @@ class JobManager(EventSubscriptionMixin):
         "gumbel-mcts", "mcts", "nnue-guided", "policy-only",
         "nn-minimax", "nn-descent", "gnn", "hybrid",
         "gmo", "ebmo", "ig-gmo", "cage",
+        "multigame-gumbel",  # Feb 2026: batched multi-game Gumbel MCTS
     }
 
     # CPU-compatible engine modes (can run on any node)
@@ -2177,6 +2178,36 @@ class JobManager(EventSubscriptionMixin):
             logger.info(
                 f"Using mixed opponent selfplay for {board_type}_{num_players}p "
                 f"(job {job_id}) - diverse opponents for better training signal"
+            )
+
+        elif effective_mode == "multigame-gumbel":
+            # February 2026: Batched multi-game Gumbel MCTS for 10-20x throughput
+            script_path = self._get_script_path("run_multigame_gumbel_selfplay.py")
+            if not os.path.exists(script_path):
+                logger.warning(f"Multigame Gumbel script not found: {script_path}")
+                return
+
+            simulation_budget = 800
+            if engine_extra_args and "budget" in engine_extra_args:
+                simulation_budget = engine_extra_args["budget"]
+
+            batch_size = engine_extra_args.get("batch_size", 64) if engine_extra_args else 64
+
+            cmd = [
+                sys.executable,
+                script_path,
+                "--board", board_norm,
+                "--num-players", str(num_players),
+                "--num-games", str(num_games),
+                "--batch-size", str(batch_size),
+                "--simulation-budget", str(simulation_budget),
+                "--db", str(output_dir / "games.db"),
+                "--model-version", model_version,
+                "--seed", str(int(time.time() * 1000) % 2**31),
+            ]
+            logger.info(
+                f"Using multigame Gumbel selfplay for {board_type}_{num_players}p "
+                f"(job {job_id}) - batch={batch_size}, budget={simulation_budget}"
             )
 
         elif effective_mode in self.SEARCH_ENGINE_MODES:
