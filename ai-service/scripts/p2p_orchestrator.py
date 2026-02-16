@@ -7929,46 +7929,79 @@ class P2POrchestrator(
                     f"(epochs={epochs}, batch={batch_size})"
                 )
 
-                # Run training as background subprocess
-                async def _run_training_subprocess():
-                    try:
-                        proc = await asyncio.create_subprocess_exec(
-                            *cmd,
-                            stdout=asyncio.subprocess.PIPE,
-                            stderr=asyncio.subprocess.STDOUT,
-                            cwd=str(Path(__file__).parent.parent),  # ai-service directory
-                        )
-                        stdout, _ = await proc.communicate()
-                        if proc.returncode == 0:
-                            logger.info(
-                                f"Training completed successfully: {config_key}/{model_version} "
-                                f"(work_id={work_id})"
-                            )
-                            # Emit training completed event
-                            try:
-                                from app.distributed.data_events import DataEventType
-                                from app.coordination.event_router import emit_event
-                                emit_event(DataEventType.TRAINING_COMPLETED, {
-                                    "config_key": config_key,
-                                    "board_type": board_type,
-                                    "num_players": num_players,
-                                    "model_version": model_version,
-                                    "model_path": f"models/{model_filename}",
-                                    "work_id": work_id,
-                                })
-                            except ImportError:
-                                pass
-                        else:
-                            output = stdout.decode()[:2000] if stdout else "no output"
-                            logger.error(
-                                f"Training failed: {config_key}/{model_version}: "
-                                f"returncode={proc.returncode}, output={output}"
-                            )
-                    except Exception as e:
-                        logger.exception(f"Training subprocess error for {config_key}: {e}")
+                # Feb 2026: Await training subprocess and capture results.
+                # Previously used asyncio.create_task() (fire-and-forget) which
+                # returned True immediately, causing work completion to report
+                # loss=0.0000 and empty model_path for ALL training work.
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                        cwd=str(Path(__file__).parent.parent),  # ai-service directory
+                    )
+                    stdout, _ = await proc.communicate()
+                    output = stdout.decode() if stdout else ""
 
-                asyncio.create_task(_run_training_subprocess())
-                return True
+                    if proc.returncode == 0:
+                        # Parse training output for loss value
+                        final_loss = 0.0
+                        training_samples = 0
+                        for line in reversed(output.splitlines()):
+                            if "loss" in line.lower() and "=" in line:
+                                # Match patterns like "loss=0.1234" or "Loss: 0.1234"
+                                import re
+                                loss_match = re.search(r'loss[=:\s]+([0-9]+\.?[0-9]*)', line.lower())
+                                if loss_match:
+                                    final_loss = float(loss_match.group(1))
+                                    break
+                            if "samples" in line.lower() and final_loss > 0:
+                                samples_match = re.search(r'(\d+)\s*samples', line.lower())
+                                if samples_match:
+                                    training_samples = int(samples_match.group(1))
+
+                        model_path = f"models/{model_filename}"
+                        logger.info(
+                            f"Training completed successfully: {config_key}/{model_version} "
+                            f"(work_id={work_id}, loss={final_loss:.4f}, samples={training_samples})"
+                        )
+
+                        # Populate work_item result so report_work_result sends real data
+                        work_item["result"] = {
+                            "model_path": model_path,
+                            "final_loss": final_loss,
+                            "training_samples": training_samples,
+                            "config_key": config_key,
+                            "model_version": model_version,
+                        }
+
+                        # Emit training completed event
+                        try:
+                            from app.distributed.data_events import DataEventType
+                            from app.coordination.event_router import emit_event
+                            emit_event(DataEventType.TRAINING_COMPLETED, {
+                                "config_key": config_key,
+                                "board_type": board_type,
+                                "num_players": num_players,
+                                "model_version": model_version,
+                                "model_path": model_path,
+                                "final_loss": final_loss,
+                                "training_samples": training_samples,
+                                "work_id": work_id,
+                            })
+                        except ImportError:
+                            pass
+                        return True
+                    else:
+                        truncated = output[:2000] if output else "no output"
+                        logger.error(
+                            f"Training failed: {config_key}/{model_version}: "
+                            f"returncode={proc.returncode}, output={truncated}"
+                        )
+                        return False
+                except Exception as e:
+                    logger.exception(f"Training subprocess error for {config_key}: {e}")
+                    return False
 
             elif work_type == "selfplay":
                 # Jan 5, 2026: Check if this node should do selfplay

@@ -1114,20 +1114,23 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                         populator.increment_training(board_type, num_players)
 
             # Feb 2026: Emit TRAINING_COMPLETED for training work completions
-            # from GPU nodes. The result only contains {"node_id": "..."} because
-            # _execute_claimed_work fires off training as a background subprocess
-            # and reports completion immediately. We reconstruct model_path from
-            # the work config so the evaluation pipeline can find the model.
+            # from GPU nodes. Now includes actual training results (final_loss,
+            # training_samples, model_path) from the awaited subprocess.
             if success and work_type == WorkType.TRAINING:
                 board_type = config.get("board_type", "")
                 num_players = config.get("num_players", 0)
                 config_key = f"{board_type}_{num_players}p"
                 model_version = config.get("model_version", "v2")
-                if model_version and model_version != "v2":
-                    model_filename = f"canonical_{config_key}_{model_version}.pth"
-                else:
-                    model_filename = f"canonical_{config_key}.pth"
-                model_path = f"models/{model_filename}"
+                # Use result data from GPU node if available, else reconstruct
+                result_model_path = result.get("model_path", "")
+                if not result_model_path:
+                    if model_version and model_version != "v2":
+                        model_filename = f"canonical_{config_key}_{model_version}.pth"
+                    else:
+                        model_filename = f"canonical_{config_key}.pth"
+                    result_model_path = f"models/{model_filename}"
+                final_loss = result.get("final_loss", 0.0)
+                training_samples = result.get("training_samples", 0)
                 try:
                     from app.coordination.event_emission_helpers import safe_emit_event
                     safe_emit_event(
@@ -1137,7 +1140,9 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                             "board_type": board_type,
                             "num_players": num_players,
                             "model_version": model_version,
-                            "model_path": model_path,
+                            "model_path": result_model_path,
+                            "final_loss": final_loss,
+                            "training_samples": training_samples,
                             "work_id": work_id,
                             "trained_by": assigned_to,
                             "source": "distributed_training",
@@ -1146,7 +1151,8 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     )
                     logger.info(
                         f"Emitted TRAINING_COMPLETED for {work_id}: "
-                        f"{config_key} model={model_path} (trained by {assigned_to})"
+                        f"{config_key} model={result_model_path} loss={final_loss:.4f} "
+                        f"samples={training_samples} (trained by {assigned_to})"
                     )
                 except ImportError:
                     logger.debug("Event emission not available for training completion")

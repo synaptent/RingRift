@@ -645,20 +645,6 @@ class SelfplayScheduler(
 
         # Send parallel requests to /selfplay/start endpoint
         try:
-            # Get orchestrator for HTTP calls
-            if not hasattr(self, "_orchestrator") or not self._orchestrator:
-                self._log_warning(f"No orchestrator available for auto_start_selfplay on {peer_node_id}")
-                return
-
-            url = self._orchestrator._url_for_peer(peer, "/selfplay/start")
-            try:
-                from aiohttp import ClientTimeout
-            except ImportError:
-                self._log_warning("aiohttp not available for auto_start_selfplay")
-                return
-
-            timeout = ClientTimeout(total=30)
-
             # Import profile selector
             try:
                 from scripts.p2p.config.selfplay_job_configs import select_diverse_profiles
@@ -685,9 +671,20 @@ class SelfplayScheduler(
                 })
                 self._log_debug(f"  Process {i}: {profile.get('description', profile['engine_mode'])}")
 
+            # Feb 2026: If orchestrator is not available, fall back to work queue
+            # instead of silently returning. This was causing 108+ selfplay dispatch
+            # failures per day because _orchestrator was None after init.
+            has_orchestrator = hasattr(self, "_orchestrator") and self._orchestrator
+            if not has_orchestrator:
+                self._log_info(
+                    f"No orchestrator for HTTP push to {peer_node_id}, "
+                    f"falling back to work queue for {len(job_configs)} selfplay jobs"
+                )
+
             # NAT-blocked node detection and work queue routing
+            # Feb 2026: Also route via work queue when orchestrator is unavailable
             is_nat_blocked = getattr(peer, "nat_blocked", False)
-            if is_nat_blocked:
+            if is_nat_blocked or not has_orchestrator:
                 try:
                     from app.coordination.work_queue import WorkItem, WorkType, get_work_queue
                     wq = get_work_queue()
@@ -729,10 +726,14 @@ class SelfplayScheduler(
 
             # Non-NAT-blocked nodes: Direct HTTP push to /selfplay/start endpoint
             try:
+                from aiohttp import ClientTimeout
                 from scripts.p2p.network import get_client_session
             except ImportError:
                 self._log_warning("get_client_session not available for auto_start_selfplay")
                 return
+
+            url = self._orchestrator._url_for_peer(peer, "/selfplay/start")
+            timeout = ClientTimeout(total=30)
 
             async def send_selfplay_request(session: Any, payload: dict) -> bool:
                 """Send a single selfplay start request."""

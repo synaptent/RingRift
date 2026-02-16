@@ -478,28 +478,31 @@ class MetricsHandlersMixin:
             lines.append("# HELP ringrift_elo_games_played Games played by best model")
             lines.append("# TYPE ringrift_elo_games_played gauge")
             try:
+                import asyncio as _asyncio
                 ai_root = Path(self._get_ai_service_path())
                 db_path = ai_root / "data" / "unified_elo.db"
-                if not db_path.exists():
-                    db_path = ai_root / "data" / "unified_elo.db"
                 if db_path.exists():
-                    # Use context manager to prevent connection leaks
-                    with safe_db_connection(db_path) as conn:
-                        cursor = conn.cursor()
-                        # Check which column name is used (model_id vs participant_id)
-                        cursor.execute("PRAGMA table_info(elo_ratings)")
-                        columns = [col[1] for col in cursor.fetchall()]
-                        id_col = "model_id" if "model_id" in columns else "participant_id"
-                        cursor.execute(f"""
-                            SELECT board_type, num_players, MAX(rating), {id_col}, games_played
-                            FROM elo_ratings
-                            WHERE games_played >= 10
-                            GROUP BY board_type, num_players
-                        """)
-                        for row in cursor.fetchall():
-                            bt, np, rating, model, games = row
-                            lines.append(f'ringrift_best_elo{{board_type="{bt}",num_players="{np}",model="{model}"}} {rating:.1f}')
-                            lines.append(f'ringrift_elo_games_played{{board_type="{bt}",num_players="{np}",model="{model}"}} {games}')
+                    # Feb 2026: Run sync SQLite in thread to prevent event loop blocking
+                    def _query_best_elo(db_path_str):
+                        elo_lines = []
+                        with safe_db_connection(db_path_str) as conn:
+                            cursor = conn.cursor()
+                            cursor.execute("PRAGMA table_info(elo_ratings)")
+                            columns = [col[1] for col in cursor.fetchall()]
+                            id_col = "model_id" if "model_id" in columns else "participant_id"
+                            cursor.execute(f"""
+                                SELECT board_type, num_players, MAX(rating), {id_col}, games_played
+                                FROM elo_ratings
+                                WHERE games_played >= 10
+                                GROUP BY board_type, num_players
+                            """)
+                            for row in cursor.fetchall():
+                                bt, np, rating, model, games = row
+                                elo_lines.append(f'ringrift_best_elo{{board_type="{bt}",num_players="{np}",model="{model}"}} {rating:.1f}')
+                                elo_lines.append(f'ringrift_elo_games_played{{board_type="{bt}",num_players="{np}",model="{model}"}} {games}')
+                        return elo_lines
+                    elo_metric_lines = await _asyncio.to_thread(_query_best_elo, str(db_path))
+                    lines.extend(elo_metric_lines)
             except (OSError, KeyError, IndexError, AttributeError, ImportError, sqlite3.Error):
                 pass
 

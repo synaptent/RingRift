@@ -11,6 +11,7 @@ Must be mixed into a class that provides:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sqlite3
 import time
@@ -70,58 +71,61 @@ class EloAnalyticsHandlersMixin:
             num_players = int(num_players_str) if num_players_str else None
             limit = int(request.query.get("limit", "20"))
 
-            db = init_elo_database()
+            # Feb 2026: Run all synchronous SQLite queries in a thread to
+            # prevent blocking the P2P event loop (was causing 54-137s blocks).
+            def _query_leaderboard(bt_filter, np_filter, lim):
+                db = init_elo_database()
+                try:
+                    if bt_filter and np_filter:
+                        lb = get_leaderboard(db, bt_filter, np_filter, limit=lim)
+                        return {
+                            "leaderboards": {f"{bt_filter}_{np_filter}p": lb},
+                            "total_models": len(lb),
+                            "total_matches": 0,
+                            "total_games_recorded": 0,
+                            "configs": [f"{bt_filter}_{np_filter}p"],
+                        }
 
-            # If specific filter requested, return just that
-            if board_type and num_players:
-                leaderboard = get_leaderboard(db, board_type, num_players, limit=limit)
-                db.close()
-                return web.json_response({
-                    "success": True,
-                    "leaderboards": {f"{board_type}_{num_players}p": leaderboard},
-                    "total_models": len(leaderboard),
-                    "timestamp": time.time(),
-                })
+                    conn = db._get_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT DISTINCT board_type, num_players
+                        FROM elo_ratings
+                        WHERE board_type IS NOT NULL AND num_players IS NOT NULL
+                        ORDER BY board_type, num_players
+                    """)
+                    configs = cursor.fetchall()
 
-            # Otherwise return all board/player combinations
-            # Query unique board_type/num_players combinations
-            conn = db._get_connection()
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT DISTINCT board_type, num_players
-                FROM elo_ratings
-                WHERE board_type IS NOT NULL AND num_players IS NOT NULL
-                ORDER BY board_type, num_players
-            """)
-            configs = cursor.fetchall()
+                    leaderboards = {}
+                    total_models = 0
+                    total_games = 0
 
-            leaderboards = {}
-            total_models = 0
-            total_games = 0
+                    for bt, np in configs:
+                        key = f"{bt}_{np}p"
+                        lb = get_leaderboard(db, bt, np, limit=lim)
+                        if lb:
+                            leaderboards[key] = lb
+                            total_models += len(lb)
+                            total_games += sum(entry.get("games_played", 0) for entry in lb)
 
-            for bt, np in configs:
-                key = f"{bt}_{np}p"
-                lb = get_leaderboard(db, bt, np, limit=limit)
-                if lb:
-                    leaderboards[key] = lb
-                    total_models += len(lb)
-                    total_games += sum(entry.get("games_played", 0) for entry in lb)
+                    cursor.execute("SELECT COUNT(*) FROM match_history")
+                    match_count = cursor.fetchone()[0]
 
-            # Get match history stats
-            cursor.execute("SELECT COUNT(*) FROM match_history")
-            match_count = cursor.fetchone()[0]
+                    return {
+                        "leaderboards": leaderboards,
+                        "total_models": total_models,
+                        "total_matches": match_count,
+                        "total_games_recorded": total_games,
+                        "configs": [f"{bt}_{np}p" for bt, np in configs],
+                    }
+                finally:
+                    db.close()
 
-            db.close()
+            result = await asyncio.to_thread(_query_leaderboard, board_type, num_players, limit)
+            result["success"] = True
+            result["timestamp"] = time.time()
 
-            return web.json_response({
-                "success": True,
-                "leaderboards": leaderboards,
-                "total_models": total_models,
-                "total_matches": match_count,
-                "total_games_recorded": total_games,
-                "configs": [f"{bt}_{np}p" for bt, np in configs],
-                "timestamp": time.time(),
-            })
+            return web.json_response(result)
 
         except Exception as e:  # noqa: BLE001
             return web.json_response({"success": False, "error": str(e)}, status=500)
@@ -145,105 +149,94 @@ class EloAnalyticsHandlersMixin:
 
             ai_root = Path(self._get_ai_service_path())
 
-            # Canonical Elo database for trained models
-            db_paths = [
-                ai_root / "data" / "unified_elo.db",
-            ]
+            # Feb 2026: Run all synchronous SQLite queries in a thread to
+            # prevent blocking the P2P event loop (was causing 54-137s blocks).
+            def _query_history(ai_root_str, cfg_filter, mdl_filter, nn_flag, hrs, lim):
+                db_paths = [
+                    Path(ai_root_str) / "data" / "unified_elo.db",
+                ]
+                data = []
+                cutoff_ts = time.time() - (hrs * 3600)
 
-            data = []
-            cutoff = time.time() - (hours * 3600)
+                for db_path in db_paths:
+                    if not db_path.exists():
+                        continue
+                    try:
+                        with safe_db_connection(db_path) as conn:
+                            cursor = conn.cursor()
+                            cursor.execute("SELECT COUNT(*) FROM rating_history WHERE timestamp > ?", (cutoff_ts,))
+                            count = cursor.fetchone()[0]
+                            if count == 0:
+                                continue
 
-            for db_path in db_paths:
-                if not db_path.exists():
-                    continue
+                            cursor.execute("PRAGMA table_info(rating_history)")
+                            columns = {col[1] for col in cursor.fetchall()}
 
-                try:
-                    # Phase 3.4 Dec 29, 2025: Use context manager to prevent connection leaks
-                    with safe_db_connection(db_path) as conn:
-                        cursor = conn.cursor()
-
-                        # Check if this DB has data
-                        cursor.execute("SELECT COUNT(*) FROM rating_history WHERE timestamp > ?", (cutoff,))
-                        count = cursor.fetchone()[0]
-                        if count == 0:
-                            continue
-
-                        # Build query - unified_elo.db has different schema (no board_type/num_players)
-                        cursor.execute("PRAGMA table_info(rating_history)")
-                        columns = {col[1] for col in cursor.fetchall()}
-
-                        if "board_type" in columns:
-                            # unified_elo.db schema
-                            query = """
-                                SELECT participant_id, board_type, num_players, rating, games_played, timestamp
-                                FROM rating_history
-                                WHERE timestamp > ?
-                            """
-                            params = [cutoff]
-
-                            if config_filter:
-                                parts = config_filter.replace("_", " ").split()
-                                if len(parts) >= 2:
-                                    board_type = parts[0]
-                                    num_players = int(parts[1].replace("p", ""))
-                                    query += " AND board_type = ? AND num_players = ?"
-                                    params.extend([board_type, num_players])
-                        else:
-                            # unified_elo.db schema (model_id instead of participant_id)
-                            query = """
-                                SELECT model_id, rating, games_played, timestamp
-                                FROM rating_history
-                                WHERE timestamp > ?
-                            """
-                            params = [cutoff]
-
-                        if model_filter:
-                            col = "participant_id" if "participant_id" in columns else "model_id"
-                            query += f" AND {col} LIKE ?"
-                            params.append(f"%{model_filter}%")
-
-                        if nn_only:
-                            col = "participant_id" if "participant_id" in columns else "model_id"
-                            query += f" AND ({col} LIKE '%nn%' OR {col} LIKE '%NN%')"
-
-                        query += f" ORDER BY timestamp DESC LIMIT {limit}"
-
-                        cursor.execute(query, params)
-                        rows = cursor.fetchall()
-
-                    # Format for Grafana time series
-                    for row in rows:
-                        if "board_type" in columns:
-                            participant_id, board_type, num_players, rating, games_played, ts = row
-                            config = f"{board_type}_{num_players}p"
-                        else:
-                            model_id, rating, games_played, ts = row
-                            participant_id = model_id
-                            # Extract config from model name (e.g., sq8_2p_nn_baseline -> square8_2p)
-                            if "sq8" in model_id.lower() or "square8" in model_id.lower():
-                                config = "square8_2p"
-                            elif "sq19" in model_id.lower() or "square19" in model_id.lower():
-                                config = "square19_2p"
+                            if "board_type" in columns:
+                                query = """
+                                    SELECT participant_id, board_type, num_players, rating, games_played, timestamp
+                                    FROM rating_history
+                                    WHERE timestamp > ?
+                                """
+                                params = [cutoff_ts]
+                                if cfg_filter:
+                                    parts = cfg_filter.replace("_", " ").split()
+                                    if len(parts) >= 2:
+                                        bt = parts[0]
+                                        npl = int(parts[1].replace("p", ""))
+                                        query += " AND board_type = ? AND num_players = ?"
+                                        params.extend([bt, npl])
                             else:
-                                config = "unknown"
+                                query = """
+                                    SELECT model_id, rating, games_played, timestamp
+                                    FROM rating_history
+                                    WHERE timestamp > ?
+                                """
+                                params = [cutoff_ts]
 
-                        data.append({
-                            "time": int(ts * 1000),  # Grafana expects ms
-                            "model": participant_id,
-                            "config": config,
-                            "elo": round(rating, 1),
-                            "games": games_played,
-                        })
+                            if mdl_filter:
+                                col = "participant_id" if "participant_id" in columns else "model_id"
+                                query += f" AND {col} LIKE ?"
+                                params.append(f"%{mdl_filter}%")
+                            if nn_flag:
+                                col = "participant_id" if "participant_id" in columns else "model_id"
+                                query += f" AND ({col} LIKE '%nn%' OR {col} LIKE '%NN%')"
 
-                    # If we got data from this DB, don't check others
-                    if data:
-                        break
+                            query += f" ORDER BY timestamp DESC LIMIT {lim}"
+                            cursor.execute(query, params)
+                            rows = cursor.fetchall()
 
-                except sqlite3.Error:
-                    continue
+                        for row in rows:
+                            if "board_type" in columns:
+                                participant_id, bt, npl, rating, games_played, ts = row
+                                cfg = f"{bt}_{npl}p"
+                            else:
+                                model_id, rating, games_played, ts = row
+                                participant_id = model_id
+                                if "sq8" in model_id.lower() or "square8" in model_id.lower():
+                                    cfg = "square8_2p"
+                                elif "sq19" in model_id.lower() or "square19" in model_id.lower():
+                                    cfg = "square19_2p"
+                                else:
+                                    cfg = "unknown"
+                            data.append({
+                                "time": int(ts * 1000),
+                                "model": participant_id,
+                                "config": cfg,
+                                "elo": round(rating, 1),
+                                "games": games_played,
+                            })
+                        if data:
+                            break
+                    except sqlite3.Error:
+                        continue
 
-            # Sort by time ascending for time series
-            data.sort(key=lambda x: x["time"])
+                data.sort(key=lambda x: x["time"])
+                return data
+
+            data = await asyncio.to_thread(
+                _query_history, str(ai_root), config_filter, model_filter, nn_only, hours, limit
+            )
 
             return web.json_response(data)
 
