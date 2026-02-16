@@ -302,231 +302,46 @@ def get_gumbel_configs() -> list[dict[str, Any]]:
 # ~6.5% each (3-4x boost) and cut hex8_2p from 41% to 16%.
 
 DIVERSE_PROFILES: list[dict[str, Any]] = [
-    # High-quality neural-guided profiles
-    {
-        "engine_mode": "gumbel-mcts",
-        "board_type": "hex8",
-        "num_players": 2,
-        "profile": "balanced",
-        "weight": 0.06,
-        "description": "Gumbel MCTS 2P hex8 - highest quality",
-    },
-    {
-        "engine_mode": "policy-only",
-        "board_type": "hex8",
-        "num_players": 2,
-        "profile": "balanced",
-        "weight": 0.04,
-        "description": "Policy-only 2P hex8 - fast NN inference",
-    },
-    {
-        "engine_mode": "nnue-guided",
-        "board_type": "square8",
-        "num_players": 2,
-        "profile": "aggressive",
-        "weight": 0.05,
-        "description": "NNUE-guided 2P square - aggressive style",
-    },
-    {
-        "engine_mode": "gumbel-mcts",
-        "board_type": "square8",
-        "num_players": 3,
-        "profile": "balanced",
-        "weight": 0.06,
-        "description": "Gumbel MCTS 3P square - multiplayer strategy",
-    },
-    {
-        "engine_mode": "mcts",
-        "board_type": "hex8",
-        "num_players": 2,
-        "profile": "territorial",
-        "weight": 0.02,
-        "description": "MCTS 2P hex8 - territorial focus",
-    },
-    # MaxN/BRS multiplayer profiles
-    # Benchmarks show: MaxN >> Descent in 3P/4P, MaxN ≈ BRS
-    {
-        "engine_mode": "maxn",
-        "board_type": "hex8",
-        "num_players": 3,
-        "profile": "balanced",
-        "weight": 0.05,
-        "description": "MaxN 3P hex8 - optimal multiplayer search",
-    },
-    {
-        "engine_mode": "maxn",
-        "board_type": "square8",
-        "num_players": 4,
-        "profile": "balanced",
-        "weight": 0.04,
-        "description": "MaxN 4P square - best for 4-player",
-    },
-    {
-        "engine_mode": "brs",
-        "board_type": "hex8",
-        "num_players": 3,
-        "profile": "aggressive",
-        "weight": 0.03,
-        "description": "BRS 3P hex8 - fast multiplayer search",
-    },
-    {
-        "engine_mode": "brs",
-        "board_type": "square8",
-        "num_players": 4,
-        "profile": "territorial",
-        "weight": 0.03,
-        "description": "BRS 4P square - territorial multiplayer",
-    },
-    # Throughput profiles
-    {
-        "engine_mode": "heuristic-only",
-        "board_type": "hex8",
-        "num_players": 2,
-        "profile": "balanced",
-        "weight": 0.03,
-        "description": "GPU heuristic 2P hex8 - fast throughput",
-    },
-    {
-        "engine_mode": "heuristic-only",
-        "board_type": "square8",
-        "num_players": 2,
-        "profile": "defensive",
-        "weight": 0.04,
-        "description": "GPU heuristic 2P square - defensive style",
-    },
-    {
-        "engine_mode": "heuristic-only",
-        "board_type": "hex8",
-        "num_players": 4,
-        "profile": "balanced",
-        "weight": 0.05,
-        "description": "GPU heuristic 4P hex8 - large multiplayer",
-    },
-    # Exploration profiles
-    {
-        "engine_mode": "mixed",
-        "board_type": "square19",
-        "num_players": 2,
-        "profile": "balanced",
-        "weight": 0.06,
-        "description": "Mixed 2P large board - strategic depth",
-    },
-    {
-        "engine_mode": "nnue-guided",
-        "board_type": "hex8",
-        "num_players": 3,
-        "profile": "aggressive",
-        "weight": 0.04,
-        "description": "NNUE 3P hex8 - aggressive multiplayer",
-    },
-    {
-        "engine_mode": "policy-only",
-        "board_type": "square8",
-        "num_players": 4,
-        "profile": "territorial",
-        "weight": 0.04,
-        "description": "Policy 4P square - territory control",
-    },
-    # Large board profiles (square19, hexagonal) - boosted for fair allocation
-    # These configs need higher weights to compensate for fewer games-per-job
-    # (200 for square19, 100 for hexagonal vs 1000 for small boards)
-    {
-        "engine_mode": "heuristic-only",
-        "board_type": "square19",
-        "num_players": 2,
-        "profile": "balanced",
-        "weight": 0.06,
-        "description": "Heuristic 2P square19 - fast large board",
-    },
-    {
-        "engine_mode": "heuristic-only",
-        "board_type": "hexagonal",
-        "num_players": 2,
-        "profile": "balanced",
-        "weight": 0.07,
-        "description": "Heuristic 2P hexagonal - fast large board",
-    },
-    {
-        "engine_mode": "brs",
-        "board_type": "square19",
-        "num_players": 3,
-        "profile": "balanced",
-        "weight": 0.07,
-        "description": "BRS 3P square19 - multiplayer large board",
-    },
-    {
-        "engine_mode": "brs",
-        "board_type": "hexagonal",
-        "num_players": 3,
-        "profile": "balanced",
-        "weight": 0.07,
-        "description": "BRS 3P hexagonal - multiplayer large board",
-    },
-    {
-        "engine_mode": "maxn",
-        "board_type": "square19",
-        "num_players": 4,
-        "profile": "balanced",
-        "weight": 0.07,
-        "description": "MaxN 4P square19 - high quality 4-player",
-    },
-    {
-        "engine_mode": "maxn",
-        "board_type": "hexagonal",
-        "num_players": 4,
-        "profile": "balanced",
-        "weight": 0.07,
-        "description": "MaxN 4P hexagonal - high quality 4-player",
-    },
-    # Full diversity profiles - Minimax (2P paranoid search), Descent (stochastic), Random (baseline)
-    {
-        "engine_mode": "nn-minimax",
-        "board_type": "hex8",
-        "num_players": 2,
-        "profile": "balanced",
-        "weight": 0.01,
-        "description": "NN-Minimax 2P hex8 - deep alpha-beta search",
-    },
-    {
-        "engine_mode": "nn-minimax",
-        "board_type": "square8",
-        "num_players": 2,
-        "profile": "balanced",
-        "weight": 0.02,
-        "description": "NN-Minimax 2P square - tactical search",
-    },
-    {
-        "engine_mode": "nn-descent",
-        "board_type": "hex8",
-        "num_players": 2,
-        "profile": "balanced",
-        "weight": 0.005,
-        "description": "NN-Descent 2P hex8 - stochastic exploration",
-    },
-    {
-        "engine_mode": "nn-descent",
-        "board_type": "square8",
-        "num_players": 3,
-        "profile": "balanced",
-        "weight": 0.01,
-        "description": "NN-Descent 3P square - multiplayer descent",
-    },
-    {
-        "engine_mode": "random",
-        "board_type": "hex8",
-        "num_players": 2,
-        "profile": "balanced",
-        "weight": 0.003,
-        "description": "Random 2P hex8 - baseline diversity",
-    },
-    {
-        "engine_mode": "random",
-        "board_type": "square8",
-        "num_players": 4,
-        "profile": "balanced",
-        "weight": 0.003,
-        "description": "Random 4P square - multiplayer baseline",
-    },
+    # ========================================================================
+    # GUMBEL MCTS - 70% of all selfplay (~6% per config)
+    # Feb 2026: Previously only 12% was Gumbel (2 profiles). Without MCTS
+    # visit distributions as policy targets, training data is noise and the
+    # AlphaZero loop cannot improve models. All 12 configs now have Gumbel.
+    # ========================================================================
+    {"engine_mode": "gumbel-mcts", "board_type": "hex8", "num_players": 2, "profile": "balanced", "weight": 0.07, "description": "Gumbel hex8_2p"},
+    {"engine_mode": "gumbel-mcts", "board_type": "hex8", "num_players": 3, "profile": "balanced", "weight": 0.06, "description": "Gumbel hex8_3p"},
+    {"engine_mode": "gumbel-mcts", "board_type": "hex8", "num_players": 4, "profile": "balanced", "weight": 0.06, "description": "Gumbel hex8_4p"},
+    {"engine_mode": "gumbel-mcts", "board_type": "square8", "num_players": 2, "profile": "balanced", "weight": 0.07, "description": "Gumbel square8_2p"},
+    {"engine_mode": "gumbel-mcts", "board_type": "square8", "num_players": 3, "profile": "balanced", "weight": 0.06, "description": "Gumbel square8_3p"},
+    {"engine_mode": "gumbel-mcts", "board_type": "square8", "num_players": 4, "profile": "balanced", "weight": 0.06, "description": "Gumbel square8_4p"},
+    {"engine_mode": "gumbel-mcts", "board_type": "square19", "num_players": 2, "profile": "balanced", "weight": 0.06, "description": "Gumbel square19_2p"},
+    {"engine_mode": "gumbel-mcts", "board_type": "square19", "num_players": 3, "profile": "balanced", "weight": 0.05, "description": "Gumbel square19_3p"},
+    {"engine_mode": "gumbel-mcts", "board_type": "square19", "num_players": 4, "profile": "balanced", "weight": 0.05, "description": "Gumbel square19_4p"},
+    {"engine_mode": "gumbel-mcts", "board_type": "hexagonal", "num_players": 2, "profile": "balanced", "weight": 0.06, "description": "Gumbel hexagonal_2p"},
+    {"engine_mode": "gumbel-mcts", "board_type": "hexagonal", "num_players": 3, "profile": "balanced", "weight": 0.05, "description": "Gumbel hexagonal_3p"},
+    {"engine_mode": "gumbel-mcts", "board_type": "hexagonal", "num_players": 4, "profile": "balanced", "weight": 0.05, "description": "Gumbel hexagonal_4p"},
+    # Gumbel total: 0.70 (70%)
+
+    # ========================================================================
+    # DIVERSITY PROFILES - 30% (search diversity for robustness)
+    # ========================================================================
+    # MaxN/BRS for multiplayer configs (better than heuristic for 3p/4p)
+    {"engine_mode": "maxn", "board_type": "hex8", "num_players": 3, "profile": "balanced", "weight": 0.03, "description": "MaxN hex8_3p"},
+    {"engine_mode": "maxn", "board_type": "square8", "num_players": 4, "profile": "balanced", "weight": 0.03, "description": "MaxN square8_4p"},
+    {"engine_mode": "brs", "board_type": "hex8", "num_players": 4, "profile": "balanced", "weight": 0.02, "description": "BRS hex8_4p"},
+    {"engine_mode": "brs", "board_type": "square19", "num_players": 3, "profile": "balanced", "weight": 0.02, "description": "BRS square19_3p"},
+    {"engine_mode": "maxn", "board_type": "hexagonal", "num_players": 4, "profile": "balanced", "weight": 0.02, "description": "MaxN hexagonal_4p"},
+    # NNUE-guided and NN-minimax for tactical diversity
+    {"engine_mode": "nnue-guided", "board_type": "square8", "num_players": 2, "profile": "aggressive", "weight": 0.03, "description": "NNUE square8_2p"},
+    {"engine_mode": "nnue-guided", "board_type": "hex8", "num_players": 2, "profile": "balanced", "weight": 0.02, "description": "NNUE hex8_2p"},
+    {"engine_mode": "nn-minimax", "board_type": "square8", "num_players": 2, "profile": "balanced", "weight": 0.02, "description": "NN-Minimax square8_2p"},
+    # Mixed mode for exploration
+    {"engine_mode": "mixed", "board_type": "square19", "num_players": 2, "profile": "balanced", "weight": 0.03, "description": "Mixed square19_2p"},
+    {"engine_mode": "mixed", "board_type": "hexagonal", "num_players": 2, "profile": "balanced", "weight": 0.03, "description": "Mixed hexagonal_2p"},
+    # Heuristic-only - minimal, just for bootstrap diversity
+    {"engine_mode": "heuristic-only", "board_type": "hex8", "num_players": 2, "profile": "balanced", "weight": 0.02, "description": "Heuristic hex8_2p"},
+    {"engine_mode": "heuristic-only", "board_type": "square19", "num_players": 4, "profile": "balanced", "weight": 0.02, "description": "Heuristic square19_4p"},
+    # Diversity total: 0.30 (30%)
 ]
 
 
