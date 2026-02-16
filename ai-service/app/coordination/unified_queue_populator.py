@@ -1933,7 +1933,27 @@ class UnifiedQueuePopulator:
         # Get unmet targets sorted by priority
         unmet = self.get_unmet_targets()
         if not unmet:
-            return 0
+            # Feb 2026: Even when all targets are met, still create maintenance
+            # tournaments so met configs continue to get evaluated. Without this,
+            # configs that reached target Elo stop getting gauntlet matches entirely.
+            met_targets = [t for t in self._targets.values() if t.target_met]
+            maintenance_added = 0
+            for target in met_targets:
+                try:
+                    item = self._create_tournament_item(target.board_type, target.num_players)
+                    item.priority = max(item.priority - 20, 1)
+                    self._work_queue.add_work(item)
+                    self._queued_work_ids.add(item.work_id)
+                    maintenance_added += 1
+                except Exception:
+                    pass
+            if maintenance_added > 0:
+                logger.info(
+                    f"[QueuePopulator] All targets met. Added {maintenance_added} "
+                    f"maintenance tournaments for continued evaluation."
+                )
+                self._last_populate_time = time.time()
+            return maintenance_added
 
         if scheduler_priorities:
             unmet.sort(
@@ -2071,6 +2091,35 @@ class UnifiedQueuePopulator:
                 logger.error(f"Failed to add tournament item: {e}")
             except Exception as e:
                 logger.error(f"Failed to add tournament item: {e}")
+
+        # Feb 2026: Add maintenance tournaments for "met" configs.
+        # Configs that reached target Elo were excluded from tournament work,
+        # causing evaluation to stall (hexagonal_2p/3p, square19_3p/4p had
+        # no gauntlet matches for 2-4 weeks). This ensures all configs get
+        # periodic re-evaluation to track regressions and maintain Elo freshness.
+        met_targets = [t for t in self._targets.values() if t.target_met]
+        maintenance_added = 0
+        for target in met_targets:
+            # One tournament item per met config per populate cycle
+            try:
+                item = self._create_tournament_item(target.board_type, target.num_players)
+                item.priority = max(item.priority - 20, 1)  # Lower priority than unmet
+                self._work_queue.add_work(item)
+                self._queued_work_ids.add(item.work_id)
+                added += 1
+                maintenance_added += 1
+            except RuntimeError as e:
+                if "hard limit" in str(e).lower() or "BACKPRESSURE" in str(e):
+                    break
+                logger.debug(f"Failed to add maintenance tournament: {e}")
+            except Exception as e:
+                logger.debug(f"Failed to add maintenance tournament: {e}")
+
+        if maintenance_added > 0:
+            logger.info(
+                f"[QueuePopulator] Added {maintenance_added} maintenance tournaments "
+                f"for {len(met_targets)} met configs"
+            )
 
         # Add hyperparameter sweeps opportunistically
         sweep_added = 0
