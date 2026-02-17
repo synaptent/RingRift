@@ -360,7 +360,8 @@ class DistributedNNGauntlet:
 
         new_models = []
         for pth_file in self.model_dir.glob("*.pth"):
-            model_id = pth_file.stem
+            from app.training.composite_participant import normalize_nn_id
+            model_id = normalize_nn_id(pth_file.stem) or pth_file.stem
             # Check if matches any pattern
             matches = any(model_id.startswith(p) or f"_{p}_" in model_id for p in patterns)
             if matches and model_id not in registered:
@@ -423,13 +424,13 @@ class DistributedNNGauntlet:
         baselines = []
 
         # 1. Canonical model for this config (if it exists and is different from best)
-        canonical_id = f"canonical_{config_key}"
+        canonical_id = f"ringrift_best_{config_key}"
         baselines.append(canonical_id)
 
         if not models:
             # No trained models yet - use diverse AI baselines
             # January 10, 2026: Include heuristic for strategy testing
-            return [canonical_id, f"canonical_{config_key}:policy_only:t0p3", "heuristic", "random_ai"]
+            return [canonical_id, f"ringrift_best_{config_key}:policy_only:t0p3", "heuristic", "random_ai"]
 
         n = len(models)
 

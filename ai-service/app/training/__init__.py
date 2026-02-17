@@ -276,6 +276,8 @@ __all__ = [
     "wilson_lower_bound",
     "wilson_score_interval",
     "wrap_model_ddp",
+    # Version suffix stripping (Feb 2026)
+    "strip_version_suffix",
     # Modular training components (December 2025)
     # Config resolver
     "ResolvedTrainingParams",
@@ -692,6 +694,7 @@ try:
         extract_nn_id,
         extract_ai_type,
         normalize_nn_id,
+        strip_version_suffix,
         STANDARD_ALGORITHM_CONFIGS,
         ParticipantCategory,
     )

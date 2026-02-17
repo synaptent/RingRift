@@ -199,6 +199,30 @@ def get_file_size(path: Path) -> int:
         return 0
 
 
+def get_protected_models() -> set[str]:
+    """Get model stems protected by Elo-based model protection (top 50%).
+
+    Returns a set of model ID stems that should NOT be archived because
+    they are in the top 50% by Elo for their config.
+    """
+    protected = set()
+    try:
+        from app.tournament.model_culling import get_culling_controller, CONFIG_KEYS
+        controller = get_culling_controller()
+        for config_key in CONFIG_KEYS:
+            config_protected = controller.get_protected_model_set(config_key)
+            # Extract just the nn_id/stem part for file matching
+            for pid in config_protected:
+                if ":" in pid:
+                    protected.add(pid.split(":")[0])
+                else:
+                    protected.add(pid)
+    except Exception as e:
+        # Non-fatal - if we can't load protection, proceed without it
+        print(f"  Note: Could not load Elo protection set: {e}")
+    return protected
+
+
 def main():
     parser = argparse.ArgumentParser(description="Clean up model archives")
     parser.add_argument(
@@ -216,6 +240,22 @@ def main():
         sys.exit(1)
 
     actions = classify_models(MODELS_DIR, args.keep)
+
+    # Feb 2026: Check Elo-protected models before archiving
+    protected_stems = get_protected_models()
+    if protected_stems:
+        elo_protected = []
+        remaining_archive = []
+        for f in actions["archive"]:
+            stem = f.stem
+            if stem in protected_stems:
+                elo_protected.append(f)
+            else:
+                remaining_archive.append(f)
+        if elo_protected:
+            print(f"Elo-protected from archival: {len(elo_protected)} models (top 50% by Elo)")
+            actions["keep"].extend(elo_protected)
+            actions["archive"] = remaining_archive
 
     # Calculate sizes
     archive_size = sum(get_file_size(f) for f in actions["archive"])

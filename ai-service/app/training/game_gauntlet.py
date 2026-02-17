@@ -2202,8 +2202,9 @@ def run_baseline_gauntlet(
     result.harness_type = harness_type
     if harness_type and model_path:
         # Generate composite model ID for Elo tracking
-        path_stem = Path(model_path).stem.replace("canonical_", "ringrift_")
-        result.model_id = f"{path_stem}:{harness_type}" if harness_type else path_stem
+        from app.training.composite_participant import normalize_nn_id
+        nn_id = normalize_nn_id(Path(model_path).stem)
+        result.model_id = f"{nn_id}:{harness_type}" if harness_type else nn_id
         # Generate config hash if harness abstraction available
         try:
             from app.ai.harness import HarnessType as HT, create_harness

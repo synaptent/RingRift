@@ -568,7 +568,8 @@ class ComprehensiveModelScanDaemon(HandlerBase):
         try:
             # Build composite participant ID
             # Format: model_name:harness_type:config_hash
-            model_name = Path(model.path).stem
+            from app.training.composite_participant import normalize_nn_id
+            model_name = normalize_nn_id(Path(model.path).stem)
             participant_id = f"{model_name}:{harness_type.value}"
 
             rating = elo_service.get_rating(participant_id, model.config_key)

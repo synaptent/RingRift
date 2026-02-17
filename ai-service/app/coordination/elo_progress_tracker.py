@@ -493,10 +493,13 @@ def _extract_canonical_nn_id(participant_id: str) -> str | None:
     evaluations of the same model (e.g., canonical_hex8_2p:gumbel_mcts:d2 and
     canonical_hex8_2p:policy_only:d2) are recognized as the same model.
 
-    Also normalizes canonical_* to ringrift_best_* for consistency.
+    Also normalizes canonical_* to ringrift_best_* and strips version suffixes
+    (e.g., _v2, _v5_heavy) for consistent grouping.
 
     Returns None for baselines (none:random, heuristic, etc).
     """
+    from app.training.composite_participant import normalize_nn_id
+
     pid_lower = participant_id.lower()
 
     # Filter out baselines
@@ -509,9 +512,8 @@ def _extract_canonical_nn_id(participant_id: str) -> str | None:
     else:
         nn_id = participant_id
 
-    # Normalize canonical_ → ringrift_best_ for grouping
-    if nn_id.startswith("canonical_"):
-        nn_id = "ringrift_best_" + nn_id[len("canonical_"):]
+    # Normalize canonical_ → ringrift_best_ and strip version suffixes for grouping
+    nn_id = normalize_nn_id(nn_id, strip_version=True) or nn_id
 
     return nn_id if nn_id and nn_id.lower() != "none" else None
 
@@ -561,16 +563,17 @@ async def snapshot_all_configs() -> dict[str, EloSnapshot | None]:
 
             # Feb 2026: Group by canonical NN identity to find the best
             # model regardless of which harness variant is highest-rated.
-            # Prefer ringrift_best_<config> entries (stable symlink).
+            # Prefer ringrift_best_<config> entries (the stable symlink)
+            # so Elo tracking persists across model promotions.
             best = model_entries[0]
 
             # Check if there's a ringrift_best_* entry for this config
             canonical_id = f"ringrift_best_{config_key}"
             for entry in model_entries:
                 nn_id = _extract_canonical_nn_id(entry.participant_id)
-                if nn_id == canonical_id and entry.rating > best.rating:
-                    best = entry
-                    break  # Prefer exact canonical match at highest Elo
+                if nn_id == canonical_id:
+                    best = entry  # Take the highest-rated canonical match
+                    break
                 # Also match plain ringrift_best_* (non-composite)
                 if entry.participant_id == canonical_id:
                     best = entry

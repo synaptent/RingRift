@@ -93,6 +93,9 @@ class EloSyncLoop(BaseLoop):
         # Jan 5, 2026: Push-based sync tracking
         self._last_push_time: float = 0.0
         self._event_subscription_active = False
+        # Feb 2026: Periodic reconciliation of canonical_ -> ringrift_best_ IDs
+        self._last_reconciliation_time: float = 0.0
+        self._reconciliation_interval: float = 86400.0  # 24 hours
 
     async def _on_start(self) -> None:
         """Initialize the EloSyncManager on loop start with retry logic.
@@ -161,6 +164,9 @@ class EloSyncLoop(BaseLoop):
 
             # Sync elo_progress.db (Jan 2026: cluster-wide progress tracking)
             await self._sync_elo_progress()
+
+            # Feb 2026: Periodic reconciliation of canonical_ -> ringrift_best_ IDs
+            await self._reconcile_participant_ids()
         except Exception as e:
             logger.warning(f"[{self.name}] Sync error: {e}")
             raise  # Trigger backoff
@@ -381,6 +387,101 @@ class EloSyncLoop(BaseLoop):
             logger.info(f"[{self.name}] Elo push completed: {successful}/{total} nodes updated")
         except Exception as e:
             logger.warning(f"[{self.name}] Elo push failed: {e}")
+
+    async def _reconcile_participant_ids(self) -> None:
+        """Reconcile any remaining canonical_* participant IDs to ringrift_best_*.
+
+        Feb 2026: Runs once per day on coordinator only. Catches drift from
+        non-updated cluster nodes that may still write canonical_* entries.
+        """
+        import os
+
+        # Only run on coordinator
+        is_coordinator = os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() == "true"
+        if not is_coordinator:
+            return
+
+        # Check reconciliation interval
+        now = time.time()
+        if now - self._last_reconciliation_time < self._reconciliation_interval:
+            return
+
+        self._last_reconciliation_time = now
+
+        try:
+            import sqlite3
+            from pathlib import Path
+            from app.training.composite_participant import normalize_nn_id
+
+            db_path = Path("data/unified_elo.db")
+            if not db_path.exists():
+                return
+
+            def _do_reconcile():
+                conn = sqlite3.connect(str(db_path), timeout=30.0)
+                try:
+                    # Find columns
+                    cursor = conn.execute("PRAGMA table_info(elo_ratings)")
+                    columns = {row[1] for row in cursor.fetchall()}
+                    id_col = "model_id" if "model_id" in columns else "participant_id"
+
+                    # Find remaining canonical_* entries
+                    cursor = conn.execute(f"""
+                        SELECT {id_col}, board_type, num_players
+                        FROM elo_ratings
+                        WHERE {id_col} LIKE 'canonical_%'
+                    """)
+                    entries = cursor.fetchall()
+
+                    if not entries:
+                        return 0
+
+                    renamed = 0
+                    for old_id, board_type, num_players in entries:
+                        # Normalize the ID
+                        if ":" in old_id:
+                            parts = old_id.split(":")
+                            normalized_nn = normalize_nn_id(parts[0])
+                            new_id = ":".join([normalized_nn] + parts[1:])
+                        else:
+                            new_id = normalize_nn_id(old_id)
+
+                        if new_id == old_id:
+                            continue
+
+                        # Check if target exists
+                        cursor = conn.execute(f"""
+                            SELECT COUNT(*) FROM elo_ratings
+                            WHERE {id_col} = ? AND board_type = ? AND num_players = ?
+                        """, (new_id, board_type, num_players))
+                        exists = cursor.fetchone()[0] > 0
+
+                        if not exists:
+                            # Simple rename
+                            conn.execute(f"""
+                                UPDATE elo_ratings SET {id_col} = ?
+                                WHERE {id_col} = ? AND board_type = ? AND num_players = ?
+                            """, (new_id, old_id, board_type, num_players))
+                            renamed += 1
+                        else:
+                            # Merge conflict - log for manual attention
+                            logger.warning(
+                                f"[{self.name}] Reconciliation merge needed: "
+                                f"{old_id} -> {new_id} (both exist for {board_type}/{num_players}p)"
+                            )
+
+                    conn.commit()
+                    return renamed
+                finally:
+                    conn.close()
+
+            renamed = await asyncio.to_thread(_do_reconcile)
+            if renamed:
+                logger.info(
+                    f"[{self.name}] Reconciled {renamed} canonical_* -> ringrift_best_* entries"
+                )
+        except Exception as e:
+            logger.warning(f"[{self.name}] Reconciliation error: {e}")
 
     async def _sync_elo_progress(self) -> None:
         """Sync elo_progress.db from coordinator for cluster-wide progress tracking.

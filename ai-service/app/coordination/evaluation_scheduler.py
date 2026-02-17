@@ -123,9 +123,11 @@ class EvaluationJob:
 
         Format: {model_id}:{harness}:{config_hash}
         """
+        from app.training.composite_participant import normalize_nn_id
+        nn_id = normalize_nn_id(self.model_id) or self.model_id
         config_str = f"{self.board_type}_{self.num_players}p"
         config_hash = hashlib.sha256(config_str.encode()).hexdigest()[:8]
-        return f"{self.model_id}:{harness.value}:{config_hash}"
+        return f"{nn_id}:{harness.value}:{config_hash}"
 
     def is_claimable(self) -> bool:
         """Check if job can be claimed."""

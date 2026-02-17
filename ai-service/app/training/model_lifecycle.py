@@ -90,7 +90,7 @@ class RetentionPolicy:
 
     # Per-config limits
     max_models_per_config: int = 100  # Trigger culling above this
-    keep_top_by_elo: int = 25  # Always keep top N by Elo
+    keep_top_by_elo: int = 50  # Always keep top N by Elo
     keep_latest_production: int = 5  # Keep N most recent production models
 
     # Time-based retention

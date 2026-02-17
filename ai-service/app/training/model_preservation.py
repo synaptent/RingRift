@@ -88,7 +88,7 @@ class PreservationConfig:
     top_decile_min_count: int = 10  # If >10 in top decile, use decile; else use quartile
     min_games_for_preservation: int = 50
     preservation_dir: Path = field(default_factory=lambda: Path("models/preserved"))
-    max_preserved_per_config: int = 5
+    max_preserved_per_config: int = 25
     enabled: bool = True
     fallback_min_elo: float = 800.0  # Only used when <3 models exist for comparison
 
@@ -235,15 +235,8 @@ class ModelPreservationService:
     ) -> float:
         """Compute the Elo threshold for preservation based on existing model distribution.
 
-        Uses relative thresholds:
-        - If >10 models in top decile (top 10%), use the 90th percentile as threshold
-        - If <20 models exist, use the 50th percentile (top half) as threshold
-        - Otherwise, use the 75th percentile (top quartile) as threshold
-
-        This ensures preservation adapts to:
-        - Early training (lower absolute Elo, but preserves relative best)
-        - Mature training (higher threshold as population improves)
-        - Different configs which may have different Elo ranges
+        Feb 2026: Simplified to always use 50th percentile (top half) for
+        consistent top-50% model protection across all population sizes.
 
         Returns:
             Elo threshold for preservation, or fallback_min_elo if no models exist
@@ -268,43 +261,19 @@ class ModelPreservationService:
             ratings = [row[0] for row in cursor.fetchall()]
 
             if len(ratings) < 3:
-                # Not enough models to compute meaningful percentile
                 logger.debug(
                     f"Only {len(ratings)} models with sufficient games for {board_type}_{num_players}p, "
                     f"using fallback threshold {self.config.fallback_min_elo}"
                 )
                 return self.config.fallback_min_elo
 
-            # Compute percentile thresholds
-            # Top decile = top 10% = index at 10% from top
-            decile_idx = max(0, len(ratings) // 10)
-            quartile_idx = max(0, len(ratings) // 4)
+            # Always use 50th percentile (top half) for top-50% protection
             half_idx = max(0, len(ratings) // 2)
-
-            decile_threshold = ratings[decile_idx] if decile_idx < len(ratings) else ratings[0]
-            quartile_threshold = ratings[quartile_idx] if quartile_idx < len(ratings) else ratings[0]
-            half_threshold = ratings[half_idx] if half_idx < len(ratings) else ratings[0]
-
-            # Count models in top decile
-            models_in_top_decile = sum(1 for r in ratings if r >= decile_threshold)
-
-            # Choose threshold based on population size and distribution
-            if models_in_top_decile > self.config.top_decile_min_count:
-                # Enough models in top decile - use strict threshold
-                threshold = decile_threshold
-                percentile_used = "decile (90th)"
-            elif len(ratings) < 20:
-                # Small population - be more lenient, keep top half
-                threshold = half_threshold
-                percentile_used = "half (50th)"
-            else:
-                # Medium population - use quartile
-                threshold = quartile_threshold
-                percentile_used = "quartile (75th)"
+            threshold = ratings[half_idx] if half_idx < len(ratings) else ratings[0]
 
             logger.debug(
                 f"Preservation threshold for {board_type}_{num_players}p: "
-                f"{threshold:.0f} ({percentile_used}, {len(ratings)} models)"
+                f"{threshold:.0f} (50th percentile, {len(ratings)} models)"
             )
             return threshold
 

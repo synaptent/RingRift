@@ -704,8 +704,8 @@ def promote_after_gauntlet(
             elo_service = get_elo_service()
             # Source participant is the model being promoted (e.g., "ringrift_best_hex8_2p")
             source_participant_id = f"ringrift_best_{config}"
-            # Target participant is the canonical model
-            target_participant_id = f"canonical_{config}"
+            # Target participant is the canonical model (use ringrift_best_ for stable Elo tracking)
+            target_participant_id = f"ringrift_best_{config}"
 
             promotion_result = elo_service.handle_model_promotion(
                 source_model_path=str(model_path),
@@ -733,7 +733,7 @@ def promote_after_gauntlet(
     if HAS_ELO_SERVICE and get_elo_service is not None:
         try:
             elo_service = get_elo_service()
-            target_participant_id = f"canonical_{config}"
+            target_participant_id = f"ringrift_best_{config}"
             elo_service.register_model(
                 model_id=target_participant_id,
                 board_type=board_type,

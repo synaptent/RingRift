@@ -1,8 +1,8 @@
 """Per-config model culling to manage model proliferation.
 
 When the number of models for a specific config (e.g., square8_2p) exceeds
-a threshold (default 100), this module archives the bottom 75% based on
-Elo rating, keeping only the top quartile.
+a threshold (default 100), this module archives the bottom 50% based on
+Elo rating, keeping the top half.
 
 This prevents unbounded model growth while preserving the best performers.
 
@@ -66,10 +66,10 @@ class CullResult:
 
 
 class ModelCullingController:
-    """Controls per-config model culling to keep top quartile.
+    """Controls per-config model culling to keep top half.
 
     When model count exceeds CULL_THRESHOLD for a config, archives bottom
-    75% of models by Elo rating. Models are moved to archived/ subdirectory
+    50% of models by Elo rating. Models are moved to archived/ subdirectory
     and marked in the database.
 
     Protections:
@@ -80,7 +80,7 @@ class ModelCullingController:
     """
 
     CULL_THRESHOLD = 100  # Trigger culling when > 100 models
-    KEEP_FRACTION = 0.25  # Keep top 25% (quartile)
+    KEEP_FRACTION = 0.50  # Keep top 50%
     MIN_KEEP = 25         # Always keep at least 25 models
     MIN_GAMES_FOR_CULL = 20  # Don't cull models with < 20 games (high uncertainty)
 
@@ -415,6 +415,54 @@ class ModelCullingController:
             conn.commit()
         finally:
             conn.close()
+
+    def get_protected_model_set(self, config_key: str) -> set[str]:
+        """Get the set of model IDs (composite and bare) protected from archival.
+
+        Queries all non-archived elo_ratings for this config, extracts the base
+        model (nn_id part), takes the MAX rating across all harnesses per base
+        model, then protects the top 50%.
+
+        Args:
+            config_key: Config like "square8_2p"
+
+        Returns:
+            Set of all participant_ids (composite and bare) for protected models
+        """
+        models = self.get_models_for_config(config_key)
+        if not models:
+            return set()
+
+        # Group by base nn_id (strip harness/config_hash suffix)
+        from collections import defaultdict
+        base_models: dict[str, list[ModelInfo]] = defaultdict(list)
+        for m in models:
+            # Extract nn_id from composite ID: "nn_id:harness:config" -> "nn_id"
+            if ":" in m.model_id:
+                nn_id = m.model_id.split(":")[0]
+            else:
+                nn_id = m.model_id
+            base_models[nn_id].append(m)
+
+        # For each base model, take its MAX rating across all harnesses
+        base_best: list[tuple[str, float, list[str]]] = []
+        for nn_id, entries in base_models.items():
+            best_elo = max(e.elo for e in entries)
+            all_ids = [e.model_id for e in entries]
+            base_best.append((nn_id, best_elo, all_ids))
+
+        # Sort by best rating descending
+        base_best.sort(key=lambda x: x[1], reverse=True)
+
+        # Protect top 50%
+        keep_count = max(1, int(len(base_best) * self.KEEP_FRACTION))
+        protected = set()
+        for nn_id, _, all_ids in base_best[:keep_count]:
+            protected.add(nn_id)  # bare nn_id
+            for pid in all_ids:
+                protected.add(pid)  # all composite variants
+
+        return protected
 
     def cull_all_configs(self) -> dict[str, CullResult]:
         """Check and cull all 9 configs.

@@ -709,7 +709,25 @@ def get_algorithm_variants(
     ]
 
 
-def normalize_nn_id(nn_id: str | None) -> str | None:
+_VERSION_SUFFIX_PATTERN = re.compile(
+    r'(_v\d+(?:_heavy(?:_large|_xl)?)?(?:_averaged)?)$'
+)
+
+
+def strip_version_suffix(nn_id: str) -> str:
+    """Strip architecture version suffix from nn_id.
+
+    Examples:
+        canonical_hexagonal_2p_v2 -> canonical_hexagonal_2p
+        ringrift_best_hex8_2p_v5_heavy -> ringrift_best_hex8_2p
+        ringrift_best_square8_2p_v5_heavy_large -> ringrift_best_square8_2p
+        ringrift_best_hex8_2p_v5_heavy_averaged -> ringrift_best_hex8_2p
+        ringrift_best_hex8_2p -> ringrift_best_hex8_2p  (no change)
+    """
+    return _VERSION_SUFFIX_PATTERN.sub('', nn_id)
+
+
+def normalize_nn_id(nn_id: str | None, *, strip_version: bool = False) -> str | None:
     """Normalize model stem to canonical participant ID format.
 
     Converts 'canonical_square8_2p' to 'ringrift_best_square8_2p' so that
@@ -723,6 +741,8 @@ def normalize_nn_id(nn_id: str | None) -> str | None:
 
     Args:
         nn_id: Neural network identifier (model stem)
+        strip_version: If True, also strip architecture version suffixes
+            (e.g., _v2, _v5_heavy) for grouping by base model identity.
 
     Returns:
         Normalized nn_id with 'canonical_' replaced by 'ringrift_best_'
@@ -730,7 +750,9 @@ def normalize_nn_id(nn_id: str | None) -> str | None:
     if not nn_id:
         return nn_id
     if nn_id.startswith("canonical_"):
-        return "ringrift_best_" + nn_id[len("canonical_"):]
+        nn_id = "ringrift_best_" + nn_id[len("canonical_"):]
+    if strip_version:
+        nn_id = strip_version_suffix(nn_id)
     return nn_id
 
 
