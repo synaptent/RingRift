@@ -195,6 +195,7 @@ def extract_batch_quality(
         logger.warning(f"Database not found: {db_path}")
         return []
 
+    conn = None
     try:
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
@@ -224,7 +225,6 @@ def extract_batch_quality(
 
         cursor.execute(query, params)
         rows = cursor.fetchall()
-        conn.close()
 
         # Extract quality for each game
         qualities = []
@@ -238,6 +238,9 @@ def extract_batch_quality(
     except sqlite3.Error as e:
         logger.error(f"Failed to extract quality from {db_path}: {e}")
         return []
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def extract_quality_from_synced_db(
