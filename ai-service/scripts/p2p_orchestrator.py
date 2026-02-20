@@ -50,6 +50,65 @@ def _load_env_local():
 
 _load_env_local()
 
+# ===========================================================================
+# CRITICAL: Monkey-patch sqlite3.connect to auto-close on context exit.
+# In Python < 3.12, sqlite3.Connection.__exit__() only commits/rolls back
+# but does NOT close the connection. With hundreds of daemons scanning
+# 9000+ selfplay databases, this caused 4000+ leaked FDs and 400%+ CPU.
+# This patch wraps every connection to close on __exit__.
+# ===========================================================================
+import sqlite3 as _sqlite3_module
+
+_original_sqlite3_connect = _sqlite3_module.connect
+
+
+class _AutoClosingConnection:
+    """sqlite3.Connection wrapper that closes on context manager exit."""
+    __slots__ = ("_conn",)
+
+    def __init__(self, conn):
+        object.__setattr__(self, "_conn", conn)
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def __setattr__(self, name, value):
+        if name == "_conn":
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._conn, name, value)
+
+    def __enter__(self):
+        return self._conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            if exc_type is None:
+                self._conn.commit()
+            else:
+                self._conn.rollback()
+        finally:
+            self._conn.close()
+        return False
+
+    def close(self):
+        self._conn.close()
+
+    def __del__(self):
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
+
+def _patched_connect(*args, **kwargs):
+    conn = _original_sqlite3_connect(*args, **kwargs)
+    return _AutoClosingConnection(conn)
+
+
+_sqlite3_module.connect = _patched_connect
+# ===========================================================================
+
 import argparse
 import asyncio
 import contextlib
