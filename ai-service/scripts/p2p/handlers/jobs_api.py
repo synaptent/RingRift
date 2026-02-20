@@ -308,18 +308,21 @@ class JobsApiHandlersMixin(BaseP2PHandler):
         """Get JobType enum value from string.
 
         Handles lazy import to avoid circular dependencies.
+        Feb 2026: Use JobType(value) directly instead of hardcoded if-chain.
+        The old code only handled 3 of 12+ job types, silently returning None
+        for gumbel_selfplay, cpu_selfplay, training, etc.
         """
-        # Try to import JobType from the orchestrator module
+        # Try local types module first (no circular dependency risk)
+        try:
+            from scripts.p2p.types import JobType as JT
+            return JT(job_type_str)
+        except (ImportError, ValueError):
+            pass
+        # Fallback to orchestrator module
         try:
             from scripts.p2p_orchestrator import JobType as JT
-            if job_type_str == "gpu_selfplay":
-                return JT.GPU_SELFPLAY
-            elif job_type_str == "hybrid_selfplay":
-                return JT.HYBRID_SELFPLAY
-            elif job_type_str == "selfplay":
-                return JT.SELFPLAY
-            return None
-        except ImportError:
+            return JT(job_type_str)
+        except (ImportError, ValueError):
             return None
 
     @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
