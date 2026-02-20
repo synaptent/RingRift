@@ -387,6 +387,7 @@ class IdleDetectionLoop(BaseLoop):
         self._get_node_metrics = get_node_metrics
         self._idle_since: dict[str, float] = {}  # node_id -> timestamp when became idle
         self._zombie_since: dict[str, float] = {}  # node_id -> timestamp when became zombie
+        self._zombie_kill_attempts: dict[str, float] = {}  # node_id -> last kill attempt time
         self._detected_count = 0
         self._zombie_detected_count = 0
         self._skipped_not_leader = 0
@@ -422,16 +423,19 @@ class IdleDetectionLoop(BaseLoop):
                 has_gpu = peer_info.has_gpu
                 gpu_util = getattr(peer_info, "gpu_percent", 0) or 0
                 selfplay_jobs = getattr(peer_info, "selfplay_jobs", 0) or 0
+                is_cuda = getattr(peer_info, "is_cuda_gpu_node", False)
             else:
                 has_gpu = peer_info.get("has_gpu", False)
                 gpu_util = peer_info.get("gpu_percent", 0) or peer_info.get("gpu_utilization", 0) or 0
                 selfplay_jobs = peer_info.get("selfplay_jobs", 0) or 0
+                is_cuda = peer_info.get("is_cuda_gpu_node", False)
 
             if has_gpu:
                 gpu_peers[node_id] = {
                     "peer": peer_info,
                     "gpu_utilization": gpu_util,
                     "selfplay_jobs": selfplay_jobs,
+                    "is_cuda": is_cuda,
                 }
 
         active_nodes = len(gpu_peers)
@@ -482,8 +486,11 @@ class IdleDetectionLoop(BaseLoop):
                     logger.debug(f"[IdleDetection] Node {node_id} became active (GPU: {gpu_util}%)")
 
             # Zombie detection: node has jobs but GPU is nearly idle (stuck processes)
+            # Skip non-CUDA nodes (e.g. Apple MPS) - gpu_percent is always 0 for them
+            is_cuda = metrics.get("is_cuda", False)
             is_zombie = (
-                selfplay_jobs > 0
+                is_cuda
+                and selfplay_jobs > 0
                 and gpu_util < self.config.zombie_gpu_threshold_percent
             )
 
@@ -497,16 +504,21 @@ class IdleDetectionLoop(BaseLoop):
 
                 zombie_duration = now - self._zombie_since[node_id]
                 if zombie_duration >= self.config.zombie_duration_threshold_seconds:
+                    # Cooldown: only attempt kill once per 5 minutes
+                    last_attempt = self._zombie_kill_attempts.get(node_id, 0.0)
+                    if now - last_attempt < 300.0:
+                        continue  # Skip, still in cooldown
+
                     peer = metrics["peer"]
                     if self._on_zombie_detected:
                         try:
+                            self._zombie_kill_attempts[node_id] = now
                             await self._on_zombie_detected(peer, zombie_duration)
                             self._zombie_detected_count += 1
                             logger.warning(
                                 f"[ZombieDetection] Triggered zombie handler on {node_id} "
                                 f"(zombie for {zombie_duration:.0f}s, jobs: {selfplay_jobs})"
                             )
-                            # Don't remove from tracking - keep monitoring until state changes
                         except Exception as e:
                             logger.warning(f"[ZombieDetection] Callback failed for {node_id}: {e}")
                     else:
