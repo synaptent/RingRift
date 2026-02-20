@@ -265,13 +265,14 @@ class JobLifecycleManager:
                 and now - started > config.training_stuck_threshold
             ):
                 self._stats.stuck_jobs_detected += 1
+                worker = getattr(job, "worker_node", "") or ""
                 logger.info(
-                    f"STUCK DETECTED: Training job {job.job_id} on {job.target_node} "
+                    f"STUCK DETECTED: Training job {job.job_id} on {worker} "
                     f"- no progress for {int((now - last_progress)/60)}min"
                 )
 
                 # Try to kill the process on the target node
-                target_node = job.target_node
+                target_node = worker
                 if target_node and target_node != node_id:
                     await self._remote_kill_stuck_job(target_node, job.job_id, "training")
                 else:
@@ -308,7 +309,7 @@ class JobLifecycleManager:
                             fields={
                                 "Job ID": job.job_id,
                                 "Type": job.job_type,
-                                "Node": job.target_node or "local",
+                                "Node": worker or "local",
                                 "Config": f"{job.board_type}_{job.num_players}p",
                                 "Stuck For": f"{int((now - last_progress)/60)} minutes",
                             },
