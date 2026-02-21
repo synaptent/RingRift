@@ -373,6 +373,15 @@ class EvaluationDaemon(HandlerBase):
         # update the persistent queue (was causing 88% stuck evaluation timeout)
         self._dispatched_evaluations: dict[str, str] = {}
 
+        # Feb 2026: Track work IDs already processed via polling to avoid duplicates
+        # This bridges the cross-process gap between P2P orchestrator and master_loop
+        self._polled_work_ids: set[str] = set()
+        self._poll_completions_stats = {
+            "polls": 0,
+            "completions_found": 0,
+            "errors": 0,
+        }
+
     def _get_subscriptions(self) -> Dict[Any, Callable]:
         """Return event subscriptions for HandlerBase.
 
@@ -464,12 +473,22 @@ class EvaluationDaemon(HandlerBase):
         This catches models trained on cluster nodes where the TRAINING_COMPLETED
         event didn't reach the coordinator (network issues, event drops, etc.).
 
+        February 2026: Added cross-process completion polling. The P2P orchestrator
+        runs in a separate process from master_loop, so WORK_COMPLETED events emitted
+        on the P2P event bus never reach this daemon's event bus. This polling bridges
+        the gap by querying the P2P work queue via HTTP for completed evaluations.
+
         December 29, 2025: Added to satisfy HandlerBase abstract requirement.
         The actual work is done by _evaluation_worker() processing the queue.
         """
         import time
 
         current_time = time.time()
+
+        # Feb 2026: Poll P2P work queue for completed evaluations (cross-process bridge)
+        # This fixes the 97% evaluation failure rate caused by process isolation between
+        # P2P orchestrator and master_loop - events can't cross process boundaries
+        await self._poll_cluster_completions()
 
         # Check if it's time for a periodic model scan
         if self._last_model_scan is None or \
@@ -507,6 +526,8 @@ class EvaluationDaemon(HandlerBase):
                 "last_evaluation_time": self._eval_stats.last_evaluation_time,
             },
             "dedup_stats": dict(self._dedup_stats),
+            "poll_completions_stats": dict(self._poll_completions_stats),
+            "dispatched_evaluations_pending": len(self._dispatched_evaluations),
             "config": {
                 "games_per_baseline": self.config.games_per_baseline,
                 "baselines": self.config.baselines,
@@ -818,6 +839,182 @@ class EvaluationDaemon(HandlerBase):
             self._persistent_queue.fail(persistent_request_id, error)
 
         self._eval_stats.evaluations_failed += 1
+
+    async def _poll_cluster_completions(self) -> None:
+        """Poll P2P work queue for completed evaluation work items.
+
+        February 2026: Bridges the cross-process gap between P2P orchestrator
+        and master_loop. The P2P orchestrator runs in a separate Python process,
+        so events emitted on its event bus never reach this daemon's event bus.
+        This caused 97% of dispatched evaluations to time out as STUCK.
+
+        Approach:
+        1. Query P2P leader via HTTP for recently completed evaluation items
+        2. Match against dispatched evaluations (in-memory) or RUNNING persistent
+           queue entries (survives restarts)
+        3. Process completions the same way as _on_work_completed
+        """
+        import aiohttp
+
+        self._poll_completions_stats["polls"] += 1
+
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as session:
+                url = "http://localhost:8770/work/history?status=completed&limit=50"
+                async with session.get(url) as resp:
+                    if resp.status != 200:
+                        return
+                    data = await resp.json()
+
+            history = data.get("history", [])
+            if not history:
+                return
+
+            completions_processed = 0
+            for item in history:
+                work_id = item.get("work_id", "")
+                work_type = item.get("work_type", "")
+
+                # Only care about evaluation/gauntlet/tournament work
+                if work_type not in ("evaluation", "gauntlet", "tournament"):
+                    continue
+
+                # Skip already-processed items
+                if work_id in self._polled_work_ids:
+                    continue
+
+                config = item.get("config", {})
+                result = item.get("result", {})
+                board_type = config.get("board_type", "")
+                num_players = config.get("num_players", 0)
+                model_path = config.get("candidate_model", "")
+                estimated_elo = result.get("estimated_elo", result.get("best_elo", 0.0))
+
+                # Mark as seen regardless of whether we can match it
+                self._polled_work_ids.add(work_id)
+
+                # Strategy 1: Match against in-memory dispatched evaluations
+                if work_id in self._dispatched_evaluations:
+                    persistent_request_id = self._dispatched_evaluations.pop(work_id)
+                    logger.info(
+                        f"[EvaluationDaemon] Poll: matched dispatched evaluation "
+                        f"work_id={work_id}, elo={estimated_elo:.0f}"
+                    )
+                    if self._persistent_queue and persistent_request_id:
+                        self._persistent_queue.complete(persistent_request_id, elo=estimated_elo)
+                    self._eval_stats.evaluations_completed += 1
+                    completions_processed += 1
+
+                    if board_type and num_players and model_path:
+                        await self._emit_evaluation_completed(
+                            model_path=model_path,
+                            board_type=board_type,
+                            num_players=num_players,
+                            result=result,
+                        )
+                    continue
+
+                # Strategy 2: Match against RUNNING persistent queue entries
+                # This handles the case where master_loop restarted and lost
+                # the in-memory _dispatched_evaluations mapping
+                if self._persistent_queue and board_type and num_players:
+                    config_key = f"{board_type}_{num_players}p"
+                    matched = self._match_running_evaluation(
+                        config_key, model_path, estimated_elo, result
+                    )
+                    if matched:
+                        completions_processed += 1
+
+            if completions_processed > 0:
+                self._poll_completions_stats["completions_found"] += completions_processed
+                logger.info(
+                    f"[EvaluationDaemon] Poll: processed {completions_processed} "
+                    f"completed evaluations from P2P work queue"
+                )
+
+            # Prevent unbounded growth of polled_work_ids
+            if len(self._polled_work_ids) > 500:
+                # Keep only most recent 200
+                excess = len(self._polled_work_ids) - 200
+                for _ in range(excess):
+                    self._polled_work_ids.pop()
+
+        except (OSError, aiohttp.ClientError, asyncio.TimeoutError):
+            # P2P not reachable - normal during startup or network issues
+            self._poll_completions_stats["errors"] += 1
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[EvaluationDaemon] Poll error: {e}")
+            self._poll_completions_stats["errors"] += 1
+
+    def _match_running_evaluation(
+        self,
+        config_key: str,
+        model_path: str,
+        estimated_elo: float,
+        result: dict,
+    ) -> bool:
+        """Match a completed P2P work item against RUNNING persistent queue entries.
+
+        February 2026: Handles the case where master_loop restarted and the
+        in-memory _dispatched_evaluations mapping was lost. Matches by config_key
+        and model_path against RUNNING entries in the persistent queue.
+
+        Returns:
+            True if a match was found and processed.
+        """
+        if not self._persistent_queue:
+            return False
+
+        try:
+            stuck = self._persistent_queue.get_stuck_evaluations(timeout_seconds=0)
+            # Also check non-stuck running evaluations
+            from app.coordination.evaluation_queue import RequestStatus
+            with self._persistent_queue._lock:
+                with self._persistent_queue._get_connection() as conn:
+                    rows = conn.execute(
+                        """
+                        SELECT * FROM evaluation_requests
+                        WHERE status = ? AND config_key = ?
+                        ORDER BY started_at DESC
+                        LIMIT 5
+                        """,
+                        (RequestStatus.RUNNING, config_key),
+                    ).fetchall()
+
+            for row in rows:
+                request_id = row["request_id"]
+                row_model = row["model_path"]
+
+                # Match by model_path if available
+                if model_path and row_model and model_path != row_model:
+                    continue
+
+                logger.info(
+                    f"[EvaluationDaemon] Poll: matched RUNNING persistent request "
+                    f"{request_id} ({config_key}), elo={estimated_elo:.0f}"
+                )
+                self._persistent_queue.complete(request_id, elo=estimated_elo)
+                self._eval_stats.evaluations_completed += 1
+
+                board_type = row["board_type"]
+                num_players = row["num_players"]
+                effective_model = model_path or row_model
+                if board_type and num_players and effective_model:
+                    # Use fire-and-forget since we're in a sync context helper
+                    asyncio.ensure_future(self._emit_evaluation_completed(
+                        model_path=effective_model,
+                        board_type=board_type,
+                        num_players=num_players,
+                        result=result,
+                    ))
+                return True
+
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"[EvaluationDaemon] Match running evaluation error: {e}")
+
+        return False
 
     async def _evaluation_worker(self) -> None:
         """Worker that processes evaluation requests from the queue."""

@@ -2195,7 +2195,7 @@ class WorkQueue:
                 """, (limit,))
 
             for row in cursor.fetchall():
-                items.append({
+                item_dict: dict[str, Any] = {
                     "work_id": row["work_id"],
                     "work_type": row["work_type"],
                     "priority": row["priority"],
@@ -2208,7 +2208,14 @@ class WorkQueue:
                     "claimed_by": row["claimed_by"],
                     "attempts": row["attempts"],
                     "error": row["error"],
-                })
+                }
+                # Feb 2026: Include result for completed items (needed for
+                # cross-process evaluation completion polling)
+                try:
+                    item_dict["result"] = json.loads(row["result"]) if row["result"] else {}
+                except (json.JSONDecodeError, KeyError):
+                    item_dict["result"] = {}
+                items.append(item_dict)
 
         except (sqlite3.OperationalError, sqlite3.IntegrityError) as e:
             logger.error(f"Database error getting work history: {e}")
