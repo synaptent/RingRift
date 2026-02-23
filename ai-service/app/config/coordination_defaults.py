@@ -194,8 +194,10 @@ class DistributionDefaults:
     # Minimum nodes a model must be distributed to before promotion
     MIN_NODES_FOR_PROMOTION: int = _env_int("RINGRIFT_MIN_NODES_FOR_PROMOTION", 10)
 
-    # Minimum nodes for fair evaluation (lower than promotion to allow testing)
-    MIN_NODES_FOR_EVALUATION: int = _env_int("RINGRIFT_MIN_NODES_FOR_EVALUATION", 5)
+    # Minimum nodes for fair evaluation.
+    # Set to 1: coordinator runs evaluation locally with the candidate model.
+    # Higher values block evaluation behind model distribution which times out.
+    MIN_NODES_FOR_EVALUATION: int = _env_int("RINGRIFT_MIN_NODES_FOR_EVALUATION", 1)
 
     # Timeout waiting for distribution to complete (seconds)
     DISTRIBUTION_TIMEOUT_SECONDS: float = _env_float(
