@@ -1138,7 +1138,7 @@ class EvaluationDaemon(HandlerBase):
                                 "config_key": request.get("config_key", "unknown"),
                             },
                         )
-                        self.stats.failed_evaluations += 1
+                        self._eval_stats.evaluations_failed += 1
                         continue
 
                 # Run evaluation
