@@ -358,7 +358,7 @@ class DataManagementConfig:
 
     # Export thresholds
     db_export_threshold_mb: float = 100.0
-    max_concurrent_exports: int = 3
+    max_concurrent_exports: int = 1  # Reduced from 3: concurrent exports cause I/O contention with P2P
     export_timeout_seconds: float = 3600.0  # 1 hour
 
     # Training thresholds
