@@ -281,27 +281,40 @@ class LeaderMaintenanceLoop(BaseLoop):
             )
             return
 
-        # ALWAYS renew lease if we're currently the leader (regardless of voter status)
-        # This is critical: lease renewal must happen for ANY leader, not just
-        # the "primary voter". Without this, the bully algorithm step-down
-        # check in _is_leader() expires our lease and gossip takes over.
+        # Feb 23, 2026: Only renew lease if this node is the designated coordinator
+        # OR has an active forced_leader_override set by the force_leader endpoint.
+        # Previously, ANY node that was leader got its lease renewed forever,
+        # preventing forced leadership transfers from the coordinator. Lambda GPU
+        # nodes that accidentally became leader (via stale bootstrap) would never
+        # step down because their lease kept getting renewed.
         if self._is_currently_leader():
-            try:
-                from app.p2p.constants import LEADER_LEASE_DURATION
+            forced_override = getattr(self._orchestrator, "_forced_leader_override", False)
+            if self._is_primary_leader_node() or forced_override:
+                try:
+                    from app.p2p.constants import LEADER_LEASE_DURATION
+                    lease_expires = getattr(self._orchestrator, "leader_lease_expires", 0)
+                    remaining = lease_expires - time.time()
+                    # Renew when less than 75% of lease remaining (aggressive)
+                    if remaining < LEADER_LEASE_DURATION * 0.75:
+                        self._orchestrator.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
+                        self._orchestrator.last_leader_seen = time.time()
+                        if hasattr(self._orchestrator, "_save_state"):
+                            self._orchestrator._save_state()
+                        logger.info(
+                            f"[LeaderMaintenance] Renewed lease "
+                            f"(was {remaining:.0f}s remaining, now {LEADER_LEASE_DURATION}s)"
+                        )
+                except (ImportError, AttributeError) as e:
+                    logger.warning(f"[LeaderMaintenance] Lease renewal failed: {e}")
+            else:
+                # Non-coordinator leader: let lease expire so coordinator can take over
                 lease_expires = getattr(self._orchestrator, "leader_lease_expires", 0)
                 remaining = lease_expires - time.time()
-                # Renew when less than 75% of lease remaining (aggressive)
-                if remaining < LEADER_LEASE_DURATION * 0.75:
-                    self._orchestrator.leader_lease_expires = time.time() + LEADER_LEASE_DURATION
-                    self._orchestrator.last_leader_seen = time.time()
-                    if hasattr(self._orchestrator, "_save_state"):
-                        self._orchestrator._save_state()
+                if remaining > 0:
                     logger.info(
-                        f"[LeaderMaintenance] Renewed lease "
-                        f"(was {remaining:.0f}s remaining, now {LEADER_LEASE_DURATION}s)"
+                        f"[LeaderMaintenance] Non-coordinator leader, "
+                        f"lease expiring in {remaining:.0f}s (not renewing)"
                     )
-            except (ImportError, AttributeError) as e:
-                logger.warning(f"[LeaderMaintenance] Lease renewal failed: {e}")
             return
 
         # Only the primary voter node should try to recover lost leadership
