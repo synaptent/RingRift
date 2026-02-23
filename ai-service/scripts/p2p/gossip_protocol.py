@@ -2338,6 +2338,15 @@ class GossipProtocolMixin(GossipPersistenceMixin, GossipPartitionMixin, _GossipM
         if getattr(self, "leader_id", None) == self.node_id:
             return
 
+        # Feb 23, 2026: Skip during election grace period (set by force_leader).
+        # Without this, nodes that were just forced to accept a leader would
+        # immediately self-elect because stale gossip_peer_states still reported
+        # them as leader. The grace period gives gossip time to propagate the
+        # forced leader's higher term to all peers.
+        grace_until = getattr(self, "_election_grace_until", 0) or 0
+        if time.time() < grace_until:
+            return
+
         # Skip if we're in an election or stepping down
         if getattr(self, "election_in_progress", False):
             return
@@ -2880,10 +2889,18 @@ class GossipProtocolMixin(GossipPersistenceMixin, GossipPartitionMixin, _GossipM
                 # Feb 2026: Don't adopt incoming leader if forced override is active
                 _forced_ae = getattr(self, "_forced_leader_override", False)
                 _lease_ae = time.time() < getattr(self, "leader_lease_expires", 0)
+                # Feb 23, 2026: Also check election grace period
+                _grace_ae = time.time() < (getattr(self, "_election_grace_until", 0) or 0)
+                _current_leader = getattr(self, "leader_id", None)
                 if _forced_ae and _lease_ae:
                     self._log_info(
                         f"Rejecting epoch-based leader {incoming_leader} "
                         f"(forced leader override active)"
+                    )
+                elif _grace_ae and incoming_leader != _current_leader:
+                    self._log_info(
+                        f"Rejecting epoch-based leader {incoming_leader} "
+                        f"during election grace period (current: {_current_leader})"
                     )
                 else:
                     # Import NodeRole for comparison

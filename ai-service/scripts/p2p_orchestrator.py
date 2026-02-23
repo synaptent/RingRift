@@ -9508,6 +9508,17 @@ print(json.dumps({{
 
     async def _start_election(self):
         """Start leader election using Bully algorithm."""
+        # Feb 23, 2026: Suppress elections during force_leader grace period.
+        # Without this, nodes that were forced to accept a specific leader could
+        # immediately start a new election, overriding the forced leader.
+        grace_until = getattr(self, "_election_grace_until", 0) or 0
+        if time.time() < grace_until:
+            logger.info(
+                f"[Election] Skipping: election grace period active "
+                f"({grace_until - time.time():.0f}s remaining)"
+            )
+            return
+
         # Jan 3, 2026 Sprint 13.3: Track election start time for latency metrics
         self._start_election_timing()
 
@@ -11270,6 +11281,60 @@ print(json.dumps({{
         except Exception as e:
             logger.debug(f"[JobMgmt] {name} failed: {e}")
 
+    async def _run_leader_ops_inline(self) -> None:
+        """Run leader-only operations inline in the management loop.
+
+        Feb 23, 2026: These contain sync blocking calls (subprocess.run for
+        pgrep/ps/nvidia-smi, sync SQLite in check_training_readiness and
+        check_training_needed, sync file I/O in manifest collection).
+        Called every 60s instead of 15s to reduce total blocking time.
+        Run sequentially with yields between each op so HTTP handlers
+        get brief windows to process between blocking ops.
+        """
+        _t0 = time.time()
+        try:
+            split_brain = await self._run_with_timeout(
+                self._check_and_resolve_split_brain(),
+                "check_and_resolve_split_brain", timeout=10.0)
+            if split_brain:
+                return
+            await asyncio.sleep(0)
+
+            logger.info("[LeaderOps] Running leader operations cycle")
+
+            _is_coord = os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() in ("true", "1", "yes")
+            _leader_ops = [
+                ("manage_cluster_jobs", self._manage_cluster_jobs(), 30.0),
+                ("check_cluster_balance", self._check_cluster_balance(), 15.0),
+                ("check_and_trigger_training", self._check_and_trigger_training(), 15.0),
+                ("check_improvement_cycles", self._check_improvement_cycles(), 15.0),
+                ("auto_rebalance_from_work_queue",
+                 self._auto_rebalance_from_work_queue(), 30.0),
+                ("auto_scale_gpu_utilization",
+                 self._auto_scale_gpu_utilization(), 15.0),
+                ("sweep_nat_recovery",
+                 self.recovery_manager.sweep_nat_recovery(), 15.0),
+                ("check_node_recovery",
+                 self.recovery_manager.check_node_recovery(), 15.0),
+            ]
+            # Coordinator has no local training/selfplay processes, so
+            # check_and_kill_stuck_jobs is pure waste (subprocess.run pgrep
+            # for processes that don't exist, blocking 2-10s).
+            if not _is_coord:
+                _leader_ops.insert(4, ("check_and_kill_stuck_jobs",
+                    self.job_lifecycle_manager.check_and_kill_stuck_jobs(), 15.0))
+            for _name, _coro, _timeout in _leader_ops:
+                _op_t = time.time()
+                await self._run_with_timeout(_coro, _name, timeout=_timeout)
+                _op_e = time.time() - _op_t
+                logger.info(f"[LeaderOps] {_name}: {_op_e:.1f}s")
+                await asyncio.sleep(0)  # Yield between each op
+
+            _elapsed = time.time() - _t0
+            logger.info(f"[LeaderOps] Cycle complete in {_elapsed:.1f}s")
+        except Exception as e:
+            logger.error(f"[LeaderOps] Error: {e}", exc_info=True)
+
     async def _job_management_loop(self):
         """Manage jobs - leader coordinates cluster, all nodes handle local operations.
 
@@ -11290,13 +11355,20 @@ print(json.dumps({{
                 # and were redundantly blocking this loop for 15-30s.
                 _ops = [
                     ("check_local_stuck_jobs", lambda: self.job_lifecycle_manager.check_local_stuck_jobs()),
-                    ("local_resource_cleanup", lambda: self.job_coordination_manager.local_resource_cleanup()),
                     ("check_emergency_coordinator_fallback", lambda: self._check_emergency_coordinator_fallback()),
-                    ("p2p_data_sync", lambda: self.sync.p2p_data_sync()),
-                    ("p2p_model_sync", lambda: self.sync.p2p_model_sync()),
-                    ("p2p_training_db_sync", lambda: self.sync.p2p_training_db_sync()),
                 ]
-                # Coordinator doesn't run selfplay/training locally, skip those ops
+                # Coordinator doesn't run selfplay/training locally, doesn't sync
+                # from peers, and doesn't need local resource cleanup (no local
+                # game data). Skip all heavy ops that use asyncio.to_thread() or
+                # subprocess calls - these exhaust the 4-worker thread pool and
+                # block HTTP handlers for 15-200s.
+                if not _is_coord:
+                    _ops.extend([
+                        ("local_resource_cleanup", lambda: self.job_coordination_manager.local_resource_cleanup()),
+                        ("p2p_data_sync", lambda: self.sync.p2p_data_sync()),
+                        ("p2p_model_sync", lambda: self.sync.p2p_model_sync()),
+                        ("p2p_training_db_sync", lambda: self.sync.p2p_training_db_sync()),
+                    ])
                 if not _is_coord:
                     _ops.extend([
                         ("consolidate_selfplay_data", lambda: self.data_pipeline_manager.consolidate_selfplay_data(
@@ -11315,39 +11387,15 @@ print(json.dumps({{
                     await asyncio.sleep(0)
 
                 # ==== LEADER-ONLY OPERATIONS ====
+                # These contain sync blocking calls (subprocess.run, SQLite,
+                # check_training_readiness) that block the event loop for
+                # 30-136s. Run at reduced frequency (every 60s instead of 15s)
+                # and skip during the first cycle to let startup complete.
                 if self.role == NodeRole.LEADER:
-                    split_brain = await self._check_and_resolve_split_brain()
-                    if split_brain:
-                        await asyncio.sleep(JOB_CHECK_INTERVAL)
-                        continue
-
-                    logger.info("[JobMgmt] Running leader-only operations cycle")
-                    # Run independent leader ops concurrently to reduce total cycle time.
-                    # manage_cluster_jobs and auto_rebalance need 30s (HTTP calls to nodes).
-                    await asyncio.gather(
-                        self._run_with_timeout(
-                            self._manage_cluster_jobs(), "manage_cluster_jobs", timeout=30.0),
-                        self._run_with_timeout(
-                            self._check_cluster_balance(), "check_cluster_balance", timeout=15.0),
-                        self._run_with_timeout(
-                            self._check_and_trigger_training(), "check_and_trigger_training", timeout=15.0),
-                        self._run_with_timeout(
-                            self._check_improvement_cycles(), "check_improvement_cycles", timeout=15.0),
-                        self._run_with_timeout(
-                            self.job_lifecycle_manager.check_and_kill_stuck_jobs(),
-                            "check_and_kill_stuck_jobs", timeout=15.0),
-                    )
-                    await asyncio.sleep(0)  # Yield for HTTP handlers
-                    await asyncio.gather(
-                        self._run_with_timeout(
-                            self._auto_rebalance_from_work_queue(), "auto_rebalance_from_work_queue", timeout=30.0),
-                        self._run_with_timeout(
-                            self._auto_scale_gpu_utilization(), "auto_scale_gpu_utilization", timeout=15.0),
-                        self._run_with_timeout(
-                            self.recovery_manager.sweep_nat_recovery(), "sweep_nat_recovery", timeout=15.0),
-                        self._run_with_timeout(
-                            self.recovery_manager.check_node_recovery(), "check_node_recovery", timeout=15.0),
-                    )
+                    _leader_last = getattr(self, "_last_leader_ops_time", 0)
+                    if time.time() - _leader_last >= 60:
+                        self._last_leader_ops_time = time.time()
+                        await self._run_leader_ops_inline()
                 _total = time.time() - _t0
                 logger.info(f"[JobMgmt] Cycle complete in {_total:.1f}s (role={self.role})")
             except Exception as e:  # noqa: BLE001

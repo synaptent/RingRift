@@ -636,7 +636,13 @@ class ElectionHandlersMixin(BaseP2PHandler):
                 # This was the root cause of Lambda GPU nodes refusing to follow
                 # local-mac and never claiming work from the queue.
                 self._forced_leader_override = False
-                self.leader_lease_expires = 0  # Clear stale self-lease
+                # Feb 23, 2026: Set lease_expires to match grace period instead
+                # of 0. Setting to 0 caused gossip to treat the lease as expired,
+                # entering the "leaderless or expired" code path which accepted
+                # new leader claims from peers, overriding the forced leader
+                # within seconds. With a valid lease, gossip skips that path.
+                self.leader_lease_expires = time.time() + 120.0
+                self.last_leader_seen = time.time()
 
                 # Sync ULSM state machine to FOLLOWER
                 if hasattr(self, "_leadership_sm") and self._leadership_sm:
