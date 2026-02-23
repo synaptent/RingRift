@@ -1379,6 +1379,19 @@ class EvaluationDaemon(HandlerBase):
             return
         model_path = local_model_path
 
+        # February 2026: Check if this node should run gauntlets locally.
+        # Must be checked BEFORE distribution availability - coordinators dispatch
+        # to cluster and let GPU nodes pull the model on demand.
+        import os
+        gauntlet_override = os.environ.get("RINGRIFT_GAUNTLET_ENABLED", "").lower()
+        from app.config.env import env
+        if gauntlet_override not in ("1", "true", "yes") and not env.gauntlet_enabled:
+            logger.info(
+                f"[EvaluationDaemon] Gauntlet disabled on this node, dispatching to cluster: {model_path}"
+            )
+            await self._dispatch_gauntlet_to_cluster(model_path, board_type, num_players, request)
+            return
+
         # December 2025 - Phase 3B: Pre-evaluation distribution check
         available, node_count = await self._check_model_availability(model_path)
         if not available:
@@ -1398,18 +1411,6 @@ class EvaluationDaemon(HandlerBase):
                 model_path, board_type, num_players,
                 f"Distribution incomplete: only {node_count} nodes"
             )
-            return
-
-        # February 2026: Check if this node should run gauntlets locally
-        # Allow env var override to bypass cached_property on coordinator
-        import os
-        gauntlet_override = os.environ.get("RINGRIFT_GAUNTLET_ENABLED", "").lower()
-        from app.config.env import env
-        if gauntlet_override not in ("1", "true", "yes") and not env.gauntlet_enabled:
-            logger.info(
-                f"[EvaluationDaemon] Gauntlet disabled on this node, dispatching to cluster: {model_path}"
-            )
-            await self._dispatch_gauntlet_to_cluster(model_path, board_type, num_players, request)
             return
 
         start_time = time.time()

@@ -392,16 +392,18 @@ class RingRiftEnv:
     def gauntlet_enabled(self) -> bool:
         """Whether gauntlet/evaluation is enabled on this node.
 
-        Note: Coordinators NEED gauntlet enabled because candidate models
-        are only available locally. The cluster dispatch path requires model
-        distribution first, which is fragile and times out. The evaluation
-        daemon's _run_gauntlet() is async and won't block the event loop.
+        Coordinators default to False: PyTorch MPS holds the Python GIL
+        during forward passes, blocking the asyncio event loop for minutes
+        on large boards (square19=361 cells). Evaluations dispatch to GPU
+        cluster nodes instead via _dispatch_gauntlet_to_cluster().
         """
         explicit = os.environ.get("RINGRIFT_GAUNTLET_ENABLED", "").lower()
         if explicit in ("0", "false", "no"):
             return False
         if explicit in ("1", "true", "yes"):
             return True
+        if self.is_coordinator:
+            return False
         return self._get_node_config_bool("gauntlet_enabled", default=True)
 
     @cached_property
