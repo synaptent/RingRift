@@ -2057,8 +2057,8 @@ class P2POrchestrator(
         """Phase 5: All 14 managers + 6 sub-orchestrators + state loading."""
         # Load persisted state first
         self._load_state()
-        if self.leader_id == self.node_id:
-            self._set_leader(self.node_id, reason="startup_restore_leadership", save_state=False)
+        # NOTE: _set_leader() deferred until after self.leadership is initialized
+        # (see below at LeadershipOrchestrator creation)
 
         # MonitoringOrchestrator must be early (_create_self_info uses it)
         from scripts.p2p.orchestrators import MonitoringOrchestrator
@@ -2233,6 +2233,9 @@ class P2POrchestrator(
             PeerNetworkOrchestrator, ProcessSpawnerOrchestrator, SyncOrchestrator,
         )
         self.leadership = LeadershipOrchestrator(self)
+        # Deferred from _load_state(): restore leadership after LeadershipOrchestrator exists
+        if self.leader_id == self.node_id:
+            self._set_leader(self.node_id, reason="startup_restore_leadership", save_state=False)
         self.network = PeerNetworkOrchestrator(self)
         self.sync = SyncOrchestrator(self)
         self.jobs = JobOrchestrator(self)
