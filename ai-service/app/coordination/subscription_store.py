@@ -483,9 +483,15 @@ class SubscriptionStore:
         dlq = get_dead_letter_queue()
         router = get_router()
 
-        # Get events older than min_age
+        # Get events older than min_age but not older than max_age
         cutoff = datetime.now() - timedelta(seconds=min_age_seconds)
         cutoff_str = cutoff.isoformat()
+        # Feb 2026: Cap max age to 1 hour. Stale events from days/weeks ago
+        # were being replayed indefinitely, emitting phantom TRAINING_COMPLETED
+        # events with lost metrics (policy_accuracy=0.0).
+        max_age_seconds = 3600
+        max_age_cutoff = datetime.now() - timedelta(seconds=max_age_seconds)
+        max_age_cutoff_str = max_age_cutoff.isoformat()
 
         # Wrap blocking SQLite call with asyncio.to_thread to avoid event loop blocking
         # December 30, 2025: Fixed async context blocking
@@ -496,10 +502,12 @@ class SubscriptionStore:
                     """
                     SELECT * FROM dead_letter
                     WHERE created_at < ?
+                    AND created_at > ?
+                    AND retry_count < 5
                     ORDER BY created_at ASC
                     LIMIT ?
                     """,
-                    (cutoff_str, max_events),
+                    (cutoff_str, max_age_cutoff_str, max_events),
                 )
                 return cursor.fetchall()
 

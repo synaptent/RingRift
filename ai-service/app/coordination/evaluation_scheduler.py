@@ -45,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 # Default configuration
 DEFAULT_GAMES_PER_HARNESS = 50  # Games per harness evaluation
-DEFAULT_GAUNTLET_GAMES = 30  # Games against baseline opponents
+DEFAULT_GAUNTLET_GAMES = 50  # Games against baseline opponents (raised from 30, Feb 22)
 DEFAULT_TOURNAMENT_GAMES = 10  # Games per matchup in round-robin
 
 

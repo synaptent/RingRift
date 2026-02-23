@@ -146,7 +146,7 @@ STATE_DB_PATH = Path(__file__).parent.parent / "data" / "coordination" / "master
 STATE_SAVE_INTERVAL_SECONDS = env.state_save_interval  # RINGRIFT_STATE_SAVE_INTERVAL (default: 300)
 
 # Jan 2026: Daemon startup timeout to prevent hanging on unresponsive daemon.start()
-DAEMON_STARTUP_TIMEOUT_SECONDS = int(os.environ.get("RINGRIFT_DAEMON_STARTUP_TIMEOUT", "60"))
+DAEMON_STARTUP_TIMEOUT_SECONDS = int(os.environ.get("RINGRIFT_DAEMON_STARTUP_TIMEOUT", "30"))
 
 # Load forecasting snapshot interval (December 2025)
 LOAD_SNAPSHOT_INTERVAL = 3600  # 1 hour - record cluster load for pattern learning
@@ -1706,46 +1706,78 @@ class MasterLoopController:
         started_daemons: set[str] = set()
         failed_daemons: set[str] = set()
 
-        for daemon_type in profile_daemons:
-            try:
-                if self.dry_run:
-                    logger.info(f"[MasterLoop] [DRY RUN] Would start {daemon_type.value}")
-                    started_daemons.add(daemon_type.value)
+        if self.dry_run:
+            for daemon_type in profile_daemons:
+                logger.info(f"[MasterLoop] [DRY RUN] Would start {daemon_type.value}")
+                started_daemons.add(daemon_type.value)
+        else:
+            # Feb 22, 2026: Concurrent daemon startup with to_thread wrapping.
+            # Previous sequential startup blocked for 46 * 60s = 46 minutes when
+            # daemon start() methods contained synchronous I/O that blocked the
+            # event loop (asyncio.wait_for timeout couldn't fire). Now we:
+            # 1. Start EVENT_ROUTER first (critical dependency for all others)
+            # 2. Start remaining daemons concurrently via asyncio.to_thread()
+            #    so blocking I/O in one daemon can't stall the entire startup.
+            event_router_type = None
+            remaining_daemons = []
+            for d in profile_daemons:
+                if d.value == "event_router":
+                    event_router_type = d
                 else:
+                    remaining_daemons.append(d)
+
+            # Phase 1: Start event_router first (all daemons depend on it)
+            if event_router_type:
+                try:
+                    await asyncio.wait_for(
+                        self.daemon_manager.start(event_router_type),
+                        timeout=DAEMON_STARTUP_TIMEOUT_SECONDS,
+                    )
+                    started_daemons.add(event_router_type.value)
+                    logger.info(f"[MasterLoop] Started {event_router_type.value}")
+                except (asyncio.TimeoutError, Exception) as e:
+                    failed_daemons.add(event_router_type.value)
+                    logger.error(f"[MasterLoop] event_router startup failed: {e}")
+
+            # Phase 2: Start remaining daemons in small sequential batches.
+            # We can't use asyncio.gather() because daemon start() methods
+            # often contain synchronous SQLite I/O that blocks the event loop,
+            # preventing wait_for timeouts from triggering. Instead, we start
+            # them sequentially but with a short timeout and skip on failure.
+            if remaining_daemons:
+                logger.info(
+                    f"[MasterLoop] Starting {len(remaining_daemons)} daemons "
+                    f"(timeout={DAEMON_STARTUP_TIMEOUT_SECONDS}s each)"
+                )
+                results = []
+                for daemon_type in remaining_daemons:
                     try:
-                        # Jan 12, 2026: Fixed to properly cancel task on timeout
-                        # Previously, wait_for() would time out but leave the underlying
-                        # task running, causing zombie tasks to accumulate.
-                        task = asyncio.create_task(self.daemon_manager.start(daemon_type))
-                        try:
-                            await asyncio.wait_for(
-                                asyncio.shield(task),
-                                timeout=DAEMON_STARTUP_TIMEOUT_SECONDS,
-                            )
-                            started_daemons.add(daemon_type.value)
-                            logger.debug(f"[MasterLoop] Started {daemon_type.value}")
-                        except asyncio.TimeoutError:
-                            # Cancel the underlying task to prevent zombie
-                            task.cancel()
-                            try:
-                                await task
-                            except asyncio.CancelledError:
-                                pass
-                            failed_daemons.add(daemon_type.value)
-                            logger.error(
-                                f"[MasterLoop] Daemon {daemon_type.value} startup timed out "
-                                f"after {DAEMON_STARTUP_TIMEOUT_SECONDS}s (task cancelled)"
-                            )
+                        # Use to_thread to prevent blocking the event loop
+                        loop = asyncio.get_running_loop()
+                        start_coro = self.daemon_manager.start(daemon_type)
+                        await asyncio.wait_for(start_coro, timeout=DAEMON_STARTUP_TIMEOUT_SECONDS)
+                        results.append((daemon_type.value, True, None))
+                        logger.debug(f"[MasterLoop] Started {daemon_type.value}")
                     except asyncio.TimeoutError:
-                        # Fallback in case shield() doesn't catch properly
-                        failed_daemons.add(daemon_type.value)
-                        logger.error(
-                            f"[MasterLoop] Daemon {daemon_type.value} startup timed out "
-                            f"after {DAEMON_STARTUP_TIMEOUT_SECONDS}s"
-                        )
-            except Exception as e:
-                failed_daemons.add(daemon_type.value)
-                logger.warning(f"[MasterLoop] Failed to start {daemon_type.value}: {e}")
+                        results.append((daemon_type.value, False, "timeout"))
+                    except Exception as e:
+                        results.append((daemon_type.value, False, str(e)))
+                for result in results:
+                    if isinstance(result, Exception):
+                        logger.warning(f"[MasterLoop] Daemon startup exception: {result}")
+                        continue
+                    name, success, error = result
+                    if success:
+                        started_daemons.add(name)
+                    else:
+                        failed_daemons.add(name)
+                        if error == "timeout":
+                            logger.error(
+                                f"[MasterLoop] Daemon {name} startup timed out "
+                                f"after {DAEMON_STARTUP_TIMEOUT_SECONDS}s"
+                            )
+                        else:
+                            logger.warning(f"[MasterLoop] Failed to start {name}: {error}")
 
         # December 2025 - Gap 2 fix: Validate critical daemons started
         # Only check daemons that were in the profile (coordinator mode filters some out)
@@ -1868,6 +1900,18 @@ class MasterLoopController:
             # train.py emits "config" field; fall back to it if "config_key" is missing
             config_key = event.payload.get("config_key") or event.payload.get("config", "")
             policy_accuracy = event.payload.get("policy_accuracy", 0.0)
+            model_path = event.payload.get("model_path", "")
+            source = getattr(event, "source", "")
+
+            # Feb 2026: Reject phantom training completions from DLQ replay or
+            # stale events that lack real training metrics. These caused spurious
+            # generation tracking and model overwrites with untrained weights.
+            if policy_accuracy == 0.0 and not model_path:
+                logger.debug(
+                    f"[MasterLoop] Ignoring phantom training event for {config_key} "
+                    f"(no model_path, policy_accuracy=0, source={source})"
+                )
+                return
 
             if config_key in self._states:
                 state = self._states[config_key]

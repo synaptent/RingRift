@@ -367,6 +367,8 @@ def subscribe_to_manager_events(orchestrator: Any) -> bool:
                         "config_key": config_key,
                         "model_path": model_path,
                         "final_loss": final_loss,
+                        "training_samples": payload.get("training_samples", 0),
+                        "training_games": payload.get("training_games", 0),
                         "source": "p2p_bridge",
                     })
                     logger.debug("[P2P] Bridged TRAINING_COMPLETED to coordination bus")

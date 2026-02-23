@@ -593,6 +593,18 @@ class AutoExportDaemon(HandlerBase):
             return None, None
         return parsed.board_type, parsed.num_players
 
+    def _get_min_elo_for_config(self, config_key: str) -> float | None:
+        """Get minimum Elo for export filtering (current_best - 300, or None if < 1400)."""
+        try:
+            from app.coordination.elo_progress_tracker import get_elo_progress_tracker
+            tracker = get_elo_progress_tracker()
+            snapshot = tracker.get_latest_snapshot(config_key)
+            if snapshot is None or snapshot.best_elo < 1400:
+                return None
+            return snapshot.best_elo - 300
+        except Exception:
+            return None
+
     # ========== Event-Driven Batch Export (December 2025) ==========
 
     async def _evaluate_batch_trigger(self, config_key: str) -> None:
@@ -954,6 +966,10 @@ class AutoExportDaemon(HandlerBase):
                     "--output", str(output_path),
                     "--allow-noncanonical",  # Allow any database, not just registry
                 ]
+
+                min_elo = self._get_min_elo_for_config(config_key)
+                if min_elo is not None:
+                    cmd.extend(["--min-elo", str(min_elo)])
 
                 if self.config.use_incremental_export:
                     cmd.append("--use-cache")

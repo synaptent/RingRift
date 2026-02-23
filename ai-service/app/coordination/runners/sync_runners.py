@@ -464,8 +464,22 @@ async def create_gossip_sync() -> None:
     GossipSyncDaemon requires node_id, data_dir, and peers_config.
 
     Jan 10, 2026: Skip if P2P orchestrator is running (uses same port 8771).
+    Feb 22, 2026: Always skip on coordinator - P2P orchestrator handles gossip.
+    Binding 8771 here prevents P2P from starting if master_loop launches first.
     """
+    import asyncio
     import socket
+
+    from app.config.env import env
+
+    # Coordinator nodes always use P2P orchestrator for gossip (port 8771).
+    # If master_loop grabs 8771 first, P2P can't start - causing the entire
+    # cluster pipeline to stall.
+    if env.is_coordinator:
+        logger.info("GossipSync skipped: coordinator uses P2P orchestrator for gossip")
+        while True:
+            await asyncio.sleep(3600)
+        return
 
     # Check if port 8771 is already in use (likely P2P orchestrator)
     test_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -475,8 +489,6 @@ async def create_gossip_sync() -> None:
     except OSError:
         # Port already in use - P2P orchestrator likely running
         logger.info("GossipSync skipped: port 8771 already in use (P2P orchestrator running)")
-        # Sleep forever to keep daemon "running" without conflict
-        import asyncio
         while True:
             await asyncio.sleep(3600)
         return

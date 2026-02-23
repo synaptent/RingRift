@@ -87,8 +87,10 @@ class TournamentDaemonConfig:
     ladder_interval_seconds: float = 3600.0  # 1 hour
 
     # Evaluation settings
-    games_per_evaluation: int = 20
-    games_per_baseline: int = 10
+    # Feb 22, 2026: Raised from 20→50. With 20 games, 95% CI is ±22% win rate,
+    # making promotion decisions statistically indistinguishable from random.
+    games_per_evaluation: int = 50
+    games_per_baseline: int = 20
     # Extended baselines for diverse Elo population (Dec 2025)
     # Includes random, heuristic variants, MCTS, and NNUE at different strengths
     baselines: list[str] = field(default_factory=lambda: [

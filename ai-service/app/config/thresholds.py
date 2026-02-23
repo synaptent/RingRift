@@ -125,13 +125,13 @@ def get_gauntlet_games_per_opponent(num_players: int = 2) -> int:
     return GAUNTLET_GAMES_PER_OPPONENT
 
 
-# Jan 17, 2026: Gauntlet simulation budget by player count
-# Multiplayer games have more complex decision trees requiring deeper search
-# to achieve reliable evaluation. Scale simulations proportionally:
-# 2p: 200 (baseline), 3p: 400 (2x), 4p: 600 (3x)
-GAUNTLET_SIMULATIONS_2P = 200   # 2-player baseline
-GAUNTLET_SIMULATIONS_3P = 400   # 3-player: 2x budget for complexity
-GAUNTLET_SIMULATIONS_4P = 600   # 4-player: 3x budget for complexity
+# Gauntlet simulation budget by player count.
+# Feb 22, 2026: Raised from 200/400/600 to 400/600/800. Selfplay uses 800 sims,
+# so gauntlet at 200 caused models to play much weaker during evaluation than
+# training, producing false negatives and blocking good model promotions.
+GAUNTLET_SIMULATIONS_2P = 400   # 2-player baseline (was 200)
+GAUNTLET_SIMULATIONS_3P = 600   # 3-player (was 400)
+GAUNTLET_SIMULATIONS_4P = 800   # 4-player (was 600)
 
 
 def get_gauntlet_simulations(num_players: int = 2) -> int:

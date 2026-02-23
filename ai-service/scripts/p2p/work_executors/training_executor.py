@@ -52,9 +52,9 @@ async def execute_training_work(
 
     board_type = config.get("board_type", "square8")
     num_players = config.get("num_players", 2)
-    epochs = config.get("epochs", 20)
+    epochs = config.get("epochs", 50)
     batch_size = config.get("batch_size", 256)
-    learning_rate = config.get("learning_rate", 1e-3)
+    learning_rate = config.get("learning_rate", 3e-4)
     model_version = config.get("model_version", "v2")
 
     config_key = f"{board_type}_{num_players}p"
@@ -65,6 +65,13 @@ async def execute_training_work(
         model_filename = f"candidate_{config_key}_{model_version}.pth"
     else:
         model_filename = f"candidate_{config_key}.pth"
+
+    # Resolve paths for training data and initial weights.
+    # Without --data-path, train.py relies on flaky catalog discovery.
+    # Without --init-weights, training starts from random → loss 5-9 (useless).
+    ai_service_root = Path(ringrift_path)
+    npz_path = ai_service_root / f"data/training/{config_key}.npz"
+    canonical_path = ai_service_root / f"models/canonical_{config_key}.pth"
 
     cmd = [
         sys.executable, "-m", "app.training.train",
@@ -79,9 +86,28 @@ async def execute_training_work(
         "--max-data-age-hours", "168",  # 7 days tolerance
     ]
 
+    # Point training at the NPZ file so it doesn't need catalog discovery
+    if npz_path.exists():
+        cmd.extend(["--data-path", str(npz_path)])
+    else:
+        logger.warning(
+            f"Training data not found: {npz_path} — "
+            f"train.py will attempt catalog discovery"
+        )
+
+    # Continue from canonical model weights instead of random initialization
+    if canonical_path.exists():
+        cmd.extend(["--init-weights", str(canonical_path)])
+    else:
+        logger.warning(
+            f"No canonical model at {canonical_path} — training from scratch"
+        )
+
     logger.info(
         f"Executing training work {work_id}: {config_key} with {model_version} "
-        f"(epochs={epochs}, batch={batch_size})"
+        f"(epochs={epochs}, batch={batch_size}, "
+        f"data={'found' if npz_path.exists() else 'MISSING'}, "
+        f"init_weights={'found' if canonical_path.exists() else 'MISSING'})"
     )
 
     # Await training subprocess and capture results.
@@ -98,19 +124,23 @@ async def execute_training_work(
         output = stdout.decode() if stdout else ""
 
         if proc.returncode == 0:
-            # Parse training output for loss value
+            # Parse training output for loss and sample count.
+            # Search all lines (not just until first loss match) so we
+            # can find both metrics regardless of line order.
             final_loss = 0.0
             training_samples = 0
             for line in reversed(output.splitlines()):
-                if "loss" in line.lower() and "=" in line:
-                    loss_match = re.search(r'loss[=:\s]+([0-9]+\.?[0-9]*)', line.lower())
+                line_lower = line.lower()
+                if final_loss == 0.0 and "loss" in line_lower and "=" in line_lower:
+                    loss_match = re.search(r'loss[=:\s]+([0-9]+\.?[0-9]*)', line_lower)
                     if loss_match:
                         final_loss = float(loss_match.group(1))
-                        break
-                if "samples" in line.lower() and final_loss > 0:
-                    samples_match = re.search(r'(\d+)\s*samples', line.lower())
+                if training_samples == 0 and "samples" in line_lower:
+                    samples_match = re.search(r'(\d+)\s*samples', line_lower)
                     if samples_match:
                         training_samples = int(samples_match.group(1))
+                if final_loss > 0 and training_samples > 0:
+                    break
 
             model_path = f"models/{model_filename}"
             logger.info(

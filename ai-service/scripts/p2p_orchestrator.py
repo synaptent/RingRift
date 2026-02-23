@@ -12235,11 +12235,13 @@ print(json.dumps({{
             logger.error("aiohttp is required. Install with: pip install aiohttp")
             raise RuntimeError("aiohttp is required but not available - install with: pip install aiohttp")
 
-        # Cap thread pool to 4 workers to reduce CPU from 400% to ~100%
+        # Cap thread pool to reduce CPU. Was 4 (too few for 21 status metrics
+        # + daemon SQLite ops, causing cascading timeouts). 8 balances CPU
+        # usage vs thread availability for StatusMetricsCollector.
         import concurrent.futures
         loop = asyncio.get_running_loop()
         loop.set_default_executor(
-            concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="p2p_")
+            concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix="p2p_")
         )
 
         runner = await self._run_http_setup()

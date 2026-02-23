@@ -91,9 +91,9 @@ class AutoPromotionConfig:
     consecutive_passes_required: int = 1
     # Dry run mode - log but don't actually promote
     dry_run: bool = False
-    # Dec 27, 2025: Minimum Elo improvement over previous model required for promotion
-    # Dec 30: REVERTED from 5 to 10 - require meaningful improvement
-    min_elo_improvement: float = 10.0
+    # Feb 22, 2026: Raised from 10→25. With 20-50 game evaluations, Elo estimates
+    # have ~50-100 point CIs. +10 was within noise, causing random promotions.
+    min_elo_improvement: float = 25.0
     # December 2025: Quality gate settings to prevent bad model promotion
     quality_gate_enabled: bool = True
     # Jan 12, 2026: Lowered from 1000 to 100 to enable early promotion for bootstrap configs
@@ -113,8 +113,10 @@ class AutoPromotionConfig:
     # CRITICAL: Ensures new models actually beat the current best, not just baselines
     # This prevents model regression where new models are worse than current canonical
     head_to_head_enabled: bool = True
-    min_win_rate_vs_canonical: float = 0.52  # Must win 52%+ vs current canonical
-    head_to_head_games: int = 50  # Games to play vs canonical for evaluation
+    # Feb 22, 2026: Tightened from 0.52/50 to 0.55/100. At 52% over 50 games
+    # (26/50 wins), the p-value vs 50% is ~0.44 — statistically meaningless.
+    min_win_rate_vs_canonical: float = 0.55  # Must win 55%+ vs current canonical
+    head_to_head_games: int = 100  # Games to play vs canonical for evaluation
     # January 26, 2026 (P4): Elo velocity gate - block promotion if Elo is declining
     # This prevents promoting models during regression periods, ensuring only models
     # with positive momentum (or at least stable Elo) get promoted.

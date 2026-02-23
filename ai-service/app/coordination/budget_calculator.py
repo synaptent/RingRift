@@ -108,7 +108,7 @@ LARGE_BOARD_BUDGET_CAPS: dict[str, dict[str, int]] = {
     # play on a 361-cell board. This caused square19_4p to regress from training
     # on garbage data. New caps give 260 effective sims at 4p bootstrap, 520 mature.
     "square19": {"bootstrap": 400, "mature": 800},   # 361 cells (raised from 200/500)
-    "hexagonal": {"bootstrap": 64, "mature": 200},   # 469 cells
+    "hexagonal": {"bootstrap": 200, "mature": 400},   # 469 cells (raised: 64/200 was near-random)
 }
 
 # Player count scaling for budget caps.
@@ -152,13 +152,13 @@ def get_board_adjusted_budget(
 
     Examples:
         >>> get_board_adjusted_budget("hexagonal", 300, 150, 2)  # 2p bootstrap
-        64
-        >>> get_board_adjusted_budget("hexagonal", 300, 150, 4)  # 4p bootstrap
-        41
-        >>> get_board_adjusted_budget("hexagonal", 800, 3000, 2)  # 2p mature
         200
+        >>> get_board_adjusted_budget("hexagonal", 300, 150, 4)  # 4p bootstrap
+        160
+        >>> get_board_adjusted_budget("hexagonal", 800, 3000, 2)  # 2p mature
+        400
         >>> get_board_adjusted_budget("hexagonal", 800, 3000, 4)  # 4p mature
-        130
+        320
         >>> get_board_adjusted_budget("hex8", 3200, 150, 4)  # Small board, no cap
         3200
     """
