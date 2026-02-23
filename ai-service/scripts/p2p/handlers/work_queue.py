@@ -44,9 +44,9 @@ try:
     )
 except ImportError:
     # Fallback defaults if thresholds module not available
-    MIN_MEMORY_GB_FOR_TRAINING = 32
-    MIN_MEMORY_GB_FOR_SELFPLAY = 16
-    MIN_MEMORY_GB_FOR_GAUNTLET = 16
+    MIN_MEMORY_GB_FOR_TRAINING = 8
+    MIN_MEMORY_GB_FOR_SELFPLAY = 4
+    MIN_MEMORY_GB_FOR_GAUNTLET = 8
 
 # Work type to minimum VRAM requirements (GB)
 # Session 17.32: Added to prevent OOM by checking capacity before claiming
@@ -465,8 +465,17 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
         # Look up VRAM from GPU name
         gpu_vram_total_gb = self._get_gpu_vram_from_name(gpu_name)
 
-        # If no GPU info available, allow work (CPU-only nodes or unknown GPU)
+        # If no GPU info available: allow lightweight work but reject GPU-requiring types.
+        # Feb 2026: CPU-only nodes (hetzner-cpu*) were claiming training/selfplay work,
+        # wasting work slots. Training, selfplay (Gumbel MCTS), and gpu_cmaes require GPU.
         if gpu_vram_total_gb <= 0:
+            gpu_required_types = {"training", "selfplay", "gpu_cmaes"}
+            if work_type in gpu_required_types:
+                has_gpu = node_info.get("has_gpu", False)
+                if not has_gpu:
+                    reason = f"no GPU detected, {work_type} requires GPU"
+                    logger.info(f"[capacity] {node_id} rejected: {reason}")
+                    return (False, reason)
             return (True, "")
 
         # Calculate available VRAM

@@ -39,7 +39,7 @@ except ImportError:
     BASELINE_ELO_RANDOM = 400  # Random AI pinned at 400 Elo
     INITIAL_ELO_RATING = 1500.0
     ELO_K_FACTOR = 32
-    CONFIG_MIN_MEMORY_GB_FOR_TRAINING = 32
+    CONFIG_MIN_MEMORY_GB_FOR_TRAINING = 8
 
 try:
     from app.config.ports import SWIM_PORT, P2P_DEFAULT_PORT
