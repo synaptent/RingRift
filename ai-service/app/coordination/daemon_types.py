@@ -518,6 +518,15 @@ class DaemonType(Enum):
     # =========================================================================
     ONLINE_MERGE = "online_merge"
 
+    # =========================================================================
+    # Pipeline Completeness Monitor (February 2026)
+    # =========================================================================
+    # Tracks last completion timestamp for each pipeline stage per config.
+    # Emits PIPELINE_STAGE_OVERDUE events when stages exceed thresholds.
+    # Health check returns RED if any config has 2+ overdue stages.
+    # =========================================================================
+    PIPELINE_COMPLETENESS_MONITOR = "pipeline_completeness_monitor"
+
 
 class DaemonState(Enum):
     """State of a daemon."""
@@ -860,6 +869,7 @@ DAEMON_CATEGORY_MAP: dict[DaemonType, DaemonCategory] = {
     DaemonType.PARITY_VALIDATION: DaemonCategory.AUTONOMOUS,
     DaemonType.ELO_PROGRESS: DaemonCategory.AUTONOMOUS,  # Dec 31, 2025: Tracks Elo improvement
     DaemonType.MAINTENANCE: DaemonCategory.AUTONOMOUS,
+    DaemonType.PIPELINE_COMPLETENESS_MONITOR: DaemonCategory.AUTONOMOUS,  # Feb 2026: Pipeline stage tracking
 
     # PROVIDER category - cloud provider daemons
     DaemonType.MULTI_PROVIDER: DaemonCategory.PROVIDER,
@@ -1161,6 +1171,7 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
     DaemonType.SOCKET_LEAK_RECOVERY: {DaemonType.EVENT_ROUTER},  # Emits SOCKET_LEAK events
     DaemonType.STALE_FALLBACK: {DaemonType.EVENT_ROUTER, DaemonType.AUTO_SYNC},  # Fallback when sync fails
     DaemonType.ELO_PROGRESS: {DaemonType.EVENT_ROUTER},  # Dec 31, 2025: Tracks Elo improvement
+    DaemonType.PIPELINE_COMPLETENESS_MONITOR: {DaemonType.EVENT_ROUTER},  # Feb 2026: Pipeline stage tracking
 }
 
 

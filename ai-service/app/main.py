@@ -2123,6 +2123,94 @@ async def get_model_versions():
     }
 
 
+@app.get("/ai/model_freshness")
+async def ai_model_freshness(stale_threshold_hours: float = 72.0):
+    """Return per-config canonical model age for freshness monitoring.
+
+    Enables operators to quickly see which production models need updating.
+    Used by sync_models_to_production.py to determine which models to rsync.
+    """
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    models_dir = Path(__file__).parent.parent / "models"
+    configs = [
+        "hex8_2p", "hex8_3p", "hex8_4p",
+        "square8_2p", "square8_3p", "square8_4p",
+        "square19_2p", "square19_3p", "square19_4p",
+        "hexagonal_2p", "hexagonal_3p", "hexagonal_4p",
+    ]
+
+    models = {}
+    stale_count = 0
+
+    for config_key in configs:
+        model_path = models_dir / f"canonical_{config_key}.pth"
+        if model_path.exists():
+            try:
+                stat = model_path.stat()
+                age_hours = (time.time() - stat.st_mtime) / 3600.0
+                modified_dt = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+                is_stale = age_hours > stale_threshold_hours
+                if is_stale:
+                    stale_count += 1
+                models[config_key] = {
+                    "path": str(model_path),
+                    "modified": modified_dt.isoformat(),
+                    "age_hours": round(age_hours, 1),
+                    "size_mb": round(stat.st_size / (1024 * 1024), 1),
+                    "stale": is_stale,
+                }
+            except (OSError, PermissionError) as e:
+                models[config_key] = {"error": str(e)}
+        else:
+            models[config_key] = {"error": "not_found"}
+            stale_count += 1
+
+    return {
+        "models": models,
+        "stale_count": stale_count,
+        "total_configs": len(configs),
+        "stale_threshold_hours": stale_threshold_hours,
+        "timestamp": time.time(),
+    }
+
+
+@app.post("/ai/reload_models")
+async def ai_reload_models(x_admin_key: str | None = Header(None)):
+    """Clear the model cache to force reload from disk on next inference.
+
+    Call after syncing fresh models to pick up new weights without restart.
+    Requires ADMIN_API_KEY if set.
+    """
+    if ADMIN_API_KEY and x_admin_key != ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+
+    cleared_count = 0
+
+    # Clear the singleton model cache
+    if HAS_MODEL_CACHE:
+        try:
+            _clear_model_cache()
+            cleared_count += 1
+            logger.info("[ModelReload] Cleared model cache")
+        except Exception as e:
+            logger.warning(f"[ModelReload] Error clearing model cache: {e}")
+
+    # Clear the AI instance cache
+    with _ai_cache_lock:
+        instance_count = len(ai_instances)
+        ai_instances.clear()
+        logger.info(f"[ModelReload] Cleared {instance_count} AI instances from cache")
+
+    return {
+        "status": "ok",
+        "model_cache_cleared": HAS_MODEL_CACHE,
+        "ai_instances_cleared": instance_count,
+        "message": "Models will be reloaded from disk on next inference request",
+    }
+
+
 def _safe_file_stat(path: "Path") -> dict[str, Any]:
     try:
         stat = path.stat()

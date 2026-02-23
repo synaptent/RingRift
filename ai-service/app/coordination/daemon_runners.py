@@ -752,6 +752,13 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         factory_func="get_node_data_agent",
         notes="Jan 2026: Per-node agent for data discovery and fetching",
     ),
+    # --- Pipeline Completeness Monitor (February 2026) ---
+    "pipeline_completeness_monitor": RunnerSpec(
+        module="app.coordination.pipeline_completeness_monitor",
+        class_name="PipelineCompletenessMonitor",
+        style=InstantiationStyle.SINGLETON,
+        notes="Feb 2026: Tracks pipeline stage completion, emits PIPELINE_STAGE_OVERDUE",
+    ),
 }
 
 
@@ -1033,6 +1040,7 @@ from app.coordination.runners import (  # noqa: E402, F401
     create_s3_sync,
     create_production_game_import,
     create_reanalysis,
+    create_pipeline_completeness_monitor,
 )
 
 
@@ -1191,6 +1199,8 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.S3_SYNC.name: create_s3_sync,
         DaemonType.PRODUCTION_GAME_IMPORT.name: create_production_game_import,
         DaemonType.REANALYSIS.name: create_reanalysis,
+        # Pipeline completeness monitor (February 2026)
+        DaemonType.PIPELINE_COMPLETENESS_MONITOR.name: create_pipeline_completeness_monitor,
     }
 
 

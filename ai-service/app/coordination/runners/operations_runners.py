@@ -1203,3 +1203,23 @@ async def create_reanalysis() -> None:
     except ImportError as e:
         logger.warning(f"Reanalysis daemon not available: {e}")
         await asyncio.sleep(float("inf"))
+
+
+async def create_pipeline_completeness_monitor() -> None:
+    """Create and run pipeline completeness monitor daemon.
+
+    Tracks pipeline stage completion timestamps per config and emits
+    PIPELINE_STAGE_OVERDUE events when stages exceed thresholds.
+    February 2026.
+    """
+    try:
+        from app.coordination.pipeline_completeness_monitor import (
+            PipelineCompletenessMonitor,
+        )
+
+        daemon = PipelineCompletenessMonitor.get_instance()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.warning(f"PipelineCompletenessMonitor not available: {e}")
+        await asyncio.sleep(float("inf"))

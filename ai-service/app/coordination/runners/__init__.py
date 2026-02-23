@@ -175,4 +175,5 @@ from app.coordination.runners.operations_runners import (  # noqa: E402, F401
     create_unified_data_sync_orchestrator,
     create_vast_cpu_pipeline,
     create_voter_health_monitor,
+    create_pipeline_completeness_monitor,
 )

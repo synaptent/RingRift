@@ -192,6 +192,23 @@ class PriorityUpdateMixin:
                         f"intensity={intensity})"
                     )
 
+            # Feb 2026: Dynamic priority override based on live metrics
+            from app.coordination.priority_calculator import compute_config_priority_override
+            live_game_count = game_count_data.get(config_key)
+            live_elo = elo_current_data.get(config_key)
+            dynamic_override = compute_config_priority_override(config_key, live_game_count, live_elo)
+            old_override = priority.priority_override
+            priority.priority_override = dynamic_override
+            if dynamic_override != old_override:
+                tier_names = {-1: "EMERGENCY", 0: "CRITICAL", 1: "HIGH", 2: "MEDIUM", 3: "LOW"}
+                source = "dynamic" if live_game_count is not None else "fallback"
+                elo_str = f"{live_elo:.0f}" if live_elo is not None else "?"
+                logger.info(
+                    f"[SelfplayScheduler] Priority update: {config_key}="
+                    f"{tier_names.get(dynamic_override, '?')}({source}, "
+                    f"{live_game_count or '?'} games, {elo_str} Elo)"
+                )
+
             # Dec 29, 2025: Update Elo uncertainty for VOI calculation
             BASE_UNCERTAINTY = 300.0
             MIN_UNCERTAINTY = 30.0

@@ -955,6 +955,17 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         category="sync",
         health_check_interval=120.0,
     ),
+    # =========================================================================
+    # Pipeline Completeness Monitor (February 2026)
+    # Tracks pipeline stage completion timestamps per config.
+    # Emits PIPELINE_STAGE_OVERDUE events when stages exceed thresholds.
+    # =========================================================================
+    DaemonType.PIPELINE_COMPLETENESS_MONITOR: DaemonSpec(
+        runner_name="create_pipeline_completeness_monitor",
+        depends_on=(DaemonType.EVENT_ROUTER,),
+        category="autonomous",
+        health_check_interval=1800.0,
+    ),
 }
 
 

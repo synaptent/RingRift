@@ -59,41 +59,53 @@ ALL_CONFIGS = [
 
 # Priority override multipliers
 PRIORITY_OVERRIDE_MULTIPLIERS = {
-    0: 3.0,  # CRITICAL: 3x boost
-    1: 2.0,  # HIGH: 2x boost
+    -1: 4.0,  # EMERGENCY: 4x boost (bootstrap crisis)
+    0: 3.0,   # CRITICAL: 3x boost
+    1: 2.0,   # HIGH: 2x boost
     2: 1.25,  # MEDIUM: 25% boost
-    3: 1.0,  # LOW: no boost (normal)
+    3: 1.0,   # LOW: no boost (normal)
 }
 
-# Explicit config priority overrides (Jan 2026)
-# These configs have insufficient training data despite existing priority system.
-# VOI cost factors for large boards (square19: 9.0, hexagonal: 11.0) offset starvation boosts.
-# Adding explicit CRITICAL overrides to ensure adequate selfplay allocation.
-# Jan 12, 2026: Added CRITICAL overrides for ALL configs with 0 games to bootstrap selfplay.
-# Jan 14, 2026: Added hex8_4p CRITICAL override - only 77-873 games vs 16K+ for hex8_2p.
-# Jan 14, 2026: Added hex8_3p CRITICAL, upgraded square19_3p HIGH→CRITICAL for slow 3p configs.
-CONFIG_PRIORITY_OVERRIDES: dict[str, int] = {
-    # Updated Jan 14, 2026 - Current match counts from unified_elo.db
-    # CRITICAL (0): Large board configs with fewest matches, slowest generation
-    "hexagonal_3p": 0,  # CRITICAL - 130 matches, only ~5 games/day
-    "hexagonal_4p": 0,  # CRITICAL - 35 matches
-    "square19_3p": 0,   # CRITICAL - 50 matches
-    "square19_4p": 0,   # CRITICAL - 63 matches
-    # Feb 2026: Upgraded square8_2p and square19_2p to CRITICAL.
-    # square8_2p at 1910 Elo is closest to 2000 target - needs maximum resources.
-    # square19_2p at 1671 Elo is stalled due to insufficient budget allocation.
-    "square8_2p": 0,    # CRITICAL - 1910 Elo, closest to 2000 target (upgraded from HIGH)
-    "square19_2p": 0,   # CRITICAL - 1671 Elo, stalled, needs more quality data (upgraded from HIGH)
-    # HIGH (1): Medium deficit, need more data
-    "hexagonal_2p": 1,  # HIGH - 77 matches
-    # MEDIUM (2): Sufficient data but below target Elo (1600)
-    "hex8_3p": 2,       # MEDIUM - 175 matches, Elo 1292
-    "square8_3p": 2,    # MEDIUM - 377 matches
-    # CRITICAL (0): Data quality crisis - need gumbel selfplay data (Jan 15, 2026)
-    "square8_4p": 0,    # CRITICAL - Elo 529 after training, needs more quality gumbel data
-    "hex8_4p": 0,       # CRITICAL - underserved 4p config, needs quality gumbel data
-    # hex8_2p: No override - 810 matches, uses default priority calculation
+# Static fallback priorities (used when live metrics unavailable)
+# Dynamic computation in compute_config_priority_override() takes precedence
+CONFIG_PRIORITY_FALLBACK: dict[str, int] = {
+    "hexagonal_3p": 0,
+    "hexagonal_4p": 0,
+    "square19_3p": 0,
+    "square19_4p": 0,
+    "square8_2p": 0,
+    "square19_2p": 0,
+    "hexagonal_2p": 1,
+    "hex8_3p": 2,
+    "square8_3p": 2,
+    "square8_4p": 0,
+    "hex8_4p": 0,
 }
+
+
+def compute_config_priority_override(config_key: str, game_count: int | None, elo: float | None) -> int:
+    """Compute priority tier from actual metrics instead of hardcoded table.
+
+    Returns priority override level:
+        -1: EMERGENCY (bootstrap crisis, <100 games)
+         0: CRITICAL (< 500 games)
+         1: HIGH (< 2000 games, Elo < 1800)
+         2: MEDIUM (default)
+         3: LOW (target met, Elo >= 2000)
+
+    Falls back to CONFIG_PRIORITY_FALLBACK when game_count is None (live data unavailable).
+    """
+    if game_count is None:
+        return CONFIG_PRIORITY_FALLBACK.get(config_key, 2)
+    if elo is not None and elo >= 2000:
+        return 3  # LOW - target met, free resources for others
+    if game_count < 100:
+        return -1  # EMERGENCY - bootstrap crisis
+    if game_count < 500:
+        return 0  # CRITICAL
+    if elo is not None and elo < 1800 and game_count < 2000:
+        return 1  # HIGH
+    return 2  # MEDIUM
 
 # Player count allocation multipliers
 # Jan 14, 2026: Increased 4p from 4.0 to 8.0 to address severe game deficit
@@ -720,9 +732,9 @@ class PriorityCalculator:
             near_target_boost = 5.0
             score *= near_target_boost
 
-        # Apply priority override (Jan 2026: Check explicit config overrides first)
-        # CONFIG_PRIORITY_OVERRIDES takes precedence over inputs.priority_override
-        effective_override = CONFIG_PRIORITY_OVERRIDES.get(
+        # Apply priority override (Feb 2026: Dynamic overrides take precedence)
+        # CONFIG_PRIORITY_FALLBACK used only when dynamic computation unavailable
+        effective_override = CONFIG_PRIORITY_FALLBACK.get(
             inputs.config_key, inputs.priority_override
         )
         override_multiplier = PRIORITY_OVERRIDE_MULTIPLIERS.get(effective_override, 1.0)
