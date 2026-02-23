@@ -1265,15 +1265,19 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
 
     @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
     async def handle_work_status(self, request: web.Request) -> web.Response:
-        """Get work queue status."""
+        """Get work queue status.
+
+        Feb 22, 2026: Removed asyncio.to_thread(check_timeouts) - the 8-worker
+        thread pool is often saturated by other ops, causing this handler to hang
+        indefinitely. check_timeouts is fast (<10ms) and safe to call directly.
+        get_queue_status is also called directly (in-memory + fast SQLite).
+        """
         try:
             wq = get_work_queue()
             if wq is None:
                 return self._work_queue_unavailable()
 
-            # Check for timeouts (Feb 2026: async to avoid blocking event loop)
-            import asyncio
-            timed_out = await asyncio.to_thread(wq.check_timeouts)
+            timed_out = wq.check_timeouts()
 
             status = wq.get_queue_status()
             status["is_leader"] = self.is_leader

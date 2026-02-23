@@ -11271,39 +11271,48 @@ print(json.dumps({{
             logger.debug(f"[JobMgmt] {name} failed: {e}")
 
     async def _job_management_loop(self):
-        """Manage jobs - leader coordinates cluster, all nodes handle local operations."""
+        """Manage jobs - leader coordinates cluster, all nodes handle local operations.
+
+        Feb 22, 2026: Restructured to prevent event loop blocking.
+        - Removed redundant gossip ops (already have dedicated LoopManager loops)
+        - Skip GPU/selfplay ops on coordinator (no GPU, no selfplay)
+        - Reduced timeouts from 60s to 15s
+        - Added asyncio.sleep(0) yield points between ops to let HTTP handlers process
+        - Run independent leader ops concurrently
+        """
         logger.info("[JobMgmt] _job_management_loop started")
+        _is_coord = os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() in ("true", "1", "yes")
         while self.running:
             try:
                 _t0 = time.time()
                 # ==== DECENTRALIZED OPERATIONS (all nodes) ====
-                # Each op has a 60s timeout to prevent blocking the entire loop
+                # Gossip ops REMOVED - they have dedicated LoopManager loops
+                # and were redundantly blocking this loop for 15-30s.
                 _ops = [
-                    ("consolidate_selfplay_data", lambda: self.data_pipeline_manager.consolidate_selfplay_data(
-                        dispatch_export_job_callback=self._dispatch_export_job)),
                     ("check_local_stuck_jobs", lambda: self.job_lifecycle_manager.check_local_stuck_jobs()),
                     ("local_resource_cleanup", lambda: self.job_coordination_manager.local_resource_cleanup()),
-                    ("manage_local_jobs_decentralized", lambda: self._manage_local_jobs_decentralized()),
-                    ("local_gpu_auto_scale", lambda: self.job_coordination_manager.local_gpu_auto_scale()),
-                    ("check_local_training_fallback", lambda: self._check_local_training_fallback()),
                     ("check_emergency_coordinator_fallback", lambda: self._check_emergency_coordinator_fallback()),
                     ("p2p_data_sync", lambda: self.sync.p2p_data_sync()),
                     ("p2p_model_sync", lambda: self.sync.p2p_model_sync()),
                     ("p2p_training_db_sync", lambda: self.sync.p2p_training_db_sync()),
-                    # Gossip ops have dedicated LoopManager loops; use short timeout here
-                    ("gossip_state_to_peers", lambda: self._gossip_state_to_peers()),
-                    ("gossip_anti_entropy_repair", lambda: self._gossip_anti_entropy_repair()),
                 ]
-                # Gossip ops have dedicated LoopManager loops, so use shorter
-                # timeout here (15s) to avoid blocking the management cycle.
-                _gossip_ops = {"gossip_state_to_peers", "gossip_anti_entropy_repair"}
+                # Coordinator doesn't run selfplay/training locally, skip those ops
+                if not _is_coord:
+                    _ops.extend([
+                        ("consolidate_selfplay_data", lambda: self.data_pipeline_manager.consolidate_selfplay_data(
+                            dispatch_export_job_callback=self._dispatch_export_job)),
+                        ("manage_local_jobs_decentralized", lambda: self._manage_local_jobs_decentralized()),
+                        ("local_gpu_auto_scale", lambda: self.job_coordination_manager.local_gpu_auto_scale()),
+                        ("check_local_training_fallback", lambda: self._check_local_training_fallback()),
+                    ])
                 for _op_name, _op_factory in _ops:
                     _op_start = time.time()
-                    _timeout = 15.0 if _op_name in _gossip_ops else 60.0
-                    await self._run_with_timeout(_op_factory(), _op_name, timeout=_timeout)
+                    await self._run_with_timeout(_op_factory(), _op_name, timeout=15.0)
                     _op_elapsed = time.time() - _op_start
                     if _op_elapsed > 5.0:
                         logger.warning(f"[JobMgmt] {_op_name} took {_op_elapsed:.1f}s")
+                    # Yield to event loop so HTTP handlers can process requests
+                    await asyncio.sleep(0)
 
                 # ==== LEADER-ONLY OPERATIONS ====
                 if self.role == NodeRole.LEADER:
@@ -11313,25 +11322,32 @@ print(json.dumps({{
                         continue
 
                     logger.info("[JobMgmt] Running leader-only operations cycle")
-                    await self._run_with_timeout(
-                        self._manage_cluster_jobs(), "manage_cluster_jobs")
-                    await self._run_with_timeout(
-                        self._check_cluster_balance(), "check_cluster_balance")
-                    await self._run_with_timeout(
-                        self._check_and_trigger_training(), "check_and_trigger_training")
-                    await self._run_with_timeout(
-                        self._check_improvement_cycles(), "check_improvement_cycles")
-                    await self._run_with_timeout(
-                        self.job_lifecycle_manager.check_and_kill_stuck_jobs(),
-                        "check_and_kill_stuck_jobs")
-                    await self._run_with_timeout(
-                        self._auto_rebalance_from_work_queue(), "auto_rebalance_from_work_queue")
-                    await self._run_with_timeout(
-                        self._auto_scale_gpu_utilization(), "auto_scale_gpu_utilization")
-                    await self._run_with_timeout(
-                        self.recovery_manager.sweep_nat_recovery(), "sweep_nat_recovery")
-                    await self._run_with_timeout(
-                        self.recovery_manager.check_node_recovery(), "check_node_recovery")
+                    # Run independent leader ops concurrently to reduce total cycle time.
+                    # manage_cluster_jobs and auto_rebalance need 30s (HTTP calls to nodes).
+                    await asyncio.gather(
+                        self._run_with_timeout(
+                            self._manage_cluster_jobs(), "manage_cluster_jobs", timeout=30.0),
+                        self._run_with_timeout(
+                            self._check_cluster_balance(), "check_cluster_balance", timeout=15.0),
+                        self._run_with_timeout(
+                            self._check_and_trigger_training(), "check_and_trigger_training", timeout=15.0),
+                        self._run_with_timeout(
+                            self._check_improvement_cycles(), "check_improvement_cycles", timeout=15.0),
+                        self._run_with_timeout(
+                            self.job_lifecycle_manager.check_and_kill_stuck_jobs(),
+                            "check_and_kill_stuck_jobs", timeout=15.0),
+                    )
+                    await asyncio.sleep(0)  # Yield for HTTP handlers
+                    await asyncio.gather(
+                        self._run_with_timeout(
+                            self._auto_rebalance_from_work_queue(), "auto_rebalance_from_work_queue", timeout=30.0),
+                        self._run_with_timeout(
+                            self._auto_scale_gpu_utilization(), "auto_scale_gpu_utilization", timeout=15.0),
+                        self._run_with_timeout(
+                            self.recovery_manager.sweep_nat_recovery(), "sweep_nat_recovery", timeout=15.0),
+                        self._run_with_timeout(
+                            self.recovery_manager.check_node_recovery(), "check_node_recovery", timeout=15.0),
+                    )
                 _total = time.time() - _t0
                 logger.info(f"[JobMgmt] Cycle complete in {_total:.1f}s (role={self.role})")
             except Exception as e:  # noqa: BLE001

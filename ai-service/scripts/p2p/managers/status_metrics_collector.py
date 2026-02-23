@@ -149,11 +149,13 @@ class StatusMetricsCollector:
         func: Callable[[], Any],
         timeout: float | None = None,
         is_async: bool = False,
+        use_thread: bool = False,
     ) -> MetricResult:
         """Safely gather a metric with timeout and error handling.
 
         This is the core pattern extracted from handle_status:
-        - Wraps sync functions in asyncio.to_thread()
+        - By default, calls sync functions directly (they're fast in-memory ops)
+        - Set use_thread=True for functions with blocking I/O (file/DB access)
         - Applies timeout protection
         - Captures errors gracefully
 
@@ -162,9 +164,16 @@ class StatusMetricsCollector:
             func: Function to call (sync or async)
             timeout: Timeout in seconds (uses config default if None)
             is_async: Whether func is already async
+            use_thread: Whether to run sync func in thread pool (for blocking I/O)
 
         Returns:
             MetricResult with value or error information
+
+        Feb 22, 2026: Changed default from asyncio.to_thread() to direct call.
+        With thread pool capped at 4 workers, 20+ metrics all using to_thread()
+        caused massive queuing (each waiting 2s for a slot), blocking the event
+        loop for 10-40s total. Most metrics are fast in-memory dict operations
+        that don't need threads.
         """
         effective_timeout = timeout or self.config.metric_timeout
         start_time = time.perf_counter()
@@ -175,11 +184,16 @@ class StatusMetricsCollector:
                     func(),
                     timeout=effective_timeout,
                 )
-            else:
+            elif use_thread:
                 result = await asyncio.wait_for(
                     asyncio.to_thread(func),
                     timeout=effective_timeout,
                 )
+            else:
+                # Call sync function directly - most metrics are fast in-memory ops.
+                # The 2s timeout won't help if the function truly blocks, but these
+                # functions should return in <10ms.
+                result = func()
 
             duration_ms = (time.perf_counter() - start_time) * 1000
 

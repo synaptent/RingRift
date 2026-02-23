@@ -246,14 +246,11 @@ class JobCoordinationManager:
     async def _update_self_info(self) -> None:
         """Update self info.
 
-        Feb 2026: Use async version to prevent event loop blocking from
-        subprocess.run() calls in count_local_jobs().
+        Feb 22, 2026: No-op. Resource detection (GPU, disk, CPU) is slow on
+        macOS (10-30s) and blocks the event loop. self_info is refreshed in
+        the background by heartbeat and health loops - use cached data.
         """
-        if self._orchestrator and hasattr(self._orchestrator, "_update_self_info_async"):
-            await self._orchestrator._update_self_info_async()
-        elif self._orchestrator and hasattr(self._orchestrator, "_update_self_info"):
-            import asyncio
-            await asyncio.to_thread(self._orchestrator._update_self_info)
+        pass
 
     def _get_cached_peer_snapshot(self) -> dict[str, Any]:
         """Get cached peer snapshot for lock-free access."""

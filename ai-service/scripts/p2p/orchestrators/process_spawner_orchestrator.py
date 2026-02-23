@@ -1093,13 +1093,11 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
         else:
             alive_peers = [p for p in peers.values() if p.is_alive()]
 
-        # Add self
-        # Feb 2026: Use async version to prevent event loop blocking
-        if hasattr(self._p2p, "_update_self_info_async"):
-            await self._p2p._update_self_info_async()
-        elif hasattr(self._p2p, "_update_self_info"):
-            import asyncio
-            await asyncio.to_thread(self._p2p._update_self_info)
+        # Add self (use cached self_info - refreshed by heartbeat/health loops)
+        # Feb 22, 2026: Removed _update_self_info_async() call here. Resource
+        # detection (GPU, disk, CPU) is slow on macOS (10-30s) and was blocking
+        # the event loop, preventing work/claim HTTP requests from being processed.
+        # self_info is refreshed in the background by heartbeat and health loops.
         self_info = getattr(self._p2p, "self_info", None)
         all_nodes = [*alive_peers]
         if self_info is not None:
