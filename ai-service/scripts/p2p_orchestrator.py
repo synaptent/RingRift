@@ -31,6 +31,13 @@ def _load_env_local():
     """Load .env.local from script directory or ai-service root."""
     import os as _os
     from pathlib import Path as _Path
+
+    # Feb 2026: Node-specific vars that must ONLY come from the actual process
+    # environment (LaunchAgent, systemd, command line), never from .env.local.
+    # Root cause: .env.local with RINGRIFT_IS_COORDINATOR=true was deployed to
+    # GPU nodes, causing them to self-elect as leader and block the pipeline.
+    _SKIP_KEYS = {"RINGRIFT_IS_COORDINATOR"}
+
     for base in [_Path(__file__).parent.parent, _Path.cwd()]:
         env_file = base / ".env.local"
         if env_file.exists():
@@ -42,6 +49,8 @@ def _load_env_local():
                             key, _, value = line.partition("=")
                             key = key.strip()
                             value = value.strip().strip('"').strip("'")
+                            if key in _SKIP_KEYS:
+                                continue
                             if key not in _os.environ:  # Don't override existing
                                 _os.environ[key] = value
                 break
