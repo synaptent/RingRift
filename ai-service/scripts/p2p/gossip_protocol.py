@@ -2204,10 +2204,18 @@ class GossipProtocolMixin(GossipPersistenceMixin, GossipPartitionMixin, _GossipM
             _forced_gs = getattr(self, "_forced_leader_override", False)
             _lease_gs = now < getattr(self, "leader_lease_expires", 0)
             _is_self_gs = (claimed_leader == getattr(self, "node_id", None))
+            # Feb 22, 2026: Also respect election grace period after force_leader
+            _grace_gs = now < (getattr(self, "_election_grace_until", 0) or 0)
+            _different_leader = (claimed_leader != getattr(self, "leader_id", None))
             if _forced_gs and _lease_gs and not _is_self_gs:
                 self._log_debug(
                     f"Gossip: Rejecting leader claim {claimed_leader} "
                     f"(forced leader override active)"
+                )
+            elif _grace_gs and _different_leader:
+                self._log_debug(
+                    f"Gossip: Rejecting leader claim {claimed_leader} "
+                    f"during election grace period (current: {self.leader_id})"
                 )
             # Check if we have ULSM state machine for validation
             elif hasattr(self, "_leadership_sm") and self._leadership_sm:

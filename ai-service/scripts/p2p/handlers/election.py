@@ -656,7 +656,11 @@ class ElectionHandlersMixin(BaseP2PHandler):
                         self.self_info.leader_consensus_id = target_leader_id
 
                 # Feb 2026 (2c): Set election grace period on followers too
-                self._election_grace_until = time.time() + 30.0
+                # Feb 22, 2026: Extended to 120s. 30s wasn't enough — Lambda nodes
+                # with the same term were overriding via leader announcements within
+                # 0.4s. 120s gives gossip time to propagate the forced leader's
+                # higher term to all peers, preventing immediate override.
+                self._election_grace_until = time.time() + 120.0
 
                 self._save_state()
 
@@ -1031,6 +1035,18 @@ class ElectionHandlersMixin(BaseP2PHandler):
                     f"(forced leader override active for {self.node_id})"
                 )
                 return self.json_response({"accepted": False, "reason": "forced_override_active"})
+
+            # Feb 22, 2026: Reject announcements during election grace period
+            # if they're for a different leader. force_leader sets a 30s grace
+            # period to let gossip converge, but direct announcements from other
+            # nodes were bypassing it, overriding the forced leader within 0.4s.
+            grace_until = getattr(self, "_election_grace_until", 0) or 0
+            if time.time() < grace_until and leader_id != getattr(self, "leader_id", None):
+                logger.info(
+                    f"[Election] Rejecting leader announcement for {leader_id} "
+                    f"during election grace period (current leader: {self.leader_id})"
+                )
+                return self.json_response({"accepted": False, "reason": "election_grace_period"})
 
             # Update leader immediately
             self.leader_id = leader_id
