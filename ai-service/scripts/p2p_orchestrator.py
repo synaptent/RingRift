@@ -4246,6 +4246,21 @@ class P2POrchestrator(
                     with contextlib.suppress(Exception):
                         self.role = NodeRole(ls.role)
 
+                # Feb 23, 2026: Non-coordinator nodes must not load self-leadership.
+                # After P2P restart, persisted state may have leader_id=self (from when
+                # the node was leader). Without clearing this, the node continues
+                # announcing itself as leader via gossip, overriding force_leader.
+                _is_coordinator = os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() in ("true", "1", "yes")
+                if not _is_coordinator and self.leader_id == self.node_id:
+                    logger.info(
+                        f"[P2POrchestrator] Non-coordinator: clearing self-leadership "
+                        f"loaded from state (was leader_id={self.leader_id})"
+                    )
+                    self.leader_id = None
+                    self.leader_lease_id = ""
+                    self.leader_lease_expires = 0
+                    self.role = NodeRole.FOLLOWER
+
             # Voter grant state
             if ls.voter_grant_leader_id:
                 self.voter_grant_leader_id = ls.voter_grant_leader_id
