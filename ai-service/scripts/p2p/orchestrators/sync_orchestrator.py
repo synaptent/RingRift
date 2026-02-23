@@ -1067,16 +1067,18 @@ class SyncOrchestrator(BaseOrchestrator):
         cluster_manifest.unique_files = all_files
 
         # Find files missing from nodes (for sync planning)
+        # Pre-build file path sets per node to avoid O(n^2) set reconstruction.
+        # Previously rebuilt {f.path for f in files} for every (file, node) pair,
+        # blocking the event loop for 16+ minutes with 14 nodes × hundreds of files.
+        node_file_sets = {
+            node_id: {f.path for f in node_manifest.files}
+            for node_id, node_manifest in cluster_manifest.node_manifests.items()
+        }
         for file_path in all_files:
-            nodes_with_file = []
-            nodes_without_file = []
-            for node_id, node_manifest in cluster_manifest.node_manifests.items():
-                file_paths = {f.path for f in node_manifest.files}
-                if file_path in file_paths:
-                    nodes_with_file.append(node_id)
-                else:
-                    nodes_without_file.append(node_id)
-
+            nodes_without_file = [
+                node_id for node_id in cluster_manifest.node_manifests
+                if file_path not in node_file_sets[node_id]
+            ]
             if nodes_without_file:
                 cluster_manifest.missing_from_nodes[file_path] = nodes_without_file
 
