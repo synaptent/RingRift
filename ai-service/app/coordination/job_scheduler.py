@@ -524,7 +524,7 @@ class PriorityJobScheduler:
         for host, status in zip(hosts, statuses, strict=False):
             if not _is_reachable(status):
                 continue
-            if _get_disk(status) > 70:  # 70% limit enforced 2025-12-15
+            if _get_disk(status) > 85:  # 85% limit (raised from 70% which starved pipeline)
                 continue
             if _get_mem(status) > 80:  # 80% limit enforced 2025-12-16
                 continue

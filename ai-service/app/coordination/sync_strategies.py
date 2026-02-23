@@ -103,7 +103,7 @@ class AutoSyncConfig:
     min_games_to_sync: int = 10
     bandwidth_limit_mbps: int = 20
     # Disk usage thresholds (from sync_routing)
-    max_disk_usage_percent: float = 70.0
+    max_disk_usage_percent: float = 85.0
     target_disk_usage_percent: float = 60.0
     # Enable automatic disk cleanup
     auto_cleanup_enabled: bool = True

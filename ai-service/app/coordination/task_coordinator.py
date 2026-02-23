@@ -221,8 +221,8 @@ class TaskLimits:
     max_task_spawns_per_minute: int = 60
     max_selfplay_spawns_per_minute: int = 30
 
-    # Resource thresholds (halt spawning above these) - 70% disk limit enforced 2025-12-15
-    halt_on_disk_percent: float = 70.0
+    # Resource thresholds (halt spawning above these) - raised from 70% to 85% (was starving pipeline)
+    halt_on_disk_percent: float = 85.0
     halt_on_memory_percent: float = 95.0
     halt_on_cpu_percent: float = 95.0
 

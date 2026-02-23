@@ -1035,7 +1035,7 @@ def _register_follower_discovery(
                 port = int(port_str)
                 async with aiohttp.ClientSession() as session:
                     async with session.get(
-                        f"http://{host}:{port}/peers",
+                        f"http://{host}:{port}/relay/peers",
                         timeout=aiohttp.ClientTimeout(total=5.0),
                     ) as resp:
                         if resp.status == 200:
@@ -1303,7 +1303,7 @@ def _register_training_sync(
             is_leader=ctx.is_leader,
             sync_to_training_nodes=orchestrator._sync_selfplay_to_training_nodes,
             get_last_sync_time=lambda: getattr(orchestrator, 'last_training_sync_time', 0.0),
-            check_disk_capacity=lambda: check_disk_has_capacity(70.0),
+            check_disk_capacity=lambda: check_disk_has_capacity(85.0),
         )
         manager.register(training_sync)
         logger.info("[LoopRegistry] TrainingSyncLoop registered")

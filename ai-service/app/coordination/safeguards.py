@@ -67,8 +67,8 @@ class SafeguardConfig:
     # Resource thresholds - unified at 80% max utilization (enforced 2025-12-16)
     # Disk threshold raised from 70% to 75% (Dec 29, 2025) - 70% was too conservative
     # and blocked selfplay on nodes with adequate space. Cleanup runs proactively at 60%.
-    disk_critical_percent: float = 75.0
-    disk_warning_percent: float = 70.0
+    disk_critical_percent: float = 85.0
+    disk_warning_percent: float = 80.0
     # Memory/CPU at 80% to leave headroom for spikes
     memory_critical_percent: float = 80.0
     memory_warning_percent: float = 70.0

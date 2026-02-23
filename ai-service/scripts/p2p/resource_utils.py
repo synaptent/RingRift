@@ -65,7 +65,7 @@ def check_disk_has_capacity(threshold: float | None = None) -> tuple[bool, float
     """Check if disk has capacity below threshold for data sync.
 
     Uses unified resource_guard utilities when available for consistent
-    80% max utilization enforcement (70% for disk).
+    85% max utilization enforcement for disk.
 
     Args:
         threshold: Max disk usage percentage (defaults to MAX_DISK_USAGE_PERCENT)
@@ -95,7 +95,7 @@ def check_all_resources() -> tuple[bool, str]:
 
     reasons = []
 
-    # Check disk (70% limit)
+    # Check disk (85% limit)
     if not unified_check_disk(log_warning=False):
         disk_pct, _, _ = get_disk_usage()
         reasons.append(f"Disk {disk_pct:.1f}%")

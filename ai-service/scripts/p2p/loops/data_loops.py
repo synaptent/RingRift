@@ -353,7 +353,7 @@ class DataManagementConfig:
     initial_delay_seconds: float = 30.0  # Wait before first run
 
     # Disk thresholds
-    disk_warning_percent: float = 70.0
+    disk_warning_percent: float = 80.0
     disk_critical_percent: float = 85.0
 
     # Export thresholds

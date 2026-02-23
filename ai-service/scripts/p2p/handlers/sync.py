@@ -573,7 +573,7 @@ class SyncHandlersMixin(BaseP2PHandler):
             # Check disk capacity before accepting sync request
             has_capacity, disk_percent = self._check_disk_has_capacity()
             if not has_capacity:
-                max_disk = float(os.environ.get("RINGRIFT_MAX_DISK_USAGE_PERCENT", "70"))
+                max_disk = float(os.environ.get("RINGRIFT_MAX_DISK_USAGE_PERCENT", "85"))
                 return self.json_response({
                     "error": f"Disk full ({disk_percent:.1f}% >= {max_disk}%)",
                     "disk_percent": disk_percent,
@@ -748,7 +748,7 @@ class SyncHandlersMixin(BaseP2PHandler):
             Tuple of (has_capacity, disk_usage_percent)
         """
         try:
-            max_disk = float(os.environ.get("RINGRIFT_MAX_DISK_USAGE_PERCENT", "70"))
+            max_disk = float(os.environ.get("RINGRIFT_MAX_DISK_USAGE_PERCENT", "85"))
             data_dir = Path("data")
             if data_dir.exists():
                 usage = shutil.disk_usage(data_dir)
