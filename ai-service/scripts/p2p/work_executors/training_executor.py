@@ -113,6 +113,9 @@ async def execute_training_work(
     # Await training subprocess and capture results.
     # Previously used asyncio.create_task() (fire-and-forget) which
     # returned True immediately, causing loss=0.0000 and empty model_path.
+    # Timeout: 2 hours max. Training typically completes in 2-30 min,
+    # but DataLoader/thread hangs caused 12+ hour zombie processes.
+    TRAINING_TIMEOUT_SECONDS = 7200  # 2 hours
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -120,7 +123,35 @@ async def execute_training_work(
             stderr=asyncio.subprocess.STDOUT,
             cwd=str(Path(ringrift_path)),
         )
-        stdout, _ = await proc.communicate()
+        try:
+            stdout, _ = await asyncio.wait_for(
+                proc.communicate(), timeout=TRAINING_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"Training subprocess timed out after {TRAINING_TIMEOUT_SECONDS}s "
+                f"for {config_key}/{model_version} (work_id={work_id}). Killing."
+            )
+            proc.kill()
+            await proc.wait()
+            # Even though it timed out, the model file may already be saved.
+            # Check if the model file exists and report partial success.
+            model_file = Path(ringrift_path) / "models" / model_filename
+            if model_file.exists():
+                logger.info(
+                    f"Model file exists despite timeout: {model_file} "
+                    f"({model_file.stat().st_size / 1e6:.1f}MB). Reporting success."
+                )
+                work_item["result"] = {
+                    "model_path": f"models/{model_filename}",
+                    "final_loss": 0.0,
+                    "training_samples": 0,
+                    "config_key": config_key,
+                    "model_version": model_version,
+                    "timed_out": True,
+                }
+                return True
+            return False
         output = stdout.decode() if stdout else ""
 
         if proc.returncode == 0:

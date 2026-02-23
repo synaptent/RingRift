@@ -1323,6 +1323,14 @@ def main() -> None:
         amp_dtype=getattr(args, 'amp_dtype', 'bfloat16'),
     )
 
+    # Force exit to prevent DataLoader worker processes and non-daemon threads
+    # from keeping the process alive after training completes.
+    # On Linux with num_workers>0, PyTorch DataLoader spawns persistent workers
+    # that aren't always cleaned up, causing GH200 training processes to hang
+    # indefinitely (12+ hours observed). os._exit bypasses thread cleanup.
+    import os as _os
+    _os._exit(0)
+
 
 if __name__ == "__main__":
     main()

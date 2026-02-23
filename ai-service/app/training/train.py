@@ -5439,6 +5439,21 @@ def train_model(
         if distributed:
             cleanup_distributed()
 
+        # Explicitly shutdown DataLoader workers to prevent process hang.
+        # On Linux with num_workers>0, worker processes prevent the main
+        # process from exiting (GH200 nodes stuck for 12+ hours).
+        for loader in (train_loader, val_loader):
+            if loader is not None and hasattr(loader, '_workers'):
+                try:
+                    loader._iterator = None
+                    # Force shutdown of any active worker processes
+                    if hasattr(loader, '_shutdown_workers'):
+                        loader._shutdown_workers()
+                except Exception:
+                    pass
+        # Delete references to trigger __del__ cleanup
+        del train_loader, val_loader
+
     # ==========================================================================
     # Auto-Promotion Hook (January 2026)
     # ==========================================================================
