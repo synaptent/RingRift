@@ -1164,12 +1164,14 @@ class AutoPromotionDaemon(HandlerBase):
                 )
 
         except ImportError as e:
-            logger.warning(f"[AutoPromotion] Head-to-head gate unavailable: {e}")
-            return True, f"head_to_head_unavailable: {e}"
+            logger.error(f"[AutoPromotion] Head-to-head gate unavailable (blocking promotion): {e}")
+            return False, f"head_to_head_unavailable: {e}"
         except Exception as e:
-            logger.warning(f"[AutoPromotion] Head-to-head gate error: {e}")
-            # Don't block on gate errors, log and continue
-            return True, f"head_to_head_error: {e}"
+            logger.error(f"[AutoPromotion] Head-to-head gate error (blocking promotion): {e}")
+            # Feb 23, 2026: Changed from pass-through to block. Previously returned True
+            # on errors, silently promoting models that couldn't be evaluated. This defeats
+            # the purpose of the gate - if we can't prove improvement, don't promote.
+            return False, f"head_to_head_error: {e}"
 
     async def _promote_model(self, candidate: PromotionCandidate) -> None:
         """Promote a model that passed evaluation.

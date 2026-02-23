@@ -2394,15 +2394,16 @@ class EvaluationDaemon(HandlerBase):
     # =========================================================================
 
     async def _startup_scan_for_unevaluated_models(self) -> None:
-        """Scan for canonical models without Elo ratings on startup.
+        """Scan for models without Elo ratings on startup.
 
         January 3, 2026: Ensures all canonical models get evaluated.
+        February 2026: Also scans candidate_*.pth models from training pipeline.
         This catches models that were trained but never evaluated due to
         daemon restarts, event drops, or system failures.
         """
         from pathlib import Path
 
-        logger.info("[EvaluationDaemon] Starting scan for unevaluated canonical models...")
+        logger.info("[EvaluationDaemon] Starting scan for unevaluated models...")
         scanned = 0
         queued = 0
 
@@ -2416,8 +2417,10 @@ class EvaluationDaemon(HandlerBase):
             # (ringrift_best_* are symlinks to canonical_* models)
             seen_actual_paths: set[str] = set()
 
-            # Scan both canonical AND promoted best models
-            for pattern in ["canonical_*.pth", "ringrift_best_*.pth"]:
+            # Scan canonical, promoted best, AND candidate models
+            # Feb 2026: candidate_*.pth are produced by training executor and need
+            # evaluation before they can be promoted to canonical
+            for pattern in ["candidate_*.pth", "canonical_*.pth", "ringrift_best_*.pth"]:
                 for model_path in models_dir.glob(pattern):
                     # Resolve symlinks to get actual model path
                     actual_path = model_path.resolve() if model_path.is_symlink() else model_path
@@ -2433,8 +2436,8 @@ class EvaluationDaemon(HandlerBase):
                     scanned += 1
 
                     # Extract board_type and num_players from filename
-                    # Format: canonical_{board_type}_{n}p.pth or ringrift_best_{board_type}_{n}p.pth
-                    stem = model_path.stem  # e.g., "canonical_hex8_2p" or "ringrift_best_hex8_2p"
+                    # Format: {prefix}_{board_type}_{n}p.pth (canonical, candidate, or ringrift_best)
+                    stem = model_path.stem  # e.g., "candidate_hex8_2p" or "canonical_hex8_2p"
                     parts = stem.split("_")
 
                     # Determine the prefix length: "canonical" = 1 part, "ringrift_best" = 2 parts
