@@ -94,20 +94,33 @@ async def execute_gauntlet_work(
         )
 
         # Build result dict with full win rate data
+        total_games = getattr(gauntlet_result, "total_games", 0)
+        gauntlet_passed = getattr(gauntlet_result, "passed", False)
+
+        # Feb 2026: Zero-game evaluations are failures regardless of passed flag.
+        # Previously hardcoded success=True even when all games failed silently,
+        # causing the entire evaluation pipeline to report success with 0 games.
+        if total_games == 0:
+            gauntlet_passed = False
+            logger.warning(
+                f"Gauntlet work {work_id}: 0 games completed - treating as failure. "
+                f"Reason: {getattr(gauntlet_result, 'failure_reason', 'unknown')}"
+            )
+
         result_data: dict[str, Any] = {
             "config_key": config_key,
             "board_type": board_type,
             "num_players": num_players,
             "model_path": model_path,
             "work_id": work_id,
-            "success": True,
+            "success": total_games > 0,
             "win_rates": {},
             "opponent_results": {},
-            "games_played": getattr(gauntlet_result, "total_games", 0),
-            "total_games": getattr(gauntlet_result, "total_games", 0),
+            "games_played": total_games,
+            "total_games": total_games,
             "estimated_elo": getattr(gauntlet_result, "estimated_elo", 0.0),
             "elo": getattr(gauntlet_result, "estimated_elo", 0.0),
-            "passed": getattr(gauntlet_result, "passed", False),
+            "passed": gauntlet_passed,
         }
 
         # Extract per-opponent results
@@ -134,16 +147,22 @@ async def execute_gauntlet_work(
         work_item["result"] = result_data
 
         # Also emit EVALUATION_COMPLETED locally for any local subscribers
-        try:
-            from app.coordination.event_emission_helpers import safe_emit_event
-            safe_emit_event(
-                "EVALUATION_COMPLETED",
-                result_data,
-                context="gauntlet_worker",
-            )
-        except ImportError:
-            pass
+        # Feb 2026: Only emit when games were actually played
+        if total_games > 0:
+            try:
+                from app.coordination.event_emission_helpers import safe_emit_event
+                safe_emit_event(
+                    "EVALUATION_COMPLETED",
+                    result_data,
+                    context="gauntlet_worker",
+                )
+            except ImportError:
+                pass
 
+        # Feb 2026: Return False when 0 games completed so work item is
+        # marked as failed and can be retried on another node.
+        if total_games == 0:
+            return False
         return True
 
     except ImportError as e:

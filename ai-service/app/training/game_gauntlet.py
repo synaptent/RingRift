@@ -1748,7 +1748,7 @@ def _evaluate_single_opponent(
                         result["games"] += 1
 
                         if game_result["error"]:
-                            logger.debug(f"[gauntlet] Game error: {game_result['error']}")
+                            logger.warning(f"[gauntlet] Game {game_result['game_num']} error vs {baseline_name}: {game_result['error']}")
                             continue
 
                         if game_result["candidate_won"]:
@@ -2286,7 +2286,12 @@ def run_baseline_gauntlet(
                     eval_result = future.result()
                     opponent_eval_results.append(eval_result)
                 except (RuntimeError, ValueError, KeyError, OSError, AttributeError) as e:
-                    logger.error(f"[gauntlet] Error evaluating vs {baseline.value}: {e}")
+                    logger.error(
+                        f"[gauntlet] OPPONENT EVAL FAILED vs {baseline.value}: {e}. "
+                        f"This opponent contributed 0 games. If all opponents fail, "
+                        f"the evaluation will be marked as FAILED.",
+                        exc_info=True,
+                    )
                     # Add empty result for this baseline
                     opponent_eval_results.append({
                         "baseline_name": baseline.value,
@@ -2398,6 +2403,19 @@ def run_baseline_gauntlet(
     # Calculate overall win rate
     if result.total_games > 0:
         result.win_rate = result.total_wins / result.total_games
+    else:
+        # Feb 2026: Zero-game evaluations are failures, not passes.
+        # When all opponent evaluations throw exceptions, results have games=0
+        # but passed=True (the default). This caused the entire evaluation pipeline
+        # to report success with 0 games, blocking model promotion indefinitely.
+        result.passed = False
+        result.passes_baseline_gating = False
+        result.failure_reason = "No games completed successfully"
+        logger.error(
+            f"[gauntlet] ZERO games completed across all opponents. "
+            f"All game executions likely failed (model loading, CUDA, architecture mismatch). "
+            f"Marking evaluation as FAILED."
+        )
 
     # Estimate Elo from win rates
     result.estimated_elo = _estimate_elo_from_results(result.opponent_results)
@@ -2417,25 +2435,33 @@ def run_baseline_gauntlet(
 
     # Emit EVALUATION_COMPLETED event for curriculum feedback (December 2025)
     # This closes the eval→curriculum feedback loop
-    board_type_str = board_type.value if hasattr(board_type, "value") else str(board_type)
+    # Feb 2026: Skip event emission when 0 games completed - the evaluation
+    # didn't produce meaningful results and should not trigger downstream
+    # promotion/curriculum/feedback consumers.
+    if result.total_games > 0:
+        board_type_str = board_type.value if hasattr(board_type, "value") else str(board_type)
 
-    # Extract baseline-specific win rates for promotion daemon (Dec 28, 2025)
-    random_stats = result.opponent_results.get("random", {})
-    heuristic_stats = result.opponent_results.get("heuristic", {})
-    vs_random_rate = random_stats.get("win_rate") if random_stats else None
-    vs_heuristic_rate = heuristic_stats.get("win_rate") if heuristic_stats else None
+        # Extract baseline-specific win rates for promotion daemon (Dec 28, 2025)
+        random_stats = result.opponent_results.get("random", {})
+        heuristic_stats = result.opponent_results.get("heuristic", {})
+        vs_random_rate = random_stats.get("win_rate") if random_stats else None
+        vs_heuristic_rate = heuristic_stats.get("win_rate") if heuristic_stats else None
 
-    # Jan 2026: Pass model_path to prevent config-as-model_id bug in Elo tracking
-    model_path_str = str(model_path) if model_path else ""
-    _emit_gauntlet_result_event(
-        config_key=f"{board_type_str}_{num_players}p",
-        elo=result.estimated_elo,
-        win_rate=result.win_rate,
-        games=result.total_games,
-        model_path=model_path_str,
-        vs_random_rate=vs_random_rate,
-        vs_heuristic_rate=vs_heuristic_rate,
-    )
+        # Jan 2026: Pass model_path to prevent config-as-model_id bug in Elo tracking
+        model_path_str = str(model_path) if model_path else ""
+        _emit_gauntlet_result_event(
+            config_key=f"{board_type_str}_{num_players}p",
+            elo=result.estimated_elo,
+            win_rate=result.win_rate,
+            games=result.total_games,
+            model_path=model_path_str,
+            vs_random_rate=vs_random_rate,
+            vs_heuristic_rate=vs_heuristic_rate,
+        )
+    else:
+        logger.warning(
+            f"[gauntlet] Skipping EVALUATION_COMPLETED event emission: 0 games played"
+        )
 
     # Store results in gauntlet_results.db (December 2025)
     if store_results:

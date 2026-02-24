@@ -1350,7 +1350,12 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             # auto-promotion pipeline can process results from GPU nodes.
             # Previously results were silently dropped because
             # handle_work_complete had no event emission for these types.
-            if success and work_type in (WorkType.GAUNTLET, WorkType.TOURNAMENT):
+            #
+            # Feb 23, 2026: Only emit when games were actually played.
+            # Zero-game evaluations are failures and should not trigger
+            # downstream promotion/curriculum consumers.
+            eval_games = result.get("games_played", result.get("total_games", 0))
+            if success and work_type in (WorkType.GAUNTLET, WorkType.TOURNAMENT) and eval_games > 0:
                 config_key = f"{config.get('board_type', '')}_{config.get('num_players', 0)}p"
                 model_path = config.get("candidate_model", "")
                 try:
@@ -1362,12 +1367,13 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                             "model_path": model_path,
                             "board_type": config.get("board_type", ""),
                             "num_players": config.get("num_players", 0),
-                            "success": True,
+                            "success": result.get("success", True),
+                            "passed": result.get("passed", False),
                             "win_rates": result.get("win_rates", {}),
                             "opponent_results": result.get("opponent_results", {}),
                             "elo": result.get("elo") or result.get("estimated_elo") or result.get("best_elo"),
                             "estimated_elo": result.get("estimated_elo") or result.get("elo") or result.get("best_elo"),
-                            "games_played": result.get("games_played", result.get("total_games", 0)),
+                            "games_played": eval_games,
                             "vs_random_rate": result.get("vs_random_rate"),
                             "vs_heuristic_rate": result.get("vs_heuristic_rate"),
                             "work_id": work_id,
@@ -1378,7 +1384,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     )
                     logger.info(
                         f"Emitted EVALUATION_COMPLETED for {work_type.value} {work_id}: "
-                        f"{config_key} model={model_path}"
+                        f"{config_key} model={model_path} games={eval_games}"
                     )
                 except ImportError:
                     logger.debug(f"Event emission not available for {work_type.value} completion")
