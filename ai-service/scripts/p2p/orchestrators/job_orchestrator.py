@@ -21,6 +21,7 @@ import subprocess
 import time
 from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.orchestrators.base_orchestrator import BaseOrchestrator, HealthCheckResult, get_job_attr
 
 if TYPE_CHECKING:
@@ -282,7 +283,7 @@ class JobOrchestrator(BaseOrchestrator):
             return self._p2p._create_safe_task(coro, name, factory)
 
         # Fallback: create task directly
-        return asyncio.create_task(coro, name=name)
+        return safe_create_task(coro, name=name)
 
     # =========================================================================
     # GPU Job Tracking
@@ -926,13 +927,14 @@ class JobOrchestrator(BaseOrchestrator):
                             # Send alert via notifier if available
                             notifier = getattr(self._p2p, "notifier", None)
                             if notifier is not None:
-                                asyncio.create_task(
+                                safe_create_task(
                                     notifier.send(
                                         title="Stale Process Killed",
                                         message=f"Killed {pattern} (PID {pid}) after {elapsed_seconds/3600:.1f} hours",
                                         level="warning",
                                         node_id=self.node_id,
-                                    )
+                                    ),
+                                    name="job-notify-stale-process-killed",
                                 )
 
                     except (ValueError, subprocess.TimeoutExpired):

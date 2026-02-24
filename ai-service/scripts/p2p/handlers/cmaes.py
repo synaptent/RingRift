@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.handlers.base import BaseP2PHandler
 from scripts.p2p.handlers.timeout_decorator import handler_timeout, HANDLER_TIMEOUT_TOURNAMENT
 
@@ -137,7 +138,7 @@ class CMAESHandlersMixin(BaseP2PHandler):
             logger.info(f"Started distributed CMA-ES job {job_id} with {len(state.worker_nodes)} workers")
 
             # Launch coordinator task (Jan 2026: uses cmaes_coordinator directly)
-            asyncio.create_task(self.cmaes_coordinator.run_distributed_cmaes(job_id))
+            safe_create_task(self.cmaes_coordinator.run_distributed_cmaes(job_id), name="cmaes-run-distributed")
 
             return self.json_response({
                 "success": True,
@@ -180,10 +181,10 @@ class CMAESHandlersMixin(BaseP2PHandler):
             logger.info(f"Received CMA-ES evaluation request: job={job_id}, gen={generation}, idx={individual_idx}")
 
             # Start evaluation in background (Jan 2026: uses cmaes_coordinator directly)
-            asyncio.create_task(self.cmaes_coordinator.evaluate_weights(
+            safe_create_task(self.cmaes_coordinator.evaluate_weights(
                 job_id, weights, generation, individual_idx,
                 games_per_eval=games_per_eval, board_type=board_type, num_players=num_players
-            ))
+            ), name="cmaes-evaluate-weights")
 
             return self.json_response({
                 "success": True,
@@ -298,7 +299,7 @@ class CMAESHandlersMixin(BaseP2PHandler):
                 self.distributed_cmaes_state[cmaes_job_id] = state
 
                 # Launch distributed coordinator task (Jan 2026: uses cmaes_coordinator directly)
-                asyncio.create_task(self.cmaes_coordinator.run_distributed_cmaes(cmaes_job_id))
+                safe_create_task(self.cmaes_coordinator.run_distributed_cmaes(cmaes_job_id), name="cmaes-run-distributed-auto")
 
                 # Track as training job
                 with self.training_lock:
@@ -348,7 +349,7 @@ class CMAESHandlersMixin(BaseP2PHandler):
                 )
 
                 logger.info(f"Started local GPU CMA-ES (PID {proc.pid}) for job {job_id}")
-                asyncio.create_task(self._monitor_training_process(job_id, proc, output_dir))
+                safe_create_task(self._monitor_training_process(job_id, proc, output_dir), name="cmaes-monitor-training")
 
                 return self.json_response({
                     "success": True,

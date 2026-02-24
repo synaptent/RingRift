@@ -47,6 +47,8 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import ClientTimeout, web
 
+from app.core.async_context import safe_create_task
+
 if TYPE_CHECKING:
     from ..types import NodeInfo
 
@@ -369,7 +371,7 @@ class ClusterApiHandlersMixin:
                         "new_commit": remote_commit[:8] if remote_commit else None,
                     }
                     if success:
-                        asyncio.create_task(self._restart_orchestrator())
+                        safe_create_task(self._restart_orchestrator(), name="cluster-restart-after-update")
 
             return web.json_response(
                 {

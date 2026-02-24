@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any
 import aiohttp
 from aiohttp import web
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.handlers.base import BaseP2PHandler
 from scripts.p2p.handlers.timeout_decorator import (
     handler_timeout,
@@ -211,7 +212,7 @@ class ElectionHandlersMixin(BaseP2PHandler):
             # If our ID is higher, we respond with "ALIVE" (Bully algorithm)
             if self.node_id > candidate_id and eligible:
                 # Start our own election
-                asyncio.create_task(self._start_election())
+                safe_create_task(self._start_election(), name="election-bully-start")
                 return self.json_response({
                     "response": "ALIVE",
                     "node_id": self.node_id,
@@ -502,7 +503,7 @@ class ElectionHandlersMixin(BaseP2PHandler):
                 })
 
             logger.info(f"[Election] Manual election start requested: reason={reason}")
-            asyncio.create_task(self._start_election())
+            safe_create_task(self._start_election(), name="election-manual-start")
 
             return self.json_response({
                 "accepted": True,
@@ -598,12 +599,13 @@ class ElectionHandlersMixin(BaseP2PHandler):
                     epoch = getattr(self, "cluster_epoch", 0)
                     if hasattr(self, "_leadership_sm") and self._leadership_sm:
                         epoch = getattr(self._leadership_sm, "epoch", epoch)
-                    asyncio.create_task(
+                    safe_create_task(
                         self._broadcast_leader_to_all_peers(
                             self.node_id,
                             epoch,
                             self.leader_lease_expires,
-                        )
+                        ),
+                        name="election-broadcast-forced-leader",
                     )
 
                 # Feb 2026 (2c): Set election grace period to prevent natural elections
@@ -741,7 +743,7 @@ class ElectionHandlersMixin(BaseP2PHandler):
 
                 # Start election
                 if not getattr(self, "election_in_progress", False):
-                    asyncio.create_task(self._start_election())
+                    safe_create_task(self._start_election(), name="election-request-start")
                     return self.json_response({
                         "accepted": True,
                         "action": "started_election",

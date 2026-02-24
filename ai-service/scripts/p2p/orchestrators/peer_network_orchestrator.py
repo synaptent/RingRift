@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 import aiohttp
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.orchestrators.base_orchestrator import BaseOrchestrator, HealthCheckResult
 
 if TYPE_CHECKING:
@@ -782,7 +783,7 @@ class PeerNetworkOrchestrator(BaseOrchestrator):
         # Emit HOST_ONLINE if this is first registration
         if not was_present:
             try:
-                asyncio.create_task(self._emit_host_online_for_self())
+                safe_create_task(self._emit_host_online_for_self(), name="peer-network-emit-host-online-self")
             except RuntimeError:
                 # No event loop running
                 pass
@@ -1175,27 +1176,27 @@ class PeerNetworkOrchestrator(BaseOrchestrator):
         # Jan 12, 2026: Emit events OUTSIDE the lock to prevent deadlocks
         # Event handlers may need to acquire peers_lock themselves
         for node_id, last_hb, dead_for in retired_peers:
-            asyncio.create_task(p2p._emit_host_offline(node_id, "retired", last_hb))
-            asyncio.create_task(p2p._emit_node_dead(node_id, "retired", last_hb, dead_for))
-            asyncio.create_task(p2p._emit_cluster_capacity_changed(
+            safe_create_task(p2p._emit_host_offline(node_id, "retired", last_hb), name=f"peer-network-emit-host-offline-{node_id}")
+            safe_create_task(p2p._emit_node_dead(node_id, "retired", last_hb, dead_for), name=f"peer-network-emit-node-dead-{node_id}")
+            safe_create_task(p2p._emit_cluster_capacity_changed(
                 total_nodes=capacity_total,
                 alive_nodes=capacity_alive,
                 gpu_nodes=capacity_gpu,
                 training_nodes=capacity_training,
                 change_type="node_removed",
                 change_details={"node_id": node_id, "reason": "peer_timeout"},
-            ))
+            ), name=f"peer-network-capacity-changed-removed-{node_id}")
 
         for node_id, caps in recovered_peers:
-            asyncio.create_task(p2p._emit_host_online(node_id, caps))
-            asyncio.create_task(p2p._emit_cluster_capacity_changed(
+            safe_create_task(p2p._emit_host_online(node_id, caps), name=f"peer-network-emit-host-online-{node_id}")
+            safe_create_task(p2p._emit_cluster_capacity_changed(
                 total_nodes=capacity_total,
                 alive_nodes=capacity_alive,
                 gpu_nodes=capacity_gpu,
                 training_nodes=capacity_training,
                 change_type="node_added",
                 change_details={"node_id": node_id, "reason": "peer_recovered"},
-            ))
+            ), name=f"peer-network-capacity-changed-added-{node_id}")
 
         # Clear stale leader IDs after restarts/partitions
         if p2p.leader_id and not p2p._is_leader_lease_valid():
@@ -1230,7 +1231,7 @@ class PeerNetworkOrchestrator(BaseOrchestrator):
                 if getattr(p2p, "voter_node_ids", []) and not p2p._has_voter_quorum():
                     logger.warning("Skipping election after stale lease clear: no voter quorum available")
                 else:
-                    asyncio.create_task(p2p._start_election())
+                    safe_create_task(p2p._start_election(), name="peer-network-election-lease-expired")
 
         # If leader is dead, start election
         if p2p.leader_id and p2p.leader_id != p2p.node_id:
@@ -1251,12 +1252,12 @@ class PeerNetworkOrchestrator(BaseOrchestrator):
                     p2p.last_lease_renewal = 0.0
                     # Dec 31, 2025: Set invalidation window to prevent gossip from re-setting dead leader
                     p2p._leader_invalidation_until = time.time() + 60.0
-                    asyncio.create_task(p2p._emit_leader_lost(old_leader_id, reason))
+                    safe_create_task(p2p._emit_leader_lost(old_leader_id, reason), name=f"peer-network-emit-leader-lost-{reason}")
                     # CRITICAL: Check quorum before starting election to prevent quorum bypass
                     if getattr(p2p, "voter_node_ids", []) and not p2p._has_voter_quorum():
                         logger.warning(f"Skipping election after leader {reason}: no voter quorum available")
                     else:
-                        asyncio.create_task(p2p._start_election())
+                        safe_create_task(p2p._start_election(), name=f"peer-network-election-leader-{reason}")
             else:
                 # Dec 31, 2025: Leader not in peers dict - unknown/unreachable leader
                 # This can happen if leader gossip propagated but peer discovery hasn't caught up
@@ -1269,7 +1270,7 @@ class PeerNetworkOrchestrator(BaseOrchestrator):
                 p2p.leader_lease_expires = 0.0
                 p2p.last_lease_renewal = 0.0
                 p2p._leader_invalidation_until = time.time() + 60.0
-                asyncio.create_task(p2p._emit_leader_lost(old_leader_id, "unknown_peer"))
+                safe_create_task(p2p._emit_leader_lost(old_leader_id, "unknown_peer"), name="peer-network-emit-leader-lost-unknown-peer")
 
         # If we're leaderless, periodically retry elections with adaptive backoff
         # December 29, 2025: Improved backoff to start faster then slow down
@@ -1288,10 +1289,10 @@ class PeerNetworkOrchestrator(BaseOrchestrator):
                     logger.warning(f"Skipping periodic election retry {retry_count + 1}: no voter quorum available")
                     # Jan 1, 2026: Check probabilistic fallback leadership when quorum unavailable
                     # This prevents indefinite cluster stalls when voters are unreachable
-                    asyncio.create_task(p2p._check_probabilistic_leadership(now_ts))
+                    safe_create_task(p2p._check_probabilistic_leadership(now_ts), name="peer-network-probabilistic-leadership")
                 else:
                     logger.info(f"Triggering election retry {retry_count + 1} after {backoff_seconds}s leaderless")
-                    asyncio.create_task(p2p._start_election())
+                    safe_create_task(p2p._start_election(), name="peer-network-election-periodic-retry")
         elif p2p.leader_id:
             # Reset retry count when we have a leader
             p2p._election_retry_count = 0
@@ -1659,14 +1660,14 @@ class PeerNetworkOrchestrator(BaseOrchestrator):
                                     if p.is_alive() and not getattr(p, "retired", False)
                                     and getattr(p, "training_enabled", False)
                                 )
-                            asyncio.create_task(p2p._emit_cluster_capacity_changed(
+                            safe_create_task(p2p._emit_cluster_capacity_changed(
                                 total_nodes=len(p2p.peers),
                                 alive_nodes=alive_count,
                                 gpu_nodes=gpu_count,
                                 training_nodes=training_count,
                                 change_type="node_added",
                                 change_details={"node_id": peer.node_id, "reason": "peer_recovered_via_probe"},
-                            ))
+                            ), name=f"peer-network-capacity-changed-probe-{peer.node_id}")
 
             except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
                 # Still unreachable - remain retired

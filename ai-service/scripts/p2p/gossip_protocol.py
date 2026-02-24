@@ -21,6 +21,8 @@ Feb 2026: Decomposed into gossip_health, gossip_persistence, gossip_partition, g
 from __future__ import annotations
 
 import asyncio
+
+from app.core.async_context import safe_create_task
 import contextlib
 import gzip
 import json
@@ -1915,8 +1917,9 @@ class GossipProtocolMixin(GossipPersistenceMixin, GossipPartitionMixin, _GossipM
         # December 2025: Check config freshness for distributed config sync
         sender_id = sender_state.get("node_id") if sender_state else None
         if sender_id and sender_state.get("config"):
-            asyncio.create_task(
-                self._check_config_freshness(sender_id, sender_state["config"])
+            safe_create_task(
+                self._check_config_freshness(sender_id, sender_state["config"]),
+                name=f"gossip-config-freshness-{sender_id}",
             )
 
         # Jan 13, 2026: Check voter config drift (P2P Cluster Stability Plan Phase 3)
@@ -2472,8 +2475,7 @@ class GossipProtocolMixin(GossipPersistenceMixin, GossipPartitionMixin, _GossipM
                         self._log_warning(f"[Leadership] State machine transition failed: {inner_e}")
                         # Even if state machine fails, our role/leader_id are already set correctly
                 # Schedule with error callback to ensure we know if it fails
-                task = asyncio.create_task(_do_transition())
-                task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+                task = safe_create_task(_do_transition(), name="gossip-leadership-transition")
             except Exception as e:
                 self._log_warning(f"[Leadership] Failed to schedule state machine transition: {e}")
 
@@ -2494,13 +2496,14 @@ class GossipProtocolMixin(GossipPersistenceMixin, GossipPartitionMixin, _GossipM
         try:
             from scripts.p2p.handlers.handlers_base import get_event_bridge
             _event_bridge = get_event_bridge()
-            asyncio.create_task(
+            safe_create_task(
                 _event_bridge.emit("p2p_leader_changed", {
                     "new_leader_id": self.node_id,
                     "old_leader_id": "",
                     "term": getattr(self, "cluster_epoch", 0),
                     "reason": "accepted_from_gossip",
-                })
+                }),
+                name="gossip-emit-leader-changed",
             )
         except Exception as e:
             self._log_debug(f"[Leadership] Failed to emit leader change event: {e}")
@@ -2511,12 +2514,13 @@ class GossipProtocolMixin(GossipPersistenceMixin, GossipPartitionMixin, _GossipM
                 epoch = getattr(self, "cluster_epoch", 0)
                 if hasattr(self, "_leadership_sm") and self._leadership_sm:
                     epoch = getattr(self._leadership_sm, "epoch", epoch)
-                asyncio.create_task(
+                safe_create_task(
                     self._broadcast_leader_to_all_peers(
                         self.node_id,
                         epoch,
                         self.leader_lease_expires,
-                    )
+                    ),
+                    name="gossip-broadcast-leadership"
                 )
         except Exception as e:
             self._log_debug(f"[Leadership] Failed to broadcast leadership: {e}")
@@ -2855,7 +2859,7 @@ class GossipProtocolMixin(GossipPersistenceMixin, GossipPartitionMixin, _GossipM
                 # If this is an unknown peer, try to connect
                 if node_id not in self.peers:
                     # Queue for async connection attempt
-                    asyncio.create_task(self._try_connect_gossip_peer(node_id, host, port))
+                    safe_create_task(self._try_connect_gossip_peer(node_id, host, port), name=f"gossip-connect-{node_id}")
 
     async def _try_connect_gossip_peer(self, node_id: str, host: str, port: int) -> None:
         """Phase 28: Attempt to connect to a peer learned via gossip."""

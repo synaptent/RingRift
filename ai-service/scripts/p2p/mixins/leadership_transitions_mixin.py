@@ -31,6 +31,8 @@ Dependencies on parent class methods:
 from __future__ import annotations
 
 import asyncio
+
+from app.core.async_context import safe_create_task
 import logging
 import time
 from typing import TYPE_CHECKING, Any
@@ -171,7 +173,7 @@ class LeadershipTransitionsMixin(P2PMixinBase):
                     logger.warning("ULSM: Skipping post-step-down election - no voter quorum")
                 else:
                     logger.info("ULSM: Starting election after step-down")
-                    asyncio.create_task(self._start_election())
+                    safe_create_task(self._start_election(), name="ulsm-post-stepdown-election")
 
         except Exception as e:
             logger.error(f"ULSM: Error during step-down: {e}", exc_info=True)

@@ -258,7 +258,7 @@ class VoterHealthMonitor:
             return
 
         self._running = True
-        self._task = asyncio.create_task(self._monitor_loop())
+        self._task = safe_create_task(self._monitor_loop(), name="voter-health-monitor")
         logger.info("[VoterHealth] Started health monitoring")
 
     async def stop(self) -> None:

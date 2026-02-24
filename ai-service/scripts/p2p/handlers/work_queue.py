@@ -506,6 +506,75 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             "reason": reason,
         }, status=429)
 
+    async def _sync_then_emit_training_completed(
+        self,
+        node_id: str,
+        model_path: str,
+        config_key: str,
+        board_type: str,
+        num_players: int,
+        model_version: str,
+        final_loss: float,
+        training_samples: int,
+        work_id: str,
+    ) -> None:
+        """Fetch candidate model from training node, then emit TRAINING_COMPLETED.
+
+        Phase 5B+5C (Feb 2026): The evaluation daemon needs the candidate model
+        to be locally available before it can evaluate. This method:
+        1. Fetches the candidate model from the GPU node via rsync
+        2. Only emits TRAINING_COMPLETED if the model is locally available
+        3. Logs a warning and skips event emission if fetch fails
+
+        This replaces the old fire-and-forget pattern where the event was
+        emitted before the model was synced, causing evaluation failures.
+        """
+        # Step 1: Fetch candidate model from training node
+        fetch_ok = await _fetch_candidate_model_from_node(
+            node_id, model_path, config_key
+        )
+
+        # Step 2: Check if model is locally available (either fetched or already present)
+        from pathlib import Path
+        local_model = Path(model_path)
+        candidate_model_local = local_model.exists() and local_model.stat().st_size > 1024
+
+        if not candidate_model_local:
+            logger.warning(
+                f"Deferring TRAINING_COMPLETED for {config_key}: "
+                f"candidate model not yet synced from {node_id} "
+                f"(fetch_ok={fetch_ok}, path={model_path})"
+            )
+            return
+
+        # Step 3: Emit TRAINING_COMPLETED now that model is locally available
+        try:
+            from app.coordination.event_emission_helpers import safe_emit_event
+            safe_emit_event(
+                "TRAINING_COMPLETED",
+                {
+                    "config_key": config_key,
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "model_version": model_version,
+                    "model_path": model_path,
+                    "final_loss": final_loss,
+                    "training_samples": training_samples,
+                    "work_id": work_id,
+                    "trained_by": node_id,
+                    "source": "distributed_training",
+                    "candidate_synced": True,
+                },
+                context="work_queue_training_complete",
+            )
+            logger.info(
+                f"Emitted TRAINING_COMPLETED for {work_id}: "
+                f"{config_key} model={model_path} loss={final_loss:.4f} "
+                f"samples={training_samples} (trained by {node_id}, synced OK)"
+            )
+        except ImportError:
+            logger.debug("Event emission not available for training completion")
+
     async def _forward_to_leader(
         self,
         endpoint: str,
@@ -1244,38 +1313,25 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 # receives the event but can't find the model locally (it only
                 # exists on the GPU node that trained). This was the root cause of
                 # zero candidate models ever being evaluated or promoted.
-                import asyncio
-                asyncio.ensure_future(
-                    _fetch_candidate_model_from_node(
-                        assigned_to, result_model_path, config_key
-                    )
+                #
+                # Phase 5B+5C: Await the model fetch, then emit event only if
+                # the model is locally available. This prevents the evaluation
+                # daemon from trying to evaluate a model that doesn't exist yet.
+                from app.core.async_context import safe_create_task
+                safe_create_task(
+                    self._sync_then_emit_training_completed(
+                        node_id=assigned_to,
+                        model_path=result_model_path,
+                        config_key=config_key,
+                        board_type=board_type,
+                        num_players=num_players,
+                        model_version=model_version,
+                        final_loss=final_loss,
+                        training_samples=training_samples,
+                        work_id=work_id,
+                    ),
+                    name=f"sync-candidate-{config_key}",
                 )
-
-                try:
-                    from app.coordination.event_emission_helpers import safe_emit_event
-                    safe_emit_event(
-                        "TRAINING_COMPLETED",
-                        {
-                            "config_key": config_key,
-                            "board_type": board_type,
-                            "num_players": num_players,
-                            "model_version": model_version,
-                            "model_path": result_model_path,
-                            "final_loss": final_loss,
-                            "training_samples": training_samples,
-                            "work_id": work_id,
-                            "trained_by": assigned_to,
-                            "source": "distributed_training",
-                        },
-                        context="work_queue_training_complete",
-                    )
-                    logger.info(
-                        f"Emitted TRAINING_COMPLETED for {work_id}: "
-                        f"{config_key} model={result_model_path} loss={final_loss:.4f} "
-                        f"samples={training_samples} (trained by {assigned_to})"
-                    )
-                except ImportError:
-                    logger.debug("Event emission not available for training completion")
 
             # Feb 2026: Emit EVALUATION_COMPLETED for evaluation work so the
             # auto-promotion pipeline can process results from GPU nodes.

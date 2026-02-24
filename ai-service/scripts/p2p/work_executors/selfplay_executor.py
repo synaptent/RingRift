@@ -5,9 +5,10 @@ Extracted from P2POrchestrator._execute_claimed_work (Feb 2026).
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
+
+from app.core.async_context import safe_create_task
 
 if TYPE_CHECKING:
     from scripts.p2p.managers.job_manager import JobManager
@@ -48,16 +49,22 @@ async def execute_selfplay_work(
     engine_extra_args = config.get("engine_extra_args")
     selfplay_model_version = config.get("model_version", "v2")
 
-    # Delegate to JobManager (fire-and-forget)
-    asyncio.create_task(job_manager.run_gpu_selfplay_job(
-        job_id=f"pull-{work_id}",
-        board_type=board_type,
-        num_players=num_players,
-        num_games=num_games,
-        engine_mode=engine_mode,
-        engine_extra_args=engine_extra_args,
-        model_version=selfplay_model_version,
-    ))
+    # Delegate to JobManager (fire-and-forget with error tracking)
+    safe_create_task(
+        job_manager.run_gpu_selfplay_job(
+            job_id=f"pull-{work_id}",
+            board_type=board_type,
+            num_players=num_players,
+            num_games=num_games,
+            engine_mode=engine_mode,
+            engine_extra_args=engine_extra_args,
+            model_version=selfplay_model_version,
+        ),
+        name=f"selfplay-{work_id}",
+        error_callback=lambda t: logger.error(
+            f"Selfplay {work_id} failed: {t.exception()}"
+        ),
+    )
 
     # Track diversity metrics for monitoring
     selfplay_scheduler.track_diversity({

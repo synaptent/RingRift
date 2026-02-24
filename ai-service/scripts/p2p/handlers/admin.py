@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.handlers.base import BaseP2PHandler
 from scripts.p2p.handlers.timeout_decorator import (
     handler_timeout,
@@ -140,7 +141,7 @@ class AdminHandlersMixin(BaseP2PHandler):
 
             if success:
                 # Schedule restart
-                asyncio.create_task(self._restart_orchestrator())
+                safe_create_task(self._restart_orchestrator(), name="admin-restart-after-update")
                 return self.json_response({
                     "success": True,
                     "message": "Update successful, restarting...",
@@ -177,7 +178,7 @@ class AdminHandlersMixin(BaseP2PHandler):
         try:
             logger.info("Admin restart requested via API")
             # Schedule restart (gives time to return response)
-            asyncio.create_task(self._restart_orchestrator())
+            safe_create_task(self._restart_orchestrator(), name="admin-restart-manual")
             return self.json_response({
                 "success": True,
                 "message": "Restart scheduled, process will restart in 2 seconds",

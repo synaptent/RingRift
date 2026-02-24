@@ -16,6 +16,8 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+
+from app.core.async_context import safe_create_task
 import logging
 import os
 import subprocess
@@ -1049,7 +1051,7 @@ def _register_follower_discovery(
             try:
                 host, port_str = peer_addr.rsplit(":", 1)
                 port = int(port_str)
-                asyncio.create_task(
+                safe_create_task(
                     orchestrator._send_heartbeat_to_peer(host, port),
                     name=f"discover_peer_{peer_addr}",
                 )
@@ -1634,7 +1636,7 @@ def _register_udp_discovery(
             try:
                 host, port_str = peer_addr.rsplit(":", 1)
                 port = int(port_str)
-                asyncio.create_task(
+                safe_create_task(
                     orchestrator._send_heartbeat_to_peer(host, port),
                     name=f"udp_discover_{peer_addr}",
                 )

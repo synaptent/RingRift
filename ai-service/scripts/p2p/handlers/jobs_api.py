@@ -54,6 +54,7 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.network import NonBlockingAsyncLockWrapper
 
 from scripts.p2p.handlers.base import BaseP2PHandler
@@ -718,7 +719,7 @@ class JobsApiHandlersMixin(BaseP2PHandler):
             logger.info("Cleanup request received")
 
             # Run cleanup in background to avoid blocking the request
-            asyncio.create_task(self._cleanup_local_disk())
+            safe_create_task(self._cleanup_local_disk(), name="jobs-cleanup-disk")
 
             # Return current disk usage
             usage = self._get_resource_usage()
@@ -744,7 +745,7 @@ class JobsApiHandlersMixin(BaseP2PHandler):
             logger.info("Restart stuck jobs request received")
 
             # Run in background to avoid blocking
-            asyncio.create_task(self._restart_local_stuck_jobs())
+            safe_create_task(self._restart_local_stuck_jobs(), name="jobs-restart-stuck")
 
             return web.json_response({
                 "success": True,

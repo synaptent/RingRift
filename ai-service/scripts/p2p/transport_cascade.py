@@ -13,6 +13,8 @@ Design Philosophy:
 from __future__ import annotations
 
 import asyncio
+
+from app.core.async_context import safe_create_task
 import logging
 import os
 import time
@@ -862,8 +864,9 @@ class TransportCascade:
             # Create tasks for all transports in this tier
             tasks = []
             for transport in tier_transports:
-                task = asyncio.create_task(
-                    self._try_transport(target, payload, transport, clamped_timeout)
+                task = safe_create_task(
+                    self._try_transport(target, payload, transport, clamped_timeout),
+                    name=f"cascade-transport-{transport.name}",
                 )
                 tasks.append((transport.name, task))
 
@@ -971,8 +974,9 @@ class TransportCascade:
             # Create tasks for all transports in this tier
             tasks = []
             for transport in tier_transports:
-                task = asyncio.create_task(
-                    self._try_transport(target, payload, transport, clamped_timeout)
+                task = safe_create_task(
+                    self._try_transport(target, payload, transport, clamped_timeout),
+                    name=f"cascade-stagger-{transport.name}",
                 )
                 tasks.append(task)
                 all_tasks.append(task)
@@ -1008,7 +1012,7 @@ class TransportCascade:
         # Start each tier with staggered delay
         for tier_idx, tier in enumerate(sorted_tiers):
             delay = tier_idx * self.STAGGER_DELAY
-            task = asyncio.create_task(probe_tier(tier, delay))
+            task = safe_create_task(probe_tier(tier, delay), name=f"cascade-probe-tier-{tier.name}")
             tier_start_tasks.append(task)
 
         # Wait for first success or total timeout
@@ -1527,7 +1531,7 @@ class GlobalCircuitBreaker:
 
             # Trigger emergency notifications
             if self._notification_callback:
-                asyncio.create_task(self._emit_emergency_alerts())
+                safe_create_task(self._emit_emergency_alerts(), name="cascade-emergency-alerts")
 
     def _close_circuit(self) -> None:
         """Close the circuit breaker."""

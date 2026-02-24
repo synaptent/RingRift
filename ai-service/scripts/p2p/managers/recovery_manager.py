@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING, Any
 import aiohttp
 from aiohttp import ClientTimeout
 
+from app.core.async_context import safe_create_task
+
 if TYPE_CHECKING:
     from scripts.p2p_orchestrator import P2POrchestrator
     from scripts.p2p.types import NodeInfo
@@ -714,7 +716,7 @@ class RecoveryManager:
             self._stats.node_recovery_attempts += 1
 
             # Notify on recovery attempt
-            asyncio.create_task(self._orchestrator.notifier.send(
+            safe_create_task(self._orchestrator.notifier.send(
                 title="Node Recovery Initiated",
                 message=f"Attempting to recover node {node_id}: {reason}",
                 level="warning",
@@ -724,25 +726,25 @@ class RecoveryManager:
                     "Host": getattr(peer, "host", "unknown"),
                 },
                 node_id=self._orchestrator.node_id,
-            ))
+            ), name="recovery-notify-attempt")
 
             success = await self.attempt_node_recovery(node_id, peer)
             if success:
                 self._node_recovery_metrics["successes"] += 1
                 self._stats.node_recovery_successes += 1
                 logger.info(f"NODE RECOVERY: Successfully restarted {node_id}")
-                asyncio.create_task(self._orchestrator.notifier.send(
+                safe_create_task(self._orchestrator.notifier.send(
                     title="Node Recovery Success",
                     message=f"Successfully recovered node {node_id}",
                     level="info",
                     fields={"Node": node_id, "Reason": reason},
                     node_id=self._orchestrator.node_id,
-                ))
+                ), name="recovery-notify-success")
             else:
                 self._node_recovery_metrics["failures"] += 1
                 self._stats.node_recovery_failures += 1
                 logger.info(f"NODE RECOVERY: Failed to restart {node_id}")
-                asyncio.create_task(self._orchestrator.notifier.send(
+                safe_create_task(self._orchestrator.notifier.send(
                     title="Node Recovery Failed",
                     message=f"Failed to recover node {node_id} ({reason})",
                     level="error",
@@ -752,7 +754,7 @@ class RecoveryManager:
                         "Action": "Manual intervention may be required",
                     },
                     node_id=self._orchestrator.node_id,
-                ))
+                ), name="recovery-notify-failure")
 
     async def attempt_node_recovery(self, node_id: str, peer: Any) -> bool:
         """Attempt to recover a node by restarting its service via SSH.

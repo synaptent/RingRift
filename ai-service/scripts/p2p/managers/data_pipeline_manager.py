@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.db_helpers import p2p_db_connection
 
 if TYPE_CHECKING:
@@ -874,7 +875,7 @@ class DataPipelineManager:
                                 f"(cpu_power={export_node.cpu_power_score()}, "
                                 f"cpus={export_node.cpu_count})"
                             )
-                            asyncio.create_task(
+                            safe_create_task(
                                 dispatch_export_job_callback(
                                     node=export_node,
                                     input_path=str(jsonl_db_path),
@@ -884,7 +885,8 @@ class DataPipelineManager:
                                     encoder_version="v3",
                                     max_games=5000,
                                     is_jsonl=False,
-                                )
+                                ),
+                                name="pipeline-dispatch-export",
                             )
                         else:
                             # Fall back to local export if no suitable CPU node

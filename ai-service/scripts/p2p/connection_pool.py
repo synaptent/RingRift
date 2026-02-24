@@ -36,6 +36,7 @@ from typing import Any, AsyncIterator
 
 # Jan 16, 2026: Use centralized provider timeout configuration
 from app.config.provider_timeouts import ProviderTimeouts
+from app.core.async_context import safe_create_task
 
 logger = logging.getLogger(__name__)
 
@@ -257,8 +258,8 @@ class PeerConnectionPool:
             return
 
         self._running = True
-        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
-        self._health_check_task = asyncio.create_task(self._health_check_loop())
+        self._cleanup_task = safe_create_task(self._cleanup_loop(), name="connection-pool-cleanup")
+        self._health_check_task = safe_create_task(self._health_check_loop(), name="connection-pool-health-check")
         logger.debug("Connection pool background tasks started")
 
     async def stop(self) -> None:

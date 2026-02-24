@@ -27,6 +27,10 @@ from app.utils.numpy_utils import safe_load_npz
 
 logger = logging.getLogger(__name__)
 
+# Minimum number of samples required for meaningful training.
+# Fewer than this produces unreliable gradients and garbage models.
+MIN_SAMPLES_FOR_TRAINING = 100
+
 
 class RingRiftDataset(Dataset):
     """
@@ -480,6 +484,16 @@ class RingRiftDataset(Dataset):
             except Exception as e:
                 print(f"Error loading data: {e}")
                 self.length = 0
+
+            # Validate minimum sample count to prevent training on insufficient data.
+            # Too few samples produce unreliable gradients and garbage models.
+            if self.length > 0 and self.length < MIN_SAMPLES_FOR_TRAINING:
+                raise ValueError(
+                    f"Dataset too small: {self.length} samples "
+                    f"(min={MIN_SAMPLES_FOR_TRAINING}). "
+                    f"Refusing to train on insufficient data. "
+                    f"File: {data_path}"
+                )
         else:
             print(f"Data file {data_path} not found, generating dummy data")
             # Generate dummy data in memory for testing
@@ -1636,6 +1650,7 @@ def auto_select_dataset(
 
 
 __all__ = [
+    'MIN_SAMPLES_FOR_TRAINING',
     'RingRiftDataset',
     'WeightedRingRiftDataset',
     'StreamingRingRiftDataset',

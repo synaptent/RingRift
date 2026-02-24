@@ -34,6 +34,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
+from app.core.async_context import safe_create_task
+
 if TYPE_CHECKING:
     from scripts.p2p.metrics_manager import MetricsManager
 
@@ -504,7 +506,7 @@ class BaseLoop(ABC):
             logger.warning(f"[{self.name}] Background task already running")
             return self._task
 
-        self._task = asyncio.create_task(
+        self._task = safe_create_task(
             self.run_forever(),
             name=f"loop_{self.name}",
         )
@@ -527,7 +529,7 @@ class BaseLoop(ABC):
                 logger.warning(f"[{self.name}] Background task already running")
                 return self._task
 
-            self._task = asyncio.create_task(
+            self._task = safe_create_task(
                 self.run_forever(),
                 name=f"loop_{self.name}",
             )

@@ -20,6 +20,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.orchestrators.base_orchestrator import BaseOrchestrator, HealthCheckResult
 
 if TYPE_CHECKING:
@@ -1054,7 +1055,7 @@ class LeadershipOrchestrator(BaseOrchestrator):
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                asyncio.create_task(self.async_broadcast_leader_claim())
+                safe_create_task(self.async_broadcast_leader_claim(), name="leadership-broadcast-claim")
                 self._leader_claim_broadcast_count += 1
         except RuntimeError:
             # No event loop available
@@ -1421,7 +1422,7 @@ class LeadershipOrchestrator(BaseOrchestrator):
                     notifier = getattr(self._p2p, "notifier", None)
                     if notifier is not None:
                         node_id = getattr(self._p2p, "node_id", "")
-                        asyncio.create_task(notifier.send(
+                        safe_create_task(notifier.send(
                             title="Low Leader Consensus",
                             message=f"Only {result['leader_agreement']}/{result['total_voters']} nodes agree on leader",
                             level="warning",
@@ -1432,7 +1433,7 @@ class LeadershipOrchestrator(BaseOrchestrator):
                                 "Action": "Check for network partitions or stale nodes",
                             },
                             node_id=node_id,
-                        ))
+                        ), name="leadership-notify-low-consensus")
         except ImportError:
             pass
 
@@ -1624,7 +1625,7 @@ class LeadershipOrchestrator(BaseOrchestrator):
 
         # Notify voters of lease revocation
         try:
-            asyncio.create_task(p2p._notify_voters_lease_revoked())
+            safe_create_task(p2p._notify_voters_lease_revoked(), name="leadership-notify-lease-revoked")
         except RuntimeError:
             # Not in async context, schedule on event loop if available
             loop = asyncio.get_event_loop()

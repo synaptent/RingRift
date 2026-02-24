@@ -35,6 +35,8 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from app.core.async_context import safe_create_task
+
 from .base import BaseLoop, LoopStats
 
 if TYPE_CHECKING:
@@ -344,7 +346,7 @@ class AutonomousQueuePopulationLoop(BaseLoop):
             logger.info("[AutonomousQueue] Disabled via config, not starting")
             return None
         # Use parent class start method
-        self._task = asyncio.create_task(self.run_forever())
+        self._task = safe_create_task(self.run_forever(), name="autonomous-queue-loop")
         logger.info(
             f"[AutonomousQueue] Started with config: "
             f"no_leader_threshold={self._config.no_leader_threshold_seconds}s, "

@@ -37,6 +37,8 @@ Created: December 2025
 from __future__ import annotations
 
 import asyncio
+
+from app.core.async_context import safe_create_task
 import logging
 import os
 from datetime import datetime
@@ -678,10 +680,11 @@ def emit_p2p_work_completed_sync(
     try:
         asyncio.get_running_loop()
         # If we're in an async context, schedule it
-        asyncio.create_task(
+        safe_create_task(
             emit_p2p_work_completed(
                 work_id, work_type, config_key, result, node_id, duration_seconds
-            )
+            ),
+            name=f"bridge-work-completed-{work_id}",
         )
     except RuntimeError:
         # No running loop - run synchronously
@@ -700,7 +703,7 @@ def emit_p2p_node_online_sync(
     """Synchronous version of emit_p2p_node_online."""
     try:
         asyncio.get_running_loop()
-        asyncio.create_task(emit_p2p_node_online(node_id, host_type, capabilities))
+        safe_create_task(emit_p2p_node_online(node_id, host_type, capabilities), name=f"bridge-node-online-{node_id}")
     except RuntimeError:
         asyncio.run(emit_p2p_node_online(node_id, host_type, capabilities))
 
@@ -709,7 +712,7 @@ def emit_p2p_node_offline_sync(node_id: str, reason: str = "unreachable") -> Non
     """Synchronous version of emit_p2p_node_offline."""
     try:
         asyncio.get_running_loop()
-        asyncio.create_task(emit_p2p_node_offline(node_id, reason))
+        safe_create_task(emit_p2p_node_offline(node_id, reason), name=f"bridge-node-offline-{node_id}")
     except RuntimeError:
         asyncio.run(emit_p2p_node_offline(node_id, reason))
 

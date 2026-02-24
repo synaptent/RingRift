@@ -44,6 +44,8 @@ import ipaddress
 import logging
 import socket
 import threading
+
+from app.core.async_context import safe_create_task
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -540,9 +542,9 @@ class NetworkConfigManager:
             return
 
         self._running = True
-        self._revalidation_task = asyncio.create_task(
+        self._revalidation_task = safe_create_task(
             self._revalidation_loop(),
-            name="network_config_revalidation",
+            name="network-config-revalidation",
         )
         logger.info("[NetworkConfig] Started revalidation loop")
 

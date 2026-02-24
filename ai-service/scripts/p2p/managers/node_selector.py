@@ -10,6 +10,8 @@ import logging
 import threading
 from typing import TYPE_CHECKING, Any, Callable
 
+from app.core.async_context import safe_create_task
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -90,8 +92,9 @@ class NodeSelector:
         # Import asyncio here to avoid module-level import in sync class
         import asyncio
 
-        self._recovery_task = asyncio.create_task(
-            self._periodic_unhealthy_recovery()
+        self._recovery_task = safe_create_task(
+            self._periodic_unhealthy_recovery(),
+            name="node-selector-recovery",
         )
         logger.info("[NodeSelector] Started periodic unhealthy node recovery loop")
 

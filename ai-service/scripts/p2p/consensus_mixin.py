@@ -32,6 +32,7 @@ from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING, Any
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.p2p_mixin_base import P2PMixinBase
 
 
@@ -558,9 +559,9 @@ class ConsensusMixin(P2PMixinBase):
             return  # Already running
 
         self._raft_tick_running = True
-        self._raft_tick_task = asyncio.create_task(
+        self._raft_tick_task = safe_create_task(
             self._raft_tick_loop(),
-            name="raft_manual_tick_loop"
+            name="raft_manual_tick_loop",
         )
         logger.info("Started Raft manual tick loop (CPU-efficient mode)")
 

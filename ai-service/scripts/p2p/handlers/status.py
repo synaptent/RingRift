@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.network import NonBlockingAsyncLockWrapper
 
 if TYPE_CHECKING:
@@ -138,7 +139,7 @@ class StatusHandlersMixin:
             # Jan 12, 2026: Non-blocking mode - schedule background refresh, return cached data
             # This prevents /health from blocking for 15s on macOS
             try:
-                asyncio.create_task(self._update_self_info_async())
+                safe_create_task(self._update_self_info_async(), name="status-health-refresh")
             except Exception:
                 pass  # Fire-and-forget, don't block on errors
 

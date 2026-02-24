@@ -19,6 +19,8 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
+from app.core.async_context import safe_create_task
+
 if TYPE_CHECKING:
     from aiohttp import ClientTimeout
     from scripts.p2p.models import PeerInfo
@@ -300,7 +302,7 @@ class JobLifecycleManager:
                 # ALERTING: Notify when stuck job is killed
                 notifier = await self._get_notifier()
                 if notifier:
-                    asyncio.create_task(
+                    safe_create_task(
                         notifier.send(
                             title="Stuck Job Killed",
                             message=f"Training job {job.job_id} killed after no progress "
@@ -314,7 +316,8 @@ class JobLifecycleManager:
                                 "Stuck For": f"{int((now - last_progress)/60)} minutes",
                             },
                             node_id=node_id,
-                        )
+                        ),
+                        name="lifecycle-notify-stuck-killed",
                     )
 
         # Check for GPU nodes with 0% GPU but running GPU jobs

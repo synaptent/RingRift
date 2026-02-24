@@ -29,6 +29,8 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+
+from app.core.async_context import safe_create_task
 import logging
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -155,8 +157,9 @@ class EventEmissionMixin(P2PMixinBase):
 
         try:
             asyncio.get_running_loop()
-            asyncio.create_task(
-                self._emit_event_safe(emit_func_name, event_name, context_id, **kwargs)
+            safe_create_task(
+                self._emit_event_safe(emit_func_name, event_name, context_id, **kwargs),
+                name=f"emit-{event_name}",
             )
             return True
         except RuntimeError:

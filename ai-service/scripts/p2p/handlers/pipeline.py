@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING, Any
 import aiohttp
 from aiohttp import web, ClientTimeout
 
+from app.core.async_context import safe_create_task
+
 if TYPE_CHECKING:
     from scripts.p2p_orchestrator import NodeInfo
 
@@ -139,8 +141,8 @@ class PipelineHandlersMixin:
             node_seed = seed + i * 10000 + hash(node_id) % 10000
 
             if node_id == self.node_id:
-                asyncio.create_task(self._run_local_canonical_selfplay(
-                    f"{job_id}-{node_id}", board_type, num_players, games_per_node, node_seed))
+                safe_create_task(self._run_local_canonical_selfplay(
+                    f"{job_id}-{node_id}", board_type, num_players, games_per_node, node_seed), name="pipeline-local-selfplay")
                 dispatched += 1
             else:
                 try:
@@ -257,7 +259,7 @@ class PipelineHandlersMixin:
         January 2026: Moved from p2p_orchestrator.py to PipelineHandlersMixin.
         """
         job_id = f"pipeline-parity-{int(time.time())}"
-        asyncio.create_task(self._run_parity_validation(job_id, board_type, num_players, db_paths))
+        safe_create_task(self._run_parity_validation(job_id, board_type, num_players, db_paths), name="pipeline-parity-validation")
         self._pipeline_status = {
             "job_id": job_id,
             "phase": "parity_validation",
@@ -343,7 +345,7 @@ class PipelineHandlersMixin:
         January 2026: Moved from p2p_orchestrator.py to PipelineHandlersMixin.
         """
         job_id = f"pipeline-npz-{int(time.time())}"
-        asyncio.create_task(self._run_npz_export(job_id, board_type, num_players, output_dir))
+        safe_create_task(self._run_npz_export(job_id, board_type, num_players, output_dir), name="pipeline-npz-export")
         self._pipeline_status = {
             "job_id": job_id,
             "phase": "npz_export",

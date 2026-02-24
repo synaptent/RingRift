@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
+from app.core.async_context import safe_create_task
+
 if TYPE_CHECKING:
     from aiohttp import ClientTimeout
 
@@ -550,7 +552,7 @@ print(wins / total)
                 )
                 state.status = "running"
                 state.worker_nodes = [getattr(w, "node_id", str(w)) for w in gpu_workers]
-                asyncio.create_task(self.run_distributed_cmaes(job_id))
+                safe_create_task(self.run_distributed_cmaes(job_id), name="cmaes-coordinator-run")
                 logger.info(f"Started distributed CMA-ES with {len(gpu_workers)} workers")
             else:
                 # LOCAL MODE - use GPU CMA-ES script

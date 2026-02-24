@@ -36,6 +36,7 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.handlers.base import BaseP2PHandler
 from scripts.p2p.handlers.timeout_decorator import (
     handler_timeout,
@@ -225,7 +226,7 @@ class RelayHandlersMixin(BaseP2PHandler):
             # Feb 2026: Fire-and-forget self_info refresh to prevent event loop blocking
             # under high CPU load (was causing 56-64s timeouts on /relay/peers)
             try:
-                asyncio.create_task(self._update_self_info_async())
+                safe_create_task(self._update_self_info_async(), name="relay-self-info-refresh")
             except Exception:
                 pass  # Fire-and-forget, don't block on errors
 
@@ -353,7 +354,7 @@ class RelayHandlersMixin(BaseP2PHandler):
             # Don't await - prevents blocking when subprocess resource detection
             # is slow under high CPU load
             try:
-                asyncio.create_task(self._update_self_info_async())
+                safe_create_task(self._update_self_info_async(), name="relay-self-info-refresh")
             except Exception:
                 pass  # Fire-and-forget, don't block on errors
 

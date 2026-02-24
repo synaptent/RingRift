@@ -22,6 +22,8 @@ import asyncio
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+
+from app.core.async_context import safe_create_task
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -808,9 +810,9 @@ class HealthMetricsManager:
     async def start_background_loops(self) -> None:
         """Start background monitoring loops."""
         if self._snapshot_task is None:
-            self._snapshot_task = asyncio.create_task(self.cluster_health_snapshot_loop())
+            self._snapshot_task = safe_create_task(self.cluster_health_snapshot_loop(), name="health-snapshot-loop")
         if self._latency_task is None:
-            self._latency_task = asyncio.create_task(self.event_loop_latency_monitor())
+            self._latency_task = safe_create_task(self.event_loop_latency_monitor(), name="health-latency-monitor")
 
     async def stop_background_loops(self) -> None:
         """Stop background monitoring loops."""

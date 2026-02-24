@@ -35,6 +35,8 @@ import time
 from collections import deque
 from typing import TYPE_CHECKING, Any
 
+from app.core.async_context import safe_create_task
+
 from .base import BaseLoop
 
 if TYPE_CHECKING:
@@ -852,7 +854,7 @@ class LeaderProbeLoop(BaseLoop):
             await asyncio.sleep(effective_cooldown)
             self._election_triggered_recently = False
 
-        asyncio.create_task(reset_cooldown())
+        safe_create_task(reset_cooldown(), name="leader-probe-reset-cooldown")
 
         # Trigger election
         try:
@@ -901,7 +903,7 @@ class LeaderProbeLoop(BaseLoop):
 
         # Phase 1.2 (Jan 7, 2026): Verify elected leader has consensus
         # Schedule consensus verification after election settles
-        asyncio.create_task(self._verify_elected_leader_after_delay(3.0))
+        safe_create_task(self._verify_elected_leader_after_delay(3.0), name="leader-probe-verify-consensus")
 
     async def _trigger_election_for_no_leader(self) -> None:
         """Trigger election when cluster has no leader.
@@ -928,7 +930,7 @@ class LeaderProbeLoop(BaseLoop):
             await asyncio.sleep(effective_cooldown)
             self._election_triggered_recently = False
 
-        asyncio.create_task(reset_cooldown())
+        safe_create_task(reset_cooldown(), name="leader-probe-reset-cooldown-no-leader")
 
         # Check quorum before starting election
         try:
@@ -958,7 +960,7 @@ class LeaderProbeLoop(BaseLoop):
             logger.error(f"[LeaderProbe] Failed to start no-leader election: {e}")
 
         # Schedule consensus verification after election settles
-        asyncio.create_task(self._verify_elected_leader_after_delay(3.0))
+        safe_create_task(self._verify_elected_leader_after_delay(3.0), name="leader-probe-verify-consensus-no-leader")
 
     async def _verify_elected_leader_after_delay(self, delay: float) -> None:
         """Wait for election to settle, then verify consensus.

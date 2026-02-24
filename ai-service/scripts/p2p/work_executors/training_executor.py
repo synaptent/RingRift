@@ -86,22 +86,43 @@ async def execute_training_work(
         "--max-data-age-hours", "168",  # 7 days tolerance
     ]
 
-    # Point training at the NPZ file so it doesn't need catalog discovery
+    # Validate training data exists before launching subprocess.
+    # Without --data-path, train.py relies on flaky catalog discovery that
+    # often fails on GPU nodes (missing DBs, stale indexes).
     if npz_path.exists():
+        # Reject suspiciously small NPZ files (likely corrupt or partial transfer)
+        npz_size = npz_path.stat().st_size
+        if npz_size < 1024:
+            logger.error(
+                f"Training data too small: {npz_path} ({npz_size} bytes). "
+                f"Cannot train {config_key}."
+            )
+            return False
         cmd.extend(["--data-path", str(npz_path)])
     else:
-        logger.warning(
-            f"Training data not found: {npz_path} — "
-            f"train.py will attempt catalog discovery"
+        logger.error(
+            f"Training data not found: {npz_path}. Cannot train {config_key}."
         )
+        return False
 
-    # Continue from canonical model weights instead of random initialization
+    # Validate init weights exist before launching subprocess.
+    # Without --init-weights, training starts from random (loss 5-9 = useless).
+    # Only allow from-random during bootstrap when we have very few games.
     if canonical_path.exists():
         cmd.extend(["--init-weights", str(canonical_path)])
     else:
         logger.warning(
             f"No canonical model at {canonical_path} — training from scratch"
         )
+        # Refuse from-random training when we have significant data,
+        # since it wastes GPU hours producing a weak model.
+        game_count = config.get("game_count", 0)
+        if game_count and game_count > 100:
+            logger.error(
+                f"Refusing from-random training for {config_key} with "
+                f"{game_count} games. A canonical model should exist by now."
+            )
+            return False
 
     logger.info(
         f"Executing training work {work_id}: {config_key} with {model_version} "
@@ -174,12 +195,15 @@ async def execute_training_work(
                     break
 
             model_path = f"models/{model_filename}"
+            candidate_path = Path(ringrift_path) / model_path
             logger.info(
                 f"Training completed successfully: {config_key}/{model_version} "
                 f"(work_id={work_id}, loss={final_loss:.4f}, samples={training_samples})"
             )
 
-            # Populate work_item result so report_work_result sends real data
+            # Populate work_item result so report_work_result sends real data.
+            # Include candidate model path and size so the coordinator can sync
+            # the model from this node after work completion.
             work_item["result"] = {
                 "model_path": model_path,
                 "final_loss": final_loss,
@@ -187,6 +211,9 @@ async def execute_training_work(
                 "config_key": config_key,
                 "model_version": model_version,
             }
+            if candidate_path.exists():
+                work_item["result"]["candidate_model_path"] = str(candidate_path)
+                work_item["result"]["candidate_model_size"] = candidate_path.stat().st_size
 
             # Emit training completed event
             try:

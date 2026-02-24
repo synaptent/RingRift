@@ -39,6 +39,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Awaitable
 
+from app.core.async_context import safe_create_task
+
 if TYPE_CHECKING:
     pass
 
@@ -195,8 +197,9 @@ class TwoPhaseLeaderCommit:
         # Request acks from all voters in parallel
         tasks = []
         for voter_id in self.voters:
-            task = asyncio.create_task(
-                self._request_ack_with_retry(voter_id, leader_id)
+            task = safe_create_task(
+                self._request_ack_with_retry(voter_id, leader_id),
+                name=f"two-phase-commit-ack-{voter_id}",
             )
             tasks.append((voter_id, task))
 

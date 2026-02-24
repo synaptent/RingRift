@@ -53,6 +53,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.db_helpers import p2p_db_connection
 
 if TYPE_CHECKING:
@@ -1286,7 +1287,7 @@ class AnalyticsCacheManager:
                 self._increment_rollback_counter()
 
             if self._send_notification:
-                asyncio.create_task(self._send_notification(
+                safe_create_task(self._send_notification(
                     title="Model Rollback Executed",
                     message=f"Rolled back {config} from {current_best.name} to {rollback_source['name']}",
                     level="warning",
@@ -1297,7 +1298,7 @@ class AnalyticsCacheManager:
                         "Age": f"{result.details['rollback_age_hours']:.1f}h",
                     },
                     node_id=self._node_id,
-                ))
+                ), name="analytics-notify-rollback")
 
         except Exception as e:  # noqa: BLE001
             result.message = f"Rollback failed: {e!s}"

@@ -81,6 +81,11 @@ class PipelineCompletenessMonitor(HandlerBase):
 
     _event_source = "PipelineCompletenessMonitor"
 
+    # Feb 23, 2026: Consecutive rejection threshold before emitting overdue alert.
+    # When the same config is rejected by the same gate 5+ times in a row,
+    # it indicates a systematic blocker that needs attention.
+    CONSECUTIVE_REJECTION_ALERT_THRESHOLD = 5
+
     def __init__(self) -> None:
         super().__init__(
             name="pipeline_completeness_monitor",
@@ -94,8 +99,14 @@ class PipelineCompletenessMonitor(HandlerBase):
         # Import ALL_CONFIGS lazily to avoid circular imports at module level
         self._all_configs: list[str] = []
 
+        # Feb 23, 2026: Track consecutive promotion rejections per (config, gate)
+        # Key: (config_key, gate) -> consecutive rejection count
+        self._consecutive_rejections: dict[tuple[str, str], int] = {}
+        # Track which alerts have already been emitted to avoid spam
+        self._rejection_alerts_emitted: set[tuple[str, str]] = set()
+
     def _get_event_subscriptions(self) -> dict[str, Callable[[Any], Any]]:
-        """Subscribe to pipeline stage completion events."""
+        """Subscribe to pipeline stage completion events and promotion rejections."""
         return {
             "selfplay_complete": self._on_stage_complete,
             "data_sync_completed": self._on_stage_complete,
@@ -103,6 +114,8 @@ class PipelineCompletenessMonitor(HandlerBase):
             "training_completed": self._on_stage_complete,
             "evaluation_completed": self._on_stage_complete,
             "model_promoted": self._on_stage_complete,
+            # Feb 23, 2026: Track promotion rejections for pipeline blocking detection
+            "promotion_rejected": self._on_promotion_rejected,
         }
 
     async def _on_start(self) -> None:
@@ -157,10 +170,78 @@ class PipelineCompletenessMonitor(HandlerBase):
             self._stage_timestamps[config_key] = {}
         self._stage_timestamps[config_key][stage] = now
 
+        # Feb 23, 2026: On successful promotion, reset rejection tracking
+        # since the pipeline is no longer blocked for this config
+        if stage == "promotion":
+            self._reset_rejection_tracking(config_key)
+
         self._record_success()
         logger.debug(
             f"[pipeline_completeness_monitor] Recorded {stage} for {config_key}"
         )
+
+    async def _on_promotion_rejected(self, event: Any) -> None:
+        """Handle PROMOTION_REJECTED event to track consecutive rejections.
+
+        Feb 23, 2026: When a model fails a promotion gate, track the rejection
+        per (config_key, gate). If the same gate blocks the same config 5+
+        consecutive times, emit a PIPELINE_STAGE_OVERDUE event identifying
+        the specific blocking gate.
+
+        A successful promotion (model_promoted event via _on_stage_complete)
+        resets the rejection counter for that config.
+        """
+        payload = self._get_payload(event)
+        config_key = payload.get("config_key", "")
+        gate = payload.get("gate", "unknown")
+
+        if not config_key:
+            return
+
+        key = (config_key, gate)
+        self._consecutive_rejections[key] = self._consecutive_rejections.get(key, 0) + 1
+        count = self._consecutive_rejections[key]
+
+        logger.debug(
+            f"[pipeline_completeness_monitor] Promotion rejected: "
+            f"{config_key}/{gate} (consecutive={count})"
+        )
+
+        # Check if threshold reached and alert not yet emitted
+        if count >= self.CONSECUTIVE_REJECTION_ALERT_THRESHOLD and key not in self._rejection_alerts_emitted:
+            self._rejection_alerts_emitted.add(key)
+            reason = payload.get("reason", "")
+            await self._safe_emit_event_async(
+                "PIPELINE_STAGE_OVERDUE",
+                {
+                    "config_key": config_key,
+                    "stage": "promotion",
+                    "blocking_gate": gate,
+                    "consecutive_rejections": count,
+                    "reason": f"Promotion blocked {count}x by {gate}: {reason}",
+                    "hours_since": 0.0,  # Not time-based, rejection-count-based
+                    "threshold": self.CONSECUTIVE_REJECTION_ALERT_THRESHOLD,
+                },
+            )
+            logger.warning(
+                f"[pipeline_completeness_monitor] {config_key} promotion blocked "
+                f"{count}x by gate '{gate}': {reason}"
+            )
+
+        self._record_success()
+
+    def _reset_rejection_tracking(self, config_key: str) -> None:
+        """Reset consecutive rejection counters for a config after promotion.
+
+        Feb 23, 2026: When a model is promoted, clear all rejection tracking
+        for that config since the pipeline is no longer blocked.
+        """
+        keys_to_remove = [
+            key for key in self._consecutive_rejections if key[0] == config_key
+        ]
+        for key in keys_to_remove:
+            del self._consecutive_rejections[key]
+            self._rejection_alerts_emitted.discard(key)
 
     async def _run_cycle(self) -> None:
         """Check each config x stage against thresholds."""

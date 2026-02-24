@@ -21,6 +21,8 @@ from typing import Any, Callable, Coroutine
 
 import yaml
 
+from app.core.async_context import safe_create_task
+
 logger = logging.getLogger(__name__)
 
 
@@ -107,7 +109,7 @@ class UnionDiscovery:
         # Run all discovery sources in parallel
         tasks = []
         for name, func in self._discovery_sources:
-            task = asyncio.create_task(self._run_discovery_source(name, func, timeout))
+            task = safe_create_task(self._run_discovery_source(name, func, timeout), name=f"union-discovery-{name}")
             tasks.append((name, task))
 
         # Wait for all to complete

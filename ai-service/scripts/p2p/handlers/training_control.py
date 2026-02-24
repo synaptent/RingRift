@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING
 
 from aiohttp import web
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.db_helpers import p2p_db_connection
 
 if TYPE_CHECKING:
@@ -290,7 +291,7 @@ class TrainingControlHandlersMixin:
                     job.status = "failed"
                     job.error_message = data["error"]
                     # ALERTING: Notify on training failure
-                    asyncio.create_task(self.notifier.send(
+                    safe_create_task(self.notifier.send(
                         title="Training Job Failed",
                         message=f"Training job {job.job_id} failed: {data['error'][:100]}",
                         level="error",
@@ -303,7 +304,7 @@ class TrainingControlHandlersMixin:
                             "Checkpoint": job.checkpoint_path or "none",
                         },
                         node_id=self.node_id,
-                    ))
+                    ), name="training-notify-failure")
 
                 # TRAINING CHECKPOINTING: Track checkpoint progress
                 if data.get("checkpoint_path"):
@@ -326,7 +327,7 @@ class TrainingControlHandlersMixin:
             # Auto-trigger tournament evaluation when training completes
             # Delegate to TrainingCoordinator (Phase 2B refactoring, Dec 2025)
             if should_trigger_eval:
-                asyncio.create_task(self.training_coordinator.handle_training_job_completion(job))
+                safe_create_task(self.training_coordinator.handle_training_job_completion(job), name="training-handle-completion")
 
             return web.json_response({"success": True})
 
@@ -649,7 +650,7 @@ class TrainingControlHandlersMixin:
             logger.info(f"Started NNUE training subprocess (PID {proc.pid}) for job {job_id}")
 
             # Don't wait - let it run in background
-            asyncio.create_task(self._monitor_training_process(job_id, proc, output_path))
+            safe_create_task(self._monitor_training_process(job_id, proc, output_path), name="training-monitor-nnue")
 
             return web.json_response({
                 "success": True,

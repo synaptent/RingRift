@@ -6,6 +6,8 @@ Extracted from P2POrchestrator._execute_claimed_work (Feb 2026).
 from __future__ import annotations
 
 import asyncio
+
+from app.core.async_context import safe_create_task
 import logging
 import threading
 import time
@@ -122,5 +124,5 @@ async def execute_tournament_work(
         except Exception as e:
             logger.exception(f"Tournament task failed for {job_id}: {e}")
 
-    asyncio.create_task(_run_tournament_task())
+    safe_create_task(_run_tournament_task(), name=f"tournament-{job_id}")
     return True

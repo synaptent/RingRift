@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.handlers.base import BaseP2PHandler
 from scripts.p2p.handlers.timeout_decorator import (
     handler_timeout,
@@ -169,7 +170,7 @@ class TournamentHandlersMixin(BaseP2PHandler):
                 except Exception as e:
                     logger.exception(f"Tournament coordinator task failed for {job_id}: {e}")
 
-            asyncio.create_task(_run_tournament_with_logging())
+            safe_create_task(_run_tournament_with_logging(), name="tournament-coordinator")
 
             return self.json_response({
                 "success": True,

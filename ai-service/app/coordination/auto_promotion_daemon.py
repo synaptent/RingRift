@@ -115,7 +115,9 @@ class AutoPromotionConfig:
     head_to_head_enabled: bool = True
     # Feb 22, 2026: Tightened from 0.52/50 to 0.55/100. At 52% over 50 games
     # (26/50 wins), the p-value vs 50% is ~0.44 — statistically meaningless.
-    min_win_rate_vs_canonical: float = 0.55  # Must win 55%+ vs current canonical
+    # Feb 23, 2026: Raised from 0.55 to 0.58. At n=100 games, 58% is the
+    # minimum for p < 0.05 statistical significance (binomial test vs 50%).
+    min_win_rate_vs_canonical: float = 0.58  # Must win 58%+ vs current canonical
     head_to_head_games: int = 100  # Games to play vs canonical for evaluation
     # January 26, 2026 (P4): Elo velocity gate - block promotion if Elo is declining
     # This prevents promoting models during regression periods, ensuring only models
@@ -561,6 +563,16 @@ class AutoPromotionDaemon(HandlerBase):
                         f"[AutoPromotion] {candidate.config_key}: "
                         f"Elo improvement {candidate.elo_improvement:+.1f} < {effective_min_elo:.1f} required"
                     )
+                    self._emit_promotion_rejected(
+                        candidate,
+                        gate="elo_improvement",
+                        reason=(
+                            f"Elo improvement {candidate.elo_improvement:+.1f} "
+                            f"< {effective_min_elo:.1f} required"
+                        ),
+                        actual=candidate.elo_improvement,
+                        threshold=effective_min_elo,
+                    )
                     return
 
                 # January 26, 2026 (P4): Elo velocity gate - block promotion if declining
@@ -572,6 +584,11 @@ class AutoPromotionDaemon(HandlerBase):
                             f"[AutoPromotion] {candidate.config_key}: "
                             f"Velocity gate FAILED: {velocity_reason}"
                         )
+                        self._emit_promotion_rejected(
+                            candidate,
+                            gate="velocity",
+                            reason=f"Velocity gate failed: {velocity_reason}",
+                        )
                         return
 
                 await self._promote_model(candidate)
@@ -582,6 +599,12 @@ class AutoPromotionDaemon(HandlerBase):
                 f"[AutoPromotion] {candidate.config_key} FAILS: {reason} "
                 f"(vs_random={random_win_rate:.1%}, vs_heuristic={heuristic_win_rate:.1%}, "
                 f"beats_best={candidate.beats_current_best})"
+            )
+            self._emit_promotion_rejected(
+                candidate,
+                gate="threshold",
+                reason=reason,
+                actual=heuristic_win_rate,
             )
 
     async def _check_quality_gate(
@@ -1188,6 +1211,9 @@ class AutoPromotionDaemon(HandlerBase):
             logger.warning(
                 f"[AutoPromotion] {config_key} blocked by quality gate: {quality_reason}"
             )
+            self._emit_promotion_rejected(
+                candidate, gate="quality", reason=quality_reason,
+            )
             await self._emit_promotion_failed(candidate, error=f"quality_gate: {quality_reason}")
             return
 
@@ -1196,6 +1222,9 @@ class AutoPromotionDaemon(HandlerBase):
         if not stability_passed:
             logger.warning(
                 f"[AutoPromotion] {config_key} blocked by stability gate: {stability_reason}"
+            )
+            self._emit_promotion_rejected(
+                candidate, gate="stability", reason=stability_reason,
             )
             await self._emit_promotion_failed(candidate, error=f"stability_gate: {stability_reason}")
             return
@@ -1206,6 +1235,9 @@ class AutoPromotionDaemon(HandlerBase):
             logger.warning(
                 f"[AutoPromotion] {config_key} blocked by gauntlet gate: {gauntlet_reason}"
             )
+            self._emit_promotion_rejected(
+                candidate, gate="gauntlet_win_rate", reason=gauntlet_reason,
+            )
             await self._emit_promotion_failed(candidate, error=f"gauntlet_gate: {gauntlet_reason}")
             return
 
@@ -1215,6 +1247,9 @@ class AutoPromotionDaemon(HandlerBase):
         if not head_to_head_passed:
             logger.warning(
                 f"[AutoPromotion] {config_key} blocked by head-to-head gate: {head_to_head_reason}"
+            )
+            self._emit_promotion_rejected(
+                candidate, gate="head_to_head", reason=head_to_head_reason,
             )
             await self._emit_promotion_failed(candidate, error=f"head_to_head_gate: {head_to_head_reason}")
             return
@@ -1328,6 +1363,50 @@ class AutoPromotionDaemon(HandlerBase):
 
             # Dec 29, 2025: Emit unified PROMOTION_COMPLETED for curriculum
             await self._emit_promotion_completed(candidate, success=False)
+
+    def _emit_promotion_rejected(
+        self,
+        candidate: PromotionCandidate,
+        gate: str,
+        reason: str,
+        actual: float | None = None,
+        threshold: float | None = None,
+    ) -> None:
+        """Emit PROMOTION_REJECTED event for observability.
+
+        Feb 23, 2026: Provides structured observability into WHY models fail
+        promotion. PipelineCompletenessMonitor subscribes to these events to
+        detect systematic blocking (e.g., same gate failing 5+ times).
+
+        Args:
+            candidate: PromotionCandidate that was rejected
+            gate: Name of the gate that rejected (e.g., "quality", "stability",
+                  "gauntlet_win_rate", "head_to_head", "elo_improvement",
+                  "velocity", "threshold")
+            reason: Human-readable explanation of the rejection
+            actual: Actual value that failed the gate (optional)
+            threshold: Threshold value the actual was compared against (optional)
+        """
+        from app.coordination.event_router import safe_emit_event
+
+        payload: dict[str, Any] = {
+            "config_key": candidate.config_key,
+            "gate": gate,
+            "reason": reason,
+            "model_path": candidate.model_path,
+            "estimated_elo": candidate.estimated_elo,
+            "timestamp": time.time(),
+        }
+        if actual is not None:
+            payload["actual"] = actual
+        if threshold is not None:
+            payload["threshold"] = threshold
+
+        safe_emit_event(
+            "PROMOTION_REJECTED",
+            payload,
+            source="AutoPromotionDaemon",
+        )
 
     async def _emit_promotion_event(self, candidate: PromotionCandidate) -> None:
         """Emit MODEL_PROMOTED event and CURRICULUM_ADVANCED if applicable.

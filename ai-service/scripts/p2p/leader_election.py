@@ -33,6 +33,8 @@ Prometheus Metrics (Jan 3, 2026):
 from __future__ import annotations
 
 import asyncio
+
+from app.core.async_context import safe_create_task
 import logging
 import os
 import time
@@ -1998,12 +2000,13 @@ class LeaderElectionMixin(P2PMixinBase):
                     epoch = getattr(self, "cluster_epoch", 0)
                     if hasattr(self, "_leadership_sm") and self._leadership_sm:
                         epoch = getattr(self._leadership_sm, "epoch", epoch)
-                    asyncio.create_task(
+                    safe_create_task(
                         self._broadcast_leader_to_all_peers(
                             self.node_id,
                             epoch,
                             self.leader_lease_expires,
-                        )
+                        ),
+                        name="election-broadcast-leadership",
                     )
         else:
             if self.role == NodeRole.LEADER:

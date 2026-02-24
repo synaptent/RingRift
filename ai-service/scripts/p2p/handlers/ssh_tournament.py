@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.handlers.base import BaseP2PHandler
 from scripts.p2p.handlers.timeout_decorator import handler_timeout, HANDLER_TIMEOUT_TOURNAMENT
 
@@ -207,7 +208,7 @@ class SSHTournamentHandlersMixin(BaseP2PHandler):
             with self.ssh_tournament_lock:
                 self.ssh_tournament_runs[job_id] = run_state
 
-            asyncio.create_task(self._monitor_ssh_tournament_process(job_id, proc))
+            safe_create_task(self._monitor_ssh_tournament_process(job_id, proc), name="ssh-tournament-monitor")
 
             return self.json_response({"success": True, "job": run_state.to_dict()})
         except Exception as e:

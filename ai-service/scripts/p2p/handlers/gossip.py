@@ -35,6 +35,7 @@ import aiohttp
 from aiohttp import web
 
 # Dec 2025: Use consolidated handler utilities
+from app.core.async_context import safe_create_task
 from scripts.p2p.handlers.base import BaseP2PHandler
 from scripts.p2p.handlers.handlers_base import get_event_bridge
 from scripts.p2p.handlers.timeout_decorator import (
@@ -150,7 +151,7 @@ class GossipHandlersMixin(BaseP2PHandler):
             # due to subprocess-based resource detection competing for CPU time.
             # Use cached self_info data for the response instead.
             try:
-                asyncio.create_task(self._update_self_info_async())
+                safe_create_task(self._update_self_info_async(), name="gossip-self-info-refresh")
             except Exception:
                 pass  # Don't block gossip on self_info refresh failures
 
@@ -313,7 +314,7 @@ class GossipHandlersMixin(BaseP2PHandler):
             # Feb 2026: Fire-and-forget self_info refresh (same pattern as handle_gossip)
             # to prevent event loop blocking under high CPU load
             try:
-                asyncio.create_task(self._update_self_info_async())
+                safe_create_task(self._update_self_info_async(), name="gossip-self-info-refresh")
             except Exception:
                 pass  # Don't block anti-entropy on self_info refresh failures
 

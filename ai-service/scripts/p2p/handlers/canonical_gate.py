@@ -41,6 +41,7 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.handlers.base import BaseP2PHandler
 from scripts.p2p.handlers.timeout_decorator import handler_timeout, HANDLER_TIMEOUT_DELIVERY
 
@@ -471,7 +472,7 @@ class CanonicalGateHandlersMixin(BaseP2PHandler):
             with self.canonical_gate_jobs_lock:
                 self.canonical_gate_jobs[job_id] = job
 
-            asyncio.create_task(self._monitor_canonical_gate_job(job_id, proc, summary_path))
+            safe_create_task(self._monitor_canonical_gate_job(job_id, proc, summary_path), name="canonical-gate-monitor")
 
             return web.json_response({"success": True, "job": job})
         except Exception as e:  # noqa: BLE001

@@ -27,6 +27,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Coroutine, Protocol
 
+from app.core.async_context import safe_create_task
+
 from .base import BaseLoop
 from .loop_constants import LoopIntervals
 
@@ -792,7 +794,7 @@ class SplitBrainDetectionLoop(BaseLoop):
                     from app.coordination.event_router import get_event_bus
                     bus = get_event_bus()
                     if bus:
-                        asyncio.create_task(bus.publish(event))
+                        safe_create_task(bus.publish(event), name="resilience-split-brain-event-publish")
                 except ImportError:
                     pass
             except ImportError:
@@ -874,7 +876,7 @@ class SplitBrainDetectionLoop(BaseLoop):
                 bus = get_event_bus()
                 if bus:
                     # bus.publish() is async, create task to avoid blocking
-                    asyncio.create_task(bus.publish(event))
+                    safe_create_task(bus.publish(event), name="resilience-split-brain-alert")
             except ImportError:
                 pass
             except Exception as e:
@@ -932,7 +934,7 @@ class SplitBrainDetectionLoop(BaseLoop):
             bus = get_event_bus()
             if bus:
                 # bus.publish() is async, create task to avoid blocking
-                asyncio.create_task(bus.publish(event))
+                safe_create_task(bus.publish(event), name="resilience-split-brain-sync-request")
                 logger.info("[SplitBrain] Emitted SYNC_REQUEST for partition recovery")
         except ImportError:
             logger.debug("[SplitBrain] Event system not available, skipping resync trigger")

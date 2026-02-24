@@ -30,6 +30,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from app.core.async_context import safe_create_task
+
 if TYPE_CHECKING:
     from scripts.p2p_orchestrator import P2POrchestrator
 
@@ -355,7 +357,7 @@ print(json.dumps(result))
                 "model_b": baseline_model,
                 "games_per_matchup": self.config.games_per_comparison,
             }
-            asyncio.create_task(self.run_model_comparison_tournament(tournament_config))
+            safe_create_task(self.run_model_comparison_tournament(tournament_config), name="tournament-model-comparison")
             self._stats.tournaments_scheduled += 1
 
         except Exception as e:  # noqa: BLE001
@@ -495,7 +497,7 @@ print(json.dumps(result))
 
                 # Trigger Elo sync to propagate to cluster
                 if hasattr(self._orchestrator, 'elo_sync_manager') and self._orchestrator.elo_sync_manager:
-                    asyncio.create_task(self._orchestrator._trigger_elo_sync_after_matches(1))
+                    safe_create_task(self._orchestrator._trigger_elo_sync_after_matches(1), name="tournament-elo-sync")
             except Exception as e:  # noqa: BLE001
                 logger.info(f"Elo database update failed (non-fatal): {e}")
 
@@ -521,18 +523,18 @@ print(json.dumps(result))
 
             # 5. Boost selfplay for this config if promoted
             if promoted:
-                asyncio.create_task(self.boost_selfplay_for_config(board_type, num_players))
+                safe_create_task(self.boost_selfplay_for_config(board_type, num_players), name="tournament-boost-selfplay")
                 # Alert on successful promotion
-                asyncio.create_task(self._orchestrator.notifier.send(
+                safe_create_task(self._orchestrator.notifier.send(
                     title="Model Promoted",
                     message=f"New model promoted for {board_type}_{num_players}p with {win_rate*100:.1f}% win rate",
                     level="info",
                     fields={"Model": new_model, "Win Rate": f"{win_rate*100:.1f}%"},
                     node_id=self._orchestrator.node_id,
-                ))
+                ), name="tournament-notify-promoted")
             elif win_rate < 0.5:
                 # Alert on failed promotion
-                asyncio.create_task(self._orchestrator.notifier.send(
+                safe_create_task(self._orchestrator.notifier.send(
                     title="Model Promotion Failed",
                     message=f"New model failed tournament for {board_type}_{num_players}p with only {win_rate*100:.1f}% win rate",
                     level="warning",
@@ -542,17 +544,17 @@ print(json.dumps(result))
                         "Baseline": baseline_model,
                     },
                     node_id=self._orchestrator.node_id,
-                ))
+                ), name="tournament-notify-failed")
 
         except Exception as e:  # noqa: BLE001
             logger.info(f"Tournament completion handler error: {e}")
             if self._orchestrator and self._orchestrator.notifier:
-                asyncio.create_task(self._orchestrator.notifier.send(
+                safe_create_task(self._orchestrator.notifier.send(
                     title="Tournament Handler Error",
                     message=str(e),
                     level="error",
                     node_id=self._orchestrator.node_id,
-                ))
+                ), name="tournament-notify-error")
 
     async def promote_to_baseline(
         self, model_path: str, board_type: str, num_players: int, model_type: str
@@ -752,7 +754,7 @@ print(json.dumps(result))
 
                     # If we're the coordinator, start the tournament
                     if coordinator == self._orchestrator.node_id:
-                        asyncio.create_task(self.start_tournament_from_proposal(proposal))
+                        safe_create_task(self.start_tournament_from_proposal(proposal), name="tournament-from-proposal")
 
                 # Expire old proposals
                 elif now - proposal.get("proposed_at", 0) > self.config.consensus_timeout:
@@ -818,7 +820,7 @@ print(json.dumps(result))
                   f"{len(agent_ids)} agents, {len(pairings)} matches, {len(workers)} workers")
 
             # Launch coordinator task
-            asyncio.create_task(self._orchestrator.job_manager.run_distributed_tournament(job_id))
+            safe_create_task(self._orchestrator.job_manager.run_distributed_tournament(job_id), name="tournament-distributed-run")
 
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to start tournament from proposal: {e}")

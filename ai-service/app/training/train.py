@@ -878,6 +878,61 @@ def detect_tier_from_checkpoint(
     return (memory_tier, model_version, num_filters, num_res_blocks)
 
 
+def validate_training_data(npz_path: Path, board_type: str, num_players: int) -> None:
+    """Validate NPZ file before training. Raises ValueError on issues.
+
+    Pre-flight check that catches corrupt, empty, or mismatched data files
+    before we spend time creating models and optimizers.
+
+    Args:
+        npz_path: Path to the NPZ training data file.
+        board_type: Expected board type (e.g. "hex8", "square8").
+        num_players: Expected number of players (2, 3, or 4).
+
+    Raises:
+        ValueError: If the NPZ file is invalid or too small.
+        FileNotFoundError: If the NPZ file does not exist.
+    """
+    if not npz_path.exists():
+        raise FileNotFoundError(f"Training data not found: {npz_path}")
+
+    file_size = npz_path.stat().st_size
+    if file_size < 1024:
+        raise ValueError(
+            f"Training data file too small ({file_size} bytes): {npz_path}. "
+            f"Likely corrupt or incomplete transfer."
+        )
+
+    data = np.load(npz_path, allow_pickle=True)
+    required_keys = ["features", "values"]
+    for key in required_keys:
+        if key not in data:
+            raise ValueError(f"NPZ missing required key: '{key}' in {npz_path}")
+
+    sample_count = data["features"].shape[0]
+    if sample_count < 100:
+        raise ValueError(
+            f"Too few samples in {npz_path}: {sample_count} (minimum 100). "
+            f"Collect more selfplay data before training."
+        )
+
+    # Cross-check board_type metadata if present
+    if "board_type" in data:
+        raw_bt = data["board_type"]
+        meta_bt = str(raw_bt.item() if hasattr(raw_bt, "item") else raw_bt).lower().strip()
+        expected_bt = board_type.lower().strip()
+        if meta_bt != expected_bt:
+            raise ValueError(
+                f"Board type mismatch in {npz_path}: "
+                f"file has '{meta_bt}', expected '{expected_bt}'"
+            )
+
+    logger.info(
+        f"Training data validated: {npz_path} "
+        f"({sample_count} samples, board_type={board_type}, num_players={num_players})"
+    )
+
+
 def train_model(
     config: TrainConfig,
     data_path: str | list[str],
@@ -1143,6 +1198,25 @@ def train_model(
         HAS_STALE_FALLBACK=HAS_STALE_FALLBACK,
         DataEventType=DataEventType,
     )
+
+    # ==========================================================================
+    # Mandatory NPZ validation (Feb 2026)
+    # Catches empty, corrupt, or mismatched data before model/optimizer creation
+    # ==========================================================================
+    if not use_streaming:
+        npz_paths = data_path if isinstance(data_path, list) else [data_path]
+        board_type_str = (
+            config.board_type.value
+            if hasattr(config.board_type, "value")
+            else str(config.board_type)
+        )
+        for p in npz_paths:
+            if p and os.path.exists(p):
+                try:
+                    validate_training_data(Path(p), board_type_str, num_players)
+                except (ValueError, FileNotFoundError) as e:
+                    logger.error(f"Training data validation failed: {e}")
+                    raise
 
     # Device configuration
     if distributed:

@@ -31,6 +31,8 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+from app.core.async_context import safe_create_task
+
 # Jan 2026: Allow selfplay in degraded mode (quorum loss doesn't block local GPU work)
 # Selfplay is a local operation that doesn't require cluster consensus.
 # Set RINGRIFT_ALLOW_DEGRADED_SELFPLAY=true to enable (default: true)
@@ -231,7 +233,7 @@ class SelfplayHandlersMixin:
                     gpu_job_id = f"{job_id}_gpu{gpu_id}"
 
                     # Start worker for this GPU
-                    asyncio.create_task(self.job_manager.run_gpu_selfplay_job(
+                    safe_create_task(self.job_manager.run_gpu_selfplay_job(
                         job_id=gpu_job_id,
                         board_type=board_type,
                         num_players=num_players,
@@ -240,7 +242,7 @@ class SelfplayHandlersMixin:
                         engine_extra_args=engine_extra_args,
                         model_version=model_version,
                         cuda_device=gpu_id,  # Route to specific GPU
-                    ))
+                    ), name=f"selfplay-gpu{gpu_id}-job")
 
                 logger.info(
                     f"Started {num_gpus} GPU selfplay workers {job_id}_gpu*: "
@@ -248,7 +250,7 @@ class SelfplayHandlersMixin:
                 )
             else:
                 # Single GPU or CPU-only: start single job (original behavior)
-                asyncio.create_task(self.job_manager.run_gpu_selfplay_job(
+                safe_create_task(self.job_manager.run_gpu_selfplay_job(
                     job_id=job_id,
                     board_type=board_type,
                     num_players=num_players,
@@ -256,7 +258,7 @@ class SelfplayHandlersMixin:
                     engine_mode=engine_mode,
                     engine_extra_args=engine_extra_args,
                     model_version=model_version,
-                ))
+                ), name="selfplay-gpu-job")
 
                 logger.info(f"Started GPU selfplay job {job_id}: {board_type}/{num_players}p, {num_games} games")
 
@@ -404,9 +406,9 @@ class SelfplayHandlersMixin:
         """POST /pipeline/selfplay_worker - Worker endpoint for canonical selfplay."""
         try:
             data = await request.json()
-            asyncio.create_task(self._run_local_canonical_selfplay(
+            safe_create_task(self._run_local_canonical_selfplay(
                 data.get("job_id"), data.get("board_type", "square8"), data.get("num_players", 2),
-                data.get("num_games", 500), data.get("seed", 0)))
+                data.get("num_games", 500), data.get("seed", 0)), name="selfplay-canonical-worker")
             return web.json_response({"success": True, "job_id": data.get("job_id"),
                                      "message": f"Started canonical selfplay: {data.get('num_games', 500)} games"})
         except Exception as e:  # noqa: BLE001

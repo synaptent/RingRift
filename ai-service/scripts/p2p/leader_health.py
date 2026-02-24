@@ -36,6 +36,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Coroutine
 
+from app.core.async_context import safe_create_task
+
 logger = logging.getLogger(__name__)
 
 # January 2026: Use centralized timeouts from loop_constants
@@ -221,7 +223,7 @@ class LeaderHealthProbe:
         # instead of waiting for all probes (which could include slow timeouts)
         successful = []
         failed = []
-        pending_tasks = {asyncio.create_task(t) for t in probe_tasks}
+        pending_tasks = {safe_create_task(t, name="leader-health-probe") for t in probe_tasks}
         completed_tasks: set[asyncio.Task] = set()
 
         try:
@@ -638,8 +640,9 @@ class LeaderHealthProbe:
             return
 
         self._running = True
-        self._probe_task = asyncio.create_task(
-            self._probe_loop(leader_addr, on_unhealthy)
+        self._probe_task = safe_create_task(
+            self._probe_loop(leader_addr, on_unhealthy),
+            name="leader-health-continuous-probe",
         )
         logger.debug(f"Started continuous probing of leader {self._leader_id}")
 

@@ -30,6 +30,8 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from app.core.async_context import safe_create_task
+
 from .base import BaseLoop
 
 if TYPE_CHECKING:
@@ -236,12 +238,13 @@ class LeaderMaintenanceLoop(BaseLoop):
                     sm = self._orchestrator._leadership_sm
                     if sm:
                         epoch = getattr(sm, "epoch", epoch)
-                asyncio.create_task(
+                safe_create_task(
                     self._orchestrator._broadcast_leader_to_all_peers(
                         node_id,
                         epoch,
                         self._orchestrator.leader_lease_expires,
-                    )
+                    ),
+                    name="leader-maintenance-broadcast",
                 )
 
             self._leadership_refreshes += 1

@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Any
 
 from aiohttp import web
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.handlers.base import BaseP2PHandler
 from scripts.p2p.handlers.timeout_decorator import handler_timeout, HANDLER_TIMEOUT_TOURNAMENT
 
@@ -159,7 +160,7 @@ class ImprovementHandlersMixin(BaseP2PHandler):
             logger.info(f"Started improvement loop {job_id}: {len(workers)} workers, {len(gpu_workers)} GPU workers")
 
             # Launch improvement loop
-            asyncio.create_task(self._run_improvement_loop(job_id))
+            safe_create_task(self._run_improvement_loop(job_id), name="improvement-loop-run")
 
             return web.json_response({
                 "success": True,
@@ -360,7 +361,7 @@ class ImprovementHandlersMixin(BaseP2PHandler):
             from scripts.p2p_orchestrator import NodeRole
 
             if success and self.role == NodeRole.LEADER:
-                asyncio.create_task(self._schedule_improvement_evaluation(cycle_id, new_model_id))
+                safe_create_task(self._schedule_improvement_evaluation(cycle_id, new_model_id), name="improvement-schedule-eval")
 
             return web.json_response({"success": True})
 
@@ -404,7 +405,7 @@ class ImprovementHandlersMixin(BaseP2PHandler):
                 board_type = data.get("board_type", "square8")
                 num_players = data.get("num_players", 2)
                 if model_path:
-                    asyncio.create_task(self._auto_deploy_model(model_path, board_type, num_players))
+                    safe_create_task(self._auto_deploy_model(model_path, board_type, num_players), name="improvement-auto-deploy")
 
             return web.json_response({"success": True})
 

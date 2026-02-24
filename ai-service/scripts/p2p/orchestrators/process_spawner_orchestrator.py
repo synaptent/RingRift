@@ -20,6 +20,7 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from app.core.async_context import safe_create_task
 from scripts.p2p.orchestrators.base_orchestrator import BaseOrchestrator, HealthCheckResult
 
 if TYPE_CHECKING:
@@ -437,9 +438,9 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
         self._local_jobs_started += 1
 
         # Add process monitoring
-        asyncio.create_task(self._monitor_selfplay_process(
+        safe_create_task(self._monitor_selfplay_process(
             job_id, proc, output_dir, board_type, num_players, "selfplay"
-        ))
+        ), name=f"spawner-monitor-selfplay-{job_id[:8]}")
 
         return job
 
@@ -515,9 +516,9 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
         job, proc = result
         self._local_jobs_started += 1
 
-        asyncio.create_task(self._monitor_selfplay_process(
+        safe_create_task(self._monitor_selfplay_process(
             job_id, proc, output_dir, board_type, num_players, "cpu_selfplay"
-        ))
+        ), name=f"spawner-monitor-cpu-selfplay-{job_id[:8]}")
 
         return job
 
@@ -604,9 +605,9 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
         # Monitor GPU selfplay
         job_coord_manager = getattr(self._p2p, "job_coordination_manager", None)
         if job_coord_manager is not None:
-            asyncio.create_task(job_coord_manager.monitor_gpu_selfplay_and_validate(
+            safe_create_task(job_coord_manager.monitor_gpu_selfplay_and_validate(
                 job_id, proc, output_dir, board_type, num_players
-            ))
+            ), name=f"spawner-monitor-gpu-selfplay-{job_id[:8]}")
 
         return job
 
@@ -713,9 +714,9 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
                 "engine_mode": engine_mode_norm,
             })
 
-        asyncio.create_task(self._monitor_selfplay_process(
+        safe_create_task(self._monitor_selfplay_process(
             job_id, proc, output_dir, board_type, num_players, "hybrid_selfplay"
-        ))
+        ), name=f"spawner-monitor-hybrid-selfplay-{job_id[:8]}")
 
         return job
 
@@ -820,9 +821,9 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
                 "engine_mode": "gumbel-mcts",
             })
 
-        asyncio.create_task(self._monitor_selfplay_process(
+        safe_create_task(self._monitor_selfplay_process(
             job_id, proc, output_dir, board_type, num_players, "gumbel_selfplay"
-        ))
+        ), name=f"spawner-monitor-gumbel-selfplay-{job_id[:8]}")
 
         return job
 
