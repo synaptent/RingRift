@@ -12,6 +12,26 @@ import random
 import time
 from typing import Any, Callable
 
+# Feb 2026: Import Elo gap utilities for distance-to-target priority factor
+try:
+    from app.config.thresholds import (
+        get_elo_gap as _get_elo_gap,
+        is_target_met as _is_target_met,
+        ELO_TARGET_ALL_CONFIGS,
+    )
+    ELO_GAP_AVAILABLE = True
+except ImportError:
+    ELO_GAP_AVAILABLE = False
+    ELO_TARGET_ALL_CONFIGS = 2000.0
+
+    def _get_elo_gap(config_key: str, current_elo: float) -> float:
+        """Fallback when thresholds not available."""
+        return max(0.0, ELO_TARGET_ALL_CONFIGS - current_elo)
+
+    def _is_target_met(config_key: str, current_elo: float) -> bool:
+        """Fallback when thresholds not available."""
+        return current_elo >= ELO_TARGET_ALL_CONFIGS
+
 # Jan 2026: Import adaptive budget calculator for dynamic budget selection
 try:
     from app.coordination.budget_calculator import (
@@ -254,6 +274,20 @@ class PriorityCalculatorMixin:
             staleness_boost = self._get_staleness_boost(config_key)
 
             effective_priority = int(base_priority * curriculum_mult + staleness_boost)
+
+            # Feb 2026: Apply Elo gap factor - configs further from target
+            # get proportionally more selfplay allocation
+            try:
+                current_elo = self.get_config_elo(config_key)
+                if _is_target_met(config_key, current_elo):
+                    elo_gap_factor = 0.3  # Maintenance mode
+                else:
+                    elo_gap = _get_elo_gap(config_key, current_elo)
+                    elo_gap_factor = min(3.0, 1.0 + (elo_gap / 500.0))
+                effective_priority = int(effective_priority * elo_gap_factor)
+            except (AttributeError, TypeError):
+                pass  # Elo data unavailable, skip gap factor
+
             effective_priority = max(1, effective_priority)
 
             weighted_configs.extend([config_key] * effective_priority)
@@ -490,12 +524,16 @@ class PriorityCalculatorMixin:
         The autonomous_queue_loop was calling this method but it didn't exist,
         causing it to fall back to round-robin selection which ignored starvation.
 
+        Feb 2026: Added Elo gap factor to prioritize configs furthest from target.
+        Configs at 1483 Elo (517 gap) get ~2x, configs at 2000+ get 0.3x maintenance.
+
         Returns:
             Dict mapping config_key -> priority score (higher = more priority).
             Incorporates:
             - Bootstrap priority boost for data-starved configs (<50 games = +50)
             - Staleness boost from curriculum state
             - Base weights from standard config priorities
+            - Elo gap factor: multiplier based on distance to 2000 Elo target
         """
         # All 12 canonical configs with base weights
         BASE_WEIGHTS = {
@@ -529,13 +567,32 @@ class PriorityCalculatorMixin:
             staleness_boost = self._get_staleness_boost(config_key)
             priority += staleness_boost
 
+            # Feb 2026: Apply Elo gap factor as multiplier.
+            # Configs further from 2000 Elo target get more selfplay time.
+            # This is the key insight: hexagonal_2p at 1483 needs ~3x more
+            # iterations than square19_4p at 1982, but was getting equal allocation.
+            #
+            # Scale: gap_factor = 1.0 + (elo_gap / 500)
+            #   - 0 gap (at/above target): 0.3x (maintenance mode)
+            #   - 200 gap (1800 Elo):      1.4x
+            #   - 500 gap (1500 Elo):      2.0x
+            #   - Capped at 3.0x
+            current_elo = self.get_config_elo(config_key)
+            if _is_target_met(config_key, current_elo):
+                elo_gap_factor = 0.3
+            else:
+                elo_gap = _get_elo_gap(config_key, current_elo)
+                elo_gap_factor = min(3.0, 1.0 + (elo_gap / 500.0))
+            priority *= elo_gap_factor
+
             # Log configs with significant boosts for visibility
             game_count = game_counts.get(config_key, 0)
-            if bootstrap_boost > 0 or staleness_boost > 5:
+            if bootstrap_boost > 0 or staleness_boost > 5 or elo_gap_factor > 1.5:
                 logger.debug(
                     f"[ConfigPriorities] {config_key}: base={base_weight}, "
                     f"bootstrap={bootstrap_boost}, staleness={staleness_boost}, "
-                    f"total={priority:.1f} (games={game_count})"
+                    f"elo_gap_factor={elo_gap_factor:.2f}, "
+                    f"total={priority:.1f} (games={game_count}, elo={current_elo:.0f})"
                 )
 
             priorities[config_key] = priority

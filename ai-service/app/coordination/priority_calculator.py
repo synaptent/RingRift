@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Optional
 
 from app.config.coordination_defaults import SelfplayPriorityWeightDefaults
+from app.config.thresholds import get_elo_gap, is_target_met
 from app.coordination.event_utils import parse_config_key
 
 logger = logging.getLogger(__name__)
@@ -68,18 +69,24 @@ PRIORITY_OVERRIDE_MULTIPLIERS = {
 
 # Static fallback priorities (used when live metrics unavailable)
 # Dynamic computation in compute_config_priority_override() takes precedence
+# Feb 2026: Updated to match current Elo standings:
+#   CRITICAL(0): hexagonal_2p (1483), square19_2p (1519)
+#   HIGH(1): square8_2p (1685), hex8_2p (1703)
+#   MEDIUM(2): hex8_3p (1808), square8_3p (1879), hexagonal_3p (1825), square19_3p (1825)
+#   LOW(3): square19_4p (1982), hexagonal_4p (1982), hex8_4p (2016), square8_4p (2054)
 CONFIG_PRIORITY_FALLBACK: dict[str, int] = {
-    "hexagonal_3p": 0,
-    "hexagonal_4p": 0,
-    "square19_3p": 0,
-    "square19_4p": 0,
-    "square8_2p": 0,
-    "square19_2p": 0,
-    "hexagonal_2p": 1,
-    "hex8_3p": 2,
-    "square8_3p": 2,
-    "square8_4p": 0,
-    "hex8_4p": 0,
+    "hexagonal_2p": 0,   # 1483 Elo - CRITICAL, furthest from target
+    "square19_2p": 0,    # 1519 Elo - CRITICAL
+    "square8_2p": 1,     # 1685 Elo - HIGH
+    "hex8_2p": 1,        # 1703 Elo - HIGH
+    "hex8_3p": 2,        # 1808 Elo - MEDIUM
+    "square8_3p": 2,     # 1879 Elo - MEDIUM
+    "hexagonal_3p": 2,   # 1825 Elo - MEDIUM
+    "square19_3p": 2,    # 1825 Elo - MEDIUM
+    "square19_4p": 3,    # 1982 Elo - LOW (near target)
+    "hexagonal_4p": 3,   # 1982 Elo - LOW (near target)
+    "hex8_4p": 3,        # 2016 Elo - LOW (target met)
+    "square8_4p": 3,     # 2054 Elo - LOW (target met)
 }
 
 
@@ -725,12 +732,26 @@ class PriorityCalculator:
             velocity_multiplier = 0.6 + base_recovery + linear_boost
         score *= velocity_multiplier
 
-        # Feb 2026: Near-target boost for configs close to 2000 Elo.
-        # The last 100 Elo points are the hardest but most valuable.
-        # Configs at 1900+ are closest to completion and deserve maximum resources.
-        if inputs.current_elo >= 1900:
-            near_target_boost = 5.0
-            score *= near_target_boost
+        # Feb 2026: Elo gap factor - configs further from target get more selfplay.
+        # Replaces the old near_target_boost (1900+ only = 5x) which was backwards:
+        # it boosted configs already close to target while starving configs that
+        # needed the most help (e.g., hexagonal_2p at 1483 got nothing).
+        #
+        # Scale: gap_factor = 1.0 + (elo_gap / 500)
+        #   - 0 gap (at target):   maintenance_mode = 0.3x
+        #   - 100 gap (1900 Elo):  1.2x
+        #   - 300 gap (1700 Elo):  1.6x
+        #   - 500 gap (1500 Elo):  2.0x
+        #   - 517 gap (1483 Elo):  2.03x
+        # Capped at 3.0x to prevent runaway priority for extremely weak configs.
+        elo_gap = get_elo_gap(inputs.config_key, inputs.current_elo)
+        if is_target_met(inputs.config_key, inputs.current_elo):
+            # Maintenance mode: config already at or above target.
+            # Still want occasional selfplay to prevent staleness, but deprioritize.
+            elo_gap_factor = 0.3
+        else:
+            elo_gap_factor = min(3.0, 1.0 + (elo_gap / 500.0))
+        score *= elo_gap_factor
 
         # Apply priority override (Feb 2026: Dynamic overrides take precedence)
         # CONFIG_PRIORITY_FALLBACK used only when dynamic computation unavailable

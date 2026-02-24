@@ -3058,11 +3058,13 @@ class EvaluationDaemon(HandlerBase):
             board_type_enum = BoardType(board_type)
 
             # Run tournament between new model and canonical
-            # Use moderate game count for reliable signal without excessive time
+            # Feb 23, 2026: Increased from 50 to 200 games. At 50 games the margin
+            # of error is ~15% at 95% CI, too noisy for reliable head-to-head signal.
+            # At 200 games, 58% win rate has p ≈ 0.01 (binomial test vs 50%).
             tournament = Tournament(
                 model_path_a=str(new_model_path),
                 model_path_b=str(canonical_path),
-                num_games=50,  # 50 games gives ~15% margin of error at 95% CI
+                num_games=200,
                 board_type=board_type_enum,
                 num_players=num_players,
             )

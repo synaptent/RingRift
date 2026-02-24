@@ -320,6 +320,18 @@
 
     <div class="chart-section">
         <div class="card">
+            <h2>Promotion Pipeline Health</h2>
+            <p style="color: #888; margin-bottom: 20px; font-size: 0.9rem;">
+                Per-config promotion gate status. Tracks which gates are blocking model promotions and how many consecutive rejections have occurred.
+            </p>
+            <div id="promotion-health">
+                <div class="loading">Loading promotion data...</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="chart-section">
+        <div class="card">
             <h2>Historical Elo Rankings by Config</h2>
             <p style="color: #888; margin-bottom: 20px; font-size: 0.9rem;">
                 Track model strength improvements over time. Each row represents an Elo snapshot from gauntlet evaluation.
@@ -453,6 +465,52 @@
             font-family: monospace;
             font-size: 0.85rem;
         }
+        /* Promotion Health Table */
+        .promotion-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        .promotion-table th {
+            background: #0f3460;
+            color: #00d4ff;
+            padding: 10px;
+            text-align: left;
+            border-bottom: 2px solid #333;
+        }
+        .promotion-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid #333;
+        }
+        .promotion-table tr:hover {
+            background: #1f3a5f;
+        }
+        .promo-status {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .promo-status.ok { background: #0a3d2e; color: #00ff88; }
+        .promo-status.warning { background: #3d3a1a; color: #ffd93d; }
+        .promo-status.stalled { background: #3d1a1a; color: #ff6b6b; }
+        .gate-pill {
+            display: inline-block;
+            background: #1a1a2e;
+            padding: 2px 8px;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            margin: 1px 2px;
+            color: #ccc;
+        }
+        .gate-pill.high { background: #3d1a1a; color: #ff6b6b; }
+        .promotion-empty {
+            color: #666;
+            font-style: italic;
+            padding: 20px;
+            text-align: center;
+        }
     </style>
 
     <script>
@@ -509,6 +567,9 @@
                 renderHealthIndicators(data.configs, data.overall);
                 renderHistoricalTables(data.configs);
                 renderDiagnostics(data.configs, data.overall);
+
+                // Load promotion health independently (separate endpoint)
+                loadPromotionHealth();
 
                 document.getElementById('last-updated').textContent =
                     `Last updated: ${data.generated_at}`;
@@ -935,6 +996,99 @@
                     <div class="answer">${d.answer}</div>
                 </div>
             `).join('');
+        }
+
+        // Load and render promotion pipeline health
+        async function loadPromotionHealth() {
+            const container = document.getElementById('promotion-health');
+            try {
+                const response = await fetch(`${API_BASE}/promotion_rejections?hours=${currentDays * 24}`);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const data = await response.json();
+                renderPromotionHealth(data);
+            } catch (error) {
+                console.error('Failed to load promotion rejections:', error);
+                container.innerHTML = `<div class="promotion-empty">No promotion rejection data available. Rejections will appear here once models are evaluated.</div>`;
+            }
+        }
+
+        function renderPromotionHealth(data) {
+            const container = document.getElementById('promotion-health');
+            const configs = data.configs || {};
+            const configKeys = Object.keys(configs);
+
+            if (configKeys.length === 0) {
+                container.innerHTML = `<div class="promotion-empty">No promotion rejections recorded yet. Models will show here when they fail promotion gates.</div>`;
+                return;
+            }
+
+            // Sort: stalled first, then warning, then ok; within each group by total_consecutive desc
+            const statusOrder = { stalled: 0, warning: 1, ok: 2 };
+            const sorted = configKeys.sort((a, b) => {
+                const sa = statusOrder[configs[a].status] ?? 3;
+                const sb = statusOrder[configs[b].status] ?? 3;
+                if (sa !== sb) return sa - sb;
+                return (configs[b].total_consecutive || 0) - (configs[a].total_consecutive || 0);
+            });
+
+            let html = `<table class="promotion-table">
+                <thead>
+                    <tr>
+                        <th>Config</th>
+                        <th>Status</th>
+                        <th>Consecutive Rejections</th>
+                        <th>Blocking Gates</th>
+                        <th>Last Rejection</th>
+                        <th>Last Promoted</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+            for (const key of sorted) {
+                const cfg = configs[key];
+                const statusLabel = cfg.status === 'stalled' ? 'STALLED'
+                    : cfg.status === 'warning' ? 'BLOCKED' : 'OK';
+
+                // Format gate pills with counts
+                const gatePills = Object.entries(cfg.consecutive_by_gate || {})
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([gate, count]) => {
+                        const cls = count >= 5 ? 'high' : '';
+                        return `<span class="gate-pill ${cls}">${gate}: ${count}</span>`;
+                    }).join(' ');
+
+                // Format timestamps
+                const lastRejection = cfg.last_rejection_time
+                    ? new Date(cfg.last_rejection_time * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    : '-';
+
+                const lastPromoted = cfg.last_promoted_time
+                    ? new Date(cfg.last_promoted_time * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    : 'Never';
+
+                // Last rejection reason (truncated)
+                const lastReason = cfg.rejections && cfg.rejections.length > 0
+                    ? cfg.rejections[0].reason || ''
+                    : '';
+                const truncatedReason = lastReason.length > 80
+                    ? lastReason.substring(0, 77) + '...'
+                    : lastReason;
+
+                html += `
+                    <tr>
+                        <td><strong>${key}</strong></td>
+                        <td><span class="promo-status ${cfg.status}">${statusLabel}</span></td>
+                        <td>${cfg.total_consecutive || 0}</td>
+                        <td>${gatePills || '-'}</td>
+                        <td>${lastRejection}${truncatedReason ? '<br><span style="color:#888;font-size:0.8rem;">' + truncatedReason + '</span>' : ''}</td>
+                        <td>${lastPromoted}</td>
+                    </tr>`;
+            }
+
+            html += `</tbody></table>`;
+            container.innerHTML = html;
         }
 
         // Time period button handlers

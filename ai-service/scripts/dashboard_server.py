@@ -229,6 +229,136 @@ def api_promotions():
         return jsonify([])
 
 
+@app.route("/api/promotion_rejections")
+def api_promotion_rejections():
+    """Get promotion rejection summary for pipeline health dashboard.
+
+    Feb 23, 2026: Reads PROMOTION_REJECTED events persisted by AutoPromotionDaemon
+    to a JSONL file. Returns per-config rejection summaries with consecutive counts,
+    last gate, and timestamps.
+
+    Query params:
+        hours: Lookback period in hours (default: 168 = 7 days)
+
+    Returns:
+        {
+            configs: {
+                "hex8_2p": {
+                    rejections: [{gate, reason, timestamp, actual, threshold}, ...],
+                    consecutive_by_gate: {"quality": 3, "elo_improvement": 1},
+                    last_rejection_time: 1708700000.0,
+                    last_rejection_gate: "quality",
+                    total_rejections: 4,
+                    status: "stalled" | "warning" | "ok"
+                },
+                ...
+            },
+            generated_at: "2026-02-23T12:00:00"
+        }
+    """
+    import time as _time
+    from collections import defaultdict
+
+    try:
+        hours = float(request.args.get("hours", "168"))
+    except ValueError:
+        hours = 168.0
+
+    cutoff = _time.time() - (hours * 3600)
+    rejections_path = AI_SERVICE_ROOT / "data" / "promotion_rejections.jsonl"
+
+    # Read all rejection events from JSONL file
+    raw_rejections: list[dict] = []
+    if rejections_path.exists():
+        try:
+            with open(rejections_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        ts = entry.get("timestamp", 0)
+                        if ts >= cutoff:
+                            raw_rejections.append(entry)
+                    except json.JSONDecodeError:
+                        continue
+        except OSError:
+            pass
+
+    # Read recent promotions to determine "last promoted" time per config
+    last_promoted: dict[str, float] = {}
+    history_path = AI_SERVICE_ROOT / "data" / "model_promotion_history.json"
+    if history_path.exists():
+        try:
+            with open(history_path) as f:
+                history = json.load(f)
+            if isinstance(history, list):
+                for entry in history:
+                    config = entry.get("config_key", "")
+                    ts = entry.get("timestamp", 0)
+                    if config and ts > last_promoted.get(config, 0):
+                        last_promoted[config] = ts
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Group rejections by config and compute summaries
+    configs_data: dict[str, dict] = {}
+    rejections_by_config: dict[str, list[dict]] = defaultdict(list)
+
+    for entry in raw_rejections:
+        config_key = entry.get("config_key", "unknown")
+        rejections_by_config[config_key].append(entry)
+
+    for config_key, rejections in rejections_by_config.items():
+        # Sort by timestamp ascending
+        rejections.sort(key=lambda e: e.get("timestamp", 0))
+
+        # Count consecutive rejections by gate (from most recent backwards)
+        # Only count rejections AFTER the last successful promotion
+        config_last_promoted = last_promoted.get(config_key, 0)
+        recent_rejections = [
+            r for r in rejections if r.get("timestamp", 0) > config_last_promoted
+        ]
+
+        consecutive_by_gate: dict[str, int] = defaultdict(int)
+        for r in recent_rejections:
+            gate = r.get("gate", "unknown")
+            consecutive_by_gate[gate] += 1
+
+        total_consecutive = len(recent_rejections)
+        last_rejection = rejections[-1] if rejections else {}
+        last_rejection_time = last_rejection.get("timestamp", 0)
+        last_rejection_gate = last_rejection.get("gate", "")
+
+        # Determine status: red (5+), yellow (1-4), green (0 or recently promoted)
+        if total_consecutive >= 5:
+            status = "stalled"
+        elif total_consecutive >= 1:
+            status = "warning"
+        else:
+            status = "ok"
+
+        # Return last 20 rejections (newest first) for display
+        display_rejections = list(reversed(rejections[-20:]))
+
+        configs_data[config_key] = {
+            "rejections": display_rejections,
+            "consecutive_by_gate": dict(consecutive_by_gate),
+            "last_rejection_time": last_rejection_time,
+            "last_rejection_gate": last_rejection_gate,
+            "total_rejections": len(rejections),
+            "total_consecutive": total_consecutive,
+            "last_promoted_time": config_last_promoted,
+            "status": status,
+        }
+
+    return jsonify({
+        "configs": configs_data,
+        "generated_at": datetime.utcnow().isoformat(),
+    })
+
+
 @app.route("/api/training/progress")
 def api_training_progress():
     """Get training progress by board type."""

@@ -117,8 +117,9 @@ class AutoPromotionConfig:
     # (26/50 wins), the p-value vs 50% is ~0.44 — statistically meaningless.
     # Feb 23, 2026: Raised from 0.55 to 0.58. At n=100 games, 58% is the
     # minimum for p < 0.05 statistical significance (binomial test vs 50%).
+    # Feb 23, 2026: At n=200 games, 58% win rate has p ≈ 0.01 (much stronger signal).
     min_win_rate_vs_canonical: float = 0.58  # Must win 58%+ vs current canonical
-    head_to_head_games: int = 100  # Games to play vs canonical for evaluation
+    head_to_head_games: int = 200  # Games to play vs canonical for evaluation
     # January 26, 2026 (P4): Elo velocity gate - block promotion if Elo is declining
     # This prevents promoting models during regression periods, ensuring only models
     # with positive momentum (or at least stable Elo) get promoted.
@@ -1407,6 +1408,27 @@ class AutoPromotionDaemon(HandlerBase):
             payload,
             source="AutoPromotionDaemon",
         )
+
+        # Persist to JSONL file for dashboard observability
+        self._persist_rejection(payload)
+
+    def _persist_rejection(self, payload: dict[str, Any]) -> None:
+        """Append rejection event to JSONL file for dashboard consumption.
+
+        Feb 23, 2026: The dashboard server reads this file to display promotion
+        rejection history. Uses append mode for concurrent safety.
+        """
+        import json
+        from pathlib import Path
+
+        try:
+            log_path = Path(__file__).parent.parent.parent / "data" / "promotion_rejections.jsonl"
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "a") as f:
+                f.write(json.dumps(payload) + "\n")
+        except OSError:
+            # Non-critical - don't let logging failures break promotion flow
+            pass
 
     async def _emit_promotion_event(self, candidate: PromotionCandidate) -> None:
         """Emit MODEL_PROMOTED event and CURRICULUM_ADVANCED if applicable.

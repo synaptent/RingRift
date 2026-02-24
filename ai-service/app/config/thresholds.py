@@ -125,7 +125,7 @@ def get_gauntlet_games_per_opponent(num_players: int = 2) -> int:
     return GAUNTLET_GAMES_PER_OPPONENT
 
 
-# Gauntlet simulation budget by player count.
+# Gauntlet simulation budget by player count (small boards: hex8, square8).
 # Feb 22, 2026: Raised from 200/400/600 to 400/600/800. Selfplay uses 800 sims,
 # so gauntlet at 200 caused models to play much weaker during evaluation than
 # training, producing false negatives and blocking good model promotions.
@@ -133,24 +133,37 @@ GAUNTLET_SIMULATIONS_2P = 400   # 2-player baseline (was 200)
 GAUNTLET_SIMULATIONS_3P = 600   # 3-player (was 400)
 GAUNTLET_SIMULATIONS_4P = 800   # 4-player (was 600)
 
+# Feb 23, 2026: Board-size-aware gauntlet budgets. Large boards (square19: 361
+# cells, hexagonal: 469 cells) need proportionally more simulations to maintain
+# equivalent search coverage. At 400 sims, hex8 (61 cells) covers ~6.6% of
+# actions while hexagonal covers only 0.85% — an 8x disparity that makes large-
+# board models appear 2-3 Elo weaker during evaluation vs training (3200 sims).
+_LARGE_BOARD_TYPES = {"square19", "hexagonal"}
+GAUNTLET_SIMULATIONS_LARGE_2P = 1600  # Large board 2p (4x base, ~4.4% coverage on sq19)
+GAUNTLET_SIMULATIONS_LARGE_3P = 1600  # Large board 3p
+GAUNTLET_SIMULATIONS_LARGE_4P = 1600  # Large board 4p
 
-def get_gauntlet_simulations(num_players: int = 2) -> int:
+
+def get_gauntlet_simulations(num_players: int = 2, board_type: str = "") -> int:
     """Get recommended simulation budget for gauntlet evaluation.
 
-    Multiplayer games (3p, 4p) have higher branching factor and more
-    complex decision trees, requiring more simulations for accurate
-    evaluation and stable Elo measurement.
-
-    Jan 17, 2026: Added to fix Elo regression in multiplayer configs.
-    The fixed 200-simulation budget was insufficient for 3p/4p games,
-    causing noisy evaluations and Elo artifacts.
+    Feb 23, 2026: Now board-type-aware. Large boards (square19, hexagonal) get
+    higher budgets to maintain equivalent search coverage vs small boards.
 
     Args:
         num_players: Number of players (2, 3, or 4)
+        board_type: Board type string (e.g. "hex8", "square19"). If empty,
+            uses small-board defaults for backwards compatibility.
 
     Returns:
         Recommended simulation budget for gauntlet evaluation
     """
+    if board_type in _LARGE_BOARD_TYPES:
+        if num_players >= 4:
+            return GAUNTLET_SIMULATIONS_LARGE_4P
+        if num_players == 3:
+            return GAUNTLET_SIMULATIONS_LARGE_3P
+        return GAUNTLET_SIMULATIONS_LARGE_2P
     if num_players >= 4:
         return GAUNTLET_SIMULATIONS_4P
     if num_players == 3:
