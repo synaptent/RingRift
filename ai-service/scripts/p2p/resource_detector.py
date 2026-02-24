@@ -116,6 +116,13 @@ class ResourceDetector:
         self._cached_gpu: tuple[bool, str] | None = None
         self._cached_memory: int | None = None
 
+        # Feb 2026: Cache resource usage to avoid calling `ps -A -o %cpu` every
+        # few seconds. On macOS under load, `ps -A` takes 5+ seconds and frequently
+        # times out, blocking the event loop. 30s TTL is sufficient for capacity checks.
+        self._cached_resource_usage: dict[str, float] | None = None
+        self._cached_resource_usage_at: float = 0.0
+        self._resource_usage_cache_ttl: float = 30.0
+
         # Jan 2026: Track Tailscale CLI health for event emission
         self._tailscale_cli_healthy: bool | None = None  # None = unknown, True = healthy, False = error
         self._tailscale_cli_error_emitted: bool = False
@@ -512,10 +519,23 @@ class ResourceDetector:
     def get_resource_usage(self) -> dict[str, float]:
         """Get current resource usage.
 
+        Feb 2026: Results are cached for 30 seconds. On macOS, `ps -A -o %cpu`
+        can take 5+ seconds and frequently times out under load, blocking the
+        event loop. The cache prevents this from being called every few seconds
+        by the 30+ callers (loops, HTTP handlers, capacity checks).
+
         Returns:
             Dict with cpu_percent, memory_percent, disk_percent,
             gpu_percent, gpu_memory_percent, disk_free_gb
         """
+        # Feb 2026: Return cached result if fresh enough
+        now = time.time()
+        if (
+            self._cached_resource_usage is not None
+            and (now - self._cached_resource_usage_at) < self._resource_usage_cache_ttl
+        ):
+            return self._cached_resource_usage
+
         result: dict[str, float] = {
             "cpu_percent": 0.0,
             "memory_percent": 0.0,
@@ -525,22 +545,22 @@ class ResourceDetector:
         }
 
         try:
-            # CPU
-            if sys.platform == "darwin":
-                out = subprocess.run(
-                    ["ps", "-A", "-o", "%cpu"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                cpus = [float(x) for x in out.stdout.strip().split("\n")[1:] if x.strip()]
+            # CPU - use os.getloadavg() on all platforms (instant kernel syscall).
+            # Feb 2026: Replaced `ps -A -o %cpu` on macOS which spawned a subprocess
+            # that scanned all processes, taking 5+ seconds and timing out under load
+            # (load avg 200+ on 16 cores). os.getloadavg() is the same data source
+            # as /proc/loadavg on Linux but works cross-platform.
+            try:
+                load1, _, _ = os.getloadavg()
                 cpu_count = os.cpu_count() or 1
-                result["cpu_percent"] = min(100.0, sum(cpus) / cpu_count)
-            else:
-                with open("/proc/loadavg") as f:
-                    load = float(f.read().split()[0])
-                    cpu_count = os.cpu_count() or 1
-                    result["cpu_percent"] = min(100.0, load * 100 / cpu_count)
+                result["cpu_percent"] = min(100.0, load1 * 100 / cpu_count)
+            except OSError:
+                # Fallback for platforms without getloadavg (shouldn't happen on macOS/Linux)
+                if not sys.platform.startswith("win"):
+                    with open("/proc/loadavg") as f:
+                        load = float(f.read().split()[0])
+                        cpu_count = os.cpu_count() or 1
+                        result["cpu_percent"] = min(100.0, load * 100 / cpu_count)
 
             # Memory - use psutil for accurate cross-platform measurement
             # Jan 21, 2026: psutil correctly handles macOS memory pressure calculation
@@ -631,6 +651,9 @@ class ResourceDetector:
         except Exception as e:
             logger.info(f"Resource check error: {e}")
 
+        # Feb 2026: Cache the result to avoid expensive subprocess calls
+        self._cached_resource_usage = result
+        self._cached_resource_usage_at = time.time()
         return result
 
     def check_nfs_accessible(self) -> bool:
