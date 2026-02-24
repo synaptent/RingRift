@@ -32,6 +32,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable, Generator
 
+from app.config.thresholds import DISK_SYNC_TARGET_PERCENT
+
 if TYPE_CHECKING:
     from app.distributed.cluster_config_manager import (
         ClusterConfigManager,
@@ -66,7 +68,7 @@ class NodeSyncPolicy:
     receive_games: bool = True
     receive_models: bool = True
     receive_npz: bool = True
-    max_disk_usage_percent: float = 70.0
+    max_disk_usage_percent: float = float(DISK_SYNC_TARGET_PERCENT)
     excluded: bool = False
     exclusion_reason: str = ""
 

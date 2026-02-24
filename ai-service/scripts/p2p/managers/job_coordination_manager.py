@@ -53,8 +53,9 @@ class JobCoordinationConfig:
     gpu_utilization_target: float = 0.75
     gpu_utilization_min: float = 0.60
     gpu_utilization_max: float = 0.80
-    disk_cleanup_threshold: float = 80.0
-    disk_warning_threshold: float = 75.0
+    # Disk: aligned with app.config.thresholds (DISK_PRODUCTION_HALT=85, DISK_SYNC_TARGET=70)
+    disk_cleanup_threshold: float = 80.0   # Start cleanup before production halt
+    disk_warning_threshold: float = 75.0   # Between sync target (70) and cleanup (80)
     memory_warning_threshold: float = 70.0
     memory_critical_threshold: float = 85.0
     # Job limits

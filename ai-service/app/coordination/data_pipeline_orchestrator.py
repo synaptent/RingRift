@@ -113,6 +113,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from app.config.coordination_defaults import CircuitBreakerDefaults
+from app.config.thresholds import DISK_PRODUCTION_HALT_PERCENT
 from app.config.ports import get_local_p2p_status_url
 from app.coordination.coordinator_persistence import StatePersistenceMixin
 from app.coordination.protocols import (
@@ -2231,7 +2232,7 @@ class DataPipelineOrchestrator(
 
     def _check_cluster_resources(
         self,
-        disk_threshold: float = 85.0,
+        disk_threshold: float = float(DISK_PRODUCTION_HALT_PERCENT),
         min_free_disk_gb: float = 50.0,
     ) -> bool:
         """Check if cluster has sufficient resources for training.

@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from app.config.thresholds import DISK_CRITICAL_PERCENT
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,7 +55,7 @@ class PredictiveAlertConfig:
 
     # Disk prediction
     disk_prediction_hours: int = 4          # Alert N hours before full
-    disk_critical_threshold: float = 90.0   # Critical at 90%
+    disk_critical_threshold: float = float(DISK_CRITICAL_PERCENT)
 
     # Memory prediction
     memory_prediction_hours: int = 2
@@ -527,7 +529,7 @@ def load_alert_config_from_yaml(yaml_config: dict[str, Any]) -> PredictiveAlertC
     return PredictiveAlertConfig(
         enabled=monitoring.get("enabled", True),
         disk_prediction_hours=monitoring.get("disk_prediction_hours", 4),
-        disk_critical_threshold=monitoring.get("disk_critical_threshold", 90.0),
+        disk_critical_threshold=monitoring.get("disk_critical_threshold", float(DISK_CRITICAL_PERCENT)),
         memory_prediction_hours=monitoring.get("memory_prediction_hours", 2),
         memory_critical_threshold=monitoring.get("memory_critical_threshold", 95.0),
         elo_trend_window_hours=monitoring.get("elo_trend_window_hours", 6),

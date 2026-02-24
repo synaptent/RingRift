@@ -37,7 +37,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Constants
-MAX_DISK_USAGE_PERCENT = 70  # Don't sync to nodes above this usage
+try:
+    from app.config.thresholds import DISK_SYNC_TARGET_PERCENT
+    MAX_DISK_USAGE_PERCENT = DISK_SYNC_TARGET_PERCENT  # Don't sync to nodes above this usage
+except ImportError:
+    MAX_DISK_USAGE_PERCENT = 70  # Don't sync to nodes above this usage
 
 
 # ============================================================================

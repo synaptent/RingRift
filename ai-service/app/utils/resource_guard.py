@@ -208,7 +208,13 @@ if HAS_PROMETHEUS:
 
 @dataclass(frozen=True)
 class ResourceLimits:
-    """Unified resource limits (CPU/GPU 80%, memory 90%, disk 95%)."""
+    """Unified resource limits (CPU/GPU 80%, memory 90%, disk 95%).
+
+    Note: For cluster-wide disk thresholds, see app.config.thresholds:
+    DISK_SYNC_TARGET_PERCENT (70), DISK_PRODUCTION_HALT_PERCENT (85),
+    DISK_CRITICAL_PERCENT (90). These per-operation limits are intentionally
+    higher to avoid aborting in-progress work.
+    """
     # Disk at 95% - increased to allow selfplay generation with low headroom
     DISK_MAX_PERCENT: float = 95.0
     DISK_WARN_PERCENT: float = 90.0
@@ -889,6 +895,8 @@ class DiskPressureLevel:
     EMERGENCY = 4   # > 85% - remove all non-essential files
 
 
+# Pressure gradient thresholds for DiskPressureLevel enum.
+# See app.config.thresholds for canonical hard cutoffs (70/85/90%).
 DISK_PRESSURE_THRESHOLDS = (70.0, 75.0, 80.0, 85.0)
 
 

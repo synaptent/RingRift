@@ -1061,9 +1061,9 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
                 RUNAWAY_SELFPLAY_PROCESS_THRESHOLD,
             )
         except ImportError:
-            # Fallback defaults
-            DISK_CLEANUP_THRESHOLD = 85
-            DISK_CRITICAL_THRESHOLD = 95
+            # Fallback defaults - aligned with app.config.thresholds
+            DISK_CLEANUP_THRESHOLD = 85   # DISK_PRODUCTION_HALT_PERCENT
+            DISK_CRITICAL_THRESHOLD = 95  # Above DISK_CRITICAL_PERCENT (90) for process-level
             DISK_WARNING_THRESHOLD = 80
             GPU_IDLE_RESTART_TIMEOUT = 600
             GPU_IDLE_THRESHOLD = 5
@@ -1435,7 +1435,7 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
                 MEMORY_WARNING_THRESHOLD,
             )
         except ImportError:
-            DISK_WARNING_THRESHOLD = 85
+            DISK_WARNING_THRESHOLD = 85  # DISK_PRODUCTION_HALT_PERCENT from app.config.thresholds
             LEADER_WORK_DISPATCH_TIMEOUT = 300
             LEADERLESS_TRAINING_TIMEOUT = 180
             MEMORY_WARNING_THRESHOLD = 90

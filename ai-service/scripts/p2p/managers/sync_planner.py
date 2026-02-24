@@ -111,7 +111,11 @@ def _validate_event_types() -> bool:
 MANIFEST_JSONL_LINECOUNT_MAX_BYTES = 50 * 1024 * 1024  # 50MB threshold for sampling
 MANIFEST_JSONL_SAMPLE_BYTES = 256 * 1024  # 256KB sample for large files
 MANIFEST_JSONL_LINECOUNT_CHUNK_BYTES = 65536  # 64KB chunks for line counting
-MAX_DISK_USAGE_PERCENT = 90.0
+try:
+    from app.config.thresholds import DISK_CRITICAL_PERCENT
+    MAX_DISK_USAGE_PERCENT = float(DISK_CRITICAL_PERCENT)
+except ImportError:
+    MAX_DISK_USAGE_PERCENT = 90.0
 
 
 @dataclass

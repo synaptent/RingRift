@@ -130,7 +130,8 @@ class RetryDefaults:
 class ResourceThresholds:
     """Resource utilization thresholds (as percentages 0.0-1.0)."""
 
-    # Disk usage
+    # Disk usage - values from app.config.thresholds (canonical source)
+    # 0.70 = DISK_SYNC_TARGET_PERCENT, 0.85 = DISK_PRODUCTION_HALT_PERCENT, 0.90 = DISK_CRITICAL_PERCENT
     DISK_WARNING: Final[float] = 0.70
     DISK_CRITICAL: Final[float] = 0.85
     DISK_EMERGENCY: Final[float] = 0.90

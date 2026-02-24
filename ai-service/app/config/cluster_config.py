@@ -48,6 +48,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from app.distributed.hosts import HostConfig
 
+from app.config.thresholds import DISK_SYNC_TARGET_PERCENT
+
 logger = logging.getLogger(__name__)
 
 # Default config path relative to ai-service/
@@ -85,7 +87,7 @@ class SyncRoutingConfig:
     Extracted from the sync_routing section of distributed_hosts.yaml.
     """
 
-    max_disk_usage_percent: float = 70.0
+    max_disk_usage_percent: float = float(DISK_SYNC_TARGET_PERCENT)
     target_disk_usage_percent: float = 60.0
     min_free_disk_percent: float = 15.0
     replication_target: int = 2
@@ -103,7 +105,7 @@ class SyncRoutingConfig:
             if isinstance(entry, dict)
         ]
         return cls(
-            max_disk_usage_percent=data.get("max_disk_usage_percent", 70.0),
+            max_disk_usage_percent=data.get("max_disk_usage_percent", float(DISK_SYNC_TARGET_PERCENT)),
             target_disk_usage_percent=data.get("target_disk_usage_percent", 60.0),
             min_free_disk_percent=data.get("min_free_disk_percent", 15.0),
             replication_target=data.get("replication_target", 2),

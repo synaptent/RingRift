@@ -79,10 +79,15 @@ BLUE = "\033[94m"
 CYAN = "\033[96m"
 DIM = "\033[2m"
 
-# Configuration (from cluster_health_monitor.py)
+# Configuration - aligned with app.config.thresholds (canonical source)
 DEFAULT_INTERVAL = 300  # 5 minutes
-DISK_WARNING_THRESHOLD = 80
-DISK_CRITICAL_THRESHOLD = 90
+try:
+    from app.config.thresholds import DISK_CRITICAL_PERCENT, DISK_PRODUCTION_HALT_PERCENT
+    DISK_WARNING_THRESHOLD = DISK_PRODUCTION_HALT_PERCENT - 5  # 80
+    DISK_CRITICAL_THRESHOLD = DISK_CRITICAL_PERCENT  # 90
+except ImportError:
+    DISK_WARNING_THRESHOLD = 80
+    DISK_CRITICAL_THRESHOLD = 90
 MEMORY_WARNING_THRESHOLD = 85
 HEARTBEAT_STALE_THRESHOLD = 120
 SSH_OPTS = "-o ConnectTimeout=10 -o BatchMode=yes -o StrictHostKeyChecking=no"

@@ -42,10 +42,16 @@ logger = logging.getLogger(__name__)
 # Constants (imported from orchestrator or coordination_defaults)
 # ============================================================================
 
-# Thresholds for resource management
-DISK_CLEANUP_THRESHOLD = 85
-DISK_WARNING_THRESHOLD = 80
-DISK_CRITICAL_THRESHOLD = 90
+# Thresholds for resource management - aligned with app.config.thresholds
+try:
+    from app.config.thresholds import DISK_CRITICAL_PERCENT, DISK_PRODUCTION_HALT_PERCENT
+    DISK_CLEANUP_THRESHOLD = DISK_PRODUCTION_HALT_PERCENT  # 85
+    DISK_WARNING_THRESHOLD = DISK_PRODUCTION_HALT_PERCENT - 5  # 80
+    DISK_CRITICAL_THRESHOLD = DISK_CRITICAL_PERCENT  # 90
+except ImportError:
+    DISK_CLEANUP_THRESHOLD = 85
+    DISK_WARNING_THRESHOLD = 80
+    DISK_CRITICAL_THRESHOLD = 90
 MEMORY_WARNING_THRESHOLD = 75
 MEMORY_CRITICAL_THRESHOLD = 85
 LOAD_MAX_FOR_NEW_JOBS = 80

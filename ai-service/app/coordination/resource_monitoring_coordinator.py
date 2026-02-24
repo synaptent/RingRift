@@ -63,7 +63,7 @@ try:
 except ImportError:
     _DEFAULT_GPU_THRESHOLD = 70.0  # Session 17.42: Lowered from 90 to prevent OOM
     _DEFAULT_MEMORY_THRESHOLD = 85.0
-    _DEFAULT_DISK_THRESHOLD = 90.0
+    _DEFAULT_DISK_THRESHOLD = 90.0  # DISK_CRITICAL_PERCENT from app.config.thresholds
 
 
 # December 2025: Import ResourceType from canonical source

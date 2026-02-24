@@ -32,11 +32,15 @@ from pathlib import Path
 # Add app/ to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Unified thresholds from monitoring module (December 2025)
+# Unified thresholds from canonical source (app.config.thresholds)
 try:
-    from app.config.thresholds import get_threshold
-    DISK_WARNING = get_threshold("disk", "warning", 70)
-    DISK_CRITICAL = get_threshold("disk", "critical", 85)
+    from app.config.thresholds import (
+        DISK_SYNC_TARGET_PERCENT,
+        DISK_PRODUCTION_HALT_PERCENT,
+        get_threshold,
+    )
+    DISK_WARNING = DISK_SYNC_TARGET_PERCENT     # 70
+    DISK_CRITICAL = DISK_PRODUCTION_HALT_PERCENT  # 85
     DISK_FATAL = get_threshold("disk", "fatal", 95)
     HAS_THRESHOLDS = True
 except ImportError:

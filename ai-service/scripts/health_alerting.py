@@ -117,7 +117,7 @@ class AlertConfig:
     min_vast_instances: int = 5                  # Alert if fewer Vast
     min_selfplay_jobs: int = 100                 # Alert if fewer jobs
     max_idle_instances: int = 8                  # Alert if too many idle
-    max_disk_usage_percent: int = 85             # Alert if disk > 85%
+    max_disk_usage_percent: int = 85             # = DISK_PRODUCTION_HALT_PERCENT from app.config.thresholds
     max_hourly_cost: float = 15.0                # Alert if cost > $15/hr
 
     # Alert cooldowns (minutes)

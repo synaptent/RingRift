@@ -164,9 +164,11 @@ class BackpressureConfig:
     training_low_threshold: int = 1    # Below this = 0 pressure (was 2)
     training_high_threshold: int = 5   # Above this = 1.0 pressure (was 10)
 
-    # Disk pressure thresholds (percentage)
-    disk_low_threshold: float = 0.4    # Below 40% = 0 pressure (was 50%)
-    disk_high_threshold: float = 0.75  # Above 75% = 1.0 pressure (was 90%)
+    # Disk pressure thresholds (percentage, as fraction 0.0-1.0)
+    # Note: These are backpressure gradient thresholds, not hard cutoffs.
+    # See app.config.thresholds for canonical hard cutoffs (70/85/90%).
+    disk_low_threshold: float = 0.4    # Below 40% = 0 pressure
+    disk_high_threshold: float = 0.75  # Above 75% = 1.0 pressure
 
     # Sync pressure thresholds
     sync_low_threshold: int = 3        # Below this = 0 pressure (was 5)

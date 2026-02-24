@@ -816,14 +816,28 @@ MEMORY_WARNING_PERCENT = 70
 # Memory utilization critical threshold
 MEMORY_CRITICAL_PERCENT = 80
 
-# Disk utilization warning threshold
-DISK_WARNING_PERCENT = 80
+# =============================================================================
+# Disk Usage Thresholds (CANONICAL - DO NOT duplicate elsewhere)
+# =============================================================================
+# Three tiers of disk usage thresholds used across the entire codebase.
+# All other modules MUST import from here instead of hardcoding values.
+#
+# Tier 1 (70%): "Don't sync data TO nodes above this" - conservative for
+#   distribution targeting. Sync/push operations check this before sending
+#   data to remote nodes.
+#
+# Tier 2 (85%): "Pause data production" - training, selfplay, and export
+#   checks use this to halt generating new data when disk is getting full.
+#
+# Tier 3 (90%): "Critical alarm, block all writes" - emergency halt level.
+#   All write operations are blocked and aggressive cleanup is triggered.
 
-# Disk utilization critical threshold
-# Feb 2026: Raised from 70→90 to match coordination_defaults.py. At 70%,
-# disk writes were blocked with 228GB free on a 1TB drive, completely
-# starving the selfplay → training pipeline.
-DISK_CRITICAL_PERCENT = 90
+DISK_SYNC_TARGET_PERCENT = 70       # Max disk for sync/distribution targeting
+DISK_PRODUCTION_HALT_PERCENT = 85   # Pause selfplay/training/exports
+DISK_CRITICAL_PERCENT = 90          # Emergency halt, block all writes
+
+# Legacy aliases (prefer the named constants above)
+DISK_WARNING_PERCENT = DISK_SYNC_TARGET_PERCENT
 
 # =============================================================================
 # File Descriptor & Socket Limits (December 2025)

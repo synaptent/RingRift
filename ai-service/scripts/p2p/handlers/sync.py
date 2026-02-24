@@ -56,7 +56,14 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Storage tier configuration (from Phase 3b)
-CRITICAL_DISK_THRESHOLD = 90.0  # Reject pushes above this
+# Disk thresholds from app.config.thresholds (canonical source)
+try:
+    from app.config.thresholds import DISK_CRITICAL_PERCENT, DISK_PRODUCTION_HALT_PERCENT
+    CRITICAL_DISK_THRESHOLD = float(DISK_CRITICAL_PERCENT)  # Reject pushes above this
+    _SYNC_DISK_THRESHOLD = float(DISK_PRODUCTION_HALT_PERCENT)
+except ImportError:
+    CRITICAL_DISK_THRESHOLD = 90.0  # Reject pushes above this
+    _SYNC_DISK_THRESHOLD = 85.0
 OWC_FALLBACK_THRESHOLD = 80.0   # Use OWC above this
 OWC_MOUNT_PATHS = [
     Path("/Volumes/RingRift-Data"),
@@ -573,7 +580,7 @@ class SyncHandlersMixin(BaseP2PHandler):
             # Check disk capacity before accepting sync request
             has_capacity, disk_percent = self._check_disk_has_capacity()
             if not has_capacity:
-                max_disk = float(os.environ.get("RINGRIFT_MAX_DISK_USAGE_PERCENT", "85"))
+                max_disk = float(os.environ.get("RINGRIFT_MAX_DISK_USAGE_PERCENT", str(_SYNC_DISK_THRESHOLD)))
                 return self.json_response({
                     "error": f"Disk full ({disk_percent:.1f}% >= {max_disk}%)",
                     "disk_percent": disk_percent,
@@ -748,7 +755,7 @@ class SyncHandlersMixin(BaseP2PHandler):
             Tuple of (has_capacity, disk_usage_percent)
         """
         try:
-            max_disk = float(os.environ.get("RINGRIFT_MAX_DISK_USAGE_PERCENT", "85"))
+            max_disk = float(os.environ.get("RINGRIFT_MAX_DISK_USAGE_PERCENT", str(_SYNC_DISK_THRESHOLD)))
             data_dir = Path("data")
             if data_dir.exists():
                 usage = shutil.disk_usage(data_dir)

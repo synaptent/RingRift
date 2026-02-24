@@ -163,10 +163,14 @@ except (ImportError, ModuleNotFoundError):
 
 
 # ============================================
-# Disk Usage Limits (70% max enforced 2025-12-16)
+# Disk Usage Limits - from app.config.thresholds (canonical source)
 # ============================================
 
-MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "70"))
+try:
+    from app.config.thresholds import DISK_SYNC_TARGET_PERCENT
+    MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", str(DISK_SYNC_TARGET_PERCENT)))
+except ImportError:
+    MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "70"))
 
 
 # ============================================

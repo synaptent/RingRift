@@ -34,6 +34,7 @@ from typing import Any
 import yaml
 
 from app.config.cluster_config import load_cluster_config, get_host_provider, get_cluster_nodes
+from app.config.thresholds import DISK_SYNC_TARGET_PERCENT
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.distributed.cluster_manifest import (
     ClusterManifest,
@@ -839,7 +840,7 @@ class SyncRouter:
         # Prefer nodes with more available space
         if cap.disk_usage_percent < 50:
             priority += 10
-        elif cap.disk_usage_percent > 70:
+        elif cap.disk_usage_percent > DISK_SYNC_TARGET_PERCENT:
             priority -= 20
 
         # December 2025: Time-since-sync priority weighting

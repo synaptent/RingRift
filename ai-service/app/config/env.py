@@ -744,7 +744,10 @@ class RingRiftEnv:
 
     @cached_property
     def backpressure_disk_threshold(self) -> float:
-        """Disk utilization threshold for backpressure."""
+        """Disk utilization threshold for backpressure.
+
+        Default aligned with DISK_CRITICAL_PERCENT from app.config.thresholds.
+        """
         return float(os.environ.get("RINGRIFT_BACKPRESSURE_DISK_THRESHOLD", "90"))
 
     # ==========================================================================

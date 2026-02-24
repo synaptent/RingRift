@@ -187,18 +187,30 @@ class EnvConfig:
 
     @property
     def max_disk_percent(self) -> float:
-        """Maximum disk usage percentage."""
-        return get_float("RINGRIFT_MAX_DISK_PERCENT", 70.0)
+        """Maximum disk usage percentage (sync target threshold)."""
+        try:
+            from app.config.thresholds import DISK_SYNC_TARGET_PERCENT
+            return get_float("RINGRIFT_MAX_DISK_PERCENT", float(DISK_SYNC_TARGET_PERCENT))
+        except ImportError:
+            return get_float("RINGRIFT_MAX_DISK_PERCENT", 70.0)
 
     @property
     def disk_critical_threshold(self) -> int:
         """Critical disk usage threshold (%)."""
-        return get_int("RINGRIFT_P2P_DISK_CRITICAL_THRESHOLD", 70)
+        try:
+            from app.config.thresholds import DISK_CRITICAL_PERCENT
+            return get_int("RINGRIFT_P2P_DISK_CRITICAL_THRESHOLD", DISK_CRITICAL_PERCENT)
+        except ImportError:
+            return get_int("RINGRIFT_P2P_DISK_CRITICAL_THRESHOLD", 90)
 
     @property
     def disk_warning_threshold(self) -> int:
         """Warning disk usage threshold (%)."""
-        return get_int("RINGRIFT_P2P_DISK_WARNING_THRESHOLD", 65)
+        try:
+            from app.config.thresholds import DISK_SYNC_TARGET_PERCENT
+            return get_int("RINGRIFT_P2P_DISK_WARNING_THRESHOLD", DISK_SYNC_TARGET_PERCENT)
+        except ImportError:
+            return get_int("RINGRIFT_P2P_DISK_WARNING_THRESHOLD", 70)
 
     @property
     def memory_critical_threshold(self) -> int:

@@ -352,9 +352,9 @@ class DataManagementConfig:
     interval_seconds: float = 300.0  # 5 minutes
     initial_delay_seconds: float = 30.0  # Wait before first run
 
-    # Disk thresholds
-    disk_warning_percent: float = 80.0
-    disk_critical_percent: float = 85.0
+    # Disk thresholds - aligned with app.config.thresholds (canonical source)
+    disk_warning_percent: float = 80.0  # Between DISK_SYNC_TARGET(70) and DISK_PRODUCTION_HALT(85)
+    disk_critical_percent: float = 85.0  # = DISK_PRODUCTION_HALT_PERCENT
 
     # Export thresholds
     db_export_threshold_mb: float = 100.0

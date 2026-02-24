@@ -40,6 +40,7 @@ from enum import Enum
 from typing import Any
 
 # Canonical types (December 2025 consolidation)
+from app.config.thresholds import DISK_CRITICAL_PERCENT
 from app.coordination.types import BackpressureLevel, TaskType
 
 logger = logging.getLogger(__name__)
@@ -104,7 +105,7 @@ class UnifiedResourceCoordinator:
         self._cpu_threshold = 0.85
         self._gpu_threshold = 0.90
         self._memory_threshold = 0.85
-        self._disk_threshold = 0.90
+        self._disk_threshold = DISK_CRITICAL_PERCENT / 100.0  # Convert percent to fraction
 
         # Statistics
         self._decisions_made = 0

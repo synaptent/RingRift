@@ -35,6 +35,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
+from app.config.thresholds import DISK_SYNC_TARGET_PERCENT
+
 logger = logging.getLogger(__name__)
 
 
@@ -382,7 +384,7 @@ class HealthRegistry:
                 issues.append(f"High CPU usage: {cpu_percent}%")
             if memory.percent > 80:
                 issues.append(f"High memory usage: {memory.percent}%")
-            if disk.percent > 70:  # 70% limit enforced 2025-12-15
+            if disk.percent > DISK_SYNC_TARGET_PERCENT:
                 issues.append(f"High disk usage: {disk.percent}%")
 
             if issues and any("High" in i for i in issues):

@@ -401,11 +401,20 @@ DISCOVERY_INTERVAL = 120  # seconds between discovery broadcasts
 # Resource Thresholds (80% max utilization enforced)
 # ============================================
 
-# Disk thresholds - 75% max (raised Dec 29, 2025 to allow jobs at ~71% disk)
-# Cleanup at 60%, warning at 70%, critical at 75%
-DISK_CRITICAL_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CRITICAL_THRESHOLD", "75") or 75)
-DISK_WARNING_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_WARNING_THRESHOLD", "70") or 70)
-DISK_CLEANUP_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CLEANUP_THRESHOLD", "60") or 60)
+# Disk thresholds - import from canonical source (app.config.thresholds)
+try:
+    from app.config.thresholds import (
+        DISK_CRITICAL_PERCENT as _DISK_CRITICAL,
+        DISK_PRODUCTION_HALT_PERCENT as _DISK_HALT,
+        DISK_SYNC_TARGET_PERCENT as _DISK_SYNC,
+    )
+    DISK_CRITICAL_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CRITICAL_THRESHOLD", str(_DISK_CRITICAL)) or _DISK_CRITICAL)
+    DISK_WARNING_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_WARNING_THRESHOLD", str(_DISK_SYNC)) or _DISK_SYNC)
+    DISK_CLEANUP_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CLEANUP_THRESHOLD", "60") or 60)
+except ImportError:
+    DISK_CRITICAL_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CRITICAL_THRESHOLD", "90") or 90)
+    DISK_WARNING_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_WARNING_THRESHOLD", "70") or 70)
+    DISK_CLEANUP_THRESHOLD = int(os.environ.get("RINGRIFT_P2P_DISK_CLEANUP_THRESHOLD", "60") or 60)
 
 # Memory thresholds - 80% max
 MEMORY_CRITICAL_THRESHOLD = min(80, int(os.environ.get("RINGRIFT_P2P_MEMORY_CRITICAL_THRESHOLD", "80") or 80))
@@ -771,7 +780,11 @@ COORDINATOR_URL = os.environ.get("RINGRIFT_COORDINATOR_URL", "")
 AGENT_MODE_ENABLED = os.environ.get("RINGRIFT_P2P_AGENT_MODE", "").lower() in {"1", "true", "yes", "on"}
 AUTO_UPDATE_ENABLED = os.environ.get("RINGRIFT_P2P_AUTO_UPDATE", "").lower() in {"1", "true", "yes", "on"}
 
-MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "85"))
+try:
+    from app.config.thresholds import DISK_PRODUCTION_HALT_PERCENT as _DISK_PRODUCTION
+    MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", str(_DISK_PRODUCTION)))
+except ImportError:
+    MAX_DISK_USAGE_PERCENT = float(os.environ.get("RINGRIFT_MAX_DISK_PERCENT", "85"))
 
 # Arbiter URL for split-brain resolution
 ARBITER_URL = os.environ.get("RINGRIFT_ARBITER_URL", "") or COORDINATOR_URL

@@ -84,12 +84,12 @@ class P2PConfig:
     RINGRIFT_P2P_ prefix.
     """
 
-    # Resource thresholds - 70% disk limit enforced as of 2025-12-15
+    # Resource thresholds - imported from app.config.thresholds (canonical source)
     DISK_CRITICAL_THRESHOLD: int = field(
-        default_factory=lambda: int(os.environ.get("RINGRIFT_P2P_DISK_CRITICAL_THRESHOLD", "70") or 70)
+        default_factory=lambda: int(os.environ.get("RINGRIFT_P2P_DISK_CRITICAL_THRESHOLD", "90") or 90)
     )
     DISK_WARNING_THRESHOLD: int = field(
-        default_factory=lambda: int(os.environ.get("RINGRIFT_P2P_DISK_WARNING_THRESHOLD", "65") or 65)
+        default_factory=lambda: int(os.environ.get("RINGRIFT_P2P_DISK_WARNING_THRESHOLD", "70") or 70)
     )
     DISK_CLEANUP_THRESHOLD: int = field(
         default_factory=lambda: int(os.environ.get("RINGRIFT_P2P_DISK_CLEANUP_THRESHOLD", "65") or 65)

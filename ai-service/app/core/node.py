@@ -44,6 +44,7 @@ from typing import Any, ClassVar
 
 # December 2025: Use centralized port constants
 from app.config.ports import P2P_DEFAULT_PORT
+from app.config.thresholds import DISK_SYNC_TARGET_PERCENT
 
 # Jan 22, 2026: Import canonical PEER_TIMEOUT to prevent mismatch
 # Previously hardcoded 90s here vs 120s in app/p2p/constants.py
@@ -204,7 +205,7 @@ class ResourceMetrics:
     timestamp: float = 0.0
 
     DISK_WARNING_THRESHOLD: ClassVar[float] = 65.0
-    DISK_CRITICAL_THRESHOLD: ClassVar[float] = 70.0
+    DISK_CRITICAL_THRESHOLD: ClassVar[float] = float(DISK_SYNC_TARGET_PERCENT)
     MEMORY_WARNING_THRESHOLD: ClassVar[float] = 85.0
 
     @property

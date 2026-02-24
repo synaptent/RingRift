@@ -41,6 +41,8 @@ from typing import Any, Optional
 
 import psutil
 
+from app.config.thresholds import DISK_PRODUCTION_HALT_PERCENT
+
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.coordination.singleton_mixin import SingletonMixin
 
@@ -65,9 +67,8 @@ class SafeguardConfig:
     backpressure_threshold: float = 0.8 # Slow down at 80% of limit
 
     # Resource thresholds - unified at 80% max utilization (enforced 2025-12-16)
-    # Disk threshold raised from 70% to 75% (Dec 29, 2025) - 70% was too conservative
-    # and blocked selfplay on nodes with adequate space. Cleanup runs proactively at 60%.
-    disk_critical_percent: float = 85.0
+    # Disk: uses DISK_PRODUCTION_HALT_PERCENT from app.config.thresholds (canonical source)
+    disk_critical_percent: float = float(DISK_PRODUCTION_HALT_PERCENT)
     disk_warning_percent: float = 80.0
     # Memory/CPU at 80% to leave headroom for spikes
     memory_critical_percent: float = 80.0

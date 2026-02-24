@@ -41,6 +41,8 @@ try:
 except ImportError:
     yaml = None  # type: ignore
 
+from app.config.thresholds import DISK_CRITICAL_PERCENT, DISK_PRODUCTION_HALT_PERCENT
+
 logger = logging.getLogger(__name__)
 
 # Try to import optional dependencies
@@ -285,9 +287,9 @@ class UnifiedClusterMonitor:
         self.check_interval = check_interval
         self.deep_checks = deep_checks
 
-        # Thresholds
-        self.disk_warning = 80.0
-        self.disk_critical = 95.0
+        # Thresholds - from app.config.thresholds (canonical source)
+        self.disk_warning = float(DISK_PRODUCTION_HALT_PERCENT)
+        self.disk_critical = float(DISK_CRITICAL_PERCENT)
         self.memory_warning = 85.0
         self.memory_critical = 95.0
 

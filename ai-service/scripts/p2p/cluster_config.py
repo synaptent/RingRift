@@ -55,6 +55,7 @@ class AlertThresholds:
     """Alert threshold configuration."""
     gpu_util_low: int = 10
     gpu_util_critical: int = 0
+    # Aligned with app.config.thresholds: DISK_PRODUCTION_HALT(85) / DISK_CRITICAL(90)
     disk_usage_warn: int = 80
     disk_usage_critical: int = 90
     memory_warn: int = 85

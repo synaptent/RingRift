@@ -69,9 +69,14 @@ SLACK_WEBHOOK_URL = os.environ.get("RINGRIFT_SLACK_WEBHOOK", "")
 NOTIFICATION_COOLDOWN = 300  # 5 minutes between repeated alerts
 _last_notification_time: dict[str, float] = {}
 
-# Predictive health thresholds
-DISK_WARNING_PERCENT = 65
-DISK_CRITICAL_PERCENT = 70
+# Predictive health thresholds - aligned with app.config.thresholds
+try:
+    from app.config.thresholds import DISK_SYNC_TARGET_PERCENT
+    DISK_WARNING_PERCENT = DISK_SYNC_TARGET_PERCENT - 5  # 65
+    DISK_CRITICAL_PERCENT = DISK_SYNC_TARGET_PERCENT  # 70
+except ImportError:
+    DISK_WARNING_PERCENT = 65
+    DISK_CRITICAL_PERCENT = 70
 MEMORY_WARNING_PERCENT = 75
 MEMORY_CRITICAL_PERCENT = 85
 

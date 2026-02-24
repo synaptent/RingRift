@@ -107,7 +107,11 @@ __all__ = [
 # Constants
 MANIFEST_DB_NAME = "cluster_manifest.db"
 SCHEMA_VERSION = "1.0"
-MAX_DISK_USAGE_PERCENT = 70  # Don't sync to nodes above this usage
+try:
+    from app.config.thresholds import DISK_SYNC_TARGET_PERCENT
+    MAX_DISK_USAGE_PERCENT = DISK_SYNC_TARGET_PERCENT  # Don't sync to nodes above this usage
+except ImportError:
+    MAX_DISK_USAGE_PERCENT = 70  # Don't sync to nodes above this usage
 MIN_FREE_DISK_PERCENT = 30  # Ensure at least this much free space
 REPLICATION_TARGET_COUNT = 2  # Default replication count
 

@@ -487,7 +487,7 @@ class UnifiedHealthMonitor:
 
             # Check disk space
             disk = psutil.disk_usage("/")
-            if disk.percent > 90:
+            if disk.percent > 90:  # DISK_CRITICAL_PERCENT from app.config.thresholds
                 failures.append(
                     FailureContext(
                         node_id="local",

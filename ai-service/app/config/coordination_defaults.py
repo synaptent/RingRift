@@ -781,7 +781,7 @@ class ResourceMonitoringDefaults:
     # Backpressure thresholds (%) - lowered to prevent node saturation
     BACKPRESSURE_GPU_THRESHOLD: float = _env_float("RINGRIFT_BACKPRESSURE_GPU_THRESHOLD", 70.0)  # was 90
     BACKPRESSURE_MEMORY_THRESHOLD: float = _env_float("RINGRIFT_BACKPRESSURE_MEMORY_THRESHOLD", 70.0)  # was 85
-    BACKPRESSURE_DISK_THRESHOLD: float = _env_float("RINGRIFT_BACKPRESSURE_DISK_THRESHOLD", 75.0)  # was 90
+    BACKPRESSURE_DISK_THRESHOLD: float = _env_float("RINGRIFT_BACKPRESSURE_DISK_THRESHOLD", 75.0)  # Between DISK_SYNC_TARGET(70) and DISK_PRODUCTION_HALT(85)
 
     # Resource update interval (seconds)
     UPDATE_INTERVAL: int = _env_int("RINGRIFT_RESOURCE_UPDATE_INTERVAL", 10)
@@ -923,9 +923,9 @@ class MonitoringDefaults:
 
     Used by: app/coordination/system_health_monitor.py, cluster_monitor.py
     """
-    # Disk space warning thresholds (%)
-    DISK_WARNING_THRESHOLD: float = _env_float("RINGRIFT_DISK_WARNING_THRESHOLD", 70.0)
-    DISK_CRITICAL_THRESHOLD: float = _env_float("RINGRIFT_DISK_CRITICAL_THRESHOLD", 90.0)
+    # Disk space warning thresholds (%) - aligned with app.config.thresholds canonical values
+    DISK_WARNING_THRESHOLD: float = _env_float("RINGRIFT_DISK_WARNING_THRESHOLD", 70.0)   # = DISK_SYNC_TARGET_PERCENT
+    DISK_CRITICAL_THRESHOLD: float = _env_float("RINGRIFT_DISK_CRITICAL_THRESHOLD", 90.0)  # = DISK_CRITICAL_PERCENT
 
     # Memory usage thresholds (%)
     MEMORY_WARNING_THRESHOLD: float = _env_float("RINGRIFT_MEMORY_WARNING_THRESHOLD", 80.0)
@@ -1813,10 +1813,10 @@ class ResourceManagerDefaults:
     # Aggregation interval - how often to aggregate selfplay data (seconds)
     AGGREGATION_INTERVAL: int = _env_int("RINGRIFT_AGGREGATION_INTERVAL", 600)  # 10 minutes
 
-    # Disk thresholds (percentage)
-    DISK_WARNING_THRESHOLD: int = _env_int("RINGRIFT_DISK_WARNING_THRESHOLD", 85)
-    DISK_CRITICAL_THRESHOLD: int = _env_int("RINGRIFT_DISK_CRITICAL_THRESHOLD", 92)
-    DISK_CLEANUP_THRESHOLD: int = _env_int("RINGRIFT_DISK_CLEANUP_THRESHOLD", 90)
+    # Disk thresholds (%) - aligned with app.config.thresholds canonical values
+    DISK_WARNING_THRESHOLD: int = _env_int("RINGRIFT_DISK_WARNING_THRESHOLD", 85)   # = DISK_PRODUCTION_HALT_PERCENT
+    DISK_CRITICAL_THRESHOLD: int = _env_int("RINGRIFT_DISK_CRITICAL_THRESHOLD", 90)  # = DISK_CRITICAL_PERCENT
+    DISK_CLEANUP_THRESHOLD: int = _env_int("RINGRIFT_DISK_CLEANUP_THRESHOLD", 85)   # = DISK_PRODUCTION_HALT_PERCENT
 
     # Memory thresholds (percentage)
     MEMORY_WARNING_THRESHOLD: int = _env_int("RINGRIFT_MEMORY_WARNING_THRESHOLD", 85)
@@ -2515,7 +2515,7 @@ class SelfplayAllocationDefaults:
     # Minimum RAM for task allocation (GB)
     MIN_MEMORY_GB: int = _env_int("RINGRIFT_MIN_MEMORY_GB_FOR_TASKS", 8)
 
-    # Disk usage warning threshold (%)
+    # Disk usage warning threshold (%) - aligned with app.config.thresholds: DISK_CRITICAL_PERCENT
     DISK_WARNING_THRESHOLD: int = _env_int("RINGRIFT_DISK_WARNING_THRESHOLD", 90)
 
     # Memory usage warning threshold (%)

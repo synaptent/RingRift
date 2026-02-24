@@ -65,6 +65,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
+from app.config.thresholds import DISK_PRODUCTION_HALT_PERCENT
 from app.coordination.singleton_mixin import SingletonMixin
 
 # December 30, 2025: Extracted ReservationManager as part of god class refactoring
@@ -221,8 +222,8 @@ class TaskLimits:
     max_task_spawns_per_minute: int = 60
     max_selfplay_spawns_per_minute: int = 30
 
-    # Resource thresholds (halt spawning above these) - raised from 70% to 85% (was starving pipeline)
-    halt_on_disk_percent: float = 85.0
+    # Resource thresholds (halt spawning above these) - from app.config.thresholds (canonical source)
+    halt_on_disk_percent: float = float(DISK_PRODUCTION_HALT_PERCENT)
     halt_on_memory_percent: float = 95.0
     halt_on_cpu_percent: float = 95.0
 

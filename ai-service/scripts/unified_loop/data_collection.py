@@ -32,12 +32,16 @@ except ImportError:
     HAS_GAME_DISCOVERY = False
     GameDiscovery = None
 
-# Resource checking
+# Resource checking - disk threshold from canonical source
 try:
     from scripts.p2p.constants import MAX_DISK_USAGE_PERCENT
     from scripts.p2p.resource import check_disk_has_capacity
 except ImportError:
-    MAX_DISK_USAGE_PERCENT = 70.0
+    try:
+        from app.config.thresholds import DISK_SYNC_TARGET_PERCENT
+        MAX_DISK_USAGE_PERCENT = float(DISK_SYNC_TARGET_PERCENT)
+    except ImportError:
+        MAX_DISK_USAGE_PERCENT = 70.0
     def check_disk_has_capacity():
         return (True, 0.0)
 

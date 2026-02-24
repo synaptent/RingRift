@@ -41,11 +41,13 @@ logger = logging.getLogger(__name__)
 # Import centralized thresholds for quality filtering
 try:
     from app.config.thresholds import (
+        DISK_PRODUCTION_HALT_PERCENT,
         HIGH_QUALITY_THRESHOLD,
         SYNC_MIN_QUALITY,
         SYNC_QUALITY_SAMPLE_SIZE,
     )
 except ImportError:
+    DISK_PRODUCTION_HALT_PERCENT = 85
     HIGH_QUALITY_THRESHOLD = 0.7
     SYNC_MIN_QUALITY = 0.5
     SYNC_QUALITY_SAMPLE_SIZE = 20
@@ -102,8 +104,8 @@ class AutoSyncConfig:
     max_concurrent_syncs: int = int(os.getenv("RINGRIFT_AUTO_SYNC_MAX_CONCURRENT", "1"))
     min_games_to_sync: int = 10
     bandwidth_limit_mbps: int = 20
-    # Disk usage thresholds (from sync_routing)
-    max_disk_usage_percent: float = 85.0
+    # Disk usage thresholds - from app.config.thresholds (canonical source)
+    max_disk_usage_percent: float = float(DISK_PRODUCTION_HALT_PERCENT)
     target_disk_usage_percent: float = 60.0
     # Enable automatic disk cleanup
     auto_cleanup_enabled: bool = True

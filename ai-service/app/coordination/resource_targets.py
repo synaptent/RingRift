@@ -39,7 +39,11 @@ from typing import Any, Optional, TYPE_CHECKING
 
 from app.utils.yaml_utils import safe_load_yaml
 from app.coordination.singleton_mixin import SingletonMixin
-from app.config.thresholds import SQLITE_CONNECT_TIMEOUT
+from app.config.thresholds import (
+    DISK_CRITICAL_PERCENT,
+    DISK_PRODUCTION_HALT_PERCENT,
+    SQLITE_CONNECT_TIMEOUT,
+)
 
 # Import interfaces for type hints (no circular dependency)
 # December 2025: IResourceTargets/IResourceTargetManager enable protocol-based typing
@@ -116,10 +120,9 @@ class UtilizationTargets:
     memory_warn: float = 70.0       # Reduce jobs
     memory_critical: float = 80.0   # Stop spawning (HARD LIMIT)
 
-    # Disk targets (percentage) - aligned with coordination_defaults.py
-    # Feb 2026: Raised from 70→90 to prevent premature write blocking
-    disk_warn: float = 80.0         # Trigger cleanup
-    disk_critical: float = 90.0     # Stop all data-producing tasks
+    # Disk targets (percentage) - from app.config.thresholds (canonical source)
+    disk_warn: float = float(DISK_PRODUCTION_HALT_PERCENT)   # Trigger cleanup / pause production
+    disk_critical: float = float(DISK_CRITICAL_PERCENT)      # Stop all data-producing tasks
 
     # Job concurrency targets
     jobs_per_core: float = 0.5      # Target 50% core utilization from jobs

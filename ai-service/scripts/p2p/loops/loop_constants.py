@@ -85,8 +85,8 @@ class LoopIntervals:
 class LoopThresholds:
     """Threshold values for loop decisions."""
 
-    # Disk usage
-    MAX_DISK_USAGE_PERCENT: int = 85         # Don't sync if disk > 85% (aligned with thresholds.py)
+    # Disk usage - from app.config.thresholds: DISK_PRODUCTION_HALT_PERCENT
+    MAX_DISK_USAGE_PERCENT: int = 85
 
     # Scaling thresholds
     SCALE_UP_THRESHOLD: int = 10             # Pending items per node to scale up

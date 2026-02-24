@@ -44,6 +44,8 @@ from enum import IntEnum
 from pathlib import Path
 from typing import Any, TypeVar
 
+from app.config.thresholds import DISK_PRODUCTION_HALT_PERCENT
+
 logger = logging.getLogger(__name__)
 
 # Duration scheduler integration (December 2025 consolidation)
@@ -524,7 +526,7 @@ class PriorityJobScheduler:
         for host, status in zip(hosts, statuses, strict=False):
             if not _is_reachable(status):
                 continue
-            if _get_disk(status) > 85:  # 85% limit (raised from 70% which starved pipeline)
+            if _get_disk(status) > DISK_PRODUCTION_HALT_PERCENT:
                 continue
             if _get_mem(status) > 80:  # 80% limit enforced 2025-12-16
                 continue

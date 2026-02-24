@@ -155,7 +155,7 @@ class NodeConfig:
     check_interval: int = 60  # seconds
     reconnect_interval: int = 300  # seconds
     max_local_selfplay_procs: int = 4
-    disk_threshold: int = 70  # percent - trigger cleanup above this (70% limit enforced 2025-12-15)
+    disk_threshold: int = 70  # percent - DISK_SYNC_TARGET_PERCENT from app.config.thresholds
     min_free_gb: float = 2.0  # trigger cleanup if free space is low
     fallback_board: str = "square8"
     fallback_num_players: int = 2

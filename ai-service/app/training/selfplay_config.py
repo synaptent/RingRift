@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from app.config.thresholds import DISK_PRODUCTION_HALT_PERCENT, DISK_SYNC_TARGET_PERCENT
 from app.models import BoardType
 from app.utils.canonical_naming import normalize_board_type as _canonical_normalize
 from app.utils.parallel_defaults import get_default_workers, get_parallel_games_default
@@ -245,9 +246,9 @@ class SelfplayConfig:
     max_moves: int = 1000  # Maximum moves per game before termination
     record_samples: bool = True  # Record training samples during selfplay
 
-    # Disk monitoring thresholds
-    disk_warning_percent: int = 75
-    disk_critical_percent: int = 85
+    # Disk monitoring thresholds - from app.config.thresholds (canonical source)
+    disk_warning_percent: int = DISK_SYNC_TARGET_PERCENT + 5  # 75 - slightly above sync target
+    disk_critical_percent: int = DISK_PRODUCTION_HALT_PERCENT
 
     # Ramdrive settings
     use_ramdrive: bool = False

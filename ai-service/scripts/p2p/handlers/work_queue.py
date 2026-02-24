@@ -62,7 +62,12 @@ WORK_TYPE_VRAM_REQUIREMENTS: dict[str, float] = {
 DEFAULT_VRAM_REQUIREMENT = 8.0  # Fallback for unknown work types
 
 # Disk usage threshold - refuse work if disk is too full
-DISK_USAGE_CRITICAL_THRESHOLD = 85  # Percentage
+# Aligned with DISK_PRODUCTION_HALT_PERCENT from app.config.thresholds
+try:
+    from app.config.thresholds import DISK_PRODUCTION_HALT_PERCENT
+    DISK_USAGE_CRITICAL_THRESHOLD = DISK_PRODUCTION_HALT_PERCENT
+except ImportError:
+    DISK_USAGE_CRITICAL_THRESHOLD = 85  # Percentage
 
 # GPU utilization threshold - refuse selfplay if GPU is already busy
 # Session 17.42 (Jan 20, 2026): Added to prevent OOM when training is running

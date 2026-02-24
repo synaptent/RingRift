@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.config.thresholds import DISK_CRITICAL_PERCENT, DISK_PRODUCTION_HALT_PERCENT
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.event_utils import parse_config_key
 from app.coordination.contracts import CoordinatorStatus
@@ -184,12 +185,11 @@ class DiskSpaceConfig:
     # 30-minute interval allowed disk to fill silently during active selfplay
     check_interval_seconds: int = 300
 
-    # Thresholds (percentages) - imported from centralized config
-    # See app/config/thresholds.py for DISK_WARNING_PERCENT, DISK_CRITICAL_PERCENT
-    proactive_cleanup_threshold: int = 75  # Start cleanup at 75%
-    warning_threshold: int = 80  # Emit warning at 80%
-    critical_threshold: int = 90  # Emit critical at 90% (block writes)
-    emergency_threshold: int = 95  # Emergency mode at 95%
+    # Thresholds (percentages) - from app.config.thresholds (canonical source)
+    proactive_cleanup_threshold: int = 75  # Start cleanup before production halt (85)
+    warning_threshold: int = DISK_PRODUCTION_HALT_PERCENT - 5  # 80 - warn approaching halt
+    critical_threshold: int = DISK_CRITICAL_PERCENT  # 90 - block writes
+    emergency_threshold: int = 95  # Emergency mode
 
     # Target after cleanup - aligned with auto_sync_daemon target_disk_usage_percent
     target_disk_usage: int = 50  # Clean down to 50%

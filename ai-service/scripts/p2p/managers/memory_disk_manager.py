@@ -37,9 +37,14 @@ logger = logging.getLogger(__name__)
 # Singleton instance
 _memory_disk_manager: "MemoryDiskManager | None" = None
 
-# Constants
-DISK_CLEANUP_THRESHOLD = 80  # Start cleanup at 80% disk usage
-DISK_CRITICAL_THRESHOLD = 90  # Force cleanup at 90%
+# Constants - aligned with app.config.thresholds (canonical source)
+try:
+    from app.config.thresholds import DISK_CRITICAL_PERCENT, DISK_PRODUCTION_HALT_PERCENT
+    DISK_CLEANUP_THRESHOLD = DISK_PRODUCTION_HALT_PERCENT - 5  # Start cleanup at 80% (before production halt)
+    DISK_CRITICAL_THRESHOLD = DISK_CRITICAL_PERCENT  # Force cleanup at 90%
+except ImportError:
+    DISK_CLEANUP_THRESHOLD = 80
+    DISK_CRITICAL_THRESHOLD = 90
 MEMORY_WARNING_THRESHOLD = 0.7  # 70% RAM
 MEMORY_CRITICAL_THRESHOLD = 0.85  # 85% RAM
 HTTP_TOTAL_TIMEOUT = 30  # seconds

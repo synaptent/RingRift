@@ -550,10 +550,11 @@ def get_system_resources(data_path: Path | None = None) -> SystemResources:
     )
 
     # Determine if disk is limited
-    # Disk-limited: < 50GB free OR > 70% used OR total < 100GB
+    # Disk-limited: < 50GB free OR > DISK_SYNC_TARGET_PERCENT used OR total < 100GB
+    # See app.config.thresholds for canonical disk thresholds (70/85/90%)
     resources.is_disk_limited = (
         resources.free_disk_gb < 50 or
-        resources.disk_usage_percent > 70 or
+        resources.disk_usage_percent > 70 or  # DISK_SYNC_TARGET_PERCENT
         resources.total_disk_gb < 100
     )
 

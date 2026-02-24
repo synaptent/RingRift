@@ -195,9 +195,14 @@ def create_alert(
 
 @dataclass
 class AlertThresholds:
-    """Configurable thresholds for alert generation."""
+    """Configurable thresholds for alert generation.
+
+    Disk thresholds aligned with app.config.thresholds (canonical source):
+    - 65% warning (5% below DISK_SYNC_TARGET_PERCENT)
+    - 70% critical (= DISK_SYNC_TARGET_PERCENT)
+    """
     disk_warning_percent: float = 65.0
-    disk_critical_percent: float = 70.0
+    disk_critical_percent: float = 70.0  # DISK_SYNC_TARGET_PERCENT
     memory_warning_percent: float = 80.0
     memory_critical_percent: float = 95.0
     cpu_warning_percent: float = 80.0
@@ -213,7 +218,7 @@ class AlertThresholds:
         """Create from environment variables."""
         return cls(
             disk_warning_percent=float(os.getenv("RINGRIFT_DISK_WARNING", "65")),
-            disk_critical_percent=float(os.getenv("RINGRIFT_DISK_CRITICAL", "70")),
+            disk_critical_percent=float(os.getenv("RINGRIFT_DISK_CRITICAL", "70")),  # DISK_SYNC_TARGET_PERCENT
             memory_warning_percent=float(os.getenv("RINGRIFT_MEMORY_WARNING", "80")),
             memory_critical_percent=float(os.getenv("RINGRIFT_MEMORY_CRITICAL", "95")),
             cpu_warning_percent=float(os.getenv("RINGRIFT_CPU_WARNING", "80")),
