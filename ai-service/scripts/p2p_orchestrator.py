@@ -2057,20 +2057,19 @@ class P2POrchestrator(
         logger.info(f"Safeguards: rate_limit={SPAWN_RATE_LIMIT_PER_MINUTE}/min, "
               f"load_max={LOAD_AVERAGE_MAX_MULTIPLIER}x, agent_mode={self.agent_mode}")
 
-    def _get_peers_snapshot_sync(self) -> list:
-        """Get a cached snapshot of peers values, with non-blocking lock acquisition.
+    def _get_peers_snapshot_nonblocking(self) -> list:
+        """Get a cached snapshot of peers values — NEVER blocks the event loop.
 
         Feb 23, 2026: LeaderOps functions run concurrently on the event loop but
-        need peers data. Acquiring peers_lock directly from async code blocks the
-        event loop when heartbeat thread-pool workers hold the lock (10-30s on
-        macOS resource detection). This helper:
+        need peers data. This helper is safe to call directly from async code:
 
         1. Returns cached data if fresh (< 2s old) — no lock touch at all
-        2. Uses lock.acquire(timeout=0.5) — gives up quickly if contended
+        2. Uses blocking=False — instant return if lock is held
         3. Falls back to stale cache if lock can't be acquired
 
-        Called via asyncio.to_thread() from async LeaderOps functions so lock
-        acquisition happens in a thread pool worker, not on the event loop.
+        Called DIRECTLY from async functions (no asyncio.to_thread needed).
+        Thread pool is saturated (8 workers, 30+ callers), so to_thread()
+        calls would queue for 10-38s waiting for a free worker.
         """
         now = time.time()
         cache_ttl = 2.0
@@ -2079,8 +2078,8 @@ class P2POrchestrator(
         if self._peers_snapshot_cache is not None and (now - self._peers_snapshot_cache_time) < cache_ttl:
             return self._peers_snapshot_cache
 
-        # Try to acquire lock with short timeout
-        acquired = self.peers_lock.acquire(timeout=0.5)
+        # Non-blocking lock acquisition — instant return if contended
+        acquired = self.peers_lock.acquire(blocking=False)
         if not acquired:
             # Lock contended — return stale cache or empty list
             if self._peers_snapshot_cache is not None:
@@ -11596,9 +11595,9 @@ print(json.dumps({{
         if now - last_scale < 120:
             return 0
 
-        # Feb 23, 2026: Use cached snapshot via thread pool to avoid blocking
+        # Feb 23, 2026: Use non-blocking cached snapshot to avoid blocking
         # event loop on peers_lock contention (was 10-30s on macOS)
-        peers_snapshot = await asyncio.to_thread(self._get_peers_snapshot_sync)
+        peers_snapshot = self._get_peers_snapshot_nonblocking()
 
         underutilized_gpu_nodes = []
 
@@ -11710,9 +11709,9 @@ print(json.dumps({{
         Returns dict with rebalancing actions taken.
         """
         try:
-            # Feb 23, 2026: Use cached snapshot via thread pool to avoid blocking
+            # Feb 23, 2026: Use non-blocking cached snapshot to avoid blocking
             # event loop on peers_lock contention
-            _all_peers = await asyncio.to_thread(self._get_peers_snapshot_sync)
+            _all_peers = self._get_peers_snapshot_nonblocking()
             alive_peers = [p for p in _all_peers if p.is_alive()]
 
             all_nodes = [*alive_peers, self.self_info]

@@ -1233,16 +1233,25 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 return self.bad_request("work_id required")
 
             # Dec 2025: Fixed race condition - read work item data under lock
-            # before calling complete_work() which modifies state
-            with wq.lock:
-                work_item = wq.items.get(work_id)
-                work_type = work_item.work_type if work_item else None
-                # Copy config dict to avoid stale reference after lock release
-                config = dict(work_item.config) if work_item else {}
-                assigned_to = work_item.claimed_by if work_item else ""
+            # before calling complete_work() which modifies state.
+            # Feb 23, 2026: Move lock acquisition to thread pool to avoid
+            # blocking event loop when maintenance holds the lock.
+            import asyncio as _asyncio
 
-            # Feb 2026: Use async wrapper to avoid blocking event loop
-            success = await wq.complete_work_async(work_id, result)
+            def _read_and_complete():
+                with wq.lock:
+                    work_item = wq.items.get(work_id)
+                    work_type = work_item.work_type if work_item else None
+                    config = dict(work_item.config) if work_item else {}
+                    assigned_to = work_item.claimed_by if work_item else ""
+                # Complete under same thread (lock released, but no race
+                # since complete_work re-acquires lock internally)
+                success = wq.complete_work(work_id, result)
+                return work_type, config, assigned_to, success
+
+            work_type, config, assigned_to, success = await _asyncio.to_thread(
+                _read_and_complete
+            )
 
             # Emit event to coordination EventRouter (Dec 2025 consolidation)
             if success:
@@ -1414,15 +1423,22 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 return self.bad_request("work_id required")
 
             # Dec 2025: Fixed race condition - read work item data under lock
-            # before calling fail_work() which modifies state
-            with wq.lock:
-                work_item = wq.items.get(work_id)
-                work_type = work_item.work_type.value if work_item and work_item.work_type else "unknown"
-                # Copy config dict to avoid stale reference after lock release
-                config = dict(work_item.config) if work_item else {}
-                node_id = work_item.claimed_by if work_item else ""
+            # before calling fail_work() which modifies state.
+            # Feb 23, 2026: Move to thread pool (see handle_work_complete).
+            import asyncio as _asyncio
 
-            success = wq.fail_work(work_id, error)
+            def _read_and_fail():
+                with wq.lock:
+                    work_item = wq.items.get(work_id)
+                    work_type = work_item.work_type.value if work_item and work_item.work_type else "unknown"
+                    config = dict(work_item.config) if work_item else {}
+                    _node_id = work_item.claimed_by if work_item else ""
+                success = wq.fail_work(work_id, error)
+                return work_type, config, _node_id, success
+
+            work_type, config, node_id, success = await _asyncio.to_thread(
+                _read_and_fail
+            )
 
             # Emit failure event to coordination EventRouter (Dec 2025 consolidation)
             if success:

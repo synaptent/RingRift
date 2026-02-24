@@ -991,11 +991,11 @@ class JobOrchestrator(BaseOrchestrator):
         # Find idle GPU-heavy nodes
         idle_nodes = []
 
-        # Feb 23, 2026: Use cached snapshot to avoid blocking event loop on
-        # peers_lock contention
-        _snapshot_fn = getattr(p2p, "_get_peers_snapshot_sync", None)
+        # Feb 23, 2026: Use non-blocking cached snapshot to avoid blocking event
+        # loop on peers_lock contention
+        _snapshot_fn = getattr(p2p, "_get_peers_snapshot_nonblocking", None)
         if _snapshot_fn is not None:
-            peers_snapshot = await asyncio.to_thread(_snapshot_fn)
+            peers_snapshot = _snapshot_fn()
         else:
             with p2p.peers_lock:
                 peers_snapshot = list(p2p.peers.values())

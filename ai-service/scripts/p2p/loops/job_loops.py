@@ -1749,14 +1749,23 @@ class WorkQueueMaintenanceLoop(BaseLoop):
         if wq is None:
             return
 
+        # Feb 23, 2026: Run maintenance ops in thread pool to avoid blocking
+        # the event loop. These acquire wq.lock and do synchronous SQLite writes
+        # which can take seconds under CPU pressure. Running in a thread keeps
+        # the event loop free to process HTTP requests (claim, complete, etc).
+        import asyncio
+
         # Check for timeouts
-        timed_out = wq.check_timeouts()
+        timed_out = await asyncio.to_thread(wq.check_timeouts)
         if timed_out:
             self._timeouts_processed += len(timed_out)
             logger.info(f"[WorkQueueMaintenance] {len(timed_out)} items timed out")
 
         # Cleanup old completed/failed items
-        removed = wq.cleanup_old_items(max_age_seconds=self.config.cleanup_age_seconds)
+        removed = await asyncio.to_thread(
+            wq.cleanup_old_items,
+            max_age_seconds=self.config.cleanup_age_seconds,
+        )
         if removed:
             self._items_cleaned += removed
             logger.info(f"[WorkQueueMaintenance] Cleaned up {removed} old items")
@@ -1765,7 +1774,8 @@ class WorkQueueMaintenanceLoop(BaseLoop):
         # - Stale PENDING items (never claimed, config may be invalid)
         # - Orphaned CLAIMED items (claimer crashed without timeout)
         if hasattr(wq, 'cleanup_stale_items'):
-            stale_stats = wq.cleanup_stale_items(
+            stale_stats = await asyncio.to_thread(
+                wq.cleanup_stale_items,
                 max_pending_age_hours=self.config.max_pending_age_hours,
                 max_claimed_age_hours=self.config.max_claimed_age_hours,
             )

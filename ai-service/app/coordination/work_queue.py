@@ -2836,12 +2836,14 @@ class WorkQueue:
             WorkItem if work was claimed, None otherwise
 
         Sprint 17.3 (Jan 4, 2026): Added for async-safe work claiming.
-        Feb 22, 2026: Call directly instead of asyncio.to_thread(). The 8-worker
-        thread pool is often saturated by other ops (manifest, sync, resource
-        detection), causing claim requests to hang. claim_work() is a fast
-        SQLite operation (<50ms) safe to call directly.
+        Feb 23, 2026: Restored asyncio.to_thread(). The Feb 22 change to call
+        directly caused event loop blocking when maintenance ops (check_timeouts,
+        cleanup) held self.lock for seconds during SQLite writes. Thread pool
+        is capped at 4 workers (d983420d8) so saturation is less of an issue
+        now that maintenance also runs in the thread pool.
         """
-        return self.claim_work(node_id, capabilities)
+        import asyncio
+        return await asyncio.to_thread(self.claim_work, node_id, capabilities)
 
     async def start_work_async(self, work_id: str) -> bool:
         """Async wrapper for start_work().
@@ -2855,9 +2857,10 @@ class WorkQueue:
             True if work was started, False otherwise
 
         Sprint 17.3 (Jan 4, 2026): Added for async-safe work status updates.
-        Feb 22, 2026: Call directly (fast SQLite op, thread pool often saturated).
+        Feb 23, 2026: Restored asyncio.to_thread() (see claim_work_async).
         """
-        return self.start_work(work_id)
+        import asyncio
+        return await asyncio.to_thread(self.start_work, work_id)
 
     async def complete_work_async(
         self, work_id: str, result: dict[str, Any] | None = None
@@ -2874,9 +2877,10 @@ class WorkQueue:
             True if work was completed, False otherwise
 
         Sprint 17.3 (Jan 4, 2026): Added for async-safe work completion.
-        Feb 22, 2026: Call directly (fast SQLite op, thread pool often saturated).
+        Feb 23, 2026: Restored asyncio.to_thread() (see claim_work_async).
         """
-        return self.complete_work(work_id, result)
+        import asyncio
+        return await asyncio.to_thread(self.complete_work, work_id, result)
 
     async def fail_work_async(self, work_id: str, error: str = "") -> bool:
         """Async wrapper for fail_work().
