@@ -11448,9 +11448,15 @@ print(json.dumps({{
                 # Gossip ops REMOVED - they have dedicated LoopManager loops
                 # and were redundantly blocking this loop for 15-30s.
                 _ops = [
-                    ("check_local_stuck_jobs", lambda: self.job_lifecycle_manager.check_local_stuck_jobs()),
                     ("check_emergency_coordinator_fallback", lambda: self._check_emergency_coordinator_fallback()),
                 ]
+                # Feb 2026: Coordinator doesn't run local selfplay/training, so
+                # check_local_stuck_jobs (30-54s scanning pgrep/ps) is wasted CPU.
+                # Only run on GPU/worker nodes that actually have local jobs.
+                if not _is_coord:
+                    _ops.append(
+                        ("check_local_stuck_jobs", lambda: self.job_lifecycle_manager.check_local_stuck_jobs()),
+                    )
                 # Coordinator doesn't run selfplay/training locally, doesn't sync
                 # from peers, and doesn't need local resource cleanup (no local
                 # game data). Skip all heavy ops that use asyncio.to_thread() or
