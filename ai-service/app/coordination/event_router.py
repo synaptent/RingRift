@@ -2475,6 +2475,9 @@ async def emit_evaluation_completed(
         payload["board_type"] = board_type
     if num_players is not None:
         payload["num_players"] = num_players
+    # Feb 24, 2026: config_key is required by auto_promotion_daemon
+    if board_type is not None and num_players is not None and "config_key" not in payload:
+        payload["config_key"] = f"{board_type}_{num_players}p"
     if opponent_results is not None:
         payload["opponent_results"] = opponent_results
     if harness_results is not None:

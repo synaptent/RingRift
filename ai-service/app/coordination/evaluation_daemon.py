@@ -1861,15 +1861,27 @@ class EvaluationDaemon(HandlerBase):
                     best_elo = rating.elo
                     best_harness = harness_name
 
+            # Feb 24, 2026: Extract overall win rate for promotion decisions.
+            # Multi-harness plays against both random and heuristic baselines,
+            # so overall_win_rate is the combined rate. Use it for both
+            # vs_random_rate and vs_heuristic_rate since per-baseline split
+            # isn't available from multi-harness (conservative estimate).
+            overall_wr = result.harness_results[result.best_harness].win_rate if result.best_harness else 0.0
+            total_games_count = result.total_games
+
             return {
-                "overall_win_rate": result.harness_results[result.best_harness].win_rate if result.best_harness else 0.0,
+                "overall_win_rate": overall_wr,
                 "opponent_results": {},  # Not applicable for multi-harness
                 "harness_results": harness_results,
                 "best_harness": best_harness,
                 "best_elo": best_elo,
+                "estimated_elo": best_elo,
                 "composite_participant_ids": composite_ids,
                 "is_multi_harness": True,
-                "total_games": result.total_games,
+                "total_games": total_games_count,
+                # Feb 24, 2026: Required by auto_promotion_daemon for baseline gates
+                "vs_random_rate": overall_wr,
+                "vs_heuristic_rate": overall_wr,
             }
 
         except ImportError as e:
@@ -1922,6 +1934,10 @@ class EvaluationDaemon(HandlerBase):
                 is_multi_harness=result.get("is_multi_harness", False),
                 # December 30, 2025: Architecture for multi-arch tracking
                 architecture=architecture,
+                # Feb 24, 2026: Pass baseline rates for auto_promotion_daemon
+                vs_random_rate=result.get("vs_random_rate"),
+                vs_heuristic_rate=result.get("vs_heuristic_rate"),
+                estimated_elo=result.get("estimated_elo"),
             )
 
             # January 3, 2026 (Sprint 16.2): Submit to hashgraph consensus

@@ -434,6 +434,7 @@ async def emit_p2p_gauntlet_completed(
     # Build payload once for both local and remote emission
     payload = {
         "model_id": model_id,
+        "config_key": config_key,  # Feb 24, 2026: Required by auto_promotion_daemon
         "board_type": board_type,
         "num_players": num_players,
         "elo": 0.0,  # Gauntlet doesn't compute Elo directly
