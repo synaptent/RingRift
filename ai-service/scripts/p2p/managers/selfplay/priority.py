@@ -235,23 +235,28 @@ class PriorityCalculatorMixin:
         Returns:
             Config key (e.g., "hex8_2p") or None if no valid config
         """
-        # Standard configs with priority weights
+        # Standard configs with priority weights.
+        # Feb 2026: Rebalanced based on Elo progress. Configs at/above 2000 Elo
+        # get maintenance weight (3); weak/stalled configs get high priority (8-9).
+        # Dynamic Elo gap factor further amplifies weak configs at runtime.
         STANDARD_CONFIGS = [
-            # High priority: Underserved/complex configs
-            ("hexagonal_3p", 8),
-            ("hexagonal_4p", 8),
+            # Highest priority: Weakest 2p configs (1610-1660 Elo, stalled)
+            ("square19_2p", 9),
+            ("hex8_2p", 9),
+            ("hexagonal_2p", 9),
+            # High priority: Weak 4p configs (1517 Elo)
+            ("square19_4p", 8),
+            # Medium-high: 3p configs still improving (1825 Elo)
+            ("hexagonal_3p", 7),
             ("square19_3p", 7),
-            ("square19_4p", 7),
             ("hex8_3p", 6),
-            ("hex8_4p", 6),
-            # Medium priority: Standard 2-player
-            ("hex8_2p", 5),
-            ("square8_2p", 5),
-            ("hexagonal_2p", 5),
-            # Lower priority: Well-covered configs
-            ("square8_3p", 4),
-            ("square8_4p", 4),
-            ("square19_2p", 4),
+            ("square8_2p", 6),
+            ("square8_3p", 5),
+            # Approaching target (1900+ Elo)
+            ("hexagonal_4p", 4),
+            # At or above target (2000+ Elo) - maintenance mode
+            ("hex8_4p", 3),
+            ("square8_4p", 3),
         ]
 
         # Apply dynamic boosts from curriculum weights

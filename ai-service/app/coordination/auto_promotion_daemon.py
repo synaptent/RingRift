@@ -420,6 +420,28 @@ class AutoPromotionDaemon(HandlerBase):
             return 1  # Single pass for bootstrap configs
         return self.config.consecutive_passes_required
 
+    def _get_effective_h2h_win_rate(self, candidate: PromotionCandidate) -> float:
+        """Get effective head-to-head win rate threshold, adaptive to Elo.
+
+        Feb 2026: The 58% threshold (p<0.01 at n=200) is mathematically sound
+        for mature configs but blocks ALL promotion for weak configs. A candidate
+        at 1600 Elo playing a 1580 canonical will win ~53%, never reaching 58%.
+
+        Tiered approach:
+        - Elo < 1700: 52% (any measurable improvement accelerates bootstrap)
+        - Elo 1700-1900: 55% (moderate confidence)
+        - Elo >= 1900: 58% (full statistical rigor near target)
+
+        Returns:
+            Effective min win rate for head-to-head gate.
+        """
+        elo = candidate.estimated_elo
+        if elo > 0 and elo < 1700:
+            return 0.52
+        if elo > 0 and elo < 1900:
+            return 0.55
+        return self.config.min_win_rate_vs_canonical
+
     def _get_effective_min_elo_improvement(self, training_game_count: int) -> float:
         """Get effective minimum Elo improvement, accounting for bootstrap phase.
 
@@ -1117,19 +1139,27 @@ class AutoPromotionDaemon(HandlerBase):
         if not self.config.head_to_head_enabled:
             return True, "head_to_head_disabled"
 
+        # Feb 2026: Use Elo-adaptive threshold so weak configs can still promote
+        effective_threshold = self._get_effective_h2h_win_rate(candidate)
+        if effective_threshold != self.config.min_win_rate_vs_canonical:
+            logger.info(
+                f"[AutoPromotion] {candidate.config_key}: Using adaptive H2H threshold "
+                f"{effective_threshold:.0%} (Elo={candidate.estimated_elo:.0f})"
+            )
+
         # Check if we already have head-to-head results cached
         cached_result = candidate.evaluation_results.get("CANONICAL")
         if cached_result is not None:
             games = candidate.evaluation_games.get("CANONICAL", 0)
-            if cached_result >= self.config.min_win_rate_vs_canonical:
+            if cached_result >= effective_threshold:
                 return True, (
                     f"head_to_head_pass: {cached_result:.1%} >= "
-                    f"{self.config.min_win_rate_vs_canonical:.0%} (games={games})"
+                    f"{effective_threshold:.0%} (games={games})"
                 )
             else:
                 return False, (
                     f"head_to_head_fail: {cached_result:.1%} < "
-                    f"{self.config.min_win_rate_vs_canonical:.0%} (games={games})"
+                    f"{effective_threshold:.0%} (games={games})"
                 )
 
         # Need to run head-to-head games
@@ -1206,15 +1236,15 @@ class AutoPromotionDaemon(HandlerBase):
             candidate.evaluation_results["CANONICAL"] = win_rate
             candidate.evaluation_games["CANONICAL"] = games_played
 
-            if win_rate >= self.config.min_win_rate_vs_canonical:
+            if win_rate >= effective_threshold:
                 return True, (
                     f"head_to_head_pass: {win_rate:.1%} >= "
-                    f"{self.config.min_win_rate_vs_canonical:.0%} (games={games_played})"
+                    f"{effective_threshold:.0%} (games={games_played})"
                 )
             else:
                 return False, (
                     f"head_to_head_fail: {win_rate:.1%} < "
-                    f"{self.config.min_win_rate_vs_canonical:.0%} (games={games_played})"
+                    f"{effective_threshold:.0%} (games={games_played})"
                 )
 
         except ImportError as e:

@@ -643,6 +643,19 @@ class CircuitBreaker:
         This prevents permanent exclusion of nodes with transient issues.
         """
         if circuit.state == CircuitState.OPEN:
+            # Feb 2026: Decay consecutive_opens over time while OPEN.
+            # Every 30 minutes in OPEN state, reduce consecutive_opens by 1.
+            # This prevents nodes from being stuck at max backoff tier forever
+            # after a burst of failures that has long since resolved.
+            if circuit.opened_at and circuit.consecutive_opens > 0:
+                open_duration = time.time() - circuit.opened_at
+                decay_steps = int(open_duration / 1800)  # 30 min per decay step
+                if decay_steps > 0:
+                    decayed = min(decay_steps, circuit.consecutive_opens)
+                    circuit.consecutive_opens = max(0, circuit.consecutive_opens - decayed)
+                    if decayed > 0 and circuit.escalation_tier > 0:
+                        circuit.escalation_tier = max(0, circuit.escalation_tier - 1)
+
             # Use exponential backoff timeout based on consecutive opens
             timeout = self._compute_backoff_timeout(circuit)
 
@@ -717,6 +730,10 @@ class CircuitBreaker:
                     circuit.escalation_tier = 0
                     circuit.escalation_entered_at = None
                     circuit.last_probe_at = None
+                    # Feb 2026: Reset TTL clock on successful recovery so a
+                    # future re-open gets a fresh 24h window instead of
+                    # inheriting stale TTL from the previous open cycle.
+                    circuit.created_at = time.time()
             elif circuit.state == CircuitState.CLOSED:
                 # Reset failure count on success
                 circuit.failure_count = 0
