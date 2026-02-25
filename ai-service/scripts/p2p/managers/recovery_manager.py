@@ -103,14 +103,18 @@ class RecoveryConfig:
     node_recovery_cooldown: float = 600.0  # 10 minutes between recovery attempts
     node_recovery_check_interval: float = 120.0  # Check every 2 minutes
     max_recoveries_per_cycle: int = 2  # Max nodes to recover per cycle
+    max_concurrent_recoveries: int = 2  # Max in-flight recovery tasks
     stale_gossip_threshold: float = 300.0  # 5 minutes
     high_failure_threshold: int = 5  # Consecutive failures
     disk_full_threshold: float = 95.0  # Disk usage percentage
 
     # SSH recovery settings
-    ssh_timeout: float = 45.0
+    ssh_timeout: float = 20.0  # Feb 24: Reduced from 45s — no reason to wait longer for dead nodes
     ssh_connect_timeout: float = 10.0
     service_name: str = "ringrift-p2p"
+
+    # Exponential backoff for failed recoveries
+    max_recovery_cooldown: float = 3600.0  # Cap at 60 minutes
 
 
 @dataclass
@@ -184,6 +188,8 @@ class RecoveryManager:
             "failures": 0,
         }
         self._last_node_recovery_check: float = 0
+        self._active_recoveries: set[str] = set()  # node_ids with in-flight recovery tasks
+        self._recovery_failure_counts: dict[str, int] = {}  # node_id -> consecutive failure count
 
     @property
     def nat_type(self) -> str:
@@ -717,13 +723,60 @@ class RecoveryManager:
             if needs_recovery:
                 nodes_to_recover.append((node_id, peer, reason))
 
-        # Attempt recovery for identified nodes
+        # Feb 24, 2026: Fire-and-forget recovery — detection loop completes immediately,
+        # slow SSH recovery runs in background without blocking LeaderOps.
         for node_id, peer, reason in nodes_to_recover[:self.config.max_recoveries_per_cycle]:
-            logger.info(f"NODE RECOVERY: Attempting to recover {node_id} ({reason})")
+            # Skip nodes already being recovered
+            if node_id in self._active_recoveries:
+                logger.debug(f"NODE RECOVERY: Skipping {node_id}, recovery already in flight")
+                continue
+
+            # Cap concurrent recoveries to prevent thread pool exhaustion
+            if len(self._active_recoveries) >= self.config.max_concurrent_recoveries:
+                logger.debug(
+                    f"NODE RECOVERY: Skipping {node_id}, "
+                    f"concurrent recovery cap ({self.config.max_concurrent_recoveries}) reached"
+                )
+                break
+
+            # Apply exponential backoff: after failed recovery, double cooldown
+            failure_count = self._recovery_failure_counts.get(node_id, 0)
+            if failure_count > 0:
+                backoff_cooldown = min(
+                    self.config.node_recovery_cooldown * (2 ** failure_count),
+                    self.config.max_recovery_cooldown,
+                )
+                last_attempt = self._node_recovery_attempts.get(node_id, 0)
+                if now - last_attempt < backoff_cooldown:
+                    logger.debug(
+                        f"NODE RECOVERY: Skipping {node_id}, in backoff cooldown "
+                        f"({backoff_cooldown:.0f}s after {failure_count} failures)"
+                    )
+                    continue
+
+            logger.info(f"NODE RECOVERY: Launching background recovery for {node_id} ({reason})")
             self._node_recovery_attempts[node_id] = now
             self._node_recovery_metrics["attempts"] += 1
             self._stats.node_recovery_attempts += 1
 
+            safe_create_task(
+                self._background_recovery(node_id, peer, reason),
+                name=f"recovery-{node_id}",
+            )
+
+    async def _background_recovery(self, node_id: str, peer: Any, reason: str) -> None:
+        """Run node recovery in the background without blocking the detection loop.
+
+        Feb 24, 2026: Extracted from check_node_recovery() to make detection fast (<1s).
+        SSH recovery (slow) runs as a background task, tracked via _active_recoveries.
+
+        Args:
+            node_id: The node identifier.
+            peer: The peer object with host information.
+            reason: Why recovery was triggered.
+        """
+        self._active_recoveries.add(node_id)
+        try:
             # Notify on recovery attempt
             safe_create_task(self._orchestrator.notifier.send(
                 title="Node Recovery Initiated",
@@ -735,12 +788,13 @@ class RecoveryManager:
                     "Host": getattr(peer, "host", "unknown"),
                 },
                 node_id=self._orchestrator.node_id,
-            ), name="recovery-notify-attempt")
+            ), name=f"recovery-notify-attempt-{node_id}")
 
             success = await self.attempt_node_recovery(node_id, peer)
             if success:
                 self._node_recovery_metrics["successes"] += 1
                 self._stats.node_recovery_successes += 1
+                self._recovery_failure_counts.pop(node_id, None)  # Reset on success
                 logger.info(f"NODE RECOVERY: Successfully restarted {node_id}")
                 safe_create_task(self._orchestrator.notifier.send(
                     title="Node Recovery Success",
@@ -748,11 +802,17 @@ class RecoveryManager:
                     level="info",
                     fields={"Node": node_id, "Reason": reason},
                     node_id=self._orchestrator.node_id,
-                ), name="recovery-notify-success")
+                ), name=f"recovery-notify-success-{node_id}")
             else:
                 self._node_recovery_metrics["failures"] += 1
                 self._stats.node_recovery_failures += 1
-                logger.info(f"NODE RECOVERY: Failed to restart {node_id}")
+                self._recovery_failure_counts[node_id] = (
+                    self._recovery_failure_counts.get(node_id, 0) + 1
+                )
+                logger.info(
+                    f"NODE RECOVERY: Failed to restart {node_id} "
+                    f"(failures={self._recovery_failure_counts[node_id]})"
+                )
                 safe_create_task(self._orchestrator.notifier.send(
                     title="Node Recovery Failed",
                     message=f"Failed to recover node {node_id} ({reason})",
@@ -763,7 +823,16 @@ class RecoveryManager:
                         "Action": "Manual intervention may be required",
                     },
                     node_id=self._orchestrator.node_id,
-                ), name="recovery-notify-failure")
+                ), name=f"recovery-notify-failure-{node_id}")
+        except Exception as e:  # noqa: BLE001
+            self._node_recovery_metrics["failures"] += 1
+            self._stats.node_recovery_failures += 1
+            self._recovery_failure_counts[node_id] = (
+                self._recovery_failure_counts.get(node_id, 0) + 1
+            )
+            logger.warning(f"NODE RECOVERY: Background recovery error for {node_id}: {e}")
+        finally:
+            self._active_recoveries.discard(node_id)
 
     async def attempt_node_recovery(self, node_id: str, peer: Any) -> bool:
         """Attempt to recover a node by restarting its service via SSH.

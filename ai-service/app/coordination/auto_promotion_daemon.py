@@ -1151,8 +1151,38 @@ class AutoPromotionDaemon(HandlerBase):
             )
 
             if not os.path.exists(canonical_path):
-                logger.info(f"[AutoPromotion] No canonical model for {config_key}, skipping head-to-head")
-                return True, f"no_canonical_model: {config_key}"
+                # Feb 24, 2026: First-ever promotion requires stricter gauntlet threshold.
+                # Without a canonical model to compare against, we must ensure the first
+                # model beats baselines convincingly (65% vs random+heuristic) before it
+                # becomes the reference that all future models are compared to.
+                gauntlet_wr = 0.0
+                total_games = 0
+                total_wins = 0
+                for opp, wr in candidate.evaluation_results.items():
+                    games = candidate.evaluation_games.get(opp, 0)
+                    if games > 0:
+                        total_games += games
+                        total_wins += int(wr * games)
+                if total_games > 0:
+                    gauntlet_wr = total_wins / total_games
+
+                first_promotion_threshold = 0.65
+                if gauntlet_wr < first_promotion_threshold:
+                    logger.warning(
+                        f"[AutoPromotion] No canonical model for {config_key} — "
+                        f"first promotion needs gauntlet_win_rate >= {first_promotion_threshold} "
+                        f"(got {gauntlet_wr:.2f})"
+                    )
+                    return False, (
+                        f"no_canonical_model: first model needs gauntlet_win_rate >= "
+                        f"{first_promotion_threshold} (got {gauntlet_wr:.2f})"
+                    )
+
+                logger.info(
+                    f"[AutoPromotion] No canonical model for {config_key}, "
+                    f"first promotion approved with gauntlet_wr={gauntlet_wr:.2f}"
+                )
+                return True, f"no_canonical_model_first_promotion: gauntlet_wr={gauntlet_wr:.2f}"
 
             # Run head-to-head games
             logger.info(
