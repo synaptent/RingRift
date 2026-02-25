@@ -1305,7 +1305,7 @@ def _register_training_sync(
             is_leader=ctx.is_leader,
             sync_to_training_nodes=orchestrator._sync_selfplay_to_training_nodes,
             get_last_sync_time=lambda: getattr(orchestrator, 'last_training_sync_time', 0.0),
-            check_disk_capacity=lambda: check_disk_has_capacity(85.0),  # DISK_PRODUCTION_HALT_PERCENT
+            check_disk_capacity=lambda: check_disk_has_capacity(90.0),  # DISK_PRODUCTION_HALT_PERCENT
         )
         manager.register(training_sync)
         logger.info("[LoopRegistry] TrainingSyncLoop registered")

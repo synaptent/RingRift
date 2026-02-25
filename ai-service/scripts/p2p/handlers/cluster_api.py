@@ -427,7 +427,7 @@ class ClusterApiHandlersMixin:
                     })
 
                 # Check disk warnings
-                if peer.disk_percent >= 85:  # DISK_PRODUCTION_HALT_PERCENT from app.config.thresholds
+                if peer.disk_percent >= 90:  # DISK_PRODUCTION_HALT_PERCENT from app.config.thresholds
                     disk_warnings.append({
                         "node_id": peer.node_id,
                         "disk_percent": peer.disk_percent,

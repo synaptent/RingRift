@@ -689,7 +689,7 @@ class SyncOrchestrator(BaseOrchestrator):
 
         # Skip if under disk pressure
         self_info = getattr(p2p, "self_info", None)
-        if self_info and getattr(self_info, "disk_percent", 0) > 85:  # DISK_PRODUCTION_HALT_PERCENT
+        if self_info and getattr(self_info, "disk_percent", 0) > 90:  # DISK_PRODUCTION_HALT_PERCENT
             return
 
         # Get our local manifest (use cache for speed)

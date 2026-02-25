@@ -855,8 +855,8 @@ MEMORY_CRITICAL_PERCENT = 80
 #   All write operations are blocked and aggressive cleanup is triggered.
 
 DISK_SYNC_TARGET_PERCENT = 70       # Max disk for sync/distribution targeting
-DISK_PRODUCTION_HALT_PERCENT = 85   # Pause selfplay/training/exports
-DISK_CRITICAL_PERCENT = 90          # Emergency halt, block all writes
+DISK_PRODUCTION_HALT_PERCENT = 90   # Pause selfplay/training/exports
+DISK_CRITICAL_PERCENT = 95          # Emergency halt, block all writes
 
 # Legacy aliases (prefer the named constants above)
 DISK_WARNING_PERCENT = DISK_SYNC_TARGET_PERCENT

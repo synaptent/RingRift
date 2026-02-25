@@ -86,7 +86,7 @@ class LoopThresholds:
     """Threshold values for loop decisions."""
 
     # Disk usage - from app.config.thresholds: DISK_PRODUCTION_HALT_PERCENT
-    MAX_DISK_USAGE_PERCENT: int = 85
+    MAX_DISK_USAGE_PERCENT: int = 90
 
     # Scaling thresholds
     SCALE_UP_THRESHOLD: int = 10             # Pending items per node to scale up
