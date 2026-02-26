@@ -255,6 +255,17 @@ class AutoPromotionDaemon(HandlerBase):
 
                 config_key = parts[1]  # "square8_2p"
 
+                # Skip if candidate is identical to canonical (already promoted)
+                canonical_path = models_dir / f"canonical_{config_key}.pth"
+                if canonical_path.exists():
+                    try:
+                        cand_stat = candidate_path.stat()
+                        canon_stat = canonical_path.stat()
+                        if cand_stat.st_size == canon_stat.st_size and canon_stat.st_mtime >= cand_stat.st_mtime:
+                            continue  # Same size and canonical is newer → already promoted
+                    except OSError:
+                        pass
+
                 # Check if already promoted recently (cooldown)
                 if config_key in self._candidates:
                     cand = self._candidates[config_key]
