@@ -2802,14 +2802,17 @@ class MasterLoopController:
         num_players: int,
         num_games: int,
     ) -> bool:
-        """Dispatch selfplay directly to a node via /selfplay/start endpoint.
+        """Dispatch selfplay to a node via work queue (preferred) or direct HTTP.
 
-        December 29, 2025: Added to fix autonomous selfplay dispatch.
-        Previously relied on event emission which IdleResourceDaemon didn't act on.
+        Feb 2026: Changed to use work queue as primary dispatch path. Direct HTTP
+        dispatch fails for NAT-blocked/firewall-blocked Lambda nodes because port
+        8770 is only accessible via localhost on those nodes. The P2P WorkerPullLoop
+        on each node claims work from the queue, which works regardless of NAT.
+
+        Falls back to direct HTTP for local/coordinator nodes where it's faster.
         """
         try:
-            from app.coordination.p2p_integration import dispatch_selfplay_direct
-            from app.config.cluster_config import get_p2p_port, load_cluster_config
+            from app.config.cluster_config import load_cluster_config
 
             # Get node host from cluster config
             config = load_cluster_config()
@@ -2823,13 +2826,7 @@ class MasterLoopController:
             if host_info.get("selfplay_enabled") is False:
                 return False
 
-            # Try tailscale_ip first, then fall back to node_id
-            host = host_info.get("tailscale_ip") or host_info.get("ssh_host") or node_id
-            port = host_info.get("p2p_port") or get_p2p_port()
-
             # Select engine using multi-armed bandit (December 2025)
-            # The bandit learns which engine produces best Elo improvement per config
-            # Jan 17, 2026: Now passes num_players for better engine filtering
             config_key = f"{board_type}_{num_players}p"
             try:
                 from app.coordination.selfplay_engine_bandit import get_selfplay_engine_bandit
@@ -2846,31 +2843,76 @@ class MasterLoopController:
                     self._states[config_key].last_selfplay_games += num_games
 
             except (ImportError, AttributeError) as e:
-                # Fallback to diverse engine selection if bandit unavailable
-                # Jan 17, 2026: Updated fallback with more diverse engines
                 logger.debug(f"[MasterLoop] Bandit unavailable ({e}), using fallback")
                 import random
                 if num_players >= 3:
-                    # Multiplayer: prefer engines designed for 3-4 player games
                     engine_mode = random.choice(["maxn", "brs", "paranoid", "gumbel-mcts", "heuristic-only"])
                 elif board_type in ("square19", "hexagonal"):
-                    # Large boards: mix of search and fast engines
                     engine_mode = random.choice(["gumbel-mcts", "nnue-guided", "descent-only", "heuristic-only"])
                 else:
-                    # Small 2-player boards: full diversity
                     engine_mode = random.choice(["gumbel-mcts", "nnue-guided", "descent-only", "policy-only", "brs"])
 
-            result = await dispatch_selfplay_direct(
-                target_node=node_id,
-                host=host,
-                port=port,
-                board_type=board_type,
-                num_players=num_players,
-                num_games=num_games,
-                engine_mode=engine_mode,
-            )
+            # For local node, use direct dispatch (faster, no work queue overhead)
+            from app.config.env import env
+            if node_id == env.node_id or node_id in ("local-mac", "localhost"):
+                try:
+                    from app.coordination.p2p_integration import dispatch_selfplay_direct
+                    from app.config.cluster_config import get_p2p_port
+                    result = await dispatch_selfplay_direct(
+                        target_node=node_id,
+                        host="127.0.0.1",
+                        port=get_p2p_port(),
+                        board_type=board_type,
+                        num_players=num_players,
+                        num_games=num_games,
+                        engine_mode=engine_mode,
+                    )
+                    if result.success:
+                        return True
+                except Exception:
+                    pass  # Fall through to work queue
 
-            return result.success
+            # Primary path: submit to work queue for WorkerPullLoop to claim
+            try:
+                from app.coordination.work_queue import get_work_queue, WorkItem, WorkType
+
+                wq = get_work_queue()
+                item = WorkItem(
+                    work_type=WorkType.SELFPLAY,
+                    priority=60,
+                    config={
+                        "board_type": board_type,
+                        "num_players": num_players,
+                        "num_games": num_games,
+                        "engine_mode": engine_mode,
+                        "target_node": node_id,
+                        "source": "master_loop",
+                    },
+                )
+                await wq.add_work_async(item)
+                return True
+            except Exception as e:
+                logger.debug(f"[MasterLoop] Work queue dispatch failed: {e}")
+
+            # Last resort: try direct HTTP dispatch
+            try:
+                from app.coordination.p2p_integration import dispatch_selfplay_direct
+                from app.config.cluster_config import get_p2p_port
+
+                host = host_info.get("tailscale_ip") or host_info.get("ssh_host") or node_id
+                port = host_info.get("p2p_port") or get_p2p_port()
+                result = await dispatch_selfplay_direct(
+                    target_node=node_id,
+                    host=host,
+                    port=port,
+                    board_type=board_type,
+                    num_players=num_players,
+                    num_games=num_games,
+                    engine_mode=engine_mode,
+                )
+                return result.success
+            except Exception:
+                return False
 
         except ImportError as e:
             logger.warning(f"[MasterLoop] P2P dispatch not available: {e}")
