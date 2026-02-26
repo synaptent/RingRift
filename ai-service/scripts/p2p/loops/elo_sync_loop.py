@@ -27,6 +27,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any, Callable
 
+from app.core.async_context import safe_create_task
 from .base import BackoffConfig, BaseLoop
 from .loop_constants import LoopIntervals, LoopLimits
 
@@ -209,8 +210,8 @@ class EloSyncLoop(BaseLoop):
                     )
 
         try:
-            loop = asyncio.get_running_loop()
-            self._reenable_task = loop.create_task(_reenable_check_loop())
+            asyncio.get_running_loop()  # Guard: safe_create_task needs a running loop
+            self._reenable_task = safe_create_task(_reenable_check_loop(), name="elo-sync-reenable")
             logger.info(
                 f"[{self.name}] Scheduled re-enable check every {interval}s"
             )

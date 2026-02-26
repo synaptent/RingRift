@@ -638,10 +638,10 @@ class LeadershipOrchestrator(BaseOrchestrator):
         Jan 29, 2026: Helper method for consistency.
         """
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()  # Guard: safe_create_task needs a running loop
             if hasattr(self._p2p, "_start_election"):
                 with contextlib.suppress(RuntimeError):
-                    loop.create_task(self._p2p._start_election())
+                    safe_create_task(self._p2p._start_election(), name="leadership-orch-election")
         except RuntimeError:
             pass  # No running event loop
 

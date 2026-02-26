@@ -93,8 +93,8 @@ class LeadershipTransitionsMixin(P2PMixinBase):
             )
             return
         try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(self._complete_step_down_async(reason))
+            asyncio.get_running_loop()  # Guard: safe_create_task needs a running loop
+            safe_create_task(self._complete_step_down_async(reason), name="ulsm-step-down")
             logger.info(f"ULSM: Scheduled step-down for reason={reason.value}")
         except RuntimeError:
             # No running loop - this shouldn't happen in normal operation
