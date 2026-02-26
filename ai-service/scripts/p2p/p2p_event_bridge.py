@@ -339,23 +339,48 @@ async def emit_p2p_work_completed(
             )
             logger.debug(f"[P2PEventBridge] Emitted TRAINING_COMPLETED for {config_key}")
 
-        elif work_type in ("tournament", "gauntlet"):
+        elif work_type == "gauntlet":
+            # Only gauntlet completions are real evaluations — include config_key
+            payload = {
+                "model_id": result.get("best_model") or result.get("model_id", ""),
+                "config_key": config_key,  # Feb 2026: Required by auto_promotion_daemon
+                "board_type": board_type,
+                "num_players": num_players,
+                "elo": result.get("best_elo") or result.get("elo", 0.0),
+                "win_rate": result.get("win_rate", 0.0),
+                "games_played": result.get("games_played", 0),
+                "elo_delta": result.get("elo_delta", 0.0),
+                "passed": result.get("passed", False),
+                "vs_random_rate": result.get("vs_random_rate", 0.0),
+                "vs_heuristic_rate": result.get("vs_heuristic_rate", 0.0),
+                "node_id": node_id,
+                "timestamp": timestamp,
+            }
             await publish(
                 event_type="EVALUATION_COMPLETED",
+                payload=payload,
+                source="p2p_work_queue",
+            )
+            logger.debug(f"[P2PEventBridge] Emitted EVALUATION_COMPLETED for {config_key}")
+
+        elif work_type == "tournament":
+            # Feb 2026: Tournaments are NOT evaluations — they produce training data,
+            # not promotion decisions. Previously emitted EVALUATION_COMPLETED with
+            # empty config_key and 0% win_rate, generating ~760 phantom events/day.
+            await publish(
+                event_type="TOURNAMENT_COMPLETED",
                 payload={
-                    "model_id": result.get("best_model") or result.get("model_id", ""),
+                    "config_key": config_key,
                     "board_type": board_type,
                     "num_players": num_players,
-                    "elo": result.get("best_elo") or result.get("elo", 0.0),
-                    "win_rate": result.get("win_rate", 0.0),
                     "games_played": result.get("games_played", 0),
-                    "elo_delta": result.get("elo_delta", 0.0),
                     "node_id": node_id,
+                    "duration_seconds": duration_seconds,
                     "timestamp": timestamp,
                 },
                 source="p2p_work_queue",
             )
-            logger.debug(f"[P2PEventBridge] Emitted EVALUATION_COMPLETED for {config_key}")
+            logger.debug(f"[P2PEventBridge] Emitted TOURNAMENT_COMPLETED for {config_key}")
 
         else:
             # Generic work completion (no specific event type)

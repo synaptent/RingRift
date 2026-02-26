@@ -483,8 +483,11 @@ tailscale ip -4
             from app.config.cluster_config import get_cluster_nodes
 
             nodes = get_cluster_nodes()
-            for node in nodes:
-                if node.name == node_name:
+            # Feb 2026: get_cluster_nodes() returns dict, not list
+            node_iter = nodes.values() if isinstance(nodes, dict) else nodes
+            for node in node_iter:
+                node_id = node.name if hasattr(node, 'name') else str(node)
+                if node_id == node_name:
                     return {
                         "host": node.ssh_host or node.tailscale_ip,
                         "port": node.ssh_port,
