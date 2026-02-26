@@ -511,11 +511,26 @@ class AllocationMixin:
         try:
             # Try getting from cluster monitor
             from app.coordination.cluster_status_monitor import ClusterMonitor
+            from app.config.cluster_config import load_cluster_config
 
             monitor = ClusterMonitor()
             status = monitor.get_cluster_status()
 
+            # Filter out nodes with selfplay disabled in config
+            cluster_cfg = load_cluster_config()
+            hosts_raw = cluster_cfg.hosts_raw
+
             for node_id, node_status in status.nodes.items():
+                host_info = hosts_raw.get(node_id, {})
+                if host_info.get("selfplay_enabled") is False:
+                    # Remove from capabilities if previously added
+                    self._node_capabilities.pop(node_id, None)
+                    continue
+                node_cfg_status = host_info.get("status", "")
+                if node_cfg_status in ("offline", "archived", "terminated"):
+                    self._node_capabilities.pop(node_id, None)
+                    continue
+
                 if node_id not in self._node_capabilities:
                     self._node_capabilities[node_id] = NodeCapability(node_id=node_id)
 

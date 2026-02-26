@@ -2892,7 +2892,7 @@ class MasterLoopController:
                 await wq.add_work_async(item)
                 return True
             except Exception as e:
-                logger.debug(f"[MasterLoop] Work queue dispatch failed: {e}")
+                logger.warning(f"[MasterLoop] Work queue dispatch to {node_id} failed: {e}")
 
             # Last resort: try direct HTTP dispatch
             try:
@@ -2910,8 +2910,11 @@ class MasterLoopController:
                     num_games=num_games,
                     engine_mode=engine_mode,
                 )
+                if not result.success:
+                    logger.info(f"[MasterLoop] Direct HTTP dispatch to {node_id} also failed: {result.error}")
                 return result.success
-            except Exception:
+            except Exception as e:
+                logger.info(f"[MasterLoop] Direct HTTP dispatch to {node_id} exception: {e}")
                 return False
 
         except ImportError as e:
