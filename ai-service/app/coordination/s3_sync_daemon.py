@@ -338,6 +338,10 @@ class S3SyncDaemon(HandlerBase):
             if self.config.sync_models:
                 await self._sync_models()
 
+            # Feb 2026: Sync critical metadata databases (Elo history, generation
+            # tracking) — small files (<20MB total) but irreplaceable training history.
+            await self._sync_metadata()
+
             self._stats.last_sync_time = time.time()
             self._stats.successful_syncs += 1
 
@@ -411,6 +415,28 @@ class S3SyncDaemon(HandlerBase):
 
         for model_path in models_dir.glob("canonical_*.pth"):
             await self._push_if_modified(model_path, self._get_s3_key(model_path, "models"))
+
+        # Feb 2026: Also sync candidate and best models — these are training pipeline
+        # outputs and promotion snapshots that were previously unprotected.
+        for pattern in ["candidate_*.pth", "ringrift_best_*.pth"]:
+            for model_path in models_dir.glob(pattern):
+                await self._push_if_modified(model_path, self._get_s3_key(model_path, "models"))
+
+    async def _sync_metadata(self) -> None:
+        """Sync critical metadata databases to S3.
+
+        Feb 2026: These are small files (<20MB total) but contain irreplaceable
+        training history — Elo progression, generation tracking, optimizer state.
+        """
+        metadata_files = [
+            self._base_path / "logs" / "unified_elo.db",
+            self._base_path / "logs" / "elo_progress.db",
+            self._base_path / "logs" / "generation_tracking.db",
+            self._base_path / "logs" / "improvement_optimizer_state.json",
+        ]
+        for path in metadata_files:
+            if path.exists():
+                await self._push_if_modified(path, self._get_s3_key(path, "metadata"))
 
     def _get_s3_key(self, local_path: Path, data_type: str) -> str:
         """Get S3 key for a local file.

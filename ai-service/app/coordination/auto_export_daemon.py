@@ -154,7 +154,10 @@ class AutoExportDaemon(HandlerBase):
             cycle_interval=30.0,  # 30 seconds scan interval
         )
         self._export_states: dict[str, ConfigExportState] = {}
-        self._export_semaphore = asyncio.Semaphore(self._daemon_config.max_concurrent_exports)
+        # Feb 2026: Semaphore must be created inside the event loop (_on_start),
+        # not in __init__. Creating it here binds to a different/no event loop,
+        # causing 8,000-14,000+ waiters and export failures.
+        self._export_semaphore: asyncio.Semaphore | None = None
         self._state_db_initialized = False
         # December 2025: Deduplication guard - when StageEvent subscriptions are active,
         # skip DataEventType handlers to prevent double-counting games
@@ -196,6 +199,10 @@ class AutoExportDaemon(HandlerBase):
 
     async def _on_start(self) -> None:
         """Hook called before main loop - check coordinator mode and init state DB."""
+        # Feb 2026: Create semaphore inside the running event loop to avoid
+        # cross-loop binding that caused 8,000-14,000+ waiters and export failures.
+        self._export_semaphore = asyncio.Semaphore(self._daemon_config.max_concurrent_exports)
+
         from app.config.env import env
 
         # Initialize state persistence first for visibility, even on coordinators
