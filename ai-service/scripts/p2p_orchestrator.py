@@ -11467,22 +11467,33 @@ print(json.dumps({{
                 _op_t = time.time()
                 await self._run_with_timeout(coro, name, timeout=timeout)
                 _op_e = time.time() - _op_t
-                logger.info(f"[LeaderOps] {name}: {_op_e:.1f}s")
+                if _op_e > 3.0:
+                    logger.info(f"[LeaderOps] {name}: {_op_e:.1f}s")
 
-            # Run all ops concurrently with a hard cycle deadline.
-            # asyncio.gather interleaves at await points, so even if one op
-            # blocks briefly, others progress when it yields.
+            # Feb 26, 2026: Run ops in batches of 3 to avoid thread pool
+            # saturation. With 8 workers and 8 concurrent ops all needing
+            # asyncio.to_thread(), the pool gets exhausted and ops queue up
+            # causing 22s+ delays. Batching limits peak demand to 3 threads.
+            BATCH_SIZE = 3
             try:
-                await asyncio.wait_for(
-                    asyncio.gather(
-                        *[_timed_op(n, c, t) for n, c, t in _leader_ops],
-                        return_exceptions=True,
-                    ),
-                    timeout=CYCLE_DEADLINE,
-                )
+                for batch_start in range(0, len(_leader_ops), BATCH_SIZE):
+                    if time.time() - _t0 > CYCLE_DEADLINE:
+                        logger.warning(f"[LeaderOps] Cycle hit {CYCLE_DEADLINE}s deadline")
+                        break
+                    batch = _leader_ops[batch_start:batch_start + BATCH_SIZE]
+                    remaining = CYCLE_DEADLINE - (time.time() - _t0)
+                    await asyncio.wait_for(
+                        asyncio.gather(
+                            *[_timed_op(n, c, t) for n, c, t in batch],
+                            return_exceptions=True,
+                        ),
+                        timeout=min(remaining, 20.0),
+                    )
+                    # Yield to event loop between batches
+                    await asyncio.sleep(0)
             except asyncio.TimeoutError:
                 logger.warning(
-                    f"[LeaderOps] Cycle hit {CYCLE_DEADLINE}s deadline, "
+                    f"[LeaderOps] Batch hit timeout, "
                     f"cancelling remaining ops"
                 )
 

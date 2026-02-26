@@ -814,19 +814,23 @@ class TailscalePeerDiscoveryLoop(BaseLoop):
         Returns:
             Dict of peer_id -> peer_info, or None if command fails
 
-        Jan 2026: Uses adaptive timeout from LoopTimeouts for subprocess operations.
+        Feb 26, 2026: Reduced subprocess timeout from 10-30s to 5s and added
+        60s response cache to prevent thread pool saturation. The tailscale CLI
+        should respond in <1s when working; long timeouts just block threads.
         """
         import json
         import subprocess
 
-        # Jan 2026: Use adaptive timeout for subprocess operations
-        subprocess_timeout = 10
-        async_timeout = 15.0
-        if LoopTimeouts is not None:
-            # Use health check timeout as base for subprocess operations
-            base_timeout = LoopTimeouts.get_adaptive_health_check()
-            subprocess_timeout = int(base_timeout * 2)  # Subprocess gets 2x base
-            async_timeout = base_timeout * 3  # Async wrapper gets 3x base
+        # Check cache first (60s TTL)
+        now = time.time()
+        _cache_result = getattr(self, "_ts_peers_cache", None)
+        _cache_time = getattr(self, "_ts_peers_cache_time", 0)
+        if _cache_result is not None and now - _cache_time < 60:
+            return _cache_result
+
+        # Hard cap: 5s subprocess timeout, 8s async timeout
+        subprocess_timeout = 5
+        async_timeout = 8.0
 
         try:
             loop = asyncio.get_running_loop()
@@ -844,14 +848,22 @@ class TailscalePeerDiscoveryLoop(BaseLoop):
             )
             if result.returncode != 0:
                 logger.debug(f"[TailscalePeerDiscovery] tailscale status failed: {result.stderr}")
+                self._ts_peers_cache = None
+                self._ts_peers_cache_time = now
                 return None
             ts_data = json.loads(result.stdout)
-            return ts_data.get("Peer", {})
+            peers = ts_data.get("Peer", {})
+            self._ts_peers_cache = peers
+            self._ts_peers_cache_time = now
+            return peers
         except json.JSONDecodeError as e:
             logger.debug(f"[TailscalePeerDiscovery] JSON parse error: {e}")
             return None
         except asyncio.TimeoutError:
             logger.debug("[TailscalePeerDiscovery] tailscale status timed out")
+            # Cache None to prevent rapid retries
+            self._ts_peers_cache = None
+            self._ts_peers_cache_time = now
             return None
         except FileNotFoundError:
             logger.debug("[TailscalePeerDiscovery] tailscale not installed")
@@ -959,7 +971,8 @@ class TailscalePeerDiscoveryLoop(BaseLoop):
         Returns:
             List of (hostname, ip) for hosts that should be connected
         """
-        yaml_hosts = self._load_yaml_hosts()
+        yaml_hosts = await asyncio.get_running_loop().run_in_executor(
+            None, self._load_yaml_hosts)
         if not yaml_hosts:
             return []
 
