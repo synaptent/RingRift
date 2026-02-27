@@ -1483,39 +1483,33 @@ class WorkQueue:
                 # Don't block claims if circuit breaker check fails
                 logger.warning(f"Circuit breaker check failed for {node_id}: {e}")
 
-            # Get set of completed work_ids for dependency checking
-            completed_ids = {
-                item.work_id for item in self.items.values()
-                if item.status == WorkStatus.COMPLETED
-            }
+            # Feb 26, 2026: Combine 3 separate iterations into a single pass.
+            # Previously iterated self.items 3 times (completed_ids, claimable,
+            # node_active_configs). With 1000+ items this was taking seconds.
+            completed_ids: set[str] = set()
+            claimable: list = []
+            node_active_configs: set[tuple[str, int, str]] = set()
 
-            # Get claimable items sorted by priority (highest first)
-            claimable = [
-                item for item in self.items.values()
-                if item.is_claimable() and not item.has_pending_dependencies(completed_ids)
-            ]
+            for existing in self.items.values():
+                if existing.status == WorkStatus.COMPLETED:
+                    completed_ids.add(existing.work_id)
+                elif existing.status == WorkStatus.CLAIMED and existing.claimed_by == node_id:
+                    bt = existing.config.get("board_type", "")
+                    np_ = existing.config.get("num_players", 0)
+                    wt = existing.work_type.value
+                    if bt and np_:
+                        node_active_configs.add((bt, np_, wt))
+
+            # Second pass: find claimable items (needs completed_ids from first pass)
+            for item in self.items.values():
+                if item.is_claimable() and not item.has_pending_dependencies(completed_ids):
+                    claimable.append(item)
 
             if not claimable:
                 return None
 
             # Sort by priority (descending)
             claimable.sort(key=lambda x: -x.priority)
-
-            # Feb 2026: Build set of (board_type, num_players, work_type) tuples
-            # already claimed by this node to prevent duplicate assignments.
-            # This fixes the bug where a node could claim multiple training or
-            # selfplay jobs for the same config, wasting GPU capacity.
-            node_active_configs: set[tuple[str, int, str]] = set()
-            for existing in self.items.values():
-                if (
-                    existing.status == WorkStatus.CLAIMED
-                    and existing.claimed_by == node_id
-                ):
-                    bt = existing.config.get("board_type", "")
-                    np_ = existing.config.get("num_players", 0)
-                    wt = existing.work_type.value
-                    if bt and np_:
-                        node_active_configs.add((bt, np_, wt))
 
             # Find work matching capabilities and policies
             for item in claimable:

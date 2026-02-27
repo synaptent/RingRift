@@ -1269,6 +1269,92 @@ class SyncPlanner(EventSubscriptionMixin):
     # Selfplay to Training Nodes Sync
     # ============================================
 
+    def _plan_training_sync_jobs(
+        self,
+        *,
+        manifest: "ClusterDataManifest",
+        eligible_training_nodes: list["NodeInfo"],
+        should_cleanup_source: Callable[["NodeInfo"], bool],
+        peers_snapshot: dict[str, "NodeInfo"],
+        max_files_per_job: int = 50,
+    ) -> tuple[list["DataSyncJob"], dict[str, list[str]]]:
+        """Plan training sync jobs by comparing file manifests.
+
+        Feb 26, 2026: Extracted from sync_selfplay_to_training_nodes to run
+        in a thread. This loop iterates 19K+ files × multiple nodes and was
+        blocking the event loop for 120-178s when run synchronously.
+
+        Returns:
+            Tuple of (sync_jobs, sources_to_cleanup)
+        """
+        sources_to_cleanup: dict[str, list[str]] = {}
+        sync_jobs: list[DataSyncJob] = []
+
+        for target_node in eligible_training_nodes:
+            target_manifest = manifest.node_manifests.get(target_node.node_id)
+            target_files: set[str] = set()
+            if target_manifest:
+                target_files = set(target_manifest.files_by_path.keys())
+
+            for source_id, source_manifest_item in manifest.node_manifests.items():
+                if source_id == target_node.node_id:
+                    continue
+
+                # Use pre-snapshotted peers to avoid lock contention
+                source_node = peers_snapshot.get(source_id)
+                needs_cleanup = source_node and should_cleanup_source(source_node)
+
+                files_to_sync = []
+                for file_info in source_manifest_item.files:
+                    if file_info.file_type != "selfplay":
+                        continue
+
+                    target_file_info = (
+                        target_manifest.files_by_path.get(file_info.path)
+                        if target_manifest else None
+                    )
+
+                    should_sync = False
+                    if file_info.path not in target_files:
+                        should_sync = True
+                    elif (
+                        target_file_info
+                        and file_info.modified_time > target_file_info.modified_time + 60
+                    ):
+                        should_sync = True
+
+                    if should_sync:
+                        files_to_sync.append(file_info.path)
+
+                if files_to_sync:
+                    job_id = (
+                        f"training_sync_{source_id}_to_{target_node.node_id}_"
+                        f"{int(time.time())}"
+                    )
+                    job = DataSyncJob(
+                        job_id=job_id,
+                        source_node=source_id,
+                        target_node=target_node.node_id,
+                        files=files_to_sync[:max_files_per_job],
+                        status="pending",
+                    )
+                    sync_jobs.append(job)
+                    self._active_sync_jobs[job_id] = job
+                    self.stats.sync_jobs_created += 1
+                    logger.info(
+                        f"Created training sync job: {len(files_to_sync)} files "
+                        f"from {source_id} to {target_node.node_id}"
+                    )
+
+                    if needs_cleanup:
+                        if source_id not in sources_to_cleanup:
+                            sources_to_cleanup[source_id] = []
+                        sources_to_cleanup[source_id].extend(
+                            files_to_sync[:max_files_per_job]
+                        )
+
+        return sync_jobs, sources_to_cleanup
+
     async def sync_selfplay_to_training_nodes(
         self,
         *,
@@ -1418,80 +1504,21 @@ class SyncPlanner(EventSubscriptionMixin):
         if not manifest:
             return {"success": False, "error": "Failed to collect cluster manifest"}
 
-        # Track source nodes that need cleanup after sync
-        sources_to_cleanup: dict[str, list[str]] = {}
+        # Feb 26, 2026: Snapshot peers dict BEFORE entering thread to avoid
+        # lock contention with heartbeat threads inside the comparison loop.
+        peers_snapshot = dict(self._get_peers())
 
-        # Find selfplay files that training nodes don't have
-        sync_jobs: list[DataSyncJob] = []
-
-        for target_node in eligible_training_nodes:
-            target_manifest = manifest.node_manifests.get(target_node.node_id)
-            target_files: set[str] = set()
-            if target_manifest:
-                target_files = set(target_manifest.files_by_path.keys())
-
-            # Find source nodes with selfplay data this target doesn't have
-            for source_id, source_manifest in manifest.node_manifests.items():
-                if source_id == target_node.node_id:
-                    continue
-
-                # Check if source node needs disk cleanup
-                source_node = self._get_peers().get(source_id)
-                needs_cleanup = source_node and should_cleanup_source(source_node)
-
-                # Find selfplay files to sync (with mtime comparison)
-                files_to_sync = []
-                for file_info in source_manifest.files:
-                    if file_info.file_type != "selfplay":
-                        continue
-
-                    # Check if target needs this file
-                    target_file_info = (
-                        target_manifest.files_by_path.get(file_info.path)
-                        if target_manifest else None
-                    )
-
-                    should_sync = False
-                    if file_info.path not in target_files:
-                        # Target doesn't have file at all
-                        should_sync = True
-                    elif (
-                        target_file_info and
-                        file_info.modified_time > target_file_info.modified_time + 60
-                    ):
-                        # Source is newer (60s tolerance for clock skew)
-                        should_sync = True
-
-                    if should_sync:
-                        files_to_sync.append(file_info.path)
-
-                if files_to_sync:
-                    job_id = (
-                        f"training_sync_{source_id}_to_{target_node.node_id}_"
-                        f"{int(time.time())}"
-                    )
-                    job = DataSyncJob(
-                        job_id=job_id,
-                        source_node=source_id,
-                        target_node=target_node.node_id,
-                        files=files_to_sync[:max_files_per_job],
-                        status="pending",
-                    )
-                    sync_jobs.append(job)
-                    self._active_sync_jobs[job_id] = job
-                    self.stats.sync_jobs_created += 1
-                    logger.info(
-                        f"Created training sync job: {len(files_to_sync)} files "
-                        f"from {source_id} to {target_node.node_id}"
-                    )
-
-                    # Track files for cleanup if source has high disk usage
-                    if needs_cleanup:
-                        if source_id not in sources_to_cleanup:
-                            sources_to_cleanup[source_id] = []
-                        sources_to_cleanup[source_id].extend(
-                            files_to_sync[:max_files_per_job]
-                        )
+        # Feb 26, 2026: Run file comparison in a thread to avoid blocking the
+        # event loop. With 19K+ files × multiple nodes, this loop was taking
+        # 120-178s synchronously and starving the HTTP server.
+        sync_jobs, sources_to_cleanup = await asyncio.to_thread(
+            self._plan_training_sync_jobs,
+            manifest=manifest,
+            eligible_training_nodes=eligible_training_nodes,
+            should_cleanup_source=should_cleanup_source,
+            peers_snapshot=peers_snapshot,
+            max_files_per_job=max_files_per_job,
+        )
 
         # Execute sync jobs with concurrency limiting (Jan 2026)
         # Use semaphore to prevent memory pressure from too many rsync processes

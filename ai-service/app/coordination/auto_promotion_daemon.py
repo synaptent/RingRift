@@ -1289,8 +1289,17 @@ class AutoPromotionDaemon(HandlerBase):
                 opponent_rates.append(f"{opponent}:{win_rate:.1%}")
 
         if total_games == 0:
-            # No evaluation data - pass through (should be caught by other checks)
-            return True, "no_gauntlet_data"
+            # No evaluation data - REJECT. Models must have gauntlet results to be promoted.
+            # Feb 2026: Was returning True which allowed models with 0 gauntlet games
+            # to be promoted, bypassing quality verification entirely.
+            self._emit_promotion_rejected(
+                candidate,
+                gate="no_gauntlet_data",
+                reason="No gauntlet evaluation data available (0 games played)",
+                actual=0,
+                threshold=1,
+            )
+            return False, "no_gauntlet_data"
 
         combined_win_rate = total_wins / total_games
 
