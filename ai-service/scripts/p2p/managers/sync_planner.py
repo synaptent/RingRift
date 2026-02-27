@@ -1370,7 +1370,7 @@ class SyncPlanner(EventSubscriptionMixin):
         cleanup_synced_files: Callable[[str, list[str]], Any],
         get_sync_router: Callable[[], Any] | None = None,
         cluster_manifest: "ClusterDataManifest | None" = None,
-        max_files_per_job: int = 50,
+        max_files_per_job: int = 500,
     ) -> dict[str, Any]:
         """Sync selfplay data to training primary nodes.
 
@@ -1386,7 +1386,7 @@ class SyncPlanner(EventSubscriptionMixin):
             cleanup_synced_files: Async callback to cleanup files on source
             get_sync_router: Optional callback to get SyncRouter for quality routing
             cluster_manifest: Optional pre-collected cluster manifest
-            max_files_per_job: Maximum files per sync job (default: 50)
+            max_files_per_job: Maximum files per sync job (default: 500)
 
         Returns:
             Dict with sync results:
