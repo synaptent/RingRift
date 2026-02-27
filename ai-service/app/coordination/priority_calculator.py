@@ -110,8 +110,14 @@ def compute_config_priority_override(config_key: str, game_count: int | None, el
         return -1  # EMERGENCY - bootstrap crisis
     if game_count < 500:
         return 0  # CRITICAL
-    if elo is not None and elo < 1800 and game_count < 2000:
-        return 1  # HIGH
+    # Feb 26, 2026: Elo-based priority independent of game count.
+    # Previously hexagonal_2p (1483 Elo, 3181 games) got MEDIUM because
+    # game_count > 2000. A config with very low Elo needs more selfplay
+    # with the current model, regardless of how many old games exist.
+    if elo is not None and elo < 1600:
+        return 0  # CRITICAL - severely underperforming
+    if elo is not None and elo < 1800:
+        return 1  # HIGH - needs improvement
     return 2  # MEDIUM
 
 # Player count allocation multipliers
