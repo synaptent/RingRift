@@ -557,6 +557,12 @@ class EloDatabase:
 
             CREATE INDEX IF NOT EXISTS idx_model_eval_status_stale
                 ON model_evaluation_status(last_evaluated_at) WHERE status = 'evaluated';
+
+            -- Feb 2026: Prevent duplicate participant entries per config/harness combo.
+            -- 4,111 winner_id mismatches were caused by duplicate registrations with
+            -- inconsistent naming (canonical_ vs ringrift_best_).
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_elo_ratings_unique
+                ON elo_ratings(participant_id, board_type, num_players, harness_type);
         """)
         conn.commit()
 
@@ -1496,6 +1502,37 @@ class EloDatabase:
             )
 
         return result
+
+    def check_winner_consistency(self) -> list[dict[str, Any]]:
+        """Find match_history rows where winner_id doesn't match any participant.
+
+        Feb 2026: Detects the class of bug where reconcile_elo_ids renames
+        participant_ids but not winner_id, causing 0% win rates.
+
+        Returns:
+            List of dicts with match_id, winner_id, participant_ids for mismatches.
+            Empty list means all winner_ids are consistent.
+        """
+        conn = self._get_connection()
+        rows = conn.execute("""
+            SELECT id, winner AS winner_id, participant_ids
+            FROM match_history
+            WHERE winner IS NOT NULL
+              AND winner != ''
+              AND winner != 'draw'
+              AND participant_ids IS NOT NULL
+              AND participant_ids != ''
+              AND winner NOT IN (
+                  SELECT participant_id FROM participants
+              )
+        """).fetchall()
+        issues = [dict(r) for r in rows]
+        if issues:
+            logger.warning(
+                f"Elo integrity: {len(issues)} match_history rows have "
+                f"winner_id not in participants table"
+            )
+        return issues
 
     def verify_database_integrity(self) -> dict[str, Any]:
         """Run comprehensive database integrity checks.

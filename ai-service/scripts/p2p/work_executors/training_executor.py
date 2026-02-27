@@ -174,6 +174,16 @@ async def execute_training_work(
                 f"Cannot train {config_key}."
             )
             return False
+        # Feb 2026: Validate NPZ structure before launching training subprocess.
+        # Catches corruption from interrupted exports/syncs (3 corrupt files in one session).
+        try:
+            from app.coordination.npz_validation import quick_npz_check
+            _ok, _err = quick_npz_check(str(npz_path))
+            if not _ok:
+                logger.error(f"Training data corrupt: {npz_path}: {_err}")
+                return False
+        except ImportError:
+            pass  # Validation module not available on this node
         cmd.extend(["--data-path", str(npz_path)])
     else:
         # Feb 2026: NPZ not available (coordinator hasn't exported yet or sync failed).

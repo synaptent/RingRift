@@ -2454,15 +2454,16 @@ class WorkQueueCleanupDefaults:
     """
     # Max age for PENDING items before removal (hours)
     # Items stuck in PENDING for this long are likely invalid configs
+    # Feb 2026: Lowered from 24h to 8h — stale items degrade claim_work() O(n) perf
     MAX_PENDING_AGE_HOURS: float = _env_float(
-        "RINGRIFT_QUEUE_MAX_PENDING_AGE_HOURS", 24.0
+        "RINGRIFT_QUEUE_MAX_PENDING_AGE_HOURS", 8.0
     )
 
     # Max age for CLAIMED items before reset to PENDING (hours)
     # Items claimed but not started within this window are orphaned
-    # Standardized to 2 hours (was 1-4h depending on caller)
+    # Feb 2026: Lowered from 2h to 1h — training starts within minutes or not at all
     MAX_CLAIMED_AGE_HOURS: float = _env_float(
-        "RINGRIFT_QUEUE_MAX_CLAIMED_AGE_HOURS", 2.0
+        "RINGRIFT_QUEUE_MAX_CLAIMED_AGE_HOURS", 1.0
     )
 
     # Cleanup check interval (seconds)

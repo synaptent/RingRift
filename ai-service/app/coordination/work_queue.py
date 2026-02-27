@@ -1241,6 +1241,11 @@ class WorkQueue:
                 pass  # ClusterCircuitBreaker not available
 
         with self.lock:
+            # Feb 2026: Inline cleanup when queue is large to prevent unbounded growth.
+            # This runs inside the existing lock so no extra synchronization needed.
+            if len(self.items) > 500:
+                self._inline_cleanup()
+
             # Dec 28, 2025: Check backpressure before adding
             pending = sum(1 for i in self.items.values() if i.status == WorkStatus.PENDING)
             should_reject = self._check_and_update_backpressure(pending)
@@ -2066,6 +2071,32 @@ class WorkQueue:
                 item.to_dict() for item in self.items.values()
                 if item.claimed_by == node_id and item.status in (WorkStatus.CLAIMED, WorkStatus.RUNNING)
             ]
+
+    def _inline_cleanup(self) -> int:
+        """Fast inline cleanup of stale items. Called from add_work() under lock.
+
+        Feb 2026: Prevents unbounded queue growth between hourly daemon cleanups.
+        Uses aggressive TTLs since stale items degrade claim_work() O(n) performance.
+        """
+        now = time.time()
+        max_pending_age = 8 * 3600   # 8 hours
+        max_claimed_age = 1 * 3600   # 1 hour
+        max_terminal_age = 4 * 3600  # 4 hours for completed/failed
+        to_remove = []
+        for wid, item in self.items.items():
+            age = now - item.created_at
+            if item.status == WorkStatus.PENDING and age > max_pending_age:
+                to_remove.append(wid)
+            elif item.status == WorkStatus.CLAIMED and age > max_claimed_age:
+                to_remove.append(wid)
+            elif item.status in (WorkStatus.COMPLETED, WorkStatus.FAILED, WorkStatus.CANCELLED, WorkStatus.TIMEOUT) and age > max_terminal_age:
+                to_remove.append(wid)
+        for wid in to_remove:
+            del self.items[wid]
+            self._delete_item(wid)
+        if to_remove:
+            logger.info(f"Inline cleanup removed {len(to_remove)} stale work items")
+        return len(to_remove)
 
     def cleanup_old_items(self, max_age_seconds: float = 86400.0) -> int:
         """Remove completed/failed items older than max_age. Returns count removed."""

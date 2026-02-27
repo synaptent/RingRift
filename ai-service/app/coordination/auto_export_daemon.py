@@ -1049,6 +1049,24 @@ class AutoExportDaemon(HandlerBase):
                 duration = time.time() - start_time
 
                 if process.returncode == 0:
+                    # Feb 2026: Validate NPZ after export subprocess succeeds.
+                    # The subprocess may return 0 but write a corrupt file (e.g., disk full
+                    # during np.savez_compressed before atomic rename was added).
+                    try:
+                        from app.coordination.npz_validation import quick_npz_check
+                        _ok, _err = quick_npz_check(str(output_path))
+                        if not _ok:
+                            logger.error(
+                                f"[AutoExportDaemon] Export produced corrupt NPZ for "
+                                f"{config_key}: {_err}"
+                            )
+                            Path(output_path).unlink(missing_ok=True)
+                            state.consecutive_failures += 1
+                            await asyncio.to_thread(self._save_state, config_key)
+                            return False
+                    except ImportError:
+                        pass  # Validation module not available
+
                     # Success
                     state.last_export_time = time.time()
                     state.last_export_games = state.games_since_last_export

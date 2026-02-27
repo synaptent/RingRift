@@ -188,9 +188,14 @@ class DeliveryHandlersMixin(BaseP2PHandler):
         try:
             if file_type == "model":
                 # Check if it's a valid PyTorch checkpoint
+                # Feb 2026: Wrap in to_thread — torch.load blocks event loop 1-5s
                 try:
                     import torch
-                    checkpoint = torch.load(file_path, map_location="cpu", weights_only=True)
+
+                    def _load_checkpoint() -> dict:
+                        return torch.load(file_path, map_location="cpu", weights_only=True)
+
+                    checkpoint = await asyncio.to_thread(_load_checkpoint)
                     validation["has_state_dict"] = "state_dict" in checkpoint
                     validation["has_metadata"] = "metadata" in checkpoint
                 except Exception as e:
@@ -199,11 +204,20 @@ class DeliveryHandlersMixin(BaseP2PHandler):
 
             elif file_type == "npz":
                 # Check if it's a valid NPZ file
+                # Feb 2026: Wrap in to_thread — np.load blocks event loop 1-3s
                 try:
                     import numpy as np
-                    with np.load(file_path) as data:
-                        validation["arrays"] = list(data.keys())
-                        validation["total_samples"] = data["states"].shape[0] if "states" in data else 0
+
+                    def _load_npz() -> dict:
+                        with np.load(file_path) as data:
+                            return {
+                                "arrays": list(data.keys()),
+                                "total_samples": data["states"].shape[0] if "states" in data else 0,
+                            }
+
+                    npz_info = await asyncio.to_thread(_load_npz)
+                    validation["arrays"] = npz_info["arrays"]
+                    validation["total_samples"] = npz_info["total_samples"]
                 except Exception as e:
                     validation["valid"] = False
                     validation["error"] = str(e)

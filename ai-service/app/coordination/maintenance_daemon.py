@@ -131,12 +131,14 @@ class MaintenanceStats(CleanupDaemonStats):
     orphan_npz_found: int = 0  # December 2025
     orphan_models_found: int = 0  # December 2025
     orphan_dbs_recovered: int = 0  # December 2025: Re-registered to manifest
+    elo_integrity_issues: int = 0  # Feb 2026: Winner_id mismatches found
     last_log_rotation: float = 0.0
     last_db_vacuum: float = 0.0
     last_archive_run: float = 0.0
     last_dlq_cleanup: float = 0.0
     last_queue_cleanup: float = 0.0  # December 2025
     last_orphan_detection: float = 0.0  # December 2025
+    last_elo_integrity_check: float = 0.0  # Feb 2026
 
     def record_log_rotation(self, logs: int, bytes_reclaimed: int) -> None:
         """Record a log rotation operation."""
@@ -380,6 +382,14 @@ class MaintenanceDaemon(HandlerBase):
                 await self._detect_orphan_files()
                 tasks_run.append("orphan_detection")
             self._maintenance_stats.last_orphan_detection = now
+
+        # Hourly: Elo database integrity check (Feb 2026)
+        # Detects winner_id mismatches caused by ID reconciliation bugs
+        hours_since_elo_check = (now - self._maintenance_stats.last_elo_integrity_check) / 3600
+        if hours_since_elo_check >= 1.0:
+            await self._check_elo_integrity()
+            self._maintenance_stats.last_elo_integrity_check = now
+            tasks_run.append("elo_integrity")
 
         # December 2025: Emit event if any maintenance tasks ran
         if tasks_run:
@@ -780,6 +790,39 @@ class MaintenanceDaemon(HandlerBase):
             pass
         except (RuntimeError, OSError) as e:
             logger.warning(f"[Maintenance] Queue cleanup error: {e}")
+
+    async def _check_elo_integrity(self) -> None:
+        """Check Elo database for winner_id consistency (Feb 2026).
+
+        Detects match_history rows where winner_id doesn't match any registered
+        participant. This catches the class of bug where ID reconciliation scripts
+        rename participant_ids but not winner_id (4,111 mismatches in one session).
+        """
+        try:
+            from app.tournament.unified_elo_db import get_elo_database
+
+            db = get_elo_database()
+            issues = await asyncio.to_thread(db.check_winner_consistency)
+            if issues:
+                self._maintenance_stats.elo_integrity_issues = len(issues)
+                logger.warning(
+                    f"[Maintenance] Elo integrity: {len(issues)} winner_id mismatches "
+                    f"(first: {issues[0].get('winner_id', '?')})"
+                )
+                try:
+                    from app.coordination.event_router import emit_event
+                    from app.distributed.data_events import DataEventType
+                    emit_event(DataEventType.DATA_QUALITY_DEGRADED, {
+                        "source": "elo_integrity_check",
+                        "issue": "winner_id_mismatch",
+                        "count": len(issues),
+                    })
+                except (ImportError, AttributeError):
+                    pass
+        except ImportError:
+            pass
+        except Exception as e:
+            logger.warning(f"[Maintenance] Elo integrity check error: {e}")
 
     async def _detect_orphan_files(self) -> None:
         """Detect files on disk that aren't tracked in ClusterManifest (December 2025).

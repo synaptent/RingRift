@@ -1616,32 +1616,43 @@ def export_replay_dataset_multi(
         )
     print(f"[Disk Space] {space_msg}")
 
-    np.savez_compressed(output_path, **save_kwargs)
-
-    # December 2025: Validate exported NPZ structure before declaring success
-    # This catches corruption issues like the 22 billion element array incident
+    # Feb 2026: Atomic write — write to temp file, validate, then rename.
+    # Prevents corrupt NPZ files when process is killed mid-write.
+    import tempfile as _tempfile
+    _fd, _tmp_path = _tempfile.mkstemp(suffix=".npz", dir=str(Path(output_path).parent))
+    os.close(_fd)
     try:
-        from app.coordination.npz_validation import validate_npz_structure
+        np.savez_compressed(_tmp_path, **save_kwargs)
 
-        validation_result = validate_npz_structure(Path(output_path))
-        if not validation_result.valid:
-            print(f"[NPZ VALIDATION FAILED] Export produced corrupted file!")
-            for error in validation_result.errors:
-                print(f"  ERROR: {error}")
-            for warning in validation_result.warnings:
-                print(f"  WARNING: {warning}")
-            # Move corrupted file to quarantine
-            from app.distributed.sync_utils import _quarantine_file
-            quarantine_path = _quarantine_file(Path(output_path), "export_validation_failed")
-            print(f"  Quarantined to: {quarantine_path}")
-            return None  # Signal failure
-        else:
-            print(f"[NPZ VALIDATION] Passed: {validation_result.sample_count} samples, "
-                  f"{len(validation_result.array_shapes)} arrays")
-    except ImportError:
-        print("[NPZ VALIDATION] Skipped (npz_validation module not available)")
-    except Exception as e:
-        print(f"[NPZ VALIDATION] Warning: Validation check failed: {e}")
+        # December 2025: Validate exported NPZ structure before declaring success
+        # This catches corruption issues like the 22 billion element array incident
+        try:
+            from app.coordination.npz_validation import validate_npz_structure
+
+            validation_result = validate_npz_structure(Path(_tmp_path))
+            if not validation_result.valid:
+                print(f"[NPZ VALIDATION FAILED] Export produced corrupted file!")
+                for error in validation_result.errors:
+                    print(f"  ERROR: {error}")
+                for warning in validation_result.warnings:
+                    print(f"  WARNING: {warning}")
+                os.unlink(_tmp_path)
+                return None  # Signal failure
+            else:
+                print(f"[NPZ VALIDATION] Passed: {validation_result.sample_count} samples, "
+                      f"{len(validation_result.array_shapes)} arrays")
+        except ImportError:
+            print("[NPZ VALIDATION] Skipped (npz_validation module not available)")
+        except Exception as e:
+            print(f"[NPZ VALIDATION] Warning: Validation check failed: {e}")
+
+        # Atomic rename — either the old file stays or the new one replaces it
+        os.replace(_tmp_path, str(output_path))
+    except BaseException:
+        # Clean up temp file on any failure (including KeyboardInterrupt)
+        if os.path.exists(_tmp_path):
+            os.unlink(_tmp_path)
+        raise
 
     # Log engine mode distribution for sample weighting visibility
     from collections import Counter
