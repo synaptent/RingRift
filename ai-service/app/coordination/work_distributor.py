@@ -365,11 +365,11 @@ class WorkDistributor:
             return None
 
         if config is None:
-            # Feb 24, 2026: Evaluation must be higher priority than training (96)
-            # to prevent trained models from piling up without evaluation.
-            # Previously defaulted to 50, causing 376+ gauntlet jobs to stagnate
-            # while GPU nodes always claimed training work first.
-            config = DistributedWorkConfig(priority=100, require_gpu=True)
+            # Feb 27, 2026: Use priority=85 (below training=100, above selfplay=75).
+            # Was 100 since Feb 24, causing 519 gauntlet items to crowd out training
+            # claims — both at priority 100, gauntlets outnumbered training items and
+            # were always picked first by the claim iterator.
+            config = DistributedWorkConfig(priority=85, require_gpu=True)
 
         work_type = (
             _WorkType.GAUNTLET if evaluation_type == "gauntlet"

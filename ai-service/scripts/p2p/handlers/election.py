@@ -610,7 +610,10 @@ class ElectionHandlersMixin(BaseP2PHandler):
 
                 # Feb 2026 (2c): Set election grace period to prevent natural elections
                 # from overriding the forced leader before gossip converges.
-                self._election_grace_until = time.time() + 30.0
+                # Feb 2026: Increased from 30s to 120s — gossip convergence across 22+
+                # nodes takes 20-40s, so 30s was insufficient and natural elections
+                # would override forced leadership. 120s matches startup grace period.
+                self._election_grace_until = time.time() + 120.0
 
                 logger.warning(
                     f"FORCED LEADERSHIP: {self.node_id} is now leader via override"

@@ -9682,6 +9682,24 @@ print(json.dumps({{
             )
             return
 
+        # Feb 2026: Preferred leader guard — non-preferred nodes suppress their
+        # own elections when the preferred leader was recently alive (last 120s).
+        # This prevents split-brain where non-preferred nodes win elections when
+        # they temporarily can't see the preferred leader (network blips).
+        # If the preferred leader is genuinely down (>120s), any node can still win.
+        preferred = getattr(self, "_preferred_leader_id", None)
+        if preferred and preferred != self.node_id:
+            preferred_info = self.peers.get(preferred)
+            if preferred_info:
+                last_seen = getattr(preferred_info, "last_seen", 0) or 0
+                age = time.time() - last_seen
+                if age < 120:
+                    logger.info(
+                        f"[Election] Suppressing: preferred leader '{preferred}' "
+                        f"alive ({age:.0f}s ago, threshold 120s)"
+                    )
+                    return
+
         # Jan 3, 2026 Sprint 13.3: Track election start time for latency metrics
         self._start_election_timing()
 
@@ -12967,12 +12985,15 @@ print(json.dumps({{
         # Feb 2026: Auto-force leadership for preferred_leader from cluster config.
         # This ensures the coordinator always becomes leader after P2P restart,
         # preventing split-brain where remote nodes elect a different leader.
+        # Also store _preferred_leader_id so _start_election() can suppress
+        # elections on non-preferred nodes (follower-side split-brain prevention).
         if not getattr(self, "_forced_leader_override", False):
             try:
                 from app.config.cluster_config import load_cluster_config
                 preferred = load_cluster_config()._raw_config.get("preferred_leader", "")
             except Exception:
                 preferred = ""
+            self._preferred_leader_id = preferred or None
             if preferred and preferred == self.node_id:
                 self._forced_leader_override = True
                 self.role = NodeRole.LEADER

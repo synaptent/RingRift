@@ -444,31 +444,50 @@ class TournamentDataPipelineLoop(BaseLoop):
                 # Fallback: use subprocess to call export script
                 import subprocess
 
-                proc = await asyncio.create_subprocess_exec(
-                    "python",
-                    "scripts/export_replay_dataset.py",
-                    "--db",
-                    str(db_stats.path),
-                    "--board-type",
-                    db_stats.board_type,
-                    "--num-players",
-                    str(db_stats.num_players),
-                    "--output",
-                    str(npz_path),
-                    "--quiet",
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                )
-                _, stderr = await proc.communicate()
+                # Feb 2026: Cross-process export coordination
+                _config_key = f"{db_stats.board_type}_{db_stats.num_players}p"
+                try:
+                    from app.coordination.export_coordinator import get_export_coordinator
+                    _coord = get_export_coordinator()
+                    if not _coord.try_acquire(_config_key):
+                        result.error = "Cross-process export slot unavailable"
+                        return result
+                    _release_slot = True
+                except Exception:
+                    _release_slot = False
 
-                if proc.returncode == 0 and npz_path.exists():
-                    result.success = True
-                    result.npz_path = npz_path
-                    result.game_count = db_stats.game_count
-                    # Estimate sample count from file size
-                    result.sample_count = db_stats.game_count * 30  # ~30 samples/game
-                else:
-                    result.error = stderr.decode() if stderr else "Export failed"
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        "python",
+                        "scripts/export_replay_dataset.py",
+                        "--db",
+                        str(db_stats.path),
+                        "--board-type",
+                        db_stats.board_type,
+                        "--num-players",
+                        str(db_stats.num_players),
+                        "--output",
+                        str(npz_path),
+                        "--quiet",
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                    )
+                    _, stderr = await proc.communicate()
+
+                    if proc.returncode == 0 and npz_path.exists():
+                        result.success = True
+                        result.npz_path = npz_path
+                        result.game_count = db_stats.game_count
+                        # Estimate sample count from file size
+                        result.sample_count = db_stats.game_count * 30  # ~30 samples/game
+                    else:
+                        result.error = stderr.decode() if stderr else "Export failed"
+                finally:
+                    if _release_slot:
+                        try:
+                            _coord.release(_config_key)
+                        except Exception:
+                            pass
 
         except Exception as e:
             result.error = str(e)

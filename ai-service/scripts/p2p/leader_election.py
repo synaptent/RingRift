@@ -1032,6 +1032,17 @@ class LeaderElectionMixin(P2PMixinBase):
         if not node_id:
             return False
 
+        # Feb 2026: Don't enter single-node mode if a preferred leader is configured
+        # and this isn't it. Prevents non-preferred nodes from self-electing when
+        # they temporarily lose contact with the preferred leader.
+        preferred = getattr(self, "_preferred_leader_id", None)
+        if preferred and preferred != node_id:
+            logger.info(
+                f"Suppressing single-node mode: preferred leader '{preferred}' "
+                f"configured (we are '{node_id}')"
+            )
+            return False
+
         # Get all peer IDs from peers dict (with lock for thread safety)
         peers_lock = getattr(self, "peers_lock", None)
         peers = getattr(self, "peers", {})

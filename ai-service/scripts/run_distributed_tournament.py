@@ -1858,7 +1858,24 @@ def main() -> None:
                 str(export_output),
             ]
             logger.info("Exporting training dataset: %s", " ".join(export_cmd))
-            subprocess.run(export_cmd, cwd=PROJECT_ROOT, env=env, check=False)
+            # Feb 2026: Best-effort cross-process export coordination
+            _config_key = f"{board_type.value}_{int(args.num_players)}p"
+            _release_slot = False
+            try:
+                from app.coordination.export_coordinator import get_export_coordinator
+                _coord = get_export_coordinator()
+                if _coord.try_acquire(_config_key):
+                    _release_slot = True
+            except Exception:
+                pass
+            try:
+                subprocess.run(export_cmd, cwd=PROJECT_ROOT, env=env, check=False)
+            finally:
+                if _release_slot:
+                    try:
+                        _coord.release(_config_key)
+                    except Exception:
+                        pass
 
 
 if __name__ == "__main__":

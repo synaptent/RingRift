@@ -931,6 +931,22 @@ class AutoExportDaemon(HandlerBase):
             return False
 
         async with self._export_semaphore:
+            # Feb 2026: Cross-process export coordination via SQLite.
+            # The semaphore above is in-process only (doesn't limit master_loop/P2P).
+            # ExportCoordinator uses shared SQLite to limit across all processes.
+            try:
+                from app.coordination.export_coordinator import get_export_coordinator
+                _coord = get_export_coordinator()
+                if not _coord.try_acquire(config_key):
+                    logger.info(
+                        f"[AutoExportDaemon] Skipping export for {config_key}: "
+                        "cross-process export slot unavailable"
+                    )
+                    return False
+                _release_export_slot = True
+            except Exception:
+                _release_export_slot = False
+
             state.export_in_progress = True
 
             try:
@@ -1109,6 +1125,12 @@ class AutoExportDaemon(HandlerBase):
 
             finally:
                 state.export_in_progress = False
+                # Feb 2026: Release cross-process export slot
+                if _release_export_slot:
+                    try:
+                        _coord.release(config_key)
+                    except Exception:
+                        pass
                 # Persist updated state (Phase 8)
                 # Dec 30, 2025: Wrap blocking SQLite I/O with asyncio.to_thread()
                 await asyncio.to_thread(self._save_state, config_key)

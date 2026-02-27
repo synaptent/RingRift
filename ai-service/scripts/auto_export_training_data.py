@@ -271,6 +271,19 @@ def run_export(config: ExportConfig, databases: list[Path]) -> tuple[bool, str]:
 
     logger.info(f"Running export: {' '.join(cmd[:6])}... ({len(databases)} DBs)")
 
+    # Feb 2026: Best-effort cross-process export coordination
+    _config_key = f"{config.board_type}_{config.num_players}p"
+    _release_slot = False
+    try:
+        from app.coordination.export_coordinator import get_export_coordinator
+        _coord = get_export_coordinator()
+        if not _coord.try_acquire(_config_key):
+            logger.info(f"Skipping: cross-process export slot unavailable for {_config_key}")
+            return False, "Export slot unavailable"
+        _release_slot = True
+    except Exception:
+        pass  # Fail open if coordinator unavailable
+
     try:
         env = os.environ.copy()
         env["PYTHONPATH"] = str(AI_SERVICE_ROOT)
@@ -301,6 +314,12 @@ def run_export(config: ExportConfig, databases: list[Path]) -> tuple[bool, str]:
     except Exception as e:
         logger.error(f"Export error: {e}")
         return False, str(e)
+    finally:
+        if _release_slot:
+            try:
+                _coord.release(_config_key)
+            except Exception:
+                pass
 
 
 def should_export(config: ExportConfig, state: ExportState, databases: list[Path]) -> bool:

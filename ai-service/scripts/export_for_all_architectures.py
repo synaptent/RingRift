@@ -104,6 +104,18 @@ def run_export(
     if verbose:
         print(f"[{architecture}] Running: {' '.join(cmd)}")
 
+    # Feb 2026: Best-effort cross-process export coordination
+    _config_key = f"{board_type}_{num_players}p"
+    _release_slot = False
+    try:
+        from app.coordination.export_coordinator import get_export_coordinator
+        _coord = get_export_coordinator()
+        if not _coord.try_acquire(_config_key):
+            return False, f"Cross-process export slot unavailable for {_config_key}"
+        _release_slot = True
+    except Exception:
+        pass  # Fail open if coordinator unavailable
+
     try:
         result = subprocess.run(
             cmd,
@@ -126,6 +138,12 @@ def run_export(
         return False, "Export timed out after 1 hour"
     except Exception as e:
         return False, f"Export error: {e}"
+    finally:
+        if _release_slot:
+            try:
+                _coord.release(_config_key)
+            except Exception:
+                pass
 
 
 def verify_npz_channels(npz_path: str, expected_channels: int) -> tuple[bool, str]:

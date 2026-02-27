@@ -226,6 +226,17 @@ class ScheduledExportDaemon:
 
         logger.info(f"Exporting {config}: {len(databases)} databases -> {output_path}")
 
+        # Feb 2026: Cross-process export coordination
+        try:
+            from app.coordination.export_coordinator import get_export_coordinator
+            _coord = get_export_coordinator()
+            if not _coord.try_acquire(config):
+                logger.info(f"  {config}: SKIPPED - cross-process export slot unavailable")
+                return ExportResult(config=config, success=False, error="Export slot unavailable")
+            _release_slot = True
+        except Exception:
+            _release_slot = False
+
         start_time = time.time()
         try:
             process = await asyncio.create_subprocess_exec(
@@ -287,6 +298,13 @@ class ScheduledExportDaemon:
                 duration=time.time() - start_time,
                 error=str(e),
             )
+        finally:
+            # Feb 2026: Release cross-process export slot
+            if _release_slot:
+                try:
+                    _coord.release(config)
+                except Exception:
+                    pass
 
     async def run_export_cycle(self, specific_config: str | None = None) -> list[ExportResult]:
         """Run export cycle for all (or specific) configurations."""

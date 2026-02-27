@@ -1701,16 +1701,36 @@ class TrainingScheduler:
                 if encoder_version != "default":
                     export_cmd.extend(["--encoder-version", encoder_version])
 
+                # Feb 2026: Cross-process export coordination
+                try:
+                    from app.coordination.export_coordinator import get_export_coordinator
+                    _coord = get_export_coordinator()
+                    if not _coord.try_acquire(config_key):
+                        logger.warning(f"Export slot unavailable for {config_key}, skipping training")
+                        self.state.training_in_progress = False
+                        self._release_training_lock()
+                        return False
+                    _release_export_slot = True
+                except Exception:
+                    _release_export_slot = False
+
                 export_env = os.environ.copy()
                 export_env["PYTHONPATH"] = str(AI_SERVICE_ROOT)
-                export_process = await asyncio.create_subprocess_exec(
-                    *export_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=AI_SERVICE_ROOT,
-                    env=export_env,
-                )
-                stdout, stderr = await export_process.communicate()
+                try:
+                    export_process = await asyncio.create_subprocess_exec(
+                        *export_cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        cwd=AI_SERVICE_ROOT,
+                        env=export_env,
+                    )
+                    stdout, stderr = await export_process.communicate()
+                finally:
+                    if _release_export_slot:
+                        try:
+                            _coord.release(config_key)
+                        except Exception:
+                            pass
 
                 if export_process.returncode != 0:
                     self.state.training_in_progress = False
