@@ -1276,7 +1276,7 @@ class SyncPlanner(EventSubscriptionMixin):
         eligible_training_nodes: list["NodeInfo"],
         should_cleanup_source: Callable[["NodeInfo"], bool],
         peers_snapshot: dict[str, "NodeInfo"],
-        max_files_per_job: int = 50,
+        max_files_per_job: int = 500,
     ) -> tuple[list["DataSyncJob"], dict[str, list[str]]]:
         """Plan training sync jobs by comparing file manifests.
 
@@ -1343,8 +1343,10 @@ class SyncPlanner(EventSubscriptionMixin):
                     sync_jobs.append(job)
                     self._active_sync_jobs[job_id] = job
                     self.stats.sync_jobs_created += 1
+                    actual_count = len(job.files)
                     logger.info(
-                        f"Created training sync job: {len(files_to_sync)} files "
+                        f"Created training sync job: {actual_count} files "
+                        f"(of {len(files_to_sync)} total) "
                         f"from {source_id} to {target_node.node_id}"
                     )
 
