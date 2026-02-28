@@ -178,7 +178,7 @@ async def execute_training_work(
         # Catches corruption from interrupted exports/syncs (3 corrupt files in one session).
         try:
             from app.coordination.npz_validation import quick_npz_check
-            _ok, _err = quick_npz_check(str(npz_path))
+            _ok, _err = quick_npz_check(npz_path)
             if not _ok:
                 logger.error(f"Training data corrupt: {npz_path}: {_err}")
                 return False

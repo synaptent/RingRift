@@ -211,10 +211,12 @@ DEFAULT_DB_PATH = Path(os.environ.get("RINGRIFT_WORK_QUEUE_DB", str(_DEFAULT_DB_
 # 15000 limit provides ~15 min buffer for backpressure handling.
 # Soft limit: Emit BACKPRESSURE_ACTIVATED event, warn callers
 # Hard limit: Reject new items, force callers to wait
-BACKPRESSURE_SOFT_LIMIT = int(os.environ.get("RINGRIFT_WORK_QUEUE_SOFT_LIMIT", "7500"))
-BACKPRESSURE_HARD_LIMIT = int(os.environ.get("RINGRIFT_WORK_QUEUE_HARD_LIMIT", "15000"))
+# Feb 28, 2026: Lowered from 7500/15000 — only ~7 GPU nodes can consume work,
+# so 15K pending items = 2000+ per node = days of backlog. 500/1000 is ~2h drain time.
+BACKPRESSURE_SOFT_LIMIT = int(os.environ.get("RINGRIFT_WORK_QUEUE_SOFT_LIMIT", "500"))
+BACKPRESSURE_HARD_LIMIT = int(os.environ.get("RINGRIFT_WORK_QUEUE_HARD_LIMIT", "1000"))
 # Recovery threshold: Emit BACKPRESSURE_RELEASED when queue drops below this
-BACKPRESSURE_RECOVERY_THRESHOLD = int(os.environ.get("RINGRIFT_WORK_QUEUE_RECOVERY", "1200"))
+BACKPRESSURE_RECOVERY_THRESHOLD = int(os.environ.get("RINGRIFT_WORK_QUEUE_RECOVERY", "200"))
 
 
 class SlackWorkQueueNotifier:

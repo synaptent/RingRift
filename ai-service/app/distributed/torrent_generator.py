@@ -363,10 +363,24 @@ class TorrentGenerator:
         if web_seeds:
             torrent[b"url-list"] = [ws.encode("utf-8") for ws in web_seeds]
 
-        # Write torrent file
+        # Write torrent file atomically to prevent read-during-write corruption.
+        # Feb 2026: Multiple concurrent threads call create_torrent() on the same
+        # file, causing 42K+ "Corrupt torrent file" warnings from partial reads.
         torrent_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(torrent_path, "wb") as f:
-            f.write(bencode(torrent))
+        import tempfile
+        tmp_fd, tmp_path = tempfile.mkstemp(
+            dir=torrent_path.parent, suffix=".tmp"
+        )
+        try:
+            with os.fdopen(tmp_fd, "wb") as f:
+                f.write(bencode(torrent))
+            Path(tmp_path).replace(torrent_path)  # Atomic on POSIX
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
         logger.info(
             f"Created torrent: {torrent_path.name} "

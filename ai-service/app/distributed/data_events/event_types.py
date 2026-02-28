@@ -366,6 +366,8 @@ class DataEventType(Enum):
     WORK_QUEUE_STALLED = "work_queue_stalled"  # No work dispatched for extended period
     WORK_QUEUE_RECOVERED = "work_queue_recovered"  # Work dispatch resumed after stall
     WORK_QUEUE_EXHAUSTED = "work_queue_exhausted"  # Jan 4, 2026: Work queue completely empty
+    WORK_SUBMITTED = "work_submitted"  # Feb 2026: Work submitted to queue (from work_distributor)
+    TOURNAMENT_COMPLETED = "tournament_completed"  # Feb 2026: Tournament work completed (training data, not evaluation)
 
     # Jan 5, 2026: Work queue backpressure events (Phase 2 - optimization)
     WORK_QUEUE_BACKPRESSURE = "work_queue_backpressure"  # Queue capacity at high level

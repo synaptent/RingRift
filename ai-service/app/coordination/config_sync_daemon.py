@@ -95,6 +95,8 @@ class ConfigSyncDaemon(HandlerBase):
         self._last_known_version: ConfigVersion | None = None
         self._pending_sync_nodes: dict[str, float] = {}  # node_id -> first_seen_stale
         self._sync_failures: dict[str, int] = {}  # node_id -> failure_count
+        self._sync_failure_times: dict[str, float] = {}  # node_id -> last_failure_time
+        self._FAILURE_DECAY_SECONDS = 3600.0  # Reset failure counter after 1 hour
 
         # Coordinator detection
         self._is_coordinator = env.is_coordinator
@@ -435,14 +437,22 @@ class ConfigSyncDaemon(HandlerBase):
 
             # Push to stale nodes
             for node_id in nodes_to_push:
-                # Check failure count
+                # Check failure count with time-based decay
                 failures = self._sync_failures.get(node_id, 0)
                 if failures >= self._max_retries:
-                    logger.warning(
-                        f"[ConfigSync] Skipping push to {node_id} "
-                        f"({failures} consecutive failures)"
-                    )
-                    continue
+                    # Feb 2026: Decay failure counter after 1 hour so nodes
+                    # get retried periodically instead of permanent blacklist
+                    last_fail = self._sync_failure_times.get(node_id, 0)
+                    if current_time - last_fail > self._FAILURE_DECAY_SECONDS:
+                        logger.info(
+                            f"[ConfigSync] Resetting failure counter for {node_id} "
+                            f"(last failure {current_time - last_fail:.0f}s ago)"
+                        )
+                        self._sync_failures.pop(node_id, None)
+                        self._sync_failure_times.pop(node_id, None)
+                        failures = 0
+                    else:
+                        continue  # Still within blacklist window
 
                 logger.info(
                     f"[ConfigSync] Active push to stale node: {node_id} "
@@ -455,8 +465,10 @@ class ConfigSyncDaemon(HandlerBase):
                     # Remove from pending list
                     self._pending_sync_nodes.pop(node_id, None)
                     self._sync_failures.pop(node_id, None)
+                    self._sync_failure_times.pop(node_id, None)
                 else:
                     self._sync_failures[node_id] = failures + 1
+                    self._sync_failure_times[node_id] = current_time
 
         except Exception as e:
             logger.error(f"[ConfigSync] Error in push_to_stale_nodes: {e}")

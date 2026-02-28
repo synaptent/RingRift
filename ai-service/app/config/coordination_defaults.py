@@ -2456,8 +2456,10 @@ class WorkQueueCleanupDefaults:
     # Items stuck in PENDING for this long are likely invalid configs
     # Feb 27, 2026: Lowered from 8h to 4h — queue was 3,000+ items deep because
     # selfplay saturated GPU slots, blocking all execution for weeks
+    # Feb 28, 2026: Lowered from 4h to 1.5h — 3,172 items accumulating because
+    # GPU nodes can't drain fast enough; shorter TTL prevents massive backlogs
     MAX_PENDING_AGE_HOURS: float = _env_float(
-        "RINGRIFT_QUEUE_MAX_PENDING_AGE_HOURS", 4.0
+        "RINGRIFT_QUEUE_MAX_PENDING_AGE_HOURS", 1.5
     )
 
     # Max age for CLAIMED items before reset to PENDING (hours)
