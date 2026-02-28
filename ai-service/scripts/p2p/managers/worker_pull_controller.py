@@ -345,7 +345,10 @@ class WorkerPullController:
                     payload = {"work_id": work_id, "result": result_data}
                 else:
                     url = self._url_for_peer(leader_peer, "/work/fail")
-                    error_msg = work_item.get("error", "execution_failed")
+                    # Feb 28, 2026: Use `or` instead of default param.
+                    # work_item["error"] may be "" (empty string from to_dict()),
+                    # which .get() finds as a valid value, skipping the default.
+                    error_msg = work_item.get("error") or "execution_failed"
                     payload = {"work_id": work_id, "error": error_msg}
 
                 async with session.post(url, json=payload, headers=self._auth_headers()) as resp:

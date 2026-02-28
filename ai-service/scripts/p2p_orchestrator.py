@@ -7682,6 +7682,10 @@ class P2POrchestrator(
 
         except Exception as e:  # noqa: BLE001
             logger.error(f"Error executing work {work_id}: {e}")
+            # Feb 28, 2026: Propagate error info so coordinator can see why
+            # it failed. Previously, 247 of 284 Lambda training failures had
+            # empty error messages, making debugging impossible.
+            work_item["error"] = f"execute_exception:{type(e).__name__}:{e}"
             return False
 
 

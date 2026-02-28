@@ -209,7 +209,12 @@ def run_p2p_supervised(node_id: str, node_config: dict, config: dict, dry_run: b
                 "RINGRIFT_PATH",
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             )
-            proc_env.setdefault("PYTHONPATH", ringrift_path)
+            # Feb 28, 2026: Use unconditional assignment, not setdefault.
+            # setdefault doesn't override when PYTHONPATH exists (even empty ""),
+            # causing "ModuleNotFoundError: No module named 'scripts'" on ALL
+            # Lambda restarts. This was the root cause of 0% training success
+            # on 7 Lambda GH200 nodes (441 consecutive failures).
+            proc_env["PYTHONPATH"] = ringrift_path
 
             proc = subprocess.Popen(
                 cmd,
