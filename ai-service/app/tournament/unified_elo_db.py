@@ -910,12 +910,13 @@ class EloDatabase:
         if self._uses_model_id_schema:
             cursor = conn.execute(f"""
                 INSERT INTO match_history
-                ({col_a}, {col_b}, winner, board_type, num_players,
+                ({col_a}, {col_b}, winner, winner_id, board_type, num_players,
                  game_length, duration_sec, timestamp, tournament_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 model_a,
                 model_b,
+                winner_id,
                 winner_id,
                 board_type,
                 num_players,
@@ -927,15 +928,16 @@ class EloDatabase:
         else:
             cursor = conn.execute(f"""
                 INSERT INTO match_history
-                ({col_a}, {col_b}, participant_ids, rankings, winner,
+                ({col_a}, {col_b}, participant_ids, rankings, winner, winner_id,
                  board_type, num_players, game_length, duration_sec, timestamp,
                  tournament_id, game_id, worker, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 model_a,
                 model_b,
                 json.dumps(participant_ids),
                 json.dumps(rankings),
+                winner_id,
                 winner_id,
                 board_type,
                 num_players,
@@ -1091,15 +1093,16 @@ class EloDatabase:
 
             cursor = conn.execute(f"""
                 INSERT INTO match_history
-                ({col_a}, {col_b}, participant_ids, rankings, winner,
+                ({col_a}, {col_b}, participant_ids, rankings, winner, winner_id,
                  board_type, num_players, game_length, duration_sec, timestamp,
                  tournament_id, game_id, worker, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 model_a,
                 model_b,
                 json.dumps(participant_ids),
                 json.dumps(rankings),
+                winner_id,
                 winner_id,
                 board_type,
                 num_players,
