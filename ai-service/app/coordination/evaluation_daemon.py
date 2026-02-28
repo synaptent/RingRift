@@ -901,8 +901,11 @@ class EvaluationDaemon(HandlerBase):
                 work_id = item.get("work_id", "")
                 work_type = item.get("work_type", "")
 
-                # Only care about evaluation/gauntlet/tournament work
-                if work_type not in ("evaluation", "gauntlet", "tournament"):
+                # Only care about evaluation/gauntlet work.
+                # Feb 28, 2026: Removed "tournament" — tournaments are NOT evaluations.
+                # Matching tournament completions against evaluation requests caused
+                # phantom 0-game results (91.5% of evaluations had elo=0.0).
+                if work_type not in ("evaluation", "gauntlet"):
                     continue
 
                 # Skip already-processed items
@@ -1006,8 +1009,12 @@ class EvaluationDaemon(HandlerBase):
                 request_id = row["request_id"]
                 row_model = row["model_path"]
 
-                # Match by model_path if available
-                if model_path and row_model and model_path != row_model:
+                # Feb 28, 2026: Require model_path match to prevent phantom
+                # completions. Previously, empty model_path would match ANY
+                # running evaluation for the same config_key.
+                if not model_path or not row_model:
+                    continue  # Skip if either side has no model info
+                if model_path != row_model:
                     continue
 
                 logger.info(

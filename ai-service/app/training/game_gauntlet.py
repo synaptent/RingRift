@@ -2136,19 +2136,11 @@ def run_baseline_gauntlet(
     if model_path is None and model_getter is None:
         raise ValueError("Must provide either model_path or model_getter")
 
-    # Feb 2026: Skip gauntlet on coordinator nodes to prevent gauntlet_*.db
-    # files from accumulating on local disk (60GB+ observed)
-    try:
-        from app.config.env import env
-        if not env.gauntlet_enabled:
-            logger.warning("[gauntlet] Gauntlet disabled on this node (coordinator mode)")
-            result = GauntletResult()
-            result.passed = False
-            result.failure_reason = "Gauntlet disabled on coordinator node"
-            return result
-    except ImportError:
-        pass
-
+    # Feb 28, 2026: Removed redundant gauntlet_enabled guard.
+    # The evaluation daemon already checks gauntlet_enabled at a higher level
+    # (line ~1399) and dispatches to the cluster when disabled on coordinator.
+    # Having the guard here too caused ALL gauntlets to return 0 games when
+    # the multi-harness path was invoked in-thread on the coordinator.
     _ensure_game_modules()
 
     # Jan 2026: Default to parallel execution if not specified
