@@ -201,6 +201,13 @@ class TorrentGenerator:
         self.piece_size = piece_size  # None = auto-select
         self.comment = comment
 
+        # Feb 2026: In-memory cache to prevent concurrent regeneration of the same
+        # torrent by multiple threads (was causing 42K+ "corrupt torrent" warnings).
+        import threading
+        self._torrent_cache: dict[str, tuple[Path, str]] = {}  # path -> (torrent_path, info_hash)
+        self._torrent_locks: dict[str, threading.Lock] = {}
+        self._torrent_locks_lock = threading.Lock()
+
         # Ensure torrents directory exists
         self.torrents_dir.mkdir(parents=True, exist_ok=True)
 
@@ -301,93 +308,116 @@ class TorrentGenerator:
             raise FileNotFoundError(f"File not found: {file_path}")
 
         torrent_path = self.get_torrent_path(file_path)
+        cache_key = str(torrent_path)
 
-        if torrent_path.exists() and not force:
-            # Torrent already exists - read info_hash from it
+        # Feb 2026: Check in-memory cache first to avoid concurrent disk reads
+        if not force and cache_key in self._torrent_cache:
+            cached_path, cached_hash = self._torrent_cache[cache_key]
+            if cached_path.exists():
+                return cached_path, cached_hash
+
+        # Per-file lock to prevent concurrent regeneration
+        with self._torrent_locks_lock:
+            if cache_key not in self._torrent_locks:
+                import threading
+                self._torrent_locks[cache_key] = threading.Lock()
+            file_lock = self._torrent_locks[cache_key]
+
+        with file_lock:
+            # Re-check cache after acquiring lock (another thread may have finished)
+            if not force and cache_key in self._torrent_cache:
+                cached_path, cached_hash = self._torrent_cache[cache_key]
+                if cached_path.exists():
+                    return cached_path, cached_hash
+
+            if torrent_path.exists() and not force:
+                # Torrent already exists - read info_hash from it
+                try:
+                    with open(torrent_path, "rb") as f:
+                        torrent_data = bdecode(f.read())
+                    info_encoded = bencode(torrent_data[b"info"])
+                    info_hash = hashlib.sha1(info_encoded).hexdigest()
+                    self._torrent_cache[cache_key] = (torrent_path, info_hash)
+                    logger.debug(f"Torrent already exists: {torrent_path}")
+                    return torrent_path, info_hash
+                except Exception as e:
+                    logger.warning(f"Corrupt torrent file, regenerating: {e}")
+
+            file_size = file_path.stat().st_size
+            piece_size = self.piece_size or get_optimal_piece_size(file_size)
+
+            logger.info(
+                f"Creating torrent for {file_path.name} "
+                f"({file_size / 1024 / 1024:.1f}MB, {piece_size // 1024}KB pieces)"
+            )
+
+            # Calculate piece hashes
+            pieces = self._hash_file_pieces(file_path, piece_size)
+            piece_count = len(pieces) // 20  # SHA1 is 20 bytes
+
+            # Build info dictionary (single file format)
+            info = {
+                b"name": file_path.name.encode("utf-8"),
+                b"length": file_size,
+                b"piece length": piece_size,
+                b"pieces": pieces,
+            }
+
+            if private:
+                info[b"private"] = 1
+
+            # Calculate info hash
+            info_encoded = bencode(info)
+            info_hash = hashlib.sha1(info_encoded).hexdigest()
+
+            # Build full torrent dictionary
+            torrent = {
+                b"info": info,
+                b"created by": b"RingRift TorrentGenerator",
+                b"creation date": int(time.time()),
+                b"comment": self.comment.encode("utf-8"),
+            }
+
+            # Add trackers
+            if trackers:
+                if len(trackers) == 1:
+                    torrent[b"announce"] = trackers[0].encode("utf-8")
+                else:
+                    torrent[b"announce"] = trackers[0].encode("utf-8")
+                    torrent[b"announce-list"] = [
+                        [t.encode("utf-8")] for t in trackers
+                    ]
+
+            # Add web seeds for hybrid HTTP+BT downloads
+            if web_seeds:
+                torrent[b"url-list"] = [ws.encode("utf-8") for ws in web_seeds]
+
+            # Write torrent file atomically to prevent read-during-write corruption.
+            # Feb 2026: Multiple concurrent threads call create_torrent() on the same
+            # file, causing 42K+ "Corrupt torrent file" warnings from partial reads.
+            torrent_path.parent.mkdir(parents=True, exist_ok=True)
+            import tempfile
+            tmp_fd, tmp_path = tempfile.mkstemp(
+                dir=torrent_path.parent, suffix=".tmp"
+            )
             try:
-                with open(torrent_path, "rb") as f:
-                    torrent_data = bdecode(f.read())
-                info_encoded = bencode(torrent_data[b"info"])
-                info_hash = hashlib.sha1(info_encoded).hexdigest()
-                logger.debug(f"Torrent already exists: {torrent_path}")
-                return torrent_path, info_hash
-            except Exception as e:
-                logger.warning(f"Corrupt torrent file, regenerating: {e}")
+                with os.fdopen(tmp_fd, "wb") as f:
+                    f.write(bencode(torrent))
+                Path(tmp_path).replace(torrent_path)  # Atomic on POSIX
+            except Exception:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
 
-        file_size = file_path.stat().st_size
-        piece_size = self.piece_size or get_optimal_piece_size(file_size)
+            logger.info(
+                f"Created torrent: {torrent_path.name} "
+                f"(info_hash: {info_hash[:16]}..., {piece_count} pieces)"
+            )
 
-        logger.info(
-            f"Creating torrent for {file_path.name} "
-            f"({file_size / 1024 / 1024:.1f}MB, {piece_size // 1024}KB pieces)"
-        )
-
-        # Calculate piece hashes
-        pieces = self._hash_file_pieces(file_path, piece_size)
-        piece_count = len(pieces) // 20  # SHA1 is 20 bytes
-
-        # Build info dictionary (single file format)
-        info = {
-            b"name": file_path.name.encode("utf-8"),
-            b"length": file_size,
-            b"piece length": piece_size,
-            b"pieces": pieces,
-        }
-
-        if private:
-            info[b"private"] = 1
-
-        # Calculate info hash
-        info_encoded = bencode(info)
-        info_hash = hashlib.sha1(info_encoded).hexdigest()
-
-        # Build full torrent dictionary
-        torrent = {
-            b"info": info,
-            b"created by": b"RingRift TorrentGenerator",
-            b"creation date": int(time.time()),
-            b"comment": self.comment.encode("utf-8"),
-        }
-
-        # Add trackers
-        if trackers:
-            if len(trackers) == 1:
-                torrent[b"announce"] = trackers[0].encode("utf-8")
-            else:
-                torrent[b"announce"] = trackers[0].encode("utf-8")
-                torrent[b"announce-list"] = [
-                    [t.encode("utf-8")] for t in trackers
-                ]
-
-        # Add web seeds for hybrid HTTP+BT downloads
-        if web_seeds:
-            torrent[b"url-list"] = [ws.encode("utf-8") for ws in web_seeds]
-
-        # Write torrent file atomically to prevent read-during-write corruption.
-        # Feb 2026: Multiple concurrent threads call create_torrent() on the same
-        # file, causing 42K+ "Corrupt torrent file" warnings from partial reads.
-        torrent_path.parent.mkdir(parents=True, exist_ok=True)
-        import tempfile
-        tmp_fd, tmp_path = tempfile.mkstemp(
-            dir=torrent_path.parent, suffix=".tmp"
-        )
-        try:
-            with os.fdopen(tmp_fd, "wb") as f:
-                f.write(bencode(torrent))
-            Path(tmp_path).replace(torrent_path)  # Atomic on POSIX
-        except Exception:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
-            raise
-
-        logger.info(
-            f"Created torrent: {torrent_path.name} "
-            f"(info_hash: {info_hash[:16]}..., {piece_count} pieces)"
-        )
-
-        return torrent_path, info_hash
+            self._torrent_cache[cache_key] = (torrent_path, info_hash)
+            return torrent_path, info_hash
 
     def create_torrent_info(
         self,

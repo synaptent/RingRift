@@ -57,12 +57,17 @@ __all__ = [
 ]
 
 
-# Harness compatibility matrix
+# Harness compatibility matrix — lists harnesses used for Elo evaluation.
+# Feb 28, 2026: Reduced from 4-5 harnesses per model to just gumbel_mcts.
+# Other harnesses (policy_only, descent, minimax, maxn, brs) are BASELINE
+# opponents used WITHIN the gauntlet, not separate evaluation harnesses.
+# The old matrix created 4-5x more gauntlet work items than needed (5,241
+# pending items on Feb 28 from 12 configs × 5 harnesses × many cycles).
 HARNESS_COMPATIBILITY: dict[str, dict[str, list[str]]] = {
     "nn": {
-        "2": ["policy_only", "mcts", "gumbel_mcts", "descent", "minimax"],
-        "3": ["policy_only", "gumbel_mcts", "maxn", "brs"],
-        "4": ["policy_only", "gumbel_mcts", "maxn", "brs"],
+        "2": ["gumbel_mcts"],
+        "3": ["gumbel_mcts"],
+        "4": ["gumbel_mcts"],
     },
     "nnue": {
         "2": ["minimax"],
@@ -71,8 +76,8 @@ HARNESS_COMPATIBILITY: dict[str, dict[str, list[str]]] = {
     },
     "nnue_mp": {
         "2": [],
-        "3": ["maxn", "brs"],
-        "4": ["maxn", "brs"],
+        "3": ["maxn"],
+        "4": ["maxn"],
     },
 }
 

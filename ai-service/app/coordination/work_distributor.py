@@ -364,6 +364,28 @@ class WorkDistributor:
             logger.warning("Work queue not available, cannot submit evaluation")
             return None
 
+        # Feb 28, 2026: Rate-limit gauntlet submissions to prevent queue explosion.
+        # Without this, ComprehensiveEvaluationLoop + evaluation_daemon create 5000+
+        # pending gauntlets that crowd out training and selfplay.
+        MAX_PENDING_GAUNTLETS = 50
+        if evaluation_type == "gauntlet" and self._queue:
+            try:
+                pending = sum(
+                    1 for item in self._queue.items.values()
+                    if getattr(item, "work_type", None)
+                    and item.work_type.value == "gauntlet"
+                    and item.status == "pending"
+                )
+                if pending >= MAX_PENDING_GAUNTLETS:
+                    logger.info(
+                        f"[WorkDistributor] Gauntlet queue full "
+                        f"({pending}>={MAX_PENDING_GAUNTLETS} pending), "
+                        f"skipping submission for {candidate_model}"
+                    )
+                    return None
+            except Exception:
+                pass  # Don't block on counting errors
+
         if config is None:
             # Feb 27, 2026: Use priority=85 (below training=100, above selfplay=75).
             # Was 100 since Feb 24, causing 519 gauntlet items to crowd out training

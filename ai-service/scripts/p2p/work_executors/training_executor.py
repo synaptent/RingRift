@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import sys
 from pathlib import Path
@@ -173,6 +174,7 @@ async def execute_training_work(
                 f"Training data too small: {npz_path} ({npz_size} bytes). "
                 f"Cannot train {config_key}."
             )
+            work_item["error"] = f"npz_too_small:{npz_size}bytes:{config_key}"
             return False
         # Feb 2026: Validate NPZ structure before launching training subprocess.
         # Catches corruption from interrupted exports/syncs (3 corrupt files in one session).
@@ -181,6 +183,7 @@ async def execute_training_work(
             _ok, _err = quick_npz_check(npz_path)
             if not _ok:
                 logger.error(f"Training data corrupt: {npz_path}: {_err}")
+                work_item["error"] = f"npz_corrupt:{config_key}:{_err}"
                 return False
         except ImportError:
             pass  # Validation module not available on this node
@@ -199,6 +202,7 @@ async def execute_training_work(
                 f"Training data not found: {npz_path}. "
                 f"No local JSONL data available either. Cannot train {config_key}."
             )
+            work_item["error"] = f"no_training_data:{config_key}"
             return False
 
     # Validate init weights exist before launching subprocess.
@@ -249,6 +253,7 @@ async def execute_training_work(
                 f"Refusing from-random training for {config_key} with "
                 f"{game_count} games. A canonical model should exist by now."
             )
+            work_item["error"] = f"refusing_from_random:{config_key}:games={game_count}"
             return False
 
     logger.info(
@@ -270,6 +275,7 @@ async def execute_training_work(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=str(Path(ringrift_path)),
+            env={**os.environ, "PYTHONPATH": str(ai_service_root)},
         )
         try:
             stdout, _ = await asyncio.wait_for(
@@ -299,6 +305,7 @@ async def execute_training_work(
                     "timed_out": True,
                 }
                 return True
+            work_item["error"] = f"training_timeout:{TRAINING_TIMEOUT_SECONDS}s:{config_key}"
             return False
         output = stdout.decode() if stdout else ""
 
@@ -376,7 +383,9 @@ async def execute_training_work(
                 f"Training failed: {config_key}/{model_version}: "
                 f"returncode={proc.returncode}, output={truncated}"
             )
+            work_item["error"] = f"subprocess_failed:rc={proc.returncode}:{config_key}"
             return False
     except Exception as e:
         logger.exception(f"Training subprocess error for {config_key}: {e}")
+        work_item["error"] = f"training_exception:{config_key}:{e}"
         return False

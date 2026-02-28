@@ -55,8 +55,11 @@ class ComprehensiveEvaluationConfig:
     # Loop interval in seconds (default: 6 hours)
     interval: float = 6 * 3600
 
-    # Maximum evaluations per cycle to prevent overload
-    max_evaluations_per_cycle: int = 50
+    # Maximum evaluations per cycle to prevent overload.
+    # Feb 28, 2026: Reduced from 50 to 12 (one per canonical config).
+    # With the corrected HARNESS_COMPATIBILITY matrix (1 harness per model
+    # instead of 4-5), 12 is sufficient for a full cluster evaluation pass.
+    max_evaluations_per_cycle: int = 12
 
     # Days after which an evaluation is considered stale
     stale_threshold_days: int = 7
