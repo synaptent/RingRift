@@ -95,7 +95,7 @@ class NPZValidationResult:
 
 
 def validate_npz_structure(
-    path: Path,
+    path: str | Path,
     require_policy: bool = True,
     max_samples: int = MAX_REASONABLE_SAMPLES,
 ) -> NPZValidationResult:
@@ -123,6 +123,7 @@ def validate_npz_structure(
         ...         print(f"ERROR: {error}")
     """
     result = NPZValidationResult(valid=False)
+    path = Path(path)  # Normalize str -> Path
 
     # Check file exists
     if not path.exists():
@@ -339,18 +340,19 @@ def _get_expected_cells(board_type: str) -> int | None:
     return cell_counts.get(board_type)
 
 
-def quick_npz_check(path: Path) -> tuple[bool, str]:
+def quick_npz_check(path: str | Path) -> tuple[bool, str]:
     """Quick check if NPZ file is likely valid.
 
     This is a fast check that doesn't fully validate the file,
     suitable for use in hot paths.
 
     Args:
-        path: Path to the NPZ file
+        path: Path to the NPZ file (str or Path)
 
     Returns:
         Tuple of (is_valid, error_message)
     """
+    path = Path(path)  # Normalize str -> Path
     if not path.exists():
         return False, "File not found"
 

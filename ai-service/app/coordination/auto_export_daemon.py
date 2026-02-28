@@ -1070,7 +1070,7 @@ class AutoExportDaemon(HandlerBase):
                     # during np.savez_compressed before atomic rename was added).
                     try:
                         from app.coordination.npz_validation import quick_npz_check
-                        _ok, _err = quick_npz_check(str(output_path))
+                        _ok, _err = quick_npz_check(output_path)
                         if not _ok:
                             logger.error(
                                 f"[AutoExportDaemon] Export produced corrupt NPZ for "
@@ -1120,7 +1120,11 @@ class AutoExportDaemon(HandlerBase):
 
             except Exception as e:  # noqa: BLE001
                 state.consecutive_failures += 1
-                logger.error(f"[AutoExportDaemon] Export error for {config_key}: {e}")
+                import traceback
+                logger.error(
+                    f"[AutoExportDaemon] Export error for {config_key}: {e}\n"
+                    f"{traceback.format_exc()}"
+                )
                 return False
 
             finally:
