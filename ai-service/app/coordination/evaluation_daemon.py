@@ -2435,9 +2435,16 @@ class EvaluationDaemon(HandlerBase):
 
         try:
             # Use only RANDOM and HEURISTIC baselines for lightweight eval.
-            # 30 games per opponent (60 total) meets the 50-game promotion
-            # threshold while staying fast on CPU (~1-2 min with policy-only).
+            # Games per opponent scaled by board size: small boards (hex8/square8)
+            # complete quickly, large boards (square19/hexagonal) need more time.
             lightweight_opponents = [BaselineOpponent.RANDOM, BaselineOpponent.HEURISTIC]
+            is_large_board = board_type in ("square19", "hexagonal")
+            # Large boards: 15 games/opponent (30 total) to stay within timeout.
+            # Small boards: 30 games/opponent (60 total) for better signal.
+            games_per = 15 if is_large_board else 30
+            # Large boards: 15 min timeout (361+ cells, ~30s/game on CPU).
+            # Small boards: 5 min timeout (~5s/game on CPU).
+            timeout_s = 900.0 if is_large_board else 300.0
 
             result = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -2445,15 +2452,15 @@ class EvaluationDaemon(HandlerBase):
                     model_path=model_path,
                     board_type=board_type,
                     opponents=lightweight_opponents,
-                    games_per_opponent=30,
+                    games_per_opponent=games_per,
                     num_players=num_players,
                     verbose=False,
                     early_stopping=False,
-                    parallel_games=4,
+                    parallel_games=2 if is_large_board else 4,
                     parallel_opponents=False,
                     use_search=False,
                 ),
-                timeout=300.0,  # 5 minutes max for lightweight eval
+                timeout=timeout_s,
             )
 
             elapsed = time.time() - start_time
