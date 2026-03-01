@@ -121,12 +121,13 @@ async def _try_fetch_npz_from_s3(config_key: str, output_path: str) -> bool:
     Returns:
         True on success, False on failure.
     """
-    s3_path = f"s3://ringrift-models-20251214/consolidated/training/{config_key}.npz"
+    bucket = os.environ.get("RINGRIFT_S3_BUCKET", "ringrift-models-20251214")
+    s3_path = f"s3://{bucket}/consolidated/training/{config_key}.npz"
     logger.info(f"Attempting S3 fetch for NPZ: {s3_path} -> {output_path}")
     try:
         proc = await asyncio.create_subprocess_exec(
             "aws", "s3", "cp", s3_path, output_path,
-            "--region", "us-east-1",
+            "--region", os.environ.get("AWS_REGION", "us-east-1"),
             "--cli-read-timeout", "300",
             "--cli-connect-timeout", "30",
             stdout=asyncio.subprocess.PIPE,
@@ -162,12 +163,13 @@ async def _try_fetch_model_from_s3(model_filename: str, output_path: str) -> boo
     Returns:
         True on success, False on failure.
     """
-    s3_path = f"s3://ringrift-models-20251214/consolidated/models/{model_filename}"
+    bucket = os.environ.get("RINGRIFT_S3_BUCKET", "ringrift-models-20251214")
+    s3_path = f"s3://{bucket}/consolidated/models/{model_filename}"
     logger.info(f"Attempting S3 fetch for model: {s3_path} -> {output_path}")
     try:
         proc = await asyncio.create_subprocess_exec(
             "aws", "s3", "cp", s3_path, output_path,
-            "--region", "us-east-1",
+            "--region", os.environ.get("AWS_REGION", "us-east-1"),
             "--cli-read-timeout", "300",
             "--cli-connect-timeout", "30",
             stdout=asyncio.subprocess.PIPE,
