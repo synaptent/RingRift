@@ -177,6 +177,9 @@ class ConfigValidatorDaemon(HandlerBase):
     async def _run_cycle(self) -> None:
         """Main daemon cycle - run validation."""
         try:
+            # Feb 2026: Guard against _config being None after daemon restart
+            if self._config is None:
+                self._config = ConfigValidatorConfig()
             result = await self.validate_config()
             self._last_result = result
 

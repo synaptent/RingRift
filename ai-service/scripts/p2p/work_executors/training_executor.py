@@ -24,6 +24,57 @@ if TYPE_CHECKING:
 logger = logging.getLogger("p2p_orchestrator")
 
 
+async def _try_fetch_npz_from_cluster(
+    ai_service_root: Path, config_key: str, npz_path: Path,
+) -> Path | None:
+    """Try to fetch an NPZ file from another cluster node via rsync.
+
+    Feb 2026: Training fails on nodes that don't have the NPZ file synced
+    from the coordinator. This fetches it on-demand before training starts,
+    preventing 100% failure rates for configs like hexagonal_2p/3p.
+    """
+    try:
+        # Get leader URL to find coordinator IP
+        from app.config.cluster_config import load_cluster_config
+        cluster_cfg = load_cluster_config()
+        preferred_leader = cluster_cfg._raw_config.get("preferred_leader", "")
+        if not preferred_leader:
+            return None
+
+        # Find the coordinator's SSH info
+        nodes = cluster_cfg._raw_config.get("nodes", {})
+        leader_node = nodes.get(preferred_leader, {})
+        leader_ip = leader_node.get("tailscale_ip") or leader_node.get("ip")
+        ssh_user = leader_node.get("ssh_user", "ubuntu")
+        if not leader_ip:
+            return None
+
+        remote_path = f"{ssh_user}@{leader_ip}:ringrift/ai-service/data/training/{config_key}.npz"
+        logger.info(f"Fetching NPZ from coordinator: {remote_path}")
+
+        proc = await asyncio.create_subprocess_exec(
+            "rsync", "-az", "--timeout=60",
+            remote_path, str(npz_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+
+        if proc.returncode == 0 and npz_path.exists() and npz_path.stat().st_size > 1024:
+            logger.info(
+                f"Fetched {config_key}.npz from coordinator: "
+                f"{npz_path.stat().st_size / 1e6:.1f}MB"
+            )
+            return npz_path
+        else:
+            err = stderr.decode()[:200] if stderr else ""
+            logger.warning(f"Failed to fetch NPZ from coordinator: rc={proc.returncode} {err}")
+            return None
+    except Exception as e:
+        logger.debug(f"NPZ fetch from cluster failed for {config_key}: {e}")
+        return None
+
+
 async def _try_local_jsonl_export(
     ai_service_root: Path, config_key: str, board_type: str, num_players: int,
 ) -> Path | None:
@@ -189,21 +240,28 @@ async def execute_training_work(
             pass  # Validation module not available on this node
         cmd.extend(["--data-path", str(npz_path)])
     else:
-        # Feb 2026: NPZ not available (coordinator hasn't exported yet or sync failed).
-        # Try converting local JSONL selfplay data to NPZ directly on this node.
-        # This breaks the circular dependency where coordinator needs selfplay data
-        # to export NPZ, but GPU nodes need NPZ to train.
-        jsonl_npz = await _try_local_jsonl_export(ai_service_root, config_key, board_type, num_players)
-        if jsonl_npz and jsonl_npz.exists() and jsonl_npz.stat().st_size > 1024:
-            logger.info(f"Using locally-exported JSONL→NPZ: {jsonl_npz}")
-            cmd.extend(["--data-path", str(jsonl_npz)])
+        # Feb 2026: NPZ not available locally. Try to fetch from another node.
+        # 1. Try rsync from coordinator (fastest for large files)
+        # 2. Fall back to local JSONL export
+        fetched_npz = await _try_fetch_npz_from_cluster(
+            ai_service_root, config_key, npz_path
+        )
+        if fetched_npz and fetched_npz.exists() and fetched_npz.stat().st_size > 1024:
+            logger.info(f"Fetched NPZ from cluster: {fetched_npz}")
+            cmd.extend(["--data-path", str(fetched_npz)])
         else:
-            logger.error(
-                f"Training data not found: {npz_path}. "
-                f"No local JSONL data available either. Cannot train {config_key}."
-            )
-            work_item["error"] = f"no_training_data:{config_key}"
-            return False
+            # Fall back to converting local JSONL selfplay data to NPZ
+            jsonl_npz = await _try_local_jsonl_export(ai_service_root, config_key, board_type, num_players)
+            if jsonl_npz and jsonl_npz.exists() and jsonl_npz.stat().st_size > 1024:
+                logger.info(f"Using locally-exported JSONL→NPZ: {jsonl_npz}")
+                cmd.extend(["--data-path", str(jsonl_npz)])
+            else:
+                logger.error(
+                    f"Training data not found: {npz_path}. "
+                    f"No local JSONL data available either. Cannot train {config_key}."
+                )
+                work_item["error"] = f"no_training_data:{config_key}"
+                return False
 
     # Validate init weights exist before launching subprocess.
     # Without --init-weights, training starts from random (loss 5-9 = useless).
