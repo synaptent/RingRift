@@ -59,14 +59,19 @@ PROTECTED_PATTERNS = [
     "coordination.db",      # Coordination state
     "work_queue.db",        # Active work queue
     "*_backup*.db",         # Backup files
+    "*.npz",                # Training data files - always protected
+    #                       # Mar 1, 2026: Moved from COORDINATOR_PROTECTED_PATTERNS
+    #                       # to PROTECTED_PATTERNS. NPZ files are critical for training
+    #                       # and take 1-17 minutes to re-export. Deleting them causes
+    #                       # training pipeline stalls (all 12 NPZ files were deleted
+    #                       # by S3-backed cleanup on Feb 28, halting training for hours).
+    #                       # The S3 re-download path in training_executor.py is a fallback,
+    #                       # not a primary data flow.
 ]
 
-# Phase 6 Step 11: NPZ files are only protected on coordinator nodes.
-# Non-coordinator (GPU) nodes can delete NPZ files if they are verified in S3,
-# since they can re-download from S3 when needed for training.
-COORDINATOR_PROTECTED_PATTERNS = [
-    "*.npz",                # Training data files - protected on coordinator only
-]
+# Phase 6 Step 11: Additional coordinator-only protections (currently empty
+# since NPZ protection was moved to PROTECTED_PATTERNS above).
+COORDINATOR_PROTECTED_PATTERNS: list[str] = []
 
 # Directories that should never have files auto-deleted
 PROTECTED_DIRECTORIES = [
