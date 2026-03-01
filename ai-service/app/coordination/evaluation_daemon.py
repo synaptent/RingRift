@@ -919,6 +919,21 @@ class EvaluationDaemon(HandlerBase):
                 model_path = config.get("candidate_model", "")
                 estimated_elo = result.get("estimated_elo", result.get("best_elo", 0.0))
 
+                # Feb 28, 2026: Compute proper Elo from opponent_results if the
+                # default 1500.0/0.0 was returned. The gauntlet executor sends
+                # opponent win/loss data but doesn't compute Elo itself.
+                if (not estimated_elo or estimated_elo == 1500.0) and board_type and num_players and model_path:
+                    computed_elo = await self._compute_elo_from_gauntlet(
+                        model_path=model_path,
+                        board_type=board_type,
+                        num_players=int(num_players),
+                        result=result,
+                    )
+                    if computed_elo is not None:
+                        estimated_elo = computed_elo
+                        result["estimated_elo"] = estimated_elo
+                        result["best_elo"] = estimated_elo
+
                 # Mark as seen regardless of whether we can match it
                 self._polled_work_ids.add(work_id)
 
@@ -2240,11 +2255,14 @@ class EvaluationDaemon(HandlerBase):
                     continue
 
                 win_rate = opp_result.get("win_rate", 0.0)
-                games_played = opp_result.get("games_played", 0)
+                # Feb 28, 2026: GauntletResult uses "games" not "games_played".
+                # Check both field names for compatibility.
+                games_played = opp_result.get("games_played") or opp_result.get("games", 0)
                 if games_played <= 0:
                     continue
 
-                wins = int(round(win_rate * games_played))
+                # Prefer explicit "wins" field over computing from win_rate
+                wins = opp_result.get("wins") or int(round(win_rate * games_played))
                 losses = games_played - wins
 
                 # Batch all matches vs this opponent into one thread call
@@ -2493,6 +2511,20 @@ class EvaluationDaemon(HandlerBase):
             self._recently_evaluated[model_path] = time.time()
             self._record_gauntlet_complete(run_id, 1, total_games, "completed_local_fallback")
 
+            # Feb 28, 2026: Update persistent queue to mark evaluation complete.
+            # Without this, the queue entry stays "running" and eventually times out.
+            persistent_request_id = request.get("_persistent_request_id")
+            if persistent_request_id and self._persistent_queue:
+                final_elo = result_dict.get("estimated_elo", result_dict.get("best_elo", 0.0))
+                self._persistent_queue.complete(persistent_request_id, elo=final_elo)
+                sibling_ids = request.get("_sibling_request_ids", [])
+                if sibling_ids:
+                    self._persistent_queue.complete_batch(sibling_ids, elo=final_elo)
+                logger.debug(
+                    f"[EvaluationDaemon] Marked persistent request complete: {persistent_request_id}"
+                    f"{f' + {len(sibling_ids)} siblings' if sibling_ids else ''}"
+                )
+
             logger.info(
                 f"[EvaluationDaemon] Lightweight local gauntlet completed: {model_path} "
                 f"(win_rate={result_dict.get('overall_win_rate', 0):.1%}, "
@@ -2504,6 +2536,13 @@ class EvaluationDaemon(HandlerBase):
             self._record_gauntlet_complete(run_id, 0, 0, "failed:local_timeout")
             await self._emit_evaluation_failed(model_path, board_type, num_players, "local_timeout")
             logger.error(f"[EvaluationDaemon] Lightweight local gauntlet timed out: {model_path}")
+            persistent_request_id = request.get("_persistent_request_id")
+            if persistent_request_id and self._persistent_queue:
+                self._persistent_queue.fail(persistent_request_id, "local_timeout")
+                sibling_ids = request.get("_sibling_request_ids", [])
+                if sibling_ids:
+                    for sid in sibling_ids:
+                        self._persistent_queue.fail(sid, "local_timeout")
 
         except Exception as e:  # noqa: BLE001
             self._eval_stats.evaluations_failed += 1
@@ -2512,6 +2551,13 @@ class EvaluationDaemon(HandlerBase):
             logger.error(
                 f"[EvaluationDaemon] Lightweight local gauntlet failed: {model_path}: {e}"
             )
+            persistent_request_id = request.get("_persistent_request_id")
+            if persistent_request_id and self._persistent_queue:
+                self._persistent_queue.fail(persistent_request_id, str(e))
+                sibling_ids = request.get("_sibling_request_ids", [])
+                if sibling_ids:
+                    for sid in sibling_ids:
+                        self._persistent_queue.fail(sid, str(e))
 
     def _should_activate_backpressure(self) -> bool:
         """Session 17.24: Check if backpressure can be activated respecting hysteresis.
