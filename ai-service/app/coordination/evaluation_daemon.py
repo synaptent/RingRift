@@ -2208,70 +2208,74 @@ class EvaluationDaemon(HandlerBase):
             return None
 
         try:
-            from app.training.elo_service import get_elo_service
+            from app.training.elo_service import EloService
             from pathlib import Path
 
-            elo_service = get_elo_service()
             model_name = Path(model_path).stem
             matches_recorded = 0
 
-            def _record_opponent_matches(
-                svc, m_name, opp_name, wins, losses, b_type, n_players
+            def _record_all_matches(
+                m_name, opponents, b_type, n_players
             ):
-                """Record all matches vs one opponent in a single thread."""
-                count = 0
-                for _ in range(wins):
-                    svc.record_match(
-                        participant_a=m_name,
-                        participant_b=opp_name,
-                        winner=m_name,
-                        board_type=b_type,
-                        num_players=n_players,
-                        harness_type="gumbel_mcts",
-                    )
-                    count += 1
-                for _ in range(losses):
-                    svc.record_match(
-                        participant_a=m_name,
-                        participant_b=opp_name,
-                        winner=opp_name,
-                        board_type=b_type,
-                        num_players=n_players,
-                        harness_type="gumbel_mcts",
-                    )
-                    count += 1
-                return count
+                """Record all matches in a single thread with a fresh DB connection.
 
+                Feb 28, 2026: Creates a fresh EloService in the thread instead of
+                using get_elo_service() singleton, which has a SQLite connection from
+                the main thread that fails with "Cannot operate on a closed database"
+                when used in asyncio.to_thread().
+                """
+                svc = EloService()
+                count = 0
+                for opp_name, wins, losses in opponents:
+                    for _ in range(wins):
+                        svc.record_match(
+                            participant_a=m_name,
+                            participant_b=opp_name,
+                            winner=m_name,
+                            board_type=b_type,
+                            num_players=n_players,
+                            harness_type="gumbel_mcts",
+                        )
+                        count += 1
+                    for _ in range(losses):
+                        svc.record_match(
+                            participant_a=m_name,
+                            participant_b=opp_name,
+                            winner=opp_name,
+                            board_type=b_type,
+                            num_players=n_players,
+                            harness_type="gumbel_mcts",
+                        )
+                        count += 1
+                # Get rating from the same fresh connection
+                rating = svc.get_rating(m_name, b_type, n_players)
+                return count, float(rating.rating) if rating else None
+
+            # Collect all opponent data first
+            opponent_data = []
             for opponent_name, opp_result in opponent_results.items():
                 if not isinstance(opp_result, dict):
                     continue
 
                 win_rate = opp_result.get("win_rate", 0.0)
-                # Feb 28, 2026: GauntletResult uses "games" not "games_played".
-                # Check both field names for compatibility.
                 games_played = opp_result.get("games_played") or opp_result.get("games", 0)
                 if games_played <= 0:
                     continue
 
-                # Prefer explicit "wins" field over computing from win_rate
                 wins = opp_result.get("wins") or int(round(win_rate * games_played))
                 losses = games_played - wins
+                opponent_data.append((str(opponent_name), wins, losses))
 
-                # Batch all matches vs this opponent into one thread call
-                recorded = await asyncio.to_thread(
-                    _record_opponent_matches,
-                    elo_service, model_name, str(opponent_name),
-                    wins, losses, board_type, num_players,
-                )
-                matches_recorded += recorded
-
-            if matches_recorded == 0:
+            if not opponent_data:
                 return None
 
-            # Retrieve updated Elo rating
-            rating = elo_service.get_rating(model_name, board_type, num_players)
-            if rating is not None:
-                elo = float(rating.rating)
+            # Record all matches in one thread call with a fresh connection
+            matches_recorded, elo = await asyncio.to_thread(
+                _record_all_matches,
+                model_name, opponent_data, board_type, num_players,
+            )
+
+            if matches_recorded > 0 and elo is not None:
                 logger.info(
                     f"[EvaluationDaemon] Computed Elo from gauntlet: {model_name} = "
                     f"{elo:.0f} ({matches_recorded} matches recorded)"
@@ -2435,16 +2439,21 @@ class EvaluationDaemon(HandlerBase):
 
         try:
             # Use only RANDOM and HEURISTIC baselines for lightweight eval.
-            # Games per opponent scaled by board size: small boards (hex8/square8)
-            # complete quickly, large boards (square19/hexagonal) need more time.
+            # Scale games and timeout by board complexity and player count.
+            # 3p/4p games have ~1.5-2x more moves than 2p, large boards ~3x.
             lightweight_opponents = [BaselineOpponent.RANDOM, BaselineOpponent.HEURISTIC]
             is_large_board = board_type in ("square19", "hexagonal")
-            # Large boards: 15 games/opponent (30 total) to stay within timeout.
-            # Small boards: 30 games/opponent (60 total) for better signal.
-            games_per = 15 if is_large_board else 30
-            # Large boards: 15 min timeout (361+ cells, ~30s/game on CPU).
-            # Small boards: 5 min timeout (~5s/game on CPU).
-            timeout_s = 900.0 if is_large_board else 300.0
+            player_mult = {2: 1.0, 3: 1.5, 4: 2.0}.get(num_players, 1.5)
+            # Games per opponent: fewer for complex configs to stay within timeout
+            if is_large_board:
+                games_per = 10
+            elif num_players >= 3:
+                games_per = 20
+            else:
+                games_per = 30
+            # Timeout: base 300s (small 2p), scaled by board and players
+            base_timeout = 900.0 if is_large_board else 300.0
+            timeout_s = base_timeout * player_mult
 
             result = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -2456,7 +2465,7 @@ class EvaluationDaemon(HandlerBase):
                     num_players=num_players,
                     verbose=False,
                     early_stopping=False,
-                    parallel_games=2 if is_large_board else 4,
+                    parallel_games=1 if is_large_board else (2 if num_players >= 3 else 4),
                     parallel_opponents=False,
                     use_search=False,
                 ),
@@ -2484,7 +2493,7 @@ class EvaluationDaemon(HandlerBase):
                 result_dict = {"overall_win_rate": 0.0, "opponent_results": {}}
 
             total_games = sum(
-                opp.get("games_played", 0)
+                opp.get("games_played") or opp.get("games", 0)
                 for opp in result_dict.get("opponent_results", {}).values()
             )
             self._eval_stats.games_played += total_games
