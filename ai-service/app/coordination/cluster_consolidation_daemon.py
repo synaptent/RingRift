@@ -419,9 +419,12 @@ class ClusterConsolidationDaemon(HandlerBase):
         node_id: str,
         node_info: dict[str, Any],
     ) -> bool:
-        """Sync selfplay database from a single node.
+        """Sync game databases from a single node.
 
         Uses rsync over SSH with Tailscale fallback.
+        Mar 2026: Extended to sync tournament_*.db and gauntlet_*.db alongside
+        selfplay.db. These contain high-quality training data that was previously
+        silently lost on GPU nodes.
 
         Args:
             node_id: Node identifier
@@ -432,31 +435,50 @@ class ClusterConsolidationDaemon(HandlerBase):
         """
         async with self._sync_semaphore:
             try:
-                # Get host to connect to (prefer Tailscale)
                 host = await self._get_best_host(node_id, node_info)
                 if not host:
                     logger.debug(f"[ClusterConsolidation] No reachable host for {node_id}")
                     return False
 
-                # Determine SSH user
                 ssh_user = self._get_ssh_user(node_id, node_info)
+                any_success = False
 
-                # Target local path
+                # Sync selfplay.db (original behavior)
                 local_path = self._daemon_config.synced_dir / f"{node_id}_selfplay.db"
-
-                # Sync via rsync
                 success = await self._rsync_database(
                     host=host,
                     user=ssh_user,
                     remote_path=self._daemon_config.remote_db_path,
                     local_path=local_path,
                 )
-
                 if success:
+                    any_success = True
+
+                # Mar 2026: Also sync tournament and gauntlet DBs.
+                # These are per-config files (tournament_hex8_2p.db, etc.)
+                remote_games_dir = str(Path(self._daemon_config.remote_db_path).parent)
+                for prefix in ("tournament", "gauntlet"):
+                    for config in ("hex8_2p", "hex8_3p", "hex8_4p",
+                                   "square8_2p", "square8_3p", "square8_4p",
+                                   "square19_2p", "square19_3p", "square19_4p",
+                                   "hexagonal_2p", "hexagonal_3p", "hexagonal_4p"):
+                        db_name = f"{prefix}_{config}.db"
+                        remote_path = f"{remote_games_dir}/{db_name}"
+                        local_db = self._daemon_config.synced_dir / f"{node_id}_{db_name}"
+                        ok = await self._rsync_database(
+                            host=host,
+                            user=ssh_user,
+                            remote_path=remote_path,
+                            local_path=local_db,
+                        )
+                        if ok:
+                            any_success = True
+
+                if any_success:
                     self._last_sync_time[node_id] = time.time()
                     logger.debug(f"[ClusterConsolidation] Synced from {node_id}")
 
-                return success
+                return any_success
 
             except Exception as e:
                 logger.debug(f"[ClusterConsolidation] Sync failed for {node_id}: {e}")

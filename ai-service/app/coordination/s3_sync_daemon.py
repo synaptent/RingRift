@@ -422,13 +422,22 @@ class S3SyncDaemon(HandlerBase):
     # =========================================================================
 
     async def _sync_games(self) -> None:
-        """Sync game databases to S3."""
+        """Sync game databases to S3.
+
+        Mar 2026: Extended to include tournament_*.db and gauntlet_*.db.
+        Tournament/gauntlet games on GPU nodes contain high-quality training
+        data (with policy targets from strong models) that was previously
+        never pushed to S3, silently lost when nodes were reprovisioned.
+        """
         games_dir = self._base_path / "data" / "games"
         if not games_dir.exists():
             return
 
-        for db_path in games_dir.glob("canonical_*.db"):
-            await self._push_if_modified(db_path, self._get_s3_key(db_path, "games"))
+        for pattern in ["canonical_*.db", "tournament_*.db", "gauntlet_*.db"]:
+            for db_path in games_dir.glob(pattern):
+                await self._push_if_modified(
+                    db_path, self._get_s3_key(db_path, "games")
+                )
 
     async def _sync_npz(self) -> None:
         """Sync NPZ training files to S3.
