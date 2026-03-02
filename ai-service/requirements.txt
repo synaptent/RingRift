@@ -84,7 +84,7 @@ matplotlib==3.10.0
 # JIT compilation can be added later when numba supports Python 3.13
 
 # Memory optimization for experience replay
-msgpack==1.1.0
+msgpack==1.1.2
 lz4==4.4.5
 
 # Progress bars and monitoring
