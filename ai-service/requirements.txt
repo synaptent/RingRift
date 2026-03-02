@@ -20,7 +20,7 @@ prometheus_client==0.23.1
 sdnotify==0.3.2  # Systemd watchdog notifications for P2P orchestrator
 
 # Dashboard server
-flask==3.1.0
+flask==3.1.3
 flask-cors==5.0.0
 
 # Development tools (Wave 3-A tooling stack validated with pytest 9.x)
