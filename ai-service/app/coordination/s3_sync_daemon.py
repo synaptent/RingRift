@@ -208,7 +208,10 @@ class S3SyncDaemon(HandlerBase):
         with a 60s delay, causing GPU nodes to train from random when the model
         hadn't reached S3 yet.
         """
-        payload = event.get("payload", event) if isinstance(event, dict) else {}
+        # Mar 2026: Use get_event_payload() to handle RouterEvent objects.
+        # Previously used event.get() which fails on RouterEvent (not a dict).
+        from app.coordination.event_router import get_event_payload
+        payload = get_event_payload(event)
         model_path_str = payload.get("model_path")
         board_type = payload.get("board_type")
         num_players = payload.get("num_players")

@@ -249,9 +249,9 @@ class ComprehensiveModelScanDaemon(HandlerBase):
         """Get or create the EloService."""
         if self._elo_service is None:
             try:
-                from app.training.elo_service import EloService
+                from app.training.elo_service import get_elo_service
 
-                self._elo_service = EloService.get_instance()
+                self._elo_service = get_elo_service()
             except ImportError:
                 logger.warning("[ComprehensiveModelScan] EloService not available")
         return self._elo_service

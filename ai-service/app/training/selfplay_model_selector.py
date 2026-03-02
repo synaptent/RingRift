@@ -568,10 +568,13 @@ def _on_model_promoted(event) -> None:
         event: The MODEL_PROMOTED event with board_type, num_players, model_path
     """
     try:
-        # Extract config from event
-        board_type = getattr(event, "board_type", None) or event.get("board_type")
-        num_players = getattr(event, "num_players", None) or event.get("num_players")
-        model_path = getattr(event, "model_path", None) or event.get("model_path")
+        # Extract config from event. Mar 2026: Use get_event_payload() to handle
+        # RouterEvent objects (which have .payload dict, not direct attributes).
+        from app.coordination.event_router import get_event_payload
+        payload = get_event_payload(event)
+        board_type = payload.get("board_type")
+        num_players = payload.get("num_players")
+        model_path = payload.get("model_path")
 
         if not board_type or not num_players:
             logger.warning("[SelfplayModelSelector] MODEL_PROMOTED event missing board_type or num_players")
