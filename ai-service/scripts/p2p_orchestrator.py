@@ -8130,10 +8130,25 @@ print(json.dumps({{
         """Update self info with current resource usage.
 
         WARNING: This is a BLOCKING method that acquires locks and does I/O.
-        In async contexts, use `await asyncio.to_thread(self._update_self_info)`
-        to avoid blocking the event loop. See _update_self_info_async() for the
-        fully async version.
+        In async contexts, prefer `await self._update_self_info_async(cache_ttl=30)`
+        instead of `await asyncio.to_thread(self._update_self_info)`, since
+        the async version caches results and avoids thread pool starvation.
+
+        Mar 2026: Added 10s cache to prevent redundant blocking calls when
+        multiple callers invoke this via asyncio.to_thread() concurrently.
+        On macOS, each call takes 10-30s (pgrep, psutil, NFS). With only 8
+        thread pool workers and 5+ callers (heartbeat, elections, leader ops),
+        the pool gets starved, causing cascading timeouts in queue_populator
+        and voter_heartbeat.
         """
+        # Mar 2026: Short cache to prevent redundant blocking work
+        now = time.time()
+        _cache_ttl = 10.0  # 10s cache for sync version (shorter than async's 30s)
+        _last = getattr(self, "_update_self_info_last_time", 0.0)
+        if (now - _last) < _cache_ttl:
+            return  # Recent data still valid
+        self._update_self_info_last_time = now
+
         usage = self._get_resource_usage()
         # Jan 30, 2026: Use jobs orchestrator directly
         selfplay, training = self.jobs.count_local_jobs()
@@ -9421,8 +9436,16 @@ print(json.dumps({{
                 if HAS_NEW_COORDINATION and get_resource_optimizer is not None:
                     try:
                         optimizer = get_resource_optimizer()
-                        # Jan 31, 2026: Run in thread to avoid blocking event loop
-                        await asyncio.to_thread(self._update_self_info)
+                        # Mar 2026: Use cached async version instead of blocking
+                        # asyncio.to_thread(self._update_self_info). The sync version
+                        # takes 10-30s on macOS (pgrep, psutil, NFS checks) and consumes
+                        # a thread pool slot every heartbeat (10-15s). With only 8 threads,
+                        # this starves queue_populator and voter_heartbeat, causing cascading
+                        # 600s timeouts that eventually trigger P2P recovery daemon to
+                        # pkill the orchestrator after ~2 hours.
+                        # cache_ttl=30s is sufficient for resource metrics (they don't
+                        # change rapidly), and dramatically reduces thread pool pressure.
+                        await self._update_self_info_async(cache_ttl=30.0)
                         node_resources = NodeResources(
                             node_id=self.node_id,
                             cpu_percent=self.self_info.cpu_percent,
@@ -13186,8 +13209,7 @@ print(json.dumps({{
         if loop_manager is not None and loop_manager.is_started:
             try:
                 results = await loop_manager.stop_all(timeout=15.0)
-                stopped = sum(1 for ok in results.values() if ok)
-                logger.info(f"LoopManager: stopped {stopped}/{len(results)} loops")
+                # Note: stop_all now logs its own "stopped X/Y loops" message
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"LoopManager: stop failed: {e}")
 

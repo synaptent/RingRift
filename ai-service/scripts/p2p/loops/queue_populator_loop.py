@@ -82,6 +82,13 @@ class QueuePopulatorLoop(BaseLoop):
                 multiplier=2.0,
             ),
             enabled=enabled,
+            # Mar 2026: Explicit 120s timeout instead of default 600s (max(60*10, 300)).
+            # The default 600s timeout causes queue_populator to hang for 10 minutes
+            # when thread pool is saturated (asyncio.to_thread calls in _run_once
+            # wait for a thread slot that never becomes available). 120s is long enough
+            # for legitimate populate() calls (typically <30s) but short enough to
+            # detect thread pool starvation quickly and allow recovery.
+            run_timeout=120.0,
         )
         self._get_role = get_role
         self._get_selfplay_scheduler = get_selfplay_scheduler
@@ -291,6 +298,33 @@ class QueuePopulatorLoop(BaseLoop):
         except Exception as e:
             logger.debug(f"[{self.name}] Error checking leader status: {e}")
             return False
+
+    async def _on_consecutive_timeouts(self) -> None:
+        """Handle consecutive timeouts by logging thread pool diagnostics.
+
+        Mar 2026: Consecutive timeouts in queue_populator almost always indicate
+        thread pool starvation — asyncio.to_thread(populate) is waiting for a
+        thread that never becomes available because other callers (heartbeat's
+        _update_self_info, leader ops, etc.) have consumed all 8 slots.
+
+        We log diagnostics to help identify the bottleneck and temporarily
+        increase the interval to reduce thread pool contention.
+        """
+        timeout_count = self._stats.consecutive_timeouts
+        logger.warning(
+            f"[{self.name}] {timeout_count} consecutive timeouts detected. "
+            f"Likely cause: thread pool starvation (8 workers, too many "
+            f"asyncio.to_thread callers). Increasing interval to reduce pressure."
+        )
+
+        # Temporarily increase interval to reduce thread pool pressure.
+        # Normal interval is 60s; double it for each consecutive timeout batch,
+        # capped at 5 minutes. This gives other loops breathing room.
+        self.interval = min(300.0, self.interval * 1.5)
+        logger.info(
+            f"[{self.name}] Interval increased to {self.interval:.0f}s "
+            f"(will reset to {POPULATOR_INTERVAL}s on next success)"
+        )
 
     @property
     def populator(self) -> Any:

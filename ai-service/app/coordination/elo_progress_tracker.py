@@ -154,10 +154,19 @@ class EloProgressTracker:
             )
             return
 
+        # March 2026: Normalize model_id to canonical NN identity so that
+        # event-driven snapshots use the same model_id as periodic snapshots
+        # from snapshot_all_configs(). Without this, events record IDs like
+        # "canonical_hex8_4p:gumbel_mcts:d4" while periodic snapshots record
+        # "ringrift_best_hex8_4p", causing inconsistent best_model_id in
+        # elo_progress.db and confusing the progress report.
+        canonical_id = _extract_canonical_nn_id(str(model_id))
+        normalized_model_id = canonical_id if canonical_id else str(model_id)
+
         # Record the snapshot with win rate breakdown
         self.record_snapshot(
             config_key=config_key,
-            best_model_id=str(model_id),
+            best_model_id=normalized_model_id,
             best_elo=float(elo) if elo else 0.0,
             games_played=int(games_played) if games_played else 0,
             vs_random_win_rate=float(vs_random_rate) if vs_random_rate is not None else None,
@@ -166,7 +175,8 @@ class EloProgressTracker:
 
         logger.debug(
             f"[EloProgress] Recorded from event: {config_key} @ {elo:.1f} Elo "
-            f"(vs_random={vs_random_rate}, vs_heuristic={vs_heuristic_rate})"
+            f"(model_id={model_id} -> {normalized_model_id}, "
+            f"vs_random={vs_random_rate}, vs_heuristic={vs_heuristic_rate})"
         )
 
     def _validate_model_for_config(self, model_id: str, config_key: str) -> bool:
@@ -524,12 +534,23 @@ async def snapshot_all_configs() -> dict[str, EloSnapshot | None]:
     This queries the unified_elo.db to find the best-performing model
     for each config and records it in the progress tracker.
 
-    Feb 2026: Enhanced to group fragmented composite participant IDs by
-    their nn_id component. Previously, the same canonical model evaluated
-    under different harnesses (gumbel_mcts, policy_only, gpu_gumbel) had
-    separate participant entries and the tracker only saw the best one.
-    Now we also prefer ringrift_best_* entries (the stable symlink) when
-    they exist, so Elo tracking persists across model promotions.
+    March 2026: Fixed false regressions caused by fragmented participant IDs.
+    The same physical model file (e.g., canonical_hex8_4p.pth) can appear in
+    the Elo leaderboard under multiple participant_ids:
+      - ringrift_best_hex8_4p (bare legacy ID)
+      - canonical_hex8_4p (bare legacy ID)
+      - canonical_hex8_4p:gumbel_mcts:d4 (composite ID)
+      - ringrift_best_hex8_4p:gumbel_mcts:d4:p1 (composite with player suffix)
+    When Elo is recalculated from match history, each participant_id gets a
+    different rating despite being the same model. The tracker would pick
+    whichever ID happened to be highest-rated, and if a different ID was picked
+    on the next snapshot, it could show a -400 Elo "regression" that wasn't real.
+
+    Fix: Group all leaderboard entries by their canonical NN identity using
+    _extract_canonical_nn_id(), then use the MAX rating across all participant
+    IDs that map to the same physical model. This ensures the reported Elo
+    reflects the model's true best performance regardless of which participant
+    ID variant the Elo system happened to create.
     """
     from app.training.elo_service import get_elo_service
 
@@ -561,28 +582,61 @@ async def snapshot_all_configs() -> dict[str, EloSnapshot | None]:
                 results[config_key] = None
                 continue
 
-            # Feb 2026: Use the highest-rated model entry.
-            # Previously we preferred bare ringrift_best_<config> IDs for
-            # tracking consistency, but cross-config matches can corrupt
-            # bare ID ratings (e.g., 560 wins / 0 losses = 1508 Elo when
-            # real rating is 1899). The leaderboard is sorted by rating
-            # DESC, so model_entries[0] is always the strongest model.
-            best = model_entries[0]
+            # March 2026: Group entries by canonical NN identity to find the
+            # best rating across ALL participant_id variants of the same model.
+            # This prevents false regressions when the same model has different
+            # Elo under different participant_ids (e.g., ringrift_best_hex8_4p
+            # at 2138 vs canonical_hex8_4p:gumbel_mcts:d4 at 1598).
+            model_groups: dict[str, list] = {}
+            for entry in model_entries:
+                canonical_id = _extract_canonical_nn_id(entry.participant_id)
+                if canonical_id is None:
+                    # Could not extract canonical ID -- treat as its own group
+                    canonical_id = entry.participant_id
+                if canonical_id not in model_groups:
+                    model_groups[canonical_id] = []
+                model_groups[canonical_id].append(entry)
 
-            # Record the snapshot
+            # For each physical model, find the MAX rating and total games
+            best_canonical_id = None
+            best_max_rating = float("-inf")
+            best_total_games = 0
+
+            for canonical_id, entries in model_groups.items():
+                max_entry = max(entries, key=lambda e: e.rating)
+                total_games = sum(e.games_played for e in entries)
+
+                if max_entry.rating > best_max_rating:
+                    best_max_rating = max_entry.rating
+                    best_total_games = total_games
+                    best_canonical_id = canonical_id
+
+            if best_canonical_id is None:
+                results[config_key] = None
+                continue
+
+            logger.debug(
+                f"[EloProgress] {config_key}: best model={best_canonical_id} "
+                f"(max_elo={best_max_rating:.1f} across "
+                f"{len(model_groups.get(best_canonical_id, []))} participant IDs, "
+                f"total_games={best_total_games})"
+            )
+
+            # Record the snapshot using the canonical ID for consistency
+            # and the MAX rating across all aliases
             tracker.record_snapshot(
                 config_key=config_key,
-                best_model_id=best.participant_id,
-                best_elo=best.rating,
-                games_played=best.games_played,
+                best_model_id=best_canonical_id,
+                best_elo=best_max_rating,
+                games_played=best_total_games,
             )
 
             results[config_key] = EloSnapshot(
                 config_key=config_key,
                 timestamp=time.time(),
-                best_model_id=best.participant_id,
-                best_elo=best.rating,
-                games_played=best.games_played,
+                best_model_id=best_canonical_id,
+                best_elo=best_max_rating,
+                games_played=best_total_games,
             )
 
         except Exception as e:

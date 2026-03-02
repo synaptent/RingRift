@@ -201,7 +201,15 @@ class AutoExportDaemon(HandlerBase):
         """Hook called before main loop - check coordinator mode and init state DB."""
         # Feb 2026: Create semaphore inside the running event loop to avoid
         # cross-loop binding that caused 8,000-14,000+ waiters and export failures.
-        self._export_semaphore = asyncio.Semaphore(self._daemon_config.max_concurrent_exports)
+        # Mar 2026: Guard against Semaphore(0) which silently deadlocks all exports.
+        # This happens when RINGRIFT_MAX_CONCURRENT_EXPORTS=0 is set in the environment.
+        sem_value = max(1, self._daemon_config.max_concurrent_exports)
+        if self._daemon_config.max_concurrent_exports <= 0:
+            logger.warning(
+                f"[AutoExportDaemon] max_concurrent_exports={self._daemon_config.max_concurrent_exports} "
+                f"would deadlock Semaphore. Clamping to 1."
+            )
+        self._export_semaphore = asyncio.Semaphore(sem_value)
 
         from app.config.env import env
 

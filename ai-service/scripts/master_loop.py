@@ -1462,6 +1462,12 @@ class MasterLoopController:
             DaemonType.ELO_SYNC,
             # Jan 3, 2026: ELO_PROGRESS snapshots Elo periodically for trend tracking
             DaemonType.ELO_PROGRESS,
+            # Mar 2026: AUTO_EXPORT in minimal profile so standby coordinators with
+            # canonical game DBs can still export NPZ training data. Export is I/O bound
+            # (SQLite reads + NPZ writes), not CPU/GPU heavy. Without this, nodes running
+            # --profile minimal never export, starving GPU nodes of fresh training data.
+            # Gated by RINGRIFT_EXPORT_ENABLED env var (daemon self-disables if false).
+            DaemonType.AUTO_EXPORT,
         ]
 
         standard = minimal + [
@@ -1478,7 +1484,7 @@ class MasterLoopController:
             DaemonType.UTILIZATION_OPTIMIZER,
             DaemonType.QUEUE_POPULATOR,
             DaemonType.SELFPLAY_COORDINATOR,  # Dec 28: Priority-based selfplay scheduling
-            DaemonType.AUTO_EXPORT,
+            # Note: AUTO_EXPORT moved to minimal profile (Mar 2026) for standby coordinators
             # Jan 2026: CLUSTER_CONSOLIDATION pulls games from P2P cluster nodes to coordinator
             # Must run after AUTO_SYNC (needs cluster connectivity) and before DATA_CONSOLIDATION
             DaemonType.CLUSTER_CONSOLIDATION,

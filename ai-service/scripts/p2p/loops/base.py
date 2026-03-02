@@ -1130,6 +1130,13 @@ class LoopManager:
     async def stop_all(self, timeout: float = 30.0) -> dict[str, bool]:
         """Stop all registered loops gracefully.
 
+        Mar 2026: Changed from sequential to concurrent waiting. Previously,
+        each loop got timeout/N seconds (e.g., 30/45 = 0.67s per loop), which
+        was far too short for loops with in-flight _run_once() calls. Now all
+        loops are stopped concurrently with the full timeout budget, so loops
+        that are just sleeping wake up immediately via shutdown_event while
+        loops with active work get the full timeout to finish.
+
         Args:
             timeout: Maximum time to wait for all loops to stop
 
@@ -1141,17 +1148,45 @@ class LoopManager:
 
         logger.info(f"[{self.name}] Stopping {len(self._loops)} loops")
 
-        # Request all loops to stop
+        # Request all loops to stop (sets _running=False and shutdown_event)
         for loop in self._loops.values():
             loop.stop()
 
-        # Wait for all to stop with timeout
+        # Wait for all loops concurrently with the full timeout budget.
+        # Most loops will stop almost immediately (they're sleeping between
+        # iterations and the shutdown_event wakes them up). Only loops with
+        # active _run_once() calls need real time to finish.
         results: dict[str, bool] = {}
-        per_loop_timeout = timeout / max(len(self._loops), 1)
 
-        for name, loop in self._loops.items():
-            success = await loop.stop_async(timeout=per_loop_timeout)
-            results[name] = success
+        async def _wait_for_loop(name: str, loop: BaseLoop) -> tuple[str, bool]:
+            success = await loop.stop_async(timeout=timeout)
+            return name, success
+
+        try:
+            wait_results = await asyncio.wait_for(
+                asyncio.gather(
+                    *[_wait_for_loop(name, loop) for name, loop in self._loops.items()],
+                    return_exceptions=True,
+                ),
+                timeout=timeout,
+            )
+            for result in wait_results:
+                if isinstance(result, Exception):
+                    continue
+                name, success = result
+                results[name] = success
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"[{self.name}] stop_all timed out after {timeout}s, "
+                f"force-cancelling remaining loops"
+            )
+            # Mark any loops not in results as failed
+            for name in self._loops:
+                if name not in results:
+                    results[name] = False
+
+        stopped = sum(1 for ok in results.values() if ok)
+        logger.info(f"[{self.name}] stopped {stopped}/{len(self._loops)} loops")
 
         self._started = False
         return results
