@@ -842,10 +842,15 @@ class DiskSpaceManagerDaemon(HandlerBase):
         models_path = self._root_path / "models"
         if models_path.exists():
             for pth_file in models_path.glob("*.pth"):
-                # Skip canonical and best symlinks - those are actively used
+                # Skip actively used model files
                 if pth_file.name.startswith("canonical_"):
                     continue
                 if pth_file.name.startswith("ringrift_best_"):
+                    continue
+                # Mar 2026: NEVER delete candidate_*.pth — needed for evaluation
+                # and promotion. The auto_promotion_daemon polls S3 and downloads
+                # candidates here; deleting them creates a fetch→delete loop.
+                if pth_file.name.startswith("candidate_"):
                     continue
                 if pth_file.is_symlink():
                     continue
