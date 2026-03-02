@@ -1,4 +1,6 @@
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
 import { logger } from '../utils/logger';
 import { config } from '../config';
 
@@ -27,7 +29,17 @@ export const connectDatabase = async (): Promise<PrismaClient> => {
       return prisma;
     }
 
+    // Prisma 7: Use pg driver adapter for direct database connection.
+    // The adapter replaces the old url-in-schema pattern.
+    const connectionString = process.env.DATABASE_URL;
+    if (!connectionString) {
+      throw new Error('DATABASE_URL environment variable is required');
+    }
+    const pool = new pg.Pool({ connectionString });
+    const adapter = new PrismaPg(pool);
+
     prisma = new PrismaClient({
+      adapter,
       log: [
         {
           emit: 'event',
@@ -127,7 +139,7 @@ export const checkDatabaseHealth = async (): Promise<boolean> => {
  */
 export type TransactionClient = Omit<
   PrismaClient,
-  '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'
+  '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'
 >;
 
 // Transaction wrapper

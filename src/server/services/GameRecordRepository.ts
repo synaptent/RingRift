@@ -10,7 +10,7 @@
  */
 
 import { PrismaClient, Game, BoardType, Prisma } from '@prisma/client';
-import type { JsonValue } from '@prisma/client/runtime/library';
+import type { JsonValue } from '@prisma/client/runtime/client';
 import { getDatabaseClient } from '../database/connection';
 import {
   GameRecord,
