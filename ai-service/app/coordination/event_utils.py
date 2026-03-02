@@ -276,9 +276,12 @@ def extract_evaluation_data(event: Any) -> EvaluationEventData:
         board_type=board_type,
         num_players=num_players,
         model_path=model_path,
-        elo=payload.get("elo", 1000.0),
-        games_played=payload.get("games_played", 0) or payload.get("games", 0),
-        win_rate=payload.get("win_rate", 0.0),
+        # Mar 2026: Use `or` instead of default kwarg to handle explicit None values.
+        # payload.get("elo", 1000.0) returns None when payload has {"elo": None},
+        # causing TypeError in downstream handlers that compare elo > threshold.
+        elo=payload.get("elo") or 1000.0,
+        games_played=payload.get("games_played") or payload.get("games") or 0,
+        win_rate=payload.get("win_rate") or 0.0,
         harness_results=payload.get("harness_results"),
         best_harness=payload.get("best_harness"),
         composite_participant_ids=payload.get("composite_participant_ids"),
