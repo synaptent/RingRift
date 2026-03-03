@@ -491,22 +491,20 @@ class ReanalysisDaemon(HandlerBase):
             return None
 
         try:
-            # Load model using safe checkpoint loader
-            import torch
+            # Load checkpoint and reconstruct model
             checkpoint = await asyncio.to_thread(safe_load_checkpoint, model_path)
             if checkpoint is None:
-                logger.warning(f"[ReanalysisDaemon] Failed to load checkpoint: {model_path}")
                 return None
 
-            # Try to reconstruct model from checkpoint metadata
+            # Try to build a proper nn.Module from the checkpoint
             try:
-                from app.ai.neural_net.architecture_registry import get_encoder_for_model
-            except ImportError:
-                pass
-
-            # For reanalysis, we just need the model weights — return the checkpoint
-            # dict and let callers handle architecture detection
-            return checkpoint
+                from app.ai.neural_net.model_loader import load_model_from_checkpoint
+                model = await asyncio.to_thread(load_model_from_checkpoint, model_path)
+                return model
+            except (ImportError, Exception):
+                # Model reconstruction not available — skip reanalysis for this config
+                logger.debug(f"[ReanalysisDaemon] Cannot reconstruct model from {model_path}")
+                return None
 
         except Exception as e:
             logger.error(f"[ReanalysisDaemon] Failed to load model from {model_path}: {e}")

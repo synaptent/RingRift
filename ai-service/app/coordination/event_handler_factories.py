@@ -246,9 +246,12 @@ def create_debouncing_handler(
         )
     """
     pending: dict[str, tuple[float, dict]] = {}
-    lock = asyncio.Lock()
+    lock: Optional[asyncio.Lock] = None
 
     async def handler(event: dict[str, Any]) -> None:
+        nonlocal lock
+        if lock is None:
+            lock = asyncio.Lock()
         key = key_func(event) if key_func else "_default"
         now = time.time()
 
@@ -321,7 +324,7 @@ def create_aggregating_handler(
     """
     events: list[dict] = []
     first_event_time: Optional[float] = None
-    lock = asyncio.Lock()
+    lock: Optional[asyncio.Lock] = None
     pending_flush: Optional[asyncio.Task] = None
 
     async def _do_flush_unlocked() -> None:
@@ -339,12 +342,17 @@ def create_aggregating_handler(
 
     async def delayed_flush() -> None:
         """Called from background task - needs to acquire lock."""
+        nonlocal lock
+        if lock is None:
+            lock = asyncio.Lock()
         await asyncio.sleep(max_wait_seconds)
         async with lock:
             await _do_flush_unlocked()
 
     async def handler(event: dict[str, Any]) -> None:
-        nonlocal events, first_event_time, pending_flush
+        nonlocal events, first_event_time, pending_flush, lock
+        if lock is None:
+            lock = asyncio.Lock()
 
         async with lock:
             events.append(event)

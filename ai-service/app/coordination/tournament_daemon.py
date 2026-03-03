@@ -2545,7 +2545,7 @@ class TournamentDaemon(HandlerBase):
                     leaderboard = elo_service.get_leaderboard(
                         board_type=board_type,
                         num_players=num_players,
-                        top_n=top_n,
+                        limit=top_n,
                         min_games=min_games,
                     )
                 except Exception as e:
