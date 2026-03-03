@@ -46,6 +46,12 @@ try:
 except ImportError:
     ExportValidationDefaults = None  # Fallback for standalone usage
 
+# Mar 2026: Dual-format NPZ export (v2 + v5-heavy)
+try:
+    from app.config.thresholds import V5_HEAVY_EXPORT_CONFIGS
+except ImportError:
+    V5_HEAVY_EXPORT_CONFIGS: list[str] = []
+
 logger = logging.getLogger(__name__)
 
 
@@ -1118,6 +1124,26 @@ class AutoExportDaemon(HandlerBase):
                     # December 2025: Emit NEW_GAMES_AVAILABLE for pipeline coordination
                     # This triggers downstream consumers (training, evaluation) immediately
                     await self._emit_new_games_available(config_key, samples)
+
+                    # Mar 2026: Schedule secondary v5-heavy export if config is opted in.
+                    # Runs at lower priority (background task) — does not block training.
+                    if config_key in V5_HEAVY_EXPORT_CONFIGS:
+                        v5_output = self.config.output_dir / f"{config_key}_v5heavy.npz"
+                        # Only re-export if v5heavy NPZ doesn't exist or is older than primary
+                        should_export_v5 = (
+                            not v5_output.exists()
+                            or v5_output.stat().st_mtime < output_path.stat().st_mtime
+                        )
+                        if should_export_v5:
+                            logger.info(
+                                f"[AutoExportDaemon] Scheduling v5-heavy secondary export "
+                                f"for {config_key} -> {v5_output}"
+                            )
+                            safe_create_task(
+                                self._run_v5heavy_export(config_key, state, v5_output),
+                                name=f"v5heavy_export_{config_key}",
+                            )
+
                     return True
 
                 else:
@@ -1169,6 +1195,129 @@ class AutoExportDaemon(HandlerBase):
                 return int(match.group(1))
 
         return None
+
+    async def _run_v5heavy_export(
+        self, config_key: str, state: ConfigExportState, output_path: Path
+    ) -> bool:
+        """Run a secondary v5-heavy format NPZ export.
+
+        Mar 2026: Produces a v5-heavy (56ch) NPZ alongside the primary v2 (40ch) NPZ.
+        Runs at lower priority — uses the export semaphore but doesn't block the primary
+        pipeline (called via safe_create_task from the success path of _run_export).
+        """
+        async with self._export_semaphore:
+            try:
+                logger.info(
+                    f"[AutoExportDaemon] Starting v5-heavy export for {config_key} "
+                    f"-> {output_path}"
+                )
+
+                base_dir = Path(__file__).resolve().parent.parent.parent
+                script_path = base_dir / "scripts" / "export_replay_dataset.py"
+
+                cmd = [
+                    sys.executable,
+                    str(script_path),
+                    "--use-discovery",
+                    "--board-type", state.board_type,
+                    "--num-players", str(state.num_players),
+                    "--output", str(output_path),
+                    "--allow-noncanonical",
+                    "--allow-pending-gate",
+                    "--no-strict",
+                    "--include-heuristics",
+                    "--full-heuristics",
+                ]
+
+                if self.config.use_incremental_export:
+                    cmd.append("--use-cache")
+
+                if self.config.require_completed_games:
+                    cmd.append("--require-completed")
+
+                if self.config.min_moves > 0:
+                    cmd.extend(["--min-moves", str(self.config.min_moves)])
+
+                if self.config.include_gauntlet:
+                    cmd.append("--include-gauntlet")
+
+                if self.config.include_tournaments:
+                    cmd.append("--include-tournaments")
+
+                # Cap workers on coordinator (same logic as primary export)
+                workers = self.config.max_export_workers
+                if workers is None:
+                    from app.config.env import env
+                    if env.is_coordinator:
+                        workers = 2
+                if workers is not None:
+                    cmd.extend(["--workers", str(workers)])
+
+                export_env = {
+                    **os.environ,
+                    "PYTHONPATH": str(base_dir),
+                    "RINGRIFT_ALLOW_PENDING_GATE": "true",
+                }
+
+                start_time = time.time()
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=str(base_dir),
+                    env=export_env,
+                )
+
+                try:
+                    stdout, stderr = await asyncio.wait_for(
+                        process.communicate(),
+                        timeout=self.config.export_timeout_seconds,
+                    )
+                except asyncio.TimeoutError:
+                    process.kill()
+                    logger.error(
+                        f"[AutoExportDaemon] v5-heavy export timed out for {config_key}"
+                    )
+                    return False
+
+                duration = time.time() - start_time
+
+                if process.returncode == 0:
+                    # Validate NPZ if available
+                    try:
+                        from app.coordination.npz_validation import quick_npz_check
+                        _ok, _err = quick_npz_check(output_path)
+                        if not _ok:
+                            logger.error(
+                                f"[AutoExportDaemon] v5-heavy export produced corrupt NPZ "
+                                f"for {config_key}: {_err}"
+                            )
+                            Path(output_path).unlink(missing_ok=True)
+                            return False
+                    except ImportError:
+                        pass
+
+                    samples = self._parse_sample_count(stdout.decode())
+                    logger.info(
+                        f"[AutoExportDaemon] v5-heavy export complete for {config_key}: "
+                        f"{samples or '?'} samples, {duration:.1f}s"
+                    )
+                    return True
+                else:
+                    logger.error(
+                        f"[AutoExportDaemon] v5-heavy export failed for {config_key}: "
+                        f"exit code {process.returncode}\n"
+                        f"stderr: {stderr.decode()[:500]}"
+                    )
+                    return False
+
+            except Exception as e:  # noqa: BLE001
+                import traceback
+                logger.error(
+                    f"[AutoExportDaemon] v5-heavy export error for {config_key}: {e}\n"
+                    f"{traceback.format_exc()}"
+                )
+                return False
 
     async def _validate_export_readiness(
         self, config_key: str, state: ConfigExportState

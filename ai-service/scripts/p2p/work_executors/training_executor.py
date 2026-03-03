@@ -262,6 +262,170 @@ async def _try_local_jsonl_export(
     return None
 
 
+def _partial_architecture_transfer(
+    source_path: Path,
+    target_version: str,
+    config_key: str,
+    board_type: str,
+    num_players: int,
+) -> Path | None:
+    """Transfer compatible weights from a source checkpoint to a new architecture.
+
+    When upgrading architectures (e.g., v2 -> v5-heavy), many conv/residual block
+    weights share the same spatial dimensions and can be directly transferred.
+    Only incompatible layers (e.g., input conv with different channel counts,
+    heuristic encoder) are randomly initialized.
+
+    This is better than training from random because the transferred residual
+    blocks already encode useful spatial patterns learned from prior training.
+
+    Args:
+        source_path: Path to the source checkpoint (old architecture).
+        target_version: Target architecture version string (e.g., "v5-heavy").
+        config_key: Configuration key (e.g., "hex8_2p").
+        board_type: Board type string (e.g., "hex8", "square8").
+        num_players: Number of players.
+
+    Returns:
+        Path to the saved transfer model, or None on failure.
+    """
+    try:
+        import torch
+
+        # Map version string to memory_tier for model_factory
+        version_to_tier = {
+            "v2": "high",
+            "v3": "v3-high",
+            "v4": "v4",
+            "v5-heavy": "v5",
+            "v5-heavy-large": "v5-heavy-large",
+            "v5-heavy-xl": "v5-heavy-xl",
+        }
+        target_tier = version_to_tier.get(target_version)
+        if not target_tier:
+            logger.warning(
+                f"No tier mapping for target_version={target_version}. "
+                f"Cannot perform partial transfer for {config_key}."
+            )
+            return None
+
+        # Load source checkpoint
+        logger.info(
+            f"Partial architecture transfer: loading source {source_path} "
+            f"for {config_key} (target={target_version})"
+        )
+        source_ckpt = torch.load(source_path, map_location="cpu", weights_only=True)
+        if "state_dict" in source_ckpt:
+            source_state = source_ckpt["state_dict"]
+        elif "model_state_dict" in source_ckpt:
+            source_state = source_ckpt["model_state_dict"]
+        else:
+            # Checkpoint may be a raw state_dict (filter out metadata keys)
+            source_state = {
+                k: v for k, v in source_ckpt.items()
+                if isinstance(v, torch.Tensor)
+            }
+
+        if not source_state:
+            logger.warning(f"No state_dict found in source checkpoint {source_path}")
+            return None
+
+        # Create target model with the new architecture
+        from app.models import BoardType
+        from app.ai.neural_net.model_factory import create_model_for_board
+
+        board_type_enum = BoardType(board_type)
+        target_model = create_model_for_board(
+            board_type=board_type_enum,
+            memory_tier=target_tier,
+            num_players=num_players,
+        )
+
+        # Get target state dict to compare shapes
+        target_state = target_model.state_dict()
+
+        # Transfer compatible weights using strict=False
+        # This loads any keys that exist in both source and target with matching shapes,
+        # and leaves everything else at its random initialization.
+        transferred_keys = []
+        skipped_keys_shape = []
+        skipped_keys_missing = []
+
+        for key in target_state:
+            if key in source_state:
+                if source_state[key].shape == target_state[key].shape:
+                    target_state[key] = source_state[key]
+                    transferred_keys.append(key)
+                else:
+                    skipped_keys_shape.append(
+                        f"{key}: source={list(source_state[key].shape)} "
+                        f"target={list(target_state[key].shape)}"
+                    )
+            else:
+                skipped_keys_missing.append(key)
+
+        if not transferred_keys:
+            logger.warning(
+                f"No compatible weights found between source and target for {config_key}. "
+                f"Source has {len(source_state)} keys, target has {len(target_state)} keys."
+            )
+            return None
+
+        # Load the partially-transferred state dict
+        target_model.load_state_dict(target_state, strict=True)
+
+        # Save the transfer model
+        transfer_filename = f"{config_key}_{target_version}_transfer.pth"
+        transfer_path = source_path.parent / transfer_filename
+
+        # Save in the same checkpoint format as the training pipeline expects
+        transfer_ckpt = {
+            "state_dict": target_model.state_dict(),
+            "_versioning_metadata": {
+                "architecture_version": target_version,
+                "transfer_source": str(source_path.name),
+                "transferred_keys": len(transferred_keys),
+                "skipped_shape_mismatch": len(skipped_keys_shape),
+                "skipped_missing": len(skipped_keys_missing),
+            },
+        }
+        torch.save(transfer_ckpt, transfer_path)
+
+        total_target = len(target_state)
+        logger.info(
+            f"Partial architecture transfer complete for {config_key}: "
+            f"{len(transferred_keys)}/{total_target} layers transferred, "
+            f"{len(skipped_keys_shape)} shape mismatches, "
+            f"{len(skipped_keys_missing)} new layers (randomly initialized). "
+            f"Saved to {transfer_path}"
+        )
+
+        # Log details at debug level for troubleshooting
+        if skipped_keys_shape:
+            logger.debug(
+                f"Shape-mismatched layers for {config_key}: "
+                + "; ".join(skipped_keys_shape[:10])
+                + (f" ... and {len(skipped_keys_shape) - 10} more"
+                   if len(skipped_keys_shape) > 10 else "")
+            )
+        if skipped_keys_missing:
+            logger.debug(
+                f"New layers (random init) for {config_key}: "
+                + "; ".join(skipped_keys_missing[:10])
+                + (f" ... and {len(skipped_keys_missing) - 10} more"
+                   if len(skipped_keys_missing) > 10 else "")
+            )
+
+        return transfer_path
+
+    except Exception as e:
+        logger.warning(
+            f"Partial architecture transfer failed for {config_key} "
+            f"({source_path} -> {target_version}): {e}"
+        )
+        return None
+
+
 async def execute_training_work(
     work_item: dict[str, Any],
     config: dict[str, Any],
@@ -413,10 +577,14 @@ async def execute_training_work(
     # Without --init-weights, training starts from random (loss 5-9 = useless).
     # Only allow from-random during bootstrap when we have very few games.
     #
-    # Feb 24, 2026: Skip init_weights when architecture is changing (e.g., v2→v5-heavy).
+    # Feb 24, 2026: Detect architecture mismatch (e.g., v2→v5-heavy).
     # train.py auto-adapts to match init_weights architecture, so passing a v2 model
     # with --model-version v5-heavy would silently revert to v2 training.
+    # Mar 2026: Instead of skipping init_weights entirely, perform partial weight
+    # transfer — conv/residual blocks share spatial dimensions between v2 and v5-heavy,
+    # so transferring compatible weights is better than training from random.
     _skip_init = False
+    _transfer_path: Path | None = None
     if canonical_path.exists():
         try:
             import torch as _torch
@@ -438,12 +606,31 @@ async def execute_training_work(
             if _canonical_version != model_version:
                 logger.info(
                     f"Architecture upgrade: canonical={_canonical_version}, "
-                    f"target={model_version}. Skipping init_weights for {config_key}."
+                    f"target={model_version}. Attempting partial weight transfer for {config_key}."
                 )
+                _transfer_path = _partial_architecture_transfer(
+                    source_path=canonical_path,
+                    target_version=model_version,
+                    config_key=config_key,
+                    board_type=board_type,
+                    num_players=num_players,
+                )
+                if _transfer_path:
+                    logger.info(
+                        f"Using partial transfer model as init_weights for {config_key}: "
+                        f"{_transfer_path}"
+                    )
+                else:
+                    logger.warning(
+                        f"Partial transfer failed for {config_key}. "
+                        f"Falling through to from-scratch logic."
+                    )
                 _skip_init = True
         except Exception:
             pass  # Can't detect, assume compatible
-    if canonical_path.exists() and not _skip_init:
+    if _transfer_path:
+        cmd.extend(["--init-weights", str(_transfer_path)])
+    elif canonical_path.exists() and not _skip_init:
         cmd.extend(["--init-weights", str(canonical_path)])
     elif not canonical_path.exists():
         # Phase 4: Try fetching canonical model from S3 before giving up

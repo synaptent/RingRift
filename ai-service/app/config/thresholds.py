@@ -173,6 +173,13 @@ def get_preferred_architecture(board_type: str) -> str:
     should be used for new training runs of the given board type.
     """
     return PREFERRED_ARCHITECTURE.get(board_type, "v2")
+
+# Configs that should also export v5-heavy format NPZ data.
+# Start empty — add configs as v5-heavy models are bootstrapped and promoted.
+# When a config is in this list, auto_export_daemon will produce both:
+#   {config}.npz (v2, 40ch) and {config}_v5heavy.npz (v5-heavy, 56ch)
+V5_HEAVY_EXPORT_CONFIGS: list[str] = []
+
 GAUNTLET_SIMULATIONS_LARGE_2P = 1600  # Large board 2p (4x base, ~4.4% coverage on sq19)
 GAUNTLET_SIMULATIONS_LARGE_3P = 1600  # Large board 3p
 GAUNTLET_SIMULATIONS_LARGE_4P = 1600  # Large board 4p
