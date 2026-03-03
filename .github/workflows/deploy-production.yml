@@ -72,7 +72,12 @@ jobs:
             npm run build
 
             echo "==> Running database migrations..."
-            npx prisma migrate deploy
+            export DATABASE_URL=$(grep DATABASE_URL ~/ringrift/.env 2>/dev/null | cut -d= -f2- || echo "")
+            if [ -n "$DATABASE_URL" ]; then
+              npx prisma migrate deploy
+            else
+              echo "WARNING: DATABASE_URL not found in .env, skipping migrations"
+            fi
 
             echo "==> Restarting server..."
             pm2 restart ringrift-server --update-env
