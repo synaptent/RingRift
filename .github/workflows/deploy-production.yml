@@ -53,13 +53,14 @@ jobs:
           host: ${{ secrets.PROD_HOST }}
           username: ${{ secrets.PROD_USER }}
           key: ${{ secrets.PROD_SSH_KEY }}
-          script_stop: true
           script: |
             set -e
             cd ~/ringrift
 
             echo "==> Pulling latest code..."
+            git stash --include-untracked || true
             git pull origin main
+            git stash pop || true
 
             echo "==> Installing dependencies..."
             npm ci --production=false
