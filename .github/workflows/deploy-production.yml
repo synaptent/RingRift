@@ -72,11 +72,13 @@ jobs:
             npm run build
 
             echo "==> Running database migrations..."
-            export DATABASE_URL=$(grep DATABASE_URL ~/ringrift/.env 2>/dev/null | cut -d= -f2- || echo "")
-            if [ -n "$DATABASE_URL" ]; then
+            set -a
+            source ~/ringrift/.env 2>/dev/null || true
+            set +a
+            if [ -n "${DATABASE_URL:-}" ]; then
               npx prisma migrate deploy
             else
-              echo "WARNING: DATABASE_URL not found in .env, skipping migrations"
+              echo "WARNING: DATABASE_URL not set, skipping migrations"
             fi
 
             echo "==> Restarting server..."
