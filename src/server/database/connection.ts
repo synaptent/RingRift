@@ -72,7 +72,7 @@ export const connectDatabase = async (): Promise<PrismaClient> => {
         ) => void;
       };
 
-      prismaWithEvents.$on('query', (e) => {
+      prismaWithEvents.$on('query', (e: PrismaQueryEvent | PrismaLogEvent) => {
         const event = e as PrismaQueryEvent;
         logger.debug('Database Query:', {
           query: event.query,
@@ -81,16 +81,16 @@ export const connectDatabase = async (): Promise<PrismaClient> => {
         });
       });
 
-      prismaWithEvents.$on('error', (e) => {
+      prismaWithEvents.$on('error', (e: PrismaQueryEvent | PrismaLogEvent) => {
         logger.error('Database Error:', e);
       });
 
-      prismaWithEvents.$on('info', (e) => {
+      prismaWithEvents.$on('info', (e: PrismaQueryEvent | PrismaLogEvent) => {
         const event = e as PrismaLogEvent;
         logger.info('Database Info:', event.message);
       });
 
-      prismaWithEvents.$on('warn', (e) => {
+      prismaWithEvents.$on('warn', (e: PrismaQueryEvent | PrismaLogEvent) => {
         const event = e as PrismaLogEvent;
         logger.warn('Database Warning:', event.message);
       });
@@ -150,7 +150,7 @@ export const withTransaction = async <T>(
     throw new Error('Database not connected');
   }
 
-  return await prisma.$transaction(async (tx) => {
+  return await prisma.$transaction(async (tx: TransactionClient) => {
     return await callback(tx);
   });
 };
