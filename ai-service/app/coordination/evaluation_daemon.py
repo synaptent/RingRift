@@ -2180,6 +2180,7 @@ class EvaluationDaemon(HandlerBase):
         board_type: str,
         num_players: int,
         result: dict,
+        harness_type: str = "policy_only",
     ) -> float | None:
         """Compute Elo rating from gauntlet opponent results via EloService.
 
@@ -2217,7 +2218,7 @@ class EvaluationDaemon(HandlerBase):
             matches_recorded = 0
 
             def _record_all_matches(
-                m_name, opponents, b_type, n_players
+                m_name, opponents, b_type, n_players, h_type
             ):
                 """Record all matches in a single thread with a fresh DB connection.
 
@@ -2225,6 +2226,8 @@ class EvaluationDaemon(HandlerBase):
                 using get_elo_service() singleton, which has a SQLite connection from
                 the main thread that fails with "Cannot operate on a closed database"
                 when used in asyncio.to_thread().
+                Mar 3, 2026: Added h_type parameter to correctly record harness_type
+                instead of hardcoding "gumbel_mcts" for all evaluations.
                 """
                 svc = EloService()
                 count = 0
@@ -2236,7 +2239,7 @@ class EvaluationDaemon(HandlerBase):
                             winner=m_name,
                             board_type=b_type,
                             num_players=n_players,
-                            harness_type="gumbel_mcts",
+                            harness_type=h_type,
                         )
                         count += 1
                     for _ in range(losses):
@@ -2246,7 +2249,7 @@ class EvaluationDaemon(HandlerBase):
                             winner=opp_name,
                             board_type=b_type,
                             num_players=n_players,
-                            harness_type="gumbel_mcts",
+                            harness_type=h_type,
                         )
                         count += 1
                 # Get rating from the same fresh connection
@@ -2274,7 +2277,7 @@ class EvaluationDaemon(HandlerBase):
             # Record all matches in one thread call with a fresh connection
             matches_recorded, elo = await asyncio.to_thread(
                 _record_all_matches,
-                model_name, opponent_data, board_type, num_players,
+                model_name, opponent_data, board_type, num_players, harness_type,
             )
 
             if matches_recorded > 0 and elo is not None:
@@ -2522,6 +2525,7 @@ class EvaluationDaemon(HandlerBase):
                     parallel_games=1 if is_large_board else (2 if num_players >= 3 else 4),
                     parallel_opponents=False,
                     use_search=False,
+                    harness_type="policy_only",  # Mar 3: Track harness for per-harness Elo
                 ),
                 timeout=timeout_s,
             )
@@ -2558,6 +2562,7 @@ class EvaluationDaemon(HandlerBase):
                 board_type=board_type,
                 num_players=num_players,
                 result=result_dict,
+                harness_type="policy_only",
             )
             if estimated_elo is not None:
                 result_dict["estimated_elo"] = estimated_elo
