@@ -1414,18 +1414,27 @@ class EvaluationDaemon(HandlerBase):
             return
         model_path = local_model_path
 
-        # February 2026: Check if this node should run gauntlets locally.
-        # Feb 28, 2026: Changed from "try cluster then fallback" to "always run
-        # local" because cluster gauntlet dispatch was 0% completion rate — 21+
-        # items dispatched but zero ever completed by any cluster node. The
-        # lightweight local gauntlet (policy-only, 30 games/opponent) runs in
-        # ~2-5 min on CPU and actually produces results for promotion.
+        # March 3, 2026: Try cluster dispatch first (GPU nodes with MCTS search),
+        # fall back to lightweight local gauntlet (CPU policy-only) if dispatch fails.
+        # The cluster path was fixed to use use_search=True on CUDA nodes for
+        # accurate Elo measurement. The local fallback provides lower-quality but
+        # guaranteed results for promotion decisions.
         import os
         gauntlet_override = os.environ.get("RINGRIFT_GAUNTLET_ENABLED", "").lower()
         from app.config.env import env
         if gauntlet_override not in ("1", "true", "yes") and not env.gauntlet_enabled:
+            # Try cluster dispatch first — GPU nodes run MCTS gauntlets
+            dispatch_ok = await self._dispatch_gauntlet_to_cluster_with_fallback(
+                model_path, board_type, num_players, request
+            )
+            if dispatch_ok:
+                logger.info(
+                    f"[EvaluationDaemon] Dispatched gauntlet to cluster (MCTS): {model_path}"
+                )
+                return
+            # Cluster dispatch failed — fall back to lightweight local
             logger.info(
-                f"[EvaluationDaemon] Running lightweight local gauntlet (gauntlet_enabled=false): {model_path}"
+                f"[EvaluationDaemon] Cluster dispatch failed, running local gauntlet (policy-only): {model_path}"
             )
             await self._run_lightweight_local_gauntlet(
                 model_path, board_type, num_players, request

@@ -52,7 +52,7 @@ async def execute_gauntlet_work(
         logger.warning(f"Gauntlet work {work_id}: No model_path specified")
         return False
 
-    # Check model exists locally
+    # Check model exists locally, with S3 fallback
     if not Path(model_path).exists():
         config_key_check = f"{board_type}_{num_players}p"
         candidate_path = f"models/candidate_{config_key_check}.pth"
@@ -62,8 +62,22 @@ async def execute_gauntlet_work(
         elif Path(canonical_path).exists():
             model_path = canonical_path
         else:
-            logger.warning(f"Gauntlet work {work_id}: Model not found: {model_path}")
-            return False
+            # Mar 3, 2026: Try fetching from S3 before giving up
+            model_filename = Path(model_path).name
+            try:
+                from scripts.p2p.work_executors.training_executor import _try_fetch_model_from_s3
+                fetched = await _try_fetch_model_from_s3(model_filename, str(Path("models") / model_filename))
+                if fetched:
+                    model_path = str(Path("models") / model_filename)
+                    logger.info(f"Gauntlet work {work_id}: Fetched model from S3: {model_path}")
+                else:
+                    logger.warning(f"Gauntlet work {work_id}: Model not found locally or on S3: {model_path}")
+                    work_item["error"] = f"model_not_found:{model_path}"
+                    return False
+            except (ImportError, Exception) as e:
+                logger.warning(f"Gauntlet work {work_id}: Model not found: {model_path} (S3 fetch failed: {e})")
+                work_item["error"] = f"model_not_found:{model_path}"
+                return False
 
     logger.info(
         f"Executing gauntlet work {work_id}: {model_path} "
@@ -77,10 +91,14 @@ async def execute_gauntlet_work(
             BaselineOpponent,
         )
 
-        # Run gauntlet in thread to avoid blocking event loop
-        # Feb 2026: parallel_opponents=False prevents nested ThreadPool deadlock
-        # that caused ALL 27 gauntlets to silently produce 0 games.
-        # use_search=False: baseline eval doesn't need MCTS (faster, avoids torch.compile storms)
+        # Run gauntlet in thread to avoid blocking event loop.
+        # Feb 2026: parallel_opponents=False prevents nested ThreadPool deadlock.
+        # Mar 3, 2026: GPU nodes use MCTS search (use_search=True) for accurate
+        # Elo measurement. The previous use_search=False produced policy-only
+        # ratings that were ~400 Elo below MCTS ratings, causing false regressions.
+        # Also added diverse opponents for better Elo calibration.
+        import torch
+        has_cuda = torch.cuda.is_available()
         gauntlet_result = await asyncio.to_thread(
             run_baseline_gauntlet,
             model_path=model_path,
@@ -90,11 +108,14 @@ async def execute_gauntlet_work(
             opponents=[
                 BaselineOpponent.RANDOM,
                 BaselineOpponent.HEURISTIC,
+                BaselineOpponent.HEURISTIC_STRONG,
+                BaselineOpponent.DESCENT_NN,
             ],
             verbose=False,
             early_stopping=True,
             parallel_opponents=False,
-            use_search=False,
+            use_search=has_cuda,  # MCTS on GPU, policy-only on CPU
+            harness_type="gumbel_mcts" if has_cuda else "policy_only",
         )
 
         # Build result dict with full win rate data
