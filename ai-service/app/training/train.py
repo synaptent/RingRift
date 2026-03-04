@@ -5429,7 +5429,7 @@ def train_model(
                 print(
                     f"TRAINING_SUMMARY: loss={_summary_loss:.4f} "
                     f"samples={_total_samples} games={_num_data_files} "
-                    f"epochs={config.epochs}"
+                    f"epochs={config.epochs_per_iter}"
                 )
 
     except (RuntimeError, ValueError, OSError, KeyError) as e:

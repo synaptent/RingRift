@@ -107,7 +107,7 @@ class FreshnessConfig:
     trigger_sync: bool = True
     check_databases: bool = True
     check_npz_files: bool = True
-    min_games_required: int = 1000  # Minimum games for valid training data
+    min_games_required: int = 50  # Minimum games for valid training data (lowered from 1000 for cluster nodes)
     # P1.6 Dec 2025: Use content-based age instead of file mtime
     # For databases, this checks the newest game's created_at timestamp
     # For NPZ files, this checks embedded export metadata if available
