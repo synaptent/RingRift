@@ -54,11 +54,19 @@ import contextlib
 import json
 import logging
 import os
+import resource
 import signal
 import sqlite3
 import sys
 import threading
 import time
+
+# Increase file descriptor limit — master_loop opens 200+ FDs at startup
+# (Python .so libs + SQLite DBs + log files). macOS default of 256 is too low.
+_soft, _hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+_target = min(8192, _hard) if _hard != resource.RLIM_INFINITY else 8192
+if _soft < _target:
+    resource.setrlimit(resource.RLIMIT_NOFILE, (_target, _hard))
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path

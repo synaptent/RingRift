@@ -589,17 +589,25 @@ class ModelLifecycleCoordinator:
                         latest = tracker.get_latest_generation(board_type, num_players)
                         parent_id = latest.generation_id if latest else None
 
-                        # Mar 2026: Deduplicate generation recording. Two TRAINING_COMPLETED
-                        # events fire for each training completion (p2p_event_bridge +
-                        # _sync_then_emit_training_completed), creating duplicate rows.
-                        # Skip if a generation for the same config+model was recorded
-                        # within the last 60 seconds. If the existing row has 0 samples
-                        # but we now have data, update it instead of creating a new row.
+                        # Mar 2026: Deduplicate generation recording.
+                        # Compare by config_key alone (not model_path which differs
+                        # between event sources). Window 120s (was 60s) to handle
+                        # slow model syncs. Skip p2p_bridge events if a
+                        # distributed_training event was already seen.
                         _skip_record = False
-                        if latest and model_path and latest.model_path == model_path:
+                        event_source = payload.get("source", "")
+                        if latest:
                             age = time.time() - latest.created_at
-                            if age < 60:
-                                if (latest.training_samples or 0) == 0 and training_samples > 0:
+                            if age < 120:
+                                if event_source == "p2p_bridge":
+                                    # Always skip p2p_bridge — canonical emission
+                                    # from work_queue.py has the complete payload
+                                    logger.debug(
+                                        f"[ModelLifecycleCoordinator] Skipping p2p_bridge duplicate for "
+                                        f"{config_key} (latest={latest.generation_id}, age={age:.0f}s)"
+                                    )
+                                    _skip_record = True
+                                elif (latest.training_samples or 0) == 0 and training_samples > 0:
                                     # Update the existing row with actual data
                                     try:
                                         import sqlite3 as _sqlite3
@@ -615,12 +623,13 @@ class ModelLifecycleCoordinator:
                                         )
                                     except Exception as upd_err:
                                         logger.debug(f"[ModelLifecycleCoordinator] Failed to update generation: {upd_err}")
+                                    _skip_record = True
                                 else:
                                     logger.debug(
                                         f"[ModelLifecycleCoordinator] Skipping duplicate generation for "
                                         f"{config_key} (latest={latest.generation_id}, age={age:.0f}s)"
                                     )
-                                _skip_record = True
+                                    _skip_record = True
 
                         if not _skip_record:
                             # Record the new generation

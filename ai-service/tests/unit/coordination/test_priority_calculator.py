@@ -453,8 +453,9 @@ class TestPriorityCalculator:
         """Priority override should affect score."""
         calculator = PriorityCalculator()
 
-        low = PriorityInputs(config_key="hex8_2p", priority_override=3)  # 1x
-        critical = PriorityInputs(config_key="hex8_2p", priority_override=0)  # 3x
+        # Use a config_key NOT in CONFIG_PRIORITY_FALLBACK so priority_override takes effect
+        low = PriorityInputs(config_key="test_board_2p", priority_override=3)  # 1x
+        critical = PriorityInputs(config_key="test_board_2p", priority_override=0)  # 3x
 
         low_score = calculator.compute_priority_score(low)
         critical_score = calculator.compute_priority_score(critical)
@@ -462,16 +463,17 @@ class TestPriorityCalculator:
         assert critical_score > low_score * 2
 
     def test_player_count_multiplier(self):
-        """4p configs should get higher priority than 2p."""
+        """During 2p focus sprint, CRITICAL 2p should outscore non-critical 4p."""
         calculator = PriorityCalculator()
 
-        two_p = PriorityInputs(config_key="hex8_2p")  # 1x
-        four_p = PriorityInputs(config_key="hex8_4p")  # 4x
+        two_p = PriorityInputs(config_key="hex8_2p")  # CRITICAL fallback -> 4.0 bypass
+        four_p = PriorityInputs(config_key="hex8_4p")  # LOW fallback -> 0.75
 
         two_score = calculator.compute_priority_score(two_p)
         four_score = calculator.compute_priority_score(four_p)
 
-        assert four_score > two_score * 3
+        # 2p CRITICAL (3.0 * 4.0 bypass) should dominate 4p LOW (1.0 * 0.75)
+        assert two_score > four_score
 
     def test_data_starvation_emergency(self):
         """Very low game count should trigger emergency multiplier."""
@@ -529,7 +531,8 @@ class TestConstants:
     def test_player_count_multipliers(self):
         """Test player count multiplier values."""
         assert PLAYER_COUNT_ALLOCATION_MULTIPLIER[2] == 1.0
-        assert PLAYER_COUNT_ALLOCATION_MULTIPLIER[4] == 8.0
+        assert PLAYER_COUNT_ALLOCATION_MULTIPLIER[3] == 0.75
+        assert PLAYER_COUNT_ALLOCATION_MULTIPLIER[4] == 0.75
 
 
 # =============================================================================

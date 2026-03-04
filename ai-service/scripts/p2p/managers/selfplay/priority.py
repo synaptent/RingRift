@@ -310,6 +310,10 @@ class PriorityCalculatorMixin:
         """Get staleness-based priority boost for a config.
 
         Configs that haven't had recent games get higher priority.
+
+        Mar 2026: Escalated boosts for long-stalled configs. Previously
+        max boost was +3 for >24h stale, which was too weak — 6 configs
+        stalled 24-362 hours with no priority recovery.
         """
         try:
             # Initialize tracking dict if needed
@@ -319,13 +323,17 @@ class PriorityCalculatorMixin:
             # Check last job time for this config
             last_job_time = self._last_config_job_time.get(config_key, 0)
             if last_job_time == 0:
-                return 3  # Never had a job, high boost
+                return 5  # Never had a job, high boost (was 3)
 
             age_hours = (time.time() - last_job_time) / 3600
-            if age_hours > 24:
-                return 3
+            if age_hours > 72:
+                return 10  # Emergency: stalled 3+ days
+            elif age_hours > 48:
+                return 7  # Critical: stalled 2+ days
+            elif age_hours > 24:
+                return 5  # High: stalled 1+ day (was 3)
             elif age_hours > 12:
-                return 2
+                return 3  # Medium (was 2)
             elif age_hours > 6:
                 return 1
             return 0

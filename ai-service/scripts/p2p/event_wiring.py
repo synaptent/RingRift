@@ -384,21 +384,12 @@ def subscribe_to_manager_events(orchestrator: Any) -> bool:
                 if hasattr(orchestrator, "selfplay_scheduler"):
                     orchestrator.selfplay_scheduler.on_training_complete(config_key)
 
-                # Bridge to coordination event bus for EvaluationDaemon
-                try:
-                    from app.coordination.event_router import emit_event
-                    from app.coordination.data_events import DataEventType
-                    emit_event(DataEventType.TRAINING_COMPLETED, {
-                        "config_key": config_key,
-                        "model_path": model_path,
-                        "final_loss": final_loss,
-                        "training_samples": payload.get("training_samples", 0),
-                        "training_games": payload.get("training_games", 0),
-                        "source": "p2p_bridge",
-                    })
-                    logger.debug("[P2P] Bridged TRAINING_COMPLETED to coordination bus")
-                except Exception as bridge_err:  # noqa: BLE001
-                    logger.debug(f"Could not bridge TRAINING_COMPLETED: {bridge_err}")
+                # Mar 2026: Removed redundant TRAINING_COMPLETED bridge emission.
+                # _sync_then_emit_training_completed in work_queue.py already emits
+                # a complete event with all fields (training_samples, training_games,
+                # model_path). This bridge emitted a stripped-down payload that raced
+                # with the canonical emission, causing 93% of generations to record
+                # training_games=0 in generation_tracking.db.
             except Exception as e:  # noqa: BLE001
                 logger.debug(f"Error handling training completed event: {e}")
 

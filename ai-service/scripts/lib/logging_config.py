@@ -300,8 +300,9 @@ def setup_script_logging(
     if log_file:
         log_file = Path(log_file)
     else:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        log_file = Path(log_dir) / f"{script_name}_{timestamp}.log"
+        # Use a fixed filename — timestamped filenames caused 2800+ log file
+        # accumulation when daemons spawn scripts repeatedly (Mar 2026 fix).
+        log_file = Path(log_dir) / f"{script_name}.log"
 
     setup_logging(
         level=level,

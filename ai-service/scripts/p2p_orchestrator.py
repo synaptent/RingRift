@@ -25,6 +25,13 @@ Usage:
 """
 from __future__ import annotations
 
+# Increase file descriptor limit early — P2P opens many connections + SQLite DBs
+import resource as _resource
+_soft, _hard = _resource.getrlimit(_resource.RLIMIT_NOFILE)
+_target = min(8192, _hard) if _hard != _resource.RLIM_INFINITY else 8192
+if _soft < _target:
+    _resource.setrlimit(_resource.RLIMIT_NOFILE, (_target, _hard))
+
 # Load .env.local BEFORE app.p2p.constants imports (for SWIM/Raft feature flags)
 # This must happen before any app.* imports that read environment variables
 def _load_env_local():

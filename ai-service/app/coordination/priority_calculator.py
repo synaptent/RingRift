@@ -69,24 +69,23 @@ PRIORITY_OVERRIDE_MULTIPLIERS = {
 
 # Static fallback priorities (used when live metrics unavailable)
 # Dynamic computation in compute_config_priority_override() takes precedence
-# Feb 2026: Updated to match current Elo standings:
-#   CRITICAL(0): hexagonal_2p (1483), square19_2p (1519)
-#   HIGH(1): square8_2p (1685), hex8_2p (1703)
-#   MEDIUM(2): hex8_3p (1808), square8_3p (1879), hexagonal_3p (1825), square19_3p (1825)
-#   LOW(3): square19_4p (1982), hexagonal_4p (1982), hex8_4p (2016), square8_4p (2054)
+# Mar 2026: Focus sprint — all 2p configs CRITICAL to concentrate GPU resources.
+#   CRITICAL(0): square8_2p (1696), hex8_2p (1642), hexagonal_2p (1660), square19_2p (1610)
+#   MEDIUM(2): hex8_3p (1603), square8_3p (1585), hexagonal_3p (1825), square19_3p (1825)
+#   LOW(3): square19_4p (1982), hexagonal_4p (1982), hex8_4p (1661), square8_4p (1656)
 CONFIG_PRIORITY_FALLBACK: dict[str, int] = {
-    "hexagonal_2p": 0,   # 1483 Elo - CRITICAL, furthest from target
-    "square19_2p": 0,    # 1519 Elo - CRITICAL
-    "square8_2p": 1,     # 1685 Elo - HIGH
-    "hex8_2p": 1,        # 1703 Elo - HIGH
-    "hex8_3p": 2,        # 1808 Elo - MEDIUM
-    "square8_3p": 2,     # 1879 Elo - MEDIUM
+    "hexagonal_2p": 0,   # 1660 Elo - CRITICAL
+    "square19_2p": 0,    # 1610 Elo - CRITICAL
+    "square8_2p": 0,     # 1696 Elo - CRITICAL (focus sprint)
+    "hex8_2p": 0,        # 1642 Elo - CRITICAL (focus sprint)
+    "hex8_3p": 2,        # 1603 Elo - MEDIUM
+    "square8_3p": 2,     # 1585 Elo - MEDIUM
     "hexagonal_3p": 2,   # 1825 Elo - MEDIUM
     "square19_3p": 2,    # 1825 Elo - MEDIUM
     "square19_4p": 3,    # 1982 Elo - LOW (near target)
     "hexagonal_4p": 3,   # 1982 Elo - LOW (near target)
-    "hex8_4p": 3,        # 2016 Elo - LOW (target met)
-    "square8_4p": 3,     # 2054 Elo - LOW (target met)
+    "hex8_4p": 3,        # 1661 Elo - LOW
+    "square8_4p": 3,     # 1656 Elo - LOW
 }
 
 
@@ -95,8 +94,8 @@ def compute_config_priority_override(config_key: str, game_count: int | None, el
 
     Returns priority override level:
         -1: EMERGENCY (bootstrap crisis, <100 games)
-         0: CRITICAL (< 500 games)
-         1: HIGH (< 2000 games, Elo < 1800)
+         0: CRITICAL (< 500 games OR Elo < 1700)
+         1: HIGH (Elo < 1800)
          2: MEDIUM (default)
          3: LOW (target met, Elo >= 2000)
 
@@ -114,21 +113,20 @@ def compute_config_priority_override(config_key: str, game_count: int | None, el
     # Previously hexagonal_2p (1483 Elo, 3181 games) got MEDIUM because
     # game_count > 2000. A config with very low Elo needs more selfplay
     # with the current model, regardless of how many old games exist.
-    if elo is not None and elo < 1600:
-        return 0  # CRITICAL - severely underperforming
+    if elo is not None and elo < 1700:
+        return 0  # CRITICAL - focus sprint (captures all 2p configs)
     if elo is not None and elo < 1800:
         return 1  # HIGH - needs improvement
     return 2  # MEDIUM
 
 # Player count allocation multipliers
-# Feb 24, 2026: Rebalanced — 4p configs at/above 2000 Elo target, 2p weakest.
-# Previous 8x/4x ratios were starving 2p configs (hexagonal_2p: 1483, square19_2p: 1519).
-# 2p needs 27-33% MORE games than 4p to reach same sample target (fewer samples/game)
-# but was getting 1/8th the allocation. Narrowing the gap.
+# Mar 2026: Focus sprint — reduce 3p/4p to concentrate on 2p.
+# CRITICAL 2p configs bypass this via CRITICAL_BYPASSES_PLAYER_MULTIPLIER (get 4.0).
+# Effective allocation: 2p CRITICAL = 4.0*3.0 = 12x, 3p/4p non-critical = 0.75*1.25 = 0.94x.
 PLAYER_COUNT_ALLOCATION_MULTIPLIER = {
-    2: 1.0,  # Baseline
-    3: 1.5,  # Reduced from 4.0 — 3p no longer severely starved
-    4: 2.0,  # Reduced from 8.0 — 4p at/near 2000 Elo, doesn't need aggressive boost
+    2: 1.0,   # Baseline - 2p focus sprint
+    3: 0.75,  # Reduced from 1.5 — deprioritized during 2p sprint
+    4: 0.75,  # Reduced from 2.0 — deprioritized during 2p sprint
 }
 
 # Jan 14, 2026: CRITICAL priority should bypass player multiplier
