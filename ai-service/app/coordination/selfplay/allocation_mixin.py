@@ -214,10 +214,10 @@ class AllocationMixin:
         if not two_p_configs:
             return allocation  # No donors available
 
-        # Feb 2026: Reduced multiplayer targets since 4p configs already beat
-        # heuristic (hex8_4p +243, square8_4p +227). Shift focus to 2p donors.
-        min_4p_games = int(games_per_config * 3.0)
-        min_3p_games = int(games_per_config * 1.5)
+        # Mar 4, 2026: Disabled during 2p focus sprint. Was 3.0x/1.5x, stealing
+        # heavily from CRITICAL 2p configs. Restore after 2p Elo > 1900.
+        min_4p_games = int(games_per_config * 0.5)
+        min_3p_games = int(games_per_config * 0.5)
         redistributed = 0
 
         # Process 4p first (higher priority - most starved)
