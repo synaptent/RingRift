@@ -124,13 +124,19 @@ def get_config_progress(config_key: str, days: float = 30.0) -> ConfigProgress:
     # Get latest snapshot for win rates
     latest = elo_tracker.get_latest_snapshot(config_key)
 
-    # Determine starting and current Elo
-    if elo_report.start_elo is not None:
-        starting_elo = elo_report.start_elo
+    # Determine starting Elo, accounting for recalibration events.
+    # A recalibration (e.g., March 1, 2026) can cause a >200 Elo single-snapshot
+    # drop across all configs simultaneously. Using the pre-recalibration value
+    # as start_elo creates false regressions. Detect and skip past these.
+    effective_start_idx = 0
+    starting_elo = BASELINE_ELO
+    if elo_report.snapshots:
+        for i in range(1, len(elo_report.snapshots)):
+            drop = elo_report.snapshots[i].best_elo - elo_report.snapshots[i - 1].best_elo
+            if drop < -200:
+                effective_start_idx = i
+        starting_elo = elo_report.snapshots[effective_start_idx].best_elo
     elif config_generations:
-        # Try to get from first generation
-        starting_elo = BASELINE_ELO
-    else:
         starting_elo = BASELINE_ELO
 
     # Feb 25, 2026: Use the LATEST snapshot Elo, not max.
@@ -155,13 +161,13 @@ def get_config_progress(config_key: str, days: float = 30.0) -> ConfigProgress:
     elif latest:
         last_updated = datetime.fromtimestamp(latest.timestamp).strftime("%Y-%m-%d %H:%M")
 
-    # Feb 25, 2026: Track peak Elo to show regressions
-    peak_elo = max((s.best_elo for s in elo_report.snapshots), default=current_elo)
+    # Track peak Elo post-recalibration to show real regressions
+    post_recal_snapshots = elo_report.snapshots[effective_start_idx:]
+    peak_elo = max((s.best_elo for s in post_recal_snapshots), default=current_elo)
 
-    # January 21, 2026: Extract real historical data points from snapshots
-    # This replaces the previous fabricated/synthesized data in the dashboard
+    # Extract real historical data points from post-recalibration snapshots
     history: list[HistoricalDataPoint] = []
-    for snapshot in elo_report.snapshots:
+    for snapshot in post_recal_snapshots:
         history.append(HistoricalDataPoint(
             timestamp=datetime.fromtimestamp(snapshot.timestamp).strftime("%Y-%m-%d"),
             elo=snapshot.best_elo,
