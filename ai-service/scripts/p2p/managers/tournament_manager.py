@@ -181,7 +181,8 @@ agents = [
 
 max_moves = 10000
 move_count = 0
-while not state.game_over and move_count < max_moves:
+from app.models import GameStatus as _GS
+while state.game_status != _GS.COMPLETED and move_count < max_moves:
     current_player = state.current_player_index
     agent = agents[current_player]
     move = agent.select_move(state)
@@ -192,7 +193,7 @@ while not state.game_over and move_count < max_moves:
 
 winner_idx = None
 victory_type = 'unknown'
-if state.game_over:
+if state.game_status == _GS.COMPLETED:
     scores = state.player_scores
     if scores:
         max_score = max(scores)

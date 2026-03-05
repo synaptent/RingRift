@@ -2841,7 +2841,8 @@ def run_model_vs_model(
         move_count = 0
 
         # Play game
-        while not state.game_over and move_count < max_moves:
+        from app.models import GameStatus as _GS
+        while state.game_status != _GS.COMPLETED and move_count < max_moves:
             current_player = state.current_player
             ai = players[current_player]
             move = ai.get_move(state)
@@ -2851,7 +2852,7 @@ def run_model_vs_model(
             move_count += 1
 
         # Determine winner
-        if state.game_over and state.winner is not None:
+        if state.game_status == _GS.COMPLETED and state.winner is not None:
             if state.winner == a_is_player:
                 wins += 1
             else:

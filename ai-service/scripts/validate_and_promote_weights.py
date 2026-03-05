@@ -156,7 +156,8 @@ def play_validation_games(
         move_count = 0
         max_moves = 200
 
-        while not state.game_over and move_count < max_moves:
+        from app.models import GameStatus as _GS
+        while state.game_status != _GS.COMPLETED and move_count < max_moves:
             current_player = state.current_player_index
             ai = ais[current_player]
             move = ai.select_move(state)
@@ -166,7 +167,7 @@ def play_validation_games(
             move_count += 1
 
         # Determine winner
-        if state.game_over and state.winner is not None:
+        if state.game_status == _GS.COMPLETED and state.winner is not None:
             if state.winner == candidate_seat:
                 candidate_wins += 1
             else:
