@@ -541,9 +541,24 @@ async def execute_training_work(
             from app.coordination.npz_validation import quick_npz_check
             _ok, _err = quick_npz_check(npz_path)
             if not _ok:
-                logger.error(f"Training data corrupt: {npz_path}: {_err}")
-                work_item["error"] = f"npz_corrupt:{config_key}:{_err}"
-                return False
+                logger.warning(
+                    f"Local NPZ corrupt: {npz_path}: {_err}. "
+                    f"Fetching fresh copy for {config_key}."
+                )
+                # Mar 4, 2026: Try to replace corrupt file before failing.
+                # Before this fix, corrupt NPZs caused permanent training failures.
+                _fetched = await _try_fetch_npz_from_cluster(
+                    ai_service_root, config_key, npz_path
+                )
+                if not _fetched:
+                    await _try_fetch_npz_from_s3(config_key, str(npz_path))
+                # Re-validate after fetch attempt
+                _ok2, _err2 = quick_npz_check(npz_path)
+                if not _ok2:
+                    logger.error(f"Training data still corrupt after re-fetch: {_err2}")
+                    work_item["error"] = f"npz_corrupt:{config_key}:{_err2}"
+                    return False
+                logger.info(f"Successfully replaced corrupt NPZ for {config_key}")
         except ImportError:
             pass  # Validation module not available on this node
         cmd.extend(["--data-path", str(npz_path)])
