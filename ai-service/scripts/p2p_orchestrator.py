@@ -14160,6 +14160,47 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
+    # Mar 2026: Event loop watchdog — runs in a separate OS thread so a blocked
+    # asyncio event loop doesn't prevent detection. Polls /health every 30s;
+    # after 3 consecutive timeouts (~90s of unresponsiveness) calls os._exit(1)
+    # to trigger systemd/supervisor restart. Startup grace period: 180s.
+    def _event_loop_watchdog(port: int) -> None:
+        import urllib.request
+        import os as _os
+        _STARTUP_GRACE = 180   # seconds before watchdog activates
+        _CHECK_INTERVAL = 30   # seconds between health checks
+        _TIMEOUT = 20          # seconds per HTTP check
+        _MAX_FAILURES = 3      # consecutive failures before exit
+        import time as _time
+        _time.sleep(_STARTUP_GRACE)
+        consecutive_failures = 0
+        while True:
+            try:
+                url = f"http://127.0.0.1:{port}/health"
+                with urllib.request.urlopen(url, timeout=_TIMEOUT):
+                    consecutive_failures = 0
+            except Exception:
+                consecutive_failures += 1
+                logger.warning(
+                    f"[Watchdog] /health unresponsive ({consecutive_failures}/{_MAX_FAILURES})"
+                )
+                if consecutive_failures >= _MAX_FAILURES:
+                    logger.error(
+                        "[Watchdog] Event loop appears blocked — triggering restart via os._exit(1)"
+                    )
+                    _os._exit(1)
+            _time.sleep(_CHECK_INTERVAL)
+
+    import threading as _threading
+    _watchdog_thread = _threading.Thread(
+        target=_event_loop_watchdog,
+        args=(args.port,),
+        daemon=True,
+        name="EventLoopWatchdog",
+    )
+    _watchdog_thread.start()
+    logger.info(f"[Watchdog] Started event loop watchdog (grace={180}s, interval={30}s, max_failures={3})")
+
     # Run with exception logging
     try:
         logger.info(f"Starting P2P orchestrator main loop: {args.node_id}")

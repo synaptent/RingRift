@@ -11,15 +11,30 @@ Type=simple
 StartLimitInterval=600
 StartLimitBurst=5
 StartLimitAction=none
-User=root
-WorkingDirectory=/root/ringrift/ai-service
-Environment=PYTHONPATH=/root/ringrift/ai-service
-Environment=HOME=/root
 EnvironmentFile=-/etc/ringrift/node.conf
 # If a previous manual/rogue orchestrator is still holding the P2P port, kill it
 # so the managed systemd unit can start cleanly (prevents bind-failure loops).
-ExecStartPre=/bin/bash -lc 'if command -v ss >/dev/null 2>&1; then pid="$(ss -ltnpH 2>/dev/null | sed -n "s/.*:$P2P_PORT .*pid=\\([0-9][0-9]*\\).*/\\1/p" | head -1)"; if [ -n "$pid" ]; then args="$(ps -p "$pid" -o args= 2>/dev/null || true)"; if echo "$args" | grep -q "p2p_orchestrator.py"; then echo "[ringrift-p2p] Killing rogue p2p_orchestrator pid=$pid (port=$P2P_PORT)"; kill "$pid" 2>/dev/null || true; sleep 2; kill -9 "$pid" 2>/dev/null || true; fi; fi; fi'
-ExecStart=/bin/bash -lc 'PY="/root/ringrift/ai-service/venv/bin/python"; if [ ! -x "$PY" ]; then PY="/usr/bin/python3"; fi; exec "$PY" "/root/ringrift/ai-service/scripts/p2p_orchestrator.py" --node-id "$NODE_ID" --port "$P2P_PORT" --peers "$COORDINATOR_URL" --ringrift-path "/root/ringrift"'
+ExecStartPre=/bin/bash -c 'if command -v ss >/dev/null 2>&1; then pid="$(ss -ltnpH 2>/dev/null | sed -n "s/.*:${P2P_PORT:-8770} .*pid=\([0-9][0-9]*\).*/\1/p" | head -1)"; if [ -n "$pid" ]; then args="$(ps -p "$pid" -o args= 2>/dev/null || true)"; if echo "$args" | grep -q "p2p_orchestrator.py"; then echo "[ringrift-p2p] Killing rogue p2p_orchestrator pid=$pid"; kill "$pid" 2>/dev/null || true; sleep 2; kill -9 "$pid" 2>/dev/null || true; fi; fi; fi'
+# Mar 2026: RINGRIFT_AI_PATH is the canonical env var pointing directly to the
+# ai-service directory. No path manipulation here — what node.conf sets is used
+# as-is. This eliminates the ambiguity where some callers appended /ai-service
+# and others did not. node.conf must set RINGRIFT_AI_PATH explicitly.
+# Fallback: RINGRIFT_AI_PATH defaults to /home/ubuntu/ringrift/ai-service.
+ExecStart=/bin/bash -c '\
+  AI="${RINGRIFT_AI_PATH:-/home/ubuntu/ringrift/ai-service}"; \
+  ROOT="$(dirname "$AI")"; \
+  export PYTHONPATH="$AI"; \
+  PY="$AI/venv/bin/python"; \
+  if [ ! -x "$PY" ]; then PY="/usr/bin/python3"; fi; \
+  EXTRA=""; \
+  if [ -n "${ADVERTISE_HOST}" ]; then EXTRA="--advertise-host ${ADVERTISE_HOST}"; fi; \
+  cd "$AI" && exec "$PY" scripts/p2p_orchestrator.py \
+    --node-id "${NODE_ID}" \
+    --port "${P2P_PORT:-8770}" \
+    --peers "${P2P_SEEDS}" \
+    --ringrift-path "$ROOT" \
+    --kill-duplicates \
+    $EXTRA'
 Restart=always
 RestartSec=10
 StandardOutput=append:/var/log/ringrift/p2p.log

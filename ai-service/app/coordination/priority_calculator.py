@@ -120,13 +120,13 @@ def compute_config_priority_override(config_key: str, game_count: int | None, el
     return 2  # MEDIUM
 
 # Player count allocation multipliers
-# Mar 2026: Focus sprint — reduce 3p/4p to concentrate on 2p.
-# CRITICAL 2p configs bypass this via CRITICAL_BYPASSES_PLAYER_MULTIPLIER (get 4.0).
-# Effective allocation: 2p CRITICAL = 4.0*3.0 = 12x, 3p/4p non-critical = 0.75*1.25 = 0.94x.
+# Mar 5, 2026: Partially restored from 2p focus sprint (square8_2p passed 1900).
+# hex8_2p (1642) still gets CRITICAL 12x weight via priority calculator.
+# 3p/4p restored to moderate levels (was 0.75 during sprint, pre-sprint was 1.5/2.0).
 PLAYER_COUNT_ALLOCATION_MULTIPLIER = {
-    2: 1.0,   # Baseline - 2p focus sprint
-    3: 0.75,  # Reduced from 1.5 — deprioritized during 2p sprint
-    4: 0.75,  # Reduced from 2.0 — deprioritized during 2p sprint
+    2: 1.0,   # Baseline
+    3: 1.2,   # Restored from 0.75 (pre-sprint was 1.5)
+    4: 1.2,   # Restored from 0.75 (pre-sprint was 2.0)
 }
 
 # Jan 14, 2026: CRITICAL priority should bypass player multiplier

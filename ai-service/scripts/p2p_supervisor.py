@@ -204,16 +204,22 @@ def run_p2p_supervised(node_id: str, node_config: dict, config: dict, dry_run: b
             # Feb 2026: Set PYTHONPATH and cwd so supervisor-restarted P2P can
             # find scripts.* modules. Without this, restarts fail with
             # "ModuleNotFoundError: No module named 'scripts'" on Lambda nodes.
+            # Mar 2026: Use RINGRIFT_AI_PATH (canonical, points directly to
+            # ai-service dir) with fallback to RINGRIFT_PATH (legacy). This
+            # unifies the convention with the systemd service template, which
+            # also reads RINGRIFT_AI_PATH directly. Previously RINGRIFT_PATH
+            # meant different things to different callers (some appended
+            # /ai-service, some did not), causing ModuleNotFoundError loops.
             proc_env = os.environ.copy()
             ringrift_path = proc_env.get(
-                "RINGRIFT_PATH",
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                "RINGRIFT_AI_PATH",
+                proc_env.get(
+                    "RINGRIFT_PATH",
+                    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                )
             )
-            # Feb 28, 2026: Use unconditional assignment, not setdefault.
-            # setdefault doesn't override when PYTHONPATH exists (even empty ""),
-            # causing "ModuleNotFoundError: No module named 'scripts'" on ALL
-            # Lambda restarts. This was the root cause of 0% training success
-            # on 7 Lambda GH200 nodes (441 consecutive failures).
+            # Mar 2026: Use unconditional assignment — setdefault doesn't override
+            # when PYTHONPATH exists (even empty ""), causing import failures.
             proc_env["PYTHONPATH"] = ringrift_path
 
             proc = subprocess.Popen(

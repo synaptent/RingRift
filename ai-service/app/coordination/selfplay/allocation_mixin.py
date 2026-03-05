@@ -214,10 +214,9 @@ class AllocationMixin:
         if not two_p_configs:
             return allocation  # No donors available
 
-        # Mar 4, 2026: Disabled during 2p focus sprint. Was 3.0x/1.5x, stealing
-        # heavily from CRITICAL 2p configs. Restore after 2p Elo > 1900.
-        min_4p_games = int(games_per_config * 0.5)
-        min_3p_games = int(games_per_config * 0.5)
+        # Mar 5, 2026: Partially restored from 2p sprint (square8_2p passed 1900).
+        min_4p_games = int(games_per_config * 1.5)
+        min_3p_games = int(games_per_config * 1.2)
         redistributed = 0
 
         # Process 4p first (higher priority - most starved)
