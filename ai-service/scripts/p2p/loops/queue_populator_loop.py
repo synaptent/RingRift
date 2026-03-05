@@ -116,8 +116,11 @@ class QueuePopulatorLoop(BaseLoop):
         Helps debug why work queue may be empty.
         """
         # Lazy initialization of populator
+        # Mar 5, 2026: Wrap in asyncio.to_thread() — _initialize_populator()
+        # calls QueuePopulator.__init__ → _load_game_counts() → GameDiscovery
+        # → maybe_parallel_map(ThreadPoolExecutor.map) which blocks the event loop.
         if not self._initialized:
-            self._initialize_populator()
+            await asyncio.to_thread(self._initialize_populator)
             self._initialized = True
 
         if self._populator is None:
