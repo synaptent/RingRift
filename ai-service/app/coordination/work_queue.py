@@ -1970,6 +1970,36 @@ class WorkQueue:
 
         return True
 
+    def release_work(self, work_id: str) -> bool:
+        """Release a claimed work item back to PENDING without counting as a failure.
+
+        Mar 2026: Used when a push-dispatch fails (node unreachable) to avoid
+        burning through max_attempts on network errors. Unlike fail_work(), this
+        decrements the attempts counter so the item gets a fresh retry via pull.
+
+        Args:
+            work_id: ID of the work item to release
+
+        Returns:
+            True if released successfully, False if item not found or not claimable
+        """
+        with self.lock:
+            item = self._items.get(work_id)
+            if not item:
+                return False
+            if item.status not in (WorkStatus.CLAIMED, WorkStatus.RUNNING):
+                return False
+
+            # Decrement attempts since the claim incremented it but no work was done
+            item.attempts = max(0, item.attempts - 1)
+            item.status = WorkStatus.PENDING
+            item.claimed_by = ""
+            item.claimed_at = 0.0
+            item.error = ""
+            self._save_item(item)
+            logger.info(f"Work {work_id} released back to pending (attempts={item.attempts})")
+        return True
+
     def _fail_work_raft(self, work_id: str, error: str = "") -> bool:
         """Fail work via Raft backend (Dec 30, 2025 - P5.1).
 

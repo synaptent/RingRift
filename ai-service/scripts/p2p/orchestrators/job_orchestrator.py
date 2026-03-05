@@ -1082,8 +1082,15 @@ class JobOrchestrator(BaseOrchestrator):
                 idle_key = f"_wq_idle_since_{node_id}"
                 setattr(p2p, idle_key, 0)
             else:
-                # Failed to dispatch, reset work status for retry
-                await asyncio.to_thread(p2p.fail_work_distributed, work_id, "dispatch_failed")
+                # Mar 2026: Release claim without counting as failure — push dispatch
+                # errors are network issues, not work failures. fail_work() burned
+                # through max_attempts on unreachable nodes; release_work() lets
+                # the pull model pick it up without wasting retry budget.
+                wq_local = get_work_queue()
+                if wq_local is not None:
+                    await asyncio.to_thread(wq_local.release_work, work_id)
+                else:
+                    await asyncio.to_thread(p2p.fail_work_distributed, work_id, "dispatch_failed")
 
         if dispatched > 0:
             p2p._last_work_queue_rebalance = now

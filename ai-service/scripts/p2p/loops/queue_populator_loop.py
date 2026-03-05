@@ -98,7 +98,10 @@ class QueuePopulatorLoop(BaseLoop):
         self._initialized = False
         # Jan 5, 2026 (Session 17.28): Track leader unreachability for follower takeover
         self._leader_last_seen: float = time.time()
-        self._leader_unreachable_threshold: float = 30.0  # seconds before follower takes over
+        # Mar 2026: Raised from 30s to 120s — 30s was too aggressive, causing
+        # followers to take over during brief heartbeat gaps and add duplicate
+        # items to their local (non-authoritative) work queues.
+        self._leader_unreachable_threshold: float = 120.0  # seconds before follower takes over
 
     async def _on_start(self) -> None:
         """Initialize the QueuePopulator on loop start."""
