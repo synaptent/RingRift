@@ -325,8 +325,9 @@ class QuorumSafeUpdateCoordinator:
         import aiohttp
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self.health_endpoint, timeout=10) as resp:
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(self.health_endpoint) as resp:
                     if resp.status != 200:
                         logger.warning(f"Health endpoint returned {resp.status}")
                         return ClusterHealth(
@@ -738,9 +739,10 @@ class QuorumSafeUpdateCoordinator:
         deadline = time.time() + timeout
         node_names = set(batch.node_names)
         consecutive_lost = 0
-        # Allow up to 6 consecutive LOST checks (30s) before giving up —
-        # enough time for P2P to restart after a code update
-        max_consecutive_lost = 6
+        # Allow up to 18 consecutive LOST checks (~3min) before giving up —
+        # after batch non-voter restarts, P2P leader is overwhelmed by
+        # reconnection traffic and /status endpoint may be slow
+        max_consecutive_lost = 18
 
         logger.info(f"Waiting up to {timeout}s for convergence of {node_names}")
 
@@ -925,8 +927,9 @@ class QuorumSafeUpdateCoordinator:
                 result.batches_updated += 1
                 continue
 
-            # Wait for convergence
-            logger.info(f"  Waiting for convergence...")
+            # Wait for convergence (give P2P 15s to settle before checking)
+            logger.info(f"  Waiting 15s for P2P settling, then checking convergence...")
+            await asyncio.sleep(15)
             converged = await self._wait_for_convergence(batch)
 
             if not converged:
