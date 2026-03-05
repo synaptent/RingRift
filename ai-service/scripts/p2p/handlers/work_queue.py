@@ -426,6 +426,17 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             - (True, "") if capacity is sufficient
             - (False, reason) if capacity is insufficient
         """
+        # Mar 2026: Check YAML config for training_enabled/selfplay_enabled flags.
+        # Prevents dispatching work to nodes that always fail (e.g. vultr-a100-20gb
+        # had 21 consecutive training failures because 20GB vGPU is too small).
+        if work_type in ("training", "selfplay"):
+            flag = f"{work_type}_enabled"
+            yaml_disabled = self._is_node_disabled_in_yaml(node_id, flag)
+            if yaml_disabled:
+                reason = f"{flag}=false in distributed_hosts.yaml"
+                logger.info(f"[capacity] {node_id} rejected for {work_type}: {reason}")
+                return (False, reason)
+
         node_info = self._get_node_info(node_id)
 
         # If we can't get node info, allow the work claim
@@ -494,6 +505,43 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             return (False, reason)
 
         return (True, "")
+
+    # Mar 2026: Cache YAML node config to avoid re-reading file on every claim
+    _yaml_node_flags: dict[str, dict[str, bool]] = {}
+    _yaml_loaded: bool = False
+
+    def _is_node_disabled_in_yaml(self, node_id: str, flag: str) -> bool:
+        """Check if a node has a flag set to False in distributed_hosts.yaml.
+
+        Returns True if the flag is explicitly False, False otherwise.
+        Results are cached after first load.
+        """
+        if not self.__class__._yaml_loaded:
+            self.__class__._yaml_loaded = True
+            try:
+                import yaml
+                from pathlib import Path
+                config_paths = [
+                    Path(__file__).parent.parent.parent / "config" / "distributed_hosts.yaml",
+                    Path.cwd() / "config" / "distributed_hosts.yaml",
+                ]
+                for p in config_paths:
+                    if p.exists():
+                        with open(p) as f:
+                            cfg = yaml.safe_load(f) or {}
+                        hosts = cfg.get("hosts", {})
+                        for nid, ncfg in hosts.items():
+                            if isinstance(ncfg, dict):
+                                self.__class__._yaml_node_flags[nid] = {
+                                    k: v for k, v in ncfg.items()
+                                    if k.endswith("_enabled") and isinstance(v, bool)
+                                }
+                        break
+            except Exception:
+                pass
+
+        node_flags = self.__class__._yaml_node_flags.get(node_id, {})
+        return node_flags.get(flag) is False
 
     def _insufficient_capacity_response(self, reason: str) -> web.Response:
         """Return response when node has insufficient capacity.
