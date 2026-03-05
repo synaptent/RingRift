@@ -1778,7 +1778,11 @@ def _register_comprehensive_evaluation(
             get_orchestrator=lambda: orchestrator,
             config=ComprehensiveEvaluationConfig(
                 interval=6 * 3600,
-                max_evaluations_per_cycle=50,
+                # Mar 5, 2026: Reduced from 50 to 20. At 50, the queue populates
+                # 50 items per cycle and hits the 70-slot gauntlet cap immediately
+                # after P2P restart, blocking candidate evaluations. 20 leaves 50
+                # slots for candidates and other evaluators.
+                max_evaluations_per_cycle=20,
                 stale_threshold_days=7,
                 games_per_harness=50,
                 save_games=True,
