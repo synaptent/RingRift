@@ -683,12 +683,20 @@ async def execute_training_work(
     # but DataLoader/thread hangs caused 12+ hour zombie processes.
     TRAINING_TIMEOUT_SECONDS = 7200  # 2 hours
     try:
+        # Mar 4, 2026: expandable_segments reduces VRAM fragmentation on nodes
+        # where selfplay processes already hold large VRAM allocations.
+        _training_env = {
+            **os.environ,
+            "PYTHONPATH": str(ai_service_root),
+            "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True",
+            "RINGRIFT_ALLOW_PENDING_GATE": "true",
+        }
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             cwd=str(Path(ringrift_path)),
-            env={**os.environ, "PYTHONPATH": str(ai_service_root)},
+            env=_training_env,
         )
         try:
             stdout, _ = await asyncio.wait_for(
@@ -812,7 +820,16 @@ async def execute_training_work(
                 f"Training failed: {config_key}/{model_version}: "
                 f"returncode={proc.returncode}, output={truncated}"
             )
-            work_item["error"] = f"subprocess_failed:rc={proc.returncode}:{config_key}"
+            # Mar 4, 2026: Include OOM/CUDA keywords in error string so the
+            # coordinator's retryable check can detect transient GPU failures.
+            # Previously, "subprocess_failed:rc=1" was never retried because
+            # it didn't contain "cuda" or "out of memory".
+            if "out of memory" in output.lower() or "outofmemoryerror" in output.lower():
+                work_item["error"] = f"cuda_oom:rc={proc.returncode}:{config_key}"
+            elif "cuda" in output.lower() and proc.returncode == 1:
+                work_item["error"] = f"cuda_error:rc={proc.returncode}:{config_key}"
+            else:
+                work_item["error"] = f"subprocess_failed:rc={proc.returncode}:{config_key}"
             return False
     except Exception as e:
         logger.exception(f"Training subprocess error for {config_key}: {e}")
