@@ -679,9 +679,11 @@ async def execute_training_work(
     # Await training subprocess and capture results.
     # Previously used asyncio.create_task() (fire-and-forget) which
     # returned True immediately, causing loss=0.0000 and empty model_path.
-    # Timeout: 2 hours max. Training typically completes in 2-30 min,
-    # but DataLoader/thread hangs caused 12+ hour zombie processes.
-    TRAINING_TIMEOUT_SECONDS = 7200  # 2 hours
+    # Mar 5, 2026: Board-aware timeouts. Large boards (square19=361 cells,
+    # hexagonal=469 cells) with 50 epochs can exceed 2h on GH200s.
+    # 681 consecutive Lambda timeouts were caused by 2h being too short.
+    _LARGE_BOARDS = ("square19", "hexagonal")
+    TRAINING_TIMEOUT_SECONDS = 14400 if board_type in _LARGE_BOARDS else 7200
     try:
         # Mar 4, 2026: expandable_segments reduces VRAM fragmentation on nodes
         # where selfplay processes already hold large VRAM allocations.
@@ -713,14 +715,43 @@ async def execute_training_work(
             # Check if the model file exists and report partial success.
             model_file = Path(ringrift_path) / "models" / model_filename
             if model_file.exists():
+                # Mar 5, 2026: Estimate training_samples from the NPZ file used
+                # for training. Previously reported 0, causing ALL 2,414+ generations
+                # to record training_samples=0 in generation_tracking.db.
+                # Extract actual --data-path from cmd (may differ from npz_path
+                # when fetched from cluster or converted from JSONL).
+                _timeout_samples = 0
+                _timeout_loss = 0.0
+                _actual_data_path = npz_path
+                try:
+                    _dp_idx = cmd.index("--data-path")
+                    _actual_data_path = Path(cmd[_dp_idx + 1])
+                except (ValueError, IndexError):
+                    pass
+                try:
+                    import numpy as _np
+                    _npz_data = _np.load(str(_actual_data_path), mmap_mode='r')
+                    if 'boards' in _npz_data:
+                        _timeout_samples = len(_npz_data['boards'])
+                    elif 'states' in _npz_data:
+                        _timeout_samples = len(_npz_data['states'])
+                    _npz_data.close()
+                except Exception as _e:
+                    logger.debug(f"Could not read NPZ for sample count: {_e}")
+                _timeout_games = 0
+                if _timeout_samples > 0:
+                    avg_moves = 100 if board_type in _LARGE_BOARDS else 40
+                    _timeout_games = max(1, _timeout_samples // avg_moves)
                 logger.info(
                     f"Model file exists despite timeout: {model_file} "
-                    f"({model_file.stat().st_size / 1e6:.1f}MB). Reporting success."
+                    f"({model_file.stat().st_size / 1e6:.1f}MB). "
+                    f"Reporting success with estimated samples={_timeout_samples}."
                 )
                 work_item["result"] = {
                     "model_path": f"models/{model_filename}",
-                    "final_loss": 0.0,
-                    "training_samples": 0,
+                    "final_loss": _timeout_loss,
+                    "training_samples": _timeout_samples,
+                    "training_games": _timeout_games,
                     "config_key": config_key,
                     "model_version": model_version,
                     "timed_out": True,
