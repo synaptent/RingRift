@@ -1056,6 +1056,15 @@ class TrainingTriggerDaemon(HandlerBase):
                 logger.debug("[TrainingTriggerDaemon] No config_key in evaluation event")
                 return
 
+            # Mar 2026: Skip zero-game evaluations — they produce meaningless
+            # win_rate=0, elo=1000 defaults that falsely trigger "struggling" intensity
+            # and inflate consecutive_failures via Elo plateau detection.
+            if games_played <= 0:
+                logger.debug(
+                    f"[TrainingTriggerDaemon] Ignoring zero-game evaluation for {config_key}"
+                )
+                return
+
             state = self._get_or_create_state(config_key)
 
             # Calculate Elo change if we have previous Elo
