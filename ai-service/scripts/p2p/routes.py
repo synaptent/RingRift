@@ -58,6 +58,7 @@ CORE_ROUTES = [
     Route("GET", "/status", "handle_status"),
     Route("GET", "/external_work", "handle_external_work"),
     Route("GET", "/health", "handle_health"),
+    Route("GET", "/health/gpu", "handle_gpu_health"),  # Mar 2026: Force-refresh GPU metrics
     Route("GET", "/cluster/health", "handle_cluster_health"),
     Route("GET", "/peer-health", "handle_peer_health"),  # Jan 3, 2026: Sprint 10+ P2P hardening
     Route("GET", "/p2p/diagnostics", "handle_p2p_diagnostics"),  # Jan 21, 2026: P2P Stability Plan Phase 0 diagnostics

@@ -192,6 +192,25 @@ class StatusHandlersMixin:
         except Exception as e:  # noqa: BLE001
             return web.json_response({"error": str(e), "healthy": False}, status=500)
 
+    async def handle_gpu_health(self, request: web.Request) -> web.Response:
+        """GET /health/gpu - Force-refresh GPU metrics.
+
+        Mar 2026: Bypasses the resource usage cache to get fresh nvidia-smi data.
+        Useful for monitoring dashboards that need real-time GPU utilization.
+        """
+        try:
+            gpu_metrics = await asyncio.to_thread(self._get_gpu_metrics, True)
+            return web.json_response({
+                "node_id": self.node_id,
+                "gpu_percent": gpu_metrics["gpu_percent"],
+                "gpu_memory_percent": gpu_metrics["gpu_memory_percent"],
+                "gpu_name": self.self_info.gpu_name if hasattr(self.self_info, "gpu_name") else "",
+                "has_gpu": self.self_info.has_gpu if hasattr(self.self_info, "has_gpu") else False,
+                "timestamp": datetime.utcnow().isoformat(),
+            })
+        except Exception as e:  # noqa: BLE001
+            return web.json_response({"error": str(e)}, status=500)
+
     async def handle_peer_health(self, request: web.Request) -> web.Response:
         """GET /peer-health - Return per-peer health scores and circuit breaker status.
 

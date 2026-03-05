@@ -75,14 +75,14 @@ async def _try_fetch_npz_from_cluster(
             return None
 
         # Find the coordinator's SSH info
-        nodes = cluster_cfg._raw_config.get("nodes", {})
-        leader_node = nodes.get(preferred_leader, {})
-        leader_ip = leader_node.get("tailscale_ip") or leader_node.get("ip")
+        leader_node = cluster_cfg.hosts_raw.get(preferred_leader, {})
+        leader_ip = leader_node.get("tailscale_ip") or leader_node.get("ssh_host")
         ssh_user = leader_node.get("ssh_user", "ubuntu")
+        ringrift_path = leader_node.get("ringrift_path", "~/ringrift/ai-service")
         if not leader_ip:
             return None
 
-        remote_path = f"{ssh_user}@{leader_ip}:ringrift/ai-service/data/training/{config_key}.npz"
+        remote_path = f"{ssh_user}@{leader_ip}:{ringrift_path}/data/training/{config_key}.npz"
         logger.info(f"Fetching NPZ from coordinator: {remote_path}")
 
         proc = await asyncio.create_subprocess_exec(

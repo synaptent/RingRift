@@ -123,6 +123,14 @@ class ResourceDetector:
         self._cached_resource_usage_at: float = 0.0
         self._resource_usage_cache_ttl: float = 30.0
 
+        # Mar 2026: Separate GPU sub-cache with shorter TTL (10s).
+        # GPU utilization changes rapidly during selfplay/training. The 30s main cache
+        # caused stale 0% readings when P2P had just restarted or nvidia-smi was slow.
+        # Last-known-value fallback prevents 0% readings when nvidia-smi times out.
+        self._cached_gpu_metrics: dict[str, float] | None = None
+        self._cached_gpu_metrics_at: float = 0.0
+        self._gpu_metrics_cache_ttl: float = 10.0
+
         # Jan 2026: Track Tailscale CLI health for event emission
         self._tailscale_cli_healthy: bool | None = None  # None = unknown, True = healthy, False = error
         self._tailscale_cli_error_emitted: bool = False
@@ -545,6 +553,71 @@ class ResourceDetector:
         """
         return (time.time() - self.start_time) < self.startup_grace_period
 
+    def _get_gpu_metrics(self, force_refresh: bool = False) -> dict[str, float]:
+        """Get GPU utilization with separate sub-cache and last-known-value fallback.
+
+        Mar 2026: Extracted from get_resource_usage to provide:
+        - Shorter cache TTL (10s vs 30s) for rapidly-changing GPU metrics
+        - Last-known-value fallback when nvidia-smi fails (prevents 0% readings)
+        - force_refresh parameter for /health/gpu endpoint
+
+        Returns:
+            Dict with gpu_percent and gpu_memory_percent
+        """
+        now = time.time()
+        if (
+            not force_refresh
+            and self._cached_gpu_metrics is not None
+            and (now - self._cached_gpu_metrics_at) < self._gpu_metrics_cache_ttl
+        ):
+            return self._cached_gpu_metrics
+
+        result = {"gpu_percent": 0.0, "gpu_memory_percent": 0.0}
+
+        has_nvidia, gpu_name = self.detect_gpu()
+        if has_nvidia and "MPS" not in gpu_name:
+            try:
+                out = subprocess.run(
+                    [
+                        "nvidia-smi",
+                        "--query-gpu=utilization.gpu,memory.used,memory.total",
+                        "--format=csv,noheader,nounits",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if out.returncode == 0:
+                    lines = out.stdout.strip().split("\n")
+                    gpu_utils: list[float] = []
+                    mem_percents: list[float] = []
+                    for line in lines:
+                        parts = line.strip().split(",")
+                        if len(parts) >= 3:
+                            try:
+                                gpu_utils.append(float(parts[0].strip()))
+                                mem_used = float(parts[1].strip())
+                                mem_total = float(parts[2].strip())
+                                if mem_total > 0:
+                                    mem_percents.append(100.0 * mem_used / mem_total)
+                            except (ValueError, IndexError):
+                                continue
+                    if gpu_utils:
+                        result["gpu_percent"] = max(gpu_utils)
+                    if mem_percents:
+                        result["gpu_memory_percent"] = max(mem_percents)
+            except (subprocess.TimeoutExpired, OSError) as e:
+                # nvidia-smi failed — use last known value if available
+                if self._cached_gpu_metrics is not None:
+                    logger.debug("nvidia-smi failed (%s), using last-known GPU metrics", e)
+                    return self._cached_gpu_metrics
+                # No fallback available, return zeros
+                return result
+
+        self._cached_gpu_metrics = result
+        self._cached_gpu_metrics_at = now
+        return result
+
     def get_resource_usage(self) -> dict[str, float]:
         """Get current resource usage.
 
@@ -639,43 +712,10 @@ class ResourceDetector:
             result["disk_free_gb"] = usage.free / (1024**3)
 
             # GPU (NVIDIA) - handle multi-GPU by using max
-            # Jan 2026: Check cached GPU detection first to avoid spinning nvidia-smi on non-GPU nodes
-            has_nvidia, gpu_name = self.detect_gpu()
-            if has_nvidia and "MPS" not in gpu_name:  # Only run nvidia-smi for NVIDIA GPUs
-                try:
-                    out = subprocess.run(
-                        [
-                            "nvidia-smi",
-                            "--query-gpu=utilization.gpu,memory.used,memory.total",
-                            "--format=csv,noheader,nounits",
-                        ],
-                        capture_output=True,
-                        text=True,
-                        timeout=5,
-                    )
-                    if out.returncode == 0:
-                        lines = out.stdout.strip().split("\n")
-                        gpu_utils: list[float] = []
-                        mem_percents: list[float] = []
-                        for line in lines:
-                            parts = line.strip().split(",")
-                            if len(parts) >= 3:
-                                try:
-                                    gpu_utils.append(float(parts[0].strip()))
-                                    mem_used = float(parts[1].strip())
-                                    mem_total = float(parts[2].strip())
-                                    if mem_total > 0:
-                                        mem_percents.append(100.0 * mem_used / mem_total)
-                                except (ValueError, IndexError):
-                                    continue
-                        if gpu_utils:
-                            # Use max utilization across GPUs (more representative)
-                            result["gpu_percent"] = max(gpu_utils)
-                        if mem_percents:
-                            result["gpu_memory_percent"] = max(mem_percents)
-                except (ValueError, KeyError, IndexError, AttributeError, subprocess.TimeoutExpired, OSError):
-                    # Silently ignore nvidia-smi errors
-                    pass
+            # Mar 2026: GPU has its own sub-cache (10s TTL) and last-known-value fallback.
+            gpu_metrics = self._get_gpu_metrics()
+            result["gpu_percent"] = gpu_metrics["gpu_percent"]
+            result["gpu_memory_percent"] = gpu_metrics["gpu_memory_percent"]
 
         except Exception as e:
             logger.info(f"Resource check error: {e}")
