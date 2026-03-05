@@ -817,15 +817,31 @@ class UnifiedQueuePopulator:
         if self._work_queue is None:
             return {}
         try:
-            # Use direct SQL for efficiency
+            # Mar 2026: Primary path — use in-memory items dict (live state).
+            # The SQLite db has stale 'pending' items from before orchestrator
+            # restarts (items expire in memory but SQLite is never updated),
+            # causing false "over limit" signals. The in-memory items dict is
+            # the source of truth and resets cleanly on each restart.
+            items_dict = getattr(self._work_queue, "_items", None)
+            if items_dict is not None:
+                lock = getattr(self._work_queue, "lock", None)
+                counts: dict[str, int] = {}
+                items_snapshot = list(items_dict.values()) if lock is None else []
+                if lock is not None:
+                    with lock:
+                        items_snapshot = list(items_dict.values())
+                for item in items_snapshot:
+                    status_val = getattr(item, "status", None)
+                    if status_val is not None and getattr(status_val, "value", status_val) == "pending":
+                        wtype = getattr(item, "work_type", None)
+                        if wtype is not None:
+                            wtype_str = getattr(wtype, "value", str(wtype))
+                            counts[wtype_str] = counts.get(wtype_str, 0) + 1
+                return counts
+            # Fallback: direct SQL with age filter to exclude post-restart stale items
             db_path = getattr(self._work_queue, "db_path", None)
             if db_path:
                 with sqlite3.connect(db_path, timeout=10.0) as conn:
-                    # Mar 2026: Filter out stale items whose max lifetime has expired.
-                    # Items remain as 'pending' in SQLite even after the in-memory Raft
-                    # queue expires them (e.g. after orchestrator restart), causing false
-                    # "over limit" signals that block new work from being created.
-                    # Filter: item must be younger than timeout_seconds * max_attempts.
                     now = time.time()
                     cursor = conn.execute(
                         "SELECT work_type, COUNT(*) FROM work_items "
@@ -836,10 +852,10 @@ class UnifiedQueuePopulator:
                     )
                     result = {row[0]: row[1] for row in cursor.fetchall()}
                 return result
-            # Fallback to status dict
+            # Final fallback: use queue status dict
             status = self._work_queue.get_queue_status()
             pending_items = status.get("pending", [])
-            counts: dict[str, int] = {}
+            counts = {}
             for item in pending_items:
                 wtype = getattr(item, "work_type", "unknown")
                 counts[wtype] = counts.get(wtype, 0) + 1
