@@ -115,10 +115,10 @@ class PipelineHandlersMixin:
         job_id = f"pipeline-selfplay-{int(time.time())}"
         healthy_nodes: list[tuple[str, "NodeInfo"]] = []
 
-        with self.peers_lock:
-            for peer_id, peer in self.peers.items():
-                if peer.is_alive() and peer.is_healthy():
-                    healthy_nodes.append((peer_id, peer))
+        # Mar 2026: Use lock-free snapshot
+        for peer_id, peer in self.get_peers_ro().items():
+            if peer.is_alive() and peer.is_healthy():
+                healthy_nodes.append((peer_id, peer))
 
         if self.self_info.is_healthy():
             healthy_nodes.append((self.node_id, self.self_info))

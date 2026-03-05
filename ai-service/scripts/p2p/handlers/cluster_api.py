@@ -98,8 +98,8 @@ class ClusterApiHandlersMixin:
             # Collect peer info (dashboard-oriented shape)
             peers_info: list[dict[str, Any]] = []
             include_retired = request.query.get("include_retired") == "1"
-            with self.peers_lock:
-                peers_snapshot = dict(self.peers)
+            # Mar 2026: Use lock-free snapshot
+            peers_snapshot = self.get_peers_ro()
             for peer_id, peer in peers_snapshot.items():
                 if getattr(peer, "retired", False) and not include_retired:
                     continue
@@ -286,8 +286,8 @@ class ClusterApiHandlersMixin:
             timeout_seconds = float(payload.get("timeout_seconds", 20) or 20)
             timeout_seconds = max(5.0, min(timeout_seconds, 120.0))
 
-            with self.peers_lock:
-                peers_by_id = dict(self.peers)
+            # Mar 2026: Use lock-free snapshot
+            peers_by_id = self.get_peers_ro()
 
             targets: list[Any] = []  # NodeInfo type
 
@@ -406,8 +406,8 @@ class ClusterApiHandlersMixin:
 
             my_version = self.build_version
 
-            with self.peers_lock:
-                peers_snapshot = list(self.peers.values())
+            # Mar 2026: Use lock-free snapshot
+            peers_snapshot = self.get_peers_list_ro()
 
             for peer in peers_snapshot:
                 # Check for health issues

@@ -128,8 +128,8 @@ class NetworkDiscoveryMixin(BaseP2PHandler):
         Returns:
             True if partition detected (majority of peers unreachable).
         """
-        with self.peers_lock:
-            peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
+        # Mar 2026: Use lock-free snapshot
+        peers_snapshot = [p for p in self.get_peers_list_ro() if p.node_id != self.node_id]
 
         if len(peers_snapshot) < 2:
             return False
@@ -242,15 +242,16 @@ class NetworkDiscoveryMixin(BaseP2PHandler):
             tailscale_ip = self._get_tailscale_ip()
 
             # Count peer reachability
-            with self.peers_lock:
-                total_peers = len([p for p in self.peers.values() if p.node_id != self.node_id])
-                now = time.time()
-                unreachable = sum(
-                    1 for p in self.peers.values()
-                    if p.node_id != self.node_id and (
-                        p.consecutive_failures >= 3 or (now - p.last_heartbeat > PEER_TIMEOUT)
-                    )
+            # Mar 2026: Use lock-free snapshot
+            peers_ro = self.get_peers_list_ro()
+            total_peers = len([p for p in peers_ro if p.node_id != self.node_id])
+            now = time.time()
+            unreachable = sum(
+                1 for p in peers_ro
+                if p.node_id != self.node_id and (
+                    p.consecutive_failures >= 3 or (now - p.last_heartbeat > PEER_TIMEOUT)
                 )
+            )
 
             return self.json_response({
                 "local_ip": local_ip,

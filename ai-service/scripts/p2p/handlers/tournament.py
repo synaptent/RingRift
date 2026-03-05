@@ -151,8 +151,8 @@ class TournamentHandlersMixin(BaseP2PHandler):
             )
 
             # Find available workers
-            with self.peers_lock:
-                workers = [p.node_id for p in self.peers.values() if p.is_healthy()]
+            # Mar 2026: Use lock-free snapshot
+            workers = [p.node_id for p in self.get_peers_list_ro() if p.is_healthy()]
             state.worker_nodes = workers
 
             if not state.worker_nodes:

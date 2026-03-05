@@ -606,8 +606,8 @@ class SyncHandlersMixin(BaseP2PHandler):
             # Prefer the local peer table for reachability (avoids leader guessing our routes).
             source_host = data.get("source_host")
             source_port = int(data.get("source_port", DEFAULT_PORT) or DEFAULT_PORT)
-            with self.peers_lock:
-                peer = self.peers.get(source_node_id)
+            # Mar 2026: Use lock-free snapshot
+            peer = self.get_peers_ro().get(source_node_id)
             if source_node_id == self.node_id:
                 peer = self.self_info
             if peer:

@@ -156,11 +156,11 @@ class ConfigurationHandlersMixin:
                 )
 
                 # Count alive peers
-                with self.peers_lock:
-                    peers_notified = sum(
-                        1 for p in self.peers.values()
-                        if p.get("status") == "alive"
-                    )
+                # Mar 2026: Use lock-free snapshot
+                peers_notified = sum(
+                    1 for p in self.get_peers_list_ro()
+                    if p.get("status") == "alive"
+                )
 
                 logger.info(
                     f"[P2POrchestrator] Config pushed: hash={version.content_hash}, "
@@ -194,8 +194,8 @@ class ConfigurationHandlersMixin:
             return web.json_response({"error": "node_id required"}, status=400)
 
         # Find the node's address
-        with self.peers_lock:
-            peer = self.peers.get(node_id)
+        # Mar 2026: Use lock-free snapshot
+        peer = self.get_peers_ro().get(node_id)
 
         if not peer:
             return web.json_response({

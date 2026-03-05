@@ -581,30 +581,30 @@ class TableHandlersMixin(BaseP2PHandler):
             })
 
             # Add peers
-            with self.peers_lock:
-                for peer_id, peer in self.peers.items():
-                    peer_name = peer_id or "unknown"
-                    is_alive = peer.is_alive()
-                    status = "Online" if is_alive else "Offline"
+            # Mar 2026: Use lock-free snapshot
+            for peer_id, peer in self.get_peers_ro().items():
+                peer_name = peer_id or "unknown"
+                is_alive = peer.is_alive()
+                status = "Online" if is_alive else "Offline"
 
-                    peer_cpu = getattr(peer, 'cpu_percent', 0) or 0
-                    peer_mem = getattr(peer, 'memory_percent', 0) or 0
-                    peer_gpu = getattr(peer, 'gpu_percent', 0) or 0
-                    peer_gpu_mem = getattr(peer, 'gpu_memory_percent', 0) or 0
-                    peer_jobs = getattr(peer, 'selfplay_jobs', 0) or 0
-                    has_gpu = getattr(peer, 'has_gpu', False)
+                peer_cpu = getattr(peer, 'cpu_percent', 0) or 0
+                peer_mem = getattr(peer, 'memory_percent', 0) or 0
+                peer_gpu = getattr(peer, 'gpu_percent', 0) or 0
+                peer_gpu_mem = getattr(peer, 'gpu_memory_percent', 0) or 0
+                peer_jobs = getattr(peer, 'selfplay_jobs', 0) or 0
+                has_gpu = getattr(peer, 'has_gpu', False)
 
-                    nodes.append({
-                        "Node": peer_name,
-                        "Role": "Worker",
-                        "Status": status,
-                        "CPU": round(peer_cpu, 1),
-                        "Memory": round(peer_mem, 1),
-                        "GPU": round(peer_gpu, 1),
-                        "GPUMem": round(peer_gpu_mem, 1),
-                        "Jobs": peer_jobs,
-                        "HasGPU": "Yes" if has_gpu else "No",
-                    })
+                nodes.append({
+                    "Node": peer_name,
+                    "Role": "Worker",
+                    "Status": status,
+                    "CPU": round(peer_cpu, 1),
+                    "Memory": round(peer_mem, 1),
+                    "GPU": round(peer_gpu, 1),
+                    "GPUMem": round(peer_gpu_mem, 1),
+                    "Jobs": peer_jobs,
+                    "HasGPU": "Yes" if has_gpu else "No",
+                })
 
             # Sort by role (leader first) then by name
             nodes.sort(key=lambda n: (0 if n["Role"] == "Leader" else 1, n["Node"]))

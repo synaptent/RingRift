@@ -81,9 +81,8 @@ class MetricsHandlersMixin:
             lines = []
             now = time.time()
 
-            # Cluster metrics - Jan 12, 2026: Copy-on-write to reduce lock hold time
-            with self.peers_lock:
-                peers_snapshot = list(self.peers.values())
+            # Cluster metrics - Mar 2026: Use lock-free snapshot
+            peers_snapshot = self.get_peers_list_ro()
             alive_peers = len([p for p in peers_snapshot if p.is_alive()])
             total_peers = len(peers_snapshot)
 
@@ -202,10 +201,8 @@ class MetricsHandlersMixin:
             lines.append(f'ringrift_cluster_memory_used_bytes{{node="{node_name}"}} {sys_mem_bytes}')
 
             # Export peer metrics with node labels
-            # Jan 12, 2026: Copy-on-write - snapshot for thread-safe iteration
-            with self.peers_lock:
-                peers_items_snapshot = list(self.peers.items())
-            for peer_id, peer in peers_items_snapshot:
+            # Mar 2026: Use lock-free snapshot
+            for peer_id, peer in self.get_peers_ro().items():
                 peer_name = peer_id or "unknown"
                 peer_role = "worker"
                 is_alive = 1 if peer.is_alive() else 0

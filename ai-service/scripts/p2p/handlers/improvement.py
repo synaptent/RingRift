@@ -147,9 +147,10 @@ class ImprovementHandlersMixin(BaseP2PHandler):
             )
 
             # Find available workers
-            with self.peers_lock:
-                workers = [p.node_id for p in self.peers.values() if p.is_healthy()]
-                gpu_workers = [p.node_id for p in self.peers.values() if p.is_healthy() and p.has_gpu]
+            # Mar 2026: Use lock-free snapshot
+            peers_snapshot = self.get_peers_list_ro()
+            workers = [p.node_id for p in peers_snapshot if p.is_healthy()]
+            gpu_workers = [p.node_id for p in peers_snapshot if p.is_healthy() and p.has_gpu]
             state.worker_nodes = workers
 
             if not gpu_workers:

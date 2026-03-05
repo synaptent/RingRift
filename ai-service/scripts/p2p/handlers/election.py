@@ -192,10 +192,10 @@ class ElectionHandlersMixin(BaseP2PHandler):
             if not candidate_id:
                 return self.bad_request("missing_candidate_id")
 
-            with self.peers_lock:
-                peers_snapshot = [
-                    p for p in self.peers.values() if p.node_id != self.node_id
-                ]
+            # Mar 2026: Use lock-free snapshot
+            peers_snapshot = [
+                p for p in self.get_peers_list_ro() if p.node_id != self.node_id
+            ]
             conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
             eligible = self._is_leader_eligible(
                 self.self_info, conflict_keys, require_alive=False
@@ -725,8 +725,8 @@ class ElectionHandlersMixin(BaseP2PHandler):
             if not voters or self.node_id in voters:
                 # Check if we already have a leader
                 if self.leader_id:
-                    with self.peers_lock:
-                        leader = self.peers.get(self.leader_id)
+                    # Mar 2026: Use lock-free snapshot
+                    leader = self.get_peers_ro().get(self.leader_id)
                     if leader and leader.is_alive():
                         return self.json_response({
                             "accepted": False,
@@ -767,8 +767,8 @@ class ElectionHandlersMixin(BaseP2PHandler):
 
                 forwarded_to = []
                 for voter_id in voters[:3]:  # Limit to 3 to avoid broadcast storm
-                    with self.peers_lock:
-                        voter = self.peers.get(voter_id)
+                    # Mar 2026: Use lock-free snapshot
+                    voter = self.get_peers_ro().get(voter_id)
                     if voter and voter.is_alive():
                         try:
                             url = self._url_for_peer(voter, "/election/request")
@@ -846,8 +846,8 @@ class ElectionHandlersMixin(BaseP2PHandler):
 
             # If we already have a functioning leader, reject the claim
             if self.leader_id and self.leader_id != claimant_id:
-                with self.peers_lock:
-                    leader = self.peers.get(self.leader_id)
+                # Mar 2026: Use lock-free snapshot
+                leader = self.get_peers_ro().get(self.leader_id)
                 if leader and leader.is_alive():
                     logger.info(f"Rejecting provisional claim: have active leader {self.leader_id}")
                     return self.json_response({
@@ -1270,9 +1270,10 @@ class ElectionHandlersMixin(BaseP2PHandler):
 
             # Reject leadership from nodes that are not directly reachable / uniquely addressable.
             if new_leader != self.node_id:
-                with self.peers_lock:
-                    peer = self.peers.get(new_leader)
-                    peers_snapshot = [p for p in self.peers.values() if p.node_id != self.node_id]
+                # Mar 2026: Use lock-free snapshot
+                peers_ro = self.get_peers_ro()
+                peer = peers_ro.get(new_leader)
+                peers_snapshot = [p for p in peers_ro.values() if p.node_id != self.node_id]
                 if peer:
                     conflict_keys = self._endpoint_conflict_keys([self.self_info, *peers_snapshot])
                     if not self._is_leader_eligible(peer, conflict_keys, require_alive=False):

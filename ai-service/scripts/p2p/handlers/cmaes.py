@@ -119,11 +119,11 @@ class CMAESHandlersMixin(BaseP2PHandler):
             )
 
             # Find available GPU workers
-            with self.peers_lock:
-                gpu_nodes = [
-                    p.node_id for p in self.peers.values()
-                    if p.is_healthy() and p.has_gpu
-                ]
+            # Mar 2026: Use lock-free snapshot
+            gpu_nodes = [
+                p.node_id for p in self.get_peers_list_ro()
+                if p.is_healthy() and p.has_gpu
+            ]
             state.worker_nodes = gpu_nodes
 
             if not state.worker_nodes:
@@ -268,11 +268,11 @@ class CMAESHandlersMixin(BaseP2PHandler):
             num_players = data.get("num_players", 2)
 
             # Check for available GPU workers in the cluster
+            # Mar 2026: Use lock-free snapshot
             gpu_workers = []
-            with self.peers_lock:
-                for peer in self.peers.values():
-                    if peer.is_healthy() and peer.has_gpu and peer.node_id != self.node_id:
-                        gpu_workers.append(peer)
+            for peer in self.get_peers_list_ro():
+                if peer.is_healthy() and peer.has_gpu and peer.node_id != self.node_id:
+                    gpu_workers.append(peer)
 
             # Include self if we have GPU
             if self.self_info.has_gpu:
