@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -242,6 +243,11 @@ class QuorumSafeUpdateCoordinator:
         # Load config on init
         self._config: dict[str, Any] | None = None
         self._voter_node_ids: set[str] = set()
+
+        # Detect self-node to defer P2P restart (avoids killing our own health endpoint)
+        import socket
+        self._self_node_id = os.environ.get("RINGRIFT_NODE_ID", socket.gethostname())
+        self._deferred_p2p_restart_node: NodeConfig | None = None
 
     def _find_config_path(self) -> Path:
         """Find distributed_hosts.yaml config file."""
@@ -609,6 +615,13 @@ class QuorumSafeUpdateCoordinator:
 
             # Restart P2P if needed
             if p2p_was_running and restart_p2p:
+                # Mar 2026: Defer P2P restart on self-node to avoid killing
+                # the health endpoint that convergence checks depend on
+                if node.name == self._self_node_id:
+                    self._deferred_p2p_restart_node = node
+                    return (node.name, True,
+                            f"Updated to {current_commit}{config_sync_msg}, P2P restart deferred (self-node)")
+
                 # Kill existing P2P and clean up screen sessions
                 # Jan 2026: Added screen cleanup to prevent dead session accumulation
                 await client.run_async(
@@ -939,6 +952,50 @@ class QuorumSafeUpdateCoordinator:
             if batch.batch_type == "voter" and batch_num < len(batches) - 1:
                 logger.info(f"  Waiting {self.voter_update_delay}s before next voter...")
                 await asyncio.sleep(self.voter_update_delay)
+
+        # Mar 2026: Restart deferred self-node P2P after all batches converge
+        if self._deferred_p2p_restart_node and not dry_run:
+            node = self._deferred_p2p_restart_node
+            logger.info(f"\nPhase 4: Restarting P2P on self-node ({node.name})...")
+            try:
+                client = await self._create_ssh_client(node)
+                await client.run_async(
+                    "pkill -f p2p_orchestrator 2>/dev/null || true; "
+                    "screen -X -S p2p quit 2>/dev/null || true; "
+                    "screen -wipe 2>/dev/null || true",
+                    timeout=15,
+                )
+                await asyncio.sleep(2)
+                p2p_args = [
+                    f"--node-id {node.name}",
+                    "--port 8770",
+                    f"--ringrift-path {node.ringrift_path}",
+                    "--kill-duplicates",
+                ]
+                if node.tailscale_ip:
+                    p2p_args.append(f"--advertise-host {node.tailscale_ip}")
+                known_peers = [
+                    "vultr-a100-20gb:8770",
+                    "nebius-h100-3:8770",
+                    "hetzner-cpu1:8770",
+                    "nebius-backbone-1:8770",
+                ]
+                p2p_args.append(f"--peers {','.join(known_peers)}")
+                start_cmd = (
+                    f"cd {node.ringrift_path} && {node.venv_activate} && "
+                    f"mkdir -p logs && "
+                    f"nohup python scripts/p2p_orchestrator.py {' '.join(p2p_args)} "
+                    f"> logs/p2p.log 2>&1 &"
+                )
+                await client.run_async(start_cmd, timeout=15)
+                await asyncio.sleep(5)
+                if await self._check_p2p_running(client, node.name):
+                    logger.info(f"  [{node.name}] P2P restarted successfully")
+                else:
+                    logger.warning(f"  [{node.name}] P2P restart may have failed")
+            except Exception as e:
+                logger.error(f"  [{node.name}] Deferred P2P restart failed: {e}")
+            self._deferred_p2p_restart_node = None
 
         result.duration_seconds = time.time() - start_time
         logger.info(f"\nUpdate complete: {len(result.nodes_updated)} updated, "
