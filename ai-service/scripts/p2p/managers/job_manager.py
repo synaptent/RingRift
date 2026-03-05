@@ -1782,6 +1782,31 @@ class JobManager(EventSubscriptionMixin):
 
         return killed
 
+    def _kill_all_processes_sync(self) -> int:
+        """Synchronous version of cleanup_active_processes for shutdown paths.
+
+        Mar 2026: The async cleanup_active_processes can't be awaited in
+        signal handlers or finally blocks where the event loop is shutting
+        down. This sync version uses os.kill() directly.
+        """
+        import signal as _sig
+
+        with self._processes_lock:
+            processes = dict(self._active_processes)
+
+        if not processes:
+            return 0
+
+        killed = 0
+        for job_id, proc in processes.items():
+            try:
+                if proc.returncode is None:
+                    os.kill(proc.pid, _sig.SIGTERM)
+                    killed += 1
+            except (OSError, ProcessLookupError):
+                pass
+        return killed
+
     # =========================================================================
     # Job Heartbeat Tracking (Phase 15.1.9 - December 29, 2025)
     # =========================================================================

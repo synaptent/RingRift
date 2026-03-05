@@ -290,15 +290,33 @@ class ResourceDetector:
             return ipv6
         return ipv4 or ipv6 or ""
 
-    @staticmethod
-    def _find_tailscale_binary() -> str | None:
-        """Find the tailscale binary path.
+    # Mar 2026: Class-level cache for tailscale binary availability.
+    # Prevents repeated 5s timeouts on nodes where tailscale CLI doesn't work
+    # (e.g., mac-studio has the app but CLI doesn't respond).
+    _tailscale_binary_cache: str | None = None
+    _tailscale_binary_checked: bool = False
+    _tailscale_cli_consecutive_failures: int = 0
+    _TAILSCALE_MAX_FAILURES: int = 3  # Stop trying after 3 consecutive failures
+
+    @classmethod
+    def _find_tailscale_binary(cls) -> str | None:
+        """Find the tailscale binary path, with caching.
 
         Jan 2, 2026: Checks multiple locations to handle macOS and Linux.
+        Mar 2026: Results cached at class level. After 3 consecutive CLI
+        failures (timeouts), returns None to avoid wasting 15+ seconds on
+        nodes where tailscale doesn't work.
 
         Returns:
-            Path to tailscale binary or None if not found
+            Path to tailscale binary or None if not found/disabled
         """
+        # Check failure threshold — stop trying after repeated timeouts
+        if cls._tailscale_cli_consecutive_failures >= cls._TAILSCALE_MAX_FAILURES:
+            return None
+
+        if cls._tailscale_binary_checked:
+            return cls._tailscale_binary_cache
+
         # Candidate paths in order of preference
         candidates = [
             "tailscale",  # In PATH (Linux, some macOS setups)
@@ -312,10 +330,16 @@ class ResourceDetector:
             if "/" not in candidate:
                 path = shutil.which(candidate)
                 if path:
+                    cls._tailscale_binary_cache = path
+                    cls._tailscale_binary_checked = True
                     return path
             elif os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                cls._tailscale_binary_cache = candidate
+                cls._tailscale_binary_checked = True
                 return candidate
 
+        cls._tailscale_binary_cache = None
+        cls._tailscale_binary_checked = True
         return None
 
     def get_tailscale_ipv6(self) -> str:
@@ -377,13 +401,18 @@ class ResourceDetector:
                 logger.warning(f"[ResourceDetector] {error_msg}")
                 self._emit_tailscale_health_event(success=False, error=error_msg)
                 return ""
-            # Successful IP retrieval - mark as healthy
+            # Successful IP retrieval - mark as healthy and reset failure counter
+            ResourceDetector._tailscale_cli_consecutive_failures = 0
             self._emit_tailscale_health_event(success=True)
             return ip
         except subprocess.TimeoutExpired as e:
+            ResourceDetector._tailscale_cli_consecutive_failures += 1
             self._emit_tailscale_health_event(success=False, error=f"timeout after {e.timeout}s")
+            if ResourceDetector._tailscale_cli_consecutive_failures >= ResourceDetector._TAILSCALE_MAX_FAILURES:
+                logger.info("[ResourceDetector] Tailscale CLI disabled after repeated timeouts")
             return ""
         except (FileNotFoundError, subprocess.SubprocessError, OSError) as e:
+            ResourceDetector._tailscale_cli_consecutive_failures += 1
             self._emit_tailscale_health_event(success=False, error=str(e))
             return ""
 

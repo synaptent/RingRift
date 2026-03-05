@@ -5420,6 +5420,81 @@ class P2POrchestrator(
         else:
             return 2  # CPU-only nodes
 
+    def _reap_orphan_processes(self) -> int:
+        """Kill orphan Python processes from previous P2P/master_loop runs.
+
+        Mar 2026: When the P2P process restarts (via LaunchAgent KeepAlive or
+        manual restart), child processes from the old run become orphans.
+        These accumulate over time (148 zombies observed on mac-studio).
+
+        This runs at startup and kills any Python processes that:
+        1. Are children of PID 1 (reparented orphans)
+        2. Match known RingRift process patterns (selfplay, train, gauntlet)
+        3. Started before the current process
+
+        Returns:
+            Number of processes killed
+        """
+        import signal as _sig
+
+        my_pid = os.getpid()
+        my_start = os.path.getctime(f"/proc/{my_pid}") if os.path.exists(f"/proc/{my_pid}") else time.time()
+        killed = 0
+
+        try:
+            import subprocess
+            # Get all python processes with their PIDs and command lines
+            result = subprocess.run(
+                ["ps", "-eo", "pid,ppid,lstart,args"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode != 0:
+                return 0
+
+            ringrift_patterns = [
+                "selfplay", "train", "gauntlet", "export_replay",
+                "gpu_parallel_games", "game_gauntlet",
+            ]
+
+            for line in result.stdout.strip().split("\n")[1:]:  # Skip header
+                parts = line.split()
+                if len(parts) < 5:
+                    continue
+                try:
+                    pid = int(parts[0])
+                    ppid = int(parts[1])
+                except ValueError:
+                    continue
+
+                if pid == my_pid:
+                    continue
+
+                cmd = " ".join(parts[4:]).lower()  # lstart takes 5 fields
+                # Heuristic: skip lines where we can't find 'python' in the command
+                # (ps output on macOS has variable-width lstart field)
+                if "python" not in cmd:
+                    continue
+
+                # Only kill orphaned processes (ppid=1 means reparented)
+                # and processes that match RingRift patterns
+                is_orphan = ppid == 1
+                is_ringrift = any(p in cmd for p in ringrift_patterns)
+
+                if is_orphan and is_ringrift:
+                    try:
+                        os.kill(pid, _sig.SIGTERM)
+                        killed += 1
+                        logger.info(f"[OrphanReaper] Killed orphan PID {pid}: {cmd[:80]}")
+                    except (OSError, ProcessLookupError):
+                        pass
+
+            if killed:
+                logger.info(f"[OrphanReaper] Killed {killed} orphan processes at startup")
+        except Exception as e:
+            logger.debug(f"[OrphanReaper] Failed: {e}")
+
+        return killed
+
     def _cleanup_stale_processes(self) -> int:
         """Kill processes that have been running too long.
 
@@ -12646,6 +12721,11 @@ print(json.dumps({{
             concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix="p2p_")
         )
 
+        # Mar 2026: Reap orphan processes from previous P2P/master_loop runs.
+        # When LaunchAgent restarts P2P, old child processes (selfplay, training,
+        # gauntlet) become orphans. Kill them on startup to prevent accumulation.
+        await asyncio.to_thread(self._reap_orphan_processes)
+
         runner = await self._run_http_setup()
         tasks = await self._run_start_background_tasks()
         await self._run_bootstrap_and_election(tasks)
@@ -14094,6 +14174,28 @@ def main():
             except (RuntimeError, OSError, AttributeError) as e:
                 # Dec 2025: Narrowed from bare Exception; best effort cleanup
                 logger.debug(f"Notifier close failed (best effort): {e}")
+
+            # Mar 2026: Kill child processes to prevent zombie accumulation.
+            # Without this, every P2P restart leaves orphan selfplay/training/
+            # gauntlet subprocesses that accumulate (148 zombies observed).
+            try:
+                if hasattr(orchestrator, 'job_manager') and orchestrator.job_manager:
+                    import asyncio as _async_cleanup
+                    try:
+                        loop = _async_cleanup.get_event_loop()
+                        if loop.is_running():
+                            # Can't await in finally block, use sync kill
+                            killed = orchestrator.job_manager._kill_all_processes_sync()
+                        else:
+                            killed = _async_cleanup.run(
+                                orchestrator.job_manager.cleanup_active_processes()
+                            )
+                    except RuntimeError:
+                        killed = orchestrator.job_manager._kill_all_processes_sync()
+                    if killed:
+                        logger.info(f"Killed {killed} child processes on shutdown")
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"Child process cleanup failed (best effort): {e}")
 
             # December 2025: Close work queue to persist final stats
             try:
