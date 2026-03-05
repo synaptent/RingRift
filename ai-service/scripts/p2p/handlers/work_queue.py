@@ -791,7 +791,10 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                         timeout_seconds=timeout,
                         depends_on=depends_on,
                     )
-                    work_id = await asyncio.to_thread(wq.add_work, item)
+                    _loop = asyncio.get_event_loop()
+                    work_id = await _loop.run_in_executor(
+                        wq._get_wq_executor(), wq.add_work, item
+                    )
                     work_ids.append(work_id)
                 except Exception as e:
                     errors.append({"index": i, "error": str(e)})
@@ -993,9 +996,12 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 wq = get_work_queue()
                 if wq is not None:
                     # Try to claim training work specifically
-                    # Feb 2026: Use async wrapper to avoid blocking event loop
+                    # Mar 4, 2026: Use dedicated executor to avoid shared pool saturation
                     import asyncio
-                    item = await asyncio.to_thread(wq.claim_work, node_id, capabilities, ["training"])
+                    _loop = asyncio.get_event_loop()
+                    item = await _loop.run_in_executor(
+                        wq._get_wq_executor(), wq.claim_work, node_id, capabilities, ["training"]
+                    )
                     if item is not None:
                         return self.json_response({
                             "status": "claimed",
@@ -1258,8 +1264,10 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 success = wq.complete_work(work_id, result)
                 return work_type, config, assigned_to, success
 
-            work_type, config, assigned_to, success = await _asyncio.to_thread(
-                _read_and_complete
+            # Mar 4, 2026: Use dedicated executor to avoid shared pool saturation
+            _loop = _asyncio.get_event_loop()
+            work_type, config, assigned_to, success = await _loop.run_in_executor(
+                wq._get_wq_executor(), _read_and_complete
             )
 
             # Emit event to coordination EventRouter (Dec 2025 consolidation)
@@ -1453,8 +1461,10 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 success = wq.fail_work(work_id, error)
                 return work_type, config, _node_id, success
 
-            work_type, config, node_id, success = await _asyncio.to_thread(
-                _read_and_fail
+            # Mar 4, 2026: Use dedicated executor to avoid shared pool saturation
+            _loop = _asyncio.get_event_loop()
+            work_type, config, node_id, success = await _loop.run_in_executor(
+                wq._get_wq_executor(), _read_and_fail
             )
 
             # Emit failure event to coordination EventRouter (Dec 2025 consolidation)
@@ -1614,9 +1624,12 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     one_hour_ago = time.time() - 3600
 
                     # Get recent completions/failures from history
-                    # Feb 2026: async to avoid blocking event loop
+                    # Mar 4, 2026: Use dedicated executor to avoid shared pool saturation
                     import asyncio
-                    history = await asyncio.to_thread(wq.get_history, 500, None)
+                    _loop = asyncio.get_event_loop()
+                    history = await _loop.run_in_executor(
+                        wq._get_wq_executor(), wq.get_history, 500, None
+                    )
                     completions_1h = 0
                     failures_1h = 0
                     total_duration = 0.0
@@ -1731,9 +1744,12 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             limit = int(request.query.get("limit", "50"))
             status_filter = request.query.get("status", None)
 
-            # Feb 2026: async to avoid blocking event loop
+            # Mar 4, 2026: Use dedicated executor to avoid shared pool saturation
             import asyncio
-            history = await asyncio.to_thread(wq.get_history, limit, status_filter)
+            _loop = asyncio.get_event_loop()
+            history = await _loop.run_in_executor(
+                wq._get_wq_executor(), wq.get_history, limit, status_filter
+            )
             return self.json_response({
                 "history": history,
                 "count": len(history),

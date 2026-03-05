@@ -2832,9 +2832,13 @@ class WorkQueue:
             RuntimeError: If queue is at hard limit and force=False
 
         Sprint 17.3 (Jan 4, 2026): Added for async-safe work queue access.
+        Mar 4, 2026: Uses dedicated executor (see claim_work_async).
         """
         import asyncio
-        return await asyncio.to_thread(self.add_work, item, force)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self._get_wq_executor(), self.add_work, item, force
+        )
 
     async def add_work_batch_async(
         self, items: list[WorkItem], force: bool = False
@@ -2851,9 +2855,30 @@ class WorkQueue:
             List of work_ids for successfully added items
 
         Sprint 17.3 (Jan 4, 2026): Added for async-safe batch operations.
+        Mar 4, 2026: Uses dedicated executor (see claim_work_async).
         """
         import asyncio
-        return await asyncio.to_thread(self.add_work_batch, items, force)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self._get_wq_executor(), self.add_work_batch, items, force
+        )
+
+    def _get_wq_executor(self):
+        """Get or create a dedicated thread pool for work queue operations.
+
+        Mar 4, 2026: Work queue async methods were using asyncio.to_thread()
+        which submits to the default executor (shared 8-thread P2P pool).
+        Heavy operations (sync, export, gauntlet) saturate the shared pool,
+        causing work claim/complete handlers to queue for 60s+ and timeout
+        with 503. A dedicated 2-thread pool ensures work queue operations
+        always get a thread immediately.
+        """
+        if not hasattr(self, "_wq_executor"):
+            from concurrent.futures import ThreadPoolExecutor
+            self._wq_executor = ThreadPoolExecutor(
+                max_workers=2, thread_name_prefix="wq_"
+            )
+        return self._wq_executor
 
     async def claim_work_async(
         self, node_id: str, capabilities: list[str] | None = None
@@ -2869,15 +2894,16 @@ class WorkQueue:
         Returns:
             WorkItem if work was claimed, None otherwise
 
-        Sprint 17.3 (Jan 4, 2026): Added for async-safe work claiming.
-        Feb 23, 2026: Restored asyncio.to_thread(). The Feb 22 change to call
-        directly caused event loop blocking when maintenance ops (check_timeouts,
-        cleanup) held self.lock for seconds during SQLite writes. Thread pool
-        is capped at 4 workers (d983420d8) so saturation is less of an issue
-        now that maintenance also runs in the thread pool.
+        Mar 4, 2026: Uses dedicated executor instead of shared P2P thread pool.
+        The shared pool (8 threads) gets saturated by heavy sync/export/gauntlet
+        ops, causing work claim handlers to timeout (60s) and return 503 to all
+        cluster nodes. With a dedicated 2-thread pool, claims always succeed.
         """
         import asyncio
-        return await asyncio.to_thread(self.claim_work, node_id, capabilities)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self._get_wq_executor(), self.claim_work, node_id, capabilities
+        )
 
     async def start_work_async(self, work_id: str) -> bool:
         """Async wrapper for start_work().
@@ -2890,11 +2916,13 @@ class WorkQueue:
         Returns:
             True if work was started, False otherwise
 
-        Sprint 17.3 (Jan 4, 2026): Added for async-safe work status updates.
-        Feb 23, 2026: Restored asyncio.to_thread() (see claim_work_async).
+        Mar 4, 2026: Uses dedicated executor (see claim_work_async).
         """
         import asyncio
-        return await asyncio.to_thread(self.start_work, work_id)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self._get_wq_executor(), self.start_work, work_id
+        )
 
     async def complete_work_async(
         self, work_id: str, result: dict[str, Any] | None = None
@@ -2910,11 +2938,13 @@ class WorkQueue:
         Returns:
             True if work was completed, False otherwise
 
-        Sprint 17.3 (Jan 4, 2026): Added for async-safe work completion.
-        Feb 23, 2026: Restored asyncio.to_thread() (see claim_work_async).
+        Mar 4, 2026: Uses dedicated executor (see claim_work_async).
         """
         import asyncio
-        return await asyncio.to_thread(self.complete_work, work_id, result)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self._get_wq_executor(), self.complete_work, work_id, result
+        )
 
     async def fail_work_async(self, work_id: str, error: str = "") -> bool:
         """Async wrapper for fail_work().
@@ -2929,9 +2959,13 @@ class WorkQueue:
             True if work was marked as failed, False otherwise
 
         Sprint 17.3 (Jan 4, 2026): Added for async-safe work failure reporting.
+        Mar 4, 2026: Uses dedicated executor (see claim_work_async).
         """
         import asyncio
-        return await asyncio.to_thread(self.fail_work, work_id, error)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self._get_wq_executor(), self.fail_work, work_id, error
+        )
 
     async def get_work_async(self, work_id: str) -> WorkItem | None:
         """Get a work item by ID without blocking the event loop.
@@ -2950,7 +2984,8 @@ class WorkQueue:
             with self.lock:
                 return self.items.get(work_id)
 
-        return await asyncio.to_thread(_get_work)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self._get_wq_executor(), _get_work)
 
     async def cancel_work_async(self, work_id: str) -> bool:
         """Async wrapper for cancel_work().
@@ -2964,9 +2999,13 @@ class WorkQueue:
             True if work was cancelled, False otherwise
 
         Sprint 17.3 (Jan 4, 2026): Added for async-safe work cancellation.
+        Mar 4, 2026: Uses dedicated executor (see claim_work_async).
         """
         import asyncio
-        return await asyncio.to_thread(self.cancel_work, work_id)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self._get_wq_executor(), self.cancel_work, work_id
+        )
 
     async def get_pending_work_async(
         self, work_type: WorkType | None = None
@@ -2994,7 +3033,8 @@ class WorkQueue:
                 pending.sort(key=lambda x: -x.priority)
                 return pending
 
-        return await asyncio.to_thread(_get_pending)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(self._get_wq_executor(), _get_pending)
 
     async def health_check_async(self) -> HealthCheckResult:
         """Async wrapper for health_check().
@@ -3005,9 +3045,13 @@ class WorkQueue:
             HealthCheckResult with queue status and metrics
 
         Sprint 17.3 (Jan 4, 2026): Added for async-safe health checks.
+        Mar 4, 2026: Uses dedicated executor (see claim_work_async).
         """
         import asyncio
-        return await asyncio.to_thread(self.health_check)
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(
+            self._get_wq_executor(), self.health_check
+        )
 
     # =========================================================================
     # Lifecycle Management (December 2025)
