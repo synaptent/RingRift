@@ -183,7 +183,7 @@ max_moves = 10000
 move_count = 0
 from app.models import GameStatus as _GS
 while state.game_status != _GS.COMPLETED and move_count < max_moves:
-    current_player = state.current_player_index
+    current_player = state.current_player
     agent = agents[current_player]
     move = agent.select_move(state)
     if move is None:
