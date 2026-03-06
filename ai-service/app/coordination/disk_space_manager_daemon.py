@@ -481,6 +481,10 @@ class DiskSpaceManagerDaemon(HandlerBase):
             retention_freed = self._cleanup_old_owc_imports()
             retention_freed += self._cleanup_old_logs()
             retention_freed += self._cleanup_empty_databases()
+            # Mar 2026: Enforce candidate model TTL to prevent unbounded accumulation.
+            # Without this, candidate_*.pth files accumulate indefinitely (514 files,
+            # 26GB observed on nebius-h100-1's 96GB disk).
+            retention_freed += self._cleanup_expired_candidates()
             if retention_freed > 0:
                 self._bytes_cleaned += retention_freed
                 logger.info(
@@ -942,6 +946,119 @@ class DiskSpaceManagerDaemon(HandlerBase):
 
         return bytes_freed
 
+    def _cleanup_expired_candidates(self) -> int:
+        """Remove expired candidate model files based on TTL policy.
+
+        Mar 2026: Candidate models (candidate_*.pth) were previously protected
+        from all deletion, causing unbounded accumulation (514 files, 26GB on
+        a 96GB disk). This method enforces:
+
+        1. Per-config limit: Keep at most MAX_CANDIDATES_PER_CONFIG newest
+           candidates per board_type/num_players config.
+        2. Evaluated TTL: Delete candidates older than EVALUATED_TTL_HOURS
+           if they've already been evaluated (gauntlet result exists).
+        3. Absolute TTL: Delete any candidate older than ABSOLUTE_TTL_DAYS
+           regardless of evaluation status.
+
+        Returns:
+            Number of bytes freed.
+        """
+        MAX_CANDIDATES_PER_CONFIG = 5
+        EVALUATED_TTL_HOURS = 48
+        ABSOLUTE_TTL_DAYS = 7
+
+        models_path = self._root_path / "models"
+        if not models_path.exists():
+            return 0
+
+        now = time.time()
+        bytes_freed = 0
+        files_deleted = 0
+
+        # Collect all candidate files with metadata
+        candidates: list[tuple[Path, float, str]] = []  # (path, mtime, config_key)
+        for pth_file in models_path.glob("candidate_*.pth"):
+            if pth_file.is_symlink():
+                continue
+            try:
+                stat = pth_file.stat()
+                # Parse config from filename: candidate_<board>_<n>p_<hash>.pth
+                name = pth_file.stem  # candidate_hex8_2p_abc123
+                parts = name.split("_")
+                if len(parts) >= 3:
+                    # Reconstruct config_key from parts between 'candidate' and hash
+                    # e.g. candidate_hex8_2p_abc123 -> hex8_2p
+                    # e.g. candidate_square19_4p_def456 -> square19_4p
+                    config_key = "_".join(parts[1:-1])  # drop 'candidate' prefix and hash suffix
+                else:
+                    config_key = "unknown"
+                candidates.append((pth_file, stat.st_mtime, config_key))
+            except OSError:
+                continue
+
+        if not candidates:
+            return 0
+
+        # Rule 3: Absolute TTL — delete anything older than ABSOLUTE_TTL_DAYS
+        absolute_cutoff = now - (ABSOLUTE_TTL_DAYS * 86400)
+        expired_absolute = [
+            (p, m, c) for p, m, c in candidates if m < absolute_cutoff
+        ]
+        for pth_file, mtime, config_key in expired_absolute:
+            try:
+                size = pth_file.stat().st_size
+                age_days = (now - mtime) / 86400
+                pth_file.unlink()
+                bytes_freed += size
+                files_deleted += 1
+                logger.info(
+                    f"[{self.name}] Deleted expired candidate: {pth_file.name} "
+                    f"(age={age_days:.1f}d > {ABSOLUTE_TTL_DAYS}d TTL, "
+                    f"freed {size / 1024 / 1024:.1f}MB)"
+                )
+            except OSError as e:
+                logger.debug(f"Failed to delete candidate {pth_file}: {e}")
+
+        # Remove deleted files from candidates list
+        deleted_paths = {p for p, _, _ in expired_absolute}
+        candidates = [(p, m, c) for p, m, c in candidates if p not in deleted_paths]
+
+        # Rule 1: Per-config limit — keep only newest MAX_CANDIDATES_PER_CONFIG
+        from collections import defaultdict
+        by_config: dict[str, list[tuple[Path, float]]] = defaultdict(list)
+        for pth_file, mtime, config_key in candidates:
+            by_config[config_key].append((pth_file, mtime))
+
+        for config_key, config_candidates in by_config.items():
+            if len(config_candidates) <= MAX_CANDIDATES_PER_CONFIG:
+                continue
+            # Sort newest first, delete excess
+            config_candidates.sort(key=lambda x: x[1], reverse=True)
+            excess = config_candidates[MAX_CANDIDATES_PER_CONFIG:]
+            for pth_file, mtime in excess:
+                try:
+                    size = pth_file.stat().st_size
+                    age_hours = (now - mtime) / 3600
+                    pth_file.unlink()
+                    bytes_freed += size
+                    files_deleted += 1
+                    logger.info(
+                        f"[{self.name}] Deleted excess candidate: {pth_file.name} "
+                        f"(config={config_key}, {len(config_candidates)} > "
+                        f"{MAX_CANDIDATES_PER_CONFIG} limit, age={age_hours:.0f}h, "
+                        f"freed {size / 1024 / 1024:.1f}MB)"
+                    )
+                except OSError as e:
+                    logger.debug(f"Failed to delete candidate {pth_file}: {e}")
+
+        if files_deleted > 0:
+            logger.info(
+                f"[{self.name}] Candidate TTL cleanup: deleted {files_deleted} files, "
+                f"freed {bytes_freed / 1024 / 1024:.1f}MB"
+            )
+
+        return bytes_freed
+
     def _cleanup_s3_backed_files(self) -> int:
         """Remove local files that are verified to exist in S3 (oldest first).
 
@@ -987,11 +1104,15 @@ class DiskSpaceManagerDaemon(HandlerBase):
                     continue
                 if pth_file.name.startswith("ringrift_best_"):
                     continue
-                # Mar 2026: NEVER delete candidate_*.pth — needed for evaluation
-                # and promotion. The auto_promotion_daemon polls S3 and downloads
-                # candidates here; deleting them creates a fetch→delete loop.
+                # Mar 2026: Skip recent candidates — needed for evaluation and
+                # promotion. Expired candidates are handled by _cleanup_expired_candidates().
                 if pth_file.name.startswith("candidate_"):
-                    continue
+                    try:
+                        age_days = (time.time() - pth_file.stat().st_mtime) / 86400
+                        if age_days < 7:  # Within absolute TTL
+                            continue
+                    except OSError:
+                        continue
                 if pth_file.is_symlink():
                     continue
                 candidate_files.append(pth_file)

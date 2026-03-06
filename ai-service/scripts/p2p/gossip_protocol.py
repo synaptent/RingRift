@@ -25,6 +25,7 @@ import asyncio
 from app.core.async_context import safe_create_task
 import contextlib
 import gzip
+from scripts.p2p.loop_executors import LoopExecutors
 import json
 import os
 import time
@@ -1587,11 +1588,11 @@ class GossipProtocolMixin(GossipPersistenceMixin, GossipPartitionMixin, _GossipM
             }
 
             # GOSSIP COMPRESSION: Compress payload with gzip to reduce network transfer
-            # Dec 30, 2025: Use asyncio.to_thread() to avoid blocking event loop
+            # Mar 2026: Use dedicated network pool instead of default thread pool
             json_bytes = json.dumps(gossip_payload).encode("utf-8")
             original_size = len(json_bytes)
-            compressed_bytes = await asyncio.to_thread(
-                gzip.compress, json_bytes, 6  # compresslevel=6
+            compressed_bytes = await LoopExecutors.run_in_pool(
+                "network", gzip.compress, json_bytes, 6  # compresslevel=6
             )
             compressed_size = len(compressed_bytes)
 
@@ -1785,7 +1786,7 @@ class GossipProtocolMixin(GossipPersistenceMixin, GossipPartitionMixin, _GossipM
         if content_encoding == "gzip":
             response_bytes = await resp.read()
             try:
-                decompressed = await asyncio.to_thread(gzip.decompress, response_bytes)
+                decompressed = await LoopExecutors.run_in_pool("network", gzip.decompress, response_bytes)
                 return json.loads(decompressed.decode("utf-8"))
             except (gzip.BadGzipFile, zlib.error, OSError) as e:
                 # Log corruption with payload hash for debugging
@@ -2011,8 +2012,8 @@ class GossipProtocolMixin(GossipPersistenceMixin, GossipPartitionMixin, _GossipM
             remote_spec = f"{source.ssh_user}@{source.best_ip}:{remote_config_path}"
             cmd = ["rsync", "-az", "-e", f"ssh {' '.join(ssh_args)}", remote_spec, local_config_path]
 
-            result = await asyncio.to_thread(
-                subprocess.run, cmd, capture_output=True, timeout=30
+            result = await LoopExecutors.run_in_pool(
+                "network", subprocess.run, cmd, capture_output=True, timeout=30
             )
 
             if result.returncode != 0:

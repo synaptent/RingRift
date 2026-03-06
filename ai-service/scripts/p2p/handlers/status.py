@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 from aiohttp import web
 
 from app.core.async_context import safe_create_task
+from scripts.p2p.loop_executors import LoopExecutors
 from scripts.p2p.network import NonBlockingAsyncLockWrapper
 
 if TYPE_CHECKING:
@@ -199,7 +200,7 @@ class StatusHandlersMixin:
         Useful for monitoring dashboards that need real-time GPU utilization.
         """
         try:
-            gpu_metrics = await asyncio.to_thread(self._get_gpu_metrics, True)
+            gpu_metrics = await LoopExecutors.run_in_pool("health", self._get_gpu_metrics, True)
             return web.json_response({
                 "node_id": self.node_id,
                 "gpu_percent": gpu_metrics["gpu_percent"],
@@ -312,8 +313,8 @@ class StatusHandlersMixin:
 
         Also identifies misrouted nodes (GPU nodes running CPU-bound work).
         """
-        # Feb 2026: Use to_thread to avoid blocking event loop (subprocess.run in count_local_jobs)
-        await asyncio.to_thread(self._update_self_info)
+        # Feb 2026: Use dedicated pool to avoid blocking event loop (subprocess.run in count_local_jobs)
+        await LoopExecutors.run_in_pool("health", self._update_self_info)
 
         # Mar 2026: Use lock-free snapshot for read-only peer listing
         peers_snapshot = self.get_peers_list_ro()
@@ -394,7 +395,7 @@ class StatusHandlersMixin:
             try:
                 from app.utils.game_discovery import get_game_counts_cluster_aware
 
-                game_counts = await asyncio.to_thread(get_game_counts_cluster_aware)
+                game_counts = await LoopExecutors.run_in_pool("sync", get_game_counts_cluster_aware)
                 if game_counts and sum(game_counts.values()) > 0:
                     return web.json_response({
                         "game_counts": game_counts,
@@ -408,7 +409,7 @@ class StatusHandlersMixin:
                 logger.debug(f"[P2P] Cluster-aware counts unavailable: {e}")
 
             # Fall back to local canonical databases
-            game_counts = await asyncio.to_thread(self._seed_selfplay_scheduler_game_counts_sync)
+            game_counts = await LoopExecutors.run_in_pool("sync", self._seed_selfplay_scheduler_game_counts_sync)
 
             return web.json_response({
                 "game_counts": game_counts,
@@ -460,7 +461,7 @@ class StatusHandlersMixin:
                                     counts[config] = total
                             return counts
 
-                        manifest_counts = await asyncio.to_thread(_get_manifest_counts)
+                        manifest_counts = await LoopExecutors.run_in_pool("sync", _get_manifest_counts)
                         if manifest_counts:
                             if self.selfplay_scheduler:
                                 self.selfplay_scheduler.update_p2p_game_counts(manifest_counts)
@@ -476,7 +477,7 @@ class StatusHandlersMixin:
                     logger.debug(f"[P2P] ClusterManifest lookup failed, falling back: {e}")
 
             # Fall back to local canonical DBs
-            local_counts = await asyncio.to_thread(self._seed_selfplay_scheduler_game_counts_sync)
+            local_counts = await LoopExecutors.run_in_pool("sync", self._seed_selfplay_scheduler_game_counts_sync)
 
             if local_counts:
                 # We have local canonical DBs, use them

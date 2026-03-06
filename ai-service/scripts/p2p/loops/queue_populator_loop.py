@@ -24,6 +24,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
+from scripts.p2p.loop_executors import LoopExecutors
+
 from .base import BackoffConfig, BaseLoop
 from .loop_constants import LoopIntervals
 
@@ -120,7 +122,7 @@ class QueuePopulatorLoop(BaseLoop):
         # calls QueuePopulator.__init__ → _load_game_counts() → GameDiscovery
         # → maybe_parallel_map(ThreadPoolExecutor.map) which blocks the event loop.
         if not self._initialized:
-            await asyncio.to_thread(self._initialize_populator)
+            await LoopExecutors.run_in_pool("sync", self._initialize_populator)
             self._initialized = True
 
         if self._populator is None:
@@ -182,9 +184,9 @@ class QueuePopulatorLoop(BaseLoop):
         current_depth = wq_status.get('total_items', 0)
         logger.debug(f"[{self.name}] Running as LEADER, queue depth={current_depth}")
 
-        # Check if all targets are met (run in thread to avoid blocking)
+        # Check if all targets are met (run in sync pool to avoid blocking)
         t0 = time.time()
-        all_met = await asyncio.to_thread(self._populator.all_targets_met)
+        all_met = await LoopExecutors.run_in_pool("sync", self._populator.all_targets_met)
         t1 = time.time()
         if t1 - t0 > 10:
             logger.warning(f"[{self.name}] all_targets_met() took {t1-t0:.1f}s")
@@ -195,13 +197,13 @@ class QueuePopulatorLoop(BaseLoop):
         else:
             self.interval = POPULATOR_INTERVAL
 
-        # Populate the queue (run in thread to avoid blocking SQLite operations)
-        items_added = await asyncio.to_thread(self._populator.populate)
+        # Populate the queue (run in sync pool to avoid blocking SQLite operations)
+        items_added = await LoopExecutors.run_in_pool("sync", self._populator.populate)
         t2 = time.time()
         if t2 - t1 > 30:
             logger.warning(f"[{self.name}] populate() took {t2-t1:.1f}s")
         if items_added > 0:
-            status = await asyncio.to_thread(self._populator.get_status)
+            status = await LoopExecutors.run_in_pool("sync", self._populator.get_status)
             logger.info(
                 f"[{self.name}] Queue populated: +{items_added} items, "
                 f"depth={status['current_queue_depth']}, "
