@@ -1059,6 +1059,16 @@ class AutoExportDaemon(HandlerBase):
                 if workers is not None:
                     cmd.extend(["--workers", str(workers)])
 
+                # Mar 6, 2026: Cap max samples on coordinator to prevent OOM.
+                # Without a cap, large configs accumulate 17GB+ in Python lists
+                # before np.stack() doubles it → kernel watchdog panic.
+                # 500k samples ≈ 4GB RAM, sufficient for training.
+                env_cap = os.environ.get("RINGRIFT_MAX_EXPORT_SAMPLES")
+                if env_cap:
+                    cmd.extend(["--max-samples", env_cap])
+                elif env.is_coordinator:
+                    cmd.extend(["--max-samples", "500000"])
+
                 # Run export subprocess
                 start_time = time.time()
                 # December 29, 2025: Add RINGRIFT_ALLOW_PENDING_GATE to bypass parity
@@ -1276,6 +1286,13 @@ class AutoExportDaemon(HandlerBase):
                         workers = 2
                 if workers is not None:
                     cmd.extend(["--workers", str(workers)])
+
+                # Mar 6, 2026: Cap max samples on coordinator (same as primary export)
+                env_cap = os.environ.get("RINGRIFT_MAX_EXPORT_SAMPLES")
+                if env_cap:
+                    cmd.extend(["--max-samples", env_cap])
+                elif env.is_coordinator:
+                    cmd.extend(["--max-samples", "500000"])
 
                 export_env = {
                     **os.environ,
