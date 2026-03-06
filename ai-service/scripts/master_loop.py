@@ -1595,6 +1595,7 @@ class MasterLoopController:
             DaemonType.S3_NODE_SYNC,          # Use S3_SYNC (Feb 2026)
             DaemonType.S3_PUSH,               # Use S3_SYNC (Feb 2026)
             DaemonType.S3_CONSOLIDATION,      # Use S3_SYNC (Feb 2026)
+            DaemonType.EXTERNAL_DRIVE_SYNC,  # Use OWC_SYNC_MANAGER (Mar 2026)
         }
         full = [daemon for daemon in DaemonType if daemon not in deprecated]
 
@@ -1650,7 +1651,7 @@ class MasterLoopController:
             # and stores TS hashes for cluster nodes that lack Node.js
             coordinator_daemons = {
                 DaemonType.COORDINATOR_DISK_MANAGER,  # Proactive disk cleanup with external sync
-                DaemonType.EXTERNAL_DRIVE_SYNC,       # Pull data from cluster to OWC drive (Dec 29)
+                DaemonType.OWC_SYNC_MANAGER,          # Bidirectional OWC sync (replaces EXTERNAL_DRIVE_SYNC, Mar 2026)
                 DaemonType.OWC_IMPORT,                # Import data FROM OWC to cluster (Dec 30)
                 DaemonType.PARITY_VALIDATION,         # Validate pending_gate DBs, store TS hashes (Dec 30)
             }
