@@ -250,6 +250,25 @@ class S3PushDaemon(HandlerBase):
             s3_uri = f"s3://{self.config.bucket}/{s3_key}"
             file_size = local_path.stat().st_size
 
+            # Mar 6, 2026: Don't overwrite S3 files with smaller versions.
+            # After daemon restart, _last_push_times is cleared, causing all
+            # files to be re-pushed. If a local NPZ was partially re-exported
+            # (e.g. with --min-elo filter), pushing the smaller file would
+            # clobber the good training data on S3 that GPU nodes depend on.
+            if s3_key.startswith("consolidated/training/") and file_size > 0:
+                try:
+                    s3_size = await self._get_s3_file_size(s3_uri)
+                    if s3_size > 0 and file_size < s3_size * 0.8:
+                        logger.warning(
+                            f"[S3PushDaemon] Skipping {local_path.name}: local "
+                            f"({file_size / 1e6:.1f}MB) < S3 ({s3_size / 1e6:.1f}MB). "
+                            f"Won't overwrite larger training data."
+                        )
+                        self._last_push_times[str(local_path)] = mtime
+                        return False
+                except Exception:
+                    pass  # Can't check S3 size, proceed with push
+
             # January 2026: Retry loop with exponential backoff
             last_error: str | None = None
             for attempt in S3_RETRY_CONFIG.attempts():
@@ -353,6 +372,25 @@ class S3PushDaemon(HandlerBase):
             self._push_stats.push_errors += 1
             self._push_stats.last_error = str(e)
             return False
+
+    async def _get_s3_file_size(self, s3_uri: str) -> int:
+        """Get the size of a file on S3. Returns 0 if not found or error."""
+        try:
+            result = await asyncio.to_thread(
+                subprocess.run,
+                ["aws", "s3", "ls", s3_uri, "--region", self.config.region],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                # Output format: "2026-03-06 03:54:48  221871742 hex8_2p.npz"
+                parts = result.stdout.strip().split()
+                if len(parts) >= 3:
+                    return int(parts[2])
+        except Exception:
+            pass
+        return 0
 
     def _get_event_subscriptions(self) -> dict[str, Any]:
         """Get event subscriptions for this daemon.
