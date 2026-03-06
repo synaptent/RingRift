@@ -231,17 +231,23 @@ class TestS3Storage:
 
     def test_s3_list_mocked(self):
         """Test S3 list with mocked client."""
-        with patch("boto3.client") as mock_client:
+        with patch("boto3.client") as mock_client, \
+             patch("boto3.resource"):
             from app.storage import S3Storage
 
             mock_s3 = MagicMock()
             mock_client.return_value = mock_s3
-            mock_s3.list_objects_v2.return_value = {
-                "Contents": [
-                    {"Key": "prefix/file1.txt"},
-                    {"Key": "prefix/file2.txt"},
-                ]
-            }
+            # S3Storage.list() uses get_paginator, not list_objects_v2 directly
+            mock_paginator = MagicMock()
+            mock_s3.get_paginator.return_value = mock_paginator
+            mock_paginator.paginate.return_value = [
+                {
+                    "Contents": [
+                        {"Key": "prefix/file1.txt"},
+                        {"Key": "prefix/file2.txt"},
+                    ]
+                }
+            ]
 
             storage = S3Storage(bucket="test-bucket")
             files = storage.list("prefix/")

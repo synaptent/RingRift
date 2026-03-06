@@ -430,6 +430,7 @@ class TestRingRiftEnv:
         # Create a move for wrong player
         wrong_player = (state.current_player % env.num_players) + 1
         wrong_move = Move(
+            id="test-wrong-player",
             player=wrong_player,
             type=MoveType.PLACE_RING,
             to=None,
