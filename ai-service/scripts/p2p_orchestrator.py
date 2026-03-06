@@ -12727,13 +12727,16 @@ print(json.dumps({{
             logger.error("aiohttp is required. Install with: pip install aiohttp")
             raise RuntimeError("aiohttp is required but not available - install with: pip install aiohttp")
 
-        # Cap thread pool to reduce CPU. Was 4 (too few for 21 status metrics
-        # + daemon SQLite ops, causing cascading timeouts). 8 balances CPU
-        # usage vs thread availability for StatusMetricsCollector.
+        # Size the default thread pool for asyncio.to_thread() callers.
+        # History: 4 -> 8 (status metrics timeouts) -> 24 (queue_populator starvation).
+        # With 100+ asyncio.to_thread() callers across loops/handlers/managers,
+        # 8 workers causes cascading timeouts when multiple loops run concurrently.
+        # 24 workers on 28-core mac-studio keeps CPU usage reasonable while
+        # preventing thread pool starvation that blocks queue_populator.
         import concurrent.futures
         loop = asyncio.get_running_loop()
         loop.set_default_executor(
-            concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix="p2p_")
+            concurrent.futures.ThreadPoolExecutor(max_workers=24, thread_name_prefix="p2p_")
         )
 
         # Mar 2026: Reap orphan processes from previous P2P/master_loop runs.
