@@ -184,12 +184,33 @@ class UnifiedBackupDaemon(HandlerBase):
         if not coordinator_resource_gate("UNIFIED_BACKUP"):
             return
 
+        # Mar 6, 2026: Cross-process governor for backup I/O
+        _governor_slot = None
+        try:
+            from app.utils.coordinator_governor import get_governor, OperationType
+            _governor_slot = get_governor().try_acquire(
+                OperationType.S3_UPLOAD,
+                description="unified_backup_cycle",
+            )
+            if _governor_slot is None:
+                logger.info("[UnifiedBackup] Governor denied: system at capacity")
+                return
+        except Exception as _gov_err:
+            logger.debug(f"[UnifiedBackup] Governor unavailable: {_gov_err}")
+
         try:
             await self.backup_all_databases()
         except Exception as e:
             self._backup_stats.last_error = str(e)
             self._backup_stats.last_error_time = time.time()
             logger.error(f"[UnifiedBackup] Backup cycle failed: {e}")
+        finally:
+            if _governor_slot is not None:
+                try:
+                    from app.utils.coordinator_governor import get_governor
+                    get_governor().release(_governor_slot)
+                except Exception:
+                    pass
 
     async def backup_all_databases(self) -> int:
         """Discover and backup all game databases.

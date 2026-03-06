@@ -414,6 +414,32 @@ class SelfplayUploadDaemon(HandlerBase):
 
     async def _run_upload_cycle(self) -> None:
         """Run a single upload cycle."""
+        # Mar 6, 2026: Cross-process governor for S3/OWC uploads
+        _governor_slot = None
+        try:
+            from app.utils.coordinator_governor import get_governor, OperationType
+            _governor_slot = get_governor().try_acquire(
+                OperationType.S3_UPLOAD,
+                description="selfplay_upload_cycle",
+            )
+            if _governor_slot is None:
+                logger.debug("[SelfplayUploadDaemon] Governor denied: system at capacity")
+                return
+        except Exception as _gov_err:
+            logger.debug(f"[SelfplayUploadDaemon] Governor unavailable: {_gov_err}")
+
+        try:
+            await self._run_upload_cycle_inner()
+        finally:
+            if _governor_slot is not None:
+                try:
+                    from app.utils.coordinator_governor import get_governor
+                    get_governor().release(_governor_slot)
+                except Exception:
+                    pass
+
+    async def _run_upload_cycle_inner(self) -> None:
+        """Inner upload cycle (called with governor slot held)."""
         logger.debug("[SelfplayUploadDaemon] Starting upload cycle")
 
         # Find databases to upload

@@ -127,6 +127,22 @@ class EvaluationFeedbackMixin:
 
                 Falls back to single-harness evaluation if multi-harness unavailable.
                 """
+                # Mar 6, 2026: Cross-process governor for evaluation on GPU nodes
+                _governor_slot = None
+                try:
+                    from app.utils.coordinator_governor import get_governor, OperationType
+                    _governor_slot = get_governor().try_acquire(
+                        OperationType.EVALUATION,
+                        description=f"feedback_gauntlet:{config_key}",
+                    )
+                    if _governor_slot is None:
+                        logger.info(
+                            f"[EvaluationFeedback] Governor denied gauntlet for {config_key}"
+                        )
+                        return
+                except Exception as _gov_err:
+                    logger.debug(f"[EvaluationFeedback] Governor unavailable: {_gov_err}")
+
                 try:
                     from app.training.multi_harness_gauntlet import (
                         MultiHarnessGauntlet,
@@ -211,6 +227,14 @@ class EvaluationFeedbackMixin:
                     logger.error(
                         f"[EvaluationFeedback] Multi-harness evaluation failed for {config_key}: {e}"
                     )
+                finally:
+                    # Mar 6, 2026: Release governor slot
+                    if _governor_slot is not None:
+                        try:
+                            from app.utils.coordinator_governor import get_governor
+                            get_governor().release(_governor_slot)
+                        except Exception:
+                            pass
 
             _safe_create_task(run_multi_harness_gauntlet(), f"run_multi_harness_gauntlet({config_key})")
 

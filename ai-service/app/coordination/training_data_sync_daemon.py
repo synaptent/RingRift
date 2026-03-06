@@ -683,6 +683,20 @@ class TrainingDataSyncDaemon(HandlerBase):
         except ImportError:
             pass
 
+        # Mar 6, 2026: Cross-process governor for S3 sync I/O
+        _governor_slot = None
+        try:
+            from app.utils.coordinator_governor import get_governor, OperationType
+            _governor_slot = get_governor().try_acquire(
+                OperationType.S3_UPLOAD,
+                description="training_data_sync",
+            )
+            if _governor_slot is None:
+                logger.debug("Governor denied training data sync: system at capacity")
+                return
+        except Exception as _gov_err:
+            logger.debug(f"Governor unavailable: {_gov_err}")
+
         try:
             # Check for pending training jobs
             pending = await self._get_pending_training_configs()
@@ -738,6 +752,14 @@ class TrainingDataSyncDaemon(HandlerBase):
             # File/network errors in sync cycle
             logger.exception(f"Error in sync cycle: {e}")
             self._record_error(f"Sync cycle error: {e}", e)
+        finally:
+            # Mar 6, 2026: Release governor slot
+            if _governor_slot is not None:
+                try:
+                    from app.utils.coordinator_governor import get_governor
+                    get_governor().release(_governor_slot)
+                except Exception:
+                    pass
 
     async def _get_pending_training_configs(self) -> list[str]:
         """Get configs with pending or active training jobs.

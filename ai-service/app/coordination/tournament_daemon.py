@@ -1127,6 +1127,30 @@ class TournamentDaemon(HandlerBase):
         self._tournament_stats.evaluations_triggered += 1
         start_time = time.time()
 
+        # Mar 6, 2026: Cross-process resource governor.
+        # Prevents tournament evaluation from overloading node.
+        _governor_slot = None
+        try:
+            from app.utils.coordinator_governor import get_governor, OperationType
+            _governor_slot = get_governor().try_acquire(
+                OperationType.TOURNAMENT,
+                description=f"tournament:{make_config_key(board_type, num_players)}",
+            )
+            if _governor_slot is None:
+                logger.info(
+                    f"[TournamentDaemon] Governor denied evaluation for {model_path}: "
+                    "system at capacity"
+                )
+                return {
+                    "model_path": model_path, "board_type": board_type,
+                    "num_players": num_players, "trigger": trigger,
+                    "success": False, "error": "governor_denied",
+                    "win_rates": {}, "elo": None, "games_played": 0,
+                    "duration_seconds": 0.0,
+                }
+        except Exception as _gov_err:
+            logger.debug(f"[TournamentDaemon] Governor unavailable: {_gov_err}")
+
         logger.info(f"Starting evaluation: {model_path} ({board_type}_{num_players}p)")
 
         results = {
@@ -1264,6 +1288,14 @@ class TournamentDaemon(HandlerBase):
             self._tournament_stats.record_failure(str(e))
 
         results["duration_seconds"] = time.time() - start_time
+
+        # Mar 6, 2026: Release governor slot
+        if _governor_slot is not None:
+            try:
+                from app.utils.coordinator_governor import get_governor
+                get_governor().release(_governor_slot)
+            except Exception:
+                pass
 
         # Emit EVALUATION_COMPLETED event
         await self._emit_evaluation_completed(results)

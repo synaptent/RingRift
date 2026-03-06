@@ -1119,8 +1119,41 @@ class UnifiedDistributionDaemon(HandlerBase):
         Returns:
             True if at least one file was uploaded successfully.
         """
+        # Mar 6, 2026: Cross-process governor for S3 distribution uploads
+        _governor_slot = None
+        try:
+            from app.utils.coordinator_governor import get_governor, OperationType
+            _governor_slot = get_governor().try_acquire(
+                OperationType.S3_UPLOAD,
+                description=f"s3_distribute:{data_type.value}",
+            )
+            if _governor_slot is None:
+                logger.info(
+                    f"[S3Distribution] Governor denied upload: system at capacity"
+                )
+                return False
+        except Exception as _gov_err:
+            logger.debug(f"[S3Distribution] Governor unavailable: {_gov_err}")
+
         bucket = self.config.s3_bucket
         region = self.config.s3_region
+        uploaded = 0
+
+        try:
+            return await self._distribute_via_s3_inner(files, data_type, bucket, region)
+        finally:
+            if _governor_slot is not None:
+                try:
+                    from app.utils.coordinator_governor import get_governor
+                    get_governor().release(_governor_slot)
+                except Exception:
+                    pass
+
+    async def _distribute_via_s3_inner(
+        self, files: list[Path], data_type: "DataType",
+        bucket: str, region: str,
+    ) -> bool:
+        """Inner S3 distribution loop (called with governor slot held)."""
         uploaded = 0
 
         for file_path in files:
