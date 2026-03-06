@@ -145,6 +145,20 @@ import os
 # Skip shadow contracts for performance
 os.environ['RINGRIFT_SKIP_SHADOW_CONTRACTS'] = 'true'
 
+# Mar 6, 2026: Prevent multiprocessing worker explosion.
+# Without this, each game subprocess spawns cpu_count() workers via torch/MPS,
+# and with 25+ concurrent games this creates 700+ processes → kernel panic.
+os.environ['OMP_NUM_THREADS'] = '1'
+os.environ['MKL_NUM_THREADS'] = '1'
+import multiprocessing
+multiprocessing.set_start_method('spawn', force=True)
+try:
+    import torch
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
+except ImportError:
+    pass
+
 def load_agent(agent_id: str, player_idx: int, board_type: str, num_players: int, game_seed: int = 0):
     '''Load agent by ID - supports random, heuristic, or model paths.'''
     rng_seed = (game_seed * 10000 + player_idx * 1000) & 0xFFFFFFFF
@@ -222,6 +236,11 @@ print(json.dumps(result))
             env = os.environ.copy()
             env["PYTHONPATH"] = ai_service_path
             env["RINGRIFT_SKIP_SHADOW_CONTRACTS"] = "true"
+            # Mar 6, 2026: Limit threads/workers per game subprocess to prevent
+            # coordinator overload (700+ workers caused kernel watchdog panic)
+            env["OMP_NUM_THREADS"] = "1"
+            env["MKL_NUM_THREADS"] = "1"
+            env["TORCH_NUM_THREADS"] = "1"
 
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
