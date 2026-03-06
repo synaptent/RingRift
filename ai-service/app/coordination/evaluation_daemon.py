@@ -188,12 +188,13 @@ class EvaluationConfig:
     early_stopping_min_games: int = 20
 
     # Concurrency
-    # Mar 2026: Env-configurable via RINGRIFT_MAX_CONCURRENT_EVALUATIONS.
-    # Default 3. Each evaluation spawns ~210 game subprocesses (7 baselines × 30 games),
-    # so 12 concurrent evaluations = 2500+ Python processes, which overloads the
-    # coordinator (mac-studio). 3 concurrent keeps subprocess count under 700.
+    # Mar 6, 2026: Default reduced from 3 to 1.
+    # Each evaluation spawns 7 baselines × 30 games × parallel_games threads.
+    # On coordinator (mac-studio), 2 concurrent evals created 478 multiprocessing
+    # workers → load 137 → kernel watchdog panic. 1 concurrent is safe.
+    # GPU nodes can override via RINGRIFT_MAX_CONCURRENT_EVALUATIONS env var.
     max_concurrent_evaluations: int = field(
-        default_factory=lambda: int(os.environ.get("RINGRIFT_MAX_CONCURRENT_EVALUATIONS", "3"))
+        default_factory=lambda: int(os.environ.get("RINGRIFT_MAX_CONCURRENT_EVALUATIONS", "1"))
     )
 
     # Timeouts
@@ -1145,6 +1146,23 @@ class EvaluationDaemon(HandlerBase):
                     await self._evaluation_queue.put(request)
                     await asyncio.sleep(1.0)
                     continue
+
+                # Mar 6, 2026: System load guard — skip evaluation if system is
+                # already overloaded. Prevents cascading process explosion that
+                # caused kernel watchdog panics on mac-studio.
+                try:
+                    load_1m = os.getloadavg()[0]
+                    cpu_count = os.cpu_count() or 1
+                    if load_1m > cpu_count * 2:
+                        logger.warning(
+                            f"[EvaluationDaemon] System overloaded (load={load_1m:.0f}, "
+                            f"cpus={cpu_count}), deferring evaluation"
+                        )
+                        await self._evaluation_queue.put(request)
+                        await asyncio.sleep(30.0)
+                        continue
+                except OSError:
+                    pass
 
                 # Sprint 15 (Jan 3, 2026): Download OWC models before evaluation
                 source = request.get("source", "")

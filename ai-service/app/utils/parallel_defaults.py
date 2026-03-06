@@ -318,9 +318,23 @@ def get_parallel_games_default() -> int:
     running P2P + master_loop + daemons, unchecked parallelism caused 62 GB RSS
     and OOM crashes (Mar 6, 2026).
 
+    Mar 6, 2026: Coordinator nodes (mac-studio) cap at 4 to prevent watchdog
+    panics from process explosion (478 workers → kernel panic).
+
     Returns:
         Parallel games count scaled by available memory (max 16, min 2).
     """
+    # Env override takes priority
+    env_val = os.environ.get("RINGRIFT_MAX_PARALLEL_GAMES")
+    if env_val:
+        return max(1, int(env_val))
+
+    # Coordinator nodes should use conservative parallelism —
+    # they already run P2P + master_loop + daemons + S3 uploads
+    is_coordinator = os.environ.get("RINGRIFT_IS_COORDINATOR", "").lower() in ("true", "1", "yes")
+    if is_coordinator:
+        return 4
+
     cpu = os.cpu_count() or 4
     base = 16 if cpu >= 8 else 8
 

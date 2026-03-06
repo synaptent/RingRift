@@ -612,6 +612,7 @@ def export_replay_dataset_multi(
     feature_version: int = 2,
     sample_every: int = 1,
     max_games: int | None = None,
+    max_samples: int | None = None,
     require_completed: bool = False,
     min_moves: int | None = None,
     max_moves: int | None = None,
@@ -674,6 +675,15 @@ def export_replay_dataset_multi(
         encoder_version=encoder_version,
         feature_version=feature_version,
     )
+
+    # Mar 6, 2026: Auto-apply sample cap from env var if not explicitly set.
+    # Coordinator nodes set RINGRIFT_MAX_EXPORT_SAMPLES to prevent OOM
+    # (17GB+ RAM usage caused kernel watchdog panics on mac-studio).
+    if max_samples is None:
+        env_cap = os.environ.get("RINGRIFT_MAX_EXPORT_SAMPLES")
+        if env_cap:
+            max_samples = int(env_cap)
+            print(f"[Memory Safety] Auto-applying max_samples={max_samples} from RINGRIFT_MAX_EXPORT_SAMPLES")
 
     features_list: list[np.ndarray] = []
     globals_list: list[np.ndarray] = []
@@ -1389,12 +1399,20 @@ def export_replay_dataset_multi(
             games_processed += 1
             if max_games is not None and games_processed >= max_games:
                 break
+            # Mar 6, 2026: Memory safety — cap total samples to prevent OOM.
+            # export_replay_dataset accumulates ALL samples in-memory before writing.
+            # Without a cap, large configs (square8_4p) can use 17GB+ RAM.
+            if max_samples is not None and len(features_list) >= max_samples:
+                break
 
         _db_elapsed = _time_module.time() - _progress_start
         print(f"    -> {db_games} games, {db_samples} samples, {db_dedup} deduplicated ({_db_elapsed:.1f}s)")
 
         if max_games is not None and games_processed >= max_games:
             print(f"  Reached max_games limit ({max_games})")
+            break
+        if max_samples is not None and len(features_list) >= max_samples:
+            print(f"  Reached max_samples limit ({max_samples})")
             break
 
     if not features_list:
@@ -1725,6 +1743,7 @@ def export_replay_dataset(
     feature_version: int = 2,
     sample_every: int = 1,
     max_games: int | None = None,
+    max_samples: int | None = None,
     require_completed: bool = False,
     min_moves: int | None = None,
     max_moves: int | None = None,
@@ -1758,6 +1777,7 @@ def export_replay_dataset(
         feature_version=feature_version,
         sample_every=sample_every,
         max_games=max_games,
+        max_samples=max_samples,
         require_completed=require_completed,
         min_moves=min_moves,
         max_moves=max_moves,
@@ -1973,6 +1993,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=None,
         help="Optional cap on number of games to process (default: all).",
+    )
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=None,
+        help="Cap total training samples to prevent OOM (default: no limit). "
+             "Each sample uses ~8KB RAM; 500000 samples ≈ 4GB.",
     )
     parser.add_argument(
         "--require-completed",
@@ -2577,6 +2604,7 @@ def main(argv: list[str] | None = None) -> int:
             feature_version=args.feature_version,
             sample_every=args.sample_every,
             max_games=args.max_games,
+            max_samples=getattr(args, "max_samples", None),
             require_completed=args.require_completed,
             min_moves=args.min_moves,
             max_moves=args.max_moves,
@@ -2643,6 +2671,7 @@ def main(argv: list[str] | None = None) -> int:
         feature_version=args.feature_version,
         sample_every=args.sample_every,
         max_games=args.max_games,
+        max_samples=getattr(args, "max_samples", None),
         require_completed=args.require_completed,
         min_moves=args.min_moves,
         max_moves=args.max_moves,
