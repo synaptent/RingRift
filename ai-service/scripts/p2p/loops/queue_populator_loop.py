@@ -82,13 +82,13 @@ class QueuePopulatorLoop(BaseLoop):
                 multiplier=2.0,
             ),
             enabled=enabled,
-            # Mar 2026: Explicit 120s timeout instead of default 600s (max(60*10, 300)).
-            # The default 600s timeout causes queue_populator to hang for 10 minutes
-            # when thread pool is saturated (asyncio.to_thread calls in _run_once
-            # wait for a thread slot that never becomes available). 120s is long enough
-            # for legitimate populate() calls (typically <30s) but short enough to
-            # detect thread pool starvation quickly and allow recovery.
-            run_timeout=120.0,
+            # Mar 2026: 300s timeout. populate() does substantial work on each
+            # cycle — game count discovery, Elo DB queries, circuit breaker checks,
+            # scheduler priority calculation, and SQLite inserts. With 12 configs
+            # and cluster health checks, legitimate cycles take 60-180s. The original
+            # 120s was too aggressive and caused consecutive timeouts even when
+            # populate() was actually making progress.
+            run_timeout=300.0,
         )
         self._get_role = get_role
         self._get_selfplay_scheduler = get_selfplay_scheduler
@@ -183,20 +183,23 @@ class QueuePopulatorLoop(BaseLoop):
         logger.debug(f"[{self.name}] Running as LEADER, queue depth={current_depth}")
 
         # Check if all targets are met (run in thread to avoid blocking)
-        # Dec 31, 2025: Wrap blocking operations with asyncio.to_thread()
-        # to prevent CPU spikes and HTTP server unresponsiveness on leader nodes
+        t0 = time.time()
         all_met = await asyncio.to_thread(self._populator.all_targets_met)
+        t1 = time.time()
+        if t1 - t0 > 10:
+            logger.warning(f"[{self.name}] all_targets_met() took {t1-t0:.1f}s")
         if all_met:
             logger.info(f"[{self.name}] All Elo targets met (2000+), checking less often")
-            # Increase interval temporarily
             self.interval = ALL_TARGETS_MET_INTERVAL
             return
         else:
-            # Reset to normal interval
             self.interval = POPULATOR_INTERVAL
 
         # Populate the queue (run in thread to avoid blocking SQLite operations)
         items_added = await asyncio.to_thread(self._populator.populate)
+        t2 = time.time()
+        if t2 - t1 > 30:
+            logger.warning(f"[{self.name}] populate() took {t2-t1:.1f}s")
         if items_added > 0:
             status = await asyncio.to_thread(self._populator.get_status)
             logger.info(
