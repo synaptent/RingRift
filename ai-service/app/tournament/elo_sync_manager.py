@@ -653,16 +653,8 @@ class EloSyncManager(DatabaseSyncManager):
         INITIAL_RATING = 1500.0
         K_FACTOR = 32.0
 
-        # Pinned baselines (anchors to prevent ELO inflation)
-        PINNED_BASELINES = {
-            "baseline_random": 400.0,
-        }
-
-        def get_pinned_rating(participant_id: str):
-            for prefix, rating in PINNED_BASELINES.items():
-                if participant_id.startswith(prefix):
-                    return rating
-            return None
+        # Use shared pinning logic (covers random AND heuristic baselines)
+        from app.config.thresholds import get_pinned_baseline_rating
 
         def expected_score(rating_a: float, rating_b: float) -> float:
             return 1.0 / (1.0 + 10 ** ((rating_b - rating_a) / 400.0))
@@ -746,8 +738,8 @@ class EloSyncManager(DatabaseSyncManager):
                 continue
 
             # Update ratings (unless pinned)
-            pinned_a = get_pinned_rating(p_a)
-            pinned_b = get_pinned_rating(p_b)
+            pinned_a = get_pinned_baseline_rating(p_a)
+            pinned_b = get_pinned_baseline_rating(p_b)
 
             if pinned_a is None:
                 r_a["rating"] += K_FACTOR * (score_a - exp_a)

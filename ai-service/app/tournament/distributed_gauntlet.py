@@ -1368,8 +1368,12 @@ class DistributedNNGauntlet:
                     elo_changes[model_id] = 0.0
                 elo_changes[model_id] += delta
 
-            # Update database
+            # Update database (skip pinned baselines — their ratings are fixed)
+            from app.config.thresholds import get_pinned_baseline_rating
             for model_id, delta in elo_changes.items():
+                pinned = get_pinned_baseline_rating(model_id)
+                if pinned is not None:
+                    continue  # Never update pinned baseline ratings
                 new_rating = ratings.get(model_id, DEFAULT_RATING) + delta
                 new_games = games_played.get(model_id, 0) + 1
 

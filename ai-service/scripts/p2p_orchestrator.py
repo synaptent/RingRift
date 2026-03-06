@@ -11811,7 +11811,14 @@ print(json.dumps({{
                 # 30-136s. Run at reduced frequency (every 60s instead of 15s)
                 # and skip during the first cycle to let startup complete.
                 if self.role == NodeRole.LEADER:
+                    # Mar 6, 2026: Initialize to startup time to skip first cycle.
+                    # Previously defaulted to 0, causing time.time()-0 >= 60 = True
+                    # immediately, running manage_cluster_jobs (SSH to all nodes)
+                    # before event loop stabilized → 59s event loop block.
                     _leader_last = getattr(self, "_last_leader_ops_time", 0)
+                    if _leader_last == 0:
+                        self._last_leader_ops_time = time.time()
+                        _leader_last = self._last_leader_ops_time
                     if time.time() - _leader_last >= 60:
                         self._last_leader_ops_time = time.time()
                         await self._run_leader_ops_inline()

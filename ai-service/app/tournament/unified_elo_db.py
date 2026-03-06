@@ -736,32 +736,14 @@ class EloDatabase:
 
         return result
 
-    # Pinned baselines that should not have their ELO updated (anchor points)
-    # These use prefix matching - any participant_id starting with these is pinned
-    # Random at 400 Elo is the anchor that prevents rating inflation across the system
-    PINNED_BASELINES = {
-        "baseline_random": 400.0,  # Random player pinned at 400 ELO as anchor
-        "none:random": 400.0,      # Composite format prefix (matches none:random:d1, etc.)
-        "none:random:d1": 400.0,   # Explicit composite format for D1 random
-        "random": 400.0,           # Simple random prefix
-        "tier1_random": 400.0,     # Tier 1 difficulty = random, pinned at 400
-        "d1": 400.0,               # D1 tier = random baseline, pinned at 400
-    }
-
     def _is_pinned_baseline(self, participant_id: str) -> float | None:
         """Check if participant is a pinned baseline and return pinned ELO if so.
 
-        Random AI must ALWAYS be pinned at 400 ELO to serve as the anchor point
-        for the entire rating system. This is critical for ELO calibration.
+        Uses shared pinning logic from thresholds.py to prevent multiplayer
+        baseline inflation across ALL Elo update paths.
         """
-        pid_lower = participant_id.lower()
-        for prefix, pinned_elo in self.PINNED_BASELINES.items():
-            if pid_lower.startswith(prefix.lower()):
-                return pinned_elo
-        # Also check for 'random' anywhere in the name for robustness
-        if 'random' in pid_lower and 'heuristic' not in pid_lower:
-            return 400.0
-        return None
+        from app.config.thresholds import get_pinned_baseline_rating
+        return get_pinned_baseline_rating(participant_id)
 
     def update_rating(self, rating: UnifiedEloRating) -> None:
         """Update a single rating."""
@@ -841,25 +823,29 @@ class EloDatabase:
         conn = self._get_connection()
         reset_count = 0
 
-        for prefix, pinned_elo in self.PINNED_BASELINES.items():
+        from app.config.thresholds import PINNED_BASELINE_PREFIXES, get_pinned_baseline_rating
+
+        for prefix, pinned_elo in PINNED_BASELINE_PREFIXES.items():
             # Find all participants matching this prefix
             cursor = conn.execute("""
                 SELECT participant_id, board_type, num_players, rating
                 FROM elo_ratings
-                WHERE participant_id LIKE ?
-            """, (f"{prefix}%",))
+                WHERE LOWER(participant_id) LIKE ?
+            """, (f"{prefix.lower()}%",))
 
             for row in cursor.fetchall():
                 pid, board_type, num_players, current_rating = row
-                if current_rating != pinned_elo:
+                # Use canonical pinning function (handles edge cases)
+                actual_pin = get_pinned_baseline_rating(pid)
+                if actual_pin is not None and current_rating != actual_pin:
                     conn.execute("""
                         UPDATE elo_ratings
                         SET rating = ?, last_update = ?
                         WHERE participant_id = ? AND board_type = ? AND num_players = ?
-                    """, (pinned_elo, time.time(), pid, board_type, num_players))
+                    """, (actual_pin, time.time(), pid, board_type, num_players))
                     reset_count += 1
                     logger.info(
-                        f"Reset {pid} from {current_rating:.0f} to {pinned_elo:.0f}"
+                        f"Reset {pid} from {current_rating:.0f} to {actual_pin:.0f}"
                     )
 
         conn.commit()

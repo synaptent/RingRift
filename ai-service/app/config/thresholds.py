@@ -760,6 +760,46 @@ def get_graduated_thresholds(
 BASELINE_ELO_RANDOM = 400
 BASELINE_ELO_HEURISTIC = 1200
 
+# Mar 2026: Canonical pinned baselines — used by ALL Elo update paths
+# This prevents multiplayer baseline inflation (kingmaking dynamics inflate random/heuristic
+# ratings in 3p/4p games when they're allowed to drift).
+
+# Prefix-based pins: any participant_id starting with these is always a baseline
+_PINNED_PREFIXES: dict[str, float] = {
+    "baseline_random": BASELINE_ELO_RANDOM,
+    "baseline_heuristic": BASELINE_ELO_HEURISTIC,
+    "none:random": BASELINE_ELO_RANDOM,
+    "none:heuristic": BASELINE_ELO_HEURISTIC,
+    "tier1_random": BASELINE_ELO_RANDOM,
+}
+
+# Exact-or-colon pins: match "random" or "random:..." but NOT "random_model_name"
+_PINNED_EXACT_OR_COLON: dict[str, float] = {
+    "random": BASELINE_ELO_RANDOM,
+    "heuristic": BASELINE_ELO_HEURISTIC,
+    "d1": BASELINE_ELO_RANDOM,
+}
+
+
+def get_pinned_baseline_rating(participant_id: str) -> float | None:
+    """Return the pinned Elo if participant_id is a baseline, else None.
+
+    Shared across all Elo update paths to prevent multiplayer baseline inflation.
+    """
+    pid_lower = participant_id.lower()
+
+    # Check prefix-based pins (these are always baselines)
+    for prefix, pinned_elo in _PINNED_PREFIXES.items():
+        if pid_lower.startswith(prefix):
+            return pinned_elo
+
+    # Check exact-or-colon pins: match "random" or "random:d3" but NOT "random_model"
+    for name, pinned_elo in _PINNED_EXACT_OR_COLON.items():
+        if pid_lower == name or pid_lower.startswith(name + ":"):
+            return pinned_elo
+
+    return None
+
 # December 2025: Extended baseline Elo ladder for measuring higher Elo models
 # These enable accurate Elo estimation above the previous 1600 ceiling
 BASELINE_ELO_HEURISTIC_STRONG = 1400  # Heuristic at difficulty 8
