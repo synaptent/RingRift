@@ -171,6 +171,36 @@ class WorkerPullController:
                 return peers.get(leader_id)
         return peers.get(leader_id)
 
+    def _get_coordinator_peers(self) -> list[Any]:
+        """Get known coordinator peers as fallback when leader is unreachable.
+
+        March 2026: When the leader (mac-studio) goes offline, GPU nodes can't
+        pull work. This provides fallback coordinator endpoints so training
+        doesn't stall waiting for leader recovery.
+        """
+        coordinator_ids = ("mac-studio", "local-mac")
+        leader_id = self._get_leader_id()
+        node_id = self._get_node_id()
+
+        peers_lock = getattr(self._orchestrator, "peers_lock", None)
+        peers = getattr(self._orchestrator, "peers", {})
+
+        fallbacks = []
+        if peers_lock:
+            with peers_lock:
+                for cid in coordinator_ids:
+                    if cid != node_id and cid != leader_id:
+                        peer = peers.get(cid)
+                        if peer:
+                            fallbacks.append(peer)
+        else:
+            for cid in coordinator_ids:
+                if cid != node_id and cid != leader_id:
+                    peer = peers.get(cid)
+                    if peer:
+                        fallbacks.append(peer)
+        return fallbacks
+
     def _url_for_peer(self, peer: Any, endpoint: str) -> str:
         """Build URL for a peer endpoint."""
         if hasattr(self._orchestrator, "_url_for_peer"):
@@ -195,6 +225,9 @@ class WorkerPullController:
     ) -> dict[str, Any] | None:
         """Claim work from the leader's work queue.
 
+        March 2026: Falls back to known coordinator peers when leader is
+        unreachable, preventing total training stall when mac-studio goes down.
+
         Args:
             capabilities: List of work types this node can handle
 
@@ -213,30 +246,45 @@ class WorkerPullController:
             return None
 
         leader_peer = self._get_leader_peer()
-        if not leader_peer:
+
+        # Build ordered list of peers to try: leader first, then coordinator fallbacks
+        peers_to_try = []
+        if leader_peer:
+            peers_to_try.append(("leader", leader_peer))
+        for fallback_peer in self._get_coordinator_peers():
+            peers_to_try.append(("coordinator-fallback", fallback_peer))
+
+        if not peers_to_try:
             return None
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=self.config.claim_timeout)
-            async with get_client_session(timeout) as session:
-                caps_str = ",".join(capabilities)
-                url = self._url_for_peer(
-                    leader_peer,
-                    f"/work/claim?node_id={node_id}&capabilities={caps_str}"
-                )
-                async with session.get(url, headers=self._auth_headers()) as resp:
-                    if resp.status == 200:
-                        # Update timestamp on any leader response
-                        self._stats.last_work_from_leader = time.time()
-                        self._stats.last_claim_time = time.time()
-                        data = await resp.json()
-                        if data.get("status") == "claimed":
-                            self._stats.claims_successful += 1
-                            return data.get("work")
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"Failed to claim work from leader: {e}")
-            self._stats.claims_failed += 1
+        for source, peer in peers_to_try:
+            try:
+                timeout = aiohttp.ClientTimeout(total=self.config.claim_timeout)
+                async with get_client_session(timeout) as session:
+                    caps_str = ",".join(capabilities)
+                    url = self._url_for_peer(
+                        peer,
+                        f"/work/claim?node_id={node_id}&capabilities={caps_str}"
+                    )
+                    async with session.get(url, headers=self._auth_headers()) as resp:
+                        if resp.status == 200:
+                            self._stats.last_work_from_leader = time.time()
+                            self._stats.last_claim_time = time.time()
+                            data = await resp.json()
+                            if data.get("status") == "claimed":
+                                self._stats.claims_successful += 1
+                                if source != "leader":
+                                    logger.info(
+                                        f"Claimed work via {source} (leader unreachable)"
+                                    )
+                                return data.get("work")
+            except Exception as e:  # noqa: BLE001
+                if source == "leader":
+                    logger.debug(f"Failed to claim work from leader: {e}")
+                else:
+                    logger.debug(f"Failed to claim work from {source}: {e}")
 
+        self._stats.claims_failed += 1
         return None
 
     async def claim_work_batch_from_leader(
@@ -245,6 +293,7 @@ class WorkerPullController:
         """Claim multiple work items from the leader's work queue.
 
         Batch claiming reduces HTTP round-trips and improves GPU utilization.
+        March 2026: Falls back to coordinator peers when leader unreachable.
 
         Args:
             capabilities: List of work types this node can handle
@@ -265,32 +314,44 @@ class WorkerPullController:
             return []
 
         leader_peer = self._get_leader_peer()
-        if not leader_peer:
+
+        # Build ordered list: leader first, then coordinator fallbacks
+        peers_to_try = []
+        if leader_peer:
+            peers_to_try.append(("leader", leader_peer))
+        for fallback_peer in self._get_coordinator_peers():
+            peers_to_try.append(("coordinator-fallback", fallback_peer))
+
+        if not peers_to_try:
             return []
 
         max_items = min(max_items or self.config.max_batch_size, self.config.max_batch_size)
 
-        try:
-            timeout = aiohttp.ClientTimeout(total=self.config.batch_claim_timeout)
-            async with get_client_session(timeout) as session:
-                caps_str = ",".join(capabilities)
-                url = self._url_for_peer(
-                    leader_peer,
-                    f"/work/claim_batch?node_id={node_id}&capabilities={caps_str}&max_items={max_items}"
-                )
-                async with session.get(url, headers=self._auth_headers()) as resp:
-                    if resp.status == 200:
-                        # Update timestamp on any leader response
-                        self._stats.last_work_from_leader = time.time()
-                        self._stats.last_claim_time = time.time()
-                        data = await resp.json()
-                        if data.get("status") == "claimed" and data.get("items"):
-                            items = data.get("items", [])
-                            self._stats.batch_claims_successful += 1
-                            self._stats.batch_items_claimed += len(items)
-                            return items
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"Failed to batch claim work from leader: {e}")
+        for source, peer in peers_to_try:
+            try:
+                timeout = aiohttp.ClientTimeout(total=self.config.batch_claim_timeout)
+                async with get_client_session(timeout) as session:
+                    caps_str = ",".join(capabilities)
+                    url = self._url_for_peer(
+                        peer,
+                        f"/work/claim_batch?node_id={node_id}&capabilities={caps_str}&max_items={max_items}"
+                    )
+                    async with session.get(url, headers=self._auth_headers()) as resp:
+                        if resp.status == 200:
+                            self._stats.last_work_from_leader = time.time()
+                            self._stats.last_claim_time = time.time()
+                            data = await resp.json()
+                            if data.get("status") == "claimed" and data.get("items"):
+                                items = data.get("items", [])
+                                self._stats.batch_claims_successful += 1
+                                self._stats.batch_items_claimed += len(items)
+                                if source != "leader":
+                                    logger.info(
+                                        f"Batch claimed {len(items)} items via {source}"
+                                    )
+                                return items
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"Failed to batch claim from {source}: {e}")
 
         return []
 

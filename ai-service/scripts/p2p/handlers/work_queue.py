@@ -508,6 +508,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
 
     # Mar 2026: Cache YAML node config to avoid re-reading file on every claim
     _yaml_node_flags: dict[str, dict[str, bool]] = {}
+    _yaml_known_nodes: set[str] = set()  # All node IDs from YAML (for unknown node detection)
     _yaml_loaded: bool = False
 
     def _is_node_disabled_in_yaml(self, node_id: str, flag: str) -> bool:
@@ -531,6 +532,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                             cfg = yaml.safe_load(f) or {}
                         hosts = cfg.get("hosts", {})
                         for nid, ncfg in hosts.items():
+                            self.__class__._yaml_known_nodes.add(nid)
                             if isinstance(ncfg, dict):
                                 self.__class__._yaml_node_flags[nid] = {
                                     k: v for k, v in ncfg.items()
@@ -542,6 +544,36 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
 
         node_flags = self.__class__._yaml_node_flags.get(node_id, {})
         return node_flags.get(flag) is False
+
+    def _is_unknown_node(self, node_id: str) -> bool:
+        """Check if a node_id is not in distributed_hosts.yaml.
+
+        Mar 2026: Prevents auto-scaled nodes (e.g. lambda-gh200-auto) from
+        claiming work and failing 100%, burning through max_attempts.
+        Only rejects nodes that are BOTH: not in YAML AND not a known peer.
+        """
+        # Ensure YAML is loaded (lazy-loads on first call)
+        self._is_node_disabled_in_yaml(node_id, "_dummy")
+        # If no YAML was loaded or has no hosts, allow all nodes
+        if not self.__class__._yaml_known_nodes:
+            return False
+        # Allow self-node (coordinator may not be in hosts list)
+        if node_id == getattr(self, "node_id", ""):
+            return False
+        # Allow nodes that are in the YAML config
+        if node_id in self.__class__._yaml_known_nodes:
+            return False
+        # Allow nodes that are known peers (connected to P2P mesh).
+        # Only check if we have an orchestrator with peer data.
+        orchestrator = getattr(self, "_orchestrator", None)
+        if orchestrator is not None:
+            node_info = self._get_node_info(node_id)
+            if node_info is not None:
+                return False
+        else:
+            # No orchestrator attached (handler not fully wired) — allow
+            return False
+        return True
 
     def _insufficient_capacity_response(self, reason: str) -> web.Response:
         """Return response when node has insufficient capacity.
@@ -873,6 +905,14 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             if not node_id:
                 return self.bad_request("node_id required")
 
+            # Mar 2026: Reject claims from nodes not in cluster config
+            if self.is_leader and self._is_unknown_node(node_id):
+                logger.warning(f"[work_claim] Rejected claim from unknown node: {node_id}")
+                return self.json_response(
+                    {"status": "rejected", "reason": f"node {node_id} not in cluster config"},
+                    status=403,
+                )
+
             # Strategy 1: Leader path - claim from centralized work queue
             if self.is_leader:
                 wq = get_work_queue()
@@ -972,6 +1012,14 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
 
             if not node_id:
                 return self.bad_request("node_id required")
+
+            # Mar 2026: Reject claims from nodes not in cluster config
+            if self._is_unknown_node(node_id):
+                logger.warning(f"[work_claim_batch] Rejected claim from unknown node: {node_id}")
+                return self.json_response(
+                    {"status": "rejected", "reason": f"node {node_id} not in cluster config"},
+                    status=403,
+                )
 
             # Session 17.32: Check node capacity before claiming work
             check_work_type = "selfplay"  # Default
@@ -1842,6 +1890,52 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             })
         except Exception as e:
             logger.error(f"Error getting dispatch stats: {e}")
+            return self.error_response(str(e), status=500)
+
+    @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)
+    async def handle_work_flush_stale(self, request: web.Request) -> web.Response:
+        """Archive failed and timed-out work items to unblock queue populator.
+
+        March 2026: Failed/timeout items count toward per-type pending limits,
+        preventing new work from being added. This endpoint marks them as
+        cancelled so the queue populator can refill.
+
+        POST /work/flush_stale
+        Query params:
+            work_type: Optional filter (e.g., "training"). Default: all types.
+        """
+        try:
+            if not self.is_leader:
+                return self._not_leader_response()
+
+            wq = get_work_queue()
+            if wq is None:
+                return self._work_queue_unavailable()
+
+            work_type_filter = request.query.get("work_type", None)
+            flushed = 0
+
+            from app.coordination.types import WorkStatus
+
+            with wq.lock:
+                for item in list(wq.items.values()):
+                    if item.status not in (WorkStatus.FAILED, WorkStatus.TIMEOUT):
+                        continue
+                    if work_type_filter and item.work_type != work_type_filter:
+                        continue
+                    item.status = WorkStatus.CANCELLED
+                    item.completed_at = __import__("time").time()
+                    wq._save_item(item)
+                    flushed += 1
+
+            logger.info(f"Flushed {flushed} stale work items (type={work_type_filter or 'all'})")
+            return self.json_response({
+                "status": "flushed",
+                "items_flushed": flushed,
+                "work_type_filter": work_type_filter,
+            })
+        except Exception as e:
+            logger.error(f"Error flushing stale work: {e}")
             return self.error_response(str(e), status=500)
 
     @handler_timeout(HANDLER_TIMEOUT_TOURNAMENT)

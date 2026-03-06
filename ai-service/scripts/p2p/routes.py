@@ -90,6 +90,7 @@ WORK_QUEUE_ROUTES = [
     Route("GET", "/work/populator", "handle_populator_status"),
     Route("GET", "/work/node/{node_id}", "handle_work_for_node"),
     Route("POST", "/work/cancel", "handle_work_cancel"),
+    Route("POST", "/work/flush_stale", "handle_work_flush_stale"),  # Mar 2026: Archive failed/timeout items
     Route("GET", "/work/history", "handle_work_history"),
     Route("GET", "/dispatch/stats", "handle_dispatch_stats"),  # Jan 2, 2026
     Route("POST", "/queue/clear-stale-targets", "handle_clear_stale_targets"),  # Jan 2, 2026

@@ -175,6 +175,8 @@ class EvaluationConfig:
         "heuristic_strong", # ~1400 Elo (tuned heuristic weights)
         "policy_only_nn",   # ~1350 Elo (NN without search, tests policy head)
         "gumbel_b64",       # ~1400 Elo (search baseline with budget=64)
+        "mcts_medium",      # ~1700 Elo (MCTS 128 sims, breaks 1982 ceiling)
+        "mcts_strong",      # ~1900 Elo (MCTS 512 sims, enables 2000+ ratings)
     ])
 
     # Early stopping configuration
