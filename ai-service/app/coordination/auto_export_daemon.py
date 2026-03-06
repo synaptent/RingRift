@@ -964,8 +964,17 @@ class AutoExportDaemon(HandlerBase):
             state.export_in_progress = True
 
             try:
+                # Mar 2026: Absolute RAM headroom check (works on all nodes).
+                # Export subprocess + workers use 11-16GB RAM.
+                from app.utils.resource_guard import check_memory, coordinator_resource_gate
+                if not check_memory(required_gb=16.0, log_warning=True):
+                    logger.info(
+                        f"[AutoExportDaemon] Skipping export for {config_key}: "
+                        "insufficient free RAM (need 16GB)"
+                    )
+                    return False
+
                 # February 2026: Block export when coordinator is low on RAM/disk
-                from app.utils.resource_guard import coordinator_resource_gate
                 if not coordinator_resource_gate("NPZ_EXPORT"):
                     logger.info(
                         f"[AutoExportDaemon] Skipping export for {config_key}: "
@@ -1207,6 +1216,21 @@ class AutoExportDaemon(HandlerBase):
         """
         async with self._export_semaphore:
             try:
+                # Mar 2026: Block v5-heavy export when low on RAM
+                from app.utils.resource_guard import check_memory, coordinator_resource_gate
+                if not check_memory(required_gb=16.0, log_warning=True):
+                    logger.info(
+                        f"[AutoExportDaemon] Skipping v5-heavy export for {config_key}: "
+                        "insufficient free RAM (need 16GB)"
+                    )
+                    return False
+                if not coordinator_resource_gate("V5_HEAVY_EXPORT"):
+                    logger.info(
+                        f"[AutoExportDaemon] Skipping v5-heavy export for {config_key}: "
+                        "coordinator resource gate blocked"
+                    )
+                    return False
+
                 logger.info(
                     f"[AutoExportDaemon] Starting v5-heavy export for {config_key} "
                     f"-> {output_path}"

@@ -590,6 +590,16 @@ class DataManagementLoop(BaseLoop):
         if current_exports >= self.config.max_concurrent_exports:
             return
 
+        # Mar 2026: Check available RAM before spawning export subprocess.
+        # Exports use 11-16GB RAM; skip if insufficient headroom.
+        try:
+            from app.utils.resource_guard import check_memory
+            if not check_memory(required_gb=16.0, log_warning=True):
+                logger.info(f"[{self.name}] Skipping exports: insufficient memory (need 16GB free)")
+                return
+        except ImportError:
+            pass  # resource_guard not available on minimal cluster nodes
+
         if not games_dir.exists():
             return
 

@@ -1387,11 +1387,11 @@ def wait_for_resources(
 # February 2026: Coordinator machines run 45+ daemons simultaneously and are
 # especially vulnerable to OOM / swap exhaustion.  Heavy operations (DB merges,
 # NPZ exports, rsync transfers, backups) must NOT start when physical memory or
-# disk headroom is below a safe threshold.  The default is 30 % free for both
+# disk headroom is below a safe threshold.  The default is 25 % free RAM
 # (configurable via environment variables).
 
 _COORD_MIN_FREE_RAM_PCT = float(
-    os.environ.get("RINGRIFT_COORDINATOR_MIN_FREE_RAM_PERCENT", "15")
+    os.environ.get("RINGRIFT_COORDINATOR_MIN_FREE_RAM_PERCENT", "25")
 )
 _COORD_MIN_FREE_DISK_PCT = float(
     os.environ.get("RINGRIFT_COORDINATOR_MIN_FREE_DISK_PERCENT", "10")
@@ -1402,8 +1402,8 @@ def coordinator_resource_gate(operation: str) -> bool:
     """Return True if a heavy operation may proceed on a coordinator node.
 
     Checks:
-        1. Physical RAM free >= RINGRIFT_COORDINATOR_MIN_FREE_RAM_PERCENT  (default 30 %)
-        2. Disk free >= RINGRIFT_COORDINATOR_MIN_FREE_DISK_PERCENT  (default 30 %)
+        1. Physical RAM free >= RINGRIFT_COORDINATOR_MIN_FREE_RAM_PERCENT  (default 25 %)
+        2. Disk free >= RINGRIFT_COORDINATOR_MIN_FREE_DISK_PERCENT  (default 10 %)
 
     The check is ONLY enforced when RINGRIFT_IS_COORDINATOR=true.  On worker
     nodes the function always returns True so callers don't need separate
