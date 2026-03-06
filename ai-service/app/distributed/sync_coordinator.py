@@ -431,6 +431,14 @@ class SyncCoordinator:
         remote_subdir: str,
         include_patterns: list[str],
     ) -> tuple[int, int, list[str]]:
+        # Mar 2026: Memory guard — rsync pulls can spike RAM on coordinator
+        try:
+            from app.utils.resource_guard import check_memory
+            if not check_memory(required_gb=4.0, log_warning=True):
+                return 0, 0, ["insufficient memory for rsync"]
+        except ImportError:
+            pass
+
         # Dec 2025: Use verified rsync to prevent silent corruption
         if not HAS_RSYNC or rsync_directory_verified is None:
             # Fallback to unverified if verified not available

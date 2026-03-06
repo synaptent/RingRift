@@ -1067,6 +1067,14 @@ class ClusterTransport:
         ssh_port: int = 22,
     ) -> TransportResult:
         """Execute rsync transfer."""
+        # Mar 2026: Memory guard — prevent OOM from concurrent transfers
+        try:
+            from app.utils.resource_guard import check_memory
+            if not check_memory(required_gb=4.0, log_warning=True):
+                return TransportResult(success=False, error="insufficient memory for rsync")
+        except ImportError:
+            pass
+
         # Feb 2026: Memory-aware transfer fallback
         try:
             from app.coordination.rsync_command_builder import (

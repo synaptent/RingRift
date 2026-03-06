@@ -577,6 +577,15 @@ class DatabaseSyncManager(SyncManagerBase):
         Returns:
             True if pull and merge succeeded
         """
+        # Mar 2026: Memory guard — rsync pull + merge can spike RAM
+        try:
+            from app.utils.resource_guard import check_memory
+            if not check_memory(required_gb=4.0, log_warning=True):
+                logger.info(f"[{self.db_type}] Skipping rsync pull from {host}: low memory")
+                return False
+        except ImportError:
+            pass
+
         try:
             # Create temp directory for download (to hold DB and WAL files)
             tmp_dir = Path(tempfile.mkdtemp(prefix="db_sync_"))
