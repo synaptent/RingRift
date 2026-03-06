@@ -1719,8 +1719,24 @@ def _evaluate_single_opponent(
     if parallel_games > 1:
         game_num = 0
         while game_num < games_per_opponent:
+            # Mar 6, 2026: Check memory pressure before each batch.
+            # Reduces batch size dynamically when available RAM drops (OOM prevention).
+            effective_parallel = parallel_games
+            try:
+                import psutil as _psutil
+                _mem = _psutil.virtual_memory()
+                _avail_gb = _mem.available / (1024 ** 3)
+                if _avail_gb < 4.0:
+                    effective_parallel = 1
+                    logger.warning(f"[gauntlet] Low memory ({_avail_gb:.1f} GB free), running games sequentially")
+                elif _avail_gb < 8.0:
+                    effective_parallel = min(effective_parallel, 4)
+                    logger.info(f"[gauntlet] Moderate memory pressure ({_avail_gb:.1f} GB free), limiting to {effective_parallel} parallel games")
+            except ImportError:
+                pass
+
             # Determine batch size (don't exceed remaining games)
-            batch_size = min(parallel_games, games_per_opponent - game_num)
+            batch_size = min(effective_parallel, games_per_opponent - game_num)
             batch_games = list(range(game_num, game_num + batch_size))
 
             # Run batch in parallel

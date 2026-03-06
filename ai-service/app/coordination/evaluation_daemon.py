@@ -1770,8 +1770,17 @@ class EvaluationDaemon(HandlerBase):
         # Jan 2, 2026 (Phase 1.3): Use graduated timeout based on board size
         # Jan 10, 2026: Added player count scaling for longer 3p/4p games
         # January 2026: Use reduced parallel_games if OOM recovery is active
-        parallel_games = self._oom_parallel_games.get(config_key, 16)
-        if parallel_games < 16:
+        # Mar 6, 2026: Cap at 4 on coordinator to prevent OOM (evaluation_daemon
+        # runs in master_loop which shares memory with P2P + daemons + NPZ exports).
+        default_parallel = 16
+        try:
+            from app.config.env import env as _env
+            if _env.is_coordinator:
+                default_parallel = 4
+        except ImportError:
+            pass
+        parallel_games = self._oom_parallel_games.get(config_key, default_parallel)
+        if parallel_games < default_parallel:
             logger.info(
                 f"[EvaluationDaemon] Using reduced parallel_games={parallel_games} "
                 f"for {config_key} (OOM recovery)"

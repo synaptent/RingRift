@@ -101,6 +101,14 @@ async def execute_gauntlet_work(
         # Also added diverse opponents for better Elo calibration.
         import torch
         has_cuda = torch.cuda.is_available()
+
+        # Mar 6, 2026: Cap parallel_games on coordinator to prevent OOM.
+        # Coordinator runs P2P + master_loop + 132 daemons + NPZ exports.
+        # Unbounded parallel_games=16 caused 62 GB RSS → OOM crash.
+        parallel_games = None  # Let memory-aware default decide
+        if env.is_coordinator:
+            parallel_games = 4  # Conservative on coordinator
+
         gauntlet_result = await asyncio.to_thread(
             run_baseline_gauntlet,
             model_path=model_path,
@@ -118,6 +126,7 @@ async def execute_gauntlet_work(
             parallel_opponents=False,
             use_search=has_cuda,  # MCTS on GPU, policy-only on CPU
             harness_type="gumbel_mcts" if has_cuda else "policy_only",
+            parallel_games=parallel_games,
         )
 
         # Build result dict with full win rate data

@@ -313,11 +313,34 @@ def maybe_parallel_map(
 def get_parallel_games_default() -> int:
     """Get default parallel games count for gauntlet/tournament.
 
+    Memory-aware: reduces parallelism when available RAM is low to prevent OOM.
+    Each game thread uses ~100-200 MB RSS (model + engine). On coordinator nodes
+    running P2P + master_loop + daemons, unchecked parallelism caused 62 GB RSS
+    and OOM crashes (Mar 6, 2026).
+
     Returns:
-        16 for systems with 8+ cores, 8 for smaller systems
+        Parallel games count scaled by available memory (max 16, min 2).
     """
     cpu = os.cpu_count() or 4
-    return 16 if cpu >= 8 else 8
+    base = 16 if cpu >= 8 else 8
+
+    # Check available memory and scale down if needed
+    try:
+        import psutil
+        mem = psutil.virtual_memory()
+        available_gb = mem.available / (1024 ** 3)
+
+        # ~200 MB per game thread as conservative estimate
+        # Reserve 8 GB for system + P2P + daemons + master_loop
+        usable_gb = max(0, available_gb - 8.0)
+        mem_limited = max(2, int(usable_gb / 0.2))
+
+        if mem_limited < base:
+            return min(base, mem_limited)
+    except ImportError:
+        pass
+
+    return base
 
 
 def should_use_parallel() -> bool:
