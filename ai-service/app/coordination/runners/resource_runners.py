@@ -220,10 +220,12 @@ async def create_multi_provider() -> None:
 async def create_queue_populator() -> None:
     """Create and run queue populator daemon (Phase 4)."""
     try:
+        import asyncio
         from app.coordination.unified_queue_populator import UnifiedQueuePopulatorDaemon
 
-        # Use the daemon wrapper which has start/stop lifecycle
-        daemon = UnifiedQueuePopulatorDaemon()
+        # Mar 2026: Wrap in to_thread — UnifiedQueuePopulator.__init__ can block
+        # if ensure_game_counts_loaded() is called eagerly by other init paths.
+        daemon = await asyncio.to_thread(UnifiedQueuePopulatorDaemon)
         await daemon.start()
         await _wait_for_daemon(daemon)
     except ImportError as e:

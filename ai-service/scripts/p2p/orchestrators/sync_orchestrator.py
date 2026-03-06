@@ -990,10 +990,14 @@ class SyncOrchestrator(BaseOrchestrator):
 
         return imported
 
-    async def collect_cluster_manifest(self):
+    async def collect_cluster_manifest(self, *, skip_external_storage: bool = False):
         """Leader-only: Collect manifests from all peers and build cluster view.
 
         Jan 29, 2026: Moved from P2POrchestrator._collect_cluster_manifest().
+
+        Args:
+            skip_external_storage: If True, skip OWC/S3 metadata scan (saves time
+                when caller only needs peer file manifests, e.g. training sync).
 
         Returns:
             ClusterDataManifest with aggregated cluster data state
@@ -1076,11 +1080,12 @@ class SyncOrchestrator(BaseOrchestrator):
                 cluster_manifest.missing_from_nodes[file_path] = nodes_without_file
 
         # Collect external storage metadata (OWC drive, S3 bucket)
-        try:
-            external_storage = await p2p._collect_external_storage_metadata()
-            cluster_manifest.external_storage = external_storage
-        except Exception as e:
-            self._log_debug(f"External storage scan skipped: {e}")
+        if not skip_external_storage:
+            try:
+                external_storage = await p2p._collect_external_storage_metadata()
+                cluster_manifest.external_storage = external_storage
+            except Exception as e:
+                self._log_debug(f"External storage scan skipped: {e}")
 
         self._log_info(
             f"Cluster manifest: {cluster_manifest.total_nodes} nodes, "

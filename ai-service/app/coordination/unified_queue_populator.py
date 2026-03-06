@@ -410,7 +410,10 @@ class UnifiedQueuePopulator:
         self._init_targets()
         self._load_existing_elo()
         self._load_curriculum_weights()
-        self._load_game_counts()  # Jan 5, 2026: Load actual game counts from canonical DBs
+        # Mar 2026: Deferred from __init__ to avoid blocking event loop for 6+ min.
+        # _load_game_counts() scans 50-100+ databases via GameDiscovery. Now called
+        # lazily in ensure_game_counts_loaded() before first populate().
+        self._game_counts_loaded = False
 
         # Work tracking
         self._queued_work_ids: set[str] = set()
@@ -666,6 +669,16 @@ class UnifiedQueuePopulator:
             logger.warning("[QueuePopulator] game_discovery not available, using elo_ratings game counts")
         except Exception as e:
             logger.warning(f"[QueuePopulator] Failed to load game counts from canonical DBs: {e}")
+
+    def ensure_game_counts_loaded(self) -> None:
+        """Load game counts if not already loaded. Safe to call multiple times.
+
+        Mar 2026: Deferred from __init__ to avoid blocking the event loop.
+        Called lazily before first populate().
+        """
+        if not self._game_counts_loaded:
+            self._load_game_counts()
+            self._game_counts_loaded = True
 
     def set_work_queue(self, work_queue: "WorkQueue") -> None:
         """Set the work queue reference."""
@@ -1853,6 +1866,9 @@ class UnifiedQueuePopulator:
         if self._work_queue is None:
             logger.warning("No work queue set, cannot populate")
             return 0
+
+        # Mar 2026: Lazy-load game counts (deferred from __init__)
+        self.ensure_game_counts_loaded()
 
         # === January 14, 2026: Backoff check ===
         # If we're in a backoff period, skip population

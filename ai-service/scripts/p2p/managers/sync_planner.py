@@ -1489,7 +1489,7 @@ class SyncPlanner(EventSubscriptionMixin):
         if not manifest:
             logger.info("Collecting fresh cluster manifest for training sync...")
             # Jan 2026: Use centralized timeout from LoopTimeouts
-            manifest_timeout = 120.0  # Default fallback
+            manifest_timeout = 180.0  # Mar 2026: Raised from 120s — manifest collection needs time for local scan + peers
             if LoopTimeouts is not None:
                 manifest_timeout = LoopTimeouts.MANIFEST_COLLECTION
             try:
@@ -1499,22 +1499,21 @@ class SyncPlanner(EventSubscriptionMixin):
                 )
             except asyncio.TimeoutError:
                 logger.warning(f"Manifest collection timed out after {manifest_timeout}s, trying cached")
-                # Try to get cached manifest as fallback (sync method)
+                # Mar 2026: Build partial ClusterDataManifest from cached local manifest
+                # instead of failing entirely. Sync will be incomplete (local-only) but
+                # better than no sync at all.
                 try:
                     cached = self.get_cached_manifest()
                     if cached:
-                        # Cached manifest is local-only, but can still be useful
-                        # for determining what files exist locally
-                        logger.info("Using cached local manifest as partial fallback")
-                        # Continue without full cluster manifest - sync may be incomplete
-                        manifest = None  # Will fail gracefully below
-                except (OSError, json.JSONDecodeError) as e:
-                    # Cache file read/parse errors
-                    logger.debug(f"Cache read error: {e}")
-                    manifest = None
-                except (ValueError, KeyError) as e:
-                    # Invalid cached data structure
-                    logger.debug(f"Cache data format error: {e}")
+                        from scripts.p2p.models import ClusterDataManifest
+                        manifest = ClusterDataManifest(collected_at=time.time())
+                        manifest.node_manifests[self.node_id] = cached
+                        manifest.total_nodes = 1
+                        logger.info("Using local-only manifest after timeout (sync may be incomplete)")
+                    else:
+                        manifest = None
+                except Exception as e:
+                    logger.debug(f"Cache fallback error: {e}")
                     manifest = None
 
         if not manifest:

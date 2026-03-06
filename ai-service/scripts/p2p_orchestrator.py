@@ -5927,7 +5927,7 @@ class P2POrchestrator(
             get_training_nodes=self._get_training_nodes_plus_coordinator,
             should_sync_to_node=self._should_sync_to_node,
             should_cleanup_source=lambda node: node.disk_percent >= DISK_CLEANUP_THRESHOLD,
-            collect_manifest=self._collect_cluster_manifest,
+            collect_manifest=lambda: self.sync.collect_cluster_manifest(skip_external_storage=True),
             execute_sync_job=self._request_node_sync,
             cleanup_synced_files=self.sync.cleanup_synced_files,
             get_sync_router=self._get_sync_router,
