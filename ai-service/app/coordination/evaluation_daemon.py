@@ -34,6 +34,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import os
 import time
 import uuid
 from pathlib import Path
@@ -187,14 +188,13 @@ class EvaluationConfig:
     early_stopping_min_games: int = 20
 
     # Concurrency
-    # Dec 29: Increased from 8 to 24 for faster eval throughput
-    # With 50 games per baseline, each eval still completes in ~5 min
-    # Session 17.31 (Jan 5, 2026): Increased from 24 to 32 for higher throughput
-    # Session 17.46 (Jan 6, 2026): Increased from 32 to 64 for +5-8 Elo improvement
-    # Feb 2026: Lowered from 64 to 12. 64 concurrent evals consumed all GPU capacity,
-    # contributing to selfplay starvation (no new games for 4-46 days).
-    # 12 concurrent still completes a full eval pass in ~5h, which is acceptable.
-    max_concurrent_evaluations: int = 12
+    # Mar 2026: Env-configurable via RINGRIFT_MAX_CONCURRENT_EVALUATIONS.
+    # Default 3. Each evaluation spawns ~210 game subprocesses (7 baselines × 30 games),
+    # so 12 concurrent evaluations = 2500+ Python processes, which overloads the
+    # coordinator (mac-studio). 3 concurrent keeps subprocess count under 700.
+    max_concurrent_evaluations: int = field(
+        default_factory=lambda: int(os.environ.get("RINGRIFT_MAX_CONCURRENT_EVALUATIONS", "3"))
+    )
 
     # Timeouts
     # Dec 29: Reduced from 600s to 300s for faster iteration (5 min per eval)
