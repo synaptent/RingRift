@@ -492,6 +492,12 @@ class DiskSpaceManagerDaemon(HandlerBase):
                     f"{retention_freed / (1024**3):.1f}GB"
                 )
 
+        # Mar 2026: Rotate gauntlet/tournament DBs that exceed size threshold.
+        # These are evaluation data (not training data) and grow unboundedly.
+        # gauntlet_square19_4p.db reached 86GB on local-mac.
+        if self.config.enable_cleanup:
+            self._rotate_large_evaluation_dbs()
+
         # Full cleanup if disk usage exceeds threshold
         if self._current_status.needs_cleanup and self.config.enable_cleanup:
             await self._perform_cleanup(self._current_status)
@@ -1058,6 +1064,72 @@ class DiskSpaceManagerDaemon(HandlerBase):
             )
 
         return bytes_freed
+
+    def _rotate_large_evaluation_dbs(self) -> None:
+        """Rotate gauntlet/tournament databases that exceed a size threshold.
+
+        Mar 2026: Gauntlet game databases grow unboundedly (86GB observed for
+        gauntlet_square19_4p.db). These contain evaluation game replays that
+        are NOT used for training. Rotation renames them with a date suffix
+        and lets the gauntlet system create a fresh DB on next write.
+
+        Rotated DBs are archived with suffix like .2026-03-06.bak and can
+        be manually deleted or uploaded to S3 for cold storage.
+        """
+        ROTATION_THRESHOLD_GB = 10.0  # Rotate DBs larger than this
+        _ROTATION_CHECK_INTERVAL = 3600.0  # Only check once per hour
+
+        # Rate-limit rotation checks (heavy stat() calls on many DBs)
+        now = time.time()
+        last_check = getattr(self, "_last_rotation_check", 0.0)
+        if (now - last_check) < _ROTATION_CHECK_INTERVAL:
+            return
+        self._last_rotation_check = now
+
+        games_path = self._root_path / "data" / "games"
+        if not games_path.exists():
+            return
+
+        from datetime import datetime
+        date_suffix = datetime.now().strftime("%Y-%m-%d")
+
+        for pattern in ["gauntlet_*.db", "baseline_calibration_*.db"]:
+            for db_file in games_path.glob(pattern):
+                if db_file.is_symlink():
+                    continue
+                # Skip already-rotated files
+                if ".bak" in db_file.name:
+                    continue
+                try:
+                    size_gb = db_file.stat().st_size / (1024**3)
+                    if size_gb < ROTATION_THRESHOLD_GB:
+                        continue
+
+                    # Rotate: rename with date suffix
+                    archive_name = f"{db_file.stem}.{date_suffix}.bak"
+                    archive_path = db_file.parent / archive_name
+                    # If archive already exists for today, skip
+                    if archive_path.exists():
+                        continue
+
+                    # Also rotate WAL and SHM files if they exist
+                    wal_file = db_file.with_suffix(".db-wal")
+                    shm_file = db_file.with_suffix(".db-shm")
+
+                    db_file.rename(archive_path)
+                    if wal_file.exists():
+                        wal_file.rename(archive_path.with_suffix(f".bak-wal"))
+                    if shm_file.exists():
+                        shm_file.rename(archive_path.with_suffix(f".bak-shm"))
+
+                    logger.info(
+                        f"[{self.name}] Rotated evaluation DB: {db_file.name} "
+                        f"({size_gb:.1f}GB) -> {archive_name}"
+                    )
+                except OSError as e:
+                    logger.warning(
+                        f"[{self.name}] Failed to rotate {db_file.name}: {e}"
+                    )
 
     def _cleanup_s3_backed_files(self) -> int:
         """Remove local files that are verified to exist in S3 (oldest first).

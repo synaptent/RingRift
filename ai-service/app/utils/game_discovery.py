@@ -736,33 +736,40 @@ class GameDiscovery:
             return {}
 
         try:
+            from app.distributed.db_utils import timed_query
+        except ImportError:
+            timed_query = None
+
+        _query_timeout = 10.0
+        try:
             with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5.0) as conn:
                 # Phase 5.3: Validate schema before querying
                 if not self._validate_schema(conn):
                     logger.debug(f"Schema validation failed for {db_path}")
                     return {}
 
-                # Mar 2026: Add query timeout (10s) to prevent blocking on large DBs.
-                # sqlite3 progress_handler is called every N VM instructions; interrupt
-                # raises OperationalError if query exceeds wall-clock limit.
-                _query_start = time.time()
-                _query_timeout = 10.0
-                conn.set_progress_handler(
-                    lambda: 1 if (time.time() - _query_start) > _query_timeout else 0,
-                    10000,  # Check every 10K VM instructions
-                )
+                # Mar 2026: 10s query timeout to prevent blocking on large DBs.
+                if timed_query is not None:
+                    ctx = timed_query(conn, timeout_seconds=_query_timeout)
+                    conn = ctx.__enter__()
+                else:
+                    ctx = None
 
-                cursor = conn.execute(
-                    "SELECT board_type, num_players, COUNT(*) "
-                    "FROM games WHERE winner IS NOT NULL "
-                    "GROUP BY board_type, num_players"
-                )
-                results = {}
-                for row in cursor.fetchall():
-                    board_type, num_players, count = row
-                    if board_type and num_players:
-                        results[(board_type, num_players)] = count
-                return results
+                try:
+                    cursor = conn.execute(
+                        "SELECT board_type, num_players, COUNT(*) "
+                        "FROM games WHERE winner IS NOT NULL "
+                        "GROUP BY board_type, num_players"
+                    )
+                    results = {}
+                    for row in cursor.fetchall():
+                        board_type, num_players, count = row
+                        if board_type and num_players:
+                            results[(board_type, num_players)] = count
+                    return results
+                finally:
+                    if ctx is not None:
+                        ctx.__exit__(None, None, None)
         except sqlite3.OperationalError as e:
             if "interrupt" in str(e).lower():
                 logger.warning(f"Query timeout ({_query_timeout}s) on {db_path.name}")

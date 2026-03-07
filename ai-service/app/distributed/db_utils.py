@@ -1310,3 +1310,74 @@ atexit.register(close_all_connections)
 
 # Alias for backward compatibility (used by p2p_orchestrator.py)
 safe_db_connection = safe_transaction
+
+
+# =============================================================================
+# Query Timeout Protection (March 2026)
+# =============================================================================
+
+
+def set_query_timeout(conn: sqlite3.Connection, timeout_seconds: float = 10.0,
+                      check_interval: int = 10000) -> None:
+    """Set a wall-clock query timeout on a SQLite connection.
+
+    Uses sqlite3.set_progress_handler() to check elapsed time every
+    `check_interval` VM instructions. If the query exceeds `timeout_seconds`,
+    the progress handler returns 1 which causes SQLite to raise
+    OperationalError("interrupted").
+
+    Mar 2026: Generalized from game_discovery.py where 18GB gauntlet DB
+    full table scans took 120s+ and blocked the queue_populator.
+
+    Usage:
+        conn = sqlite3.connect("data.db")
+        set_query_timeout(conn, timeout_seconds=10.0)
+        try:
+            cursor = conn.execute("SELECT COUNT(*) FROM large_table")
+        except sqlite3.OperationalError as e:
+            if "interrupt" in str(e).lower():
+                print("Query timed out")
+
+    Args:
+        conn: SQLite connection to protect.
+        timeout_seconds: Maximum wall-clock seconds per query.
+        check_interval: Check every N SQLite VM instructions (10000 is
+            a good balance between overhead and responsiveness).
+    """
+    _start = time.time()
+    conn.set_progress_handler(
+        lambda: 1 if (time.time() - _start) > timeout_seconds else 0,
+        check_interval,
+    )
+
+
+@contextmanager
+def timed_query(conn: sqlite3.Connection, timeout_seconds: float = 10.0,
+                check_interval: int = 10000) -> Generator[sqlite3.Connection]:
+    """Context manager for query timeout protection.
+
+    Sets a query timeout on entry, removes it on exit.
+
+    Usage:
+        conn = sqlite3.connect("data.db")
+        with timed_query(conn, timeout_seconds=5.0):
+            cursor = conn.execute("SELECT COUNT(*) FROM large_table")
+            # OperationalError("interrupted") raised if > 5s
+
+    Args:
+        conn: SQLite connection.
+        timeout_seconds: Maximum wall-clock seconds.
+        check_interval: VM instruction check interval.
+
+    Yields:
+        The same connection with timeout protection applied.
+    """
+    _start = time.time()
+    conn.set_progress_handler(
+        lambda: 1 if (time.time() - _start) > timeout_seconds else 0,
+        check_interval,
+    )
+    try:
+        yield conn
+    finally:
+        conn.set_progress_handler(None, 0)
