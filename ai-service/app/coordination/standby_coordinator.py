@@ -353,9 +353,18 @@ class StandbyCoordinator(HandlerBase):
         """One cycle of primary health monitoring.
 
         This is called by HandlerBase every cycle_interval seconds.
-        Only performs monitoring when in STANDBY role.
+        Monitors in STANDBY role (for takeover) AND in PRIMARY role
+        (for handoff back when the real primary recovers).
         """
-        # Only monitor when in STANDBY role
+        if self._role == CoordinatorRole.PRIMARY:
+            # Mar 2026: Monitor the original primary for recovery.
+            # If it comes back healthy, hand off and return to standby.
+            # This fixes the bug where takeover was permanent — the standby
+            # promoted to PRIMARY but never stepped down, running 100+ daemons
+            # and pulling 380GB of data onto a MacBook.
+            await self._check_primary_recovery()
+            return
+
         if self._role != CoordinatorRole.STANDBY:
             return
 
@@ -390,6 +399,34 @@ class StandbyCoordinator(HandlerBase):
             # Check if primary is dead
             if await self._should_take_over():
                 await self._take_over(FailoverReason.PRIMARY_TIMEOUT)
+
+    async def _check_primary_recovery(self) -> None:
+        """Check if the original primary has recovered and hand off if so.
+
+        Called every cycle when this standby is acting as PRIMARY after failover.
+        Requires 3 consecutive healthy checks before handing off to avoid flapping.
+        """
+        if not self._primary_host:
+            return
+
+        is_healthy = await self._check_primary_health()
+        if is_healthy:
+            self._primary_recovery_checks = getattr(self, "_primary_recovery_checks", 0) + 1
+            if self._primary_recovery_checks >= 3:
+                logger.info(
+                    f"[StandbyCoordinator] Original primary {self._primary_host} "
+                    f"recovered ({self._primary_recovery_checks} consecutive checks). "
+                    "Handing off and returning to STANDBY."
+                )
+                await self.hand_off_to_primary(self._primary_host)
+                self._primary_recovery_checks = 0
+            else:
+                logger.info(
+                    f"[StandbyCoordinator] Primary recovery check "
+                    f"{self._primary_recovery_checks}/3 passed"
+                )
+        else:
+            self._primary_recovery_checks = 0
 
     async def _check_primary_health(self) -> bool:
         """Check if primary coordinator is healthy.
@@ -585,9 +622,21 @@ class StandbyCoordinator(HandlerBase):
         self._primary_host = new_primary
         self._consecutive_failures = 0  # Reset failure count for new primary
 
-        # Monitoring resumes automatically via HandlerBase's _run_cycle()
         logger.info("Handoff complete, now running as STANDBY")
-        return True
+
+        # Mar 2026: Exit process so launchd/systemd restarts us clean.
+        # During takeover, master_loop started 100+ daemons. Setting role back
+        # to STANDBY doesn't stop those daemons. A clean restart re-initializes
+        # with the standby profile (~7 daemons). This is safe because:
+        # - launchd has KeepAlive=true, so it restarts us immediately
+        # - The real primary is confirmed healthy (3 consecutive checks)
+        # - sys.exit(0) triggers graceful cleanup via signal handlers
+        import sys
+        logger.critical(
+            "[StandbyCoordinator] Exiting for clean restart in standby mode. "
+            "launchd/systemd will restart automatically."
+        )
+        sys.exit(0)
 
     async def force_takeover(self, reason: FailoverReason = FailoverReason.MANUAL_TAKEOVER) -> None:
         """Force immediate takeover (manual intervention).
