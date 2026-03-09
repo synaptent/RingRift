@@ -117,5 +117,5 @@ opentelemetry-exporter-otlp==1.29.0
 # Use OTLP exporter with Jaeger's native OTLP endpoint instead.
 # Kept for backward compatibility; set OTEL_EXPORTER=otlp for new deployments.
 opentelemetry-exporter-jaeger==1.21.0
-opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-fastapi==0.60b1
 paramiko>=3.0.0
