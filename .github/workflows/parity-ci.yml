@@ -120,7 +120,7 @@ jobs:
       # Upload summary artifact for debugging failed builds
       - name: Upload parity check summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: parity-ci-summary
           path: ai-service/results/parity_ci_summary.json
@@ -188,7 +188,7 @@ jobs:
 
       - name: Upload parity check summary (3-player)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: parity-ci-3p-summary
           path: ai-service/results/parity_ci_3p_summary.json
@@ -256,7 +256,7 @@ jobs:
 
       - name: Upload parity check summary (4-player)
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: parity-ci-4p-summary
           path: ai-service/results/parity_ci_4p_summary.json
@@ -311,7 +311,7 @@ jobs:
 
       - name: Upload extended parity summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: parity-extended-summary
           path: ai-service/results/parity_extended_summary.json

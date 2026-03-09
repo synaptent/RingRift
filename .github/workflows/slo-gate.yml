@@ -337,7 +337,7 @@ jobs:
       - name: Upload SLO report artifacts
         id: upload-report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: slo-gate-report-${{ github.run_id }}
           path: |

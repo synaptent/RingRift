@@ -370,7 +370,7 @@ jobs:
         run: npm run build
 
       - name: Archive production artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
@@ -407,7 +407,7 @@ jobs:
         run: npx @cyclonedx/cyclonedx-npm --output-format JSON --output-file sbom-node.json
 
       - name: Upload Node SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-node
           path: sbom-node.json
@@ -618,7 +618,7 @@ jobs:
 
       - name: Upload AI healthcheck summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ai-healthcheck-summary
           path: ai-service/results/ai_healthcheck_summary.json
@@ -656,7 +656,7 @@ jobs:
 
       - name: Upload parity healthcheck summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: parity-healthcheck-summary
           path: ai-service/results/parity_healthcheck_summary.json
@@ -753,7 +753,7 @@ jobs:
 
       - name: Upload parity gate summaries
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: canonical-parity-gate-summaries
           path: |
@@ -802,7 +802,7 @@ jobs:
           python -m cyclonedx_py environment --output-format json --output-file sbom-python.json
 
       - name: Upload Python SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-python
           path: ai-service/sbom-python.json
@@ -845,7 +845,7 @@ jobs:
 
       - name: Upload AI evaluation summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ai-eval-baseline-vs-random
           path: ai-service/results/ai_eval_baseline_vs_random.json
@@ -883,7 +883,7 @@ jobs:
 
       - name: Upload strength regression gate report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ai-strength-regression-gate
           path: ai-service/results/ai_strength_regression_gate.json
@@ -969,7 +969,7 @@ jobs:
         run: npm run test:e2e:chromium
 
       - name: Upload Playwright report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: playwright-report
@@ -977,7 +977,7 @@ jobs:
           retention-days: 7
 
       - name: Upload E2E test artifacts on failure
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: e2e-test-results

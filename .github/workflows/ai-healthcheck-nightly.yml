@@ -44,7 +44,7 @@ jobs:
 
       - name: Upload AI healthcheck nightly summary
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ai-healthcheck-nightly-summary
           path: ai-service/results/ai_healthcheck_nightly_summary.json
