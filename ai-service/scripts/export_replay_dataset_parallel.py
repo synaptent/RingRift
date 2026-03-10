@@ -167,6 +167,7 @@ def export_parallel(
     force_export: bool = False,
     include_heuristics: bool = False,
     full_heuristics: bool = False,
+    max_samples: int | None = None,
 ) -> int:
     """
     Export training samples using parallel encoding.
@@ -270,6 +271,11 @@ def export_parallel(
     if not samples:
         logger.warning("No samples generated!")
         return
+
+    # Cap samples to prevent OOM on coordinator
+    if max_samples is not None and len(samples) > max_samples:
+        logger.info(f"Capping samples from {len(samples)} to {max_samples}")
+        samples = samples[:max_samples]
 
     # Convert to arrays
     arrays = samples_to_arrays(samples)
