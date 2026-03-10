@@ -573,7 +573,7 @@ def _count_descendant_processes() -> int | None:
 
 
 # Hard limits on descendant process count
-_COORDINATOR_MAX_DESCENDANTS = 60
+_COORDINATOR_MAX_DESCENDANTS = 120  # Coordinator manages 15+ nodes via SSH
 _WORKER_MAX_DESCENDANTS = 200
 
 
@@ -628,8 +628,24 @@ class ProcessWatchdog:
             except Exception as e:
                 logger.warning(f"[ProcessWatchdog] Error in check cycle: {e}")
 
+    # Never kill these processes — they're system-critical infrastructure
+    PROTECTED_NAMES = frozenset({
+        "tailscale", "tailscaled",  # VPN connectivity
+        "ssh", "sshd",  # Remote operations
+        "rsync",  # File sync
+        "aws", "s3",  # S3 operations
+        "pgrep", "pkill", "ps",  # Process utilities
+        "git",  # Version control
+        "launchd", "launchctl",  # macOS service management
+        "mdworker", "mds",  # Spotlight (shouldn't be child but be safe)
+    })
+
     def _check_and_kill(self, psutil_mod: Any) -> None:
-        """Check descendant count and kill excess processes."""
+        """Check descendant count and kill excess processes.
+
+        Only kills Python worker processes. System processes (ssh, tailscale,
+        rsync, etc.) are protected and never killed.
+        """
         try:
             proc = psutil_mod.Process()
             children = proc.children(recursive=True)
@@ -640,19 +656,24 @@ class ProcessWatchdog:
 
             excess = count - self.max_processes
             # Sort by creation time descending (newest first) to kill newest
-            children_with_time = []
+            # Only consider killable (non-protected) processes
+            killable = []
+            protected_count = 0
             for child in children:
                 try:
-                    children_with_time.append((child.create_time(), child))
+                    child_name = child.name()
+                    if child_name in self.PROTECTED_NAMES:
+                        protected_count += 1
+                        continue
+                    killable.append((child.create_time(), child, child_name))
                 except (psutil_mod.NoSuchProcess, psutil_mod.AccessDenied):
                     continue
 
-            children_with_time.sort(reverse=True)
+            killable.sort(reverse=True)  # newest first
 
             killed = 0
-            for _ctime, child in children_with_time[:excess]:
+            for _ctime, child, child_name in killable[:excess]:
                 try:
-                    child_name = child.name()
                     child_pid = child.pid
                     child.terminate()  # SIGTERM
                     killed += 1
@@ -667,7 +688,14 @@ class ProcessWatchdog:
             if killed:
                 logger.critical(
                     f"[ProcessWatchdog] Killed {killed}/{excess} excess processes "
-                    f"(total descendants: {count} > limit {self.max_processes})"
+                    f"(total descendants: {count} > limit {self.max_processes}, "
+                    f"protected={protected_count})"
+                )
+            elif excess > 0 and not killable:
+                logger.warning(
+                    f"[ProcessWatchdog] {count} descendants > limit {self.max_processes}, "
+                    f"but all {protected_count} excess are protected processes — "
+                    f"not killing"
                 )
 
         except psutil_mod.NoSuchProcess:
