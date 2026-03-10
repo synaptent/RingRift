@@ -420,8 +420,13 @@ class EloSyncManager(DatabaseSyncManager):
             remote_db_path.unlink(missing_ok=True)
 
             # Recalculate ratings if we inserted new matches
+            # NOTE: This runs AFTER commit, so savepoint is gone — errors here
+            # should not attempt rollback to merge_start
             if inserted > 0:
-                self._recalculate_ratings_from_history_sync(local_conn)
+                try:
+                    self._recalculate_ratings_from_history_sync(local_conn)
+                except Exception as e:
+                    logger.warning(f"[EloSync] Rating recalculation failed (matches already merged): {e}")
 
             local_conn.close()
             return inserted
@@ -761,7 +766,7 @@ class EloSyncManager(DatabaseSyncManager):
         now = time.time()
         for (board_type, num_players, participant_id), data in ratings.items():
             cur.execute("""
-                INSERT INTO elo_ratings
+                INSERT OR REPLACE INTO elo_ratings
                 (participant_id, board_type, num_players, rating, games_played,
                  wins, losses, draws, rating_deviation, last_update)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
