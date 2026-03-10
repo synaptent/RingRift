@@ -30,6 +30,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+class _NullLock:
+    """No-op context manager used when no lock is available."""
+    def __enter__(self): return self
+    def __exit__(self, *args): pass
+
+
 class JobOrchestrator(BaseOrchestrator):
     """Orchestrator for job spawning and process management.
 
@@ -165,13 +171,48 @@ class JobOrchestrator(BaseOrchestrator):
     # Spawn Gating
     # =========================================================================
 
+    # Mar 2026: Max active selfplay/training processes to prevent event loop starvation.
+    # GH200 (96GB, 72 CPU) was spawning unlimited processes, reaching 599+ asyncio tasks
+    # and 36GB RAM after ~10h, causing HTTP server unresponsiveness.
+    # Env override: RINGRIFT_MAX_ACTIVE_PROCESSES (default: 8 for GPU nodes, 2 for CPU)
+    MAX_ACTIVE_PROCESSES_GPU = 8
+    MAX_ACTIVE_PROCESSES_CPU = 2
+
+    def _get_max_active_processes(self) -> int:
+        """Get the max active process limit, respecting env override."""
+        env_val = os.environ.get("RINGRIFT_MAX_ACTIVE_PROCESSES", "").strip()
+        if env_val:
+            try:
+                return max(1, int(env_val))
+            except ValueError:
+                pass
+        has_gpu = getattr(self._p2p, "has_gpu", False)
+        return self.MAX_ACTIVE_PROCESSES_GPU if has_gpu else self.MAX_ACTIVE_PROCESSES_CPU
+
+    def _count_active_processes(self) -> int:
+        """Count currently running job processes."""
+        job_manager = getattr(self._p2p, "job_manager", None)
+        if job_manager is not None and hasattr(job_manager, "_active_processes"):
+            with getattr(job_manager, "_processes_lock", _NullLock()):
+                return sum(
+                    1 for p in job_manager._active_processes.values()
+                    if p is not None and p.returncode is None
+                )
+        # Fallback: count from local_jobs
+        local_jobs = getattr(self._p2p, "local_jobs", {})
+        return sum(
+            1 for j in local_jobs.values()
+            if (get_job_attr(j, "status") == "running")
+        )
+
     def can_spawn_process(self, reason: str = "job") -> tuple[bool, str]:
         """Combined safeguard check before spawning any process.
 
         Jan 29, 2026: Implementation moved from P2POrchestrator._can_spawn_process().
+        Mar 2026: Added max active process limit to prevent unbounded accumulation.
 
-        SAFEGUARD: Checks load average, rate limit, agent mode, backpressure,
-        and graceful degradation.
+        SAFEGUARD: Checks active process count, load average, rate limit,
+        agent mode, backpressure, and graceful degradation.
 
         Args:
             reason: Description of why we want to spawn (for logging)
@@ -179,6 +220,14 @@ class JobOrchestrator(BaseOrchestrator):
         Returns:
             (can_spawn, explanation) - True if all checks pass
         """
+        # Check 0 (Mar 2026): Active process count cap
+        max_procs = self._get_max_active_processes()
+        active_count = self._count_active_processes()
+        if active_count >= max_procs:
+            msg = f"Max active processes reached: {active_count}/{max_procs}"
+            self._log_info(f"BLOCKED spawn ({reason}): {msg}")
+            return False, msg
+
         # Check 1: Load average
         self_info = getattr(self._p2p, "self_info", None)
         if self_info is not None and hasattr(self_info, "check_load_average_safe"):
