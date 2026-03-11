@@ -2101,7 +2101,7 @@ class JobManager(EventSubscriptionMixin):
         num_games: int,
         engine_mode: str,
         engine_extra_args: dict[str, Any] | None = None,
-        model_version: str = "v5",
+        model_version: str = "v2",
         cuda_device: int | None = None,
     ) -> None:
         """Run selfplay job with appropriate script based on engine mode.

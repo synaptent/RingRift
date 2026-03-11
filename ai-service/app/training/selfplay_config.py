@@ -286,7 +286,8 @@ class SelfplayConfig:
     nn_model_id: str | None = None
     # Architecture version for model selection (v2, v4, v5, v5-heavy, etc.)
     # Jan 5, 2026: Added for architecture selection feedback loop
-    model_version: str = "v5"
+    # March 11, 2026: Changed default v5→v2. All canonical models are v2.
+    model_version: str = "v2"
 
     # Shadow validation (for quality checking)
     shadow_validation: bool = False

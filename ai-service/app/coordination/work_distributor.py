@@ -247,13 +247,13 @@ class WorkDistributor:
         self,
         board: str,
         num_players: int,
-        epochs: int = 100,
-        batch_size: int = 256,
+        epochs: int = 20,
+        batch_size: int = 512,
         learning_rate: float = 3e-4,
         checkpoint_path: str | None = None,
         db_paths: list[str] | None = None,
         config: DistributedWorkConfig | None = None,
-        model_version: str = "v5",
+        model_version: str = "v2",
     ) -> str | None:
         """Submit a training job to the cluster work queue.
 
@@ -286,9 +286,11 @@ class WorkDistributor:
         if num_players in (3, 4):
             priority = min(100, priority + 10)
 
+        config_key = f"{board}_{num_players}p"
         work_config = {
             "board_type": board,
             "num_players": num_players,
+            "config_key": config_key,
             "epochs": epochs,
             "batch_size": batch_size,
             "learning_rate": learning_rate,

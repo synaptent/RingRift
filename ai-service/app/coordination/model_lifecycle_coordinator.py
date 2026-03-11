@@ -806,7 +806,7 @@ class ModelLifecycleCoordinator:
         config_key = payload.get("config_key", "")
         board_type = payload.get("board_type", "")
         num_players = payload.get("num_players", 0)
-        model_version = payload.get("model_version", "v5")
+        model_version = payload.get("model_version", "v2")
         expected_path = payload.get("expected_path", "")
         node_id = payload.get("node_id", "")
 

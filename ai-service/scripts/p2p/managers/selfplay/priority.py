@@ -160,7 +160,9 @@ class ArchitectureSelectionMixin:
         Returns:
             Architecture version string (e.g., "v5", "v2", "v5-heavy")
         """
-        default_arch = "v5"
+        # March 11, 2026: All canonical models are v2. v5 default caused
+        # architecture mismatch → training from random initialization.
+        default_arch = "v2"
 
         # Use cached weights (refreshed via events or TTL fallback)
         weights = self._get_cached_architecture_weights(board_type, num_players)
