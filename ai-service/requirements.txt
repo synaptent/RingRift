@@ -45,10 +45,10 @@ scikit-learn==1.6.1
 
 # Deep Learning for Self-Improving AI
 # PyTorch - Neural networks for position evaluation and policy learning
-# Note: torchvision 0.21.0 requires torch==2.9.1; this pair is validated for
+# Note: torchvision 0.21.0 requires torch==2.10.0; this pair is validated for
 # Python 3.10/3.11 and numpy 2.2.x via Wave 3-D (dl-torch) guardrails.
-torch==2.9.1
-torchvision==0.24.1
+torch==2.10.0
+torchvision==0.25.0
 
 # TensorBoard - Training monitoring and visualization
 tensorboard==2.20.0
