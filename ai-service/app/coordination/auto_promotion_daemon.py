@@ -473,7 +473,7 @@ class AutoPromotionDaemon(HandlerBase):
                         await self._archive_candidate_elo(stem)
                         logger.info(
                             f"[AutoPromotion] Candidate updated from S3: {filename} "
-                            f"(hash {old_hash[:12]}→{new_hash[:12]}, old Elo archived)"
+                            f"(hash {old_hash[:12]}→{new_hash[:12]}, old Elo reset)"
                         )
                     else:
                         size_mb = local_path.stat().st_size / 1e6
@@ -491,10 +491,12 @@ class AutoPromotionDaemon(HandlerBase):
             return 0
 
     async def _archive_candidate_elo(self, candidate_stem: str) -> None:
-        """Archive Elo entries for a candidate whose model file has changed.
+        """Reset Elo for a candidate whose model file has changed.
 
-        Sets archived_at on all elo_ratings rows matching this candidate prefix,
-        so the new candidate version starts with a clean Elo slate.
+        Deletes all elo_ratings rows matching this candidate prefix so the new
+        candidate version starts fresh at default Elo (1500). We DELETE rather
+        than SET archived_at because the elo_sync daemon does full DB rsync,
+        which would overwrite archived_at changes.
         """
         import sqlite3
 
@@ -503,32 +505,34 @@ class AutoPromotionDaemon(HandlerBase):
             return
 
         try:
-            def _do_archive():
+            def _do_reset():
                 conn = sqlite3.connect(str(db_path), timeout=5)
                 try:
+                    # Delete old entries so new games start fresh
                     cursor = conn.execute(
-                        """UPDATE elo_ratings
-                           SET archived_at = ?, archive_reason = ?
-                           WHERE participant_id LIKE ? AND archived_at IS NULL""",
-                        (
-                            time.time(),
-                            f"candidate_model_replaced",
-                            f"{candidate_stem}%",
-                        ),
+                        "DELETE FROM elo_ratings WHERE participant_id LIKE ?",
+                        (f"{candidate_stem}%",),
+                    )
+                    deleted = cursor.rowcount
+                    # Also clean up match_history to prevent stale data
+                    conn.execute(
+                        """DELETE FROM match_history
+                           WHERE participant_a LIKE ? OR participant_b LIKE ?""",
+                        (f"{candidate_stem}%", f"{candidate_stem}%"),
                     )
                     conn.commit()
-                    return cursor.rowcount
+                    return deleted
                 finally:
                     conn.close()
 
-            archived = await asyncio.to_thread(_do_archive)
-            if archived > 0:
+            deleted = await asyncio.to_thread(_do_reset)
+            if deleted > 0:
                 logger.info(
-                    f"[AutoPromotion] Archived {archived} stale Elo entries for "
-                    f"{candidate_stem} (model content changed)"
+                    f"[AutoPromotion] Reset Elo for {candidate_stem}: "
+                    f"deleted {deleted} stale entries (model content changed)"
                 )
         except Exception as e:
-            logger.debug(f"[AutoPromotion] Elo archive failed for {candidate_stem}: {e}")
+            logger.debug(f"[AutoPromotion] Elo reset failed for {candidate_stem}: {e}")
 
     async def _queue_candidate_evaluation(self, candidate_path: Path) -> None:
         """Queue a newly fetched candidate for gauntlet evaluation.
