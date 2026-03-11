@@ -20,9 +20,21 @@ import json
 import sys
 import os
 
-# Default API key (can be overridden by env var)
-DEFAULT_API_KEY = "secret_ringrift-lambda-cli_1997888713174c6b8ecdaf0dba4f3d9c.rHxT4chFYvWmjPn0PBEXOcPFkciuwQnu"
-API_KEY = os.environ.get("LAMBDA_API_KEY", DEFAULT_API_KEY)
+from pathlib import Path
+
+
+def _load_api_key() -> str:
+    """Load Lambda API key from env var or ~/.lambda_api_key."""
+    if key := os.environ.get("LAMBDA_API_KEY"):
+        return key
+    key_file = Path.home() / ".lambda_api_key"
+    if key_file.exists():
+        return key_file.read_text().strip()
+    print("Error: LAMBDA_API_KEY not set and ~/.lambda_api_key not found", file=sys.stderr)
+    sys.exit(1)
+
+
+API_KEY = _load_api_key()
 BASE_URL = "https://cloud.lambda.ai/api/v1"
 
 
