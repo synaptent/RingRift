@@ -105,7 +105,9 @@ class TrainingTriggerConfig:
     # January 5, 2026 (Session 17.24): Reduced from 30s to 15s for +2-3 Elo
     scan_interval_seconds: int = 15  # 15 seconds
     # Training epochs
-    default_epochs: int = 50
+    # Mar 11, 2026: Reduced from 50 to 20 — 50 epochs on stale data
+    # causes catastrophic forgetting. Matches training_executor default.
+    default_epochs: int = 20
     default_batch_size: int = 512
     # Model version
     model_version: str = "v2"

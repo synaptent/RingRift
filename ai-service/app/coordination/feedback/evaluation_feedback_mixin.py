@@ -309,7 +309,8 @@ class EvaluationFeedbackMixin:
 
             distributor = get_work_distributor()
             # Priority 85: Higher than selfplay (50) but lower than critical training (100)
-            config = DistributedWorkConfig(priority=85, require_gpu=True)
+            # Mar 11, 2026: require_gpu=False so coordinator can run gauntlets on MPS
+            config = DistributedWorkConfig(priority=85, require_gpu=False)
 
             work_id = await distributor.submit_evaluation(
                 candidate_model=model_path,

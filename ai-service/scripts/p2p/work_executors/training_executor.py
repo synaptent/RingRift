@@ -849,7 +849,7 @@ async def execute_training_work(
 
             return True
         else:
-            truncated = output[:2000] if output else "no output"
+            truncated = output[-8000:] if output else "no output"
             logger.error(
                 f"Training failed: {config_key}/{model_version}: "
                 f"returncode={proc.returncode}, output={truncated}"

@@ -2394,7 +2394,9 @@ class EvaluationDaemon(HandlerBase):
             distributor = get_work_distributor()
             # January 27, 2026: Use priority=85 for gauntlets so they're claimed
             # before most selfplay (50) but after critical training (100)
-            config = DistributedWorkConfig(priority=85, require_gpu=True)
+            # Mar 11, 2026: require_gpu=False so coordinator (MPS) can run gauntlets.
+            # Governor limits concurrent evaluations to 1.
+            config = DistributedWorkConfig(priority=85, require_gpu=False)
             work_id = await distributor.submit_evaluation(
                 candidate_model=model_path,
                 baseline_model=None,
@@ -2457,7 +2459,8 @@ class EvaluationDaemon(HandlerBase):
             )
 
             distributor = get_work_distributor()
-            config = DistributedWorkConfig(priority=85, require_gpu=True)
+            # Mar 11, 2026: require_gpu=False so coordinator can run gauntlets on MPS
+            config = DistributedWorkConfig(priority=85, require_gpu=False)
             work_id = await distributor.submit_evaluation(
                 candidate_model=model_path,
                 baseline_model=None,

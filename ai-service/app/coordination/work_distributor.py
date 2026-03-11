@@ -396,7 +396,7 @@ class WorkDistributor:
             # Was 100 since Feb 24, causing 519 gauntlet items to crowd out training
             # claims — both at priority 100, gauntlets outnumbered training items and
             # were always picked first by the claim iterator.
-            config = DistributedWorkConfig(priority=85, require_gpu=True)
+            config = DistributedWorkConfig(priority=85, require_gpu=False)
 
         work_type = (
             _WorkType.GAUNTLET if evaluation_type == "gauntlet"
@@ -409,8 +409,9 @@ class WorkDistributor:
             "games": games,
             "board_type": board,
             "num_players": num_players,
-            # Jan 28, 2026: Gauntlet/evaluation requires GPU - prevents coordinator from claiming
-            "requires_gpu": config.require_gpu if config.require_gpu else True,
+            # Mar 11, 2026: Allow coordinator (MPS) to claim gauntlets. Governor limits concurrency.
+            # Was require_gpu=True since Jan 28, blocking ALL gauntlet processing on coordinator.
+            "requires_gpu": config.require_gpu,
         }
 
         # Feb 1, 2026: Use graduated timeouts for evaluation based on board size.

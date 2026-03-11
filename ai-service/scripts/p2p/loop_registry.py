@@ -1778,10 +1778,12 @@ def _register_comprehensive_evaluation(
             get_orchestrator=lambda: orchestrator,
             config=ComprehensiveEvaluationConfig(
                 interval=6 * 3600,
-                # Mar 5, 2026: Reduced from 50 to 20. At 50, the queue populates
-                # 50 items per cycle and hits the 70-slot gauntlet cap immediately
-                # after P2P restart, blocking candidate evaluations. 20 leaves 50
-                # slots for candidates and other evaluators.
+                # Mar 11, 2026: DISABLED. This loop submits gauntlets for ALL models
+                # (canonical, backups, symlinks) - not candidates. It fills gauntlet
+                # queue slots (20/70 per cycle) that should be used for candidate
+                # evaluation from the training pipeline. Candidate evaluation is
+                # handled by evaluation_daemon and S3 candidate poll.
+                enabled=False,
                 max_evaluations_per_cycle=20,
                 stale_threshold_days=7,
                 games_per_harness=50,
