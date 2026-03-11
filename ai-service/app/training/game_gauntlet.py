@@ -237,10 +237,12 @@ GumbelMCTSAI: Any = None  # Jan 2026: Added for search-enabled gauntlet evaluati
 create_initial_state: Any = None
 DefaultRulesEngine: Any = None
 
-# Jan 2026: Light search budget for gauntlet evaluation
+# Jan 2026: Search budget for gauntlet evaluation
 # This aligns evaluation with training (both use MCTS) while keeping evaluation fast
-# Training uses 800 sims, gauntlet uses 32 for speed but still gets search benefit
-GAUNTLET_SEARCH_BUDGET = 32
+# March 11, 2026: Increased from 32 to 200. At 32 sims (25x less than training's
+# 800), evaluation was too shallow to accurately assess model quality — weak models
+# appeared decent, enabling noise promotions that regressed 8/12 configs.
+GAUNTLET_SEARCH_BUDGET = 200
 
 
 def _ensure_game_modules():

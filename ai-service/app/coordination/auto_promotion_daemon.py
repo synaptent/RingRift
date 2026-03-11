@@ -239,8 +239,8 @@ class AutoPromotionDaemon(HandlerBase):
         """
         from pathlib import Path
 
-        MIN_ELO_GAP = 50.0  # Minimum Elo improvement to auto-promote
-        MIN_GAMES = 20  # Minimum games for statistical confidence
+        MIN_ELO_GAP = 30.0  # Minimum Elo improvement to auto-promote (was 50, lowered with more games)
+        MIN_GAMES = 50  # Minimum games for statistical confidence (was 20, CI was ±35 Elo)
 
         try:
             models_dir = Path("models")

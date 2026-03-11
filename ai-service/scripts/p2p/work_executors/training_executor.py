@@ -456,8 +456,11 @@ async def execute_training_work(
 
     board_type = config.get("board_type", "square8")
     num_players = config.get("num_players", 2)
-    epochs = config.get("epochs", 50)
-    batch_size = config.get("batch_size", 256)
+    # March 11, 2026: Reduced defaults — 50 epochs on batch 256 caused
+    # catastrophic forgetting on stale data. 20 epochs on batch 512 gives
+    # better gradient estimates and less overfitting to noise.
+    epochs = config.get("epochs", 20)
+    batch_size = config.get("batch_size", 512)
     learning_rate = config.get("learning_rate", 3e-4)
     # Feb 24, 2026: Use preferred architecture per board type as fallback
     try:
@@ -493,7 +496,7 @@ async def execute_training_work(
         "--learning-rate", str(learning_rate),
         "--save-path", f"models/{model_filename}",
         "--allow-stale-data",
-        "--max-data-age-hours", "168",  # 7 days tolerance
+        "--max-data-age-hours", "48",  # 2 days tolerance (was 168, caused regression)
     ]
 
     # Validate training data exists before launching subprocess.

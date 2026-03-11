@@ -288,10 +288,10 @@ class DataFreshnessDefaults:
     # Maximum acceptable age of training data (hours)
     # Data older than this is considered stale and may trigger sync
     # December 29, 2025: Relaxed from 4.0 to 48.0 for autonomous operation
-    # March 2, 2026: Increased from 48.0 to 168.0 for 7-day autonomous operation
-    # This reduces training gate blocks by allowing older data when fresh data
-    # isn't available, prioritizing training throughput
-    MAX_DATA_AGE_HOURS: float = _env_float("RINGRIFT_MAX_DATA_AGE_HOURS", 168.0)
+    # March 11, 2026: Reduced from 168.0 back to 48.0. 7-day tolerance caused
+    # catastrophic forgetting — models trained on week-old data from prior
+    # generations regressed 8/12 configs (square8_3p: -185, hex8_3p: -108).
+    MAX_DATA_AGE_HOURS: float = _env_float("RINGRIFT_MAX_DATA_AGE_HOURS", 48.0)
 
     # Warning threshold (hours) - emit DATA_STALE warning above this
     # December 29, 2025: Tightened from 8.0 to 1.0 for earlier warnings
