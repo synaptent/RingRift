@@ -656,17 +656,17 @@ class SyncHandlersMixin(BaseP2PHandler):
 
             data_dir = self.get_data_directory()
             data_dir.mkdir(parents=True, exist_ok=True)
-            data_root = data_dir.resolve()
             full_path = (data_dir / rel_path)
-            try:
-                resolved = full_path.resolve()
-                resolved.relative_to(data_root)
-            except (AttributeError):
+
+            # Security: block directory traversal (but allow symlinks
+            # within data/ that point to external drives like OWC)
+            if ".." in rel_path.split("/"):
                 return self.error_response("Invalid path", status=400)
 
-            if not resolved.exists() or not resolved.is_file():
+            if not full_path.exists() or not full_path.is_file():
                 return self.json_response({"error": "Not found"}, status=404)
 
+            resolved = full_path.resolve()
             stat = resolved.stat()
             resp = web.StreamResponse(
                 status=200,
