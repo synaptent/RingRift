@@ -1930,9 +1930,22 @@ class EvaluationDaemon(HandlerBase):
                 )
 
             # January 5, 2026: Enable parallel harness evaluation for 3x speedup
+            # Mar 11, 2026: On coordinator (MPS), skip NN-based baselines too.
+            # mcts_medium/strong, gumbel_b64, policy_only_nn all create
+            # GumbelMCTSAI opponents that do 128-512 MCTS sims per move on MPS,
+            # making each 4p game take 3+ minutes. Use fast baselines only.
+            coordinator_baselines = self.config.baselines
+            if env.is_coordinator:
+                fast_baselines = ["random", "heuristic", "heuristic_strong"]
+                coordinator_baselines = [b for b in self.config.baselines if b in fast_baselines]
+                logger.info(
+                    f"[EvaluationDaemon] Coordinator baselines: {coordinator_baselines} "
+                    f"(skipped NN-based: {[b for b in self.config.baselines if b not in fast_baselines]})"
+                )
+
             gauntlet = MultiHarnessGauntlet(
                 default_games_per_baseline=games_per_baseline,
-                default_baselines=self.config.baselines,
+                default_baselines=coordinator_baselines,
                 parallel_evaluations=self.config.multi_harness_parallel,
             )
 
