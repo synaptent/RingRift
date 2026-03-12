@@ -5495,6 +5495,30 @@ class P2POrchestrator(
 
         return killed
 
+    async def _safe_startup_s3_push(
+        self,
+        push_fn: "Callable",
+        models_dir: "Path | None",
+    ) -> None:
+        """Run stranded candidate S3 push in background without blocking startup.
+
+        Mar 2026: Wraps push_stranded_candidates_to_s3() with error isolation
+        and a short delay to let the HTTP server come up first.
+        """
+        try:
+            # Small delay so we don't compete with other startup I/O
+            await asyncio.sleep(10)
+            results = await push_fn(models_dir)
+            if results:
+                pushed = sum(1 for v in results.values() if v)
+                if pushed:
+                    logger.info(
+                        f"[StartupS3Push] Pushed {pushed} stranded candidate(s) to S3"
+                    )
+        except Exception as e:
+            # Never crash startup over this
+            logger.warning(f"[StartupS3Push] Background push failed: {e}")
+
     def _cleanup_stale_processes(self) -> int:
         """Kill processes that have been running too long.
 
@@ -12986,6 +13010,23 @@ print(json.dumps({{
             await asyncio.to_thread(self._cleanup_orphan_gpu_processes)
         except Exception as e:
             logger.warning(f"[P2P] Orphan GPU detection failed: {e}")
+
+        # Mar 2026: Push any stranded candidate models to S3.
+        # If P2P restarted between training completion and S3 push, candidate
+        # models are stranded locally. Fire-and-forget so it doesn't block startup.
+        try:
+            from scripts.p2p.work_executors.training_executor import (
+                push_stranded_candidates_to_s3,
+            )
+            models_dir = Path(self.ringrift_path) / "models" if self.ringrift_path else None
+            asyncio.create_task(
+                self._safe_startup_s3_push(push_stranded_candidates_to_s3, models_dir),
+                name="startup_s3_push",
+            )
+        except ImportError as e:
+            logger.debug(f"[P2P] Startup S3 push not available: {e}")
+        except Exception as e:
+            logger.warning(f"[P2P] Failed to schedule startup S3 push: {e}")
 
         # Start background tasks with exception isolation and restart support
         # CRITICAL FIX (Dec 2025): Each task is wrapped to prevent cascade failures.

@@ -184,7 +184,7 @@ class QualityMonitorDaemon(HandlerBase):
         model_path = self._extract_model_path(payload)
 
         if config_key and config_key != "unknown":
-            self._stats["evaluations_tracked"] = self._stats.get("evaluations_tracked", 0) + 1
+            self._stats.custom_stats["evaluations_tracked"] = self._stats.custom_stats.get("evaluations_tracked", 0) + 1
             logger.debug(
                 f"[QualityMonitorDaemon] Tracking evaluation for {config_key}: {model_path}"
             )

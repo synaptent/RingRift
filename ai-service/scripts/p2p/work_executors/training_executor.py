@@ -57,6 +57,163 @@ async def _try_push_candidate_to_s3(
         return False
 
 
+async def push_stranded_candidates_to_s3(
+    models_dir: str | Path | None = None,
+) -> dict[str, bool]:
+    """Scan for local candidate models that were never pushed to S3 and push them.
+
+    Mar 2026: Closes the gap where P2P restart between training completion and
+    S3 push causes candidate models to be stranded on the worker node. This
+    function runs at P2P startup and pushes any candidates that are newer or
+    different from the S3 version.
+
+    Args:
+        models_dir: Path to the models directory. Defaults to auto-detection.
+
+    Returns:
+        Dict mapping filename -> push success (True/False). Empty if no
+        candidates found or on error.
+    """
+    import time
+
+    # Resolve models directory
+    if models_dir is None:
+        # Try common locations
+        candidates_dirs = [
+            Path.cwd() / "models",
+            Path(__file__).resolve().parents[3] / "models",
+            Path.home() / "ringrift" / "ai-service" / "models",
+            Path.home() / "Development" / "RingRift" / "ai-service" / "models",
+        ]
+        for d in candidates_dirs:
+            if d.exists():
+                models_dir = d
+                break
+        if models_dir is None:
+            logger.debug("[StartupS3Push] No models directory found, skipping")
+            return {}
+    else:
+        models_dir = Path(models_dir)
+
+    if not models_dir.exists():
+        logger.debug(f"[StartupS3Push] Models dir does not exist: {models_dir}")
+        return {}
+
+    # Find all candidate model files
+    local_candidates = sorted(models_dir.glob("candidate_*.pth"))
+    if not local_candidates:
+        logger.info("[StartupS3Push] No local candidate models found, nothing to push")
+        return {}
+
+    # Filter out temp/partial files (e.g., candidate_hex8_3p.pth.9f290FDf)
+    local_candidates = [p for p in local_candidates if p.suffix == ".pth"]
+
+    logger.info(
+        f"[StartupS3Push] Found {len(local_candidates)} local candidate model(s), "
+        f"checking against S3..."
+    )
+
+    bucket = os.environ.get("RINGRIFT_S3_BUCKET", "ringrift-models-20251214")
+    s3_prefix = f"s3://{bucket}/consolidated/models/"
+    region = os.environ.get("AWS_REGION", "us-east-1")
+
+    # Fetch S3 listing for all candidates in one call
+    s3_listing: dict[str, tuple[int, str]] = {}  # filename -> (size, last_modified)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "aws", "s3", "ls", s3_prefix,
+            "--region", region,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60)
+        if proc.returncode == 0 and stdout:
+            # Parse `aws s3 ls` output lines like:
+            # 2026-03-10 14:22:31   41943040 candidate_hex8_2p.pth
+            for line in stdout.decode().strip().splitlines():
+                parts = line.split()
+                if len(parts) >= 4:
+                    s3_date = parts[0]  # e.g. "2026-03-10"
+                    s3_time = parts[1]  # e.g. "14:22:31"
+                    s3_size = int(parts[2])
+                    s3_filename = parts[3]
+                    if s3_filename.startswith("candidate_"):
+                        s3_listing[s3_filename] = (s3_size, f"{s3_date} {s3_time}")
+        elif proc.returncode != 0:
+            err = stderr.decode()[:200] if stderr else ""
+            logger.warning(f"[StartupS3Push] aws s3 ls failed: rc={proc.returncode} {err}")
+            # Don't blindly push if we can't check S3 — could be a credentials issue
+            return {}
+    except asyncio.TimeoutError:
+        logger.warning("[StartupS3Push] aws s3 ls timed out, skipping startup push")
+        return {}
+    except Exception as e:
+        logger.warning(f"[StartupS3Push] aws s3 ls error: {e}")
+        return {}
+
+    results: dict[str, bool] = {}
+    pushed_count = 0
+    skipped_count = 0
+
+    for local_path in local_candidates:
+        filename = local_path.name
+        local_size = local_path.stat().st_size
+        local_mtime = local_path.stat().st_mtime
+
+        # Skip very small files (likely corrupt/incomplete)
+        if local_size < 10_000:
+            logger.debug(f"[StartupS3Push] Skipping {filename}: too small ({local_size} bytes)")
+            skipped_count += 1
+            continue
+
+        # Check if S3 has this file
+        if filename in s3_listing:
+            s3_size, s3_timestamp = s3_listing[filename]
+            # If sizes match, the file is likely already pushed
+            if s3_size == local_size:
+                logger.debug(
+                    f"[StartupS3Push] Skipping {filename}: S3 already has matching file "
+                    f"(size={local_size}, s3_modified={s3_timestamp})"
+                )
+                skipped_count += 1
+                continue
+            # Different size — local is likely newer (retrained)
+            logger.info(
+                f"[StartupS3Push] {filename}: local size ({local_size}) differs from "
+                f"S3 ({s3_size}), pushing updated version"
+            )
+        else:
+            # Not on S3 at all — definitely needs pushing
+            local_age_hours = (time.time() - local_mtime) / 3600
+            logger.info(
+                f"[StartupS3Push] {filename}: not found on S3, pushing "
+                f"(local age: {local_age_hours:.1f}h, size: {local_size / 1e6:.1f}MB)"
+            )
+
+        # Extract config_key from filename: candidate_hex8_2p.pth -> hex8_2p
+        # Also handles: candidate_hex8_2p_v5-heavy.pth -> hex8_2p
+        stem = local_path.stem  # e.g. "candidate_hex8_2p" or "candidate_hex8_2p_v5-heavy"
+        config_key = stem.replace("candidate_", "", 1)
+        # Remove trailing architecture version if present
+        for ver in ("_v2", "_v3", "_v4", "_v5-heavy-large", "_v5-heavy-xl", "_v5-heavy"):
+            if config_key.endswith(ver):
+                config_key = config_key[: -len(ver)]
+                break
+
+        success = await _try_push_candidate_to_s3(
+            str(local_path), filename, config_key
+        )
+        results[filename] = success
+        if success:
+            pushed_count += 1
+
+    logger.info(
+        f"[StartupS3Push] Complete: pushed={pushed_count}, "
+        f"skipped={skipped_count}, failed={len(results) - pushed_count}"
+    )
+    return results
+
+
 async def _try_fetch_npz_from_cluster(
     ai_service_root: Path, config_key: str, npz_path: Path,
 ) -> Path | None:

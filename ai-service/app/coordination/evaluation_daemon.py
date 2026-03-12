@@ -3026,10 +3026,11 @@ class EvaluationDaemon(HandlerBase):
             # (ringrift_best_* are symlinks to canonical_* models)
             seen_actual_paths: set[str] = set()
 
-            # Scan canonical, promoted best, AND candidate models
-            # Feb 2026: candidate_*.pth are produced by training executor and need
-            # evaluation before they can be promoted to canonical
-            for pattern in ["candidate_*.pth", "canonical_*.pth", "ringrift_best_*.pth"]:
+            # Mar 2026: Only scan candidate models on startup. Canonical/ringrift_best
+            # models already have Elo ratings from their promotion gauntlet. Scanning
+            # all 116+ models × 4 harness types = 415+ queue items that block candidate
+            # evaluations for days on MPS hardware.
+            for pattern in ["candidate_*.pth"]:
                 for model_path in models_dir.glob(pattern):
                     # Resolve symlinks to get actual model path
                     actual_path = model_path.resolve() if model_path.is_symlink() else model_path

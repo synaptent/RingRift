@@ -763,8 +763,15 @@ class EloSyncManager(DatabaseSyncManager):
         cur.execute("DELETE FROM elo_ratings")
 
         # Insert recalculated ratings
+        # Mar 2026: Skip candidate entries — their Elo is per-gauntlet,
+        # not accumulated. Old candidate matches from previous model versions
+        # produce misleading ratings that block promotion of new candidates.
         now = time.time()
+        skipped_candidates = 0
         for (board_type, num_players, participant_id), data in ratings.items():
+            if participant_id.startswith("candidate_"):
+                skipped_candidates += 1
+                continue
             cur.execute("""
                 INSERT OR REPLACE INTO elo_ratings
                 (participant_id, board_type, num_players, rating, games_played,
@@ -780,7 +787,8 @@ class EloSyncManager(DatabaseSyncManager):
 
         conn.commit()
         logger.info(
-            f"Recalculated {len(ratings)} ratings from {len(matches)} matches"
+            f"Recalculated {len(ratings) - skipped_candidates} ratings from {len(matches)} matches"
+            + (f" ({skipped_candidates} candidate entries excluded)" if skipped_candidates else "")
             + (f" ({skipped_matches} skipped - missing participants)" if skipped_matches else "")
         )
 
