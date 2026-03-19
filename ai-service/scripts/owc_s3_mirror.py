@@ -165,6 +165,26 @@ class OWCMirrorConfig:
             exclude_patterns=["*-shm", "*-wal", "*-journal"],
             description="Local game databases (~324GB)",
         ),
+        # Mar 18, 2026: Gauntlet DBs contain high-quality evaluation games
+        # that are valuable for training. Previously missing from S3 mirror.
+        SyncDirectory(
+            local_path="ai-service-live/data/games",
+            s3_prefix="owc/ai-service-live/data/games",
+            tier=2,
+            include_patterns=["*.db"],
+            exclude_patterns=["*-shm", "*-wal", "*-journal", "*.bak", "*.bak-*"],
+            description="Live gauntlet/tournament game databases (~1.3TB)",
+        ),
+        # Mar 18, 2026: selfplay_local contains JSONL training data that
+        # was NOT backed up to S3 — 1.9TB at risk of loss during cleanup.
+        SyncDirectory(
+            local_path="selfplay_local",
+            s3_prefix="owc/selfplay_local",
+            tier=2,
+            include_patterns=["*.jsonl", "*.jsonl.gz"],
+            exclude_patterns=["*.partial", "*.tmp"],
+            description="Local selfplay JSONL training data (~1.9TB)",
+        ),
 
         # Tier 3: Archival (large, infrequently accessed)
         SyncDirectory(

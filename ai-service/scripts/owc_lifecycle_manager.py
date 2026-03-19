@@ -254,7 +254,20 @@ def find_cleanup_candidates() -> list[CleanupCandidate]:
     if local_dir.exists():
         cutoff = time.time() - (30 * 86400)
         for f in local_dir.iterdir():
-            if f.is_file() and f.suffix in (".jsonl", ".partial") and f.stat().st_mtime < cutoff:
+            if not f.is_file() or f.stat().st_mtime >= cutoff:
+                continue
+            if f.suffix == ".partial":
+                # .partial files are incomplete writes — safe to delete without backup
+                candidates.append(CleanupCandidate(
+                    path=f,
+                    size_bytes=f.stat().st_size,
+                    priority=4,  # Higher priority (safe to delete)
+                    category="incomplete_selfplay",
+                    description=f"Incomplete selfplay: {f.name} ({bytes_to_gb(f.stat().st_size):.1f}GB)",
+                    needs_s3_backup=False,
+                ))
+            elif f.suffix == ".jsonl":
+                # Complete JSONL files MUST be backed up to S3 before deletion
                 candidates.append(CleanupCandidate(
                     path=f,
                     size_bytes=f.stat().st_size,
@@ -353,7 +366,19 @@ def run_cleanup(
         action = "DRY RUN" if dry_run else "CLEANING"
         logger.info(f"[{action}] {candidate.description}")
 
-        if candidate.needs_s3_backup and not skip_s3_verify:
+        if candidate.needs_s3_backup:
+            if skip_s3_verify:
+                # Even with --skip-s3-verify, NEVER delete items that need
+                # S3 backup without actually verifying. This flag only skips
+                # the slow sync — it still won't delete unbackable data.
+                # Only items with needs_s3_backup=False are safe to delete
+                # without any verification (journal files, .bak files, etc.)
+                logger.info(
+                    f"  SKIPPING (needs S3 backup, --skip-s3-verify): "
+                    f"{candidate.path.name}"
+                )
+                result.items_skipped += 1
+                continue
             if candidate.s3_prefix:
                 logger.info(f"  Backing up to S3: {candidate.s3_prefix}")
                 if not dry_run:
@@ -443,7 +468,9 @@ def main():
     parser.add_argument("--daemon", action="store_true", help="Run as daemon")
     parser.add_argument(
         "--skip-s3-verify", action="store_true",
-        help="Skip S3 backup verification before deletion",
+        help="Skip slow S3 sync/verify. Items that need S3 backup will be "
+             "SKIPPED (not deleted). Only safe items (journals, .bak files, "
+             "incomplete writes) will be cleaned. Use for fast emergency cleanup.",
     )
     args = parser.parse_args()
 

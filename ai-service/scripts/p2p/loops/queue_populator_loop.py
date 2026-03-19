@@ -133,10 +133,15 @@ class QueuePopulatorLoop(BaseLoop):
                 )
                 try:
                     import subprocess
-                    # Run lifecycle manager to free space (non-blocking)
+                    # Run lifecycle manager to free space (non-blocking).
+                    # DO NOT use --skip-s3-verify — that bypasses S3 backup
+                    # and can cause data loss. The lifecycle manager will
+                    # back up to S3 before deleting, or skip items it can't
+                    # back up. Safe items (journal files, .bak files) don't
+                    # need S3 backup and will be cleaned regardless.
                     subprocess.Popen(
                         ["python3", "scripts/owc_lifecycle_manager.py",
-                         "--target-free-gb", "500", "--skip-s3-verify"],
+                         "--target-free-gb", "500"],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                     )
