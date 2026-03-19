@@ -109,18 +109,34 @@ async def execute_gauntlet_work(
         if env.is_coordinator:
             parallel_games = 4  # Conservative on coordinator
 
+        # Mar 18, 2026: Add strong MCTS baselines on GPU nodes to break the
+        # 1982 Elo ceiling. Previously only weak baselines (random/heuristic/
+        # heuristic_strong/descent_nn, max ~1400 Elo) were used, making it
+        # impossible to rate models above ~1500. With mcts_medium (~1700) and
+        # mcts_strong (~1900), models can be rated up to ~2000+.
+        if has_cuda:
+            opponents = [
+                BaselineOpponent.RANDOM,
+                BaselineOpponent.HEURISTIC,
+                BaselineOpponent.HEURISTIC_STRONG,
+                BaselineOpponent.MCTS_MEDIUM,       # ~1700 Elo, 128 sims
+                BaselineOpponent.MCTS_STRONG,        # ~1900 Elo, 512 sims
+            ]
+        else:
+            opponents = [
+                BaselineOpponent.RANDOM,
+                BaselineOpponent.HEURISTIC,
+                BaselineOpponent.HEURISTIC_STRONG,
+                BaselineOpponent.DESCENT_NN,
+            ]
+
         gauntlet_result = await asyncio.to_thread(
             run_baseline_gauntlet,
             model_path=model_path,
             board_type=board_type,
             num_players=num_players,
-            games_per_opponent=max(games // 4, 10),
-            opponents=[
-                BaselineOpponent.RANDOM,
-                BaselineOpponent.HEURISTIC,
-                BaselineOpponent.HEURISTIC_STRONG,
-                BaselineOpponent.DESCENT_NN,
-            ],
+            games_per_opponent=max(games // 5, 10),
+            opponents=opponents,
             verbose=False,
             early_stopping=True,
             parallel_opponents=False,

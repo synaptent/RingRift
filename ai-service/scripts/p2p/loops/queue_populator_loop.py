@@ -110,6 +110,45 @@ class QueuePopulatorLoop(BaseLoop):
         import asyncio
         await asyncio.sleep(INITIAL_DELAY)
         logger.info(f"[{self.name}] Starting with {INITIAL_DELAY}s initial delay")
+        self._disk_full_recovery_triggered = False
+
+    async def _on_error(self, error: Exception) -> None:
+        """Detect disk-full errors and trigger automatic OWC cleanup.
+
+        Mar 18, 2026: OWC filling to 100% caused queue_populator to enter a
+        crash loop with 742+ consecutive "disk I/O error" errors, stalling the
+        pipeline for 7 days. This callback detects the pattern and triggers
+        the owc_lifecycle_manager to free space automatically.
+        """
+        error_msg = str(error).lower()
+        is_disk_error = "disk i/o error" in error_msg or "no space left" in error_msg
+
+        if is_disk_error and self._stats.consecutive_errors >= 3:
+            if not self._disk_full_recovery_triggered:
+                self._disk_full_recovery_triggered = True
+                logger.error(
+                    f"[{self.name}] DISK FULL DETECTED after "
+                    f"{self._stats.consecutive_errors} errors. "
+                    f"Triggering automatic OWC cleanup..."
+                )
+                try:
+                    import subprocess
+                    # Run lifecycle manager to free space (non-blocking)
+                    subprocess.Popen(
+                        ["python3", "scripts/owc_lifecycle_manager.py",
+                         "--target-free-gb", "500", "--skip-s3-verify"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    logger.info(
+                        f"[{self.name}] OWC lifecycle manager launched. "
+                        f"Queue populator will recover once disk space is freed."
+                    )
+                except Exception as e:
+                    logger.error(f"[{self.name}] Failed to launch OWC cleanup: {e}")
+        elif not is_disk_error:
+            # Reset flag when errors are not disk-related
+            self._disk_full_recovery_triggered = False
 
     async def _run_once(self) -> None:
         """Execute one iteration of the queue population loop.

@@ -468,6 +468,10 @@ class DiskSpaceManagerDaemon(HandlerBase):
             f"({self._current_status.free_gb:.1f}GB free)"
         )
 
+        # Mar 18, 2026: Monitor OWC drive if mounted. OWC filling to 100%
+        # caused a 7-day pipeline stall (queue_populator crash loop).
+        self._check_owc_disk_space()
+
         # Emit events if thresholds exceeded
         if self.config.emit_events:
             await self._emit_status_events(self._current_status)
@@ -1065,6 +1069,53 @@ class DiskSpaceManagerDaemon(HandlerBase):
 
         return bytes_freed
 
+    def _check_owc_disk_space(self) -> None:
+        """Monitor OWC external drive free space and log warnings.
+
+        Mar 18, 2026: OWC filling to 100% (34MB free on 7.3TB) caused the
+        queue_populator to enter a crash loop with 742+ consecutive disk I/O
+        errors. The pipeline was stalled for 7 days because nothing monitored
+        OWC free space. This method adds that monitoring.
+        """
+        owc_path = Path("/Volumes/RingRift-Data")
+        if not owc_path.exists():
+            return
+
+        _OWC_CHECK_INTERVAL = 300.0  # Check every 5 minutes
+        now = time.time()
+        last_check = getattr(self, "_last_owc_check", 0.0)
+        if (now - last_check) < _OWC_CHECK_INTERVAL:
+            return
+        self._last_owc_check = now
+
+        try:
+            stat = os.statvfs(str(owc_path))
+            free_bytes = stat.f_bavail * stat.f_frsize
+            total_bytes = stat.f_blocks * stat.f_frsize
+            free_gb = free_bytes / (1024**3)
+            usage_pct = ((total_bytes - free_bytes) / total_bytes * 100) if total_bytes > 0 else 0
+
+            OWC_WARNING_GB = 500  # Warn below 500GB
+            OWC_CRITICAL_GB = 100  # Critical below 100GB
+
+            if free_gb < OWC_CRITICAL_GB:
+                logger.error(
+                    f"[{self.name}] OWC CRITICAL: {free_gb:.1f}GB free "
+                    f"({usage_pct:.1f}% used). Pipeline will stall if OWC fills! "
+                    f"Run: python scripts/owc_lifecycle_manager.py --target-free-gb 500"
+                )
+            elif free_gb < OWC_WARNING_GB:
+                logger.warning(
+                    f"[{self.name}] OWC WARNING: {free_gb:.1f}GB free "
+                    f"({usage_pct:.1f}% used). Consider cleanup."
+                )
+            else:
+                logger.info(
+                    f"[{self.name}] OWC: {free_gb:.1f}GB free ({usage_pct:.1f}% used)"
+                )
+        except OSError:
+            pass  # OWC may be unmounted
+
     def _rotate_large_evaluation_dbs(self) -> None:
         """Rotate gauntlet/tournament databases that exceed a size threshold.
 
@@ -1093,7 +1144,8 @@ class DiskSpaceManagerDaemon(HandlerBase):
         from datetime import datetime
         date_suffix = datetime.now().strftime("%Y-%m-%d")
 
-        for pattern in ["gauntlet_*.db", "baseline_calibration_*.db"]:
+        # Mar 18, 2026: Also rotate tournament_*.db (was missing, 76GB observed)
+        for pattern in ["gauntlet_*.db", "baseline_calibration_*.db", "tournament_*.db"]:
             for db_file in games_path.glob(pattern):
                 if db_file.is_symlink():
                     continue
@@ -1130,6 +1182,49 @@ class DiskSpaceManagerDaemon(HandlerBase):
                     logger.warning(
                         f"[{self.name}] Failed to rotate {db_file.name}: {e}"
                     )
+
+        # Mar 18, 2026: Delete old .bak files to prevent unbounded disk growth.
+        # Without this, rotated evaluation DBs accumulate forever — OWC filled
+        # to 100% (34MB free on 7.3TB) causing a 7-day pipeline stall.
+        BAK_RETENTION_DAYS = 7
+        bak_cutoff = time.time() - (BAK_RETENTION_DAYS * 86400)
+        for bak_file in games_path.glob("*.bak"):
+            try:
+                if bak_file.stat().st_mtime < bak_cutoff:
+                    size_gb = bak_file.stat().st_size / (1024**3)
+                    bak_file.unlink()
+                    logger.info(
+                        f"[{self.name}] Deleted old rotated DB: {bak_file.name} "
+                        f"({size_gb:.1f}GB, >{BAK_RETENTION_DAYS}d old)"
+                    )
+                    # Also clean associated WAL/SHM
+                    for suffix in [".bak-wal", ".bak-shm"]:
+                        companion = bak_file.with_suffix(suffix)
+                        if companion.exists():
+                            companion.unlink()
+            except OSError as e:
+                logger.warning(
+                    f"[{self.name}] Failed to delete old .bak {bak_file.name}: {e}"
+                )
+
+        # Also clean .bak files on OWC if mounted
+        owc_games = Path("/Volumes/RingRift-Data/ai-service-live/data/games")
+        if owc_games.exists():
+            for bak_file in owc_games.glob("*.bak"):
+                try:
+                    if bak_file.stat().st_mtime < bak_cutoff:
+                        size_gb = bak_file.stat().st_size / (1024**3)
+                        bak_file.unlink()
+                        logger.info(
+                            f"[{self.name}] Deleted old OWC rotated DB: "
+                            f"{bak_file.name} ({size_gb:.1f}GB)"
+                        )
+                        for suffix in [".bak-wal", ".bak-shm"]:
+                            companion = bak_file.with_suffix(suffix)
+                            if companion.exists():
+                                companion.unlink()
+                except OSError as e:
+                    pass  # OWC may be unmounted or read-only
 
     def _cleanup_s3_backed_files(self) -> int:
         """Remove local files that are verified to exist in S3 (oldest first).

@@ -1434,36 +1434,42 @@ class EvaluationDaemon(HandlerBase):
             return
         model_path = local_model_path
 
-        # March 3, 2026: Try cluster dispatch first (GPU nodes with MCTS search),
-        # fall back to lightweight local gauntlet (CPU policy-only) if dispatch fails.
-        # The cluster path was fixed to use use_search=True on CUDA nodes for
-        # accurate Elo measurement. The local fallback provides lower-quality but
-        # guaranteed results for promotion decisions.
+        # Mar 18, 2026: ALWAYS try cluster dispatch first (GPU nodes with MCTS
+        # search and strong baselines up to ~1900 Elo), regardless of
+        # gauntlet_enabled. Previously, gauntlet_enabled=true on coordinator
+        # SKIPPED cluster dispatch and ran locally with weak baselines (max
+        # ~1400 Elo), directly causing the 1982 Elo ceiling for all configs.
+        # Now: cluster first → local fallback only if cluster unavailable.
+        from app.config.env import env
+        dispatch_ok = await self._dispatch_gauntlet_to_cluster_with_fallback(
+            model_path, board_type, num_players, request
+        )
+        if dispatch_ok:
+            logger.info(
+                f"[EvaluationDaemon] Dispatched gauntlet to cluster (MCTS): {model_path}"
+            )
+            return
+        # Cluster dispatch failed.
+        # Mar 4, 2026: For large boards (hexagonal, square19), don't fall
+        # back to local — they're too slow on CPU. Re-queue for later
+        # cluster dispatch when the gauntlet queue has capacity.
+        if board_type in ("hexagonal", "square19"):
+            logger.info(
+                f"[EvaluationDaemon] Cluster dispatch full, deferring large board: {model_path}"
+            )
+            return  # Will be re-queued on next startup scan
+
+        # Small boards: fall back to local if gauntlet_enabled
         import os
         gauntlet_override = os.environ.get("RINGRIFT_GAUNTLET_ENABLED", "").lower()
-        from app.config.env import env
-        if gauntlet_override not in ("1", "true", "yes") and not env.gauntlet_enabled:
-            # Try cluster dispatch first — GPU nodes run MCTS gauntlets
-            dispatch_ok = await self._dispatch_gauntlet_to_cluster_with_fallback(
-                model_path, board_type, num_players, request
-            )
-            if dispatch_ok:
-                logger.info(
-                    f"[EvaluationDaemon] Dispatched gauntlet to cluster (MCTS): {model_path}"
-                )
-                return
-            # Cluster dispatch failed.
-            # Mar 4, 2026: For large boards (hexagonal, square19), don't fall
-            # back to local — they're too slow on CPU. Re-queue for later
-            # cluster dispatch when the gauntlet queue has capacity.
-            if board_type in ("hexagonal", "square19"):
-                logger.info(
-                    f"[EvaluationDaemon] Cluster dispatch full, deferring large board: {model_path}"
-                )
-                return  # Will be re-queued on next startup scan
-            # Small boards: fall back to lightweight local
+        if gauntlet_override in ("1", "true", "yes") or env.gauntlet_enabled:
             logger.info(
-                f"[EvaluationDaemon] Cluster dispatch failed, running local gauntlet (policy-only): {model_path}"
+                f"[EvaluationDaemon] Cluster dispatch failed, running local gauntlet: {model_path}"
+            )
+        else:
+            # No local fallback available
+            logger.info(
+                f"[EvaluationDaemon] Cluster dispatch failed, running lightweight local gauntlet (policy-only): {model_path}"
             )
             await self._run_lightweight_local_gauntlet(
                 model_path, board_type, num_players, request
