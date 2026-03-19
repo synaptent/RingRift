@@ -121,6 +121,7 @@ async def execute_gauntlet_work(
                 BaselineOpponent.HEURISTIC_STRONG,
                 BaselineOpponent.MCTS_MEDIUM,       # ~1700 Elo, 128 sims
                 BaselineOpponent.MCTS_STRONG,        # ~1900 Elo, 512 sims
+                BaselineOpponent.MCTS_MASTER,        # ~2000 Elo, 1024 sims
             ]
         else:
             opponents = [

@@ -276,15 +276,42 @@ async def get_p2p_nodes() -> list[P2PNodeStatus]:
 
     nodes: list[P2PNodeStatus] = []
 
-    # Parse alive_peers
-    alive_peers = status.get("alive_peers", [])
-    if isinstance(alive_peers, list):
-        for peer in alive_peers:
+    # Mar 19, 2026: Parse from "peers" dict (keyed by node_id).
+    # Previously parsed "alive_peers" which is an INTEGER count (not a list),
+    # so get_p2p_nodes() always returned empty. This broke
+    # ClusterConsolidationDaemon — it never synced game data from Lambda
+    # nodes to the coordinator, starving training of fresh data.
+    peers = status.get("peers", {})
+    if isinstance(peers, dict):
+        for node_id, peer_data in peers.items():
+            if isinstance(peer_data, dict):
+                peer_data_with_id = {**peer_data, "node_id": node_id}
+                try:
+                    nodes.append(P2PNodeStatus.from_dict(peer_data_with_id))
+                except Exception:
+                    nodes.append(P2PNodeStatus(
+                        node_id=node_id,
+                        host=peer_data.get("host", peer_data.get("advertise_host", "")),
+                        is_alive=peer_data.get("is_alive", peer_data.get("alive", False)),
+                        has_gpu=peer_data.get("has_gpu", False),
+                        provider=peer_data.get("provider", ""),
+                    ))
+    elif isinstance(peers, list):
+        for peer in peers:
             if isinstance(peer, dict):
                 nodes.append(P2PNodeStatus.from_dict(peer))
             elif isinstance(peer, str):
-                # Just a node ID string
                 nodes.append(P2PNodeStatus(node_id=peer, host=""))
+
+    # Fallback: check "alive_peers" if it's a list (old format compat)
+    if not nodes:
+        alive_peers = status.get("alive_peers", [])
+        if isinstance(alive_peers, list):
+            for peer in alive_peers:
+                if isinstance(peer, dict):
+                    nodes.append(P2PNodeStatus.from_dict(peer))
+                elif isinstance(peer, str):
+                    nodes.append(P2PNodeStatus(node_id=peer, host=""))
 
     return nodes
 
