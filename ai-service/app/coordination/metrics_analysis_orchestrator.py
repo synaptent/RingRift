@@ -514,18 +514,25 @@ class MetricsAnalysisOrchestrator:
         win_rate = payload.get("win_rate")
         opponent = payload.get("opponent", "")
 
-        # Record evaluation progress metrics
+        # Record evaluation progress metrics.
+        # Mar 20, 2026: emit_regression=False for all evaluation progress metrics.
+        # These are transient estimates that oscillate during gauntlet games (e.g.,
+        # win rate after 3 games != final win rate). Previously, each oscillation
+        # could trigger REGRESSION_DETECTED → 13 subscribers × secondary events
+        # → 100% CPU within 5 minutes when 8/12 configs are regressed.
         if games_played and games_total:
             progress_pct = (games_played / games_total) * 100
             self.record_metric(
                 f"eval_progress_{config_key}" if config_key else "eval_progress",
                 progress_pct,
+                emit_regression=False,
             )
 
         if current_elo is not None:
             self.record_metric(
                 f"eval_elo_{config_key}" if config_key else "eval_elo",
                 current_elo,
+                emit_regression=False,
             )
 
         if win_rate is not None:
@@ -534,7 +541,7 @@ class MetricsAnalysisOrchestrator:
                 if config_key and opponent
                 else f"eval_winrate_{config_key}" if config_key else "eval_winrate"
             )
-            self.record_metric(metric_name, win_rate)
+            self.record_metric(metric_name, win_rate, emit_regression=False)
 
         logger.debug(
             f"[MetricsAnalysisOrchestrator] EVALUATION_PROGRESS: "
@@ -707,9 +714,15 @@ class MetricsAnalysisOrchestrator:
         return count
 
     def record_metric(
-        self, name: str, value: float, epoch: int = 0, **metadata
+        self, name: str, value: float, epoch: int = 0,
+        emit_regression: bool = True, **metadata
     ) -> AnomalyDetection | None:
         """Record a metric value.
+
+        Args:
+            emit_regression: If False, skip emitting REGRESSION_DETECTED even
+                if regression is detected. Use for transient metrics like
+                evaluation progress that oscillate naturally. Default True.
 
         Returns:
             AnomalyDetection if anomaly detected, None otherwise
@@ -741,9 +754,15 @@ class MetricsAnalysisOrchestrator:
                     callback(name, analysis.regression_severity)
                 except Exception as e:
                     logger.error(f"[MetricsAnalysisOrchestrator] Regression callback error: {e}")
-            # Emit REGRESSION_DETECTED event (December 2025)
-            self._emit_regression_detected(name, analysis.regression_severity)
-            logger.warning(f"[MetricsAnalysisOrchestrator] Regression detected for {name}")
+            # Mar 20, 2026: Only emit REGRESSION_DETECTED if emit_regression=True.
+            # Evaluation progress metrics (eval_elo_*, eval_winrate_*) are transient
+            # and oscillate naturally during gauntlet games. Emitting REGRESSION_DETECTED
+            # for these caused a CPU burn cascade (hundreds of events/min × 13 subscribers).
+            if emit_regression:
+                self._emit_regression_detected(name, analysis.regression_severity)
+                logger.warning(f"[MetricsAnalysisOrchestrator] Regression detected for {name}")
+            else:
+                logger.debug(f"[MetricsAnalysisOrchestrator] Regression noted for {name} (emit suppressed)")
 
         # Check for anomaly
         anomaly = tracker.check_anomaly()

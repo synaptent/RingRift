@@ -147,6 +147,14 @@ class RegressionHandlingMixin:
 
         return exploration_boost, target_games
 
+    # Mar 20, 2026: Per-config cooldown to prevent regression response cascade.
+    # Without this, REGRESSION_DETECTED fires hundreds of times per minute when
+    # 8/12 configs are regressed, creating an event amplification cascade that
+    # burns 100% CPU. 30-minute cooldown ensures at most one response per config
+    # per evaluation cycle.
+    _regression_cooldowns: dict[str, float] = {}
+    _REGRESSION_COOLDOWN_SECONDS: float = 1800.0  # 30 minutes
+
     def _on_regression_detected(self, event: Any) -> None:
         """Handle REGRESSION_DETECTED event.
 
@@ -161,6 +169,11 @@ class RegressionHandlingMixin:
         January 3, 2026: Added deduplication to prevent duplicate handling when
         both FeedbackLoopController and UnifiedFeedbackOrchestrator are running.
 
+        Mar 20, 2026: Added 30-minute per-config cooldown. Without this, with
+        8/12 configs regressed, the handler fires hundreds of times per minute
+        (each EVALUATION_PROGRESS triggers record_metric → regression detection
+        → 13+ subscribers × secondary events = event cascade → 100% CPU).
+
         This closes the feedback loop: REGRESSION_DETECTED -> exploration boost ->
         more diverse selfplay -> better training data -> recovery.
         """
@@ -171,6 +184,19 @@ class RegressionHandlingMixin:
             if self._is_duplicate_event(payload):
                 logger.debug("[RegressionHandling] Skipping duplicate REGRESSION_DETECTED")
                 return
+
+            # Mar 20, 2026: Per-config cooldown (30 min) to prevent CPU burn cascade
+            config_key = payload.get("config_key", payload.get("config", ""))
+            if config_key:
+                import time as _time
+                last_handled = self._regression_cooldowns.get(config_key, 0.0)
+                if (_time.time() - last_handled) < self._REGRESSION_COOLDOWN_SECONDS:
+                    logger.debug(
+                        f"[RegressionHandling] Cooldown active for {config_key}, "
+                        f"skipping ({self._REGRESSION_COOLDOWN_SECONDS}s)"
+                    )
+                    return
+                self._regression_cooldowns[config_key] = _time.time()
 
             config_key = extract_config_key(payload)
             elo_drop = payload.get("elo_drop", 0.0)
@@ -301,12 +327,11 @@ class RegressionHandlingMixin:
                         f"[RegressionHandling] Failed to emit curriculum event: {emit_err}"
                     )
 
-                # Trigger gauntlet evaluation against all baselines to reassess model strength
-                # This ensures we have fresh Elo data after the regression
-                try:
-                    self._trigger_gauntlet_all_baselines(config_key)
-                except (AttributeError, TypeError, RuntimeError) as e:
-                    logger.debug(f"[RegressionHandling] Failed to trigger gauntlet: {e}")
+                # Mar 20, 2026: REMOVED gauntlet re-trigger on regression.
+                # This was the root cause of a CPU burn loop: regression detected →
+                # trigger gauntlet → gauntlet detects same regression → loop forever.
+                # The evaluation daemon already runs gauntlets on its regular schedule.
+                # Removing this breaks the infinite loop without losing functionality.
 
         except (AttributeError, TypeError, KeyError, RuntimeError) as e:
             logger.error(f"[RegressionHandling] Error handling regression detected: {e}")
