@@ -1,0 +1,23 @@
+[Unit]
+Description=RingRift Gauntlet Evaluation Runner
+After=network.target
+# Explicitly NOT dependent on ringrift-p2p so it survives P2P restarts
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/ringrift/ai-service
+Environment=PYTHONPATH=/home/ubuntu/ringrift/ai-service
+EnvironmentFile=/etc/ringrift/node.conf
+ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python /home/ubuntu/ringrift/ai-service/scripts/gauntlet_runner.py
+Restart=on-failure
+RestartSec=300
+Nice=10
+# KillMode=process: only kill the main process, not children (game workers)
+# This is separate from P2P's KillMode=control-group
+KillMode=process
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
