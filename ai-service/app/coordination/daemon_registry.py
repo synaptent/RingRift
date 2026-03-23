@@ -65,13 +65,6 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     # Sync Daemons
     # All sync daemons depend on EVENT_ROUTER since they emit events
     # =========================================================================
-    DaemonType.SYNC_COORDINATOR: DaemonSpec(
-        runner_name="create_sync_coordinator",
-        depends_on=(DaemonType.EVENT_ROUTER,),
-        category="sync",
-        deprecated=True,
-        deprecated_message="Use AUTO_SYNC daemon instead. Removal: Q2 2026.",
-    ),
     DaemonType.HIGH_QUALITY_SYNC: DaemonSpec(
         runner_name="create_high_quality_sync",
         depends_on=(DaemonType.EVENT_ROUTER,),
@@ -123,14 +116,6 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         category="sync",
         health_check_interval=1800.0,  # 30 min - runs hourly import cycles
     ),
-    # Ephemeral sync for Vast.ai (Phase 4)
-    DaemonType.EPHEMERAL_SYNC: DaemonSpec(
-        runner_name="create_ephemeral_sync",
-        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE),
-        category="sync",
-        deprecated=True,
-        deprecated_message="Use AutoSyncDaemon(strategy='ephemeral') instead. Removal: Q2 2026.",
-    ),
     DaemonType.GOSSIP_SYNC: DaemonSpec(
         runner_name="create_gossip_sync",
         depends_on=(DaemonType.EVENT_ROUTER,),
@@ -156,12 +141,6 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     # =========================================================================
     # Health & Monitoring
     # =========================================================================
-    DaemonType.HEALTH_CHECK: DaemonSpec(
-        runner_name="create_health_check",
-        category="health",
-        deprecated=True,
-        deprecated_message="Use NODE_HEALTH_MONITOR daemon instead. Removal: Q2 2026.",
-    ),
     DaemonType.QUEUE_MONITOR: DaemonSpec(
         runner_name="create_queue_monitor",
         depends_on=(DaemonType.EVENT_ROUTER,),
@@ -172,20 +151,6 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         depends_on=(DaemonType.EVENT_ROUTER,),
         category="health",
         health_check_interval=30.0,  # Dec 2025: Monitors other daemons - fast checks
-    ),
-    DaemonType.NODE_HEALTH_MONITOR: DaemonSpec(
-        runner_name="create_node_health_monitor",
-        depends_on=(DaemonType.EVENT_ROUTER,),
-        category="health",
-        deprecated=True,
-        deprecated_message="Use health_check_orchestrator.py instead. Removal: Q2 2026.",
-    ),
-    DaemonType.SYSTEM_HEALTH_MONITOR: DaemonSpec(
-        runner_name="create_system_health_monitor",
-        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.NODE_HEALTH_MONITOR),
-        category="health",
-        deprecated=True,
-        deprecated_message="Use unified_health_manager.py instead. Removal: Q2 2026.",
     ),
     DaemonType.QUALITY_MONITOR: DaemonSpec(
         runner_name="create_quality_monitor",
@@ -239,14 +204,6 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         startup_mode="degraded",  # Allow local-only operation
         category="pipeline",
         health_check_interval=30.0,  # Dec 2025: Critical for data flow
-    ),
-    # Jan 3, 2026: Deprecated - module archived, functionality in p2p_orchestrator.py
-    DaemonType.CONTINUOUS_TRAINING_LOOP: DaemonSpec(
-        runner_name="create_continuous_training_loop",
-        depends_on=(DaemonType.EVENT_ROUTER,),
-        category="pipeline",
-        deprecated=True,
-        deprecated_message="Module archived. Functionality now in p2p_orchestrator.py. Removal: Q2 2026.",
     ),
     DaemonType.SELFPLAY_COORDINATOR: DaemonSpec(
         runner_name="create_selfplay_coordinator",
@@ -346,34 +303,10 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         depends_on=(DaemonType.EVENT_ROUTER, DaemonType.EVALUATION, DaemonType.AUTO_PROMOTION),
         category="distribution",
     ),
-    DaemonType.NPZ_DISTRIBUTION: DaemonSpec(
-        runner_name="create_npz_distribution",
-        depends_on=(DaemonType.EVENT_ROUTER,),
-        category="distribution",
-        deprecated=True,
-        deprecated_message="Use unified_distribution_daemon.py with DataType.NPZ. Removal: Q2 2026.",
-    ),
     DaemonType.DATA_SERVER: DaemonSpec(
         runner_name="create_data_server",
         depends_on=(DaemonType.EVENT_ROUTER,),
         category="distribution",
-    ),
-    # =========================================================================
-    # Replication
-    # =========================================================================
-    DaemonType.REPLICATION_MONITOR: DaemonSpec(
-        runner_name="create_replication_monitor",
-        depends_on=(DaemonType.EVENT_ROUTER,),
-        category="replication",
-        deprecated=True,
-        deprecated_message="Use unified_replication_daemon.py instead. Removal: Q2 2026.",
-    ),
-    DaemonType.REPLICATION_REPAIR: DaemonSpec(
-        runner_name="create_replication_repair",
-        depends_on=(DaemonType.EVENT_ROUTER,),
-        category="replication",
-        deprecated=True,
-        deprecated_message="Use unified_replication_daemon.py instead. Removal: Q2 2026.",
     ),
     # =========================================================================
     # Resource Management
@@ -408,20 +341,6 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     # =========================================================================
     # Provider-Specific
     # =========================================================================
-    DaemonType.LAMBDA_IDLE: DaemonSpec(
-        runner_name="create_lambda_idle",
-        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR),
-        category="provider",
-        deprecated=True,
-        deprecated_message="Lambda GH200 nodes are dedicated training infrastructure (restored Dec 28, 2025). Dedicated nodes don't need idle shutdown. Removal: Q2 2026.",
-    ),
-    DaemonType.VAST_IDLE: DaemonSpec(
-        runner_name="create_vast_idle",
-        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR),
-        category="provider",
-        deprecated=True,
-        deprecated_message="Use create_vast_idle_daemon() from unified_idle_shutdown_daemon. Removal: Q2 2026.",
-    ),
     DaemonType.MULTI_PROVIDER: DaemonSpec(
         runner_name="create_multi_provider",
         depends_on=(DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR),
@@ -460,7 +379,7 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     # =========================================================================
     DaemonType.RECOVERY_ORCHESTRATOR: DaemonSpec(
         runner_name="create_recovery_orchestrator",
-        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.NODE_HEALTH_MONITOR),
+        depends_on=(DaemonType.EVENT_ROUTER,),
         category="recovery",
     ),
     DaemonType.CACHE_COORDINATION: DaemonSpec(
@@ -503,31 +422,10 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         depends_on=(DaemonType.EVENT_ROUTER, DaemonType.S3_NODE_SYNC),
         category="sync",
     ),
-    # Jan 3, 2026: Deprecated - standalone script at scripts/distillation_daemon.py
-    DaemonType.DISTILLATION: DaemonSpec(
-        runner_name="create_distillation",
-        depends_on=(DaemonType.EVENT_ROUTER,),
-        category="misc",
-        deprecated=True,
-        deprecated_message="Standalone script. Use scripts/distillation_daemon.py directly.",
-    ),
-    DaemonType.EXTERNAL_DRIVE_SYNC: DaemonSpec(
-        runner_name="create_external_drive_sync",
-        depends_on=(DaemonType.EVENT_ROUTER,),
-        category="misc",
-        deprecated=True,  # Mar 2026: Replaced by OWC_SYNC_MANAGER
-    ),
     DaemonType.VAST_CPU_PIPELINE: DaemonSpec(
         runner_name="create_vast_cpu_pipeline",
         depends_on=(DaemonType.EVENT_ROUTER,),
         category="misc",
-    ),
-    DaemonType.CLUSTER_DATA_SYNC: DaemonSpec(
-        runner_name="create_cluster_data_sync",
-        depends_on=(DaemonType.EVENT_ROUTER,),
-        category="misc",
-        deprecated=True,
-        deprecated_message="Use AutoSyncDaemon(strategy='broadcast') instead. Removal: Q2 2026.",
     ),
     DaemonType.P2P_BACKEND: DaemonSpec(
         runner_name="create_p2p_backend",
@@ -836,22 +734,6 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         depends_on=(DaemonType.EVENT_ROUTER,),
         category="sync",
         health_check_interval=1800.0,  # 30 minutes
-    ),
-    DaemonType.UNIFIED_DATA_CATALOG: DaemonSpec(
-        runner_name="create_unified_data_catalog",
-        depends_on=(DaemonType.EVENT_ROUTER,),
-        category="sync",
-        health_check_interval=600.0,  # 10 minutes
-        deprecated=True,
-        deprecated_message="Not yet implemented - placeholder for future unified data catalog API",
-    ),
-    DaemonType.NODE_DATA_AGENT: DaemonSpec(
-        runner_name="create_node_data_agent",
-        depends_on=(DaemonType.EVENT_ROUTER,),
-        category="distribution",
-        health_check_interval=300.0,  # 5 minutes
-        deprecated=True,
-        deprecated_message="Not yet implemented - placeholder for per-node data agent",
     ),
     DaemonType.UNIFIED_DATA_SYNC_ORCHESTRATOR: DaemonSpec(
         runner_name="create_unified_data_sync_orchestrator",

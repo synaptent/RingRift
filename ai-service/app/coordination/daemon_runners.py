@@ -146,13 +146,6 @@ class RunnerSpec:
 # Runner names match DaemonType enum values (lowercase with underscores)
 RUNNER_SPECS: dict[str, RunnerSpec] = {
     # --- Sync Daemons ---
-    "sync_coordinator": RunnerSpec(
-        module="app.distributed.sync_coordinator",
-        class_name="SyncCoordinator",
-        style=InstantiationStyle.SINGLETON,
-        deprecated=True,
-        deprecation_message="Use DaemonType.AUTO_SYNC instead. Removal scheduled for Q2 2026.",
-    ),
     "high_quality_sync": RunnerSpec(
         module="app.coordination.training_freshness",
         class_name="HighQualityDataSyncWatcher",
@@ -197,15 +190,6 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         style=InstantiationStyle.FACTORY,
         factory_func="get_owc_import_daemon",
     ),
-    "ephemeral_sync": RunnerSpec(
-        module="app.coordination.auto_sync_daemon",
-        class_name="AutoSyncDaemon",
-        style=InstantiationStyle.WITH_CONFIG,
-        config_class="AutoSyncConfig",
-        deprecated=True,
-        deprecation_message="Use AutoSyncDaemon(strategy='ephemeral') instead. Removal scheduled for Q2 2026.",
-        wait=WaitStyle.CUSTOM,  # Sets strategy after config creation
-    ),
     "gossip_sync": RunnerSpec(
         module="app.distributed.gossip_sync",
         class_name="GossipSyncDaemon",
@@ -228,12 +212,6 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         class_name="DLQRetryDaemon",
     ),
     # --- Health & Monitoring Daemons ---
-    "health_check": RunnerSpec(
-        module="app.coordination.health_check_orchestrator",
-        class_name="HealthCheckOrchestrator",
-        deprecated=True,
-        deprecation_message="Use DaemonType.NODE_HEALTH_MONITOR instead. Removal scheduled for Q2 2026.",
-    ),
     "queue_monitor": RunnerSpec(
         module="app.coordination.queue_monitor",
         class_name="QueueMonitor",
@@ -244,18 +222,6 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         style=InstantiationStyle.ASYNC_FACTORY,
         factory_func="start_watchdog",
         start_method=StartMethod.NONE,  # start_watchdog() handles start
-    ),
-    "node_health_monitor": RunnerSpec(
-        module="app.coordination.health_check_orchestrator",
-        class_name="HealthCheckOrchestrator",
-        deprecated=True,
-        deprecation_message="Use HealthCheckOrchestrator (via DaemonType.HEALTH_SERVER) instead. Removal scheduled for Q2 2026.",
-    ),
-    "system_health_monitor": RunnerSpec(
-        module="app.coordination.unified_health_manager",
-        class_name="UnifiedHealthManager",
-        deprecated=True,
-        deprecation_message="Use unified_health_manager.get_system_health_score() instead. Removal scheduled for Q2 2026.",
     ),
     "health_server": RunnerSpec(
         module="app.coordination.daemon_manager",
@@ -299,10 +265,6 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         class_name="DataPipelineOrchestrator",
         style=InstantiationStyle.FACTORY,
         factory_func="get_pipeline_orchestrator",
-    ),
-    "continuous_training_loop": RunnerSpec(
-        module="app.coordination.continuous_training_loop",
-        class_name="ContinuousTrainingLoop",
     ),
     "selfplay_coordinator": RunnerSpec(
         module="app.coordination.selfplay_scheduler",
@@ -389,12 +351,6 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         module="app.coordination.unified_distribution_daemon",
         class_name="UnifiedDistributionDaemon",
     ),
-    "npz_distribution": RunnerSpec(
-        module="app.coordination.unified_distribution_daemon",
-        class_name="UnifiedDistributionDaemon",
-        style=InstantiationStyle.FACTORY,
-        factory_func="create_npz_distribution_daemon",
-    ),
     # Jan 3, 2026: Changed to CUSTOM runner because SyncCoordinator has
     # start_data_server() not start_server(). The create_data_server() function
     # correctly calls start_data_server() on the singleton instance.
@@ -402,19 +358,6 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         module="app.coordination.daemon_runners",
         class_name="",  # Not used for CUSTOM
         style=InstantiationStyle.CUSTOM,
-    ),
-    # --- Replication Daemons ---
-    "replication_monitor": RunnerSpec(
-        module="app.coordination.unified_replication_daemon",
-        class_name="UnifiedReplicationDaemon",
-        style=InstantiationStyle.FACTORY,
-        factory_func="create_replication_monitor",
-    ),
-    "replication_repair": RunnerSpec(
-        module="app.coordination.unified_replication_daemon",
-        class_name="UnifiedReplicationDaemon",
-        style=InstantiationStyle.FACTORY,
-        factory_func="create_replication_repair_daemon",
     ),
     # --- Resource Management Daemons ---
     "idle_resource": RunnerSpec(
@@ -446,21 +389,6 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         class_name="AdaptiveResourceManager",
     ),
     # --- Provider-Specific Daemons ---
-    "lambda_idle": RunnerSpec(
-        module="app.coordination.unified_idle_shutdown_daemon",
-        class_name="UnifiedIdleShutdownDaemon",
-        style=InstantiationStyle.FACTORY,
-        factory_func="create_lambda_idle_daemon",
-        deprecated=True,
-        deprecation_message="Lambda Labs account was terminated Dec 2025. Use DaemonType.VAST_IDLE instead. Removal scheduled for Q2 2026.",
-        wait=WaitStyle.CUSTOM,  # Returns None, skips start
-    ),
-    "vast_idle": RunnerSpec(
-        module="app.coordination.unified_idle_shutdown_daemon",
-        class_name="UnifiedIdleShutdownDaemon",
-        style=InstantiationStyle.FACTORY,
-        factory_func="create_vast_idle_daemon",
-    ),
     "multi_provider": RunnerSpec(
         module="app.coordination.multi_provider_orchestrator",
         class_name="MultiProviderOrchestrator",
@@ -546,26 +474,9 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         module="app.coordination.s3_node_sync_daemon",
         class_name="S3ConsolidationDaemon",
     ),
-    "distillation": RunnerSpec(
-        module="app.coordination.distillation_daemon",
-        class_name="DistillationDaemon",
-    ),
-    "external_drive_sync": RunnerSpec(
-        module="app.coordination.external_drive_sync",
-        class_name="ExternalDriveSyncDaemon",
-    ),
     "vast_cpu_pipeline": RunnerSpec(
         module="app.distributed.vast_cpu_pipeline",
         class_name="VastCpuPipelineDaemon",
-    ),
-    "cluster_data_sync": RunnerSpec(
-        module="app.coordination.auto_sync_daemon",
-        class_name="AutoSyncDaemon",
-        style=InstantiationStyle.WITH_CONFIG,
-        config_class="AutoSyncConfig",
-        deprecated=True,
-        deprecation_message="Use AutoSyncDaemon(strategy='broadcast') instead. Removal scheduled for Q2 2026.",
-        wait=WaitStyle.CUSTOM,
     ),
     "p2p_backend": RunnerSpec(
         module="app.coordination.p2p_integration",
@@ -733,24 +644,11 @@ RUNNER_SPECS: dict[str, RunnerSpec] = {
         style=InstantiationStyle.SINGLETON,
         notes="Jan 2026: Import data from S3 for recovery/bootstrap",
     ),
-    "unified_data_catalog": RunnerSpec(
-        module="app.coordination.unified_data_catalog",
-        class_name="UnifiedDataCatalog",
-        style=InstantiationStyle.SINGLETON,
-        notes="Jan 2026: Single API for querying data across all sources",
-    ),
     "dual_backup": RunnerSpec(
         module="app.coordination.dual_backup_daemon",
         class_name="DualBackupDaemon",
         style=InstantiationStyle.SINGLETON,
         notes="Jan 2026: Ensures data is backed up to BOTH S3 AND OWC",
-    ),
-    "node_data_agent": RunnerSpec(
-        module="app.coordination.node_data_agent",
-        class_name="NodeDataAgent",
-        style=InstantiationStyle.FACTORY,
-        factory_func="get_node_data_agent",
-        notes="Jan 2026: Per-node agent for data discovery and fetching",
     ),
     # --- Pipeline Completeness Monitor (February 2026) ---
     "pipeline_completeness_monitor": RunnerSpec(
@@ -903,7 +801,6 @@ async def _wait_for_daemon(daemon: Any, check_interval: float = 10.0) -> None:
 
 from app.coordination.runners import (  # noqa: E402, F401
     # Sync runners
-    create_sync_coordinator,
     create_high_quality_sync,
     create_elo_sync,
     create_auto_sync,
@@ -919,18 +816,14 @@ from app.coordination.runners import (  # noqa: E402, F401
     create_unevaluated_model_scanner,
     create_stale_evaluation,
     create_comprehensive_model_scan,
-    create_ephemeral_sync,
     create_gossip_sync,
     # Event processing runners
     create_event_router,
     create_cross_process_poller,
     create_dlq_retry,
     # Health runners
-    create_health_check,
     create_queue_monitor,
     create_daemon_watchdog,
-    create_node_health_monitor,
-    create_system_health_monitor,
     create_health_server,
     create_quality_monitor,
     create_model_performance_watchdog,
@@ -940,7 +833,6 @@ from app.coordination.runners import (  # noqa: E402, F401
     create_work_queue_monitor,
     # Training runners
     create_data_pipeline,
-    create_continuous_training_loop,
     create_selfplay_coordinator,
     create_training_trigger,
     create_auto_export,
@@ -958,11 +850,7 @@ from app.coordination.runners import (  # noqa: E402, F401
     # Distribution runners
     create_model_sync,
     create_model_distribution,
-    create_npz_distribution,
     create_data_server,
-    # Replication runners
-    create_replication_monitor,
-    create_replication_repair,
     # Resource runners
     create_idle_resource,
     create_cluster_utilization_watchdog,
@@ -971,8 +859,6 @@ from app.coordination.runners import (  # noqa: E402, F401
     create_utilization_optimizer,
     create_adaptive_resources,
     # Provider-specific runners
-    create_lambda_idle,
-    create_vast_idle,
     create_multi_provider,
     # Queue & job runners
     create_queue_populator,
@@ -997,10 +883,7 @@ from app.coordination.runners import (  # noqa: E402, F401
     create_s3_consolidation,
     create_unified_backup,
     create_s3_push,
-    create_distillation,
-    create_external_drive_sync,
     create_vast_cpu_pipeline,
-    create_cluster_data_sync,
     create_p2p_backend,
     create_p2p_auto_deploy,
     create_metrics_analysis,
@@ -1033,8 +916,6 @@ from app.coordination.runners import (  # noqa: E402, F401
     create_dual_backup,
     create_owc_push,
     create_s3_import,
-    create_unified_data_catalog,
-    create_node_data_agent,
     create_online_merge,
     create_owc_sync_manager,
     create_s3_sync,
@@ -1065,7 +946,6 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
     from app.coordination.daemon_types import DaemonType
 
     return {
-        DaemonType.SYNC_COORDINATOR.name: create_sync_coordinator,
         DaemonType.HIGH_QUALITY_SYNC.name: create_high_quality_sync,
         DaemonType.ELO_SYNC.name: create_elo_sync,
         DaemonType.AUTO_SYNC.name: create_auto_sync,
@@ -1082,16 +962,12 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.UNEVALUATED_MODEL_SCANNER.name: create_unevaluated_model_scanner,
         DaemonType.STALE_EVALUATION.name: create_stale_evaluation,  # Jan 4, 2026: Sprint 17
         DaemonType.COMPREHENSIVE_MODEL_SCAN.name: create_comprehensive_model_scan,  # Jan 9, 2026: Sprint 17.9
-        DaemonType.EPHEMERAL_SYNC.name: create_ephemeral_sync,
         DaemonType.GOSSIP_SYNC.name: create_gossip_sync,
         DaemonType.EVENT_ROUTER.name: create_event_router,
         DaemonType.CROSS_PROCESS_POLLER.name: create_cross_process_poller,
         DaemonType.DLQ_RETRY.name: create_dlq_retry,
-        DaemonType.HEALTH_CHECK.name: create_health_check,
         DaemonType.QUEUE_MONITOR.name: create_queue_monitor,
         DaemonType.DAEMON_WATCHDOG.name: create_daemon_watchdog,
-        DaemonType.NODE_HEALTH_MONITOR.name: create_node_health_monitor,
-        DaemonType.SYSTEM_HEALTH_MONITOR.name: create_system_health_monitor,
         DaemonType.HEALTH_SERVER.name: create_health_server,
         DaemonType.QUALITY_MONITOR.name: create_quality_monitor,
         DaemonType.MODEL_PERFORMANCE_WATCHDOG.name: create_model_performance_watchdog,
@@ -1100,7 +976,6 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.COORDINATOR_HEALTH_MONITOR.name: create_coordinator_health_monitor,
         DaemonType.WORK_QUEUE_MONITOR.name: create_work_queue_monitor,
         DaemonType.DATA_PIPELINE.name: create_data_pipeline,
-        DaemonType.CONTINUOUS_TRAINING_LOOP.name: create_continuous_training_loop,
         DaemonType.SELFPLAY_COORDINATOR.name: create_selfplay_coordinator,
         DaemonType.TRAINING_TRIGGER.name: create_training_trigger,
         DaemonType.AUTO_EXPORT.name: create_auto_export,
@@ -1112,18 +987,13 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.GAUNTLET_FEEDBACK.name: create_gauntlet_feedback,
         DaemonType.MODEL_SYNC.name: create_model_sync,
         DaemonType.MODEL_DISTRIBUTION.name: create_model_distribution,
-        DaemonType.NPZ_DISTRIBUTION.name: create_npz_distribution,
         DaemonType.DATA_SERVER.name: create_data_server,
-        DaemonType.REPLICATION_MONITOR.name: create_replication_monitor,
-        DaemonType.REPLICATION_REPAIR.name: create_replication_repair,
         DaemonType.IDLE_RESOURCE.name: create_idle_resource,
         DaemonType.CLUSTER_UTILIZATION_WATCHDOG.name: create_cluster_utilization_watchdog,
         DaemonType.NODE_RECOVERY.name: create_node_recovery,
         DaemonType.RESOURCE_OPTIMIZER.name: create_resource_optimizer,
         DaemonType.UTILIZATION_OPTIMIZER.name: create_utilization_optimizer,
         DaemonType.ADAPTIVE_RESOURCES.name: create_adaptive_resources,
-        DaemonType.LAMBDA_IDLE.name: create_lambda_idle,
-        DaemonType.VAST_IDLE.name: create_vast_idle,
         DaemonType.MULTI_PROVIDER.name: create_multi_provider,
         DaemonType.QUEUE_POPULATOR.name: create_queue_populator,
         DaemonType.JOB_SCHEDULER.name: create_job_scheduler,
@@ -1144,10 +1014,7 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.S3_CONSOLIDATION.name: create_s3_consolidation,
         DaemonType.UNIFIED_BACKUP.name: create_unified_backup,  # Jan 2026: OWC + S3 backup
         DaemonType.S3_PUSH.name: create_s3_push,  # Jan 2026: S3 backup push
-        DaemonType.DISTILLATION.name: create_distillation,
-        DaemonType.EXTERNAL_DRIVE_SYNC.name: create_external_drive_sync,
         DaemonType.VAST_CPU_PIPELINE.name: create_vast_cpu_pipeline,
-        DaemonType.CLUSTER_DATA_SYNC.name: create_cluster_data_sync,
         DaemonType.P2P_BACKEND.name: create_p2p_backend,
         DaemonType.P2P_AUTO_DEPLOY.name: create_p2p_auto_deploy,
         DaemonType.METRICS_ANALYSIS.name: create_metrics_analysis,
@@ -1190,8 +1057,6 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.DUAL_BACKUP.name: create_dual_backup,
         DaemonType.OWC_PUSH.name: create_owc_push,
         DaemonType.S3_IMPORT.name: create_s3_import,
-        DaemonType.UNIFIED_DATA_CATALOG.name: create_unified_data_catalog,
-        DaemonType.NODE_DATA_AGENT.name: create_node_data_agent,
         # Online model merge daemon (January 2026)
         DaemonType.ONLINE_MERGE.name: create_online_merge,
         # Sync and import daemons (February 2026)

@@ -443,9 +443,7 @@ class DaemonType(Enum):
     # These daemons provide unified data management across all storage:
     # - OWC_PUSH: Push data to OWC external drive for backup
     # - S3_IMPORT: Import data from S3 for recovery/bootstrap
-    # - UNIFIED_DATA_CATALOG: Single API for querying data across sources
     # - DUAL_BACKUP: Ensures data is backed up to BOTH S3 AND OWC
-    # - NODE_DATA_AGENT: Per-node agent for data discovery and fetching
     # =========================================================================
     OWC_PUSH = "owc_push"
     S3_IMPORT = "s3_import"
@@ -522,7 +520,7 @@ class DaemonCategory(Enum):
     - EVENT: Core event routing daemons (EVENT_ROUTER, CROSS_PROCESS_POLLER, DLQ_RETRY)
     - SYNC: Data synchronization daemons (AUTO_SYNC, ELO_SYNC, GOSSIP_SYNC)
     - PIPELINE: Data pipeline daemons (DATA_PIPELINE, SELFPLAY_COORDINATOR)
-    - HEALTH: Health monitoring daemons (NODE_HEALTH_MONITOR, QUALITY_MONITOR)
+    - HEALTH: Health monitoring daemons (QUALITY_MONITOR, CLUSTER_MONITOR)
     - EVALUATION: Model evaluation daemons (EVALUATION, AUTO_PROMOTION)
     - DISTRIBUTION: Model/data distribution daemons
     - RESOURCE: Resource management daemons (IDLE_RESOURCE, NODE_RECOVERY)
@@ -530,7 +528,7 @@ class DaemonCategory(Enum):
     - QUEUE: Queue management daemons (QUEUE_POPULATOR, WORK_QUEUE_MONITOR)
     - RECOVERY: Recovery daemons (RECOVERY_ORCHESTRATOR, CONNECTIVITY_RECOVERY)
     - AUTONOMOUS: Autonomous operation daemons (PROGRESS_WATCHDOG, MEMORY_MONITOR)
-    - PROVIDER: Cloud provider daemons (MULTI_PROVIDER, VAST_IDLE)
+    - PROVIDER: Cloud provider daemons (MULTI_PROVIDER, NODE_AVAILABILITY)
     - MISC: Miscellaneous daemons not in other categories
     """
     EVENT = "event"
@@ -681,7 +679,7 @@ class DaemonManagerConfig:
 
 # P11-HIGH-2: Daemons critical for cluster health that need faster failure detection
 # NOTE (Dec 2025): Only include daemons that are ACTUALLY used in standard profile.
-# Optional daemons like GOSSIP_SYNC, DATA_SERVER, EPHEMERAL_SYNC should not be marked
+# Optional daemons like GOSSIP_SYNC, DATA_SERVER should not be marked
 # critical since they're not started by default.
 CRITICAL_DAEMONS: set[DaemonType] = {
     DaemonType.EVENT_ROUTER,  # Core event bus - all coordination depends on this
@@ -869,7 +867,7 @@ DAEMON_STARTUP_ORDER: list[DaemonType] = [
     DaemonType.CLUSTER_MONITOR,        # 11. Cluster monitoring (depends on EVENT_ROUTER)
     DaemonType.HEALTH_SERVER,          # 12. Health endpoints (depends on EVENT_ROUTER)
     DaemonType.CLUSTER_WATCHDOG,       # 14. Cluster watchdog (depends on CLUSTER_MONITOR)
-    DaemonType.NODE_RECOVERY,          # 15. Node recovery (depends on NODE_HEALTH_MONITOR)
+    DaemonType.NODE_RECOVERY,          # 15. Node recovery (depends on EVENT_ROUTER)
     DaemonType.MEMORY_MONITOR,         # 16. Memory/VRAM monitor (prevents OOM crashes)
     DaemonType.SOCKET_LEAK_RECOVERY,   # 17. Socket/FD leak recovery (Jan 2026)
 
