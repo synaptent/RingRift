@@ -49,21 +49,12 @@ __all__ = [
 
 # Daemon types scheduled for removal in Q2 2026
 _DEPRECATED_DAEMON_TYPES: dict[str, tuple[str, str]] = {
-    "sync_coordinator": ("AUTO_SYNC", "Q2 2026"),
-    "health_check": ("NODE_HEALTH_MONITOR", "Q2 2026"),
-    # December 2025: Added missing deprecated types
-    "ephemeral_sync": ("AUTO_SYNC", "Q2 2026"),
-    "cluster_data_sync": ("AUTO_SYNC", "Q2 2026"),
-    "system_health_monitor": ("HEALTH_SERVER", "Q2 2026"),  # Use unified_health_manager
-    # December 2025: Lambda GH200 nodes are dedicated training (restored Dec 28). Use UNIFIED_IDLE for ephemeral nodes.
-    "lambda_idle": ("UNIFIED_IDLE", "Q2 2026"),
     # January 2026: Consolidated backup/sync daemons (Session 17.41)
     # S3 sync consolidation: 3 daemons → S3_SYNC
     "s3_backup": ("S3_SYNC", "Q2 2026"),
     "s3_node_sync": ("S3_SYNC", "Q2 2026"),
     "s3_push": ("S3_SYNC", "Q2 2026"),
     # OWC sync consolidation: 4 daemons → OWC_SYNC_MANAGER
-    "external_drive_sync": ("OWC_SYNC_MANAGER", "Q2 2026"),
     "owc_push": ("OWC_SYNC_MANAGER", "Q2 2026"),
     "dual_backup": ("OWC_SYNC_MANAGER", "Q2 2026"),
     "unified_backup": ("OWC_SYNC_MANAGER", "Q2 2026"),
@@ -85,19 +76,13 @@ def _check_deprecated_daemon(daemon_type: "DaemonType") -> None:
 class DaemonType(Enum):
     """Types of daemons that can be managed."""
     # Sync daemons
-    # DEPRECATED (Dec 2025): SYNC_COORDINATOR replaced by AUTO_SYNC - removal Q2 2026
-    SYNC_COORDINATOR = "sync_coordinator"
     HIGH_QUALITY_SYNC = "high_quality_sync"
     ELO_SYNC = "elo_sync"
     MODEL_SYNC = "model_sync"
 
     # Health/monitoring
-    # DEPRECATED (Dec 2025): HEALTH_CHECK replaced by NODE_HEALTH_MONITOR - removal Q2 2026
-    HEALTH_CHECK = "health_check"
     CLUSTER_MONITOR = "cluster_monitor"
     QUEUE_MONITOR = "queue_monitor"
-    # DEPRECATED (Dec 2025): Use UnifiedNodeHealthDaemon (health_check_orchestrator) - removal Q2 2026
-    NODE_HEALTH_MONITOR = "node_health_monitor"
 
     # Event processing
     EVENT_ROUTER = "event_router"
@@ -115,16 +100,8 @@ class DaemonType(Enum):
     DATA_SERVER = "data_server"
 
     # Training enhancement daemons (December 2025)
-    DISTILLATION = "distillation"
     UNIFIED_PROMOTION = "unified_promotion"
-    EXTERNAL_DRIVE_SYNC = "external_drive_sync"
     VAST_CPU_PIPELINE = "vast_cpu_pipeline"
-
-    # Continuous training loop (December 2025)
-    CONTINUOUS_TRAINING_LOOP = "continuous_training_loop"
-
-    # DEPRECATED (Dec 2025): Use AutoSyncDaemon(strategy="broadcast") - removal Q2 2026
-    CLUSTER_DATA_SYNC = "cluster_data_sync"
 
     # Model distribution (December 2025) - auto-distribute models after promotion
     MODEL_DISTRIBUTION = "model_distribution"
@@ -192,26 +169,14 @@ class DaemonType(Enum):
     # Rate-limited, respects backpressure from EvaluationDaemon
     BACKLOG_EVALUATION = "backlog_evaluation"
 
-    # DEPRECATED (Dec 2025): Use AutoSyncDaemon(strategy="ephemeral") - removal Q2 2026
-    EPHEMERAL_SYNC = "ephemeral_sync"
-
     # P2P auto-deployment (December 2025) - ensure P2P runs on all nodes
     P2P_AUTO_DEPLOY = "p2p_auto_deploy"
-
-    # Replication monitor (December 2025) - monitor data replication health
-    REPLICATION_MONITOR = "replication_monitor"
-
-    # Replication repair (December 2025) - actively repair under-replicated data
-    REPLICATION_REPAIR = "replication_repair"
 
     # Tournament daemon (December 2025) - automatic tournament scheduling
     TOURNAMENT_DAEMON = "tournament_daemon"
 
     # Feedback loop controller (December 2025) - orchestrates all feedback signals
     FEEDBACK_LOOP = "feedback_loop"
-
-    # NPZ distribution (December 2025) - sync training data after export
-    NPZ_DISTRIBUTION = "npz_distribution"
 
     # Orphan detection (December 2025) - detect orphaned games not in manifest
     ORPHAN_DETECTION = "orphan_detection"
@@ -300,9 +265,6 @@ class DaemonType(Enum):
     # Multi-provider orchestrator (December 2025) - coordinates across Vast/RunPod/Nebius/etc
     MULTI_PROVIDER = "multi_provider"
 
-    # DEPRECATED (Dec 2025): Use unified_health_manager.get_system_health_score() - removal Q2 2026
-    SYSTEM_HEALTH_MONITOR = "system_health_monitor"
-
     # Health server (December 2025) - exposes /health, /ready, /metrics HTTP endpoints
     HEALTH_SERVER = "health_server"
 
@@ -316,16 +278,6 @@ class DaemonType(Enum):
     # Cluster utilization watchdog (December 30, 2025) - monitors GPU utilization
     # Emits CLUSTER_UNDERUTILIZED when too many GPUs are idle, triggers remediation
     CLUSTER_UTILIZATION_WATCHDOG = "cluster_utilization_watchdog"
-
-    # Lambda idle shutdown (December 2025) - terminates idle Lambda nodes to save costs
-    # DEPRECATED: Lambda Labs GH200 nodes are now dedicated training infrastructure (restored Dec 28, 2025).
-    # Dedicated GPU nodes don't need idle shutdown - they run continuous training workloads.
-    # Use UNIFIED_IDLE for ephemeral/on-demand instances instead.
-    LAMBDA_IDLE = "lambda_idle"
-
-    # Vast.ai idle shutdown (December 2025) - terminates idle Vast.ai nodes to save costs
-    # Important for ephemeral marketplace instances with hourly billing
-    VAST_IDLE = "vast_idle"
 
     # Cluster watchdog (December 2025) - self-healing cluster utilization monitor
     CLUSTER_WATCHDOG = "cluster_watchdog"
@@ -497,9 +449,7 @@ class DaemonType(Enum):
     # =========================================================================
     OWC_PUSH = "owc_push"
     S3_IMPORT = "s3_import"
-    UNIFIED_DATA_CATALOG = "unified_data_catalog"
     DUAL_BACKUP = "dual_backup"
-    NODE_DATA_AGENT = "node_data_agent"
 
     # =========================================================================
     # Consolidated OWC Sync Manager (January 2026)
@@ -759,15 +709,11 @@ DAEMON_CATEGORY_MAP: dict[DaemonType, DaemonCategory] = {
     DaemonType.DAEMON_WATCHDOG: DaemonCategory.EVENT,
 
     # SYNC category - data synchronization
-    DaemonType.SYNC_COORDINATOR: DaemonCategory.SYNC,
     DaemonType.AUTO_SYNC: DaemonCategory.SYNC,
     DaemonType.HIGH_QUALITY_SYNC: DaemonCategory.SYNC,
     DaemonType.ELO_SYNC: DaemonCategory.SYNC,
     DaemonType.MODEL_SYNC: DaemonCategory.SYNC,
     DaemonType.GOSSIP_SYNC: DaemonCategory.SYNC,
-    DaemonType.CLUSTER_DATA_SYNC: DaemonCategory.SYNC,
-    DaemonType.EPHEMERAL_SYNC: DaemonCategory.SYNC,
-    DaemonType.EXTERNAL_DRIVE_SYNC: DaemonCategory.SYNC,
     DaemonType.TRAINING_DATA_SYNC: DaemonCategory.SYNC,
     DaemonType.OWC_IMPORT: DaemonCategory.SYNC,
     DaemonType.SYNC_PUSH: DaemonCategory.SYNC,
@@ -775,9 +721,7 @@ DAEMON_CATEGORY_MAP: dict[DaemonType, DaemonCategory] = {
     DaemonType.UNIFIED_DATA_SYNC_ORCHESTRATOR: DaemonCategory.SYNC,  # Jan 2026: Coordinate all data sync
     DaemonType.OWC_PUSH: DaemonCategory.SYNC,  # Jan 2026: Push to OWC external drive
     DaemonType.S3_IMPORT: DaemonCategory.SYNC,  # Jan 2026: Import from S3
-    DaemonType.UNIFIED_DATA_CATALOG: DaemonCategory.SYNC,  # Jan 2026: Unified data catalog API
     DaemonType.DUAL_BACKUP: DaemonCategory.SYNC,  # Jan 2026: Dual S3+OWC backup
-    DaemonType.NODE_DATA_AGENT: DaemonCategory.DISTRIBUTION,  # Jan 2026: Per-node data agent
     DaemonType.S3_SYNC: DaemonCategory.SYNC,  # Jan 2026: Consolidated S3 sync (replaces S3_BACKUP, S3_PUSH, S3_NODE_SYNC)
     DaemonType.OWC_SYNC_MANAGER: DaemonCategory.SYNC,  # Jan 2026: Consolidated OWC sync (replaces EXTERNAL_DRIVE_SYNC, OWC_PUSH, DUAL_BACKUP)
 
@@ -788,14 +732,11 @@ DAEMON_CATEGORY_MAP: dict[DaemonType, DaemonCategory] = {
     DaemonType.DATA_CONSOLIDATION: DaemonCategory.PIPELINE,
     DaemonType.NPZ_COMBINATION: DaemonCategory.PIPELINE,
     DaemonType.COMPREHENSIVE_CONSOLIDATION: DaemonCategory.PIPELINE,  # Jan 2026: Scheduled sweep
-    DaemonType.CONTINUOUS_TRAINING_LOOP: DaemonCategory.PIPELINE,
     DaemonType.CASCADE_TRAINING: DaemonCategory.PIPELINE,
 
     # HEALTH category - health monitoring
-    DaemonType.HEALTH_CHECK: DaemonCategory.HEALTH,
     DaemonType.CLUSTER_MONITOR: DaemonCategory.HEALTH,
     DaemonType.QUEUE_MONITOR: DaemonCategory.HEALTH,
-    DaemonType.NODE_HEALTH_MONITOR: DaemonCategory.HEALTH,
     DaemonType.QUALITY_MONITOR: DaemonCategory.HEALTH,
     DaemonType.MODEL_PERFORMANCE_WATCHDOG: DaemonCategory.HEALTH,
     DaemonType.HEALTH_SERVER: DaemonCategory.HEALTH,
@@ -815,9 +756,6 @@ DAEMON_CATEGORY_MAP: dict[DaemonType, DaemonCategory] = {
 
     # DISTRIBUTION category - model/data distribution
     DaemonType.MODEL_DISTRIBUTION: DaemonCategory.DISTRIBUTION,
-    DaemonType.NPZ_DISTRIBUTION: DaemonCategory.DISTRIBUTION,
-    DaemonType.REPLICATION_MONITOR: DaemonCategory.DISTRIBUTION,
-    DaemonType.REPLICATION_REPAIR: DaemonCategory.DISTRIBUTION,
     DaemonType.S3_BACKUP: DaemonCategory.DISTRIBUTION,
     DaemonType.S3_NODE_SYNC: DaemonCategory.DISTRIBUTION,
     DaemonType.S3_CONSOLIDATION: DaemonCategory.DISTRIBUTION,
@@ -841,7 +779,6 @@ DAEMON_CATEGORY_MAP: dict[DaemonType, DaemonCategory] = {
     DaemonType.CURRICULUM_INTEGRATION: DaemonCategory.FEEDBACK,
     DaemonType.ARCHITECTURE_FEEDBACK: DaemonCategory.FEEDBACK,
     DaemonType.TRAINING_TRIGGER: DaemonCategory.FEEDBACK,
-    DaemonType.DISTILLATION: DaemonCategory.FEEDBACK,
     DaemonType.NNUE_TRAINING: DaemonCategory.FEEDBACK,
 
     # QUEUE category - queue management
@@ -877,8 +814,6 @@ DAEMON_CATEGORY_MAP: dict[DaemonType, DaemonCategory] = {
 
     # PROVIDER category - cloud provider daemons
     DaemonType.MULTI_PROVIDER: DaemonCategory.PROVIDER,
-    DaemonType.VAST_IDLE: DaemonCategory.PROVIDER,
-    DaemonType.LAMBDA_IDLE: DaemonCategory.PROVIDER,
     DaemonType.VAST_CPU_PIPELINE: DaemonCategory.PROVIDER,
     DaemonType.NODE_AVAILABILITY: DaemonCategory.PROVIDER,
     DaemonType.AVAILABILITY_NODE_MONITOR: DaemonCategory.PROVIDER,
@@ -889,7 +824,6 @@ DAEMON_CATEGORY_MAP: dict[DaemonType, DaemonCategory] = {
     # MISC category - miscellaneous (default fallback)
     DaemonType.P2P_BACKEND: DaemonCategory.MISC,
     DaemonType.DATA_SERVER: DaemonCategory.MISC,
-    DaemonType.SYSTEM_HEALTH_MONITOR: DaemonCategory.MISC,
 }
 
 
@@ -933,8 +867,7 @@ DAEMON_STARTUP_ORDER: list[DaemonType] = [
     # Dec 30, 2025: Added MEMORY_MONITOR for 48-hour autonomous operation
     # =========================================================================
     DaemonType.CLUSTER_MONITOR,        # 11. Cluster monitoring (depends on EVENT_ROUTER)
-    DaemonType.NODE_HEALTH_MONITOR,    # 12. Node health (depends on EVENT_ROUTER)
-    DaemonType.HEALTH_SERVER,          # 13. Health endpoints (depends on EVENT_ROUTER)
+    DaemonType.HEALTH_SERVER,          # 12. Health endpoints (depends on EVENT_ROUTER)
     DaemonType.CLUSTER_WATCHDOG,       # 14. Cluster watchdog (depends on CLUSTER_MONITOR)
     DaemonType.NODE_RECOVERY,          # 15. Node recovery (depends on NODE_HEALTH_MONITOR)
     DaemonType.MEMORY_MONITOR,         # 16. Memory/VRAM monitor (prevents OOM crashes)
@@ -948,7 +881,6 @@ DAEMON_STARTUP_ORDER: list[DaemonType] = [
     DaemonType.QUALITY_MONITOR,        # 16. Quality monitoring (depends on DATA_PIPELINE)
     DaemonType.NNUE_TRAINING,          # 17. NNUE training (depends on DATA_PIPELINE)
     DaemonType.ARCHITECTURE_FEEDBACK,  # 18. Architecture allocation weights (Dec 29, 2025)
-    DaemonType.DISTILLATION,           # 19. Distillation (depends on TRAINING_TRIGGER)
 
     # =========================================================================
     # Evaluation and promotion chain (positions 20-24)
@@ -1001,8 +933,6 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
 
     # Distribution daemons
     DaemonType.MODEL_DISTRIBUTION: {DaemonType.EVENT_ROUTER, DaemonType.AUTO_PROMOTION},
-    DaemonType.NPZ_DISTRIBUTION: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
-
     # P2P daemons
     DaemonType.GOSSIP_SYNC: {DaemonType.EVENT_ROUTER},
     DaemonType.P2P_BACKEND: set(),  # Runs independently
@@ -1017,7 +947,6 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
     # Monitoring daemons
     DaemonType.CLUSTER_MONITOR: {DaemonType.EVENT_ROUTER},
     DaemonType.QUEUE_MONITOR: {DaemonType.EVENT_ROUTER},
-    DaemonType.REPLICATION_MONITOR: {DaemonType.EVENT_ROUTER},
 
     # Multi-provider orchestrator
     DaemonType.MULTI_PROVIDER: {DaemonType.EVENT_ROUTER, DaemonType.IDLE_RESOURCE},
@@ -1032,8 +961,6 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
     DaemonType.MODEL_SYNC: {DaemonType.EVENT_ROUTER},
 
     # Health/monitoring daemons
-    DaemonType.NODE_HEALTH_MONITOR: {DaemonType.EVENT_ROUTER},
-    DaemonType.SYSTEM_HEALTH_MONITOR: {DaemonType.EVENT_ROUTER},  # Deprecated but may still be used
     DaemonType.HEALTH_SERVER: {DaemonType.EVENT_ROUTER},
     DaemonType.CLUSTER_WATCHDOG: {DaemonType.EVENT_ROUTER, DaemonType.CLUSTER_MONITOR},
     DaemonType.MODEL_PERFORMANCE_WATCHDOG: {DaemonType.EVENT_ROUTER},
@@ -1044,16 +971,13 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
 
     # Pipeline/selfplay daemons
     DaemonType.SELFPLAY_COORDINATOR: {DaemonType.EVENT_ROUTER},
-    DaemonType.CONTINUOUS_TRAINING_LOOP: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
     DaemonType.QUALITY_MONITOR: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
 
     # P2P/data server daemons
     DaemonType.DATA_SERVER: {DaemonType.EVENT_ROUTER},
 
     # Training enhancement daemons
-    DaemonType.DISTILLATION: {DaemonType.EVENT_ROUTER, DaemonType.TRAINING_TRIGGER},
     DaemonType.UNIFIED_PROMOTION: {DaemonType.EVENT_ROUTER, DaemonType.EVALUATION},
-    DaemonType.EXTERNAL_DRIVE_SYNC: {DaemonType.EVENT_ROUTER},
     DaemonType.VAST_CPU_PIPELINE: {DaemonType.EVENT_ROUTER},
 
     # Node watching/recovery daemons
@@ -1066,10 +990,7 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
     DaemonType.OWC_IMPORT: {DaemonType.EVENT_ROUTER},
     # Production game import (January 2026) - imports human vs AI games from ringrift.ai
     DaemonType.PRODUCTION_GAME_IMPORT: {DaemonType.EVENT_ROUTER},
-    DaemonType.NODE_RECOVERY: {DaemonType.EVENT_ROUTER, DaemonType.NODE_HEALTH_MONITOR},
-
-    # Replication daemons
-    DaemonType.REPLICATION_REPAIR: {DaemonType.EVENT_ROUTER, DaemonType.REPLICATION_MONITOR},
+    DaemonType.NODE_RECOVERY: {DaemonType.EVENT_ROUTER},
 
     # Tournament/evaluation daemons
     DaemonType.TOURNAMENT_DAEMON: {DaemonType.EVENT_ROUTER},
@@ -1122,16 +1043,6 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
 
     # Sync push daemon (Dec 28, 2025) - GPU nodes push data before cleanup
     DaemonType.SYNC_PUSH: {DaemonType.EVENT_ROUTER},
-
-    # Provider-specific idle daemons
-    DaemonType.VAST_IDLE: {DaemonType.EVENT_ROUTER},
-    DaemonType.LAMBDA_IDLE: {DaemonType.EVENT_ROUTER},  # Deprecated but may still be referenced
-
-    # Deprecated daemons (empty deps - should not be started)
-    DaemonType.SYNC_COORDINATOR: set(),  # DEPRECATED: Use AUTO_SYNC
-    DaemonType.HEALTH_CHECK: set(),  # DEPRECATED: Use NODE_HEALTH_MONITOR
-    DaemonType.CLUSTER_DATA_SYNC: set(),  # DEPRECATED: Use AUTO_SYNC
-    DaemonType.EPHEMERAL_SYNC: set(),  # DEPRECATED: Use AUTO_SYNC
 
     # =========================================================================
     # Cluster Availability Manager dependencies (December 28, 2025)

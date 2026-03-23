@@ -283,6 +283,68 @@ def validate_encoder_model_match(
     return True, "OK"
 
 
+def get_validated_encoder(
+    model: "nn.Module",
+    *,
+    board_type: Optional[str] = None,
+    board_size: Optional[int] = None,
+    policy_size: Optional[int] = None,
+) -> Any:
+    """Unified encoder selection with mandatory channel validation.
+
+    Mar 2026: Single entry point for encoder selection that replaces scattered
+    instantiation paths. Detects model channels, instantiates the correct
+    encoder, and validates the match — preventing the silent encoding mismatches
+    that caused models to train on malformed input.
+
+    Args:
+        model: A loaded PyTorch neural network model
+        board_type: Optional board type for board-size-aware encoders
+        board_size: Optional board size override
+        policy_size: Optional policy size override
+
+    Returns:
+        An encoder instance guaranteed to match the model's channel count.
+
+    Raises:
+        ValueError: If encoder/model channels don't match or can't be determined.
+    """
+    channels = get_expected_channels_from_model(model)
+    if channels is None:
+        raise ValueError(
+            "Cannot detect model input channels from conv1.weight. "
+            "Model may have non-standard architecture."
+        )
+
+    encoder = get_encoder_for_model(model)
+    if encoder is None:
+        raise ValueError(
+            f"No encoder found for {channels}-channel model. "
+            f"Supported: {list(CHANNEL_TO_ENCODER_NAME.keys())}"
+        )
+
+    # Apply board-specific parameters if provided
+    if board_size is not None and hasattr(encoder, 'board_size'):
+        encoder.board_size = board_size
+    if policy_size is not None and hasattr(encoder, 'policy_size'):
+        encoder.policy_size = policy_size
+
+    # Mandatory validation — raise if channels don't match
+    is_valid, error = validate_encoder_model_match(encoder, model)
+    if not is_valid:
+        raise ValueError(
+            f"Encoder/model channel mismatch: {error}. "
+            f"Model expects {channels} channels. "
+            "This prevents training on malformed input."
+        )
+
+    logger.info(
+        f"[EncoderContract] Validated encoder for {channels}ch model "
+        f"({encoder.__class__.__name__})"
+    )
+    return encoder
+
+
 def get_architecture_from_class_name(class_name: str) -> Optional[ArchitectureSpec]:
     """
     Get architecture spec from a model class name.
