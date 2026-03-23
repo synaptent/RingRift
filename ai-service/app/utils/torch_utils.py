@@ -257,6 +257,8 @@ def safe_load_checkpoint(
     warn_on_unsafe: bool = True,
     verify_checksum: bool = True,
     strict_checksum: bool = False,
+    expected_board_type: str | None = None,
+    expected_num_players: int | None = None,
 ) -> dict[str, Any]:
     """Safely load a PyTorch checkpoint with optional integrity verification.
 
@@ -264,6 +266,7 @@ def safe_load_checkpoint(
     1. Optionally verifies SHA256 checksum against sidecar .sha256 file
     2. First tries with weights_only=True (prevents arbitrary code execution)
     3. If that fails and allow_unsafe=True, falls back to weights_only=False
+    4. Optionally validates embedded metadata against expected config (Mar 2026)
 
     Args:
         path: Path to the checkpoint file
@@ -272,6 +275,8 @@ def safe_load_checkpoint(
         warn_on_unsafe: Whether to log a warning when using unsafe loading
         verify_checksum: Whether to verify SHA256 checksum (Dec 2025)
         strict_checksum: If True, raise error on checksum mismatch
+        expected_board_type: If set, validate metadata board_type matches
+        expected_num_players: If set, validate metadata num_players matches
 
     Returns:
         The loaded checkpoint dictionary
@@ -282,6 +287,7 @@ def safe_load_checkpoint(
         InvalidCheckpointFormatError: If file has invalid magic bytes (Dec 2025)
         RuntimeError: If loading fails and allow_unsafe=False
         ModelCorruptionError: If verify_checksum=True and checksum mismatch
+        ValueError: If metadata doesn't match expected config (Mar 2026)
     """
     if not HAS_TORCH:
         raise ImportError("PyTorch is required for checkpoint loading")
@@ -337,9 +343,9 @@ def safe_load_checkpoint(
             )
 
     # Try safe loading first
+    checkpoint = None
     try:
         checkpoint = torch.load(path, map_location=map_location, weights_only=True)
-        return checkpoint
     except Exception as safe_error:
         if not allow_unsafe:
             raise RuntimeError(
@@ -357,11 +363,32 @@ def safe_load_checkpoint(
 
         try:
             checkpoint = torch.load(path, map_location=map_location, weights_only=False)
-            return checkpoint
         except TypeError:
             # Very old PyTorch versions don't support weights_only
             checkpoint = torch.load(path, map_location=map_location)
-            return checkpoint
+
+    # Mar 2026: Model Identity Contract — validate embedded metadata against
+    # expected config to prevent wrong-model-loaded bugs (e.g., hex8_2p model
+    # loaded for square8_4p evaluation).
+    if expected_board_type or expected_num_players:
+        meta = checkpoint.get("_versioning_metadata", {}) if isinstance(checkpoint, dict) else {}
+        config = meta.get("config", {})
+        meta_board = config.get("board_type") or meta.get("board_type")
+        meta_players = config.get("num_players") or meta.get("num_players")
+
+        if expected_board_type and meta_board and meta_board != expected_board_type:
+            raise ValueError(
+                f"Model identity mismatch: expected board_type={expected_board_type} "
+                f"but checkpoint has board_type={meta_board}. Path: {path}"
+            )
+        if expected_num_players and meta_players and int(meta_players) != expected_num_players:
+            logger.warning(
+                f"[ModelIdentity] num_players mismatch: expected={expected_num_players}, "
+                f"checkpoint={meta_players}. Path: {path}. "
+                "Proceeding (may be transfer learning)."
+            )
+
+    return checkpoint
 
 
 # =============================================================================

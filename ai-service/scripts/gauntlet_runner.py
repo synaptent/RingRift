@@ -46,8 +46,8 @@ CONFIGS = [
     ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
 ]
 
-# Track what we've already evaluated (by file size as proxy for version)
-evaluated = {}
+# Track what we've already evaluated (by SHA256 checksum)
+evaluated: dict[str, str] = {}
 running = True
 
 
@@ -78,8 +78,21 @@ def pull_candidate(config_key: str) -> Path | None:
             return None
         s3_size = int(parts[2])
 
-        # Skip if already evaluated this exact version
-        if evaluated.get(config_key) == s3_size:
+        # Try to fetch SHA256 sidecar from S3 for precise change detection
+        s3_sha = None
+        try:
+            sha_result = subprocess.run(
+                ["aws", "s3", "cp", f"{s3_path}.sha256", "/dev/stdout", "--quiet"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if sha_result.returncode == 0 and sha_result.stdout.strip():
+                s3_sha = sha_result.stdout.strip().split()[0]
+        except Exception:
+            pass
+
+        # Skip if already evaluated this exact version (SHA256 or size fallback)
+        check_val = s3_sha or str(s3_size)
+        if evaluated.get(config_key) == check_val:
             return None
 
         # Pull from S3
@@ -112,6 +125,20 @@ def run_gauntlet(board_type: str, num_players: int, model_path: Path) -> dict | 
     logger.info(f"Starting gauntlet: {config_key} ({model_path})")
 
     try:
+        # Model Identity Contract: verify checkpoint matches expected config
+        try:
+            from app.utils.torch_utils import safe_load_checkpoint
+            safe_load_checkpoint(
+                model_path,
+                expected_board_type=board_type,
+                expected_num_players=num_players,
+            )
+        except ValueError as e:
+            logger.error(f"[Identity] {config_key}: {e}")
+            return None
+        except Exception:
+            pass  # Other load errors handled by gauntlet itself
+
         from app.training.game_gauntlet import run_baseline_gauntlet, BaselineOpponent
 
         import torch
@@ -219,7 +246,12 @@ def main():
             result = run_gauntlet(board_type, num_players, model_path)
             if result:
                 push_result(config_key, result)
-                evaluated[config_key] = model_path.stat().st_size
+                # Track by SHA256 for precise change detection
+                try:
+                    from app.utils.torch_utils import compute_model_checksum
+                    evaluated[config_key] = compute_model_checksum(str(model_path))
+                except Exception:
+                    evaluated[config_key] = str(model_path.stat().st_size)
 
         if running:
             logger.info(f"Sleeping {POLL_INTERVAL}s before next poll...")
