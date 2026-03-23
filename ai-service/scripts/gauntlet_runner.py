@@ -88,6 +88,18 @@ def pull_candidate(config_key: str) -> Path | None:
             timeout=120, check=True,
         )
         logger.info(f"Pulled {config_key} from S3 ({s3_size} bytes)")
+
+        # Verify model integrity after S3 download
+        try:
+            from app.utils.torch_utils import validate_checkpoint_magic_bytes
+            is_valid, format_type = validate_checkpoint_magic_bytes(str(local_path))
+            if not is_valid:
+                logger.error(f"Invalid checkpoint for {config_key}: {format_type}")
+                local_path.unlink(missing_ok=True)
+                return None
+        except Exception as e:
+            logger.warning(f"Could not verify {config_key} integrity: {e}")
+
         return local_path
     except Exception as e:
         logger.warning(f"Failed to pull {config_key}: {e}")

@@ -41,10 +41,10 @@ def run_pre_training_validation(
     should_allow_stale_training_fn: Any | None = None,
     # Feature flags
     HAS_FRESHNESS_CHECK: bool = False,
-    HAS_NPZ_STRUCTURE_VALIDATION: bool = False,
-    HAS_DATA_VALIDATION: bool = False,
-    HAS_CHECKSUM_VERIFICATION: bool = False,
-    HAS_STALE_FALLBACK: bool = False,
+    HAS_NPZ_STRUCTURE_VALIDATION: bool = True,
+    HAS_DATA_VALIDATION: bool = True,
+    HAS_CHECKSUM_VERIFICATION: bool = True,
+    HAS_STALE_FALLBACK: bool = True,
     # DataEventType reference for event emission
     DataEventType: Any | None = None,
 ) -> None:

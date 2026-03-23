@@ -1142,7 +1142,7 @@ def create_neural_ai(
     game_seed: int | None = None,
     num_players: int = 2,
     model_type: str = "cnn",
-    use_search: bool = False,
+    use_search: bool = True,
     search_budget: int | None = None,
     model_version: str | None = None,  # Jan 2026: Support non-v2 architectures
 ) -> Any:
@@ -1408,11 +1408,20 @@ def play_single_game(
         # Use provided AIs for each opponent player
         player_ais.update(opponent_ais)
     else:
-        # For 2-player games, use the single opponent_ai for the other player
-        # Players are 1-indexed: range(1, num_players+1) gives [1, 2] for 2-player
+        # Assign opponent AI to all non-candidate players.
+        # For multiplayer (3p/4p), create separate instances per player since
+        # BaseAI.get_valid_moves() uses self.player_number — reusing the same
+        # instance for multiple players silently breaks move generation.
         for p in range(1, num_players + 1):
             if p != candidate_player:
-                player_ais[p] = opponent_ai
+                if num_players == 2:
+                    player_ais[p] = opponent_ai
+                else:
+                    # Clone the opponent for each player with correct player_number
+                    player_ais[p] = create_baseline_ai(
+                        BaselineOpponent.RANDOM, p, board_type,
+                        num_players=num_players,
+                    )
 
     move_count = 0
     while state.game_status == GameStatus.ACTIVE and move_count < max_moves:

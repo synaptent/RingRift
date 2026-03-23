@@ -978,6 +978,50 @@ async def execute_training_work(
                 work_item["result"]["candidate_model_path"] = str(candidate_path)
                 work_item["result"]["candidate_model_size"] = candidate_path.stat().st_size
 
+            # Post-training smoke test: reject near-random models before
+            # they enter the candidate pipeline (S3 push, gauntlet, promotion).
+            if candidate_path.exists():
+                try:
+                    from app.training.game_gauntlet import (
+                        play_single_game, create_neural_ai, create_baseline_ai,
+                        BaselineOpponent,
+                    )
+                    from app.models import BoardType as BT
+                    _bt = BT(board_type)
+                    _ai = create_neural_ai(
+                        player=1, board_type=_bt, model_path=str(candidate_path),
+                        num_players=num_players, use_search=False, temperature=0.1,
+                    )
+                    _wins = 0
+                    for _g in range(10):
+                        _opp = create_baseline_ai(
+                            BaselineOpponent.RANDOM, player=2,
+                            board_type=_bt, num_players=num_players,
+                        )
+                        _r = play_single_game(
+                            candidate_ai=_ai, opponent_ai=_opp,
+                            board_type=_bt, num_players=num_players,
+                            candidate_player=1, max_moves=500,
+                        )
+                        if _r.candidate_won:
+                            _wins += 1
+                    _wr = _wins / 10
+                    _threshold = 0.6 if num_players == 2 else 0.3
+                    if _wr < _threshold:
+                        logger.warning(
+                            f"[SmokeTest] REJECTED {config_key}: {_wins}/10 vs random "
+                            f"({_wr:.0%} < {_threshold:.0%}). Skipping S3 push."
+                        )
+                        work_item["result"]["smoke_test_failed"] = True
+                        work_item["result"]["smoke_test_win_rate"] = _wr
+                        return True  # Training succeeded but model is too weak
+                    logger.info(
+                        f"[SmokeTest] PASSED {config_key}: {_wins}/10 vs random ({_wr:.0%})"
+                    )
+                    work_item["result"]["smoke_test_win_rate"] = _wr
+                except Exception as _e:
+                    logger.debug(f"[SmokeTest] Could not run for {config_key}: {_e}")
+
             # Emit training completed event
             try:
                 from app.distributed.data_events import DataEventType

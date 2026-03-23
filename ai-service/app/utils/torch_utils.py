@@ -255,7 +255,7 @@ def safe_load_checkpoint(
     map_location: str | None = "cpu",
     allow_unsafe: bool = True,
     warn_on_unsafe: bool = True,
-    verify_checksum: bool = False,
+    verify_checksum: bool = True,
     strict_checksum: bool = False,
 ) -> dict[str, Any]:
     """Safely load a PyTorch checkpoint with optional integrity verification.

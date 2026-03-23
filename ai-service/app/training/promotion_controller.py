@@ -1322,6 +1322,18 @@ class PromotionController:
             shutil.copy2(str(candidate_path), str(tmp_path))
             tmp_path.rename(canonical_path)
 
+            # Write SHA256 checksum sidecar to detect future corruption
+            try:
+                from app.utils.torch_utils import write_checksum_file
+                write_checksum_file(str(canonical_path))
+                logger.info(
+                    f"[PromotionController] Wrote checksum sidecar for {config_key}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"[PromotionController] Failed to write checksum for {config_key}: {e}"
+                )
+
             logger.info(
                 f"[PromotionController] Promoted candidate → canonical for {config_key}"
             )
