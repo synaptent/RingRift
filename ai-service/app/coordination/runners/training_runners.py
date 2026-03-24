@@ -38,18 +38,8 @@ async def create_data_pipeline() -> None:
 
 
 async def create_continuous_training_loop() -> None:
-    """Create and run continuous training loop daemon.
-
-    Jan 3, 2026: DEPRECATED - Module archived. Functionality moved to p2p_orchestrator.py.
-    This function now logs a warning and returns without raising to prevent cascade failures.
-    """
-    logger.warning(
-        "[DEPRECATED] ContinuousTrainingLoop module is archived. "
-        "Functionality now provided by p2p_orchestrator.py. "
-        "This daemon will be removed in Q2 2026."
-    )
-    # Don't raise - allow daemon manager to continue with other daemons
-    return
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): CONTINUOUS_TRAINING_LOOP")
 
 
 async def create_selfplay_coordinator() -> None:

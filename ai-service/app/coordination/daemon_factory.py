@@ -101,12 +101,6 @@ def _build_registry() -> dict[str, DaemonImportSpec]:
             import_path="app.distributed.gossip_sync",
             class_name="GossipSyncDaemon",
         ),
-        # EPHEMERAL_SYNC: Updated Dec 2025 to use unified auto_sync_daemon
-        DaemonType.EPHEMERAL_SYNC.name: DaemonSpec(
-            import_path="app.coordination.auto_sync_daemon",
-            class_name="AutoSyncDaemon",
-            factory_fn="get_ephemeral_sync_daemon",
-        ),
         # MODEL_SYNC: Deprecated (Dec 2025) - use MODEL_DISTRIBUTION instead
         # The unified distribution daemon handles both model and NPZ sync
         DaemonType.MODEL_SYNC.name: DaemonSpec(
@@ -118,21 +112,6 @@ def _build_registry() -> dict[str, DaemonImportSpec]:
             import_path="app.coordination.unified_distribution_daemon",
             class_name="UnifiedDistributionDaemon",
             factory_fn="create_model_distribution_daemon",
-        ),
-        DaemonType.NPZ_DISTRIBUTION.name: DaemonSpec(
-            import_path="app.coordination.unified_distribution_daemon",
-            class_name="UnifiedDistributionDaemon",
-            factory_fn="create_npz_distribution_daemon",
-        ),
-        DaemonType.EXTERNAL_DRIVE_SYNC.name: DaemonSpec(
-            import_path="app.distributed.external_drive_sync",
-            class_name="ExternalDriveSyncDaemon",
-        ),
-        # CLUSTER_DATA_SYNC: Updated Dec 2025 to use unified auto_sync_daemon
-        DaemonType.CLUSTER_DATA_SYNC.name: DaemonSpec(
-            import_path="app.coordination.auto_sync_daemon",
-            class_name="AutoSyncDaemon",
-            factory_fn="create_cluster_data_sync_daemon",
         ),
         DaemonType.HIGH_QUALITY_SYNC.name: DaemonSpec(
             import_path="app.distributed.sync_coordinator",
@@ -158,14 +137,6 @@ def _build_registry() -> dict[str, DaemonImportSpec]:
             import_path="app.coordination.auto_promotion_daemon",
             class_name="AutoPromotionDaemon",
             factory_fn="get_auto_promotion_daemon",
-        ),
-        DaemonType.DISTILLATION.name: DaemonSpec(
-            import_path="app.coordination.daemon_adapters",
-            class_name="DistillationDaemonAdapter",
-        ),
-        DaemonType.CONTINUOUS_TRAINING_LOOP.name: DaemonSpec(
-            import_path="app.coordination.continuous_loop",
-            class_name="ContinuousTrainingLoop",
         ),
         DaemonType.SELFPLAY_COORDINATOR.name: DaemonSpec(
             import_path="app.coordination.selfplay_scheduler",
@@ -197,14 +168,6 @@ def _build_registry() -> dict[str, DaemonImportSpec]:
         # =================================================================
         # Health & Monitoring Daemons
         # =================================================================
-        DaemonType.HEALTH_CHECK.name: DaemonSpec(
-            import_path="app.distributed.health_checks",
-            class_name="HealthChecker",
-        ),
-        DaemonType.NODE_HEALTH_MONITOR.name: DaemonSpec(
-            import_path="app.coordination.unified_node_health_daemon",
-            class_name="UnifiedNodeHealthDaemon",
-        ),
         DaemonType.QUALITY_MONITOR.name: DaemonSpec(
             import_path="app.coordination.quality_monitor_daemon",
             class_name="QualityMonitorDaemon",
@@ -252,20 +215,6 @@ def _build_registry() -> dict[str, DaemonImportSpec]:
             import_path="app.coordination.coordinator_health_monitor_daemon",
             class_name="CoordinatorHealthMonitorDaemon",
             factory_fn="get_coordinator_health_monitor_sync",
-        ),
-        DaemonType.SYNC_COORDINATOR.name: DaemonSpec(
-            import_path="app.distributed.sync_coordinator",
-            class_name="SyncCoordinator",
-        ),
-        DaemonType.REPLICATION_MONITOR.name: DaemonSpec(
-            import_path="app.coordination.unified_replication_daemon",
-            class_name="UnifiedReplicationDaemon",
-            factory_fn="create_replication_monitor",
-        ),
-        DaemonType.REPLICATION_REPAIR.name: DaemonSpec(
-            import_path="app.coordination.unified_replication_daemon",
-            class_name="UnifiedReplicationDaemon",
-            factory_fn="create_replication_repair_daemon",
         ),
         # TRAINING_NODE_WATCHER: Updated Dec 2025 to use unified auto_sync_daemon with BROADCAST strategy
         DaemonType.TRAINING_NODE_WATCHER.name: DaemonSpec(
@@ -369,12 +318,6 @@ def _build_registry() -> dict[str, DaemonImportSpec]:
         # =================================================================
         # Health & System Monitoring
         # =================================================================
-        # SYSTEM_HEALTH_MONITOR: Updated Dec 2025 to use unified_health_manager
-        DaemonType.SYSTEM_HEALTH_MONITOR.name: DaemonSpec(
-            import_path="app.coordination.unified_health_manager",
-            class_name="UnifiedHealthManager",
-            factory_fn="get_health_manager",
-        ),
         DaemonType.MAINTENANCE.name: DaemonSpec(
             import_path="app.coordination.maintenance_daemon",
             class_name="MaintenanceDaemon",
@@ -383,17 +326,6 @@ def _build_registry() -> dict[str, DaemonImportSpec]:
         # =================================================================
         # Cost Optimization Daemons
         # =================================================================
-        DaemonType.LAMBDA_IDLE.name: DaemonSpec(
-            import_path="app.coordination.unified_idle_shutdown_daemon",
-            class_name="UnifiedIdleShutdownDaemon",
-            factory_fn="create_lambda_idle_daemon",  # Uses provider-specific config
-        ),
-        DaemonType.VAST_IDLE.name: DaemonSpec(
-            import_path="app.coordination.unified_idle_shutdown_daemon",
-            class_name="UnifiedIdleShutdownDaemon",
-            factory_fn="create_vast_idle_daemon",  # Uses provider-specific config
-        ),
-
         # =================================================================
         # Feedback & Curriculum Daemons
         # =================================================================

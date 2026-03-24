@@ -55,18 +55,8 @@ async def create_model_distribution() -> None:
 
 
 async def create_npz_distribution() -> None:
-    """Create and run NPZ distribution daemon (December 2025)."""
-    try:
-        from app.coordination.unified_distribution_daemon import (
-            create_npz_distribution_daemon,
-        )
-
-        daemon = create_npz_distribution_daemon()
-        await daemon.start()
-        await _wait_for_daemon(daemon)
-    except ImportError as e:
-        logger.error(f"NPZ distribution daemon not available: {e}")
-        raise
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): NPZ_DISTRIBUTION")
 
 
 async def create_data_server() -> None:
@@ -89,30 +79,10 @@ async def create_data_server() -> None:
 
 
 async def create_replication_monitor() -> None:
-    """Create and run replication monitor daemon (December 2025)."""
-    try:
-        from app.coordination.unified_replication_daemon import (
-            create_replication_monitor,
-        )
-
-        daemon = create_replication_monitor()
-        await daemon.start()
-        await _wait_for_daemon(daemon)
-    except ImportError as e:
-        logger.error(f"ReplicationMonitor not available: {e}")
-        raise
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): REPLICATION_MONITOR")
 
 
 async def create_replication_repair() -> None:
-    """Create and run replication repair daemon (December 2025)."""
-    try:
-        from app.coordination.unified_replication_daemon import (
-            create_replication_repair_daemon,
-        )
-
-        daemon = create_replication_repair_daemon()
-        await daemon.start()
-        await _wait_for_daemon(daemon)
-    except ImportError as e:
-        logger.error(f"ReplicationRepairDaemon not available: {e}")
-        raise
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): REPLICATION_REPAIR")

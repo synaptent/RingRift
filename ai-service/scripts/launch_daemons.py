@@ -67,15 +67,12 @@ DAEMON_CATEGORIES = {
         DaemonType.HIGH_QUALITY_SYNC,
         DaemonType.ELO_SYNC,
         DaemonType.MODEL_SYNC,
-        DaemonType.CLUSTER_DATA_SYNC,
     ],
     "training": [
         DaemonType.DATA_PIPELINE,
         DaemonType.TRAINING_NODE_WATCHER,
         DaemonType.SELFPLAY_COORDINATOR,
-        DaemonType.DISTILLATION,
         DaemonType.UNIFIED_PROMOTION,
-        DaemonType.CONTINUOUS_TRAINING_LOOP,
         DaemonType.TOURNAMENT_DAEMON,  # Auto-schedule tournaments on model events
         DaemonType.FEEDBACK_LOOP,  # Central feedback loop controller (Dec 2025)
         DaemonType.EVALUATION,  # Auto-evaluate models after training completes (Dec 2025)
@@ -84,10 +81,7 @@ DAEMON_CATEGORIES = {
         DaemonType.HEALTH_SERVER,
         DaemonType.CLUSTER_MONITOR,
         DaemonType.QUEUE_MONITOR,
-        DaemonType.REPLICATION_MONITOR,  # Monitor data replication health
-        DaemonType.REPLICATION_REPAIR,   # Actively repair under-replicated data
         DaemonType.ORPHAN_DETECTION,     # Detect unregistered game databases
-        DaemonType.NODE_HEALTH_MONITOR,  # Unified cluster health
     ],
     "events": [
         DaemonType.EVENT_ROUTER,
@@ -99,7 +93,6 @@ DAEMON_CATEGORIES = {
         DaemonType.DATA_SERVER,
     ],
     "external": [
-        DaemonType.EXTERNAL_DRIVE_SYNC,
         DaemonType.VAST_CPU_PIPELINE,
     ],
 }
@@ -229,9 +222,9 @@ def get_daemons_to_start(args: argparse.Namespace) -> list[DaemonType]:
     if args.external:
         daemons.update(DAEMON_CATEGORIES["external"])
     if args.continuous:
-        daemons.add(DaemonType.CONTINUOUS_TRAINING_LOOP)
+        logger.warning("--continuous flag is deprecated (CONTINUOUS_TRAINING_LOOP removed)")
     if args.sync_cluster:
-        daemons.add(DaemonType.CLUSTER_DATA_SYNC)
+        logger.warning("--sync-cluster flag is deprecated (CLUSTER_DATA_SYNC removed)")
 
     # Handle specific daemons
     if args.daemons:
@@ -267,7 +260,6 @@ def _filter_for_coordinator(daemons: list[DaemonType]) -> list[DaemonType]:
         DaemonType.AUTO_PROMOTION,          # triggers promotion (can spawn gauntlet)
         DaemonType.QUEUE_POPULATOR,         # can spawn selfplay
         DaemonType.UTILIZATION_OPTIMIZER,   # spawns processes on idle GPUs
-        DaemonType.CONTINUOUS_TRAINING_LOOP,  # full training loop
         DaemonType.VAST_CPU_PIPELINE,       # Vast.ai CPU selfplay
     }
 

@@ -366,27 +366,13 @@ async def create_s3_push() -> None:
 
 
 async def create_distillation() -> None:
-    """Create and run distillation daemon.
-
-    Jan 3, 2026: DEPRECATED - Standalone script at scripts/distillation_daemon.py.
-    """
-    logger.warning(
-        "[DEPRECATED] DistillationDaemon is a standalone script. "
-        "Use scripts/distillation_daemon.py directly. "
-        "This daemon will be removed in Q2 2026."
-    )
-    # Don't raise - allow daemon manager to continue with other daemons
-    return
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): DISTILLATION")
 
 
 async def create_external_drive_sync() -> None:
-    """Deprecated: replaced by OWC_SYNC_MANAGER (create_owc_sync_manager).
-
-    Mar 2026: No-op to prevent duplicate rsync operations. OWC_SYNC_MANAGER
-    handles all bidirectional sync (push+pull) that this daemon used to do.
-    """
-    logger.info("EXTERNAL_DRIVE_SYNC is deprecated, replaced by OWC_SYNC_MANAGER. Sleeping.")
-    await asyncio.sleep(float("inf"))
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): EXTERNAL_DRIVE_SYNC")
 
 
 async def create_vast_cpu_pipeline() -> None:
@@ -403,32 +389,8 @@ async def create_vast_cpu_pipeline() -> None:
 
 
 async def create_cluster_data_sync() -> None:
-    """Create and run cluster data sync daemon.
-
-    DEPRECATED (December 2025): Use AutoSyncDaemon with strategy="broadcast" instead.
-    This runner is retained for backward compatibility and will be removed in Q2 2026.
-    """
-    warnings.warn(
-        "DaemonType.CLUSTER_DATA_SYNC is deprecated. Use AutoSyncDaemon(strategy='broadcast') "
-        "instead. Removal scheduled for Q2 2026.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    try:
-        from app.coordination.auto_sync_daemon import (
-            AutoSyncConfig,
-            AutoSyncDaemon,
-            SyncStrategy,
-        )
-
-        config = AutoSyncConfig.from_config_file()
-        config.strategy = SyncStrategy.BROADCAST
-        daemon = AutoSyncDaemon(config=config)
-        await daemon.start()
-        await _wait_for_daemon(daemon)
-    except ImportError as e:
-        logger.error(f"AutoSyncDaemon not available for cluster sync: {e}")
-        raise
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): CLUSTER_DATA_SYNC")
 
 
 async def create_p2p_backend() -> None:
@@ -1091,23 +1053,13 @@ async def create_s3_import() -> None:
 
 
 async def create_unified_data_catalog() -> None:
-    """Create and run unified data catalog daemon (placeholder)."""
-    logger.warning(
-        "UNIFIED_DATA_CATALOG daemon is not yet implemented - "
-        "this is a placeholder for future unified data catalog API"
-    )
-    # Placeholder - daemon does nothing but prevents startup failure
-    await asyncio.sleep(float("inf"))
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): UNIFIED_DATA_CATALOG")
 
 
 async def create_node_data_agent() -> None:
-    """Create and run node data agent daemon (placeholder)."""
-    logger.warning(
-        "NODE_DATA_AGENT daemon is not yet implemented - "
-        "this is a placeholder for future per-node data agent"
-    )
-    # Placeholder - daemon does nothing but prevents startup failure
-    await asyncio.sleep(float("inf"))
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): NODE_DATA_AGENT")
 
 
 async def create_online_merge() -> None:

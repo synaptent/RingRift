@@ -1541,9 +1541,6 @@ class MasterLoopController:
             # December 29, 2025: Proactive disk space management
             # Prevents sync/training failures due to disk full conditions
             DaemonType.DISK_SPACE_MANAGER,
-            # December 30, 2025: Vast.ai idle termination (15min threshold)
-            # Uses unified_idle_shutdown_daemon with Vast-specific config
-            DaemonType.VAST_IDLE,
             # December 31, 2025: P2P recovery for LOCAL orchestrator health
             # Monitors /status endpoint and restarts local P2P when unhealthy
             # For cluster-wide P2P recovery, see _run_cluster_p2p_recovery()
@@ -1577,7 +1574,7 @@ class MasterLoopController:
                 DaemonType.S3_SYNC,  # Unified S3 sync (replaces S3_BACKUP, S3_NODE_SYNC, S3_PUSH)
             ]
 
-        # Dec 30 2025: All deprecated daemons (from daemon_registry.py)
+        # All deprecated daemons - excluded from 'full' profile
         # These have replacement modules and will be removed Q2 2026
         deprecated = {
             DaemonType.SYNC_COORDINATOR,      # Use AUTO_SYNC
@@ -1589,13 +1586,17 @@ class MasterLoopController:
             DaemonType.REPLICATION_MONITOR,   # Use unified_replication_daemon
             DaemonType.REPLICATION_REPAIR,    # Use unified_replication_daemon
             DaemonType.LAMBDA_IDLE,           # GH200 nodes are dedicated (Dec 28)
-            # VAST_IDLE now runs via unified_idle_shutdown_daemon - removed from skip list Dec 30
+            DaemonType.VAST_IDLE,             # Deprecated (Mar 2026)
             DaemonType.CLUSTER_DATA_SYNC,     # Use AUTO_SYNC with strategy='broadcast'
             DaemonType.S3_BACKUP,             # Use S3_SYNC (Feb 2026)
             DaemonType.S3_NODE_SYNC,          # Use S3_SYNC (Feb 2026)
             DaemonType.S3_PUSH,               # Use S3_SYNC (Feb 2026)
             DaemonType.S3_CONSOLIDATION,      # Use S3_SYNC (Feb 2026)
-            DaemonType.EXTERNAL_DRIVE_SYNC,  # Use OWC_SYNC_MANAGER (Mar 2026)
+            DaemonType.EXTERNAL_DRIVE_SYNC,   # Use OWC_SYNC_MANAGER (Mar 2026)
+            DaemonType.CONTINUOUS_TRAINING_LOOP,  # Archived, use p2p_orchestrator
+            DaemonType.DISTILLATION,          # Standalone script
+            DaemonType.UNIFIED_DATA_CATALOG,  # Never implemented
+            DaemonType.NODE_DATA_AGENT,       # Never implemented
         }
         full = [daemon for daemon in DaemonType if daemon not in deprecated]
 

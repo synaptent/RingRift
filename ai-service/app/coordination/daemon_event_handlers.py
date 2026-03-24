@@ -717,7 +717,6 @@ class DaemonEventHandlers:
             # Critical daemons (health monitoring, recovery) should keep running
             non_critical_daemons = [
                 DaemonType.SELFPLAY_COORDINATOR,
-                DaemonType.CONTINUOUS_TRAINING_LOOP,
                 DaemonType.AUTO_EXPORT,
                 DaemonType.AUTO_SYNC,
                 DaemonType.NPZ_COMBINATION,

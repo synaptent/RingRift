@@ -156,45 +156,13 @@ async def create_adaptive_resources() -> None:
 
 
 async def create_lambda_idle() -> None:
-    """Create and run Lambda idle shutdown daemon.
-
-    DEPRECATED (December 2025): Lambda Labs account permanently terminated.
-    Use DaemonType.VAST_IDLE or other provider-specific idle daemons instead.
-    This runner returns immediately without starting any daemon.
-    Retained for backward compatibility and will be removed in Q2 2026.
-    """
-    warnings.warn(
-        "DaemonType.LAMBDA_IDLE is deprecated. Lambda Labs account was terminated Dec 2025. "
-        "Use DaemonType.VAST_IDLE or other provider idle daemons instead. "
-        "Removal scheduled for Q2 2026.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    from app.coordination.unified_idle_shutdown_daemon import (
-        create_lambda_idle_daemon,
-    )
-
-    daemon = create_lambda_idle_daemon()  # Returns None with deprecation warning
-    if daemon is None:
-        logger.info("Lambda idle daemon skipped (Lambda Labs account terminated Dec 2025)")
-        return
-    await daemon.start()
-    await _wait_for_daemon(daemon)
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): LAMBDA_IDLE")
 
 
 async def create_vast_idle() -> None:
-    """Create and run Vast.ai idle shutdown daemon (December 2025)."""
-    try:
-        from app.coordination.unified_idle_shutdown_daemon import (
-            create_vast_idle_daemon,
-        )
-
-        daemon = create_vast_idle_daemon()
-        await daemon.start()
-        await _wait_for_daemon(daemon)
-    except ImportError as e:
-        logger.error(f"Vast idle daemon not available: {e}")
-        raise
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): VAST_IDLE")
 
 
 async def create_multi_provider() -> None:

@@ -25,26 +25,8 @@ logger = logging.getLogger(__name__)
 
 
 async def create_sync_coordinator() -> None:
-    """Create and run sync coordinator daemon.
-
-    DEPRECATED (December 2025): Use DaemonType.AUTO_SYNC instead.
-    This runner is retained for backward compatibility and will be removed in Q2 2026.
-    """
-    warnings.warn(
-        "DaemonType.SYNC_COORDINATOR is deprecated. Use DaemonType.AUTO_SYNC instead. "
-        "Removal scheduled for Q2 2026.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    try:
-        from app.distributed.sync_coordinator import SyncCoordinator
-
-        sync = SyncCoordinator.get_instance()
-        await sync.start()
-        await _wait_for_daemon(sync)
-    except ImportError as e:
-        logger.error(f"SyncCoordinator not available: {e}")
-        raise
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): SYNC_COORDINATOR")
 
 
 async def create_high_quality_sync() -> None:
@@ -429,32 +411,8 @@ async def create_comprehensive_model_scan() -> None:
 
 
 async def create_ephemeral_sync() -> None:
-    """Create and run ephemeral sync daemon (Phase 4, December 2025).
-
-    DEPRECATED (December 2025): Use AutoSyncDaemon with strategy="ephemeral" instead.
-    This runner is retained for backward compatibility and will be removed in Q2 2026.
-    """
-    warnings.warn(
-        "DaemonType.EPHEMERAL_SYNC is deprecated. Use AutoSyncDaemon(strategy='ephemeral') instead. "
-        "Removal scheduled for Q2 2026.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    try:
-        from app.coordination.auto_sync_daemon import (
-            AutoSyncConfig,
-            AutoSyncDaemon,
-            SyncStrategy,
-        )
-
-        config = AutoSyncConfig.from_config_file()
-        config.strategy = SyncStrategy.EPHEMERAL
-        daemon = AutoSyncDaemon(config=config)
-        await daemon.start()
-        await _wait_for_daemon(daemon)
-    except ImportError as e:
-        logger.error(f"AutoSyncDaemon not available for ephemeral sync: {e}")
-        raise
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): EPHEMERAL_SYNC")
 
 
 async def create_gossip_sync() -> None:

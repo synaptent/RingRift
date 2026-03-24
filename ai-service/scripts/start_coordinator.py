@@ -134,7 +134,6 @@ def main():
         coordinator_daemons = [
             DaemonType.EVENT_ROUTER,
             DaemonType.HEALTH_SERVER,
-            DaemonType.NODE_HEALTH_MONITOR,
             DaemonType.FEEDBACK_LOOP,
             DaemonType.DATA_PIPELINE,
             DaemonType.AUTO_SYNC,

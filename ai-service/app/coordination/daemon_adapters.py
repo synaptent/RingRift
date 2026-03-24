@@ -22,7 +22,7 @@ Usage:
     )
 
     # Get an adapter for a daemon type (uses ADAPTER_SPECS registry)
-    adapter = get_daemon_adapter(DaemonType.DISTILLATION)
+    adapter = get_daemon_adapter(DaemonType.UNIFIED_PROMOTION)
 
     # Or create a custom adapter via spec
     spec = DaemonAdapterSpec(
@@ -273,7 +273,7 @@ class ConfigurableDaemonAdapter(DaemonAdapter):
     configuration-driven implementation. Saves ~450 LOC.
 
     Usage:
-        spec = ADAPTER_SPECS[DaemonType.DISTILLATION]
+        spec = ADAPTER_SPECS[DaemonType.UNIFIED_PROMOTION]
         adapter = ConfigurableDaemonAdapter(spec)
         await adapter.run()
     """
@@ -368,23 +368,11 @@ class ConfigurableDaemonAdapter(DaemonAdapter):
 # =============================================================================
 
 ADAPTER_SPECS: dict[DaemonType, DaemonAdapterSpec] = {
-    DaemonType.DISTILLATION: DaemonAdapterSpec(
-        daemon_type=DaemonType.DISTILLATION,
-        module_path="app.training.distillation_daemon",
-        class_name="DistillationDaemon",
-        role=OrchestratorRole.DISTILLATION_LEADER,
-    ),
     DaemonType.UNIFIED_PROMOTION: DaemonAdapterSpec(
         daemon_type=DaemonType.UNIFIED_PROMOTION,
         module_path="app.training.unified_promotion_daemon",
         class_name="UnifiedPromotionDaemon",
         role=OrchestratorRole.PROMOTION_LEADER,
-    ),
-    DaemonType.EXTERNAL_DRIVE_SYNC: DaemonAdapterSpec(
-        daemon_type=DaemonType.EXTERNAL_DRIVE_SYNC,
-        module_path="app.distributed.external_drive_sync",
-        class_name="ExternalDriveSyncDaemon",
-        role=OrchestratorRole.EXTERNAL_SYNC_LEADER,
     ),
     DaemonType.VAST_CPU_PIPELINE: DaemonAdapterSpec(
         daemon_type=DaemonType.VAST_CPU_PIPELINE,
@@ -392,28 +380,11 @@ ADAPTER_SPECS: dict[DaemonType, DaemonAdapterSpec] = {
         class_name="VastCpuPipelineDaemon",
         role=OrchestratorRole.VAST_PIPELINE_LEADER,
     ),
-    DaemonType.CLUSTER_DATA_SYNC: DaemonAdapterSpec(
-        daemon_type=DaemonType.CLUSTER_DATA_SYNC,
-        module_path="app.coordination.auto_sync_daemon",
-        class_name="AutoSyncDaemon",
-        role=OrchestratorRole.CLUSTER_DATA_SYNC_LEADER,
-    ),
     DaemonType.AUTO_SYNC: DaemonAdapterSpec(
         daemon_type=DaemonType.AUTO_SYNC,
         module_path="app.coordination.auto_sync_daemon",
         class_name="AutoSyncDaemon",
         role=None,  # Runs on all nodes
-    ),
-    DaemonType.NPZ_DISTRIBUTION: DaemonAdapterSpec(
-        daemon_type=DaemonType.NPZ_DISTRIBUTION,
-        module_path="app.coordination.unified_distribution_daemon",
-        class_name="UnifiedDistributionDaemon",
-        role=None,
-        deprecated=True,
-        deprecated_message=(
-            "NPZ_DISTRIBUTION is deprecated. Use MODEL_DISTRIBUTION with "
-            "UnifiedDistributionDaemon instead."
-        ),
     ),
     DaemonType.ORPHAN_DETECTION: DaemonAdapterSpec(
         daemon_type=DaemonType.ORPHAN_DETECTION,
@@ -458,13 +429,9 @@ def _create_legacy_adapter(daemon_type: DaemonType) -> type[DaemonAdapter]:
 
 
 # Legacy classes - thin wrappers for backward compatibility
-DistillationDaemonAdapter = _create_legacy_adapter(DaemonType.DISTILLATION)
 PromotionDaemonAdapter = _create_legacy_adapter(DaemonType.UNIFIED_PROMOTION)
-ExternalDriveSyncAdapter = _create_legacy_adapter(DaemonType.EXTERNAL_DRIVE_SYNC)
 VastCpuPipelineAdapter = _create_legacy_adapter(DaemonType.VAST_CPU_PIPELINE)
-ClusterDataSyncAdapter = _create_legacy_adapter(DaemonType.CLUSTER_DATA_SYNC)
 AutoSyncDaemonAdapter = _create_legacy_adapter(DaemonType.AUTO_SYNC)
-NPZDistributionDaemonAdapter = _create_legacy_adapter(DaemonType.NPZ_DISTRIBUTION)
 OrphanDetectionDaemonAdapter = _create_legacy_adapter(DaemonType.ORPHAN_DETECTION)
 DataCleanupDaemonAdapter = _create_legacy_adapter(DaemonType.DATA_CLEANUP)
 
@@ -474,13 +441,9 @@ DataCleanupDaemonAdapter = _create_legacy_adapter(DaemonType.DATA_CLEANUP)
 # =============================================================================
 
 _ADAPTER_CLASSES: dict[DaemonType, type[DaemonAdapter]] = {
-    DaemonType.DISTILLATION: DistillationDaemonAdapter,
     DaemonType.UNIFIED_PROMOTION: PromotionDaemonAdapter,
-    DaemonType.EXTERNAL_DRIVE_SYNC: ExternalDriveSyncAdapter,
     DaemonType.VAST_CPU_PIPELINE: VastCpuPipelineAdapter,
-    DaemonType.CLUSTER_DATA_SYNC: ClusterDataSyncAdapter,
     DaemonType.AUTO_SYNC: AutoSyncDaemonAdapter,
-    DaemonType.NPZ_DISTRIBUTION: NPZDistributionDaemonAdapter,
     DaemonType.ORPHAN_DETECTION: OrphanDetectionDaemonAdapter,
     DaemonType.DATA_CLEANUP: DataCleanupDaemonAdapter,
 }
@@ -582,11 +545,7 @@ __all__ = [
     "ConfigurableDaemonAdapter",
     # Legacy adapter classes (backward compatibility)
     "AutoSyncDaemonAdapter",
-    "ClusterDataSyncAdapter",
     "DataCleanupDaemonAdapter",
-    "DistillationDaemonAdapter",
-    "ExternalDriveSyncAdapter",
-    "NPZDistributionDaemonAdapter",
     "OrphanDetectionDaemonAdapter",
     "PromotionDaemonAdapter",
     "VastCpuPipelineAdapter",

@@ -24,26 +24,8 @@ logger = logging.getLogger(__name__)
 
 
 async def create_health_check() -> None:
-    """Create and run health check daemon.
-
-    DEPRECATED (December 2025): Use DaemonType.NODE_HEALTH_MONITOR instead.
-    This runner is retained for backward compatibility and will be removed in Q2 2026.
-    """
-    warnings.warn(
-        "DaemonType.HEALTH_CHECK is deprecated. Use DaemonType.NODE_HEALTH_MONITOR instead. "
-        "Removal scheduled for Q2 2026.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    try:
-        from app.coordination.health_check_orchestrator import HealthCheckOrchestrator
-
-        orchestrator = HealthCheckOrchestrator()
-        await orchestrator.start()
-        await _wait_for_daemon(orchestrator)
-    except ImportError as e:
-        logger.error(f"HealthCheckOrchestrator not available: {e}")
-        raise
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): HEALTH_CHECK")
 
 
 async def create_queue_monitor() -> None:
@@ -73,52 +55,13 @@ async def create_daemon_watchdog() -> None:
 
 
 async def create_node_health_monitor() -> None:
-    """Create and run node health monitor daemon.
-
-    DEPRECATED (December 2025): Use HealthCheckOrchestrator directly via HEALTH_SERVER.
-    The NODE_HEALTH_MONITOR daemon type is deprecated in favor of the unified
-    health_check_orchestrator. This runner is retained for backward compatibility
-    and will be removed in Q2 2026.
-    """
-    warnings.warn(
-        "DaemonType.NODE_HEALTH_MONITOR is deprecated. Use HealthCheckOrchestrator "
-        "(via DaemonType.HEALTH_SERVER) instead. Removal scheduled for Q2 2026.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    try:
-        from app.coordination.health_check_orchestrator import HealthCheckOrchestrator
-
-        orchestrator = HealthCheckOrchestrator()
-        await orchestrator.start()
-        await _wait_for_daemon(orchestrator)
-    except ImportError as e:
-        logger.error(f"HealthCheckOrchestrator not available: {e}")
-        raise
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): NODE_HEALTH_MONITOR")
 
 
 async def create_system_health_monitor() -> None:
-    """Create and run system health monitor daemon (December 2025).
-
-    DEPRECATED (December 2025): Use unified_health_manager.get_system_health_score() instead.
-    This daemon type is deprecated in favor of unified_health_manager functions.
-    This runner is retained for backward compatibility and will be removed in Q2 2026.
-    """
-    warnings.warn(
-        "DaemonType.SYSTEM_HEALTH_MONITOR is deprecated. Use unified_health_manager."
-        "get_system_health_score() instead. Removal scheduled for Q2 2026.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    try:
-        from app.coordination.unified_health_manager import UnifiedHealthManager
-
-        manager = UnifiedHealthManager()
-        await manager.start()
-        await _wait_for_daemon(manager)
-    except ImportError as e:
-        logger.error(f"UnifiedHealthManager not available: {e}")
-        raise
+    """Deprecated. This daemon type has been removed."""
+    logger.debug("Deprecated daemon runner called (no-op): SYSTEM_HEALTH_MONITOR")
 
 
 async def create_health_server() -> None:
