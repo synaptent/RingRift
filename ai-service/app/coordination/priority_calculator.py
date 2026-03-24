@@ -69,24 +69,30 @@ PRIORITY_OVERRIDE_MULTIPLIERS = {
 
 # Static fallback priorities (used when live metrics unavailable)
 # Dynamic computation in compute_config_priority_override() takes precedence
-# Mar 2026: Focus sprint — all 2p configs CRITICAL to concentrate GPU resources.
-#   CRITICAL(0): square8_2p (1696), hex8_2p (1642), hexagonal_2p (1660), square19_2p (1610)
-#   MEDIUM(2): hex8_3p (1603), square8_3p (1585), hexagonal_3p (1825), square19_3p (1825)
-#   LOW(3): square19_4p (1982), hexagonal_4p (1982), hex8_4p (1661), square8_4p (1656)
+# Mar 23, 2026: Final week sprint — focus on small boards (hex8, square8) where
+# iteration is fast enough to see improvement. Large boards (hexagonal, square19)
+# deprioritized because one iteration takes 8-14h vs 4-6h for small boards.
+#   CRITICAL(0): hex8_2p (80% vs random), square8_2p (80% vs random)
+#   HIGH(1): hex8_3p, hex8_4p, square8_3p, square8_4p
+#   LOW(3): all hexagonal and square19 (archive current best, too slow to iterate)
 CONFIG_PRIORITY_FALLBACK: dict[str, int] = {
-    "hexagonal_2p": 0,   # 1660 Elo - CRITICAL
-    "square19_2p": 0,    # 1610 Elo - CRITICAL
-    "square8_2p": 0,     # 1696 Elo - CRITICAL (focus sprint)
-    "hex8_2p": 0,        # 1642 Elo - CRITICAL (focus sprint)
-    "hex8_3p": 2,        # 1603 Elo - MEDIUM
-    "square8_3p": 2,     # 1585 Elo - MEDIUM
-    "hexagonal_3p": 2,   # 1825 Elo - MEDIUM
-    "square19_3p": 2,    # 1825 Elo - MEDIUM
-    "square19_4p": 3,    # 1982 Elo - LOW (near target)
-    "hexagonal_4p": 3,   # 1982 Elo - LOW (near target)
-    "hex8_4p": 3,        # 1661 Elo - LOW
-    "square8_4p": 3,     # 1656 Elo - LOW
+    "hex8_2p": 0,        # CRITICAL - strongest model, fastest iteration
+    "square8_2p": 0,     # CRITICAL - strong model, fast iteration
+    "hex8_3p": 1,        # HIGH - small board, transfer from 2p
+    "hex8_4p": 1,        # HIGH - small board, transfer from 2p
+    "square8_3p": 1,     # HIGH - small board
+    "square8_4p": 1,     # HIGH - small board
+    "hexagonal_2p": 3,   # LOW - too slow to iterate in final week
+    "hexagonal_3p": 3,   # LOW
+    "hexagonal_4p": 3,   # LOW
+    "square19_2p": 3,    # LOW - corrupted, just restored
+    "square19_3p": 3,    # LOW
+    "square19_4p": 3,    # LOW
 }
+
+# Large board configs where iteration is too slow for the final sprint
+_LARGE_BOARD_CONFIGS = {"hexagonal_2p", "hexagonal_3p", "hexagonal_4p",
+                        "square19_2p", "square19_3p", "square19_4p"}
 
 
 def compute_config_priority_override(config_key: str, game_count: int | None, elo: float | None) -> int:
@@ -103,6 +109,10 @@ def compute_config_priority_override(config_key: str, game_count: int | None, el
     """
     if game_count is None:
         return CONFIG_PRIORITY_FALLBACK.get(config_key, 2)
+    # Mar 23, 2026: Cap large boards at LOW during final week sprint.
+    # One iteration on hexagonal takes 8-14h — can't improve in time.
+    if config_key in _LARGE_BOARD_CONFIGS:
+        return 3  # LOW — archive current best, focus GPU on small boards
     if elo is not None and elo >= 2000:
         return 3  # LOW - target met, free resources for others
     if game_count < 100:
@@ -110,9 +120,6 @@ def compute_config_priority_override(config_key: str, game_count: int | None, el
     if game_count < 500:
         return 0  # CRITICAL
     # Feb 26, 2026: Elo-based priority independent of game count.
-    # Previously hexagonal_2p (1483 Elo, 3181 games) got MEDIUM because
-    # game_count > 2000. A config with very low Elo needs more selfplay
-    # with the current model, regardless of how many old games exist.
     if elo is not None and elo < 1700:
         return 0  # CRITICAL - focus sprint (captures all 2p configs)
     if elo is not None and elo < 1800:
