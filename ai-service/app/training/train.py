@@ -1755,6 +1755,31 @@ def train_model(
     )
     model.to(device)
 
+    # Mar 2026: Encoding channel assertion — the single highest-leverage quality gate.
+    # Verifies NPZ feature channels match model's expected input channels.
+    # Would have prevented the Feb-Mar 2026 regression where 10/12 models trained
+    # on mismatched data for 171 iterations without detection.
+    try:
+        model_channels = None
+        if hasattr(model, 'conv1') and hasattr(model.conv1, 'weight'):
+            model_channels = model.conv1.weight.shape[1]
+        elif hasattr(model, 'in_channels'):
+            model_channels = model.in_channels
+        if model_channels is not None and hex_in_channels is not None:
+            if model_channels != hex_in_channels:
+                raise ValueError(
+                    f"ENCODING MISMATCH: NPZ has {hex_in_channels} feature channels "
+                    f"but model expects {model_channels} channels. "
+                    f"This will produce a garbage model. "
+                    f"Check encoder version (v2=40ch, v3/v4=64ch, v5=56ch)."
+                )
+            logger.info(f"[EncodingContract] Verified: NPZ channels ({hex_in_channels}) "
+                        f"match model channels ({model_channels})")
+    except ValueError:
+        raise  # Re-raise our own mismatch error
+    except Exception as e:
+        logger.debug(f"[EncodingContract] Could not verify channels: {e}")
+
     # Enable gradient checkpointing for memory-efficient training (January 2026)
     # Trades ~20-30% compute overhead for ~40-60% memory savings
     if gradient_checkpointing:

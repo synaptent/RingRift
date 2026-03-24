@@ -573,6 +573,7 @@ jobs:
         run: |
           python -m ruff check app/p2p app/distributed/gossip_sync.py app/distributed/unified_data_sync.py --select F401 --quiet
           python scripts/check_layer_violations.py
+          python scripts/check_daemon_reference_integrity.py
 
       - name: Run Python core test suite (excluding parity)
         working-directory: ai-service

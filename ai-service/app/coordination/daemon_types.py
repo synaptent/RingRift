@@ -98,6 +98,9 @@ class DaemonType(Enum):
     EXTERNAL_DRIVE_SYNC = "external_drive_sync"
     UNIFIED_DATA_CATALOG = "unified_data_catalog"
     NODE_DATA_AGENT = "node_data_agent"
+    SELFPLAY_SCHEDULER = "selfplay_scheduler"
+    DATA_AVAILABILITY = "data_availability"
+    TRAINING_COORDINATOR = "training_coordinator"
 
     # Sync daemons
     HIGH_QUALITY_SYNC = "high_quality_sync"
