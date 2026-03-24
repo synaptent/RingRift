@@ -196,6 +196,16 @@ class DaemonType(Enum):
     # Rate-limited, respects backpressure from EvaluationDaemon
     BACKLOG_EVALUATION = "backlog_evaluation"
 
+    # Canonical Model Watchdog (Mar 2026) — hourly beats-random check
+    # for all 12 canonical models. Catches corruption, encoding mismatches,
+    # and silent regression that bypassed promotion gates.
+    CANONICAL_MODEL_WATCHDOG = "canonical_model_watchdog"
+
+    # Pipeline Health Watchdog (Mar 2026) — detects stalled pipeline stages.
+    # Alerts when any config hasn't completed a full training cycle in 24h,
+    # or when evaluations pile up without promotions.
+    PIPELINE_HEALTH_WATCHDOG = "pipeline_health_watchdog"
+
     # P2P auto-deployment (December 2025) - ensure P2P runs on all nodes
     P2P_AUTO_DEPLOY = "p2p_auto_deploy"
 
