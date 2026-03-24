@@ -95,6 +95,11 @@ def pull_candidate(config_key: str) -> Path | None:
         if evaluated.get(config_key) == check_val:
             return None
 
+        # Delete stale sidecar before downloading new candidate
+        # (stale sidecar from previous version causes false checksum mismatch)
+        sidecar = local_path.with_suffix(local_path.suffix + ".sha256")
+        sidecar.unlink(missing_ok=True)
+
         # Pull from S3
         subprocess.run(
             ["aws", "s3", "cp", s3_path, str(local_path), "--quiet"],
