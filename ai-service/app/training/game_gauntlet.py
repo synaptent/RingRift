@@ -2304,6 +2304,16 @@ def run_baseline_gauntlet(
                 try:
                     eval_result = future.result()
                     opponent_eval_results.append(eval_result)
+                    # Progress logging: show interim results after each opponent
+                    _opp_name = eval_result.get("baseline_name", "?")
+                    _opp_wr = eval_result.get("win_rate", 0)
+                    _opp_games = eval_result.get("games", 0)
+                    _done = len(opponent_eval_results)
+                    _total_opps = len(futures)
+                    logger.info(
+                        f"[gauntlet] Progress {_done}/{_total_opps}: "
+                        f"vs {_opp_name} = {_opp_wr:.0%} ({_opp_games} games)"
+                    )
                 except Exception as e:
                     logger.error(
                         f"[gauntlet] OPPONENT EVAL FAILED vs {baseline.value}: {type(e).__name__}: {e}. "

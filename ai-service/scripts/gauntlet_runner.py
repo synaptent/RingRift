@@ -38,6 +38,7 @@ RESULTS_PREFIX = "consolidated/gauntlet_results"
 MODELS_DIR = Path("models")
 RESULTS_DIR = Path("data/gauntlet_results")
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+STATUS_FILE = Path("/tmp/gauntlet_status.json")
 
 CONFIGS = [
     ("hex8", 2), ("hex8", 3), ("hex8", 4),
@@ -124,10 +125,21 @@ def pull_candidate(config_key: str) -> Path | None:
         return None
 
 
+def _write_status(config_key: str, status: str, **extra):
+    """Write machine-readable status to /tmp/gauntlet_status.json."""
+    try:
+        data = {"config": config_key, "status": status, "timestamp": time.time()}
+        data.update(extra)
+        STATUS_FILE.write_text(json.dumps(data, indent=2))
+    except Exception:
+        pass
+
+
 def run_gauntlet(board_type: str, num_players: int, model_path: Path) -> dict | None:
     """Run gauntlet evaluation with strong baselines."""
     config_key = f"{board_type}_{num_players}p"
     logger.info(f"Starting gauntlet: {config_key} ({model_path})")
+    _write_status(config_key, "starting", model=str(model_path))
 
     try:
         # Model Identity Contract: verify checkpoint matches expected config
@@ -188,6 +200,8 @@ def run_gauntlet(board_type: str, num_players: int, model_path: Path) -> dict | 
             f"Gauntlet complete: {config_key} Elo={elo:.0f} "
             f"win_rate={win_rate:.1%} games={total} time={elapsed:.0f}s"
         )
+        _write_status(config_key, "complete",
+                      elo=elo, win_rate=win_rate, games=total, elapsed=elapsed)
 
         opp_results = {}
         for name, stats in getattr(result, "opponent_results", {}).items():
@@ -259,6 +273,8 @@ def main():
                     evaluated[config_key] = str(model_path.stat().st_size)
 
         if running:
+            _write_status("", "polling", next_poll_in=POLL_INTERVAL,
+                          evaluated=list(evaluated.keys()))
             logger.info(f"Sleeping {POLL_INTERVAL}s before next poll...")
             for _ in range(POLL_INTERVAL):
                 if not running:
