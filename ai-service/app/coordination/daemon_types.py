@@ -75,6 +75,30 @@ def _check_deprecated_daemon(daemon_type: "DaemonType") -> None:
 
 class DaemonType(Enum):
     """Types of daemons that can be managed."""
+
+    # =========================================================================
+    # DEPRECATED STUBS — kept for backward compatibility with references in
+    # daemon_manager.py, daemon_adapters.py, daemon_factory.py, runners/*.py.
+    # These daemons are no-ops; their runners log deprecation warnings.
+    # TODO: Remove once all 23 referencing files are cleaned up.
+    # =========================================================================
+    SYNC_COORDINATOR = "sync_coordinator"
+    EPHEMERAL_SYNC = "ephemeral_sync"
+    CLUSTER_DATA_SYNC = "cluster_data_sync"
+    HEALTH_CHECK = "health_check"
+    NODE_HEALTH_MONITOR = "node_health_monitor"
+    SYSTEM_HEALTH_MONITOR = "system_health_monitor"
+    NPZ_DISTRIBUTION = "npz_distribution"
+    REPLICATION_MONITOR = "replication_monitor"
+    REPLICATION_REPAIR = "replication_repair"
+    LAMBDA_IDLE = "lambda_idle"
+    VAST_IDLE = "vast_idle"
+    CONTINUOUS_TRAINING_LOOP = "continuous_training_loop"
+    DISTILLATION = "distillation"
+    EXTERNAL_DRIVE_SYNC = "external_drive_sync"
+    UNIFIED_DATA_CATALOG = "unified_data_catalog"
+    NODE_DATA_AGENT = "node_data_agent"
+
     # Sync daemons
     HIGH_QUALITY_SYNC = "high_quality_sync"
     ELO_SYNC = "elo_sync"

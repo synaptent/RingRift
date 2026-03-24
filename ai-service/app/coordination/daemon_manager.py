@@ -3633,14 +3633,11 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.TOURNAMENT_DAEMON,
         DaemonType.MODEL_DISTRIBUTION,
         DaemonType.S3_BACKUP,  # Dec 2025: Backup models to S3 after promotion
-        DaemonType.REPLICATION_MONITOR,
-        DaemonType.REPLICATION_REPAIR,  # Actively repair under-replicated data
         DaemonType.CLUSTER_MONITOR,
         DaemonType.QUEUE_MONITOR,  # Monitor queue depths and apply backpressure
         DaemonType.FEEDBACK_LOOP,
         DaemonType.QUALITY_MONITOR,  # Monitor selfplay data quality
         DaemonType.MODEL_PERFORMANCE_WATCHDOG,  # Monitor model win rates
-        DaemonType.NPZ_DISTRIBUTION,  # Distribute training data after export
         DaemonType.ORPHAN_DETECTION,  # Detect unregistered game databases
         # NOTE: NODE_HEALTH_MONITOR and SYSTEM_HEALTH_MONITOR removed Dec 2025
         # HEALTH_SERVER (line 3157) + health_check_orchestrator handle both use cases
@@ -3671,7 +3668,6 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.EVENT_ROUTER,
         DaemonType.HEALTH_SERVER,  # HTTP health endpoints (/health, /ready, /metrics)
         DaemonType.DATA_PIPELINE,
-        DaemonType.CONTINUOUS_TRAINING_LOOP,
         DaemonType.AUTO_SYNC,
         DaemonType.TRAINING_NODE_WATCHER,
         DaemonType.EVALUATION,  # Auto-evaluate after training completes
