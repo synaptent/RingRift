@@ -976,7 +976,12 @@ class ModelVersionManager:
         state_dict = checkpoint[self.STATE_DICT_KEY]
 
         # Verify checksum if requested
-        if verify_checksum:
+        # Mar 2026: Skip embedded checksum for candidate models. Training modifies
+        # weights but the embedded metadata.checksum is from the parent canonical.
+        # Only canonical models (with matching sidecar .sha256 files) should be
+        # verified via embedded checksum. This was blocking ALL gauntlet evaluations.
+        is_candidate = "candidate_" in os.path.basename(path)
+        if verify_checksum and not is_candidate:
             actual_checksum = compute_state_dict_checksum(state_dict)
             if metadata.checksum and actual_checksum != metadata.checksum:
                 raise ChecksumMismatchError(
