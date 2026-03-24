@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  RingRift S3 Gauntlet Promoter
+
+  Polls S3 for gauntlet evaluation results and auto-promotes winning
+  candidates to canonical. Bridges the gauntlet_runner on Lambda GPU
+  nodes with the promotion system on the coordinator.
+
+  Installation:
+    cp config/launchd/com.ringrift.s3-promoter.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.ringrift.s3-promoter.plist
+
+  Status:
+    launchctl list com.ringrift.s3-promoter
+
+  Logs:
+    tail -f ~/Development/RingRift/ai-service/logs/s3_promoter.log
+
+  March 2026: Created after S3 promoter kept dying as nohup script.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ringrift.s3-promoter</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/armand/Development/RingRift/ai-service/.venv/bin/python3</string>
+        <string>/Users/armand/Development/RingRift/ai-service/scripts/s3_gauntlet_promoter.py</string>
+        <string>--daemon</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/armand/Development/RingRift/ai-service</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/armand/Development/RingRift/ai-service</string>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/Users/armand/Development/RingRift/ai-service/.venv/bin</string>
+    </dict>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/armand/Development/RingRift/ai-service/logs/s3_promoter.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/armand/Development/RingRift/ai-service/logs/s3_promoter.err</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>Nice</key>
+    <integer>5</integer>
+
+    <key>ExitTimeOut</key>
+    <integer>15</integer>
+</dict>
+</plist>

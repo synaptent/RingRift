@@ -11,13 +11,13 @@ WorkingDirectory=/home/ubuntu/ringrift/ai-service
 Environment=PYTHONPATH=/home/ubuntu/ringrift/ai-service
 EnvironmentFile=/etc/ringrift/node.conf
 ExecStart=/home/ubuntu/ringrift/ai-service/venv/bin/python /home/ubuntu/ringrift/ai-service/scripts/gauntlet_runner.py
-Restart=on-failure
-RestartSec=300
+Restart=always
+RestartSec=30
 Nice=10
-# KillMode=process: only kill the main process, not children (game workers)
-# This is separate from P2P's KillMode=control-group
-KillMode=process
-TimeoutStopSec=120
+# KillMode=control-group: kill ALL children (game workers, torch processes)
+# Prevents zombie accumulation that crashed gh200-8 on Mar 23.
+KillMode=control-group
+TimeoutStopSec=60
 
 [Install]
 WantedBy=multi-user.target
