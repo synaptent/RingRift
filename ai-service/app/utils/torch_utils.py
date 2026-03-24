@@ -320,27 +320,35 @@ def safe_load_checkpoint(
     logger.debug(f"[ModelLoad] Checkpoint format: {format_type} for {path.name}")
 
     # Dec 2025: Optional SHA256 checksum verification
+    # Mar 2026: Only verify against .sha256 SIDECAR files, not embedded metadata
+    # checksums. Candidate models have stale embedded checksums from their
+    # parent canonical model — the training process modifies weights but doesn't
+    # update the embedded checksum. Sidecar files are only written by the
+    # promotion controller after a model is verified.
     if verify_checksum:
-        valid, computed = verify_model_checksum(path, strict=strict_checksum)
-        if not valid:
-            # Dec 2025: Emit model corrupted event for downstream systems
-            try:
-                from app.coordination.event_emission_helpers import safe_emit_event
-                safe_emit_event(
-                    "MODEL_CORRUPTED",
-                    {
-                        "model_id": path.stem,
-                        "model_path": str(path),
-                        "corruption_type": "checksum_mismatch",
-                    },
-                    context="safe_load_checkpoint",
-                )
-            except (ImportError, RuntimeError, AttributeError, OSError):
-                pass  # Best-effort event emission - don't block checkpoint loading
-            raise ModelCorruptionError(
-                f"Model checksum verification failed for {path}. "
-                "The model file may be corrupted or tampered with."
+        sidecar_path = Path(f"{path}.sha256")
+        if sidecar_path.exists():
+            valid, computed = verify_model_checksum(
+                path, checksum_file=sidecar_path, strict=strict_checksum,
             )
+            if not valid:
+                try:
+                    from app.coordination.event_emission_helpers import safe_emit_event
+                    safe_emit_event(
+                        "MODEL_CORRUPTED",
+                        {
+                            "model_id": path.stem,
+                            "model_path": str(path),
+                            "corruption_type": "checksum_mismatch",
+                        },
+                        context="safe_load_checkpoint",
+                    )
+                except (ImportError, RuntimeError, AttributeError, OSError):
+                    pass
+                raise ModelCorruptionError(
+                    f"Model checksum verification failed for {path}. "
+                    "The model file may be corrupted or tampered with."
+                )
 
     # Try safe loading first
     checkpoint = None
