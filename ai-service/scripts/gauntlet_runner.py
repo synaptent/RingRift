@@ -40,12 +40,21 @@ RESULTS_DIR = Path("data/gauntlet_results")
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 STATUS_FILE = Path("/tmp/gauntlet_status.json")
 
+# Mar 25, 2026: Focus gauntlet on hex8_2p during final GPU sprint.
+# This is the smallest board (61 cells) with the most training data (779K games).
+# Concentrated evaluation gives the clearest signal for Hypothesis 3
+# (does the AlphaZero loop produce iterative improvement?).
+# To restore full evaluation: uncomment ALL_CONFIGS and use it instead.
 CONFIGS = [
-    ("hex8", 2), ("hex8", 3), ("hex8", 4),
-    ("square8", 2), ("square8", 3), ("square8", 4),
-    ("square19", 2), ("square19", 3), ("square19", 4),
-    ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
+    ("hex8", 2),
+    ("square8", 2),
 ]
+# ALL_CONFIGS = [
+#     ("hex8", 2), ("hex8", 3), ("hex8", 4),
+#     ("square8", 2), ("square8", 3), ("square8", 4),
+#     ("square19", 2), ("square19", 3), ("square19", 4),
+#     ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
+# ]
 
 # Track what we've already evaluated (by SHA256 checksum)
 evaluated: dict[str, str] = {}
