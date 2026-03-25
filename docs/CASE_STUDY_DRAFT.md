@@ -2,6 +2,10 @@
 
 > **Status: DRAFT** — This documents the training infrastructure as built. The game has not launched publicly and the neural network models have not been validated by real players yet.
 
+## Context: A Research Experiment
+
+This case study documents infrastructure built as part of a larger research experiment: can a solo non-developer, using frontier AI models (Claude, GPT) as development partners, build an AlphaZero-style self-improvement loop from scratch and apply it to a novel game designed to resist machine learning? The project tests five hypotheses about game design, AI-assisted development, and the limits of self-play training. See [PROJECT_GOALS.md](../PROJECT_GOALS.md) Section 2.2 for the full research framing. The infrastructure described below serves Hypotheses 2 (can it be built?) and 3 (does it produce improvement?).
+
 ## Training Neural Network Opponents Across a Heterogeneous GPU Fleet
 
 ---

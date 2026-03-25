@@ -36,24 +36,38 @@
 - Fascinated by AlphaZero since the 2017 paper
 - Wondered: what would it take to replicate this today, starting from nothing?
 
-**The two-part goal:**
+**The five research hypotheses:**
 
-_Part 1: Recreate AlphaZero_
+This project tests five interconnected questions. Every outcome — success or failure — produces an interesting finding.
 
-- Not just use an existing implementation—build the entire pipeline from scratch
-- Self-play data generation, neural network training, evaluation, model promotion
-- Distributed across commodity GPUs, not Google TPU pods
-- See if one person + AI tools can match what took a large team 8 years ago
+_Hypothesis 1: Can a non-developer design a genuinely ML-resistant pure strategy game?_
 
-_Part 2: Invent a game worth training on_
+- Design a game with properties that should resist neural network optimization: multi-path victory, coalition dynamics, extreme branching, forced elimination cascades
+- If AlphaZero-style training fails to produce superhuman play despite adequate data, the game design thesis is validated — interesting for game designers and AI safety researchers
+- If training succeeds, the game still works as a product — interesting for different reasons
 
-- Most AlphaZero replications use Chess or Go—solved problems
-- I wanted to create something new: a perfect information zero-sum abstract strategy game
-- Design goals:
-  - Deep enough to challenge AI for years/decades
-  - Balanced enough that humans can remain competitive
-  - Flexible enough to serve as a testbed for new algorithms (GNNs, transformers, etc.)
-  - Multiple board geometries (square, hexagonal) and player counts (2-4)
+_Hypothesis 2: Can a non-developer build AlphaZero from scratch using frontier AI models?_
+
+- Not just use an existing implementation — build the entire pipeline from scratch with Claude/GPT
+- Self-play, neural network training, evaluation, model promotion, distributed across commodity GPUs
+- The system's existence (and its bugs) is data for this hypothesis regardless of AI strength
+
+_Hypothesis 3: Does the self-play loop actually work, and what does that tell us?_
+
+- If models improve iteratively → Hypothesis 1 falsified, Hypothesis 2 validated
+- If models stall despite correct pipeline and sufficient data → Hypothesis 1 validated
+- As of March 2026: 1.9M games generated, pipeline recently verified end-to-end after 2 months of silent regression. The experiment is ongoing.
+
+_Hypothesis 4: Can these results be presented in a way anyone cares about?_
+
+- The story writes itself regardless of outcome: "solo non-dev builds AlphaZero with Claude" OR "novel game resists ML" OR "$20K of GPU time and 132 daemons for a game with zero users"
+- Target: Hacker News, LessWrong, arxiv, game dev conferences
+
+_Hypothesis 5: Can the experiment become a product people actually play?_
+
+- The research narrative IS the marketing strategy
+- The game, web client, multiplayer backend, and AI opponents all work today at ringrift.ai
+- Users don't need superhuman AI — they need a fun game and an interesting story
 
 ---
 
@@ -483,11 +497,11 @@ I built impressive infrastructure for a game that has zero users. The AI compone
 
 **What's next:**
 
-- Right-sizing infrastructure (turn off the expensive nodes)
-- Fixing the actual training loop so models improve instead of regress
-- Documenting this for others to learn from (you're reading it)
-- Maybe open-sourcing the training infrastructure
-- Actually getting some users for the game (novel concept)
+- The training pipeline was broken for 2 months (encoding mismatches, disabled validation, model corruption). As of March 2026, root causes are found and fixed. The experiment restarts now.
+- If models improve over the next 1-2 weeks of clean iterations → the AlphaZero loop works, the game is solvable, Hypothesis 2 is validated
+- If models stall despite correct pipeline and 1.9M games → the game genuinely resists ML optimization, Hypothesis 1 is validated, interesting for AI safety
+- Either way, the game is playable today at ringrift.ai with heuristic + current NN opponents
+- The research story is the marketing: "come play the game that [defeated/resisted] AlphaZero"
 
 ---
 
