@@ -55,6 +55,27 @@ The RingRift ruleset is intentionally designed around a **modest number of simpl
 
 Together, these goals define **how the game should feel**: simple to describe at the rules level, but with deep, emergent strategy; high tension and comeback potential; and a long-term target where humans and AIs can meaningfully co-exist as competitive opponents. Detailed rules semantics, examples, and strategy notes are defined in the authoritative rulebook [`docs/rules/COMPLETE_RULES.md`](docs/rules/COMPLETE_RULES.md) and the canonical specification [`RULES_CANONICAL_SPEC.md`](RULES_CANONICAL_SPEC.md); this section records the _purpose_ those rules are serving.
 
+### 2.2 RingRift as an AI research experiment
+
+Beyond the product goals above, RingRift serves as a research experiment testing five interconnected hypotheses. The project was conceived and built by a solo non-developer using frontier AI models (Claude, GPT) as development partners, and the experimental outcomes are valuable regardless of whether the AI achieves superhuman play.
+
+**Hypothesis 1: Can a non-developer design an ML-resistant pure strategy game?**
+RingRift was designed with properties intended to resist machine learning optimization: multi-path victory conditions that defy single-scalar value functions, forced elimination cascades requiring exact tactical calculation, and coalition dynamics in 3-4 player modes that are difficult to learn from self-play alone. The question is whether these design choices genuinely create ML resistance, or whether sufficient training data and architecture overcome them. Both outcomes are scientifically interesting.
+
+**Hypothesis 2: Can a non-developer build an AlphaZero-style training loop using frontier models?**
+The project tests whether AI-assisted development can replicate research infrastructure (distributed self-play, Gumbel MCTS, neural network training, automated evaluation and promotion) that originally required teams of PhD researchers and thousands of TPUs. The complete system exists: P2P mesh network, 7+ GPU nodes, automated pipeline with quality gates. The question is whether it produces the same iterative improvement that AlphaZero demonstrated.
+
+**Hypothesis 3: Does the AlphaZero loop work, and what does it reveal about the game?**
+If training iterations produce superhuman play, Hypothesis 1 is falsified (the game is not ML-resistant) but Hypothesis 2 is validated (the loop works). If training stalls despite adequate data and a correct pipeline, Hypothesis 1 is validated (the game genuinely resists ML) and the result is interesting for game design and AI safety research. As of March 2026, 1.9 million training games have been generated across 12 board configurations, with the training pipeline recently verified end-to-end. The experiment is ongoing.
+
+**Hypothesis 4: Can the results be presented in a way that others find interesting?**
+The project generates compelling narratives regardless of AI strength outcome: the solo-developer-builds-AlphaZero story, the ML-resistant-game-design finding, or the engineering case study of debugging a 132-daemon distributed system. Target venues include Hacker News, LessWrong, arxiv (informal), game development conferences, and AI safety communities (ML resistance has alignment implications).
+
+**Hypothesis 5: Can the experiment produce a usable game that people want to play?**
+The final hypothesis tests whether the research outputs (a novel game, AI opponents at various strengths, and the narrative from Hypotheses 1-4) can drive adoption of an online implementation where humans play each other and compete against AI. The game, web client, multiplayer backend, and production infrastructure are all complete and deployed at ringrift.ai. The analysis of Hypotheses 1-4 serves as the content strategy for attracting initial players.
+
+**How these hypotheses shape the project:** The product goals (Section 3) serve Hypothesis 5. The AI training pipeline serves Hypotheses 2 and 3. The ruleset design goals (Section 2.1) serve Hypothesis 1. The documentation and case studies serve Hypothesis 4. Every engineering decision in the project advances at least one hypothesis.
+
 ---
 
 ## 3. Core objectives for current phase (v1.0)

@@ -43,6 +43,8 @@ Win by achieving **any one** of:
 
 **For players:** A deep, deterministic strategy game where "won" positions can collapse through cascading reactions. Three distinct victory paths keep every game dynamic. No dice, no card draws — every outcome is determined by player decisions. **Start with 2-player games** for pure strategy without political dynamics; 3-4 player games add alliances and kingmaking for those who enjoy social strategy.
 
+**As a research experiment:** RingRift tests whether a solo non-developer can use frontier AI models to build an AlphaZero-style self-improvement loop from scratch, apply it to a novel game designed to resist machine learning, and determine whether the game is genuinely ML-resistant or solvable. The project tests five hypotheses about game design, AI-assisted development, and the limits of self-play training. See [PROJECT_GOALS.md](PROJECT_GOALS.md) Section 2.2 for the full research framing.
+
 **For AI researchers:** A novel game environment with:
 
 - Non-trivial state space (up to 469 cells on hex boards, complex stack interactions)

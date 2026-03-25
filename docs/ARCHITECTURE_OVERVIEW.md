@@ -103,6 +103,22 @@ Unlike most perfect-information strategy games where engines quickly outclass hu
 | **Long tactical chains**     | Captures cascade through territory disconnections. Requires genuine lookahead, not just pattern matching                                       |
 | **Multiple victory paths**   | Ring elimination, territory control, and last-standing interact. Not reducible to single value function                                        |
 
+### The Research Experiment
+
+The Human-Competitive Thesis above is not just a design goal — it's a testable scientific hypothesis. RingRift is simultaneously a game AND a research experiment with five interconnected questions:
+
+1. **Can a non-developer design a genuinely ML-resistant game?** The properties above (multi-player dynamics, extreme branching, long tactical chains, multiple victory paths) are _predictions_ about what makes games hard for neural networks. If 1.9M training games and hundreds of GPU-hours fail to produce superhuman play, these predictions are validated — an interesting result for game design and AI safety.
+
+2. **Can frontier AI models help a non-developer build AlphaZero?** This entire infrastructure — the P2P mesh, 132 daemons, Gumbel MCTS, distributed training — was built by a solo non-developer using Claude and GPT as development partners. The system's existence (and its bugs) is data for this hypothesis.
+
+3. **Does the self-play loop produce improvement?** As of March 2026, 171 training iterations produced regression rather than improvement due to silent pipeline bugs (encoding mismatches, disabled validation gates, model corruption). After fixes, the pipeline is running correctly for the first time. The answer to this question determines whether Hypothesis 1 or 2 is the more interesting finding.
+
+4. **Can the results be communicated compellingly?** Regardless of AI strength outcome, the project generates narratives: solo-developer-builds-AlphaZero, ML-resistant-game-design, or debugging-132-daemons-for-$20K-of-GPU.
+
+5. **Can the experiment become a product?** The game, web client, and infrastructure are deployed at ringrift.ai. The research narrative serves as the content strategy for attracting initial players.
+
+See [PROJECT_GOALS.md](../PROJECT_GOALS.md) Section 2.2 for the authoritative framing of these hypotheses.
+
 ### Uniqueness Analysis: ~65-70% Novel
 
 RingRift is a "chimeric design" synthesizing mechanics from multiple game families:
