@@ -114,17 +114,24 @@ class ResourceBudget:
 
     @classmethod
     def for_coordinator(cls) -> ResourceBudget:
-        """Budget for coordinator nodes (mac-studio)."""
+        """Budget for coordinator nodes (mac-studio).
+
+        Mar 26, 2026: Increased max_exports to 2 and max_total_heavy_ops to 5.
+        Previous values (1 export, 3 total) caused permanent export blockage:
+        the ExportCoordinator's internal slot tracking double-counted with the
+        governor, filling all 3 slots and blocking NPZ exports for 25 days.
+        This broke the entire training loop (no fresh NPZ → no new candidates).
+        """
         return cls(
             max_heavy_ram_gb=40.0,
             max_evaluations=1,
-            max_exports=1,
+            max_exports=2,
             max_s3_uploads=2,
             max_tournaments=0,
             max_training=0,
             max_selfplay=0,
-            max_total_heavy_ops=3,
-            min_free_ram_gb=16.0,
+            max_total_heavy_ops=5,
+            min_free_ram_gb=8.0,
         )
 
     @classmethod
