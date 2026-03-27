@@ -2289,21 +2289,37 @@ class GameReplayDB:
 
             if has_table:
                 # Batch query for initial states
+                # Mar 27, 2026: Handle both old schema (state_json) and new
+                # schema (initial_state_json, compressed). Synced DBs from
+                # older nodes may use the old column name.
                 placeholders = ",".join("?" * len(game_ids))
-                rows = conn.execute(
-                    f"""
-                    SELECT game_id, initial_state_json, compressed
-                    FROM game_initial_state
-                    WHERE game_id IN ({placeholders})
-                    """,
-                    game_ids,
-                ).fetchall()
+                cols = [
+                    r[1] for r in conn.execute(
+                        "PRAGMA table_info(game_initial_state)"
+                    ).fetchall()
+                ]
+                has_compressed = "compressed" in cols
+                json_col = "initial_state_json" if "initial_state_json" in cols else "state_json"
 
-                for row in rows:
-                    json_str = row["initial_state_json"]
-                    if row["compressed"]:
-                        json_str = _decompress_json(json_str)
-                    results[row["game_id"]] = _deserialize_state(json_str)
+                if has_compressed:
+                    rows = conn.execute(
+                        f"SELECT game_id, {json_col}, compressed "
+                        f"FROM game_initial_state WHERE game_id IN ({placeholders})",
+                        game_ids,
+                    ).fetchall()
+                    for row in rows:
+                        json_str = row[json_col]
+                        if row["compressed"]:
+                            json_str = _decompress_json(json_str)
+                        results[row["game_id"]] = _deserialize_state(json_str)
+                else:
+                    rows = conn.execute(
+                        f"SELECT game_id, {json_col} "
+                        f"FROM game_initial_state WHERE game_id IN ({placeholders})",
+                        game_ids,
+                    ).fetchall()
+                    for row in rows:
+                        results[row["game_id"]] = _deserialize_state(row[json_col])
 
             # For games without stored initial state, generate from metadata
             missing = [gid for gid, state in results.items() if state is None]
