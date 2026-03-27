@@ -40,9 +40,21 @@ RestartSec=10
 StandardOutput=append:/var/log/ringrift/p2p.log
 StandardError=append:/var/log/ringrift/p2p.log
 
+# Mar 27, 2026: Kill ALL descendant processes on stop/restart.
+# Previous behavior left orphan selfplay processes (28+ procs × 80 threads)
+# that accumulated across restarts until NPROC limit (4096) was hit,
+# causing "Resource temporarily unavailable" (gh200-12, required reboot).
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=30
+ExecStopPost=/bin/bash -c 'pkill -9 -f "selfplay|gumbel_mcts|run_gpu_selfplay|generate_gumbel" 2>/dev/null || true'
+
 # Resource limits
+# LimitNPROC raised from 4096 to 16384: 28 selfplay procs × 80 threads = 2240
+# threads per P2P session. With orphans from a crash-restart, 4096 was hit.
 LimitNOFILE=65536
-LimitNPROC=4096
+LimitNPROC=16384
+TasksMax=200000
 
 [Install]
 WantedBy=multi-user.target
