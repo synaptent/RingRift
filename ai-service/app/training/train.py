@@ -1988,8 +1988,15 @@ def train_model(
             if not distributed or is_main_process():
                 logger.info(f"Skipping init_weights_path (save_path {save_path} exists, resuming instead)")
 
-    # Load existing weights if available to continue training
-    if os.path.exists(save_path):
+    # Load existing weights if available to continue training.
+    # Mar 28, 2026: SKIP resume if init_weights was provided. In AlphaZero,
+    # every training iteration should start from the canonical model, not
+    # resume from a previous candidate. The save_path checkpoint is from
+    # a WEAKER model — loading it overwrites the canonical weights and
+    # defeats the entire purpose of init_weights. This was THE root cause
+    # of Elo degradation: canonical (1595) → init_weights loaded → then
+    # overwritten by save_path candidate (1150) → trained from 1150 again.
+    if os.path.exists(save_path) and init_weights_path is None:
         try:
             # Use safe_load_checkpoint for secure loading with fallback
             checkpoint = safe_load_checkpoint(save_path, map_location=device, warn_on_unsafe=False)
@@ -2001,6 +2008,19 @@ def train_model(
             if not distributed or is_main_process():
                 logger.info(f"Loaded existing model weights from {save_path}")
             # Validate value head after loading checkpoint (catches resumed training with wrong config)
+            _validate_model_value_head(model, num_players, "after loading checkpoint")
+        except (OSError, RuntimeError, ValueError, KeyError) as e:
+            pass  # Will be caught below
+    elif os.path.exists(save_path) and init_weights_path is not None:
+        if not distributed or is_main_process():
+            logger.info(f"Skipping save_path resume ({save_path}) — init_weights takes priority (AlphaZero pattern)")
+    if False:  # Original code preserved for reference
+        try:
+            checkpoint = safe_load_checkpoint(save_path, map_location=device, warn_on_unsafe=False)
+            if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+                model.load_state_dict(checkpoint["model_state_dict"])
+            else:
+                model.load_state_dict(checkpoint)
             _validate_model_value_head(model, num_players, "after loading checkpoint")
         except (OSError, RuntimeError, ValueError, KeyError) as e:
             # OSError: file I/O errors reading checkpoint

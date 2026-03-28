@@ -618,7 +618,11 @@ async def execute_training_work(
     # better gradient estimates and less overfitting to noise.
     epochs = config.get("epochs", 20)
     batch_size = config.get("batch_size", 512)
-    learning_rate = config.get("learning_rate", 3e-4)
+    # Mar 28, 2026: Reduced from 3e-4 to 1e-4 for AlphaZero fine-tuning.
+    # At 3e-4, 20 epochs × ~976 steps/epoch = 19,500 total Adam updates
+    # destroyed pre-trained canonical model weights (catastrophic forgetting).
+    # AlphaZero paper uses 1e-4 with momentum 0.9 for fine-tuning iterations.
+    learning_rate = config.get("learning_rate", 1e-4)
     # Feb 24, 2026: Use preferred architecture per board type as fallback
     try:
         from app.config.thresholds import get_preferred_architecture
