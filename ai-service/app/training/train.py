@@ -1952,11 +1952,15 @@ def train_model(
         except FileNotFoundError:
             pass  # init_weights file doesn't exist yet, will be caught later
 
-    # Load initial weights for transfer learning (before save_path check)
-    # This allows starting from a pre-trained model (e.g., 2p->4p transfer)
-    # If save_path exists, it will override these weights (resume takes priority)
+    # Load initial weights from canonical model (AlphaZero pattern).
+    # Mar 28, 2026: ALWAYS load init_weights when provided, even if save_path
+    # exists. The previous behavior (skip init_weights if save_path exists)
+    # caused the AlphaZero loop to resume from WEAK candidates instead of
+    # the STRONG canonical model, preventing iterative improvement.
+    # The candidate save_path is deleted before each training run anyway
+    # (cleaned by Lambda node prep), so this is defense-in-depth.
     if init_weights_path is not None and os.path.exists(init_weights_path):
-        if not os.path.exists(save_path):  # Only if not resuming existing training
+        if True:  # Always load init_weights (was: not os.path.exists(save_path))
             try:
                 from app.training.checkpointing import load_weights_only
                 load_result = load_weights_only(
