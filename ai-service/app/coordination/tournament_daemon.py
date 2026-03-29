@@ -188,8 +188,11 @@ class TournamentDaemonConfig:
     max_concurrent_games: int = 4
 
     # Timeouts
-    game_timeout_seconds: float = 300.0  # 5 minutes per game
-    evaluation_timeout_seconds: float = 1800.0  # 30 minutes per evaluation
+    # Mar 29, 2026: Increased from 300s to 1800s. Gumbel MCTS with 200+ sims
+    # on hexagonal/square19 boards with 4 players takes 10-20+ min per game.
+    # 300s timeout was killing most tournament games before completion.
+    game_timeout_seconds: float = 1800.0  # 30 minutes per game (was 300s)
+    evaluation_timeout_seconds: float = 7200.0  # 2 hours per evaluation (was 30 min)
 
 
 @dataclass
@@ -2597,7 +2600,9 @@ class TournamentDaemon(HandlerBase):
                 # Extract model paths from leaderboard entries
                 top_models = []
                 for entry in leaderboard:
-                    participant_id = entry.get("participant_id", entry.get("participant"))
+                    # Mar 29, 2026: LeaderboardEntry is a dataclass, not a dict.
+                    # Using .get() crashed with "no attribute 'get'".
+                    participant_id = getattr(entry, "participant_id", None) or getattr(entry, "participant", None)
                     if not participant_id:
                         continue
                     # Find model path - try to match with available models
@@ -2616,7 +2621,7 @@ class TournamentDaemon(HandlerBase):
                     top_models.append({
                         "participant_id": participant_id,
                         "model_path": str(model_path),
-                        "elo": entry.get("elo", entry.get("rating", 1500)),
+                        "elo": getattr(entry, "rating", getattr(entry, "elo", 1500)),
                     })
 
                 if len(top_models) < 2:

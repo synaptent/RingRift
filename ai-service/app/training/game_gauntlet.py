@@ -1361,7 +1361,7 @@ def play_single_game(
     board_type: Any,  # BoardType
     num_players: int = 2,
     candidate_player: int = 1,
-    max_moves: int = 500,
+    max_moves: int = 2800,
     seed: int | None = None,
     opponent_ais: dict[int, Any] | None = None,
     recording_config: Any | None = None,
