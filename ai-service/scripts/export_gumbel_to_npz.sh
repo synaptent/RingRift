@@ -48,6 +48,33 @@ print(f'${config}: {count} complete games')
             --board-type "$board" --num-players "$players" \
             --gpu-selfplay 2>/dev/null | tail -3
 
+        # Also pull cross-strategy data from S3 and combine for optimal training mix
+        # Cross-strategy data (heuristic, minimax, BRS games) provides position diversity
+        # Gumbel data provides MCTS policy quality. Combined = strongest training signal.
+        CROSS_NPZ="/tmp/${config}_crossstrat.npz"
+        aws s3 cp "s3://ringrift-models-20251214/consolidated/training/${config}_crossstrat.npz" \
+            "$CROSS_NPZ" --quiet 2>/dev/null || true
+
+        if [ -f "$CROSS_NPZ" ] && [ -f "data/training/${config}.npz" ]; then
+            echo "$LOG_PREFIX Combining gumbel + cross-strategy for $config"
+            # numpy.load with allow_pickle=True is required for NPZ files containing
+            # object arrays (policy indices). These are trusted local training data files.
+            venv/bin/python3 -c "
+import numpy as np
+g = np.load('data/training/${config}.npz', allow_pickle=True)
+c = np.load('$CROSS_NPZ', allow_pickle=True)
+combined = {}
+for k in g.files:
+    if k in c.files:
+        combined[k] = np.concatenate([g[k], c[k]])
+    else:
+        combined[k] = g[k]
+np.savez_compressed('data/training/${config}.npz', **combined)
+print(f'Combined: {len(g[\"features\"])} gumbel + {len(c[\"features\"])} cross = {len(combined[\"features\"])} total')
+" 2>/dev/null
+            rm -f "$CROSS_NPZ"
+        fi
+
         # Push to S3
         if [ -f "data/training/${config}.npz" ]; then
             aws s3 cp "data/training/${config}.npz" \
