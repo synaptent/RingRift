@@ -258,8 +258,13 @@ STALEMATE_THRESHOLD = 30  # Consecutive moves without S-invariant progress
 EXPLORATION_NOISE_PROB = 0.05  # 5% chance of random move for exploration
 
 # Feb 2026: Timeout parameters to prevent indefinite GPU MCTS hangs
-MOVE_TIMEOUT_SECONDS = 120   # 2 min per move (CUDA contention can cause hangs)
-GAME_TIMEOUT_SECONDS = 1800  # 30 min per game
+# Mar 29, 2026: Increased from 120s to 600s. With 5 concurrent selfplay
+# processes sharing one GPU (each ~1GB VRAM), GPU contention means 400-sim
+# MCTS takes 125s+ per move. The 120s timeout killed EVERY game at move 7-9,
+# producing 1,663 empty DBs and garbage 7-move training data. 600s gives
+# 5x headroom for GPU contention peaks.
+MOVE_TIMEOUT_SECONDS = 600   # 10 min per move (was 120s = killed every game)
+GAME_TIMEOUT_SECONDS = 7200  # 2 hours per game (was 30 min)
 
 
 def create_gumbel_ai(
