@@ -26,19 +26,19 @@ try:
 except ImportError:
     BUDGET_CALCULATOR_AVAILABLE = False
     def get_adaptive_budget_for_games(game_count: int, elo: float) -> int:
-        """Fallback budget when calculator not available."""
+        """Fallback budget when calculator not available.
+
+        Mar 29, 2026: Capped at 128 for throughput. Previous values (800-3200)
+        caused games to never complete — 800 sims with GPU contention = 15+
+        min per move = 10+ hours per game. 128 sims produces complete games
+        in 20-40 min while still using neural network search.
+        """
         if game_count < 100:
             return 64
         elif game_count < 500:
-            return 150
-        elif game_count < 1000:
-            return 200
-        elif elo >= 2000:
-            return 3200
-        elif elo >= 1800:
-            return 1600
+            return 128
         else:
-            return 800
+            return 128  # was 200-3200, capped for throughput
 
     def get_board_adjusted_budget(board_type: str, budget: int, game_count: int, num_players: int = 2) -> int:
         """Fallback: no board adjustment when calculator not available."""
