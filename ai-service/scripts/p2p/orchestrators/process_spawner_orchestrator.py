@@ -746,11 +746,28 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
     ) -> Any | None:
         """Start a Gumbel MCTS selfplay job."""
         # Determine effective budget
-        # Mar 29, 2026: Cap budget at 64. Even 128 showed exponential slowdown
-        # (Move 0: 92s → Move 4: 253s) because MCTS tree depth grows each move.
-        # At 64 sims, moves should stay under 60s throughout the game.
-        # AlphaZero throughput mode used 64 sims.
-        MAX_BUDGET = 64
+        # Mar 29, 2026: Elo-adaptive budget cap. Models at different strengths
+        # need different search depths. Weak models waste time on deep search.
+        # Strong models need it to find subtle improvements.
+        # With MAX_ACTIVE_PROCESSES=2 on GH200, these budgets complete games:
+        config_key = f"{board_type}_{num_players}p"
+        config_elo = 1200.0  # default
+        try:
+            sched = getattr(self._p2p, "selfplay_scheduler", None)
+            if sched and hasattr(sched, "get_config_elo"):
+                config_elo = sched.get_config_elo(config_key) or 1200.0
+        except Exception:
+            pass
+
+        if config_elo < 1400:
+            MAX_BUDGET = 64
+        elif config_elo < 1700:
+            MAX_BUDGET = 128
+        elif config_elo < 1900:
+            MAX_BUDGET = 200
+        else:
+            MAX_BUDGET = 400
+
         if simulation_budget is not None:
             effective_budget = min(simulation_budget, MAX_BUDGET)
         else:

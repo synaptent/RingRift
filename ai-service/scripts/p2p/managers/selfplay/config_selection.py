@@ -26,15 +26,29 @@ try:
 except ImportError:
     BUDGET_CALCULATOR_AVAILABLE = False
     def get_adaptive_budget_for_games(game_count: int, elo: float) -> int:
-        """Fallback budget when calculator not available.
+        """Elo-adaptive Gumbel MCTS budget.
 
-        Mar 29, 2026: Capped at 128 for throughput. Previous values (800-3200)
-        caused games to never complete — 800 sims with GPU contention = 15+
-        min per move = 10+ hours per game. 128 sims produces complete games
-        in 20-40 min while still using neural network search.
+        Mar 29, 2026: Budget scales with model strength. Weak models don't
+        benefit from deep search — they can't use it. Strong models NEED
+        deep search to find subtle improvements. All budgets are capped to
+        ensure games complete (with MAX_ACTIVE_PROCESSES=2 on GH200):
+
+          Elo < 1400: 64 sims  (~3-10s/move, games in 5-15 min)
+          Elo 1400-1700: 128 sims (~10-30s/move, games in 15-40 min)
+          Elo 1700-1900: 200 sims (~20-60s/move, games in 30-60 min)
+          Elo > 1900: 400 sims (~60-120s/move, games in 60-120 min)
+
+        The process_spawner also has MAX_BUDGET=64 as a safety cap that
+        should be raised as we verify games complete at each tier.
         """
-        return 64  # Mar 29: hard cap at 64 for all game counts. Even 128 showed
-        # exponential slowdown (92s→253s per move). 64 = AlphaZero throughput mode.
+        if elo < 1400:
+            return 64
+        elif elo < 1700:
+            return 128
+        elif elo < 1900:
+            return 200
+        else:
+            return 400
 
     def get_board_adjusted_budget(board_type: str, budget: int, game_count: int, num_players: int = 2) -> int:
         """Fallback: no board adjustment when calculator not available."""
