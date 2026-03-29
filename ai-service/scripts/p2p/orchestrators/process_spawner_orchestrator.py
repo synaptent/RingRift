@@ -746,10 +746,11 @@ class ProcessSpawnerOrchestrator(BaseOrchestrator):
     ) -> Any | None:
         """Start a Gumbel MCTS selfplay job."""
         # Determine effective budget
-        # Mar 29, 2026: Cap budget at 128 regardless of work queue value.
-        # Previous budgets (400-3200) caused games to never complete due to
-        # GPU contention (15+ min per move). 128 completes games in 20-40 min.
-        MAX_BUDGET = 128
+        # Mar 29, 2026: Cap budget at 64. Even 128 showed exponential slowdown
+        # (Move 0: 92s → Move 4: 253s) because MCTS tree depth grows each move.
+        # At 64 sims, moves should stay under 60s throughout the game.
+        # AlphaZero throughput mode used 64 sims.
+        MAX_BUDGET = 64
         if simulation_budget is not None:
             effective_budget = min(simulation_budget, MAX_BUDGET)
         else:

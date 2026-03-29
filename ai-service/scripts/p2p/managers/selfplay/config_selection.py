@@ -33,12 +33,8 @@ except ImportError:
         min per move = 10+ hours per game. 128 sims produces complete games
         in 20-40 min while still using neural network search.
         """
-        if game_count < 100:
-            return 64
-        elif game_count < 500:
-            return 128
-        else:
-            return 128  # was 200-3200, capped for throughput
+        return 64  # Mar 29: hard cap at 64 for all game counts. Even 128 showed
+        # exponential slowdown (92s→253s per move). 64 = AlphaZero throughput mode.
 
     def get_board_adjusted_budget(board_type: str, budget: int, game_count: int, num_players: int = 2) -> int:
         """Fallback: no board adjustment when calculator not available."""
