@@ -437,8 +437,12 @@ def generate_game(
         else:
             # AI selects move (Gumbel MCTS search) with per-move timeout
             try:
+                move_start = time.monotonic()
                 future = move_executor.submit(ai.select_move, state)
                 selected_move = future.result(timeout=MOVE_TIMEOUT_SECONDS)
+                move_elapsed = time.monotonic() - move_start
+                if move_count % 5 == 0 or move_elapsed > 30:
+                    logger.info(f"Move {move_count}: {move_elapsed:.1f}s (player {current_player})")
             except concurrent.futures.TimeoutError:
                 logger.error(
                     f"Move timeout after {MOVE_TIMEOUT_SECONDS}s at move {move_count}"

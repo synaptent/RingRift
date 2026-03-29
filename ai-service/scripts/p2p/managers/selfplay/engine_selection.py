@@ -156,7 +156,7 @@ class EngineSelectionMixin:
         ("maxn", 5, False, None),  # 5% - highest heuristic quality
         ("nn-descent", 5, True, None),  # 5% - exploration via neural descent (GPU)
         ("policy-only", 15, True, None),  # 15% - neural guided (GPU)
-        ("gumbel-mcts", 50, True, {"budget": 800}),  # 50% - HIGH QUALITY neural (GPU) - primary mode
+        ("gumbel-mcts", 50, True, {"budget": 128}),  # 50% - neural MCTS (GPU). Mar 29: reduced 800→128 for throughput. At 800 sims with GPU contention, games took 10+ hours and never completed. At 128, games complete in ~30 min. AlphaZero used 64 for throughput mode.
     ]
 
     # CPU-only variant for nodes without GPU
@@ -183,7 +183,7 @@ class EngineSelectionMixin:
         ("maxn", 5, False, None),  # 5% - highest heuristic quality
         ("nn-descent", 5, True, None),  # 5% - exploration via neural descent (GPU)
         ("policy-only", 10, True, None),  # 10% - neural guided (GPU)
-        ("gumbel-mcts", 60, True, {"budget": 800}),  # 60% - HIGH QUALITY neural (GPU) - primary mode
+        ("gumbel-mcts", 60, True, {"budget": 128}),  # 60% - HIGH QUALITY neural (GPU) - primary mode
     ]
 
     # CPU-only variant for standard boards
@@ -216,7 +216,7 @@ class EngineSelectionMixin:
     # MCTS-only: All tree search variants (including BRS/MaxN for diversity)
     MCTS_ONLY_ENGINE_MIX = [
         # (engine_mode, weight, gpu_required, extra_args)
-        ("gumbel-mcts", 50, True, {"budget": 800}),  # 50% - primary MCTS
+        ("gumbel-mcts", 50, True, {"budget": 128}),  # 50% - primary MCTS
         ("minimax", 15, False, {"depth": 3}),  # 15% - tree search variant
         ("brs", 20, False, None),  # 20% - BRS for diversity
         ("maxn", 15, False, None),  # 15% - MaxN for diversity
