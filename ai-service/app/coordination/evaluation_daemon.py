@@ -500,10 +500,23 @@ class EvaluationDaemon(HandlerBase):
 
         December 29, 2025: Added to satisfy HandlerBase abstract requirement.
         The actual work is done by _evaluation_worker() processing the queue.
+
+        March 2026: Added worker task death monitoring. If _worker_task has died
+        (exception, cancellation), restart it so the daemon doesn't appear healthy
+        while silently processing nothing.
         """
         import time
 
         current_time = time.time()
+
+        # March 2026: Monitor worker task health — restart if it died silently
+        if hasattr(self, '_worker_task') and self._worker_task is not None and self._worker_task.done():
+            exc = self._worker_task.exception() if not self._worker_task.cancelled() else None
+            if exc:
+                logger.error(f"[EvaluationDaemon] Worker task died with: {exc}")
+            else:
+                logger.warning("[EvaluationDaemon] Worker task ended unexpectedly, restarting")
+            self._worker_task = asyncio.create_task(self._evaluation_worker())
 
         # Feb 2026: Poll P2P work queue for completed evaluations (cross-process bridge)
         # This fixes the 97% evaluation failure rate caused by process isolation between

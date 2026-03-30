@@ -2351,8 +2351,30 @@ def safe_emit_event(
 
             fire_and_forget(_emit(), name=f"safe_emit_{event_type}")
         else:
-            # Sync context - create new loop
-            asyncio.run(_emit())
+            # Sync context — March 2026 fix: asyncio.run() fails when called
+            # from a sync function running inside an async application (e.g.,
+            # via asyncio.to_thread or a thread pool). The RuntimeError was
+            # silently caught, dropping ALL events from sync contexts.
+            #
+            # Strategy: try to find the main event loop and schedule on it
+            # via call_soon_threadsafe; only fall back to asyncio.run() if
+            # there truly is no event loop anywhere.
+            main_loop = None
+            try:
+                # Get the event loop from the default policy (may be running
+                # in another thread, e.g., the main asyncio thread)
+                main_loop = asyncio.get_event_loop()
+                if not main_loop.is_running():
+                    main_loop = None
+            except RuntimeError:
+                main_loop = None
+
+            if main_loop is not None:
+                # Schedule onto the running loop from this sync thread
+                main_loop.call_soon_threadsafe(asyncio.ensure_future, _emit())
+            else:
+                # No running loop anywhere — safe to create one
+                asyncio.run(_emit())
 
         return True
 

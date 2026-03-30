@@ -259,6 +259,12 @@ class BaseDaemon(ABC, Generic[ConfigT]):
                 try:
                     await self._run_cycle()
                     self._cycles_completed += 1
+                    # March 2026: Reset to RUNNING only after a successful cycle.
+                    # This ensures ERROR status persists across failed cycles
+                    # until the daemon actually recovers.
+                    if self._coordinator_status == CoordinatorStatus.ERROR:
+                        logger.info(f"[{self._get_daemon_name()}] Recovered from error state")
+                        self._coordinator_status = CoordinatorStatus.RUNNING
                 except asyncio.CancelledError:
                     raise  # Re-raise to exit loop
                 except (KeyboardInterrupt, SystemExit):
@@ -270,9 +276,9 @@ class BaseDaemon(ABC, Generic[ConfigT]):
                     self._coordinator_status = CoordinatorStatus.ERROR
                     logger.error(f"[{self._get_daemon_name()}] Cycle failed: {e}")
 
-                    # Reset to running after error (will try again next cycle)
-                    if self._running:
-                        self._coordinator_status = CoordinatorStatus.RUNNING
+                    # March 2026: Status stays ERROR until next SUCCESSFUL cycle.
+                    # Previously reset to RUNNING immediately, which hid persistent
+                    # failures from health monitoring.
 
                 # Wait for next cycle
                 await asyncio.sleep(self.config.check_interval_seconds)

@@ -211,7 +211,8 @@ class UniversalAI(BaseAI):
                     value = model(features_tensor)
                     # Scale to centipawn range
                     return float(value.item()) * 10000
-            except (RuntimeError, ValueError, TypeError, ImportError):
+            except (RuntimeError, ValueError, TypeError, ImportError) as e:
+                logger.debug(f"UniversalAI: NNUE evaluation failed, using heuristic fallback: {e}")
                 return original_evaluate(state)
 
         minimax._evaluate_mutable = custom_evaluate
@@ -389,8 +390,8 @@ class UniversalAI(BaseAI):
             elif hasattr(move, "position"):
                 idx = self._pos_to_idx(move.position)
                 return idx, idx
-        except AttributeError:
-            pass
+        except AttributeError as e:
+            logger.debug(f"UniversalAI: Failed to extract move positions: {e}")
         return -1, -1
 
     def _pos_to_idx(self, pos) -> int:
@@ -407,8 +408,8 @@ class UniversalAI(BaseAI):
                 return encoder.encode_move(move)
             elif hasattr(encoder, "move_to_index"):
                 return encoder.move_to_index(move)
-        except AttributeError:
-            pass
+        except AttributeError as e:
+            logger.debug(f"UniversalAI: Failed to encode move: {e}")
         return -1
 
     def evaluate_position(self, game_state: GameState) -> float:
