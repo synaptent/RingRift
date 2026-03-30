@@ -425,7 +425,7 @@ def get_encoder_version_from_checkpoint(checkpoint_path: str) -> Optional[str]:
                 elif in_channels == 64:
                     return "v3"
                 elif in_channels == 56:
-                    return "v3"  # V5-heavy uses v3 encoder base
+                    return "v5-heavy"
                 else:
                     logger.warning(f"Unknown channel count {in_channels}, defaulting to v3")
                     return "v3"
@@ -505,7 +505,7 @@ def get_model_version_from_checkpoint(checkpoint_path: str) -> Optional[str]:
                     elif in_channels == 64:
                         return "v3"
                     elif in_channels == 56:
-                        return "v3"  # Could be v5 but using v3 encoder
+                        return "v5-heavy"
                     break
             return "v2"  # Default to v2 for 2-layer value head
         else:

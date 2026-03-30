@@ -254,7 +254,10 @@ class AutoPromotionDaemon(HandlerBase):
         """
         from pathlib import Path
 
-        MIN_ELO_GAP = 30.0  # Minimum Elo improvement to auto-promote (was 50, lowered with more games)
+        # Mar 2026: Raised from 30 to 50 to compensate for the Elo-scan path having
+        # weaker gates than the event-driven _check_promotion path (no per-baseline
+        # win rate checks, no head-to-head vs canonical, no parity validation).
+        MIN_ELO_GAP = 50.0
         MIN_GAMES = 50  # Minimum games for statistical confidence (was 20, CI was ±35 Elo)
 
         try:
@@ -320,10 +323,34 @@ class AutoPromotionDaemon(HandlerBase):
                 if gap < MIN_ELO_GAP:
                     continue
 
+                # Mar 2026: Gate — validate candidate model file integrity before promoting.
+                # The event-driven path (_check_promotion) has per-baseline win rate checks,
+                # head-to-head vs canonical, and parity validation that this scan path lacks.
+                # As a partial mitigation: verify the model loads successfully.
+                try:
+                    import torch
+                    checkpoint = await asyncio.to_thread(
+                        torch.load, str(candidate_path), map_location="cpu", weights_only=False
+                    )
+                    state_dict = checkpoint.get("state_dict", checkpoint.get("model_state_dict", checkpoint))
+                    if not isinstance(state_dict, dict) or len(state_dict) < 5:
+                        logger.warning(
+                            f"[AutoPromotion] Elo scan: {config_key} candidate model "
+                            f"has suspicious state_dict ({len(state_dict) if isinstance(state_dict, dict) else 'N/A'} keys), skipping"
+                        )
+                        continue
+                    del checkpoint, state_dict  # Free memory
+                except Exception as e:
+                    logger.warning(
+                        f"[AutoPromotion] Elo scan: {config_key} candidate model "
+                        f"failed integrity check: {e}, skipping"
+                    )
+                    continue
+
                 logger.info(
                     f"[AutoPromotion] Elo scan: {config_key} candidate={candidate_elo:.1f} "
                     f"canonical={canonical_elo:.1f} gap=+{gap:.1f} games={candidate_games} "
-                    f"-> PROMOTING"
+                    f"-> PROMOTING (NOTE: Elo-scan path has weaker gates than event-driven path)"
                 )
 
                 # Execute promotion via PromotionController
@@ -667,7 +694,11 @@ class AutoPromotionDaemon(HandlerBase):
         """
         config_key = payload.get("config_key") or payload.get("config")
         model_path = payload.get("model_path")
-        opponent_type = payload.get("opponent_type", "").upper()
+        # Mar 2026: Normalize opponent_type to handle variants like "random",
+        # "BaselineOpponent.RANDOM", "BaselineOpponent.HEURISTIC" from GPU nodes.
+        # Extract the last component after any dot separator, then uppercase.
+        raw_opponent_type = payload.get("opponent_type", "")
+        opponent_type = raw_opponent_type.rsplit(".", 1)[-1].upper() if raw_opponent_type else ""
         win_rate = payload.get("win_rate", 0.0)
         games_played = payload.get("games_played", 0)
 
@@ -709,8 +740,10 @@ class AutoPromotionDaemon(HandlerBase):
         # The evaluation_daemon sends opponent_results with keys like "random", "heuristic"
         opponent_results = payload.get("opponent_results", {})
         for opp_key, opp_result in opponent_results.items():
-            # Normalize key to uppercase for consistency
-            normalized_key = opp_key.upper() if isinstance(opp_key, str) else str(opp_key).upper()
+            # Normalize key: extract last component after dot separator, then uppercase.
+            # Handles "random", "RANDOM", "BaselineOpponent.RANDOM", etc.
+            raw_key = opp_key if isinstance(opp_key, str) else str(opp_key)
+            normalized_key = raw_key.rsplit(".", 1)[-1].upper()
             if normalized_key in ("RANDOM", "HEURISTIC"):
                 opp_win_rate = opp_result.get("win_rate", 0.0) if isinstance(opp_result, dict) else 0.0
                 opp_games = opp_result.get("games_played", 0) if isinstance(opp_result, dict) else 0
@@ -860,6 +893,19 @@ class AutoPromotionDaemon(HandlerBase):
         """
         # Dec 28, 2025: Use unified should_promote_model() for two-tier promotion
         from app.config.thresholds import should_promote_model
+
+        # Mar 2026: Normalize evaluation_results keys to handle any remaining
+        # non-normalized keys (e.g., "BaselineOpponent.RANDOM" -> "RANDOM").
+        normalized_results: dict[str, float] = {}
+        normalized_games: dict[str, int] = {}
+        for k, v in candidate.evaluation_results.items():
+            norm_k = k.rsplit(".", 1)[-1].upper() if isinstance(k, str) else str(k).rsplit(".", 1)[-1].upper()
+            normalized_results[norm_k] = v
+        for k, v in candidate.evaluation_games.items():
+            norm_k = k.rsplit(".", 1)[-1].upper() if isinstance(k, str) else str(k).rsplit(".", 1)[-1].upper()
+            normalized_games[norm_k] = v
+        candidate.evaluation_results = normalized_results
+        candidate.evaluation_games = normalized_games
 
         # Check if we have required results
         has_random = "RANDOM" in candidate.evaluation_results

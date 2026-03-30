@@ -582,6 +582,89 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             "reason": reason,
         }, status=429)
 
+    @staticmethod
+    def _training_marker_dir() -> "Path":
+        """Return directory for pending training completion markers."""
+        from pathlib import Path
+        marker_dir = Path("data/pending_training_markers")
+        marker_dir.mkdir(parents=True, exist_ok=True)
+        return marker_dir
+
+    @staticmethod
+    def _write_training_marker(marker_dir: "Path", config_key: str, payload: dict) -> "Path":
+        """Write a marker file for a pending training completion event.
+
+        Mar 2026: Persists the event payload so it can be re-emitted on restart
+        if the async task was lost due to P2P restart.
+        """
+        import json
+        marker_path = marker_dir / f"pending_training_complete_{config_key}.marker"
+        marker_path.write_text(json.dumps(payload))
+        return marker_path
+
+    @staticmethod
+    def _delete_training_marker(config_key: str) -> None:
+        """Delete marker file after successful event emission."""
+        from pathlib import Path
+        marker_path = Path("data/pending_training_markers") / f"pending_training_complete_{config_key}.marker"
+        try:
+            marker_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    async def replay_pending_training_markers(self) -> int:
+        """Re-emit TRAINING_COMPLETED events from marker files left by prior P2P sessions.
+
+        Mar 2026: Call this on startup to catch events lost during P2P restarts.
+        Scans data/pending_training_markers/ for .marker files and re-emits events
+        for any whose candidate model is locally available.
+
+        Returns:
+            Number of events re-emitted.
+        """
+        import json
+        from pathlib import Path
+
+        marker_dir = Path("data/pending_training_markers")
+        if not marker_dir.exists():
+            return 0
+
+        replayed = 0
+        for marker_path in marker_dir.glob("pending_training_complete_*.marker"):
+            try:
+                payload = json.loads(marker_path.read_text())
+                config_key = payload.get("config_key", "")
+                model_path = payload.get("model_path", "")
+
+                # Only re-emit if the candidate model is locally available
+                local_model = Path(model_path)
+                if not local_model.exists() or local_model.stat().st_size <= 1024:
+                    logger.debug(
+                        f"Skipping stale training marker for {config_key}: "
+                        f"model not available at {model_path}"
+                    )
+                    continue
+
+                from app.coordination.event_emission_helpers import safe_emit_event
+                payload["source"] = "marker_replay"
+                safe_emit_event(
+                    "TRAINING_COMPLETED",
+                    payload,
+                    context="work_queue_marker_replay",
+                )
+                logger.info(
+                    f"Replayed TRAINING_COMPLETED from marker for {config_key} "
+                    f"(model={model_path})"
+                )
+                marker_path.unlink(missing_ok=True)
+                replayed += 1
+            except Exception as e:
+                logger.warning(f"Failed to replay training marker {marker_path.name}: {e}")
+
+        if replayed:
+            logger.info(f"Replayed {replayed} pending training completion event(s) from markers")
+        return replayed
+
     async def _sync_then_emit_training_completed(
         self,
         node_id: str,
@@ -603,8 +686,8 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
         2. Only emits TRAINING_COMPLETED if the model is locally available
         3. Logs a warning and skips event emission if fetch fails
 
-        This replaces the old fire-and-forget pattern where the event was
-        emitted before the model was synced, causing evaluation failures.
+        Mar 2026: Writes a marker file before the async work so the event can be
+        re-emitted on P2P restart if this task is lost.
         """
         # Step 1: Fetch candidate model from training node
         fetch_ok = await _fetch_candidate_model_from_node(
@@ -650,6 +733,8 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 f"{config_key} model={model_path} loss={final_loss:.4f} "
                 f"samples={training_samples} (trained by {node_id}, synced OK)"
             )
+            # Step 4: Delete marker now that event was emitted successfully
+            self._delete_training_marker(config_key)
         except ImportError:
             logger.debug("Event emission not available for training completion")
 
@@ -1423,6 +1508,28 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 final_loss = result.get("final_loss", 0.0)
                 training_samples = result.get("training_samples", 0)
                 training_games = result.get("training_games", 0)
+
+                # Mar 2026: Write marker file BEFORE creating the async task.
+                # If P2P restarts between task creation and execution, the marker
+                # persists and replay_pending_training_markers() will re-emit on startup.
+                marker_payload = {
+                    "config_key": config_key,
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "model_version": model_version,
+                    "model_path": result_model_path,
+                    "final_loss": final_loss,
+                    "training_samples": training_samples,
+                    "training_games": training_games,
+                    "work_id": work_id,
+                    "trained_by": assigned_to,
+                    "candidate_synced": False,
+                }
+                try:
+                    marker_dir = self._training_marker_dir()
+                    self._write_training_marker(marker_dir, config_key, marker_payload)
+                except Exception as e:
+                    logger.debug(f"Failed to write training marker for {config_key}: {e}")
 
                 # Feb 23, 2026: Fetch candidate model from training node BEFORE
                 # emitting TRAINING_COMPLETED. Without this, the evaluation daemon

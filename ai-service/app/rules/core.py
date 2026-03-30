@@ -495,4 +495,4 @@ def is_eligible_for_recovery(state: GameState, player_number: int) -> bool:
         return False
 
     # Must have at least one buried ring
-    return not count_buried_rings(state.board, player_number) < 1
+    return count_buried_rings(state.board, player_number) >= 1

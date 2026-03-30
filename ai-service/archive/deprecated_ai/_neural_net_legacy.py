@@ -244,9 +244,9 @@ def encode_move_for_board(
         idx = canonical_encode_move_for_board(move, board)
         if idx != INVALID_MOVE_INDEX:
             return idx
-    except (ImportError, ModuleNotFoundError, AttributeError, ValueError, TypeError):
+    except (ImportError, ModuleNotFoundError, AttributeError, ValueError, TypeError) as e:
         # Fall back to legacy encoding path below.
-        pass
+        logger.debug("Canonical move encoding failed, using legacy fallback: %s", e)
 
     # Legacy fallback: dispatch to board-specific encoder.
     if board_type == BoardType.SQUARE8:
@@ -274,7 +274,8 @@ def _line_anchor_position(move: Move) -> Position | None:
             line = move.formed_lines[0]
             if hasattr(line, "positions") and line.positions:
                 return line.positions[0]
-        except (IndexError, AttributeError, TypeError):
+        except (IndexError, AttributeError, TypeError) as e:
+            logger.debug("Failed to extract line anchor position: %s", e)
             return None
     return None
 
@@ -4358,15 +4359,16 @@ class NeuralNetAI(BaseAI):
             # Strip module prefix (DDP compatibility)
             state_dict = _strip_module_prefix(state_dict)
 
-            # Load weights
+            # Load weights — strict only. Non-strict loading silently accepts
+            # wrong architectures, leaving random-initialized layers. (Mar 30, 2026)
             try:
                 self.model.load_state_dict(state_dict, strict=True)
                 logger.info("Loaded V5-Heavy weights from %s", model_path)
             except RuntimeError as e:
-                logger.warning("Strict loading failed: %s, trying non-strict", e)
-                self.model.load_state_dict(state_dict, strict=False)
-                logger.info("Loaded V5-Heavy weights (non-strict) from %s", model_path)
+                logger.error("V5-Heavy strict loading FAILED: %s — refusing non-strict fallback", e)
+                raise
 
+            self.model.to(self.device)  # Fix MPS CPU/GPU type mismatch
             self.model.eval()
         else:
             allow_fresh = getattr(self.config, "allow_fresh_weights", False)
@@ -4521,15 +4523,15 @@ class NeuralNetAI(BaseAI):
 
         # Load weights if checkpoint exists and was loaded
         if state_dict is not None:
-            # Load weights
+            # Load weights — strict only (Mar 30, 2026)
             try:
                 self.model.load_state_dict(state_dict, strict=True)
                 logger.info("Loaded V3 weights from %s", model_path)
             except RuntimeError as e:
-                logger.warning("Strict loading failed: %s, trying non-strict", e)
-                self.model.load_state_dict(state_dict, strict=False)
-                logger.info("Loaded V3 weights (non-strict) from %s", model_path)
+                logger.error("V3 strict loading FAILED: %s — refusing non-strict fallback", e)
+                raise
 
+            self.model.to(self.device)  # Fix MPS CPU/GPU type mismatch
             self.model.eval()
         else:
             allow_fresh = getattr(self.config, "allow_fresh_weights", False)
@@ -4652,15 +4654,15 @@ class NeuralNetAI(BaseAI):
             # Strip module prefix (DDP compatibility)
             state_dict = _strip_module_prefix(state_dict)
 
-            # Load weights
+            # Load weights — strict only (Mar 30, 2026)
             try:
                 self.model.load_state_dict(state_dict, strict=True)
                 logger.info("Loaded V4 weights from %s", model_path)
             except RuntimeError as e:
-                logger.warning("Strict loading failed: %s, trying non-strict", e)
-                self.model.load_state_dict(state_dict, strict=False)
-                logger.info("Loaded V4 weights (non-strict) from %s", model_path)
+                logger.error("V4 strict loading FAILED: %s — refusing non-strict fallback", e)
+                raise
 
+            self.model.to(self.device)  # Fix MPS CPU/GPU type mismatch
             self.model.eval()
         else:
             allow_fresh = getattr(self.config, "allow_fresh_weights", False)

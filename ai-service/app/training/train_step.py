@@ -464,6 +464,21 @@ def compute_value_loss(
         return multi_player_value_loss(value_pred, value_targets, effective_num_players)
     else:
         # Scalar training uses only the first value head
+        # Mar 2026: Warn when multi-player data (num_players > 2) is trained without
+        # multi-player loss enabled, since this silently discards other players' value signals.
+        if value_targets.ndim == 2 and value_targets.shape[1] > 1:
+            effective_np = num_players if isinstance(num_players, int) else (
+                int(num_players.max().item()) if num_players is not None else 2
+            )
+            if effective_np > 2 and not getattr(compute_value_loss, "_mp_warned", False):
+                logger.warning(
+                    "Training %dp data with use_multi_player_loss=False: "
+                    "value targets reduced to player 1 only (shape %s -> [:, 0]). "
+                    "Consider enabling --multi-player to use all players' value signals.",
+                    effective_np,
+                    list(value_targets.shape),
+                )
+                compute_value_loss._mp_warned = True  # type: ignore[attr-defined]
         if value_pred.ndim == 2:
             value_pred_scalar = value_pred[:, 0]
         else:
