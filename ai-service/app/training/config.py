@@ -616,12 +616,12 @@ class TrainConfig:
     # This is validated in __post_init__ and used for model config validation.
     num_players: int = 2
     episodes_per_iter: int = 4
-    epochs_per_iter: int = 50  # Increased from 4 for stronger models (Dec 2025)
+    epochs_per_iter: int = 20  # Mar 30, 2026: Match executor default (was 50, caused catastrophic forgetting)
     # Number of self-play + training + evaluation cycles to run in the
     # high-level training loop. This was previously hard-coded; exposing it
     # here makes iterative retraining a first-class configuration parameter.
     iterations: int = 2
-    learning_rate: float = 1e-3
+    learning_rate: float = 1e-4  # Mar 30, 2026: Match executor default (was 1e-3, 10x too high)
     # Jan 13, 2026: Increased from 32 to 128 for stronger gradient signals
     # Larger batches provide more stable gradients and faster convergence
     batch_size: int = 128  # Will be auto-scaled in __post_init__ if GPU available

@@ -239,10 +239,10 @@ DefaultRulesEngine: Any = None
 
 # Jan 2026: Search budget for gauntlet evaluation
 # This aligns evaluation with training (both use MCTS) while keeping evaluation fast
-# March 11, 2026: Increased from 32 to 200. At 32 sims (25x less than training's
-# 800), evaluation was too shallow to accurately assess model quality — weak models
-# appeared decent, enabling noise promotions that regressed 8/12 configs.
-GAUNTLET_SEARCH_BUDGET = 200
+# March 11, 2026: Increased from 32 to 200.
+# March 30, 2026: Changed to 128 to match selfplay budget. Evaluation and selfplay
+# must use consistent search depth for Elo comparisons to be meaningful.
+GAUNTLET_SEARCH_BUDGET = 128
 
 
 def _ensure_game_modules():
