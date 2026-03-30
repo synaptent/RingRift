@@ -1448,8 +1448,11 @@ class TrainingCoordinator(EventSubscriptionMixin):
                         continue
 
             if total_games == 0:
-                logger.warning("No games completed in gauntlet, passing by default")
-                return True
+                # Mar 30, 2026: 0-game gauntlet MUST fail, not pass.
+                # Previously returned True, silently promoting broken models
+                # that couldn't complete a single evaluation game.
+                logger.error("No games completed in gauntlet — FAILING (was: pass by default)")
+                return False
 
             win_rate = wins / total_games
             passed = win_rate >= 0.5
