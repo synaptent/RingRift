@@ -660,14 +660,20 @@ async def execute_training_work(
         "--max-data-age-hours", "48",  # 2 days tolerance (was 168, caused regression)
     ]
 
-    # Validate training data exists before launching subprocess.
-    # Without --data-path, train.py relies on flaky catalog discovery that
-    # often fails on GPU nodes (missing DBs, stale indexes).
-    # Feb 28, 2026: Minimum NPZ size thresholds. A stale local NPZ with only
-    # 68 samples (few KB) produces garbage models (loss 4+). Worker nodes may
-    # have old copies that pass the exists() check but are far too small for
-    # meaningful training. If below threshold, fetch a fresh copy.
-    MIN_NPZ_SIZE_BYTES = 5 * 1024 * 1024  # 5MB — even smallest configs have 40MB+
+    # Mar 30, 2026: ALWAYS fetch fresh NPZ from S3 before training.
+    # Previous behavior used stale local files (sometimes months old).
+    # S3 has the latest gumbel + cross-strategy combined data pushed
+    # by the Lambda cron (export_gumbel_to_npz.sh) every 2 hours.
+    # This ensures training always uses the highest quality available data.
+    logger.info(f"Fetching latest NPZ from S3 for {config_key}...")
+    _s3_fetched = await _try_fetch_npz_from_s3(config_key, str(npz_path))
+    if _s3_fetched:
+        _s3_size = npz_path.stat().st_size if npz_path.exists() else 0
+        logger.info(f"S3 NPZ fetched: {config_key} ({_s3_size / 1e6:.1f}MB)")
+    else:
+        logger.warning(f"S3 NPZ fetch failed for {config_key}, falling back to local")
+
+    MIN_NPZ_SIZE_BYTES = 1024  # 1KB minimum (was 5MB which rejected valid gumbel NPZs)
 
     if npz_path.exists():
         npz_size = npz_path.stat().st_size
