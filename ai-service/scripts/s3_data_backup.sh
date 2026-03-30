@@ -9,7 +9,10 @@
 # 39GB+ of selfplay data per node were at risk of loss.
 
 set -e
-NODE_ID="${NODE_ID:-$(hostname)}"
+# Use RINGRIFT_NODE_ID (canonical YAML name) to prevent duplicate prefixes.
+# Previous: used raw hostname which could be an IP address (e.g., 192-222-50-174)
+# causing the same node to have two S3 prefixes (by IP and by YAML name).
+NODE_ID="${RINGRIFT_NODE_ID:-${NODE_ID:-$(hostname)}}"
 BUCKET="ringrift-models-20251214"
 AI_DIR="${HOME}/ringrift/ai-service"
 LOG_PREFIX="[s3-backup $(date +%H:%M)]"
