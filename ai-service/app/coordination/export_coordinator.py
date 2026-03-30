@@ -21,7 +21,11 @@ from typing import Generator
 logger = logging.getLogger(__name__)
 
 # Default max concurrent exports (configurable via env var)
-_DEFAULT_MAX_CONCURRENT = 2
+# Mar 30, 2026: Increased from 2 to 4. The ExportCoordinator's 2-slot limit
+# caused permanent export blockage because slots leaked (acquired by master_loop
+# PID which stays alive, so _clean_stale_locks never cleans them). Combined
+# with the governor's own slot system, this created double-blocking.
+_DEFAULT_MAX_CONCURRENT = 4
 
 
 class ExportSlotUnavailable(Exception):
@@ -65,16 +69,30 @@ class ExportCoordinator:
         self._initialized = True
 
     def _clean_stale_locks(self, conn: sqlite3.Connection) -> int:
-        """Remove locks held by processes that are no longer running.
+        """Remove stale export locks.
 
-        Returns the number of stale locks cleaned.
+        Mar 30, 2026: Added TTL-based cleanup. Previous logic only cleaned
+        locks whose PIDs were dead, but the master_loop PID stays alive
+        even after the export subprocess finishes, so locks leaked permanently.
+        Now also cleans any lock older than 30 minutes regardless of PID status.
         """
         hostname = _get_hostname()
+        now = time.time()
+
+        # TTL cleanup: any lock older than 30 min is stale (exports take <15 min)
+        ttl_cleaned = conn.execute(
+            "DELETE FROM export_locks WHERE started_at < ?",
+            (now - 1800,),
+        ).rowcount
+        if ttl_cleaned > 0:
+            conn.commit()
+            logger.info(f"[ExportCoordinator] Cleaned {ttl_cleaned} TTL-expired locks")
+
         rows = conn.execute(
             "SELECT config_key, pid, hostname FROM export_locks"
         ).fetchall()
 
-        cleaned = 0
+        cleaned = ttl_cleaned
         for config_key, pid, lock_hostname in rows:
             # Only check PIDs on the same host
             if lock_hostname and lock_hostname != hostname:
@@ -83,7 +101,7 @@ class ExportCoordinator:
                     "SELECT started_at FROM export_locks WHERE config_key=? AND pid=?",
                     (config_key, pid),
                 ).fetchone()
-                if row and (time.time() - row[0]) > 3600:
+                if row and (now - row[0]) > 3600:
                     conn.execute(
                         "DELETE FROM export_locks WHERE config_key=? AND pid=?",
                         (config_key, pid),
