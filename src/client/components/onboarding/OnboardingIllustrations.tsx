@@ -11,17 +11,30 @@
 
 const HEX_R = 18;
 
-function hexPoints(cx: number, cy: number, r = HEX_R) {
+function hexPoints(cx: number, cy: number, r = HEX_R, flatTop = false) {
+  // flatTop=false (default): pointy-top, vertex at top (legacy illustrations)
+  // flatTop=true: flat-top, flat edge at top (matches game board)
+  const offset = flatTop ? 0 : -30;
   return Array.from({ length: 6 }, (_, i) => {
-    const angle = (Math.PI / 180) * (60 * i - 30);
+    const angle = (Math.PI / 180) * (60 * i + offset);
     return `${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`;
   }).join(' ');
 }
 
-function HexCell({ cx, cy, highlight }: { cx: number; cy: number; highlight?: boolean }) {
+function HexCell({
+  cx,
+  cy,
+  highlight,
+  flatTop,
+}: {
+  cx: number;
+  cy: number;
+  highlight?: boolean;
+  flatTop?: boolean;
+}) {
   return (
     <polygon
-      points={hexPoints(cx, cy)}
+      points={hexPoints(cx, cy, HEX_R, flatTop)}
       fill={highlight ? 'rgba(52, 211, 153, 0.2)' : 'rgba(51, 65, 85, 0.5)'}
       stroke={highlight ? '#34d399' : 'rgb(71, 85, 105)'}
       strokeWidth="1.2"
@@ -51,12 +64,12 @@ export function WelcomeIllustration() {
 
   return (
     <svg viewBox="0 0 160 100" className="w-40 h-24 mx-auto" aria-hidden="true">
-      {/* Properly tiled hex cluster */}
-      <HexCell cx={cx} cy={cy} />
-      <HexCell cx={cx + dx} cy={cy - dy} />
-      <HexCell cx={cx + dx} cy={cy + dy} highlight />
-      <HexCell cx={cx - dx} cy={cy - dy} />
-      <HexCell cx={cx - dx} cy={cy + dy} />
+      {/* Flat-top hex cluster matching game board orientation */}
+      <HexCell cx={cx} cy={cy} flatTop />
+      <HexCell cx={cx + dx} cy={cy - dy} flatTop />
+      <HexCell cx={cx + dx} cy={cy + dy} flatTop highlight />
+      <HexCell cx={cx - dx} cy={cy - dy} flatTop />
+      <HexCell cx={cx - dx} cy={cy + dy} flatTop />
 
       {/* Ring stacks on cells */}
       <Ring cx={cx} cy={cy} color="#0284c7" />
