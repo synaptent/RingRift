@@ -1181,9 +1181,10 @@ class AutoPromotionDaemon(HandlerBase):
             return True, f"velocity_ok_{velocity:.2f}_elo_per_hour"
 
         except Exception as e:
-            # Don't block on velocity check errors - log and allow promotion
-            logger.warning(f"[AutoPromotion] Velocity check error for {candidate.config_key}: {e}")
-            return True, f"velocity_check_error: {e}"
+            # Mar 30, 2026: FAIL on gate errors, don't pass. Previous "optimistic default"
+            # meant any broken import/DB error disabled ALL safety checks simultaneously.
+            logger.error(f"[AutoPromotion] Velocity check FAILED for {candidate.config_key}: {e}")
+            return False, f"velocity_check_error: {e}"
 
     async def _check_parity_status(
         self,
@@ -1251,7 +1252,7 @@ class AutoPromotionDaemon(HandlerBase):
         except Exception as e:
             logger.warning(f"[AutoPromotion] Parity check error: {e}")
             # Don't block on parity check errors
-            return True, f"parity_check_error: {e}"
+            return False, f"parity_check_error: {e}"
 
     async def _run_live_parity_validation(
         self, config_key: str, sample_games: int = 100
@@ -1358,10 +1359,10 @@ class AutoPromotionDaemon(HandlerBase):
             return False, "parity_timeout"
         except FileNotFoundError as e:
             logger.warning(f"[AutoPromotion] Parity script not executable: {e}")
-            return True, f"parity_script_error: {e}"
+            return False, f"parity_script_error: {e}"
         except OSError as e:
             logger.warning(f"[AutoPromotion] Parity validation OS error: {e}")
-            return True, f"parity_os_error: {e}"
+            return False, f"parity_os_error: {e}"
 
     async def _check_data_quality(
         self,
@@ -1426,7 +1427,7 @@ class AutoPromotionDaemon(HandlerBase):
         except Exception as e:
             logger.warning(f"[AutoPromotion] Quality check error: {e}")
             # Don't block on quality check errors
-            return True, f"quality_check_error: {e}"
+            return False, f"quality_check_error: {e}"
 
     async def _check_stability_gate(
         self,
@@ -1511,7 +1512,7 @@ class AutoPromotionDaemon(HandlerBase):
         except Exception as e:
             logger.warning(f"[AutoPromotion] Stability check error: {e}")
             # Don't block on stability check errors
-            return True, f"stability_check_error: {e}"
+            return False, f"stability_check_error: {e}"
 
     async def _check_gauntlet_gate(
         self,

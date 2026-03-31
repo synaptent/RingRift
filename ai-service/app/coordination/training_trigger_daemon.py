@@ -2393,9 +2393,10 @@ class TrainingTriggerDaemon(HandlerBase):
             )
             return True, "quality monitor not available"
         except Exception as e:
-            # Unexpected error - allow training but log
-            logger.debug(f"[TrainingTriggerDaemon] Quality check error: {e}")
-            return True, f"quality check error: {e}"
+            # Mar 30, 2026: FAIL on error. Previous optimistic default allowed
+            # training on potentially corrupt data when quality check code was broken.
+            logger.error(f"[TrainingTriggerDaemon] Quality check FAILED: {e}")
+            return False, f"quality check error: {e}"
 
     async def _check_gpu_availability(self) -> bool:
         """Check if any GPU is available for training."""
