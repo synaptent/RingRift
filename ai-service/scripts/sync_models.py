@@ -283,7 +283,7 @@ def check_disk_usage(path: Path | None = None) -> tuple[bool, float]:
         return has_capacity, percent
     except Exception as e:
         logger.error(f"Failed to check disk usage: {e}")
-        return True, 0.0  # Allow sync on error (fail open)
+        return False, 100.0
 
 
 # ============================================

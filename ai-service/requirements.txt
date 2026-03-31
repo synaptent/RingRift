@@ -54,13 +54,9 @@ torchvision==0.24.1
 tensorboard==2.20.0
 tensorboardX==2.6.4
 
-# PyTorch Geometric - Graph Neural Networks for territory connectivity modeling
-# OPTIONAL: requires CUDA build tooling. Install separately on GPU nodes:
-#   pip install torch-geometric torch-scatter torch-sparse
-# Commented out to prevent CI build failures on CPU-only runners.
-# torch-geometric>=2.6.0
-# torch-scatter>=2.1.0
-# torch-sparse>=0.6.0
+# Optional GNN extras live in requirements-gnn.txt.
+# Keep the base runtime/CI install free of PyG native-extension packages so
+# audit and smoke jobs don't fail on environments that don't need graph models.
 
 # CMA-ES for heuristic weight optimization
 cma>=3.3.0
@@ -111,7 +107,7 @@ pysyncobj>=0.3.14
 p2pd>=0.2.0
 
 # OpenTelemetry for distributed tracing (per Section 4.3)
-opentelemetry-api==1.39.1
+opentelemetry-api==1.29.0
 opentelemetry-sdk==1.29.0
 opentelemetry-exporter-otlp==1.29.0
 # Note: Jaeger Thrift exporter is deprecated (1.21.0 is final version).

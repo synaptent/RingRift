@@ -557,7 +557,7 @@ class SyncRouter:
             return True
         except Exception as e:
             logger.debug(f"[SyncRouter] Error checking pool capacity for {node_id}: {e}")
-            return True  # Allow sync on error
+            return False
 
     def get_sync_sources(
         self,

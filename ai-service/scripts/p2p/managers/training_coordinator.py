@@ -1466,10 +1466,10 @@ class TrainingCoordinator(EventSubscriptionMixin):
 
         except ImportError as e:
             logger.warning(f"Could not import game gauntlet modules: {e}, skipping gauntlet")
-            return True
+            return False
         except Exception as e:
             logger.error(f"Gauntlet evaluation failed: {e}", exc_info=True)
-            return True  # Pass on error to avoid blocking training pipeline
+            return False
 
     async def _archive_failed_model(self, model_path: str, board_type: str,
                                      num_players: int, reason: str) -> None:

@@ -1,0 +1,14 @@
+# Optional PyTorch Geometric extras for GNN experiments.
+#
+# Install on top of the base environment only when graph-model workflows are
+# needed:
+#   pip install -r requirements.txt -r requirements-gnn.txt \
+#     --extra-index-url https://download.pytorch.org/whl/cpu
+#
+# These packages are intentionally excluded from the base requirements used by
+# CI and the default runtime because they often require platform-specific
+# wheels or native builds.
+
+torch-geometric>=2.6.0
+torch-scatter>=2.1.0
+torch-sparse>=0.6.0

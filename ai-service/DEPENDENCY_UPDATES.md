@@ -134,6 +134,11 @@ The Jaeger Thrift exporter (`opentelemetry-exporter-jaeger==1.21.0`) is deprecat
 Version 1.21.0 is the final release. For new deployments, use the OTLP exporter
 with Jaeger's native OTLP endpoint (port 4317):
 
+The OpenTelemetry Python pins in `requirements*.txt` are intentionally kept on
+the matching `1.29.0` stable line for `api/sdk/exporter` because the repo still
+uses `opentelemetry-instrumentation-fastapi==0.50b0`. Mixing the newer `api`
+series with the older SDK/exporter line breaks dependency resolution in CI.
+
 ```bash
 export OTEL_EXPORTER=otlp
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4317

@@ -1272,7 +1272,7 @@ class JobManager(EventSubscriptionMixin):
             if not check_path.exists():
                 # Can't determine disk space if no parent exists
                 logger.warning(f"Cannot check disk space: no existing parent for {output_dir}")
-                return True, "path_not_found_skipped"
+                return False, "path_not_found"
 
             # Get disk usage statistics
             disk_usage = shutil.disk_usage(check_path)
@@ -1289,8 +1289,7 @@ class JobManager(EventSubscriptionMixin):
 
         except OSError as e:
             logger.warning(f"Disk space check failed for {output_dir}: {e}")
-            # Return True on error to avoid blocking jobs due to check failures
-            return True, f"disk_check_error_skipped: {e}"
+            return False, f"disk_check_error: {e}"
 
     async def _check_disk_space_async(
         self,
@@ -1335,13 +1334,13 @@ class JobManager(EventSubscriptionMixin):
 
             if not result or not result.success:
                 logger.debug(f"Disk space check failed for {node_id}: SSH command failed")
-                return True, "ssh_check_failed_skipped"
+                return False, "ssh_check_failed"
 
             try:
                 free_gb = float(result.stdout.strip())
             except (ValueError, TypeError):
                 logger.debug(f"Could not parse disk space for {node_id}: {result.stdout}")
-                return True, "parse_error_skipped"
+                return False, "parse_error"
 
             if free_gb < min_free_gb:
                 logger.warning(
@@ -1353,13 +1352,13 @@ class JobManager(EventSubscriptionMixin):
             return True, "ok"
 
         except asyncio.TimeoutError:
-            return True, "disk_check_timeout_skipped"
+            return False, "disk_check_timeout"
         except ImportError:
             # SSH module not available
-            return True, "ssh_unavailable_skipped"
+            return False, "ssh_unavailable"
         except Exception as e:
             logger.debug(f"Disk space check error for {node_id}: {e}")
-            return True, f"disk_check_error_skipped: {e}"
+            return False, f"disk_check_error: {e}"
 
     async def _check_gpu_health(self, node_id: str, timeout: float | None = None) -> tuple[bool, str]:
         """Verify GPU is available and not in error state.

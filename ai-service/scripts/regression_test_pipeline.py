@@ -27,6 +27,8 @@ import sys
 import tempfile
 import time
 import traceback
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -67,14 +69,17 @@ TRAIN_BATCH_SIZE = 64
 TRAIN_LR = 3e-4
 EVAL_GAMES = 2
 EVAL_BUDGET = 32
+QUICK_FIXTURE_GAMES = 8
 
-# Minimum expected state_dict key prefixes in a v2 hex model
-REQUIRED_STATE_DICT_PREFIXES = [
-    "conv_block",   # initial conv block
-    "res_blocks",   # residual blocks
-    "policy_head",  # policy head
-    "value_head",   # value head
-]
+# Supported checkpoint naming families across the canonical CNN variants.
+# The smoke test should validate that a trained checkpoint looks like a real
+# model, without assuming only one internal module naming convention.
+REQUIRED_STATE_DICT_GROUPS = {
+    "stem": ("conv_block", "conv1", "initial_conv"),
+    "trunk": ("res_blocks", "backbone", "trunk"),
+    "policy": ("policy_head", "policy_conv", "policy_fc", "spatial_policy_conv"),
+    "value": ("value_head", "value_conv", "value_fc", "value_bn"),
+}
 
 
 def _python() -> str:
@@ -138,6 +143,10 @@ def _subprocess_env() -> dict[str, str]:
     env["PYTHONPATH"] = str(PROJECT_ROOT)
     env["RINGRIFT_DISABLE_TORCH_COMPILE"] = "1"
     return env
+
+
+def _canonical_model_available() -> bool:
+    return CANONICAL_MODEL.exists()
 
 
 # ===================================================================
@@ -305,14 +314,11 @@ def test_export(r: TestResult, jsonl_path: Path, npz_path: Path):
 # ===================================================================
 # Test 3: Training (1 epoch)
 # ===================================================================
-@_run_test("3. Training (1 epoch on NPZ with canonical init weights)")
+@_run_test("3. Training (1 epoch on NPZ with optional canonical init weights)")
 def test_training(r: TestResult, npz_path: Path, candidate_path: Path):
     """Train 1 epoch using the real training CLI."""
     if not npz_path.exists():
         r.fail("NPZ input missing (export test may have failed)")
-        return
-    if not CANONICAL_MODEL.exists():
-        r.fail("Canonical model missing")
         return
 
     cmd = [
@@ -325,13 +331,14 @@ def test_training(r: TestResult, npz_path: Path, candidate_path: Path):
         "--epochs", str(TRAIN_EPOCHS),
         "--batch-size", str(TRAIN_BATCH_SIZE),
         "--learning-rate", str(TRAIN_LR),
-        "--init-weights", str(CANONICAL_MODEL),
         "--no-auto-tune-batch-size",
         "--lr-scheduler", "cosine",
         "--skip-freshness-check",
         "--sampling-weights", "uniform",
         "--early-stopping-patience", "0",
     ]
+    if _canonical_model_available():
+        cmd.extend(["--init-weights", str(CANONICAL_MODEL)])
     proc = subprocess.run(
         cmd, capture_output=True, text=True,
         timeout=600,
@@ -364,7 +371,7 @@ def test_training(r: TestResult, npz_path: Path, candidate_path: Path):
         r.fail(f"torch.load failed: {e}", "Model file may be corrupt")
         return
 
-    # Assert: has expected state_dict keys
+    # Assert: has expected state_dict structure for a supported architecture.
     state_dict = _extract_state_dict(checkpoint)
     if state_dict is None:
         r.fail(
@@ -373,15 +380,11 @@ def test_training(r: TestResult, npz_path: Path, candidate_path: Path):
         )
         return
 
-    found_prefixes = set()
-    for key in state_dict.keys():
-        for prefix in REQUIRED_STATE_DICT_PREFIXES:
-            if key.startswith(prefix):
-                found_prefixes.add(prefix)
-    missing = set(REQUIRED_STATE_DICT_PREFIXES) - found_prefixes
+    found_groups = _detect_state_dict_groups(state_dict)
+    missing = sorted(name for name in REQUIRED_STATE_DICT_GROUPS if name not in found_groups)
     if missing:
         r.fail(
-            f"State dict missing expected key prefixes: {missing}",
+            f"State dict missing expected structure groups: {missing}",
             f"Found keys (first 10): {list(state_dict.keys())[:10]}",
         )
         return
@@ -389,7 +392,7 @@ def test_training(r: TestResult, npz_path: Path, candidate_path: Path):
     r.ok(
         file_size=fsize,
         num_keys=len(state_dict),
-        key_prefixes=sorted(found_prefixes),
+        state_dict_groups=found_groups,
     )
 
 
@@ -710,27 +713,28 @@ def test_promotion_metadata(r: TestResult, candidate_path: Path):
             return
 
     # Verify the candidate is different from canonical (training actually changed weights)
-    canonical_ckpt = torch.load(str(CANONICAL_MODEL), map_location="cpu", weights_only=False)
-    cand_sd = _extract_state_dict(checkpoint)
-    canon_sd = _extract_state_dict(canonical_ckpt)
+    if _canonical_model_available():
+        canonical_ckpt = torch.load(str(CANONICAL_MODEL), map_location="cpu", weights_only=False)
+        cand_sd = _extract_state_dict(checkpoint)
+        canon_sd = _extract_state_dict(canonical_ckpt)
 
-    if cand_sd is not None and canon_sd is not None:
-        identical_keys = 0
-        total_keys = 0
-        for key in list(cand_sd.keys())[:20]:
-            if key in canon_sd:
-                total_keys += 1
-                if torch.equal(cand_sd[key], canon_sd[key]):
-                    identical_keys += 1
-        if total_keys > 0 and identical_keys == total_keys:
-            r.fail(
-                "Candidate weights are IDENTICAL to canonical (training had no effect)",
-                "Training may have loaded wrong weights or gradient updates failed",
+        if cand_sd is not None and canon_sd is not None:
+            identical_keys = 0
+            total_keys = 0
+            for key in list(cand_sd.keys())[:20]:
+                if key in canon_sd:
+                    total_keys += 1
+                    if torch.equal(cand_sd[key], canon_sd[key]):
+                        identical_keys += 1
+            if total_keys > 0 and identical_keys == total_keys:
+                r.fail(
+                    "Candidate weights are IDENTICAL to canonical (training had no effect)",
+                    "Training may have loaded wrong weights or gradient updates failed",
+                )
+                return
+            r.details["weight_diff_ratio"] = (
+                f"{total_keys - identical_keys}/{total_keys} keys differ"
             )
-            return
-        r.details["weight_diff_ratio"] = (
-            f"{total_keys - identical_keys}/{total_keys} keys differ"
-        )
 
     r.ok(
         has_metadata=isinstance(checkpoint, dict) and (
@@ -765,8 +769,19 @@ def _extract_state_dict(checkpoint: Any) -> dict | None:
     return None
 
 
+def _detect_state_dict_groups(state_dict: dict[str, Any]) -> dict[str, str]:
+    """Return the matched architecture group -> prefix for a checkpoint."""
+    found: dict[str, str] = {}
+    for group, prefixes in REQUIRED_STATE_DICT_GROUPS.items():
+        for prefix in prefixes:
+            if any(key.startswith(prefix) for key in state_dict):
+                found[group] = prefix
+                break
+    return found
+
+
 def _find_or_create_quick_jsonl(tmpdir: Path) -> Path:
-    """For --quick mode: find an existing JSONL or generate a small one."""
+    """For --quick mode: find an existing JSONL or generate a deterministic one."""
     quick_path = tmpdir / "quick_test.jsonl"
 
     # Try existing test fixtures
@@ -780,32 +795,80 @@ def _find_or_create_quick_jsonl(tmpdir: Path) -> Path:
             logger.info(f"  Using existing test fixture: {fixture}")
             return quick_path
 
-    # Generate 2 quick games with minimal budget
-    logger.info("  No test fixture found, generating 2 quick games...")
-    script = f"""\
-import json, sys, os
-os.environ["RINGRIFT_DISABLE_TORCH_COMPILE"] = "1"
-sys.path.insert(0, {str(PROJECT_ROOT)!r})
-from scripts.minimal_alphazero_loop import run_selfplay
-from pathlib import Path
-run_selfplay(
-    model_path={str(CANONICAL_MODEL)!r},
-    n_games=2,
-    out=Path({str(quick_path)!r}),
-    budget=16,
-)
-"""
-    proc = subprocess.run(
-        [_python(), "-c", script],
-        capture_output=True, text=True,
-        timeout=180,
-        cwd=str(PROJECT_ROOT),
-        env=_subprocess_env(),
+    logger.info(
+        "  No test fixture found, generating %d deterministic random games...",
+        QUICK_FIXTURE_GAMES,
     )
-    if proc.returncode != 0 or not quick_path.exists():
-        logger.warning(f"  Quick JSONL generation failed: {proc.stderr[-200:]}")
+    try:
+        _write_quick_fixture_jsonl(quick_path)
+    except Exception as e:
+        logger.warning(f"  Quick JSONL generation failed: {e}")
         logger.warning("  Cannot proceed without test data")
     return quick_path
+
+
+def _write_quick_fixture_jsonl(path: Path) -> None:
+    """Generate a tiny deterministic JSONL fixture without external model files."""
+    import random
+
+    from app.models import BoardType, GameStatus, Move
+    from app.training.env import TrainingEnvConfig, get_theoretical_max_moves, make_env
+
+    board_enum = BoardType.HEX8
+    tmax = get_theoretical_max_moves(board_enum, NUM_PLAYERS)
+    env = make_env(
+        TrainingEnvConfig(
+            board_type=board_enum,
+            num_players=NUM_PLAYERS,
+            max_moves=int(tmax * 1.5),
+        )
+    )
+    rng = random.Random(12345)
+
+    def serialize_move(move: Move, phase: str, move_number: int) -> dict[str, Any]:
+        payload = move.model_dump(by_alias=True, exclude_none=True, mode="json")
+        if phase and "phase" not in payload:
+            payload["phase"] = phase
+        payload["moveNumber"] = move_number
+        return payload
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w") as f:
+        for game_idx in range(QUICK_FIXTURE_GAMES):
+            state = env.reset(seed=1234 + game_idx)
+            initial_state = state.model_dump(by_alias=True, exclude_none=True, mode="json")
+            moves: list[dict[str, Any]] = []
+            move_count = 0
+
+            while state.game_status == GameStatus.ACTIVE and move_count < 200:
+                legal = env.legal_moves()
+                if not legal:
+                    break
+                move = rng.choice(legal)
+                phase = (
+                    state.current_phase.value
+                    if hasattr(state.current_phase, "value")
+                    else str(state.current_phase)
+                )
+                moves.append(serialize_move(move, phase, move_count + 1))
+                state, _, done, _ = env.step(move)
+                move_count += 1
+                if done:
+                    break
+
+            winner = state.winner if state.game_status == GameStatus.COMPLETED else None
+            record = {
+                "game_id": str(uuid.uuid4()),
+                "board_type": BOARD_TYPE,
+                "num_players": NUM_PLAYERS,
+                "winner": winner,
+                "status": state.game_status.value,
+                "num_moves": move_count,
+                "moves": moves,
+                "initial_state": initial_state,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            f.write(json.dumps(record) + "\n")
 
 
 # ===================================================================
@@ -817,7 +880,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--quick", action="store_true",
-        help="Skip selfplay + evaluation (uses pre-made JSONL). ~30s instead of ~8min.",
+        help="Skip selfplay + evaluation and use a deterministic JSONL fixture.",
     )
     parser.add_argument(
         "--keep-tmpdir", action="store_true",
@@ -826,7 +889,7 @@ def main() -> None:
     args = parser.parse_args()
 
     # Pre-flight check
-    if not CANONICAL_MODEL.exists():
+    if not args.quick and not _canonical_model_available():
         logger.error(f"FATAL: Canonical model not found: {CANONICAL_MODEL}")
         logger.error("Download it first: python scripts/sync_models.py or from S3")
         sys.exit(1)
@@ -834,7 +897,10 @@ def main() -> None:
     logger.info("=" * 70)
     logger.info("PIPELINE REGRESSION TEST")
     logger.info(f"  Config: {BOARD_TYPE}_{NUM_PLAYERS}p, model_version={MODEL_VERSION}")
-    logger.info(f"  Canonical model: {CANONICAL_MODEL}")
+    logger.info(
+        f"  Canonical model: {CANONICAL_MODEL} "
+        f"({'present' if _canonical_model_available() else 'missing'})"
+    )
     logger.info(f"  Mode: {'QUICK (skip selfplay + eval)' if args.quick else 'FULL (~8 min)'}")
     logger.info("=" * 70)
 

@@ -58,6 +58,21 @@ const BOARD_LABELS: Record<string, string> = {
 
 type ResultFilter = 'all' | 'wins' | 'losses' | 'draws';
 
+const VICTORY_REASONS = new Set<GameResult['reason']>([
+  'ring_elimination',
+  'territory_control',
+  'last_player_standing',
+  'timeout',
+  'resignation',
+  'draw',
+  'abandonment',
+  'game_completed',
+]);
+
+function isVictoryReason(reason: string): reason is GameResult['reason'] {
+  return VICTORY_REASONS.has(reason as GameResult['reason']);
+}
+
 export default function GameHistoryPage() {
   useDocumentTitle('Game History');
   const { user } = useAuth();
@@ -184,7 +199,9 @@ export default function GameHistoryPage() {
               const isDraw = game.status === 'completed' && !game.winnerId;
               const reason = game.outcome || game.resultReason;
               const reasonLabel = reason
-                ? formatVictoryReason(reason as GameResult['reason'])
+                ? isVictoryReason(reason)
+                  ? formatVictoryReason(reason)
+                  : reason
                 : null;
 
               return (

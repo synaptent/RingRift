@@ -691,7 +691,7 @@ def acquire_sync_lock_safe(host: str, timeout: float = 120.0) -> bool:
         # OSError: lock file creation failed
         # RuntimeError: database lock failed
         logger.warning(f"Failed to acquire sync lock for {host}: {e}")
-        return True  # Allow operation on error
+        return False
 
 
 def release_sync_lock_safe(host: str) -> None:

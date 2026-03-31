@@ -331,10 +331,10 @@ class AutonomousQueuePopulationLoop(BaseLoop):
                 self._selfplay_enabled = False
                 return False
 
-            return True  # Default to enabled if can't determine
+            return False  # Fail closed if node role/config cannot be determined
         except Exception as e:
             logger.debug(f"[AutonomousQueue] Error checking selfplay_enabled config: {e}")
-            return True  # Default to enabled on error
+            return False  # Fail closed on config/role detection errors
 
     def start_background(self) -> asyncio.Task | None:
         """Start the loop as a background task (for LoopManager compatibility).
