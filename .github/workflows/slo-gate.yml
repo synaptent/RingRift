@@ -155,7 +155,7 @@ jobs:
         run: npm ci
 
       - name: Setup Python (for AI service if needed)
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
