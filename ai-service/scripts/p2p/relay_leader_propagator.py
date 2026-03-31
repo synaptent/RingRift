@@ -383,8 +383,11 @@ class RelayLeaderPropagatorMixin:
         peers_lock = getattr(self, "peers_lock", None)
         peers = getattr(self, "peers", None)
         if peers is None:
-            # No peers list available, can't verify - allow adoption
-            return True
+            logger.error(
+                "Leader reachability check failed closed for %s: peers list unavailable",
+                leader_id,
+            )
+            return False
 
         try:
             if peers_lock:
@@ -397,19 +400,25 @@ class RelayLeaderPropagatorMixin:
                 # Leader not in peers list
                 return False
 
-            # Check if peer is alive (either via method or attribute)
+            # Check if peer is alive — support both object and dict-backed peers.
+            # Codex adversarial review: persisted peers are plain dicts, not objects.
+            import time
             if hasattr(peer, "is_alive") and callable(peer.is_alive):
                 return peer.is_alive()
             elif hasattr(peer, "last_heartbeat"):
-                # Fallback: check if heartbeat is recent (60 seconds)
-                import time
                 return (time.time() - peer.last_heartbeat) < 60.0
+            elif isinstance(peer, dict) and "last_heartbeat" in peer:
+                return (time.time() - peer["last_heartbeat"]) < 60.0
 
-            # Can't determine aliveness, allow adoption
+            # Unknown peer format — allow leader adoption rather than stalling convergence
+            logger.warning(
+                "Leader reachability check: unknown peer format for %s, allowing",
+                leader_id,
+            )
             return True
         except Exception as e:
-            logger.debug(f"Error verifying leader reachability: {e}")
-            return True  # Default to allowing adoption on error
+            logger.error(f"Error verifying leader reachability for {leader_id}: {e}")
+            return False
 
     def _emit_leader_adopted_from_gossip(
         self, claim: LeaderClaim, reason: str

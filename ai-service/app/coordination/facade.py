@@ -115,21 +115,21 @@ class CoordinationFacade:
         # Check task limits
         coordinator = self._get_task_coordinator()
         if coordinator is None:
-            return True  # No coordinator, allow by default
+            logger.error("Task spawn denied: task coordinator unavailable")
+            return False
 
         try:
             from app.coordination.task_coordinator import TaskType
-            tt = TaskType(task_type) if task_type in [t.value for t in TaskType] else None
-            if tt:
-                return coordinator.can_spawn(tt, node_id)
+            tt = TaskType(task_type)
+            return coordinator.can_spawn(tt, node_id)
         except ValueError as e:
-            # Invalid task type value
-            logger.debug(f"Invalid task type {task_type}: {e}")
+            logger.error(f"Task spawn denied: invalid task type {task_type}: {e}")
         except (ImportError, ModuleNotFoundError) as e:
-            # TaskType not importable (rare but possible)
-            logger.warning(f"TaskType import failed, allowing spawn: {e}")
+            logger.error(f"Task spawn denied: TaskType import failed: {e}")
+        except (AttributeError, RuntimeError, TypeError) as e:
+            logger.error(f"Task spawn denied: coordinator check failed for {task_type} on {node_id}: {e}")
 
-        return True
+        return False
 
     def spawn_task(
         self,
@@ -466,6 +466,9 @@ class CoordinationFacade:
         except (ValueError, TypeError, RuntimeError, KeyError) as e:
             logger.error(f"Failed to subscribe: {e}")
             return ""
+        except Exception as e:
+            logger.error(f"Unexpected subscribe failure for {event_type}: {e}")
+            return ""
 
     def unsubscribe(self, subscription_id: str) -> bool:
         """Unsubscribe from events.
@@ -495,8 +498,15 @@ class CoordinationFacade:
         """Check if node is available via monitor."""
         monitor = self._get_node_monitor()
         if monitor is None:
-            return True  # No monitor, assume available
-        return monitor.is_node_available(node_id)
+            # Monitor is optional — allow tasks when it's not bootstrapped yet.
+            # Codex adversarial review: blocking here causes availability regression.
+            logger.debug(f"Node monitor unavailable for {node_id}, allowing (monitor optional)")
+            return True
+        try:
+            return monitor.is_node_available(node_id)
+        except (AttributeError, RuntimeError, TypeError) as e:
+            logger.error(f"Node availability check failed for {node_id}: {e}")
+            return False
 
     def _get_task_coordinator(self) -> "Any | None":
         """Lazy load task coordinator.
