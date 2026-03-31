@@ -33,25 +33,39 @@ function Ring({ cx, cy, color, r = 7 }: { cx: number; cy: number; color: string;
   return <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth="3" />;
 }
 
-/** Welcome step: mini hex board with colorful ring stacks */
+/** Welcome step: mini hex board with colorful ring stacks.
+ *
+ * Flat-top hex tiling: for radius r, adjacent centers are r*sqrt(3) apart.
+ *   column step  = r * 3/2    = 27   (HEX_R=18)
+ *   row step     = r * sqrt3  ≈ 31.2
+ *   half-row off = r * sqrt3/2 ≈ 15.6  (odd-column vertical offset)
+ */
 export function WelcomeIllustration() {
+  const r = HEX_R;
+  const dx = r * 1.5; // 27
+  const dy = r * Math.sqrt(3) * 0.5; // ~15.6 (half-row offset for adjacent columns)
+
+  // 5-cell diamond: center + 4 neighbors (axial coords → pixel)
+  const cx = 80;
+  const cy = 50;
+
   return (
     <svg viewBox="0 0 160 100" className="w-40 h-24 mx-auto" aria-hidden="true">
-      {/* 5-cell hex cluster */}
-      <HexCell cx={55} cy={50} />
-      <HexCell cx={80} cy={36} />
-      <HexCell cx={80} cy={64} />
-      <HexCell cx={105} cy={50} highlight />
-      <HexCell cx={105} cy={22} />
+      {/* Properly tiled hex cluster */}
+      <HexCell cx={cx} cy={cy} />
+      <HexCell cx={cx + dx} cy={cy - dy} />
+      <HexCell cx={cx + dx} cy={cy + dy} highlight />
+      <HexCell cx={cx - dx} cy={cy - dy} />
+      <HexCell cx={cx - dx} cy={cy + dy} />
 
-      {/* Ring stacks */}
-      <Ring cx={55} cy={50} color="#0284c7" />
-      <Ring cx={80} cy={36} color="#34d399" />
-      <Ring cx={80} cy={60} color="#fbbf24" />
-      <Ring cx={80} cy={68} color="#34d399" />
-      <Ring cx={105} cy={50} color="#e879f9" />
-      <Ring cx={105} cy={18} color="#0284c7" />
-      <Ring cx={105} cy={26} color="#34d399" />
+      {/* Ring stacks on cells */}
+      <Ring cx={cx} cy={cy} color="#0284c7" />
+      <Ring cx={cx + dx} cy={cy - dy} color="#34d399" />
+      <Ring cx={cx + dx} cy={cy + dy - 4} color="#fbbf24" />
+      <Ring cx={cx + dx} cy={cy + dy + 4} color="#34d399" />
+      <Ring cx={cx - dx} cy={cy - dy} color="#e879f9" />
+      <Ring cx={cx - dx} cy={cy + dy - 4} color="#0284c7" />
+      <Ring cx={cx - dx} cy={cy + dy + 4} color="#34d399" />
     </svg>
   );
 }
