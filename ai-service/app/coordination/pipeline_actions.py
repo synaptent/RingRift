@@ -128,26 +128,69 @@ async def _check_training_data_quality(config_key: str, npz_path: str) -> tuple[
 
         daemon = get_quality_daemon()
         if daemon:
-            quality = daemon.get_config_quality(config_key)
-            if quality is not None:
-                return (quality >= QUALITY_GATE_THRESHOLD, quality)
-    except (ImportError, AttributeError):
-        pass
+            quality_getter = getattr(daemon, "get_config_quality", None)
+            if quality_getter is None:
+                quality_getter = getattr(daemon, "get_quality_for_config", None)
+
+            if quality_getter is not None:
+                quality = quality_getter(config_key)
+                if quality is not None:
+                    return (quality >= QUALITY_GATE_THRESHOLD, quality)
+    except ImportError as e:
+        logger.error(
+            f"[PipelineActions] Quality monitor unavailable for {config_key}: {e}"
+        )
+    except AttributeError as e:
+        logger.error(
+            f"[PipelineActions] Quality monitor missing quality getter for "
+            f"{config_key}: {e}"
+        )
+    except Exception as e:
+        logger.error(
+            f"[PipelineActions] Quality monitor check failed for {config_key}: {e}"
+        )
+        return (False, 0.0)
 
     # If QualityMonitorDaemon not available, check the data pipeline orchestrator
     try:
-        from app.coordination.data_pipeline_orchestrator import get_data_pipeline_orchestrator
+        try:
+            from app.coordination.data_pipeline_orchestrator import (
+                get_data_pipeline_orchestrator as get_pipeline_orchestrator,
+            )
+        except ImportError:
+            from app.coordination.data_pipeline_orchestrator import (
+                get_pipeline_orchestrator,
+            )
 
-        orchestrator = get_data_pipeline_orchestrator()
+        orchestrator = get_pipeline_orchestrator()
         if orchestrator and hasattr(orchestrator, "_check_training_data_quality"):
-            quality_ok = await orchestrator._check_training_data_quality(Path(npz_path))
-            if not quality_ok:
-                return (False, 0.5)  # Assume below threshold if check fails
-    except (ImportError, AttributeError):
-        pass
+            try:
+                quality_ok = await orchestrator._check_training_data_quality(
+                    str(npz_path),
+                    0,
+                )
+            except TypeError:
+                quality_ok = await orchestrator._check_training_data_quality(
+                    Path(npz_path)
+                )
+            if quality_ok:
+                return (True, QUALITY_GATE_THRESHOLD)
+            return (False, 0.0)
+    except (ImportError, AttributeError) as e:
+        logger.error(
+            f"[PipelineActions] Data pipeline orchestrator unavailable for {config_key}: {e}"
+        )
+    except Exception as e:
+        logger.error(
+            f"[PipelineActions] Data pipeline quality check failed for {config_key}: {e}"
+        )
+        return (False, 0.0)
 
-    # Default: assume quality is acceptable if we can't check
-    return (True, 0.7)
+    logger.error(
+        f"[PipelineActions] Unable to verify training data quality for "
+        f"{config_key} from {npz_path}"
+    )
+    return (False, 0.0)
 
 
 def _get_circuit_state(config_key: str) -> CircuitState:

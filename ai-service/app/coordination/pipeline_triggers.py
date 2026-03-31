@@ -401,11 +401,14 @@ class PipelineTrigger:
                 details={},
             )
         except Exception as e:
-            # If we can't check, assume it's safe to proceed
+            logger.error(
+                f"[PipelineTrigger] Could not verify running training for "
+                f"{make_config_key(board_type, num_players)}: {e}"
+            )
             return PrerequisiteResult(
-                passed=True,
-                message=f"Could not check for running training: {e}",
-                details={"warning": str(e)},
+                passed=False,
+                message=f"Could not verify whether training is already running: {e}",
+                details={"error": str(e)},
             )
 
     async def check_evaluation_passed(

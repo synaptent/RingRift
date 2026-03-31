@@ -11,6 +11,7 @@ Tests comprehensive integrity checking for sync operations:
 
 import hashlib
 import sqlite3
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -21,6 +22,7 @@ from app.coordination.sync_integrity import (
     LARGE_CHUNK_SIZE,
     IntegrityCheckResult,
     IntegrityReport,
+    atomic_file_write,
     check_sqlite_integrity,
     compute_db_checksum,
     compute_file_checksum,
@@ -709,6 +711,52 @@ class TestIntegrityCheckResult:
         assert result.errors == []
         assert result.warnings == []
         assert result.check_time == 0.0
+
+
+# =============================================================================
+# Atomic File Write Tests
+# =============================================================================
+
+
+class TestAtomicFileWrite:
+    """Test atomic temp-write behavior for sync downloads."""
+
+    def test_subprocess_failure_cleans_temp_file(self, temp_dir):
+        """Failed subprocess writes must not leave a temp artifact behind."""
+        target = temp_dir / "candidate.pth"
+        temp_path = temp_dir / ".candidate.pth.tmp"
+
+        def write_func(path: Path):
+            path.write_text("partial-download")
+            return subprocess.CompletedProcess(
+                args=["aria2c"],
+                returncode=1,
+                stdout="",
+                stderr="network error",
+            )
+
+        success, message = atomic_file_write(target, write_func)
+
+        assert success is False
+        assert "subprocess failed" in message.lower()
+        assert not temp_path.exists()
+        assert not target.exists()
+
+    def test_empty_output_cleans_temp_file(self, temp_dir):
+        """Writers that create an empty file should be rejected and cleaned up."""
+        target = temp_dir / "candidate.pth"
+        temp_path = temp_dir / ".candidate.pth.tmp"
+
+        def write_func(path: Path):
+            path.write_bytes(b"")
+            return None
+
+        success, message = atomic_file_write(target, write_func)
+
+        assert success is False
+        assert "empty output file" in message.lower()
+        assert not temp_path.exists()
+        assert not target.exists()
 
 
 # =============================================================================

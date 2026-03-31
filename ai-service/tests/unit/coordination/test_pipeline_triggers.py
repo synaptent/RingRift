@@ -604,3 +604,18 @@ async def test_check_no_training_running_when_clear(monkeypatch) -> None:
     result = await trigger.check_no_training_running("square8", 2)
 
     assert result.passed
+
+
+@pytest.mark.asyncio
+async def test_check_no_training_running_fails_closed_on_check_error(monkeypatch) -> None:
+    def fake_run_error(*_args, **_kwargs):
+        raise OSError("pgrep unavailable")
+
+    monkeypatch.setattr(subprocess, "run", fake_run_error)
+
+    trigger = PipelineTrigger()
+    result = await trigger.check_no_training_running("square8", 2)
+
+    assert not result.passed
+    assert "Could not verify whether training is already running" in result.message
+    assert result.details["error"] == "pgrep unavailable"

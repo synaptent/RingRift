@@ -433,8 +433,8 @@ jobs:
         run: npm audit --omit=dev --audit-level=high
 
       - name: Run Snyk security scan
+        if: ${{ secrets.SNYK_TOKEN != '' }}
         uses: snyk/actions/node@master
-        continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
@@ -1095,6 +1095,17 @@ jobs:
         working-directory: ai-service
         run: |
           python scripts/regression_test_pipeline.py --quick
+
+      - name: Run focused coordination regressions
+        working-directory: ai-service
+        run: |
+          PYTHONPATH=. pytest -q \
+            tests/test_event_router.py \
+            tests/unit/coordination/test_facade.py \
+            tests/unit/scripts/test_p2p_orchestrator.py \
+            tests/unit/training/test_generate_data.py \
+            tests/unit/p2p/handlers/test_election_handlers.py \
+            tests/unit/p2p/test_relay_leader_propagator.py
 
       - name: Verify game engine and AI play correctly
         working-directory: ai-service

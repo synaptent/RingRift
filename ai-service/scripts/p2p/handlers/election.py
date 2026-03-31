@@ -171,9 +171,8 @@ class ElectionHandlersMixin(BaseP2PHandler):
             return True, "config_ok"
 
         except Exception as e:
-            # On error, allow (don't break elections)
-            logger.debug(f"[Election] Probation check error: {e}")
-            return True, f"check_error: {e}"
+            logger.error(f"[Election] Probation check failed for {leader_id}: {e}")
+            return False, f"check_error: {e}"
 
     @handler_timeout(HANDLER_TIMEOUT_GOSSIP)
     async def handle_election(self, request: web.Request) -> web.Response:

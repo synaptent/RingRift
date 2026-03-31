@@ -193,11 +193,11 @@ class HttpServerHealthLoop(BaseLoop):
                 ) as resp:
                     return resp.status == 200
         except ImportError:
-            # aiohttp not available - can't probe, assume healthy
-            logger.warning(
-                f"[{self.name}] aiohttp not available, skipping health probe"
+            # Fail closed: without aiohttp we cannot verify the local HTTP server.
+            logger.error(
+                f"[{self.name}] aiohttp not available, failing health probe closed"
             )
-            return True
+            return False
         except asyncio.TimeoutError:
             logger.debug(f"[{self.name}] Health probe timed out")
             return False

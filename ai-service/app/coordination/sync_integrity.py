@@ -793,6 +793,14 @@ def atomic_file_write(
     temp_path = target_path.parent / f".{target_path.name}{temp_suffix}"
 
     try:
+        def cleanup_temp(message: str) -> tuple[bool, str]:
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError as unlink_err:
+                    logger.debug(f"Could not remove temp file {temp_path}: {unlink_err}")
+            return False, message
+
         # Ensure parent directory exists
         target_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -808,18 +816,18 @@ def atomic_file_write(
             and write_result.returncode != 0
         ):
             err_text = (write_result.stderr or write_result.stdout or "").strip()
-            return False, (
+            return cleanup_temp(
                 f"Write function subprocess failed with exit={write_result.returncode}: "
                 f"{err_text[:200]}"
             )
 
         # Verify temp file was created
         if not temp_path.exists():
-            return False, "Write function did not create temp file"
+            return cleanup_temp("Write function did not create temp file")
         if not temp_path.is_file():
-            return False, "Write function produced non-file output"
+            return cleanup_temp("Write function produced non-file output")
         if temp_path.stat().st_size <= 0:
-            return False, "Write function produced empty output file"
+            return cleanup_temp("Write function produced empty output file")
 
         # Atomic rename (POSIX guarantees atomicity on same filesystem)
         os.rename(str(temp_path), str(target_path))

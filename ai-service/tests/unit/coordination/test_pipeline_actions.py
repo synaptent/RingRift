@@ -7,6 +7,8 @@ for each pipeline stage (sync, export, training, evaluation, promotion).
 from __future__ import annotations
 
 import asyncio
+import sys
+import types
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -16,6 +18,8 @@ from app.coordination.pipeline_actions import (
     ActionConfig,
     ActionPriority,
     StageCompletionResult,
+    QUALITY_GATE_THRESHOLD,
+    _check_training_data_quality,
     _get_ai_service_root,
     trigger_data_sync,
     trigger_evaluation,
@@ -23,6 +27,16 @@ from app.coordination.pipeline_actions import (
     trigger_promotion,
     trigger_training,
 )
+
+
+@pytest.fixture
+def allow_training_quality_gate():
+    """Let training-action tests focus on subprocess behavior, not gate sourcing."""
+    with patch(
+        "app.coordination.pipeline_actions._check_training_data_quality",
+        new=AsyncMock(return_value=(True, QUALITY_GATE_THRESHOLD)),
+    ):
+        yield
 
 
 # =============================================================================
@@ -200,6 +214,60 @@ class TestActionConfig:
         assert config.models_dir == "custom/models"
 
 
+class TestCheckTrainingDataQuality:
+    """Tests for the training data quality gate helper."""
+
+    @pytest.mark.asyncio
+    async def test_blocks_training_when_no_quality_source_returns_signal(self):
+        quality_module = types.SimpleNamespace(get_quality_daemon=lambda: None)
+        orchestrator_module = types.SimpleNamespace(
+            get_data_pipeline_orchestrator=lambda: None
+        )
+
+        with patch.dict(
+            sys.modules,
+            {
+                "app.coordination.quality_monitor_daemon": quality_module,
+                "app.coordination.data_pipeline_orchestrator": orchestrator_module,
+            },
+        ):
+            quality_ok, quality_score = await _check_training_data_quality(
+                "hex8_2p",
+                "/tmp/hex8_2p.npz",
+            )
+
+        assert quality_ok is False
+        assert quality_score == 0.0
+
+    @pytest.mark.asyncio
+    async def test_uses_orchestrator_quality_check_with_current_signature(self):
+        orchestrator = AsyncMock()
+        orchestrator._check_training_data_quality = AsyncMock(return_value=True)
+        quality_module = types.SimpleNamespace(get_quality_daemon=lambda: None)
+        orchestrator_module = types.SimpleNamespace(
+            get_data_pipeline_orchestrator=lambda: orchestrator
+        )
+
+        with patch.dict(
+            sys.modules,
+            {
+                "app.coordination.quality_monitor_daemon": quality_module,
+                "app.coordination.data_pipeline_orchestrator": orchestrator_module,
+            },
+        ):
+            quality_ok, quality_score = await _check_training_data_quality(
+                "hex8_2p",
+                "/tmp/hex8_2p.npz",
+            )
+
+        assert quality_ok is True
+        assert quality_score == QUALITY_GATE_THRESHOLD
+        orchestrator._check_training_data_quality.assert_awaited_once_with(
+            "/tmp/hex8_2p.npz",
+            0,
+        )
+
+
 # =============================================================================
 # Helper Function Tests
 # =============================================================================
@@ -235,9 +303,13 @@ class TestRunSubprocess:
     @pytest.mark.asyncio
     async def test_subprocess_success(self):
         """Should capture successful subprocess output."""
-        mock_process = AsyncMock()
+        mock_process = MagicMock()
+        mock_process.pid = 1234
         mock_process.returncode = 0
         mock_process.communicate = AsyncMock(return_value=(b"success output", b""))
+        mock_process.wait = AsyncMock()
+        mock_process.terminate = MagicMock()
+        mock_process.kill = MagicMock()
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             with patch("app.coordination.pipeline_actions._emit_sync_complete"):
@@ -253,7 +325,10 @@ class TestRunSubprocess:
     @pytest.mark.asyncio
     async def test_subprocess_timeout(self):
         """Should handle subprocess timeout."""
-        mock_process = AsyncMock()
+        mock_process = MagicMock()
+        mock_process.pid = 1234
+        mock_process.returncode = None
+        mock_process.terminate = MagicMock()
         mock_process.kill = MagicMock()
         mock_process.wait = AsyncMock()
         mock_process.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
@@ -268,6 +343,7 @@ class TestRunSubprocess:
 
         assert result.success is False
         assert "timed out" in result.stderr.lower()
+        mock_process.terminate.assert_called_once()
 
 
 # =============================================================================
@@ -288,7 +364,7 @@ class TestTriggerDataSync:
 
     @pytest.mark.asyncio
     async def test_basic_sync(self, mock_subprocess):
-        """Should run sync with correct arguments."""
+        """Should run one-shot unified sync with the expected command."""
         with patch("asyncio.create_subprocess_exec", return_value=mock_subprocess) as exec_mock:
             with patch("app.coordination.pipeline_actions._emit_sync_complete"):
                 result = await trigger_data_sync(
@@ -306,10 +382,8 @@ class TestTriggerDataSync:
         # Verify command was constructed correctly
         call_args = exec_mock.call_args
         cmd_str = " ".join(call_args[0])
-        assert "--board-type" in cmd_str
-        assert "hex8" in cmd_str
-        assert "--num-players" in cmd_str
-        assert "2" in cmd_str
+        assert "unified_data_sync.py" in cmd_str
+        assert "--once" in cmd_str
 
     @pytest.mark.asyncio
     async def test_sync_with_hosts(self, mock_subprocess):
@@ -477,7 +551,7 @@ class TestTriggerTraining:
         return mock
 
     @pytest.mark.asyncio
-    async def test_basic_training(self, mock_training_subprocess):
+    async def test_basic_training(self, mock_training_subprocess, allow_training_quality_gate):
         """Should run training with correct arguments."""
         with patch("asyncio.create_subprocess_exec", return_value=mock_training_subprocess) as exec_mock:
             with patch("pathlib.Path.exists", return_value=True):
@@ -499,7 +573,7 @@ class TestTriggerTraining:
         assert "app.training.train" in cmd_str
 
     @pytest.mark.asyncio
-    async def test_training_parses_metrics(self):
+    async def test_training_parses_metrics(self, allow_training_quality_gate):
         """Should parse training metrics from output."""
         mock_process = AsyncMock()
         mock_process.returncode = 0
@@ -525,7 +599,7 @@ class TestTriggerTraining:
         assert result.metadata["policy_accuracy"] == 82.3
 
     @pytest.mark.asyncio
-    async def test_training_with_transfer_weights(self, mock_training_subprocess):
+    async def test_training_with_transfer_weights(self, mock_training_subprocess, allow_training_quality_gate):
         """Should pass init_weights for transfer learning."""
         with patch("asyncio.create_subprocess_exec", return_value=mock_training_subprocess) as exec_mock:
             with patch("pathlib.Path.exists", return_value=True):
@@ -543,7 +617,7 @@ class TestTriggerTraining:
         assert "/models/pretrained.pth" in cmd_str
 
     @pytest.mark.asyncio
-    async def test_training_failure_emits_event(self):
+    async def test_training_failure_emits_event(self, allow_training_quality_gate):
         """Should emit training_failed event on failure."""
         mock_process = AsyncMock()
         mock_process.returncode = 1
@@ -806,7 +880,7 @@ class TestEventEmission:
         emit_mock.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_training_emits_complete_on_success(self):
+    async def test_training_emits_complete_on_success(self, allow_training_quality_gate):
         """trigger_training should emit training_complete on success."""
         mock_process = AsyncMock()
         mock_process.returncode = 0
@@ -820,7 +894,7 @@ class TestEventEmission:
         emit_mock.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_training_emits_failed_on_failure(self):
+    async def test_training_emits_failed_on_failure(self, allow_training_quality_gate):
         """trigger_training should emit training_failed on failure."""
         mock_process = AsyncMock()
         mock_process.returncode = 1
@@ -859,7 +933,7 @@ class TestIntegration:
     """Integration tests for action chaining."""
 
     @pytest.mark.asyncio
-    async def test_export_to_training_chain(self):
+    async def test_export_to_training_chain(self, allow_training_quality_gate):
         """Should chain export output to training input."""
         # Mock export
         export_mock = AsyncMock()
@@ -948,7 +1022,7 @@ class TestEdgeCases:
     """Edge case and boundary condition tests."""
 
     @pytest.mark.asyncio
-    async def test_empty_stdout_parsing(self):
+    async def test_empty_stdout_parsing(self, allow_training_quality_gate):
         """Should handle empty stdout gracefully."""
         mock_process = AsyncMock()
         mock_process.returncode = 0
@@ -969,7 +1043,7 @@ class TestEdgeCases:
         assert result.metadata["policy_accuracy"] == 0.0
 
     @pytest.mark.asyncio
-    async def test_malformed_stdout_parsing(self):
+    async def test_malformed_stdout_parsing(self, allow_training_quality_gate):
         """Should handle malformed output without crashing."""
         mock_process = AsyncMock()
         mock_process.returncode = 0

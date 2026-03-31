@@ -2299,12 +2299,11 @@ class TrainingTriggerDaemon(HandlerBase):
                         )
                         quality = decayed_quality
                     else:
-                        # No quality data available at all - allow training with warning
-                        logger.debug(
+                        logger.error(
                             f"[TrainingTriggerDaemon] {config_key}: no quality data available, "
-                            f"proceeding with training"
+                            f"blocking training"
                         )
-                        return True, "no quality data (proceeding anyway)"
+                        return False, "no quality data available"
 
                 # Update cache with fresh quality score
                 if quality is not None:
@@ -2386,12 +2385,11 @@ class TrainingTriggerDaemon(HandlerBase):
             return True, f"quality ok ({quality:.2f})"
 
         except ImportError:
-            # QualityMonitorDaemon not available - allow training
-            logger.debug(
+            logger.error(
                 f"[TrainingTriggerDaemon] {config_key}: quality monitor not available, "
-                f"proceeding with training"
+                f"blocking training"
             )
-            return True, "quality monitor not available"
+            return False, "quality monitor not available"
         except Exception as e:
             # Mar 30, 2026: FAIL on error. Previous optimistic default allowed
             # training on potentially corrupt data when quality check code was broken.
@@ -3150,11 +3148,7 @@ class TrainingTriggerDaemon(HandlerBase):
                 breaker.record_failure(config_key)
 
         try:
-            from app.coordination.event_router import (
-                StageEvent,
-                StageCompletionResult,
-                get_stage_event_bus,
-            )
+            from app.coordination.event_emission_helpers import safe_emit_event_async
 
             state = self._training_states.get(config_key)
 
@@ -3170,22 +3164,20 @@ class TrainingTriggerDaemon(HandlerBase):
                             "EvaluationDaemon may fail"
                         )
 
-            bus = get_stage_event_bus()
-            await bus.emit(
-                StageCompletionResult(
-                    event=StageEvent.TRAINING_COMPLETE if success else StageEvent.TRAINING_FAILED,
-                    success=success,
-                    timestamp=datetime.datetime.now().isoformat(),
-                    metadata={
-                        "config": config_key,
-                        "board_type": state.board_type if state else "",
-                        "num_players": state.num_players if state else 0,
-                        "samples_trained": state.npz_sample_count if state else 0,
-                        # December 29, 2025: Critical for evaluation pipeline
-                        "model_path": model_path,
-                        "checkpoint_path": model_path,  # Alias for compatibility
-                    },
-                )
+            await safe_emit_event_async(
+                "TRAINING_COMPLETE" if success else "TRAINING_FAILED",
+                {
+                    "config": config_key,
+                    "board_type": state.board_type if state else "",
+                    "num_players": state.num_players if state else 0,
+                    "samples_trained": state.npz_sample_count if state else 0,
+                    # December 29, 2025: Critical for evaluation pipeline
+                    "model_path": model_path,
+                    "checkpoint_path": model_path,  # Alias for compatibility
+                    "success": success,
+                    "timestamp": datetime.datetime.now().isoformat(),
+                },
+                context="TrainingTriggerDaemon",
             )
             logger.info(
                 f"[TrainingTriggerDaemon] Emitted TRAINING_{'COMPLETE' if success else 'FAILED'} "

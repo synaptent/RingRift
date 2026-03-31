@@ -24,6 +24,37 @@ if TYPE_CHECKING:
 logger = logging.getLogger("p2p_orchestrator")
 
 
+def _prepare_atomic_output_path(output_path: str | Path) -> tuple[Path, Path]:
+    """Return final/temp output paths, ensuring temp output starts clean."""
+    final_path = Path(output_path)
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = final_path.parent / f".{final_path.name}.tmp"
+    temp_path.unlink(missing_ok=True)
+    return final_path, temp_path
+
+
+def _cleanup_atomic_output_path(temp_path: Path) -> None:
+    """Best-effort cleanup for failed temp outputs."""
+    temp_path.unlink(missing_ok=True)
+
+
+def _finalize_atomic_output_path(
+    temp_path: Path,
+    final_path: Path,
+    *,
+    min_size_bytes: int = 1024,
+) -> bool:
+    """Promote a completed temp output into place if it looks non-trivial."""
+    if not temp_path.exists() or not temp_path.is_file():
+        _cleanup_atomic_output_path(temp_path)
+        return False
+    if temp_path.stat().st_size <= min_size_bytes:
+        _cleanup_atomic_output_path(temp_path)
+        return False
+    temp_path.replace(final_path)
+    return True
+
+
 async def _try_push_candidate_to_s3(
     local_path: str, filename: str, config_key: str,
 ) -> bool:
@@ -223,6 +254,7 @@ async def _try_fetch_npz_from_cluster(
     from the coordinator. This fetches it on-demand before training starts,
     preventing 100% failure rates for configs like hexagonal_2p/3p.
     """
+    temp_npz_path: Path | None = None
     try:
         # Get leader URL to find coordinator IP
         from app.config.cluster_config import load_cluster_config
@@ -241,26 +273,33 @@ async def _try_fetch_npz_from_cluster(
 
         remote_path = f"{ssh_user}@{leader_ip}:{ringrift_path}/data/training/{config_key}.npz"
         logger.info(f"Fetching NPZ from coordinator: {remote_path}")
+        final_npz_path, temp_npz_path = _prepare_atomic_output_path(npz_path)
 
         proc = await asyncio.create_subprocess_exec(
             "rsync", "-az", "--timeout=60",
-            remote_path, str(npz_path),
+            remote_path, str(temp_npz_path),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
 
-        if proc.returncode == 0 and npz_path.exists() and npz_path.stat().st_size > 1024:
+        if proc.returncode == 0 and _finalize_atomic_output_path(
+            temp_npz_path,
+            final_npz_path,
+        ):
             logger.info(
                 f"Fetched {config_key}.npz from coordinator: "
-                f"{npz_path.stat().st_size / 1e6:.1f}MB"
+                f"{final_npz_path.stat().st_size / 1e6:.1f}MB"
             )
-            return npz_path
+            return final_npz_path
         else:
             err = stderr.decode()[:200] if stderr else ""
             logger.warning(f"Failed to fetch NPZ from coordinator: rc={proc.returncode} {err}")
+            _cleanup_atomic_output_path(temp_npz_path)
             return None
     except Exception as e:
+        if temp_npz_path is not None:
+            _cleanup_atomic_output_path(temp_npz_path)
         logger.debug(f"NPZ fetch from cluster failed for {config_key}: {e}")
         return None
 
@@ -281,9 +320,10 @@ async def _try_fetch_npz_from_s3(config_key: str, output_path: str) -> bool:
     bucket = os.environ.get("RINGRIFT_S3_BUCKET", "ringrift-models-20251214")
     s3_path = f"s3://{bucket}/consolidated/training/{config_key}.npz"
     logger.info(f"Attempting S3 fetch for NPZ: {s3_path} -> {output_path}")
+    final_output_path, temp_output_path = _prepare_atomic_output_path(output_path)
     try:
         proc = await asyncio.create_subprocess_exec(
-            "aws", "s3", "cp", s3_path, output_path,
+            "aws", "s3", "cp", s3_path, str(temp_output_path),
             "--region", os.environ.get("AWS_REGION", "us-east-1"),
             "--cli-read-timeout", "300",
             "--cli-connect-timeout", "30",
@@ -291,19 +331,25 @@ async def _try_fetch_npz_from_s3(config_key: str, output_path: str) -> bool:
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
-        if proc.returncode == 0 and Path(output_path).exists() and Path(output_path).stat().st_size > 1024:
-            size_mb = Path(output_path).stat().st_size / 1e6
+        if proc.returncode == 0 and _finalize_atomic_output_path(
+            temp_output_path,
+            final_output_path,
+        ):
+            size_mb = final_output_path.stat().st_size / 1e6
             logger.info(f"S3 NPZ fetch succeeded: {config_key}.npz ({size_mb:.1f}MB)")
             return True
         else:
             err = stderr.decode()[:300] if stderr else ""
             logger.warning(f"S3 NPZ fetch failed for {config_key}: rc={proc.returncode} {err}")
+            _cleanup_atomic_output_path(temp_output_path)
             return False
     except asyncio.TimeoutError:
         logger.warning(f"S3 NPZ fetch timed out for {config_key}")
+        _cleanup_atomic_output_path(temp_output_path)
         return False
     except Exception as e:
         logger.debug(f"S3 NPZ fetch error for {config_key}: {e}")
+        _cleanup_atomic_output_path(temp_output_path)
         return False
 
 
@@ -323,9 +369,10 @@ async def _try_fetch_model_from_s3(model_filename: str, output_path: str) -> boo
     bucket = os.environ.get("RINGRIFT_S3_BUCKET", "ringrift-models-20251214")
     s3_path = f"s3://{bucket}/consolidated/models/{model_filename}"
     logger.info(f"Attempting S3 fetch for model: {s3_path} -> {output_path}")
+    final_output_path, temp_output_path = _prepare_atomic_output_path(output_path)
     try:
         proc = await asyncio.create_subprocess_exec(
-            "aws", "s3", "cp", s3_path, output_path,
+            "aws", "s3", "cp", s3_path, str(temp_output_path),
             "--region", os.environ.get("AWS_REGION", "us-east-1"),
             "--cli-read-timeout", "300",
             "--cli-connect-timeout", "30",
@@ -333,19 +380,25 @@ async def _try_fetch_model_from_s3(model_filename: str, output_path: str) -> boo
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
-        if proc.returncode == 0 and Path(output_path).exists() and Path(output_path).stat().st_size > 1024:
-            size_mb = Path(output_path).stat().st_size / 1e6
+        if proc.returncode == 0 and _finalize_atomic_output_path(
+            temp_output_path,
+            final_output_path,
+        ):
+            size_mb = final_output_path.stat().st_size / 1e6
             logger.info(f"S3 model fetch succeeded: {model_filename} ({size_mb:.1f}MB)")
             return True
         else:
             err = stderr.decode()[:300] if stderr else ""
             logger.warning(f"S3 model fetch failed for {model_filename}: rc={proc.returncode} {err}")
+            _cleanup_atomic_output_path(temp_output_path)
             return False
     except asyncio.TimeoutError:
         logger.warning(f"S3 model fetch timed out for {model_filename}")
+        _cleanup_atomic_output_path(temp_output_path)
         return False
     except Exception as e:
         logger.debug(f"S3 model fetch error for {model_filename}: {e}")
+        _cleanup_atomic_output_path(temp_output_path)
         return False
 
 
@@ -384,6 +437,7 @@ async def _try_local_jsonl_export(
     if not script_path.exists():
         logger.warning(f"jsonl_to_npz.py not found at {script_path}")
         return None
+    final_output_path, temp_output_path = _prepare_atomic_output_path(output_path)
 
     logger.info(f"Converting {len(jsonl_files)} local JSONL files to NPZ for {config_key}")
     cmd = [
@@ -391,7 +445,7 @@ async def _try_local_jsonl_export(
         "--input-dir", str(jsonl_dir),
         "--board-type", board_type,
         "--num-players", str(num_players),
-        "--output", str(output_path),
+        "--output", str(temp_output_path),
         "--gpu-selfplay",  # GPU selfplay format (simplified moves)
     ]
 
@@ -404,18 +458,24 @@ async def _try_local_jsonl_export(
             env={**__import__("os").environ, "PYTHONPATH": str(ai_service_root)},
         )
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=600)
-        if proc.returncode == 0 and output_path.exists():
-            logger.info(f"JSONL→NPZ export succeeded for {config_key}: {output_path}")
-            return output_path
+        if proc.returncode == 0 and _finalize_atomic_output_path(
+            temp_output_path,
+            final_output_path,
+        ):
+            logger.info(f"JSONL→NPZ export succeeded for {config_key}: {final_output_path}")
+            return final_output_path
         else:
             logger.warning(
                 f"JSONL→NPZ export failed for {config_key} (rc={proc.returncode}): "
                 f"{stderr.decode()[:500]}"
             )
+            _cleanup_atomic_output_path(temp_output_path)
     except asyncio.TimeoutError:
         logger.warning(f"JSONL→NPZ export timed out for {config_key}")
+        _cleanup_atomic_output_path(temp_output_path)
     except Exception as e:
         logger.warning(f"JSONL→NPZ export error for {config_key}: {e}")
+        _cleanup_atomic_output_path(temp_output_path)
     return None
 
 

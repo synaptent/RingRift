@@ -11,6 +11,7 @@ in tests/unit/p2p/.
 
 from __future__ import annotations
 
+import threading
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -371,3 +372,49 @@ class TestGitUpdateSafety:
             AsyncMock(return_value=failed_status),
         ):
             assert await P2POrchestrator._check_local_changes(orch) is True
+
+
+class TestReaperEventScheduling:
+    """Tests for fire-and-forget event emission in the job reaper."""
+
+    @pytest.mark.asyncio
+    async def test_cancel_job_for_reaper_uses_tracked_task_and_canonical_config_key(self):
+        """Reaper cancellation should emit TASK_ABANDONED with the right config key."""
+        from scripts.p2p_orchestrator import P2POrchestrator
+
+        orch = P2POrchestrator.__new__(P2POrchestrator)
+        orch.jobs_lock = threading.Lock()
+        orch.active_jobs = {
+            "selfplay": {
+                "job-123": {
+                    "status": "running",
+                    "node_id": "node-1",
+                    "board_type": "hex8",
+                    "num_players": 2,
+                }
+            }
+        }
+        orch._emit_task_abandoned = AsyncMock()
+
+        scheduled: dict[str, str] = {}
+
+        def fake_fire_and_forget(coro, *, name=None, on_error=None):
+            scheduled["name"] = name or ""
+            coro.close()
+            return SimpleNamespace()
+
+        with patch(
+            "scripts.p2p_orchestrator.fire_and_forget",
+            side_effect=fake_fire_and_forget,
+        ):
+            result = await P2POrchestrator._cancel_job_for_reaper(orch, "job-123")
+
+        assert result is True
+        orch._emit_task_abandoned.assert_called_once_with(
+            job_id="job-123",
+            config_key="hex8_2p",
+            node_id="node-1",
+            reason="reaped_by_job_reaper",
+        )
+        assert scheduled["name"] == "emit_task_abandoned:job-123"
+        assert orch.active_jobs["selfplay"] == {}

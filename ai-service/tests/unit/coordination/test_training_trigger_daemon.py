@@ -39,12 +39,11 @@ class TestTrainingTriggerConfig:
         assert config.min_samples_threshold == 5000
         # Jan 5, 2026 (Session 17.24): Reduced from 0.083 to 0.033 (~2 min)
         assert config.training_cooldown_hours == 0.033
-        # December 30, 2025: Increased from 10 to 20 for larger cluster capacity
-        assert config.max_concurrent_training == 20
+        assert config.max_concurrent_training == 8
         assert config.gpu_idle_threshold_percent == 20.0
         # Jan 5, 2026 (Session 17.24): Reduced from 30s to 15s
         assert config.scan_interval_seconds == 15
-        assert config.default_epochs == 50
+        assert config.default_epochs == 20
         assert config.default_batch_size == 512
         assert config.model_version == "v2"
 
@@ -123,6 +122,29 @@ class TestTrainingTriggerDaemonInit:
             assert daemon._coordinator_skip is False
             assert daemon._recent_triggers == {}
             assert daemon._evaluation_backpressure is False
+
+
+class TestQualityGate:
+    """Tests for training quality gate decisions."""
+
+    @pytest.mark.asyncio
+    async def test_check_quality_gate_fails_closed_without_quality_data(self):
+        """Training should be blocked when no quality source can provide a score."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config = TrainingTriggerConfig(state_db_path=f"{tmpdir}/state.db")
+            daemon = TrainingTriggerDaemon(config=config)
+
+            quality_monitor = MagicMock()
+            quality_monitor.get_quality_for_config.return_value = None
+
+            with patch(
+                "app.coordination.quality_monitor_daemon.get_quality_monitor",
+                return_value=quality_monitor,
+            ):
+                quality_ok, reason = await daemon._check_quality_gate("hex8_2p")
+
+        assert quality_ok is False
+        assert reason == "no quality data available"
 
     def test_state_db_initialization(self):
         """Test that state database is created on init."""

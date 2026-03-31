@@ -333,6 +333,67 @@ class TestTrainingJob:
 
 
 # =============================================================================
+# Node Validation Tests
+# =============================================================================
+
+
+class TestNodeValidation:
+    """Tests for node admission and GPU validation safety checks."""
+
+    @pytest.mark.asyncio
+    async def test_preflight_fails_closed_when_ssh_unavailable(self, job_manager_with_peers):
+        """Nodes should be rejected when the SSH probe cannot run."""
+        with patch(
+            "app.core.ssh.run_ssh_command_async",
+            new=AsyncMock(side_effect=ImportError("ssh unavailable")),
+        ):
+            is_available, reason = await job_manager_with_peers._preflight_check_node(
+                "node-2"
+            )
+
+        assert is_available is False
+        assert reason == "ssh_unavailable"
+
+    @pytest.mark.asyncio
+    async def test_gpu_health_rejects_cpu_only_node(self, job_manager):
+        """GPU-required validation should reject nodes without GPU capability."""
+        job_manager.peers["cpu-node"] = MockNodeInfo(
+            node_id="cpu-node",
+            ip="10.0.0.9",
+            has_gpu=False,
+            gpu_available=False,
+        )
+
+        is_healthy, reason = await job_manager._check_gpu_health("cpu-node")
+
+        assert is_healthy is False
+        assert reason == "no_gpu_on_node"
+
+    @pytest.mark.asyncio
+    async def test_validate_node_for_gpu_job_rejects_cpu_only_node(self, job_manager):
+        """validate_node_for_job should not bless CPU-only nodes for GPU work."""
+        job_manager.peers["cpu-node"] = MockNodeInfo(
+            node_id="cpu-node",
+            ip="10.0.0.9",
+            has_gpu=False,
+            gpu_available=False,
+        )
+
+        with patch.object(
+            job_manager,
+            "_preflight_check_node",
+            new=AsyncMock(return_value=(True, "ok")),
+        ):
+            is_valid, reason = await job_manager.validate_node_for_job(
+                "cpu-node",
+                requires_gpu=True,
+            )
+
+        assert is_valid is False
+        assert reason == "gpu_no_gpu_on_node"
+
+
+# =============================================================================
 # Tournament Tests
 # =============================================================================
 
@@ -791,7 +852,7 @@ class TestErrorHandling:
 
     @pytest.mark.asyncio
     async def test_cleanup_active_processes_on_shutdown(self, job_manager):
-        """Verify all active processes are killed during shutdown."""
+        """Verify shutdown waits for and unregisters all active processes."""
         # Register some mock processes
         mock_proc_1 = MagicMock()
         mock_proc_1.pid = 1001
@@ -812,8 +873,10 @@ class TestErrorHandling:
         killed = await job_manager.cleanup_active_processes()
 
         assert killed == 2
-        mock_proc_1.kill.assert_called()
-        mock_proc_2.kill.assert_called()
+        mock_proc_1.wait.assert_awaited()
+        mock_proc_2.wait.assert_awaited()
+        assert "job-1" not in job_manager._active_processes
+        assert "job-2" not in job_manager._active_processes
 
     @pytest.mark.asyncio
     async def test_process_already_terminated(self, job_manager):

@@ -79,6 +79,11 @@ def pull_candidate(config_key: str) -> Path | None:
     """Pull candidate from S3 if newer than local."""
     s3_path = f"s3://{S3_BUCKET}/{S3_PREFIX}/candidate_{config_key}.pth"
     local_path = MODELS_DIR / f"candidate_{config_key}.pth"
+    sidecar = local_path.with_suffix(local_path.suffix + ".sha256")
+
+    def cleanup_local_candidate() -> None:
+        local_path.unlink(missing_ok=True)
+        sidecar.unlink(missing_ok=True)
 
     try:
         result = subprocess.run(
@@ -131,8 +136,7 @@ def pull_candidate(config_key: str) -> Path | None:
 
         # Delete stale sidecar before downloading new candidate
         # (stale sidecar from previous version causes false checksum mismatch)
-        sidecar = local_path.with_suffix(local_path.suffix + ".sha256")
-        sidecar.unlink(missing_ok=True)
+        cleanup_local_candidate()
 
         # Pull from S3
         cp_result = subprocess.run(
@@ -145,9 +149,11 @@ def pull_candidate(config_key: str) -> Path | None:
                 f"Failed downloading candidate for {config_key}: "
                 f"exit={cp_result.returncode}, error={err_text}"
             )
+            cleanup_local_candidate()
             return None
         if not local_path.exists() or local_path.stat().st_size <= 0:
             logger.warning(f"Downloaded candidate missing or empty for {config_key}: {local_path}")
+            cleanup_local_candidate()
             return None
         logger.info(f"Pulled {config_key} from S3 ({s3_size} bytes)")
 
@@ -157,7 +163,7 @@ def pull_candidate(config_key: str) -> Path | None:
             is_valid, format_type = validate_checkpoint_magic_bytes(str(local_path))
             if not is_valid:
                 logger.error(f"Invalid checkpoint for {config_key}: {format_type}")
-                local_path.unlink(missing_ok=True)
+                cleanup_local_candidate()
                 return None
         except Exception as e:
             logger.warning(f"Could not verify {config_key} integrity: {e}")
@@ -165,6 +171,7 @@ def pull_candidate(config_key: str) -> Path | None:
         return local_path
     except Exception as e:
         logger.warning(f"Failed to pull {config_key}: {e}")
+        cleanup_local_candidate()
         return None
 
 

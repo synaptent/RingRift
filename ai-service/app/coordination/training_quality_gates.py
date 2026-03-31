@@ -81,7 +81,7 @@ def compute_quality_confidence(games_assessed: int) -> float:
         games_assessed: Number of games used in quality assessment
 
     Returns:
-        Confidence factor between 0.5 and 1.0
+        Confidence factor between 0.0 and ~1.0
     """
     return get_quality_confidence(games_assessed)
 
@@ -213,10 +213,10 @@ def check_quality_gate_conditions(
                 f"[QualityGate] {config_key}: using decayed quality {quality_score:.2f}"
             )
         else:
-            # No quality data at all - allow training with warning
+            # No quality data at all - fail closed instead of training blind.
             return QualityGateResult(
-                passed=True,
-                reason="no quality data (proceeding anyway)",
+                passed=False,
+                reason="no quality data available",
                 quality_score=None,
                 threshold=quality_threshold,
             )

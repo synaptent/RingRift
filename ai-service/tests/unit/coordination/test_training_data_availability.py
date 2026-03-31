@@ -4,11 +4,12 @@ January 2026: Created as part of Phase 2 modularization testing.
 """
 
 import asyncio
-import pytest
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch, mock_open
-import tempfile
 import os
+import tempfile
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from app.coordination.training_data_availability import (
     DataAvailabilityConfig,
@@ -184,21 +185,27 @@ class TestScanLocalNpzFiles:
 class TestCheckGpuAvailability:
     """Tests for check_gpu_availability function."""
 
-    async def test_returns_true_on_nvidia_smi_failure(self):
-        """Should return True when nvidia-smi not available."""
-        with patch("asyncio.create_subprocess_exec", side_effect=FileNotFoundError):
-            result = await check_gpu_availability()
-            assert result is True
+    async def test_returns_false_on_nvidia_smi_failure(self):
+        """Should return False when nvidia-smi is not available."""
+        async def raise_file_not_found(*_args, **_kwargs):
+            raise FileNotFoundError
 
-    async def test_returns_true_on_timeout(self):
-        """Should return True on timeout."""
+        with patch(
+            "asyncio.create_subprocess_exec",
+            new=raise_file_not_found,
+        ):
+            result = await check_gpu_availability()
+            assert result is False
+
+    async def test_returns_false_on_timeout(self):
+        """Should return False on timeout."""
         mock_process = AsyncMock()
         mock_process.communicate = AsyncMock(side_effect=asyncio.TimeoutError)
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
             with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
                 result = await check_gpu_availability()
-                assert result is True
+                assert result is False
 
     async def test_returns_true_when_gpu_idle(self):
         """Should return True when at least one GPU is idle."""
@@ -207,30 +214,34 @@ class TestCheckGpuAvailability:
         mock_process.communicate = AsyncMock(return_value=(b"75\n30\n", b""))
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
-            with patch("asyncio.wait_for", return_value=(b"75\n30\n", b"")):
-                # 30% < 50% threshold
-                mock_process.communicate = AsyncMock(return_value=(b"75\n30\n", b""))
-                result = await check_gpu_availability(gpu_idle_threshold_percent=50.0)
-                # Since we mocked wait_for to return the tuple directly
-                # Let's fix the test to properly mock
-                pass
+            result = await check_gpu_availability(gpu_idle_threshold_percent=50.0)
+
+        assert result is True
+
+    async def test_returns_false_when_all_gpus_busy(self):
+        """Should return False when all GPUs exceed the idle threshold."""
+        mock_process = AsyncMock()
+        mock_process.returncode = 0
+        mock_process.communicate = AsyncMock(return_value=(b"75\n65\n", b""))
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_process):
+            result = await check_gpu_availability(gpu_idle_threshold_percent=50.0)
+
+        assert result is False
 
     async def test_handles_invalid_output(self):
         """Should handle invalid nvidia-smi output gracefully.
 
         When nvidia-smi returns non-numeric output, the function should
-        return False (no GPU available) or True (fallback).
+        fail closed rather than assuming GPU availability.
         """
-        # This test verifies error handling - since the function has multiple
-        # fallback paths, we just verify it doesn't raise an exception
         mock_process = AsyncMock()
         mock_process.returncode = 1  # Non-zero return code
         mock_process.communicate = AsyncMock(return_value=(b"", b"error"))
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_process):
-            # Should return True as fallback when nvidia-smi fails
             result = await check_gpu_availability()
-            assert result is True
+            assert result is False
 
 
 @pytest.mark.asyncio

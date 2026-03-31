@@ -60,7 +60,7 @@ async def check_gpu_availability(
                                      a GPU is considered available
 
     Returns:
-        True if at least one GPU is available (or if check fails, assumes available)
+        True if at least one GPU is available and verified, False otherwise.
     """
     try:
         process = await asyncio.create_subprocess_exec(
@@ -82,13 +82,14 @@ async def check_gpu_availability(
                     continue
             return False
 
-    except (FileNotFoundError, asyncio.TimeoutError):
-        pass
+    except FileNotFoundError:
+        logger.error("[DataAvailability] GPU check failed: nvidia-smi not available")
+    except asyncio.TimeoutError:
+        logger.error("[DataAvailability] GPU check failed: timed out waiting for nvidia-smi")
     except Exception as e:
-        logger.debug(f"[DataAvailability] GPU check failed: {e}")
+        logger.error(f"[DataAvailability] GPU check failed: {e}")
 
-    # Assume GPU available if we can't check
-    return True
+    return False
 
 
 async def check_cluster_availability(

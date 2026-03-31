@@ -97,7 +97,7 @@ class TestComputeQualityConfidence:
     def test_low_game_count(self):
         """Few games should have low confidence."""
         confidence = compute_quality_confidence(10)
-        assert 0.5 <= confidence <= 0.6
+        assert 0.06 <= confidence <= 0.07
 
     def test_medium_game_count(self):
         """Medium game count should have medium confidence."""
@@ -110,9 +110,9 @@ class TestComputeQualityConfidence:
         assert confidence >= 0.95
 
     def test_zero_games(self):
-        """Zero games should return minimum confidence."""
+        """Zero games should return zero confidence."""
         confidence = compute_quality_confidence(0)
-        assert confidence == 0.5
+        assert confidence == 0.0
 
 
 class TestApplyConfidenceWeighting:
@@ -264,13 +264,13 @@ class TestCheckQualityGateConditions:
         assert result.passed is True
         assert "quality ok" in result.reason
 
-    def test_no_quality_data_passes_with_warning(self):
-        """Missing quality data should pass with warning."""
+    def test_no_quality_data_fails_closed(self):
+        """Missing quality data should block training."""
         result = check_quality_gate_conditions(
             quality_score=None,
             config_key="hex8_2p",
         )
-        assert result.passed is True
+        assert result.passed is False
         assert "no quality data" in result.reason
 
     def test_uses_decayed_quality_when_no_fresh_data(self):

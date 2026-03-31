@@ -132,11 +132,11 @@ class TestCoordinationFacade:
     # =========================================================================
 
     def test_can_spawn_task_no_coordinator(self, facade):
-        """Test can_spawn_task returns True when no coordinator."""
+        """Test can_spawn_task fails closed when coordinator is unavailable."""
         with patch.object(facade, "_is_node_available", return_value=True):
             with patch.object(facade, "_get_task_coordinator", return_value=None):
                 result = facade.can_spawn_task("selfplay", "node1")
-                assert result is True
+                assert result is False
 
     def test_can_spawn_task_node_unavailable(self, facade):
         """Test can_spawn_task returns False when node unavailable."""
@@ -151,10 +151,19 @@ class TestCoordinationFacade:
 
         with patch.object(facade, "_is_node_available", return_value=True):
             with patch.object(facade, "_get_task_coordinator", return_value=mock_coord):
-                # Use unknown task type to skip TaskType import
-                result = facade.can_spawn_task("unknown_type", "node1")
-                # Should return True (fallback for unknown type)
+                result = facade.can_spawn_task("selfplay", "node1")
                 assert result is True
+
+    def test_can_spawn_task_invalid_task_type_fails_closed(self, facade):
+        """Invalid task types should not bypass spawn checks."""
+        mock_coord = MagicMock()
+
+        with patch.object(facade, "_is_node_available", return_value=True):
+            with patch.object(facade, "_get_task_coordinator", return_value=mock_coord):
+                result = facade.can_spawn_task("unknown_type", "node1")
+
+        assert result is False
+        mock_coord.can_spawn.assert_not_called()
 
     def test_spawn_task_no_coordinator(self, facade):
         """Test spawn_task returns None when no coordinator."""
@@ -422,10 +431,10 @@ class TestCoordinationFacade:
     # =========================================================================
 
     def test_is_node_available_no_monitor(self, facade):
-        """Test _is_node_available returns True when no monitor."""
+        """Test _is_node_available fails closed when monitor is unavailable."""
         with patch.object(facade, "_get_node_monitor", return_value=None):
             result = facade._is_node_available("node1")
-            assert result is True
+            assert result is False
 
     def test_is_node_available_with_monitor(self, facade):
         """Test _is_node_available delegates to monitor."""
@@ -435,6 +444,16 @@ class TestCoordinationFacade:
         with patch.object(facade, "_get_node_monitor", return_value=mock_monitor):
             result = facade._is_node_available("node1")
             assert result is False
+
+    def test_is_node_available_monitor_error_fails_closed(self, facade):
+        """Exceptions from the monitor should deny availability."""
+        mock_monitor = MagicMock()
+        mock_monitor.is_node_available.side_effect = RuntimeError("monitor offline")
+
+        with patch.object(facade, "_get_node_monitor", return_value=mock_monitor):
+            result = facade._is_node_available("node1")
+
+        assert result is False
 
     def test_lazy_loading_caches_coordinator(self, facade):
         """Test coordinator is cached after first load."""

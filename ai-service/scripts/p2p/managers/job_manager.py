@@ -1224,9 +1224,8 @@ class JobManager(EventSubscriptionMixin):
         except asyncio.TimeoutError:
             return False, "ssh_timeout"
         except ImportError:
-            # SSH module not available, skip check
-            logger.debug(f"SSH module not available for preflight check of {node_id}")
-            return True, "ssh_unavailable_skipped"
+            logger.error(f"SSH module not available for preflight check of {node_id}")
+            return False, "ssh_unavailable"
         except Exception as e:
             return False, f"preflight_error: {e}"
 
@@ -1373,7 +1372,6 @@ class JobManager(EventSubscriptionMixin):
         Returns:
             Tuple of (is_healthy, reason).
             - (True, "ok") if GPU is healthy
-            - (True, "no_gpu_on_node") if node doesn't have GPU (skipped)
             - (False, reason) if GPU has issues
 
         December 2025: Added as part of cluster availability fix to prevent
@@ -1391,14 +1389,14 @@ class JobManager(EventSubscriptionMixin):
         if node_info is not None:
             has_gpu = self._worker_has_gpu(node_info)
             if not has_gpu:
-                logger.debug(f"Skipping GPU health check for non-GPU node {node_id}")
-                return True, "no_gpu_on_node"
+                logger.warning(f"Rejecting GPU health check for non-GPU node {node_id}")
+                return False, "no_gpu_on_node"
         elif node_id == self.node_id:
             # Current node - check via platform detection
             import platform
             if platform.system() == "Darwin":
-                logger.debug(f"Skipping GPU health check for macOS node {node_id}")
-                return True, "macos_no_nvidia_gpu"
+                logger.warning(f"Rejecting GPU health check for macOS node {node_id}")
+                return False, "macos_no_nvidia_gpu"
 
         # Sprint 10 (Jan 3, 2026): Use adaptive timeout based on host performance history
         effective_timeout = timeout if timeout is not None else get_adaptive_timeout(
@@ -1437,8 +1435,8 @@ class JobManager(EventSubscriptionMixin):
         except asyncio.TimeoutError:
             return False, "gpu_check_timeout"
         except ImportError:
-            logger.debug(f"SSH module not available for GPU health check of {node_id}")
-            return True, "ssh_unavailable_skipped"
+            logger.error(f"SSH module not available for GPU health check of {node_id}")
+            return False, "ssh_unavailable"
         except Exception as e:
             return False, f"gpu_check_error: {e}"
 

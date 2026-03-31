@@ -204,6 +204,7 @@ from scripts.p2p.config.orchestrator_config import (
     PartitionConfig,
     SafeguardConfig,
 )
+from app.core.async_context import fire_and_forget
 
 if TYPE_CHECKING:
     from app.coordination.unified_queue_populator import UnifiedQueuePopulator as QueuePopulator
@@ -2277,7 +2278,14 @@ class P2POrchestrator(
             get_ai_service_path=lambda: self._get_ai_service_path(),
             is_in_startup_grace_period=lambda: self._is_in_startup_grace_period(),
             increment_rollback_counter=lambda: self._increment_rollback_counter(),
-            send_notification=lambda **kwargs: asyncio.create_task(self.notifier.send(**kwargs)) if hasattr(self, 'notifier') else None,
+            send_notification=(
+                lambda **kwargs: fire_and_forget(
+                    self.notifier.send(**kwargs),
+                    name=f"analytics_notification:{self.node_id}",
+                )
+                if hasattr(self, "notifier")
+                else None
+            ),
             node_id=self.node_id,
         )
         logger.info("[P2P] AnalyticsCacheManager initialized")
@@ -2584,15 +2592,26 @@ class P2POrchestrator(
                     del jobs[job_id]
 
                     # Emit event for coordination (fire-and-forget async task)
-                    try:
-                        asyncio.create_task(self._emit_task_abandoned(
-                            task_id=job_id,
-                            task_type=job_type,
+                    config_key = str(job_type)
+                    node_id = ""
+                    if isinstance(job_info, dict):
+                        node_id = str(job_info.get("node_id") or "")
+                        config_key = str(job_info.get("config_key") or config_key)
+                        if config_key == str(job_type):
+                            board_type = job_info.get("board_type")
+                            num_players = job_info.get("num_players")
+                            if board_type and num_players is not None:
+                                config_key = f"{board_type}_{num_players}p"
+
+                    fire_and_forget(
+                        self._emit_task_abandoned(
+                            job_id=job_id,
+                            config_key=config_key,
                             reason="reaped_by_job_reaper",
-                            node_id=job_info.get("node_id", "") if isinstance(job_info, dict) else "",
-                        ))
-                    except RuntimeError:
-                        pass  # No event loop running
+                            node_id=node_id,
+                        ),
+                        name=f"emit_task_abandoned:{job_id}",
+                    )
 
                     logger.info(f"[JobReaper] Cancelled job {job_id} (type: {job_type})")
                     return True
@@ -6339,7 +6358,10 @@ class P2POrchestrator(
         """Compute full cluster status dict. Called by handle_status with cache."""
         # Jan 12, 2026: Non-blocking mode - schedule background refresh, use cached data
         try:
-            asyncio.create_task(self._update_self_info_async())
+            fire_and_forget(
+                self._update_self_info_async(),
+                name=f"refresh_self_info:{self.node_id}",
+            )
         except Exception:
             pass  # Fire-and-forget, don't block on errors
 
@@ -6907,7 +6929,10 @@ class P2POrchestrator(
         for board_type, num_players in cmaes_ready:
             # Trigger distributed CMA-ES (Jan 2026: uses cmaes_coordinator directly)
             logger.info(f"CMA-ES optimization ready for {board_type}_{num_players}p")
-            asyncio.create_task(self.cmaes_coordinator.trigger_auto_cmaes(board_type, num_players))
+            fire_and_forget(
+                self.cmaes_coordinator.trigger_auto_cmaes(board_type, num_players),
+                name=f"trigger_auto_cmaes:{board_type}_{num_players}p",
+            )
 
         # Check for rollback needs (consecutive training failures)
         for key, cycle in self.improvement_cycle_manager.state.cycles.items():
@@ -7149,7 +7174,10 @@ class P2POrchestrator(
                             job.output_model_path = output_path
                             # LEARNED LESSONS - Schedule tournament to compare new model against baseline
                             # Jan 28, 2026: Uses tournament_manager directly
-                            asyncio.create_task(self.tournament_manager.schedule_model_comparison(job, output_path))
+                            fire_and_forget(
+                                self.tournament_manager.schedule_model_comparison(job, output_path),
+                                name=f"schedule_model_comparison:{job_id}",
+                            )
                             # Update improvement cycle manager with training completion
                             if self.improvement_cycle_manager:
                                 self.improvement_cycle_manager.handle_training_complete(
@@ -7171,7 +7199,10 @@ class P2POrchestrator(
                                 except Exception as e:  # noqa: BLE001
                                     logger.error(f"[PFSP] Error adding model to pool: {e}")
                             # CMA-ES: Check for Elo plateau and trigger auto-tuning
-                            asyncio.create_task(self._check_cmaes_auto_tuning(config_key))
+                            fire_and_forget(
+                                self._check_cmaes_auto_tuning(config_key),
+                                name=f"check_cmaes_auto_tuning:{config_key}",
+                            )
                         else:
                             job.status = "failed"
                             job.error_message = stderr.decode()[:500]
@@ -9170,10 +9201,16 @@ print(json.dumps({{
                         )
                         ok = job is not None
                 elif cmd_type == "cleanup":
-                    asyncio.create_task(self._cleanup_local_disk())
+                    fire_and_forget(
+                        self._cleanup_local_disk(),
+                        name=f"cleanup_local_disk:{self.node_id}",
+                    )
                     ok = True
                 elif cmd_type == "restart_stuck_jobs":
-                    asyncio.create_task(self._restart_local_stuck_jobs())
+                    fire_and_forget(
+                        self._restart_local_stuck_jobs(),
+                        name=f"restart_stuck_jobs:{self.node_id}",
+                    )
                     ok = True
                 elif cmd_type == "reduce_selfplay":
                     target = payload.get("target_selfplay_jobs", payload.get("target", 0))
@@ -9226,8 +9263,15 @@ print(json.dumps({{
                         ok = False
                         err = "missing_job_id"
                     else:
-                        asyncio.create_task(
-                            self._run_local_canonical_selfplay(job_id, board_type, num_players, num_games, seed)
+                        fire_and_forget(
+                            self._run_local_canonical_selfplay(
+                                job_id,
+                                board_type,
+                                num_players,
+                                num_games,
+                                seed,
+                            ),
+                            name=f"canonical_selfplay:{job_id}",
                         )
                         ok = True
                 else:
@@ -9530,7 +9574,10 @@ print(json.dumps({{
                     if time.time() - last_refresh > 60:  # Refresh at most once per minute
                         self._last_partition_ip_refresh = time.time()
                         # Jan 28, 2026: Uses ip_discovery_manager directly
-                        asyncio.create_task(self.ip_discovery_manager.force_ip_refresh_all_sources())
+                        fire_and_forget(
+                            self.ip_discovery_manager.force_ip_refresh_all_sources(),
+                            name=f"force_ip_refresh:{self.node_id}",
+                        )
 
                     # Jan 13, 2026: Exponential backoff during isolation
                     # Check if we're completely isolated (no alive peers)
@@ -9609,13 +9656,19 @@ print(json.dumps({{
                             delay_seconds = (LEADER_LEASE_DURATION - time_until_expiry)
                             try:
                                 from app.distributed.data_events import emit_leader_heartbeat_missing
-                                asyncio.create_task(emit_leader_heartbeat_missing(
-                                    leader_id=self.leader_id,
-                                    last_heartbeat=self.leader_lease_expires - LEADER_LEASE_DURATION,
-                                    expected_interval=LEADER_LEASE_RENEW_INTERVAL,
-                                    delay_seconds=delay_seconds,
-                                    source=self.node_id,
-                                ))
+
+                                fire_and_forget(
+                                    emit_leader_heartbeat_missing(
+                                        leader_id=self.leader_id,
+                                        last_heartbeat=(
+                                            self.leader_lease_expires - LEADER_LEASE_DURATION
+                                        ),
+                                        expected_interval=LEADER_LEASE_RENEW_INTERVAL,
+                                        delay_seconds=delay_seconds,
+                                        source=self.node_id,
+                                    ),
+                                    name=f"leader_heartbeat_missing:{self.leader_id}",
+                                )
                             except ImportError:
                                 pass  # Graceful degradation if event system not available
 
@@ -10197,7 +10250,10 @@ print(json.dumps({{
 
         # CRITICAL: Emit LEADER_ELECTED event (Dec 2025 fix)
         # This enables LeadershipCoordinator and other components to track leadership changes
-        asyncio.create_task(self._emit_leader_elected(self.node_id, getattr(self, "cluster_epoch", 0)))
+        fire_and_forget(
+            self._emit_leader_elected(self.node_id, getattr(self, "cluster_epoch", 0)),
+            name=f"emit_leader_elected:{self.node_id}:{self._lease_epoch}",
+        )
 
         # Lease-based leadership (voter-backed when enabled).
         self.leader_lease_id = lease_id
@@ -10400,7 +10456,10 @@ print(json.dumps({{
             logger.info(f"Quorum not yet achieved ({current_acks}/{quorum_size}), waiting for timeout")
             asyncio.get_event_loop().call_later(
                 PROVISIONAL_LEADER_QUORUM_TIMEOUT,
-                lambda: asyncio.create_task(self._check_provisional_promotion())
+                lambda: fire_and_forget(
+                    self._check_provisional_promotion(),
+                    name=f"check_provisional_promotion:{self.node_id}",
+                ),
             )
 
     async def _check_provisional_promotion(self) -> None:
@@ -10472,7 +10531,10 @@ print(json.dumps({{
         self._fence_token = f"{self.node_id}:{self._lease_epoch}:{now}"
 
         # Emit LEADER_ELECTED event
-        asyncio.create_task(self._emit_leader_elected(self.node_id, getattr(self, "cluster_epoch", 0)))
+        fire_and_forget(
+            self._emit_leader_elected(self.node_id, getattr(self, "cluster_epoch", 0)),
+            name=f"emit_leader_elected:{self.node_id}:{self._lease_epoch}",
+        )
 
         # Announce to all peers
         peers = self.get_peers_list_ro()
@@ -13025,7 +13087,7 @@ print(json.dumps({{
                 push_stranded_candidates_to_s3,
             )
             models_dir = Path(self.ringrift_path) / "models" if self.ringrift_path else None
-            asyncio.create_task(
+            self._startup_s3_push_task = fire_and_forget(
                 self._safe_startup_s3_push(push_stranded_candidates_to_s3, models_dir),
                 name="startup_s3_push",
             )
