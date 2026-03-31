@@ -302,24 +302,30 @@ export function LastStandingIcon() {
 
 /** Ready to play: board with highlighted "your turn" cell */
 export function ReadyToPlayIllustration() {
+  const r = HEX_R;
+  const dx = r * 1.5; // 27
+  const dy = r * Math.sqrt(3) * 0.5; // ~15.6
+  const cx = 60;
+  const cy = 40;
+
   return (
     <svg viewBox="0 0 120 80" className="w-32 h-20 mx-auto" aria-hidden="true">
-      {/* Small 3-hex cluster */}
-      <HexCell cx={40} cy={40} />
-      <HexCell cx={65} cy={28} highlight />
-      <HexCell cx={65} cy={52} />
-      <HexCell cx={90} cy={40} />
+      {/* 4-cell flat-top hex cluster */}
+      <HexCell cx={cx} cy={cy} flatTop />
+      <HexCell cx={cx + dx} cy={cy - dy} flatTop highlight />
+      <HexCell cx={cx + dx} cy={cy + dy} flatTop />
+      <HexCell cx={cx - dx} cy={cy} flatTop />
 
       {/* Rings on some cells */}
-      <Ring cx={40} cy={40} color="#0284c7" />
-      <Ring cx={65} cy={52} color="#fbbf24" />
-      <Ring cx={90} cy={40} color="#34d399" />
+      <Ring cx={cx - dx} cy={cy} color="#0284c7" />
+      <Ring cx={cx + dx} cy={cy + dy} color="#fbbf24" />
+      <Ring cx={cx} cy={cy} color="#34d399" />
 
       {/* "Your turn" cursor on highlighted cell */}
-      <Ring cx={65} cy={28} color="#34d399" r={5} />
+      <Ring cx={cx + dx} cy={cy - dy} color="#34d399" r={5} />
       <circle
-        cx={65}
-        cy={28}
+        cx={cx + dx}
+        cy={cy - dy}
         r={10}
         fill="none"
         stroke="#34d399"
