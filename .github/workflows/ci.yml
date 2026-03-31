@@ -66,6 +66,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate Prisma client
+        run: npx prisma generate
+
       - name: Run ESLint
         run: npm run lint -- --format stylish
 
@@ -104,6 +107,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
 
       - name: Run tests with coverage
         run: npm run test:coverage
@@ -151,6 +157,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate Prisma client
+        run: npx prisma generate
+
       - name: Run TS rules-engine Jest suites
         run: npm run test:ts-rules-engine
 
@@ -178,6 +187,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
 
       - name: Run TS orchestrator parity bundle (adapter-ON)
         run: npm run test:orchestrator-parity
@@ -207,6 +219,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate Prisma client
+        run: npx prisma generate
+
       - name: Run TS parity / trace suites
         run: npm run test:ts-parity
 
@@ -234,6 +249,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
 
       - name: Run TS integration suites
         run: npm run test:ts-integration
@@ -263,6 +281,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate Prisma client
+        run: npx prisma generate
+
       - name: Run P0 robustness profile
         run: npm run test:p0-robustness
 
@@ -289,6 +310,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
 
       - name: Run orchestrator invariant smoke soak
         run: npm run soak:orchestrator:smoke
@@ -317,6 +341,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Generate Prisma client
+        run: npx prisma generate
+
       - name: Run orchestrator invariant short soak
         run: npm run soak:orchestrator:short
 
@@ -339,6 +366,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
 
       - name: Run SSoT enforcement checks
         run: npm run ssot-check
@@ -365,6 +395,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
 
       - name: Build server and client
         run: npm run build
@@ -490,6 +523,9 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
+      - name: Generate Prisma client
+        run: npx prisma generate
+
       - name: Run orchestrator parity TS suites
         run: npm run test:orchestrator-parity:ts
 
@@ -502,7 +538,7 @@ jobs:
         working-directory: ai-service
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run Python contract vector tests
         run: ./scripts/run-python-contract-tests.sh --verbose
@@ -527,6 +563,9 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
+      - name: Generate Prisma client
+        run: npx prisma generate
+
       - name: Generate TS→Python rules parity fixtures
         run: npx ts-node tests/scripts/generate_rules_parity_fixtures.ts
 
@@ -539,7 +578,7 @@ jobs:
         working-directory: ai-service
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run Python rules-parity tests (fixture-based)
         working-directory: ai-service
@@ -565,7 +604,7 @@ jobs:
         working-directory: ai-service
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
           python -m pip install ruff
 
       - name: Lint Python (scoped)
@@ -605,7 +644,7 @@ jobs:
         working-directory: ai-service
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run AI self-play healthcheck profile
         working-directory: ai-service
@@ -645,7 +684,7 @@ jobs:
         working-directory: ai-service
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run Python parity healthcheck
         working-directory: ai-service
@@ -684,6 +723,9 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
+      - name: Generate Prisma client
+        run: npx prisma generate
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -693,7 +735,7 @@ jobs:
         working-directory: ai-service
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run canonical selfplay parity gate (2-player)
         working-directory: ai-service
@@ -781,7 +823,9 @@ jobs:
         working-directory: ai-service
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # Use PyTorch CPU index to avoid CUDA-only C extension build failures
+          # for torch-scatter, torch-sparse, and torch-geometric.
+          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Install pip-audit (pinned CLI supporting --severity)
         run: python -m pip install 'pip-audit>=2.7.0,<3.0.0'
@@ -829,7 +873,7 @@ jobs:
         working-directory: ai-service
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run baseline vs random AI evaluation
         working-directory: ai-service
@@ -872,7 +916,7 @@ jobs:
         working-directory: ai-service
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Run strength regression gate (CI preset)
         working-directory: ai-service
@@ -1041,7 +1085,7 @@ jobs:
         working-directory: ai-service
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
       - name: Verify model loading and checkpoint integrity
         working-directory: ai-service

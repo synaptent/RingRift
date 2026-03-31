@@ -53,7 +53,7 @@
     "prefer-const": "warn"
   },
   "ignorePatterns": [
-    "dist",
+    "**/dist",
     "node_modules",
     "coverage",
     "*.config.js",

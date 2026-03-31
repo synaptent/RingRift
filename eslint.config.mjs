@@ -13,13 +13,14 @@ export default [
   // Global ignores (was `ignorePatterns` in .eslintrc.json)
   {
     ignores: [
-      'dist/**',
+      '**/dist/**',
       'node_modules/**',
       'coverage/**',
       '*.config.js',
       '*.config.ts',
       '.eslintrc.json',
       'tests/test-environment.js',
+      'src/server/ecosystem.prod.config.js',
     ],
   },
 
