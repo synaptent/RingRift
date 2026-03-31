@@ -3,13 +3,27 @@
 Tests the core data generation utilities without requiring neural networks or GPUs.
 """
 
+import warnings
+
 import numpy as np
 import pytest
 from unittest.mock import MagicMock, patch
 
+from app.ai.neural_net import (
+    SQUARE8_LINE_FORM_BASE,
+    SQUARE8_MOVEMENT_BASE,
+    SQUARE8_SKIP_CAPTURE_IDX,
+)
+from app.ai.neural_net.constants import (
+    SQUARE19_LINE_FORM_BASE,
+    SQUARE19_MOVEMENT_BASE,
+    SQUARE19_SKIP_CAPTURE_IDX,
+)
+from app.models import BoardType
 from app.training.generate_data import (
     DataQualityTracker,
     MIN_UNIQUE_POSITIONS_PER_GAME,
+    _transform_policy_index_square_compat,
     calculate_outcome,
     calculate_multi_player_outcome,
     _calculate_player_score,
@@ -600,3 +614,67 @@ class TestExtractMCTSVisitDistribution:
 def test_min_unique_positions_constant():
     """Test the threshold constant has expected value."""
     assert MIN_UNIQUE_POSITIONS_PER_GAME == 50
+
+
+def _legacy_transform_policy_index_square(
+    policy_idx: int,
+    board_type: BoardType,
+    rotation: int,
+    flip_horizontal: bool,
+) -> int:
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        from app.ai._neural_net_legacy import transform_policy_index_square
+
+    return transform_policy_index_square(
+        policy_idx,
+        board_type,
+        rotation,
+        flip_horizontal,
+    )
+
+
+@pytest.mark.parametrize(
+    ("board_type", "policy_idx"),
+    [
+        (BoardType.SQUARE8, 0),
+        (BoardType.SQUARE8, SQUARE8_MOVEMENT_BASE),
+        (BoardType.SQUARE8, SQUARE8_LINE_FORM_BASE),
+        (BoardType.SQUARE8, SQUARE8_SKIP_CAPTURE_IDX),
+        (BoardType.SQUARE19, 0),
+        (BoardType.SQUARE19, SQUARE19_MOVEMENT_BASE),
+        (BoardType.SQUARE19, SQUARE19_LINE_FORM_BASE),
+        (BoardType.SQUARE19, SQUARE19_SKIP_CAPTURE_IDX),
+    ],
+)
+@pytest.mark.parametrize(
+    ("rotation", "flip_horizontal"),
+    [
+        (0, False),
+        (1, False),
+        (2, True),
+        (3, True),
+    ],
+)
+def test_square_policy_transform_compat_matches_legacy(
+    board_type: BoardType,
+    policy_idx: int,
+    rotation: int,
+    flip_horizontal: bool,
+):
+    """Compatibility transform must preserve legacy augmentation semantics."""
+    expected = _legacy_transform_policy_index_square(
+        policy_idx,
+        board_type,
+        rotation,
+        flip_horizontal,
+    )
+
+    actual = _transform_policy_index_square_compat(
+        policy_idx=policy_idx,
+        board_type=board_type,
+        rotation=rotation,
+        flip_horizontal=flip_horizontal,
+    )
+
+    assert actual == expected

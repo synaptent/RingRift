@@ -630,7 +630,7 @@ class RingRiftEnv:
     @cached_property
     def learning_rate(self) -> float:
         """Training learning rate."""
-        return float(os.environ.get("RINGRIFT_LEARNING_RATE", "0.001"))
+        return float(os.environ.get("RINGRIFT_LEARNING_RATE", "0.0001"))
 
     @cached_property
     def batch_size(self) -> int:

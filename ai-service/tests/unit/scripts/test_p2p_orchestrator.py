@@ -11,6 +11,9 @@ in tests/unit/p2p/.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 # =============================================================================
@@ -122,7 +125,7 @@ class MockManagerWithHealthCheckResult:
 
 
 class TestValidateManagerHealth:
-    """Tests for _validate_manager_health() method.
+    """Tests for HealthMetricsManager.validate_manager_health().
 
     December 27, 2025: Tests for the consolidated manager health validation
     that runs at P2P startup to catch initialization issues early.
@@ -136,10 +139,13 @@ class TestValidateManagerHealth:
         selfplay_scheduler=None,
         job_manager=None,
         training_coordinator=None,
+        loop_manager=None,
+        job_orchestration=None,
     ):
         """Create a mock orchestrator with the given managers."""
         class MockOrchestrator:
-            pass
+            def _get_loop_manager(self_inner):
+                return self_inner._loop_manager
 
         orch = MockOrchestrator()
         orch.state_manager = state_manager
@@ -148,12 +154,30 @@ class TestValidateManagerHealth:
         orch.selfplay_scheduler = selfplay_scheduler
         orch.job_manager = job_manager
         orch.training_coordinator = training_coordinator
+        orch._loop_manager = loop_manager
+        orch.job_orchestration = job_orchestration
+        orch.start_time = 0.0
         return orch
+
+    def _validate_manager_health(self, orch):
+        """Run the extracted health metrics manager directly."""
+        from scripts.p2p.managers.health_metrics_manager import (
+            HealthMetricsConfig,
+            HealthMetricsManager,
+        )
+
+        manager = HealthMetricsManager(
+            config=HealthMetricsConfig(startup_grace_period=0.0),
+            orchestrator=orch,
+        )
+        try:
+            return manager.validate_manager_health()
+        finally:
+            if manager._health_check_executor is not None:
+                manager._health_check_executor.shutdown(wait=False, cancel_futures=True)
 
     def test_all_managers_healthy(self):
         """All managers healthy returns all_healthy=True."""
-        from scripts.p2p_orchestrator import P2POrchestrator
-
         orch = self._create_mock_orchestrator(
             state_manager=MockManager("healthy"),
             node_selector=MockManager("healthy"),
@@ -161,19 +185,18 @@ class TestValidateManagerHealth:
             selfplay_scheduler=MockManager("healthy"),
             job_manager=MockManager("healthy"),
             training_coordinator=MockManager("healthy"),
+            loop_manager=MockManager("healthy"),
+            job_orchestration=MockManager("healthy"),
         )
 
-        # Call the method directly (monkeypatch the class)
-        status = P2POrchestrator._validate_manager_health(orch)
+        status = self._validate_manager_health(orch)
 
         assert status["all_healthy"] is True
         assert status["unhealthy_count"] == 0
-        assert len(status["managers"]) == 6
+        assert len(status["managers"]) == 8
 
     def test_one_manager_unhealthy(self):
         """One unhealthy manager sets all_healthy=False."""
-        from scripts.p2p_orchestrator import P2POrchestrator
-
         orch = self._create_mock_orchestrator(
             state_manager=MockManager("healthy"),
             node_selector=MockManager("healthy"),
@@ -181,9 +204,11 @@ class TestValidateManagerHealth:
             selfplay_scheduler=MockManager("healthy"),
             job_manager=MockManager("healthy"),
             training_coordinator=MockManager("healthy"),
+            loop_manager=MockManager("healthy"),
+            job_orchestration=MockManager("healthy"),
         )
 
-        status = P2POrchestrator._validate_manager_health(orch)
+        status = self._validate_manager_health(orch)
 
         assert status["all_healthy"] is False
         assert status["unhealthy_count"] == 1
@@ -191,8 +216,6 @@ class TestValidateManagerHealth:
 
     def test_none_manager_detected(self):
         """None manager is detected and marked unhealthy."""
-        from scripts.p2p_orchestrator import P2POrchestrator
-
         orch = self._create_mock_orchestrator(
             state_manager=MockManager("healthy"),
             node_selector=None,  # Not initialized
@@ -200,9 +223,11 @@ class TestValidateManagerHealth:
             selfplay_scheduler=MockManager("healthy"),
             job_manager=MockManager("healthy"),
             training_coordinator=MockManager("healthy"),
+            loop_manager=MockManager("healthy"),
+            job_orchestration=MockManager("healthy"),
         )
 
-        status = P2POrchestrator._validate_manager_health(orch)
+        status = self._validate_manager_health(orch)
 
         assert status["all_healthy"] is False
         assert status["unhealthy_count"] == 1
@@ -210,8 +235,6 @@ class TestValidateManagerHealth:
 
     def test_manager_without_health_check(self):
         """Manager without health_check is marked as initialized."""
-        from scripts.p2p_orchestrator import P2POrchestrator
-
         class NoHealthCheckManager:
             pass
 
@@ -222,9 +245,11 @@ class TestValidateManagerHealth:
             selfplay_scheduler=MockManager("healthy"),
             job_manager=MockManager("healthy"),
             training_coordinator=MockManager("healthy"),
+            loop_manager=MockManager("healthy"),
+            job_orchestration=MockManager("healthy"),
         )
 
-        status = P2POrchestrator._validate_manager_health(orch)
+        status = self._validate_manager_health(orch)
 
         # Manager without health_check is still considered OK (initialized)
         assert status["managers"]["state_manager"]["status"] == "initialized"
@@ -232,8 +257,6 @@ class TestValidateManagerHealth:
 
     def test_health_check_exception_handled(self):
         """Exception in health_check is caught and logged."""
-        from scripts.p2p_orchestrator import P2POrchestrator
-
         class BrokenManager:
             def health_check(self):
                 raise RuntimeError("Health check failed!")
@@ -245,9 +268,11 @@ class TestValidateManagerHealth:
             selfplay_scheduler=MockManager("healthy"),
             job_manager=MockManager("healthy"),
             training_coordinator=MockManager("healthy"),
+            loop_manager=MockManager("healthy"),
+            job_orchestration=MockManager("healthy"),
         )
 
-        status = P2POrchestrator._validate_manager_health(orch)
+        status = self._validate_manager_health(orch)
 
         assert status["all_healthy"] is False
         assert status["unhealthy_count"] == 1
@@ -256,8 +281,6 @@ class TestValidateManagerHealth:
 
     def test_health_check_result_object_supported(self):
         """HealthCheckResult-like objects are properly parsed."""
-        from scripts.p2p_orchestrator import P2POrchestrator
-
         orch = self._create_mock_orchestrator(
             state_manager=MockManagerWithHealthCheckResult("ready"),
             node_selector=MockManager("healthy"),
@@ -265,9 +288,11 @@ class TestValidateManagerHealth:
             selfplay_scheduler=MockManager("healthy"),
             job_manager=MockManager("healthy"),
             training_coordinator=MockManager("healthy"),
+            loop_manager=MockManager("healthy"),
+            job_orchestration=MockManager("healthy"),
         )
 
-        status = P2POrchestrator._validate_manager_health(orch)
+        status = self._validate_manager_health(orch)
 
         # "ready" status should be recognized as healthy
         assert status["all_healthy"] is True
@@ -275,7 +300,6 @@ class TestValidateManagerHealth:
 
     def test_timestamp_included(self):
         """Status includes timestamp."""
-        from scripts.p2p_orchestrator import P2POrchestrator
         import time
 
         orch = self._create_mock_orchestrator(
@@ -285,19 +309,19 @@ class TestValidateManagerHealth:
             selfplay_scheduler=MockManager("healthy"),
             job_manager=MockManager("healthy"),
             training_coordinator=MockManager("healthy"),
+            loop_manager=MockManager("healthy"),
+            job_orchestration=MockManager("healthy"),
         )
 
         before = time.time()
-        status = P2POrchestrator._validate_manager_health(orch)
+        status = self._validate_manager_health(orch)
         after = time.time()
 
         assert "timestamp" in status
         assert before <= status["timestamp"] <= after
 
-    def test_all_six_managers_validated(self):
-        """All 6 managers are validated."""
-        from scripts.p2p_orchestrator import P2POrchestrator
-
+    def test_all_expected_managers_validated(self):
+        """All extracted managers are validated."""
         orch = self._create_mock_orchestrator(
             state_manager=MockManager("healthy"),
             node_selector=MockManager("healthy"),
@@ -305,9 +329,11 @@ class TestValidateManagerHealth:
             selfplay_scheduler=MockManager("healthy"),
             job_manager=MockManager("healthy"),
             training_coordinator=MockManager("healthy"),
+            loop_manager=MockManager("healthy"),
+            job_orchestration=MockManager("healthy"),
         )
 
-        status = P2POrchestrator._validate_manager_health(orch)
+        status = self._validate_manager_health(orch)
 
         expected_managers = [
             "state_manager",
@@ -316,5 +342,32 @@ class TestValidateManagerHealth:
             "selfplay_scheduler",
             "job_manager",
             "training_coordinator",
+            "loop_manager",
+            "job_orchestration",
         ]
         assert set(status["managers"].keys()) == set(expected_managers)
+
+
+class TestGitUpdateSafety:
+    """Tests for git update safety checks."""
+
+    @pytest.mark.asyncio
+    async def test_check_local_changes_fails_closed_when_git_status_errors(self):
+        """Auto-update must stop if git status cannot confirm a clean tree."""
+        from scripts.p2p_orchestrator import P2POrchestrator
+
+        orch = P2POrchestrator.__new__(P2POrchestrator)
+        orch.ringrift_path = "/tmp/ringrift"
+        orch._git_safe_directory = "/tmp/ringrift"
+
+        failed_status = SimpleNamespace(
+            returncode=128,
+            stdout="",
+            stderr="fatal: not a git repository",
+        )
+
+        with patch(
+            "scripts.p2p_orchestrator.async_subprocess_run",
+            AsyncMock(return_value=failed_status),
+        ):
+            assert await P2POrchestrator._check_local_changes(orch) is True

@@ -3227,13 +3227,13 @@ class EvaluationDaemon(HandlerBase):
             return rating is None  # Needs eval if no rating
 
         except ImportError:
-            logger.debug(
+            logger.error(
                 f"[EvaluationDaemon] Dependencies not available for harness check: {harness_type}"
             )
-            return True  # Assume needs eval on import error
+            return False  # Fail closed: don't assume needs-eval when check failed
         except Exception as e:
-            logger.debug(f"[EvaluationDaemon] Harness Elo check failed: {e}")
-            return True  # Assume needs eval on error
+            logger.error(f"[EvaluationDaemon] Harness Elo check failed: {e}")
+            return False  # Fail closed: check failure must not default to allow/needs-eval
 
     async def _stuck_evaluation_check_loop(self) -> None:
         """Periodically check for and recover stuck evaluations.

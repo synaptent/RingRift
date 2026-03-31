@@ -64,6 +64,17 @@ signal.signal(signal.SIGTERM, signal_handler)
 signal.signal(signal.SIGINT, signal_handler)
 
 
+def _is_missing_object_error(stderr_text: str) -> bool:
+    """Best-effort check for missing S3 object responses."""
+    lowered = stderr_text.lower()
+    return (
+        "nosuchkey" in lowered
+        or "not found" in lowered
+        or "404" in lowered
+        or "does not exist" in lowered
+    )
+
+
 def pull_candidate(config_key: str) -> Path | None:
     """Pull candidate from S3 if newer than local."""
     s3_path = f"s3://{S3_BUCKET}/{S3_PREFIX}/candidate_{config_key}.pth"
@@ -75,23 +86,43 @@ def pull_candidate(config_key: str) -> Path | None:
             capture_output=True, text=True, timeout=30,
         )
         if result.returncode != 0:
+            err_text = (result.stderr or "").strip()
+            if err_text and not _is_missing_object_error(err_text):
+                logger.warning(
+                    f"Failed listing candidate in S3 for {config_key}: "
+                    f"exit={result.returncode}, error={err_text}"
+                )
             return None
         parts = result.stdout.strip().split()
         if len(parts) < 3:
+            logger.warning(
+                f"Unexpected `aws s3 ls` output for {config_key}: {result.stdout.strip()!r}"
+            )
             return None
-        s3_size = int(parts[2])
+        try:
+            s3_size = int(parts[2])
+        except ValueError:
+            logger.warning(
+                f"Could not parse candidate size from `aws s3 ls` for {config_key}: "
+                f"{result.stdout.strip()!r}"
+            )
+            return None
 
         # Try to fetch SHA256 sidecar from S3 for precise change detection
         s3_sha = None
-        try:
-            sha_result = subprocess.run(
-                ["aws", "s3", "cp", f"{s3_path}.sha256", "/dev/stdout", "--quiet"],
-                capture_output=True, text=True, timeout=15,
-            )
-            if sha_result.returncode == 0 and sha_result.stdout.strip():
-                s3_sha = sha_result.stdout.strip().split()[0]
-        except Exception:
-            pass
+        sha_result = subprocess.run(
+            ["aws", "s3", "cp", f"{s3_path}.sha256", "/dev/stdout", "--quiet"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if sha_result.returncode == 0 and sha_result.stdout.strip():
+            s3_sha = sha_result.stdout.strip().split()[0]
+        elif sha_result.returncode != 0:
+            sha_err = (sha_result.stderr or "").strip()
+            if sha_err and not _is_missing_object_error(sha_err):
+                logger.warning(
+                    f"Failed fetching SHA sidecar for {config_key}: "
+                    f"exit={sha_result.returncode}, error={sha_err}"
+                )
 
         # Skip if already evaluated this exact version (SHA256 or size fallback)
         check_val = s3_sha or str(s3_size)
@@ -104,10 +135,20 @@ def pull_candidate(config_key: str) -> Path | None:
         sidecar.unlink(missing_ok=True)
 
         # Pull from S3
-        subprocess.run(
+        cp_result = subprocess.run(
             ["aws", "s3", "cp", s3_path, str(local_path), "--quiet"],
-            timeout=120, check=True,
+            timeout=120, capture_output=True, text=True,
         )
+        if cp_result.returncode != 0:
+            err_text = (cp_result.stderr or cp_result.stdout or "").strip()
+            logger.warning(
+                f"Failed downloading candidate for {config_key}: "
+                f"exit={cp_result.returncode}, error={err_text}"
+            )
+            return None
+        if not local_path.exists() or local_path.stat().st_size <= 0:
+            logger.warning(f"Downloaded candidate missing or empty for {config_key}: {local_path}")
+            return None
         logger.info(f"Pulled {config_key} from S3 ({s3_size} bytes)")
 
         # Verify model integrity after S3 download
@@ -240,10 +281,17 @@ def push_result(config_key: str, result: dict):
 
     s3_path = f"s3://{S3_BUCKET}/{RESULTS_PREFIX}/gauntlet_{config_key}.json"
     try:
-        subprocess.run(
+        cp_result = subprocess.run(
             ["aws", "s3", "cp", str(result_file), s3_path, "--quiet"],
-            timeout=30, check=True,
+            timeout=30, capture_output=True, text=True,
         )
+        if cp_result.returncode != 0:
+            err_text = (cp_result.stderr or cp_result.stdout or "").strip()
+            logger.warning(
+                f"Failed to push gauntlet result for {config_key}: "
+                f"exit={cp_result.returncode}, error={err_text}"
+            )
+            return
         logger.info(f"Pushed result to S3: {s3_path}")
     except Exception as e:
         logger.warning(f"Failed to push result to S3: {e}")

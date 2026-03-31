@@ -55,7 +55,9 @@ from __future__ import annotations
 import hashlib
 import logging
 import sqlite3
+import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -756,7 +758,7 @@ def prepare_database_for_transfer(db_path: Path) -> tuple[bool, str]:
 
 def atomic_file_write(
     target_path: Path,
-    write_func,
+    write_func: Callable[[Path], object],
     temp_suffix: str = ".tmp",
 ) -> tuple[bool, str]:
     """Write a file atomically using temp file + rename pattern.
@@ -776,7 +778,12 @@ def atomic_file_write(
     Example:
         def do_download(temp_path):
             # Download to temp_path
-            subprocess.run(["aria2c", "-o", str(temp_path), url])
+            return subprocess.run(
+                ["aria2c", "-o", str(temp_path), url],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
 
         success, msg = atomic_file_write(Path("model.pth"), do_download)
     """
@@ -793,12 +800,26 @@ def atomic_file_write(
         if temp_path.exists():
             temp_path.unlink()
 
-        # Execute the write function
-        write_func(temp_path)
+        # Execute the write function. If the writer returns a subprocess result,
+        # enforce a successful exit code explicitly.
+        write_result = write_func(temp_path)
+        if (
+            isinstance(write_result, subprocess.CompletedProcess)
+            and write_result.returncode != 0
+        ):
+            err_text = (write_result.stderr or write_result.stdout or "").strip()
+            return False, (
+                f"Write function subprocess failed with exit={write_result.returncode}: "
+                f"{err_text[:200]}"
+            )
 
         # Verify temp file was created
         if not temp_path.exists():
             return False, "Write function did not create temp file"
+        if not temp_path.is_file():
+            return False, "Write function produced non-file output"
+        if temp_path.stat().st_size <= 0:
+            return False, "Write function produced empty output file"
 
         # Atomic rename (POSIX guarantees atomicity on same filesystem)
         os.rename(str(temp_path), str(target_path))

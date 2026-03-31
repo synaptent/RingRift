@@ -190,7 +190,19 @@ class TrainingDataRecoveryDaemon(SingletonMixin, HandlerBase):
 
             # Start recovery
             self._active_recoveries.add(config_key)
-            asyncio.create_task(self._recover_config(config_key))
+            recovery_task = self._safe_create_task(
+                self._recover_config(config_key),
+                context=f"recover_config:{config_key}",
+                name=f"training_data_recovery:{config_key}",
+            )
+            if recovery_task is None:
+                # Avoid leaking active state if task scheduling fails
+                self._active_recoveries.discard(config_key)
+                self._pending_recoveries.add(config_key)
+                logger.error(
+                    f"[DataRecovery] Failed to schedule recovery task for {config_key}; "
+                    "requeued for next cycle"
+                )
 
     async def _on_start(self) -> None:
         """Called when daemon starts."""

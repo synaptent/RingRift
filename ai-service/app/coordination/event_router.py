@@ -623,7 +623,10 @@ class UnifiedEventRouter:
             origin=EventSource.ROUTER,
         )
 
-        # Route to EventBus (data_events.py)
+        # Prepare downstream bus payloads before local dispatch so router subscribers
+        # can still inspect the bridged event objects without receiving duplicate
+        # callbacks from the bus echo paths.
+        data_event: DataEvent | None = None
         if route_to_data_bus and HAS_DATA_EVENTS:
             data_event_type = None
             # Dec 2025: Try multiple strategies to resolve DataEventType:
@@ -665,10 +668,8 @@ class UnifiedEventRouter:
                     source=source,
                 )
                 router_event.data_event = data_event
-                # Don't bridge to cross-process again (we'll do it separately)
-                await get_data_event_bus().publish(data_event, bridge_cross_process=False)
 
-        # Route to StageEventBus (stage_events.py)
+        stage_result: StageCompletionResult | None = None
         if route_to_stage_bus and HAS_STAGE_EVENTS:
             stage_event = None
             if isinstance(event_type, StageEvent):
@@ -719,9 +720,22 @@ class UnifiedEventRouter:
                         **extra_fields,
                     )
                     router_event.stage_result = stage_result
-                    await get_stage_event_bus().emit(stage_result)
                 except (ValueError, KeyError) as e:
                     logger.debug(f"[EventRouter] Failed to create stage result: {e}")
+
+        # Dispatch to router subscribers before forwarding to bridged buses. This
+        # allows later Stage/Data bus echoes to be suppressed by content-hash dedup.
+        await self._dispatch(router_event, exclude_origin=False)
+
+        # Route to EventBus (data_events.py) after direct dispatch. Don't bridge to
+        # cross-process again; the router handles that separately below.
+        if data_event is not None:
+            await get_data_event_bus().publish(data_event, bridge_cross_process=False)
+
+        # Route to StageEventBus (stage_events.py) after direct dispatch so the
+        # stage-bus bridge does not double-deliver to router subscribers.
+        if stage_result is not None:
+            await get_stage_event_bus().emit(stage_result)
 
         # Route to CrossProcessEventQueue
         if route_to_cross_process and HAS_CROSS_PROCESS:
@@ -746,9 +760,6 @@ class UnifiedEventRouter:
                 self._cross_process_degraded = True
                 self._last_cp_failure_time = time.time()
                 logger.warning(f"[EventRouter] Cross-process publish failed: {e}")
-
-        # Dispatch to router subscribers
-        await self._dispatch(router_event, exclude_origin=False)
 
         return router_event
 
@@ -1840,12 +1851,34 @@ class UnifiedEventRouter:
 # Global singleton
 _router: UnifiedEventRouter | None = None
 _router_lock = threading.Lock()
+_router_runtime_loop: asyncio.AbstractEventLoop | None = None
+
+
+def _capture_running_router_loop() -> None:
+    """Capture the currently running loop for cross-thread event emission."""
+    global _router_runtime_loop
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    if loop.is_running() and not loop.is_closed():
+        _router_runtime_loop = loop
+
+
+def _get_router_runtime_loop() -> asyncio.AbstractEventLoop | None:
+    """Return the last known running loop used by the router, if still valid."""
+    loop = _router_runtime_loop
+    if loop is not None and loop.is_running() and not loop.is_closed():
+        return loop
+    return None
 
 
 def get_router() -> UnifiedEventRouter:
     """Get the global event router singleton."""
     global _router
     with _router_lock:
+        _capture_running_router_loop()
         if _router is None:
             # In pytest runs, disable cross-process polling by default. The
             # cross-process queue is backed by a persistent SQLite DB under /tmp,
@@ -1858,11 +1891,12 @@ def get_router() -> UnifiedEventRouter:
 
 def reset_router() -> None:
     """Reset the global router (for testing)."""
-    global _router
+    global _router, _router_runtime_loop
     with _router_lock:
         if _router is not None:
             _router.stop()
             _router = None
+        _router_runtime_loop = None
 
 
 # Convenience functions
@@ -1874,6 +1908,7 @@ async def publish(
     source: str = "",
 ) -> RouterEvent:
     """Publish an event through the router."""
+    _capture_running_router_loop()
     return await get_router().publish(event_type, payload, source)
 
 
@@ -2351,27 +2386,36 @@ def safe_emit_event(
 
             fire_and_forget(_emit(), name=f"safe_emit_{event_type}")
         else:
-            # Sync context — March 2026 fix: asyncio.run() fails when called
-            # from a sync function running inside an async application (e.g.,
-            # via asyncio.to_thread or a thread pool). The RuntimeError was
-            # silently caught, dropping ALL events from sync contexts.
-            #
-            # Strategy: try to find the main event loop and schedule on it
-            # via call_soon_threadsafe; only fall back to asyncio.run() if
-            # there truly is no event loop anywhere.
-            main_loop = None
-            try:
-                # Get the event loop from the default policy (may be running
-                # in another thread, e.g., the main asyncio thread)
-                main_loop = asyncio.get_event_loop()
-                if not main_loop.is_running():
+            # Sync context: schedule on known running router loop when possible.
+            # This avoids cross-loop lock errors when called from worker threads.
+            main_loop = _get_router_runtime_loop()
+            if main_loop is None:
+                try:
+                    candidate_loop = asyncio.get_event_loop()
+                    if candidate_loop.is_running() and not candidate_loop.is_closed():
+                        main_loop = candidate_loop
+                except RuntimeError:
                     main_loop = None
-            except RuntimeError:
-                main_loop = None
 
             if main_loop is not None:
-                # Schedule onto the running loop from this sync thread
-                main_loop.call_soon_threadsafe(asyncio.ensure_future, _emit())
+                # Schedule onto a running loop from this sync thread.
+                future = asyncio.run_coroutine_threadsafe(_emit(), main_loop)
+
+                # Ensure background failures are visible even if caller ignores return.
+                def _log_emit_failure(done_future: concurrent.futures.Future) -> None:
+                    try:
+                        exc = done_future.exception()
+                        if exc is not None and log_on_failure:
+                            logger.warning(
+                                f"[{source}] Event {event_type} emission failed: {exc}"
+                            )
+                    except (concurrent.futures.CancelledError, RuntimeError):
+                        if log_on_failure:
+                            logger.warning(
+                                f"[{source}] Event {event_type} emission was cancelled"
+                            )
+
+                future.add_done_callback(_log_emit_failure)
             else:
                 # No running loop anywhere — safe to create one
                 asyncio.run(_emit())
@@ -2380,12 +2424,12 @@ def safe_emit_event(
 
     except (ImportError, RuntimeError, OSError, AttributeError) as e:
         if log_on_failure:
-            logger.debug(f"[{source}] Event {event_type} emission failed: {e}")
+            logger.warning(f"[{source}] Event {event_type} emission failed: {e}")
         return False
     except Exception as e:
         # Catch-all for unexpected errors to ensure caller never crashes
         if log_on_failure:
-            logger.debug(f"[{source}] Event {event_type} emission error: {e}")
+            logger.warning(f"[{source}] Event {event_type} emission error: {e}")
         return False
 
 

@@ -20,6 +20,7 @@ from app.coordination.event_router import (
     publish,
     publish_sync,
     reset_router,
+    safe_emit_event,
     subscribe,
     unsubscribe,
 )
@@ -173,6 +174,31 @@ class TestEventPublishing:
 
         assert len(received_events) == 1
         assert received_events[0].payload == {"sync": True}
+
+    @pytest.mark.asyncio
+    async def test_safe_emit_event_from_worker_thread_uses_router_loop(self, router):
+        """safe_emit_event should deliver from sync worker threads into the live router loop."""
+        delivered = asyncio.Event()
+        received_events = []
+
+        async def callback(event):
+            received_events.append(event)
+            delivered.set()
+
+        router.subscribe("threaded_event", callback)
+
+        result = await asyncio.to_thread(
+            safe_emit_event,
+            "threaded_event",
+            {"thread": True},
+            "thread_test",
+        )
+
+        assert result is True
+        await asyncio.wait_for(delivered.wait(), timeout=1.0)
+        assert len(received_events) == 1
+        assert received_events[0].payload == {"thread": True}
+        assert received_events[0].source == "thread_test"
 
 
 class TestEventHistory:

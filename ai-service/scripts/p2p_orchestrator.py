@@ -6154,9 +6154,15 @@ class P2POrchestrator(
             if result.returncode == 0:
                 # If there's output, there are uncommitted changes
                 return bool(result.stdout.strip())
+            logger.error(
+                "Failed to check local changes: git status returned %s (%s)",
+                result.returncode,
+                (result.stderr or "").strip(),
+            )
         except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to check local changes: {e}")
-        return True  # Assume changes exist on error (safer)
+        # Fail closed: if we cannot confirm the tree is clean, do not auto-update.
+        return True
 
     async def _stop_all_local_jobs(self) -> int:
         """Stop all local jobs gracefully before update.

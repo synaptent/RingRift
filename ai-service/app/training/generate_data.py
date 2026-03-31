@@ -34,6 +34,11 @@ except ImportError:
     GMOConfig = None
 from app.ai.mcts_ai import MCTSAI
 from app.ai.neural_net import INVALID_MOVE_INDEX, NeuralNetAI, encode_move_for_board
+from app.ai.neural_net.square_encoding import (
+    ActionEncoderSquare19,
+    ActionEncoderSquare8,
+    SQUARE_DIRS,
+)
 from app.db import GameReplayDB, get_or_create_db, record_completed_game
 from app.models import AIConfig, BoardType, GameState, GameStatus
 from app.models.game_record import RecordSource
@@ -52,6 +57,120 @@ from app.utils.progress_reporter import SoakProgressReporter
 from app.utils.resource_guard import LIMITS, check_disk_space, get_disk_usage
 
 logger = logging.getLogger(__name__)
+
+# Square line direction vectors used by process_line policy indices.
+# Canonical order:
+# 0 = horizontal, 1 = vertical, 2 = diagonal (\), 3 = anti-diagonal (/)
+_LINE_DIR_VECTORS: tuple[tuple[int, int], ...] = ((1, 0), (0, 1), (1, 1), (1, -1))
+
+# Reuse encoders rather than constructing per index.
+_SQUARE_POLICY_ENCODERS = {
+    BoardType.SQUARE8: ActionEncoderSquare8(),
+    BoardType.SQUARE19: ActionEncoderSquare19(),
+}
+
+
+def _apply_square_symmetry(
+    x: int,
+    y: int,
+    board_size: int,
+    rotation: int,
+    flip_horizontal: bool,
+) -> tuple[int, int]:
+    """Apply legacy square-board symmetry: flip first, then clockwise rotations."""
+    if flip_horizontal:
+        x = board_size - 1 - x
+
+    for _ in range(rotation % 4):
+        x, y = board_size - 1 - y, x
+
+    return x, y
+
+
+def _normalize_line_direction(dx: int, dy: int) -> tuple[int, int]:
+    """Normalize line vectors to canonical sign used by _LINE_DIR_VECTORS."""
+    if dx < 0:
+        return -dx, -dy
+    if dx == 0 and dy < 0:
+        return dx, -dy
+    return dx, dy
+
+
+def _transform_direction_vector(
+    dx: int,
+    dy: int,
+    rotation: int,
+    flip_horizontal: bool,
+) -> tuple[int, int]:
+    """Transform a direction vector under legacy square-board symmetry."""
+    if flip_horizontal:
+        dx = -dx
+
+    for _ in range(rotation % 4):
+        dx, dy = -dy, dx
+
+    return dx, dy
+
+
+def _transform_policy_index_square_compat(
+    policy_idx: int,
+    board_type: BoardType,
+    rotation: int,
+    flip_horizontal: bool,
+) -> int:
+    """Legacy-compatible square policy transform without deprecated module imports."""
+    normalized_board_type = board_type
+    if not isinstance(normalized_board_type, BoardType):
+        try:
+            normalized_board_type = BoardType(str(board_type))
+        except ValueError:
+            return policy_idx
+
+    encoder = _SQUARE_POLICY_ENCODERS.get(normalized_board_type)
+    if encoder is None:
+        return policy_idx
+
+    decoded = encoder.decode_to_components(policy_idx)
+    if decoded is None or decoded.is_special:
+        return policy_idx
+
+    decoded.x, decoded.y = _apply_square_symmetry(
+        decoded.x,
+        decoded.y,
+        decoded.board_size,
+        rotation,
+        flip_horizontal,
+    )
+
+    # Movement direction also transforms under symmetry.
+    if decoded.action_type == "movement":
+        try:
+            dx, dy = SQUARE_DIRS[decoded.dir_idx]
+        except IndexError:
+            return policy_idx
+        dx, dy = _transform_direction_vector(dx, dy, rotation, flip_horizontal)
+        try:
+            decoded.dir_idx = SQUARE_DIRS.index((dx, dy))
+        except ValueError:
+            return policy_idx
+
+    # Line-processing direction (0..3) also transforms.
+    elif decoded.action_type == "process_line":
+        try:
+            dx, dy = _LINE_DIR_VECTORS[decoded.dir_idx]
+        except IndexError:
+            return policy_idx
+        dx, dy = _transform_direction_vector(dx, dy, rotation, flip_horizontal)
+        normalized = _normalize_line_direction(dx, dy)
+        try:
+            decoded.dir_idx = _LINE_DIR_VECTORS.index(normalized)
+        except ValueError:
+            return policy_idx
+
+    transformed_idx = encoder.encode_from_decoded(decoded)
+    if transformed_idx == INVALID_MOVE_INDEX:
+        return policy_idx
+    return transformed_idx
 
 
 # =============================================================================
@@ -482,27 +601,26 @@ def augment_data(
         if len(indices) == 0:
             return indices, values
 
-        use_legacy = os.environ.get("RINGRIFT_LEGACY_POLICY_TRANSFORM", "").lower() in {
+        use_legacy_flag = os.environ.get("RINGRIFT_LEGACY_POLICY_TRANSFORM", "").lower() in {
             "1",
             "true",
             "yes",
             "on",
         }
-        if use_legacy:
+        if use_legacy_flag:
             logger.warning(
-                "RINGRIFT_LEGACY_POLICY_TRANSFORM enabled; using legacy transform for policy indices."
+                "RINGRIFT_LEGACY_POLICY_TRANSFORM is deprecated; "
+                "using built-in compatibility transform instead."
             )
-            from app.ai._neural_net_legacy import (
-                transform_policy_index_square,
-            )
-        else:
-            from app.ai.neural_net import transform_policy_index_square
 
         new_indices = []
         new_values = []
         for idx, prob in zip(indices, values, strict=False):
-            new_idx = transform_policy_index_square(
-                int(idx), board_type, k_rot, flip_h
+            new_idx = _transform_policy_index_square_compat(
+                policy_idx=int(idx),
+                board_type=board_type,
+                rotation=k_rot,
+                flip_horizontal=flip_h,
             )
             new_indices.append(new_idx)
             new_values.append(prob)

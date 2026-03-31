@@ -77,6 +77,7 @@ from app.coordination.protocols import (
 )
 # January 2026: HandlerBase for unified lifecycle management
 from app.coordination.handler_base import HandlerBase
+from app.core.async_context import fire_and_forget
 
 logger = logging.getLogger(__name__)
 
@@ -466,30 +467,28 @@ class UnifiedDataPlaneDaemon(HandlerBase, CoordinatorProtocol):
         # Start sync planner
         await self._planner.start()
 
-        # Start background tasks
-        self._tasks = [
-            asyncio.create_task(
-                self._catalog_refresh_loop(),
-                name="data_plane_catalog_refresh",
-            ),
-            asyncio.create_task(
-                self._replication_loop(),
-                name="data_plane_replication",
-            ),
-            asyncio.create_task(
-                self._manifest_broadcast_loop(),
-                name="data_plane_manifest",
-            ),
-        ]
+        # Start background tasks and retain explicit task handles for lifecycle cleanup
+        self._tasks = []
+        for coro, name, context in (
+            (self._catalog_refresh_loop(), "data_plane_catalog_refresh", "catalog_refresh_loop"),
+            (self._replication_loop(), "data_plane_replication", "replication_loop"),
+            (self._manifest_broadcast_loop(), "data_plane_manifest", "manifest_broadcast_loop"),
+        ):
+            task = self._safe_create_task(coro, context=context, name=name)
+            if task is None:
+                raise RuntimeError(f"Failed to create required background task: {name}")
+            self._tasks.append(task)
 
         # Start S3 backup if enabled
         if self._daemon_config.s3_enabled:
-            self._tasks.append(
-                asyncio.create_task(
-                    self._s3_backup_loop(),
-                    name="data_plane_s3_backup",
-                )
+            s3_task = self._safe_create_task(
+                self._s3_backup_loop(),
+                context="s3_backup_loop",
+                name="data_plane_s3_backup",
             )
+            if s3_task is None:
+                raise RuntimeError("Failed to create optional S3 backup task while s3_enabled=True")
+            self._tasks.append(s3_task)
 
     async def _run_cycle(self) -> None:
         """Run one cycle of data plane work.
@@ -616,7 +615,11 @@ class UnifiedDataPlaneDaemon(HandlerBase, CoordinatorProtocol):
 
             for plan in plans:
                 # Submit for async execution
-                asyncio.create_task(self._execute_plan(plan))
+                self._safe_create_task(
+                    self._execute_plan(plan),
+                    context=f"execute_plan:{event_type}",
+                    name=f"data_plane_execute_plan:{event_type}",
+                )
 
             self._stats.events_processed += 1
 
@@ -1035,5 +1038,8 @@ def reset_data_plane_daemon() -> None:
     """Reset the singleton (for testing)."""
     global _data_plane_daemon
     if _data_plane_daemon is not None:
-        asyncio.create_task(_data_plane_daemon.stop())
+        fire_and_forget(
+            _data_plane_daemon.stop(),
+            name="reset_data_plane_daemon.stop",
+        )
     _data_plane_daemon = None

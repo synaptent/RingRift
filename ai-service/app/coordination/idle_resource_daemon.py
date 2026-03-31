@@ -775,17 +775,17 @@ class IdleResourceDaemon(HandlerBase):
             nodes = get_cluster_nodes()
             node_config = nodes.get(node_id)
             if node_config is None:
-                # Unknown node - assume capable (optimistic for P2P-discovered nodes)
-                return True
+                logger.error(f"Node {node_id} missing from cluster config during selfplay capability check")
+                return False
 
             # Check explicit selfplay_enabled flag
             return node_config.selfplay_enabled
         except ImportError:
-            logger.debug("cluster_config not available, assuming selfplay capable")
-            return True
+            logger.error("cluster_config not available during selfplay capability check")
+            return False
         except (ValueError, RuntimeError, AttributeError, TypeError) as e:
-            logger.debug(f"Error checking selfplay capability for {node_id}: {e}")
-            return True  # Optimistic default on error
+            logger.error(f"Error checking selfplay capability for {node_id}: {e}")
+            return False
 
     def _get_node_backoff_remaining(self, node_id: str) -> float:
         """Get remaining backoff seconds for a node."""
