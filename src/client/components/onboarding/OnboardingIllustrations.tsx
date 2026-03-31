@@ -303,21 +303,22 @@ export function LastStandingIcon() {
 /** Ready to play: board with highlighted "your turn" cell */
 export function ReadyToPlayIllustration() {
   const r = HEX_R;
-  const dx = r * 1.5; // 27
-  const dy = r * Math.sqrt(3) * 0.5; // ~15.6
+  const dx = r * 1.5; // 27 — column step for flat-top hex
+  const dy = r * Math.sqrt(3) * 0.5; // ~15.6 — half-row offset
   const cx = 60;
   const cy = 40;
 
+  // Flat-top hex neighbors are ALWAYS at (±dx, ±dy), never at (±dx, 0).
+  // 4-cell diamond: center + upper-right + lower-right + upper-left
   return (
     <svg viewBox="0 0 120 80" className="w-32 h-20 mx-auto" aria-hidden="true">
-      {/* 4-cell flat-top hex cluster */}
       <HexCell cx={cx} cy={cy} flatTop />
       <HexCell cx={cx + dx} cy={cy - dy} flatTop highlight />
       <HexCell cx={cx + dx} cy={cy + dy} flatTop />
-      <HexCell cx={cx - dx} cy={cy} flatTop />
+      <HexCell cx={cx - dx} cy={cy - dy} flatTop />
 
-      {/* Rings on some cells */}
-      <Ring cx={cx - dx} cy={cy} color="#0284c7" />
+      {/* Rings on cells */}
+      <Ring cx={cx - dx} cy={cy - dy} color="#0284c7" />
       <Ring cx={cx + dx} cy={cy + dy} color="#fbbf24" />
       <Ring cx={cx} cy={cy} color="#34d399" />
 
