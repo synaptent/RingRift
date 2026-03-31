@@ -147,9 +147,13 @@ def run_selfplay(model_path: str, n_games: int, out: Path, budget: int) -> dict:
 
 
 def export_npz(jsonl: Path, npz: Path) -> bool:
+    # --gpu-selfplay is needed because GumbelMCTSAI records only player actions,
+    # not bookkeeping phase transitions (line processing, territory, etc.).
+    # The converter auto-injects these when --gpu-selfplay is set.
     cmd = [sys.executable, str(SCRIPT_DIR / "jsonl_to_npz.py"),
            "--input", str(jsonl), "--output", str(npz),
-           "--board-type", BOARD_TYPE, "--num-players", str(NUM_PLAYERS)]
+           "--board-type", BOARD_TYPE, "--num-players", str(NUM_PLAYERS),
+           "--gpu-selfplay"]
     logger.info(f"  exporting {jsonl.name} -> {npz.name}")
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
