@@ -5,7 +5,7 @@ import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { gameApi, type GameSummary } from '../services/api';
 import { GameHistorySkeleton } from '../components/Skeleton';
 import { formatVictoryReason } from '../adapters/gameViewModels';
-import type { BoardType } from '../../shared/types/game';
+import type { BoardType, GameResult } from '../../shared/types/game';
 
 function downloadFile(content: string, filename: string, mimeType: string) {
   const blob = new Blob([content], { type: mimeType });
@@ -183,7 +183,9 @@ export default function GameHistoryPage() {
               const isWin = game.winnerId === user?.id;
               const isDraw = game.status === 'completed' && !game.winnerId;
               const reason = game.outcome || game.resultReason;
-              const reasonLabel = reason ? formatVictoryReason(reason as string) : null;
+              const reasonLabel = reason
+                ? formatVictoryReason(reason as GameResult['reason'])
+                : null;
 
               return (
                 <div

@@ -55,11 +55,12 @@ tensorboard==2.20.0
 tensorboardX==2.6.4
 
 # PyTorch Geometric - Graph Neural Networks for territory connectivity modeling
-# Install separately if needed: pip install torch-geometric torch-scatter torch-sparse
-# These require matching PyTorch version (2.9.1); wheels auto-selected from PyG
-torch-geometric>=2.6.0
-torch-scatter>=2.1.0
-torch-sparse>=0.6.0
+# OPTIONAL: requires CUDA build tooling. Install separately on GPU nodes:
+#   pip install torch-geometric torch-scatter torch-sparse
+# Commented out to prevent CI build failures on CPU-only runners.
+# torch-geometric>=2.6.0
+# torch-scatter>=2.1.0
+# torch-sparse>=0.6.0
 
 # CMA-ES for heuristic weight optimization
 cma>=3.3.0
