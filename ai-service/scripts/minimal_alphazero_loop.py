@@ -43,8 +43,9 @@ MODEL_VERSION = "v2"
 MAX_MOVES = 800
 
 
-def _make_ai(player: int, model_path: str, budget: int) -> GumbelMCTSAI:
-    cfg = AIConfig(difficulty=9, randomness=0.0, use_neural_net=True,
+def _make_ai(player: int, model_path: str, budget: int,
+             randomness: float = 0.0) -> GumbelMCTSAI:
+    cfg = AIConfig(difficulty=9, randomness=randomness, use_neural_net=True,
                    gumbel_simulation_budget=budget, nn_model_id=model_path,
                    nn_model_version=MODEL_VERSION, allow_fresh_weights=False,
                    use_gpu_tree=True)
@@ -122,11 +123,16 @@ def _play_game(env, ai_players: dict[int, GumbelMCTSAI], idx: int, seed: int):
             "timestamp": datetime.now(timezone.utc).isoformat()}
 
 
-def run_selfplay(model_path: str, n_games: int, out: Path, budget: int) -> dict:
+def run_selfplay(model_path: str, n_games: int, out: Path, budget: int,
+                  randomness: float = 0.25) -> dict:
     env = _make_env()
-    ais = {p: _make_ai(p, model_path, budget) for p in range(1, NUM_PLAYERS + 1)}
+    # Use exploration noise (randomness > 0) for training data diversity
+    ais = {p: _make_ai(p, model_path, budget, randomness=randomness)
+           for p in range(1, NUM_PLAYERS + 1)}
     out.parent.mkdir(parents=True, exist_ok=True)
-    seed = random.randint(0, 0xFFFFFFFF)
+    # Use os.urandom for entropy instead of Python random (which may share state)
+    seed = int.from_bytes(os.urandom(4), "big")
+    logger.info(f"  selfplay seed={seed}")
     wins, done_n, t0 = {1: 0, 2: 0}, 0, time.time()
     with open(out, "w") as f:
         for i in range(n_games):
@@ -150,6 +156,9 @@ def export_npz(jsonl: Path, npz: Path) -> bool:
     # --gpu-selfplay is needed because GumbelMCTSAI records only player actions,
     # not bookkeeping phase transitions (line processing, territory, etc.).
     # The converter auto-injects these when --gpu-selfplay is set.
+    # Delete existing NPZ first to avoid stale data if export fails
+    if npz.exists():
+        npz.unlink()
     cmd = [sys.executable, str(SCRIPT_DIR / "jsonl_to_npz.py"),
            "--input", str(jsonl), "--output", str(npz),
            "--board-type", BOARD_TYPE, "--num-players", str(NUM_PLAYERS),
@@ -164,7 +173,8 @@ def export_npz(jsonl: Path, npz: Path) -> bool:
         return False
     try:
         d = np.load(npz, allow_pickle=True)
-        logger.info(f"  exported {len(d['features'])} samples")
+        fsum = float(d["features"].sum())
+        logger.info(f"  exported {len(d['features'])} samples (checksum={fsum:.1f})")
     except Exception:
         pass
     return True
@@ -264,6 +274,8 @@ def main() -> None:
     ap.add_argument("--batch-size", type=int, default=512)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--promote-threshold", type=float, default=0.55)
+    ap.add_argument("--selfplay-randomness", type=float, default=0.25,
+                    help="Exploration noise for selfplay (0=deterministic, 0.25=default)")
     ap.add_argument("--work-dir", type=str, default="data/minimal_loop")
     ap.add_argument("--log-file", type=str, default=None)
     args = ap.parse_args()
@@ -286,15 +298,31 @@ def main() -> None:
     logf.parent.mkdir(parents=True, exist_ok=True)
     promos, elo = 0, 1500.0
 
+    # Resume: find the last completed iteration to avoid overwriting data
+    existing = sorted(wdir.glob("iter_*.npz"))
+    start_iter = len(existing) + 1 if existing else 1
+    if start_iter > 1:
+        # Reload state from metrics
+        if logf.exists():
+            for line in logf.read_text().strip().split("\n"):
+                try:
+                    m = json.loads(line)
+                    promos = m.get("total_promotions", promos)
+                    elo = m.get("estimated_elo", elo)
+                except Exception:
+                    pass
+        logger.info(f"Resuming from iteration {start_iter} (elo={elo:.0f}, promos={promos})")
+
     logger.info("=" * 70)
     logger.info("MINIMAL ALPHAZERO LOOP")
     logger.info(f"  board={BOARD_TYPE} {NUM_PLAYERS}p | model={args.model}")
     logger.info(f"  iters={args.iterations} games={args.games_per_iter} eval={args.eval_games}")
     logger.info(f"  budget={args.budget} epochs={args.epochs} bs={args.batch_size} lr={args.lr}")
     logger.info(f"  promote_thr={args.promote_threshold:.0%} work_dir={wdir}")
+    logger.info(f"  selfplay_randomness={args.selfplay_randomness}")
     logger.info("=" * 70)
 
-    for it in range(1, args.iterations + 1):
+    for it in range(start_iter, start_iter + args.iterations):
         it0 = time.time()
         logger.info(f"\n{'='*70}\nITERATION {it}/{args.iterations}\n{'='*70}")
         jpath = wdir / f"iter_{it:03d}.jsonl"
@@ -302,8 +330,10 @@ def main() -> None:
         cpath = mdir / f"candidate_{it:03d}.pth"
 
         # 1. SELFPLAY
-        logger.info(f"[1/5] Selfplay: {args.games_per_iter} games, budget={args.budget}")
-        sp = run_selfplay(str(best), args.games_per_iter, jpath, args.budget)
+        logger.info(f"[1/5] Selfplay: {args.games_per_iter} games, budget={args.budget}, "
+                     f"randomness={args.selfplay_randomness}")
+        sp = run_selfplay(str(best), args.games_per_iter, jpath, args.budget,
+                          randomness=args.selfplay_randomness)
         if sp["completed"] == 0:
             logger.error("No games completed, skipping"); continue
 
