@@ -46,6 +46,8 @@ def _safe_create_task(coro, context: str = "") -> asyncio.Task | None:
         )
         return task
     except RuntimeError as e:
+        if hasattr(coro, "close"):
+            coro.close()
         logger.debug(f"[QualityFeedback] Could not create task for {context}: {e}")
         return None
 
@@ -279,14 +281,14 @@ class QualityFeedbackMixin:
                     from app.coordination.event_router import DataEventType, get_router
 
                     router = get_router()
-                    # router.emit() is synchronous - no task wrapper needed (Dec 28, 2025 fix)
-                    router.emit(
-                        event_type=DataEventType.CURRICULUM_REBALANCED,
-                        payload={
+                    router.publish_sync(
+                        DataEventType.CURRICULUM_REBALANCED,
+                        {
                             "config_key": config_key,
                             "weight": new_weight,
                             "reason": f"selfplay_quality_{quality_score:.2f}",
                         },
+                        source="QualityFeedbackMixin",
                     )
                 except (ImportError, AttributeError):
                     pass  # Event system not available

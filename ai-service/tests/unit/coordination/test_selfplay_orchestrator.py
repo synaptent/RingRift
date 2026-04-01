@@ -498,6 +498,69 @@ class TestSelfplayOrchestratorEventHandling:
         assert "memory" in orchestrator._completed_history[0].error.lower()
 
     @pytest.mark.asyncio
+    async def test_on_quality_updated_uses_publish_sync_for_adjustment_and_rebalance(self, orchestrator):
+        """Quality updates from this async handler should still use sync-safe publish for side effects."""
+        orchestrator._quality_scores["hex8_2p"] = 0.8
+        orchestrator._quality_budget_multipliers["hex8_2p"] = 1.0
+        orchestrator._emit_selfplay_budget_adjusted = MagicMock()
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "quality_score": 0.4,
+        }
+        mock_router = MagicMock()
+
+        with patch("app.coordination.event_router.get_router", return_value=mock_router):
+            await orchestrator._on_quality_updated(event)
+
+        assert mock_router.publish_sync.call_count == 2
+        first_call = mock_router.publish_sync.call_args_list[0]
+        second_call = mock_router.publish_sync.call_args_list[1]
+
+        assert first_call.args[0] == "quality_feedback_adjusted"
+        assert first_call.args[1]["config_key"] == "hex8_2p"
+        assert first_call.args[2] == "SelfplayOrchestrator"
+
+        assert second_call.args[0] == "CURRICULUM_REBALANCED"
+        assert second_call.args[1]["changed_configs"] == ["hex8_2p"]
+        assert second_call.args[2] == "SelfplayOrchestrator"
+
+    def test_sync_emit_helpers_use_publish_sync(self, orchestrator):
+        """Synchronous helper emitters should not drop async router coroutines."""
+        mock_router = MagicMock()
+
+        with patch("app.coordination.event_router.get_router", return_value=mock_router):
+            orchestrator._emit_selfplay_request_queued(
+                task_id="selfplay-123",
+                config_key="hex8_2p",
+                num_games=50,
+                priority="high",
+                source="quality_feedback",
+                routed_to_p2p=True,
+            )
+            orchestrator._emit_selfplay_budget_adjusted(
+                config_key="hex8_2p",
+                old_multiplier=1.0,
+                new_multiplier=1.5,
+                quality_score=0.42,
+                reason="quality_feedback",
+            )
+            orchestrator._emit_curriculum_allocation_changed(
+                changed_weights={"hex8_2p": 1.5},
+                trigger="quality_feedback",
+                num_changes=1,
+            )
+
+        assert mock_router.publish_sync.call_count == 3
+        emitted_types = [call.args[0] for call in mock_router.publish_sync.call_args_list]
+        assert emitted_types == [
+            "REQUEST_SELFPLAY_QUEUED",
+            "SELFPLAY_BUDGET_ADJUSTED",
+            "CURRICULUM_ALLOCATION_CHANGED",
+        ]
+
+    @pytest.mark.asyncio
     async def test_on_task_orphaned(self, orchestrator):
         """Should handle task orphaned event."""
         orchestrator.register_task(

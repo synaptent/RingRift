@@ -245,14 +245,12 @@ class ComprehensiveConsolidationDaemon(HandlerBase):
             return
 
         try:
-            from app.coordination.event_router import get_event_bus
+            from app.coordination.event_router import subscribe
             from app.distributed.data_events import DataEventType
-
-            bus = get_event_bus()
 
             # Subscribe to manual trigger
             if hasattr(DataEventType, "CONSOLIDATION_REQUESTED"):
-                bus.subscribe(DataEventType.CONSOLIDATION_REQUESTED, self._on_consolidation_requested)
+                subscribe(DataEventType.CONSOLIDATION_REQUESTED, self._on_consolidation_requested)
 
             self._subscribed = True
             logger.info("[ComprehensiveConsolidation] Subscribed to events")
@@ -266,12 +264,11 @@ class ComprehensiveConsolidationDaemon(HandlerBase):
             return
 
         try:
-            from app.coordination.event_router import get_event_bus
+            from app.coordination.event_router import unsubscribe
             from app.distributed.data_events import DataEventType
 
-            bus = get_event_bus()
             if hasattr(DataEventType, "CONSOLIDATION_REQUESTED"):
-                bus.unsubscribe(DataEventType.CONSOLIDATION_REQUESTED, self._on_consolidation_requested)
+                unsubscribe(DataEventType.CONSOLIDATION_REQUESTED, self._on_consolidation_requested)
 
             self._subscribed = False
         except Exception as e:

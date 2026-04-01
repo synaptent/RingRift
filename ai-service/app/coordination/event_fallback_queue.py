@@ -398,9 +398,7 @@ async def sync_queued_events(
     # Jan 2026: Migrated to event_router (app.coordination.data_events deprecated Q2 2026)
     synced_ids = []
     try:
-        from app.coordination.event_router import DataEventType, get_router
-
-        router = get_router()
+        from app.coordination.event_router import DataEventType, publish_sync
 
         for event in events:
             try:
@@ -419,7 +417,7 @@ async def sync_queued_events(
                         "synced_at": time.time(),
                         "original_source": event.get("source"),
                     }
-                    router.emit(event_type, payload)
+                    publish_sync(event_type, payload, source="event_fallback_queue")
                     synced_ids.append(event["id"])
                 else:
                     logger.warning(f"Unknown event type: {event_type_str}")
@@ -435,7 +433,7 @@ async def sync_queued_events(
 
             # Emit sync completion event
             try:
-                bus.emit(
+                publish_sync(
                     DataEventType.QUEUED_EVENTS_SYNCED,
                     {
                         "count": len(synced_ids),
@@ -443,6 +441,7 @@ async def sync_queued_events(
                         "remaining": len(events) - len(synced_ids),
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     },
+                    source="event_fallback_queue",
                 )
             except Exception:
                 pass  # Non-critical

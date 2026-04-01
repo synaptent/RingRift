@@ -144,16 +144,15 @@ class NodeAvailabilityCache(SingletonMixin):
                 return
 
             try:
-                from app.coordination.event_router import get_router
+                from app.coordination.event_router import subscribe
                 from app.distributed.data_events import DataEventType
 
-                router = get_router()
-                router.subscribe(DataEventType.P2P_NODE_DEAD, self._on_node_dead_event)
-                router.subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline_event)
-                router.subscribe(DataEventType.NODE_RECOVERED, self._on_node_recovered_event)
+                subscribe(DataEventType.P2P_NODE_DEAD, self._on_node_dead_event)
+                subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline_event)
+                subscribe(DataEventType.NODE_RECOVERED, self._on_node_recovered_event)
                 # Dec 30, 2025: Subscribe to health check events for real-time updates
                 if hasattr(DataEventType, "NODE_UNHEALTHY"):
-                    router.subscribe(DataEventType.NODE_UNHEALTHY, self._on_node_unhealthy_event)
+                    subscribe(DataEventType.NODE_UNHEALTHY, self._on_node_unhealthy_event)
 
                 self._event_subscribed = True
                 logger.info("[NodeAvailabilityCache] Subscribed to availability events")

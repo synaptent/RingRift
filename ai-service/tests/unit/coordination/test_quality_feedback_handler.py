@@ -5,7 +5,7 @@ December 2025: Tests for handler extracted from FeedbackLoopController.
 
 import time
 from dataclasses import dataclass
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -314,6 +314,36 @@ class TestTriggerQualityCheck:
         # Should not raise
         handler._trigger_quality_check("square8_2p", "scheduled_check")
 
+    def test_falls_back_to_asyncio_run_when_no_loop(self, handler, monkeypatch):
+        """If no event loop is running, the quality-check emitter should still run."""
+        run_calls = []
+        emitter = AsyncMock()
+
+        def fake_create_task(coro, context=""):
+            coro.close()
+            return None
+
+        def fake_run(coro):
+            run_calls.append(coro)
+            coro.close()
+
+        monkeypatch.setattr(
+            "app.coordination.quality_feedback_handler._safe_create_task",
+            fake_create_task,
+        )
+        monkeypatch.setattr(
+            "app.coordination.event_router.emit_quality_check_requested",
+            emitter,
+        )
+        monkeypatch.setattr(
+            "app.coordination.quality_feedback_handler.asyncio.run",
+            fake_run,
+        )
+
+        handler._trigger_quality_check("hex8_2p", "training_loss_anomaly")
+
+        assert len(run_calls) == 1
+
 
 class TestEmitExplorationAdjustment:
     """Tests for _emit_exploration_adjustment."""
@@ -330,6 +360,26 @@ class TestEmitExplorationAdjustment:
     def test_normal_quality_baseline(self, handler):
         """Test normal quality uses baseline parameters."""
         handler._emit_exploration_adjustment("hex8_2p", 0.75, "stable")
+
+    def test_uses_publish_sync_for_nonbaseline_adjustments(self, handler, monkeypatch):
+        """Exploration adjustments should publish synchronously from sync code."""
+        published = {}
+
+        def fake_publish_sync(event_type, payload=None, source=""):
+            published["event_type"] = event_type
+            published["payload"] = payload
+            published["source"] = source
+
+        monkeypatch.setattr(
+            "app.coordination.event_router.publish_sync",
+            fake_publish_sync,
+        )
+
+        handler._emit_exploration_adjustment("hex8_2p", 0.3, "declining")
+
+        assert published["source"] == "QualityFeedbackHandler"
+        assert published["payload"]["config_key"] == "hex8_2p"
+        assert published["payload"]["trend"] == "declining"
 
 
 class TestHealthCheck:

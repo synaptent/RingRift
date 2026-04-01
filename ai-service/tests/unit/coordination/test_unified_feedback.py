@@ -223,6 +223,58 @@ class TestUnifiedFeedbackOrchestrator:
             await orchestrator.start()
             assert orchestrator._running
 
+    def test_subscribe_to_events_uses_router_helpers(self, orchestrator):
+        """Should subscribe through unified router helpers."""
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            orchestrator._subscribe_to_events()
+
+        expected_calls = [
+            ("selfplay_complete", orchestrator._on_selfplay_complete),
+            ("training_completed", orchestrator._on_training_complete),
+            ("evaluation_completed", orchestrator._on_evaluation_complete),
+            ("model_promoted", orchestrator._on_promotion_complete),
+            ("training_loss_anomaly", orchestrator._on_loss_anomaly),
+            ("quality_degraded", orchestrator._on_quality_degraded),
+            ("plateau_detected", orchestrator._on_plateau_detected),
+            ("regression_detected", orchestrator._on_regression_detected),
+            ("data_fresh", orchestrator._on_data_fresh),
+            ("data_stale", orchestrator._on_data_stale),
+        ]
+        subscribed = [
+            (getattr(call.args[0], "value", call.args[0]), call.args[1])
+            for call in mock_subscribe.call_args_list
+        ]
+        for expected in expected_calls:
+            assert expected in subscribed
+        assert orchestrator._subscribed is True
+
+    def test_unsubscribe_from_events_uses_router_helpers(self, orchestrator):
+        """Should unsubscribe through unified router helpers."""
+        orchestrator._subscribed = True
+
+        with patch("app.coordination.event_router.unsubscribe") as mock_unsubscribe:
+            orchestrator._unsubscribe_from_events()
+
+        expected_calls = [
+            ("selfplay_complete", orchestrator._on_selfplay_complete),
+            ("training_completed", orchestrator._on_training_complete),
+            ("evaluation_completed", orchestrator._on_evaluation_complete),
+            ("model_promoted", orchestrator._on_promotion_complete),
+            ("training_loss_anomaly", orchestrator._on_loss_anomaly),
+            ("quality_degraded", orchestrator._on_quality_degraded),
+            ("plateau_detected", orchestrator._on_plateau_detected),
+            ("regression_detected", orchestrator._on_regression_detected),
+            ("data_fresh", orchestrator._on_data_fresh),
+            ("data_stale", orchestrator._on_data_stale),
+        ]
+        unsubscribed = [
+            (getattr(call.args[0], "value", call.args[0]), call.args[1])
+            for call in mock_unsubscribe.call_args_list
+        ]
+        for expected in expected_calls:
+            assert expected in unsubscribed
+        assert orchestrator._subscribed is False
+
     def test_get_metrics(self, orchestrator):
         """Should return metrics dictionary."""
         metrics = orchestrator.get_metrics()

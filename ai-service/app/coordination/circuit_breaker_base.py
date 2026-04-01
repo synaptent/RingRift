@@ -1290,31 +1290,29 @@ class OperationCircuitBreaker(CircuitBreakerBase):
     ) -> None:
         """Emit event for circuit state change."""
         try:
-            from app.coordination.event_router import get_event_router
+            from app.coordination.event_router import publish_sync
+            from app.distributed.data_events import DataEventType
 
-            router = get_event_router()
-            if router:
-                from app.distributed.data_events import DataEventType
+            event_type = None
+            if new_state == CircuitState.OPEN:
+                event_type = DataEventType.CIRCUIT_BREAKER_OPENED
+            elif new_state == CircuitState.CLOSED:
+                event_type = DataEventType.CIRCUIT_BREAKER_CLOSED
+            elif new_state == CircuitState.HALF_OPEN:
+                event_type = DataEventType.CIRCUIT_BREAKER_HALF_OPEN
 
-                event_type = None
-                if new_state == CircuitState.OPEN:
-                    event_type = DataEventType.CIRCUIT_BREAKER_OPENED
-                elif new_state == CircuitState.CLOSED:
-                    event_type = DataEventType.CIRCUIT_BREAKER_CLOSED
-                elif new_state == CircuitState.HALF_OPEN:
-                    event_type = DataEventType.CIRCUIT_BREAKER_HALF_OPEN
-
-                if event_type:
-                    router.emit(
-                        event_type.value,
-                        {
-                            "target": target,
-                            "operation_type": self.config.operation_type,
-                            "old_state": old_state.value,
-                            "new_state": new_state.value,
-                            "timestamp": time.time(),
-                        },
-                    )
+            if event_type:
+                publish_sync(
+                    event_type.value,
+                    {
+                        "target": target,
+                        "operation_type": self.config.operation_type,
+                        "old_state": old_state.value,
+                        "new_state": new_state.value,
+                        "timestamp": time.time(),
+                    },
+                    source="circuit_breaker_base",
+                )
         except (ImportError, RuntimeError, TypeError, AttributeError) as e:
             # Jan 16, 2026: Log event emission failures instead of silently ignoring
             logger.debug(f"[CircuitBreaker] Failed to emit state change event: {type(e).__name__}: {e}")
@@ -1324,26 +1322,24 @@ class OperationCircuitBreaker(CircuitBreakerBase):
     ) -> None:
         """Emit event for escalation tier change."""
         try:
-            from app.coordination.event_router import get_event_router
+            from app.coordination.event_router import publish_sync
+            from app.distributed.data_events import DataEventType
 
-            router = get_event_router()
-            if router:
-                from app.distributed.data_events import DataEventType
-
-                tier_config = self._get_tier_config(new_tier)
-                router.emit(
-                    DataEventType.ESCALATION_TIER_CHANGED.value,
-                    {
-                        "target": target,
-                        "operation_type": self.config.operation_type,
-                        "old_tier": old_tier,
-                        "new_tier": new_tier,
-                        "consecutive_opens": consecutive_opens,
-                        "wait_seconds": tier_config["wait"],
-                        "probe_interval": tier_config["probe_interval"],
-                        "timestamp": time.time(),
-                    },
-                )
+            tier_config = self._get_tier_config(new_tier)
+            publish_sync(
+                DataEventType.ESCALATION_TIER_CHANGED.value,
+                {
+                    "target": target,
+                    "operation_type": self.config.operation_type,
+                    "old_tier": old_tier,
+                    "new_tier": new_tier,
+                    "consecutive_opens": consecutive_opens,
+                    "wait_seconds": tier_config["wait"],
+                    "probe_interval": tier_config["probe_interval"],
+                    "timestamp": time.time(),
+                },
+                source="circuit_breaker_base",
+            )
         except (ImportError, RuntimeError, TypeError, AttributeError) as e:
             # Jan 16, 2026: Log event emission failures instead of silently ignoring
             logger.debug(f"[CircuitBreaker] Failed to emit escalation event: {type(e).__name__}: {e}")

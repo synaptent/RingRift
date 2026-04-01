@@ -83,71 +83,71 @@ class SyncEventMixin(SyncMixinBase):
         if self._subscribed:
             return
         try:
-            from app.coordination.event_router import DataEventType, get_event_bus
+            from app.coordination.event_router import DataEventType, get_router
 
-            bus = get_event_bus()
+            router = get_router()
 
             # Subscribe to DATA_STALE to trigger urgent sync
             if hasattr(DataEventType, 'DATA_STALE'):
-                bus.subscribe(DataEventType.DATA_STALE, self._wrap_handler(self._on_data_stale))
+                router.subscribe(DataEventType.DATA_STALE, self._wrap_handler(self._on_data_stale))
                 logger.info("[AutoSyncDaemon] Subscribed to DATA_STALE")
 
             # Subscribe to SYNC_TRIGGERED for external requests
             if hasattr(DataEventType, 'SYNC_TRIGGERED'):
-                bus.subscribe(DataEventType.SYNC_TRIGGERED, self._wrap_handler(self._on_sync_triggered))
+                router.subscribe(DataEventType.SYNC_TRIGGERED, self._wrap_handler(self._on_sync_triggered))
                 logger.info("[AutoSyncDaemon] Subscribed to SYNC_TRIGGERED")
 
             # Subscribe to NEW_GAMES_AVAILABLE for push-on-generate (Dec 2025)
             # Layer 1: Immediate push to neighbors when games are generated
             if hasattr(DataEventType, 'NEW_GAMES_AVAILABLE'):
-                bus.subscribe(DataEventType.NEW_GAMES_AVAILABLE, self._wrap_handler(self._on_new_games_available))
+                router.subscribe(DataEventType.NEW_GAMES_AVAILABLE, self._wrap_handler(self._on_new_games_available))
                 logger.info("[AutoSyncDaemon] Subscribed to NEW_GAMES_AVAILABLE (push-on-generate)")
 
             # Subscribe to DATA_SYNC_STARTED for sync coordination (Dec 2025)
             if hasattr(DataEventType, 'DATA_SYNC_STARTED'):
-                bus.subscribe(DataEventType.DATA_SYNC_STARTED, self._wrap_handler(self._on_data_sync_started))
+                router.subscribe(DataEventType.DATA_SYNC_STARTED, self._wrap_handler(self._on_data_sync_started))
                 logger.info("[AutoSyncDaemon] Subscribed to DATA_SYNC_STARTED")
 
             # Subscribe to MODEL_DISTRIBUTION_COMPLETE for model sync tracking (Dec 2025)
             if hasattr(DataEventType, 'MODEL_DISTRIBUTION_COMPLETE'):
-                bus.subscribe(DataEventType.MODEL_DISTRIBUTION_COMPLETE, self._wrap_handler(self._on_model_distribution_complete))
+                router.subscribe(DataEventType.MODEL_DISTRIBUTION_COMPLETE, self._wrap_handler(self._on_model_distribution_complete))
                 logger.info("[AutoSyncDaemon] Subscribed to MODEL_DISTRIBUTION_COMPLETE")
 
             # Subscribe to SELFPLAY_COMPLETE for immediate sync on selfplay completion (Dec 2025)
             # Phase F: Trigger sync immediately when selfplay batch finishes
             if hasattr(DataEventType, 'SELFPLAY_COMPLETE'):
-                bus.subscribe(DataEventType.SELFPLAY_COMPLETE, self._wrap_handler(self._on_selfplay_complete))
+                router.subscribe(DataEventType.SELFPLAY_COMPLETE, self._wrap_handler(self._on_selfplay_complete))
                 logger.info("[AutoSyncDaemon] Subscribed to SELFPLAY_COMPLETE (immediate sync)")
 
             # Subscribe to TRAINING_STARTED for priority sync to training nodes (Dec 2025)
             if hasattr(DataEventType, 'TRAINING_STARTED'):
-                bus.subscribe(DataEventType.TRAINING_STARTED, self._wrap_handler(self._on_training_started))
+                router.subscribe(DataEventType.TRAINING_STARTED, self._wrap_handler(self._on_training_started))
                 logger.info("[AutoSyncDaemon] Subscribed to TRAINING_STARTED (priority sync)")
 
             # Subscribe to NODE_RECOVERED to clear exclusion state for recovered nodes (Dec 2025)
             if hasattr(DataEventType, 'NODE_RECOVERED'):
-                bus.subscribe(DataEventType.NODE_RECOVERED, self._wrap_handler(self._on_node_recovered))
+                router.subscribe(DataEventType.NODE_RECOVERED, self._wrap_handler(self._on_node_recovered))
                 logger.info("[AutoSyncDaemon] Subscribed to NODE_RECOVERED (exclusion reset)")
 
             # December 28, 2025: Subscribe to backpressure events to pause sync during high load
             if hasattr(DataEventType, 'BACKPRESSURE_ACTIVATED'):
-                bus.subscribe(DataEventType.BACKPRESSURE_ACTIVATED, self._wrap_handler(self._on_backpressure_activated))
+                router.subscribe(DataEventType.BACKPRESSURE_ACTIVATED, self._wrap_handler(self._on_backpressure_activated))
                 logger.info("[AutoSyncDaemon] Subscribed to BACKPRESSURE_ACTIVATED (pause sync)")
 
             if hasattr(DataEventType, 'BACKPRESSURE_RELEASED'):
-                bus.subscribe(DataEventType.BACKPRESSURE_RELEASED, self._wrap_handler(self._on_backpressure_released))
+                router.subscribe(DataEventType.BACKPRESSURE_RELEASED, self._wrap_handler(self._on_backpressure_released))
                 logger.info("[AutoSyncDaemon] Subscribed to BACKPRESSURE_RELEASED (resume sync)")
 
             # December 28, 2025: Subscribe to SYNC_REQUEST for SyncRouter-triggered sync operations
             # This wires the previously orphaned SYNC_REQUEST event emitted by SyncRouter._emit_sync_routing_decision
             if hasattr(DataEventType, 'SYNC_REQUEST'):
-                bus.subscribe(DataEventType.SYNC_REQUEST, self._wrap_handler(self._on_sync_request))
+                router.subscribe(DataEventType.SYNC_REQUEST, self._wrap_handler(self._on_sync_request))
                 logger.info("[AutoSyncDaemon] Subscribed to SYNC_REQUEST (SyncRouter integration)")
 
             # December 30, 2025: Subscribe to CONFIG_UPDATED for distributed config sync
             # When cluster config changes, reload cached config and update node list
             if hasattr(DataEventType, 'CONFIG_UPDATED'):
-                bus.subscribe(DataEventType.CONFIG_UPDATED, self._wrap_handler(self._on_config_updated))
+                router.subscribe(DataEventType.CONFIG_UPDATED, self._wrap_handler(self._on_config_updated))
                 logger.info("[AutoSyncDaemon] Subscribed to CONFIG_UPDATED (cluster config sync)")
 
             self._subscribed = True

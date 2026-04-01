@@ -1188,9 +1188,7 @@ class DataPipelineOrchestrator(
         Jan 2, 2026: These events don't require cluster connectivity.
         """
         try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
+            from app.coordination.event_router import subscribe
 
             # Local file-based events that work without cluster
             local_events = [
@@ -1200,7 +1198,7 @@ class DataPipelineOrchestrator(
             ]
 
             for event_type in local_events:
-                router.subscribe(event_type, self._on_local_event)
+                subscribe(event_type, self._on_local_event)
 
             logger.info(
                 f"[{self.name}] Subscribed to {len(local_events)} local-only events"
@@ -1494,9 +1492,7 @@ class DataPipelineOrchestrator(
 
         try:
             # P0.5 (December 2025): Use get_router() instead of deprecated get_stage_event_bus()
-            from app.coordination.event_router import StageEvent, get_router
-
-            router = get_router()
+            from app.coordination.event_router import StageEvent, subscribe
 
             # Track subscriptions for proper error reporting
             subscriptions = [
@@ -1518,7 +1514,7 @@ class DataPipelineOrchestrator(
 
             for event, handler, event_name in subscriptions:
                 try:
-                    router.subscribe(event, handler)
+                    subscribe(event, handler)
                     successful_subscriptions.append(event_name)
                 except (TypeError, ValueError, AttributeError, RuntimeError) as sub_error:
                     failed_subscriptions.append((event_name, str(sub_error)))
@@ -1562,226 +1558,223 @@ class DataPipelineOrchestrator(
             True if successfully subscribed
         """
         try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType, subscribe
 
             # Subscribe to quality and cache events
-            router.subscribe(
+            subscribe(
                 DataEventType.QUALITY_DISTRIBUTION_CHANGED.value,
                 self._on_quality_distribution_changed,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.CACHE_INVALIDATED.value,
                 self._on_cache_invalidated,
             )
 
             # Subscribe to optimization events (December 2025)
-            router.subscribe(
+            subscribe(
                 DataEventType.CMAES_TRIGGERED.value,
                 self._on_optimization_triggered,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.NAS_TRIGGERED.value,
                 self._on_optimization_triggered,
             )
 
             # Subscribe to resource constraint events (December 2025)
-            router.subscribe(
+            subscribe(
                 DataEventType.RESOURCE_CONSTRAINT_DETECTED.value,
                 self._on_resource_constraint_detected,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.BACKPRESSURE_ACTIVATED.value,
                 self._on_backpressure_activated,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.BACKPRESSURE_RELEASED.value,
                 self._on_backpressure_released,
             )
 
             # Subscribe to promotion candidate events (December 2025)
             # This wires the previously orphaned PROMOTION_CANDIDATE event
-            router.subscribe(
+            subscribe(
                 DataEventType.PROMOTION_CANDIDATE.value,
                 self._on_promotion_candidate,
             )
 
             # Subscribe to database lifecycle events (December 2025 - Phase 4A.3)
-            router.subscribe(
+            subscribe(
                 DataEventType.DATABASE_CREATED.value,
                 self._on_database_created,
             )
 
             # Subscribe to training threshold events
-            router.subscribe(
+            subscribe(
                 DataEventType.TRAINING_THRESHOLD_REACHED.value,
                 self._on_training_threshold_reached,
             )
 
             # Subscribe to promotion lifecycle events
-            router.subscribe(
+            subscribe(
                 DataEventType.PROMOTION_STARTED.value,
                 self._on_promotion_started,
             )
 
             # Subscribe to work queue events
-            router.subscribe(
+            subscribe(
                 DataEventType.WORK_QUEUED.value,
                 self._on_work_queued,
             )
 
             # Core pipeline events (DataEventType fallback for StageEvent wiring)
-            router.subscribe(
+            subscribe(
                 DataEventType.SELFPLAY_COMPLETE.value,
                 self._on_data_selfplay_complete,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.DATA_SYNC_COMPLETED.value,
                 self._on_data_sync_completed,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.DATA_SYNC_FAILED.value,
                 self._on_data_sync_failed,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.TRAINING_COMPLETED.value,
                 self._on_data_training_completed,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.TRAINING_FAILED.value,
                 self._on_data_training_failed,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.EVALUATION_COMPLETED.value,
                 self._on_data_evaluation_completed,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.EVALUATION_FAILED.value,
                 self._on_data_evaluation_failed,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.MODEL_PROMOTED.value,
                 self._on_data_model_promoted,
             )
 
             # Orphan games detection - triggers sync and registration (Dec 2025)
-            router.subscribe(
+            subscribe(
                 DataEventType.ORPHAN_GAMES_DETECTED.value,
                 self._on_orphan_games_detected,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.ORPHAN_GAMES_REGISTERED.value,
                 self._on_orphan_games_registered,
             )
 
             # December 2025: Subscribe to GAME_SYNCED for export triggering
             # When games are synced to training nodes, this can trigger NPZ export
-            router.subscribe(
+            subscribe(
                 DataEventType.GAME_SYNCED.value,
                 self._on_game_synced,
             )
 
             # December 2025: Subscribe to exploration and sync feedback events
             # These events trigger curriculum adjustments and adaptive exploration
-            router.subscribe(
+            subscribe(
                 DataEventType.EXPLORATION_BOOST.value,
                 self._on_exploration_boost,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.SYNC_TRIGGERED.value,
                 self._on_sync_triggered,
             )
 
             # December 2025: Subscribe to DATA_STALE for training freshness
             # When training data becomes stale, we trigger urgent sync
-            router.subscribe(
+            subscribe(
                 DataEventType.DATA_STALE.value,
                 self._on_data_stale,
             )
 
             # December 2025 Phase 11: Additional event subscriptions for improved
             # pipeline coordination and regression handling
-            router.subscribe(
+            subscribe(
                 DataEventType.NEW_GAMES_AVAILABLE.value,
                 self._on_new_games_available,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.REGRESSION_DETECTED.value,
                 self._on_regression_detected,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.PROMOTION_FAILED.value,
                 self._on_promotion_failed,
             )
 
             # December 2025: Subscribe to consolidation events for training pipeline fix
             # Consolidation merges scattered selfplay games into canonical databases
-            router.subscribe(
+            subscribe(
                 DataEventType.CONSOLIDATION_STARTED.value,
                 self._on_consolidation_started,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.CONSOLIDATION_COMPLETE.value,
                 self._on_consolidation_complete,
             )
 
             # December 2025: Subscribe to NPZ combination events for quality-weighted data
             # NPZ combination combines historical + fresh data with quality weighting
-            router.subscribe(
+            subscribe(
                 DataEventType.NPZ_COMBINATION_COMPLETE.value,
                 self._on_npz_combination_complete,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.NPZ_COMBINATION_FAILED.value,
                 self._on_npz_combination_failed,
             )
 
             # December 2025: Wire previously orphaned critical events
             # These events were being emitted but had no subscribers
-            router.subscribe(
+            subscribe(
                 DataEventType.REPAIR_COMPLETED.value,
                 self._on_repair_completed,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.REPAIR_FAILED.value,
                 self._on_repair_failed,
             )
             # December 2025: Track abandoned tasks for accurate pending count
-            router.subscribe(
+            subscribe(
                 DataEventType.TASK_ABANDONED.value,
                 self._on_task_abandoned,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.QUALITY_SCORE_UPDATED.value,
                 self._on_quality_score_updated,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.CURRICULUM_REBALANCED.value,
                 self._on_curriculum_rebalanced,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.CURRICULUM_ADVANCED.value,
                 self._on_curriculum_advanced,
             )
 
             # December 2025: Subscribe to S3 backup events for pipeline tracking
-            router.subscribe(
+            subscribe(
                 DataEventType.S3_BACKUP_COMPLETED.value,
                 self._on_s3_backup_completed,
             )
 
             # December 2025: Subscribe to sync integrity events for repair triggering
             if hasattr(DataEventType, 'SYNC_CHECKSUM_FAILED'):
-                router.subscribe(
+                subscribe(
                     DataEventType.SYNC_CHECKSUM_FAILED.value,
                     self._on_sync_checksum_failed,
                 )
 
             # January 3, 2026: Subscribe to partition healing events
             # PARTITION_HEALED emitted by partition_healer.py:514 when healing succeeds
-            router.subscribe(
+            subscribe(
                 DataEventType.PARTITION_HEALED.value,
                 self._on_partition_healed,
             )
@@ -1794,8 +1787,7 @@ class DataPipelineOrchestrator(
             return False
         except (TypeError, ValueError, AttributeError, RuntimeError, KeyError) as e:
             logger.error(
-                f"[DataPipelineOrchestrator] Failed to subscribe to data events "
-                f"(router={router!r}): {e}",
+                f"[DataPipelineOrchestrator] Failed to subscribe to data events: {e}",
                 exc_info=True,
             )
             return False
@@ -2313,11 +2305,11 @@ class DataPipelineOrchestrator(
         self._last_constraint_emit[constraint_type] = now
 
         try:
-            from app.coordination.event_router import DataEvent, DataEventType, get_event_bus
+            from app.coordination.event_router import DataEventType, publish_sync
 
-            event = DataEvent(
-                event_type=DataEventType.RESOURCE_CONSTRAINT_DETECTED,
-                payload={
+            publish_sync(
+                DataEventType.RESOURCE_CONSTRAINT_DETECTED,
+                {
                     "constraint_type": constraint_type,
                     "value": value,
                     "timestamp": now,
@@ -2325,14 +2317,6 @@ class DataPipelineOrchestrator(
                 },
                 source="data_pipeline_orchestrator",
             )
-
-            import asyncio
-            bus = get_event_bus()
-            try:
-                loop = asyncio.get_running_loop()
-                fire_and_forget(bus.publish(event), name="pipeline_stage_event")
-            except RuntimeError:
-                asyncio.run(bus.publish(event))
 
         except (RuntimeError, ValueError, TypeError, AttributeError, KeyError, ImportError) as e:
             logger.debug(f"[DataPipelineOrchestrator] Best-effort event emit failed: {e}")

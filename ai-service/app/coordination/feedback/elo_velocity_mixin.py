@@ -138,11 +138,11 @@ class EloVelocityAdaptationMixin:
         search budget and game allocation.
         """
         try:
-            from app.coordination.event_router import DataEventType, get_event_bus
+            from app.coordination.event_router import DataEventType, publish_sync
 
-            bus = get_event_bus()
-            if bus:
-                bus.emit(DataEventType.SELFPLAY_TARGET_UPDATED, {
+            publish_sync(
+                DataEventType.SELFPLAY_TARGET_UPDATED,
+                {
                     "config_key": config_key,
                     "search_budget": state.current_search_budget,
                     "exploration_boost": state.current_exploration_boost,
@@ -151,10 +151,12 @@ class EloVelocityAdaptationMixin:
                     "velocity": velocity,
                     "priority": "HIGH" if elo_gap > 500 or velocity < ELO_PLATEAU_PER_HOUR else "NORMAL",
                     "reason": "velocity_feedback",
-                })
-                logger.debug(
-                    f"[EloVelocity] Emitted SELFPLAY_TARGET_UPDATED for {config_key}"
-                )
+                },
+                source="elo_velocity_mixin",
+            )
+            logger.debug(
+                f"[EloVelocity] Emitted SELFPLAY_TARGET_UPDATED for {config_key}"
+            )
         except (ImportError, AttributeError, TypeError, RuntimeError) as e:
             logger.debug(f"[EloVelocity] Could not emit selfplay adjustment: {e}")
 
@@ -239,14 +241,17 @@ class EloVelocityAdaptationMixin:
             return
 
         try:
-            from app.coordination.event_router import DataEventType, get_event_bus
+            from app.coordination.event_router import DataEventType, publish_sync
 
-            bus = get_event_bus()
-            if bus and hasattr(DataEventType, 'ADAPTIVE_PARAMS_CHANGED'):
-                bus.emit(DataEventType.ADAPTIVE_PARAMS_CHANGED, {
+            if hasattr(DataEventType, 'ADAPTIVE_PARAMS_CHANGED'):
+                publish_sync(
+                    DataEventType.ADAPTIVE_PARAMS_CHANGED,
+                    {
                     "config_key": config_key,
                     **signal.to_dict(),
-                })
+                    },
+                    source="elo_velocity_mixin",
+                )
                 logger.debug(
                     f"[EloVelocity] Emitted ADAPTIVE_PARAMS_CHANGED for {config_key}"
                 )

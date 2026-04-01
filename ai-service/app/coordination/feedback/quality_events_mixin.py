@@ -100,7 +100,7 @@ class QualityEventsMixin:
 
             # Emit the event (handle both sync and async contexts)
             try:
-                _safe_create_task(
+                task = _safe_create_task(
                     emit_quality_check_requested(
                         config_key=config_key,
                         reason=reason,
@@ -109,14 +109,17 @@ class QualityEventsMixin:
                     ),
                     context=f"emit_quality_check_requested:{config_key}",
                 )
+                if task is None:
+                    asyncio.run(emit_quality_check_requested(
+                        config_key=config_key,
+                        reason=reason,
+                        source="FeedbackLoopController",
+                        priority=priority,
+                    ))
             except RuntimeError:
-                # No running event loop, run synchronously
-                asyncio.run(emit_quality_check_requested(
-                    config_key=config_key,
-                    reason=reason,
-                    source="FeedbackLoopController",
-                    priority=priority,
-                ))
+                logger.warning(
+                    f"[FeedbackLoopController] Failed to emit quality check request for {config_key}"
+                )
 
         except (AttributeError, TypeError, RuntimeError) as e:
             logger.warning(f"[FeedbackLoopController] Error triggering quality check: {e}")
@@ -149,7 +152,7 @@ class QualityEventsMixin:
 
                 from app.coordination.feedback_loop_controller import _safe_create_task
 
-                _safe_create_task(
+                task = _safe_create_task(
                     emit_selfplay_target_updated(
                         config_key=config,
                         target_games=1000,  # Request more games
@@ -159,6 +162,16 @@ class QualityEventsMixin:
                     ),
                     "selfplay_target_emit"
                 )
+                if task is None:
+                    asyncio.run(
+                        emit_selfplay_target_updated(
+                            config_key=config,
+                            target_games=1000,
+                            reason="quality_check_failed",
+                            priority=8,
+                            source="feedback_loop_controller",
+                        )
+                    )
             except (ImportError, AttributeError) as e:
                 logger.debug(f"[FeedbackLoop] Emitter not available: {e}")
             except (TypeError, ValueError) as e:
@@ -210,7 +223,7 @@ class QualityEventsMixin:
 
                 from app.coordination.feedback_loop_controller import _safe_create_task
 
-                _safe_create_task(
+                task = _safe_create_task(
                     emit_exploration_boost(
                         config_key=config_key,
                         boost_factor=1.5,
@@ -219,6 +232,15 @@ class QualityEventsMixin:
                     ),
                     "quality_exploration_boost_emit"
                 )
+                if task is None:
+                    asyncio.run(
+                        emit_exploration_boost(
+                            config_key=config_key,
+                            boost_factor=1.5,
+                            reason=f"quality_feedback_{adjustment_type}",
+                            source="feedback_loop_controller",
+                        )
+                    )
             except (ImportError, RuntimeError, asyncio.CancelledError) as e:
                 logger.debug(f"Failed to emit exploration boost: {e}")
         else:
@@ -319,7 +341,7 @@ class QualityEventsMixin:
         Adjusts exploration parameters to match data quality needs.
         """
         try:
-            from app.coordination.event_router import DataEventType, get_event_bus
+            from app.coordination.event_router import DataEventType, publish_sync
 
             # Determine exploration adjustments based on quality
             if quality_score < 0.5:
@@ -362,14 +384,11 @@ class QualityEventsMixin:
                     "timestamp": time.time(),
                 }
 
-                bus = get_event_bus()
-                from app.distributed.data_events import DataEvent
-                event = DataEvent(
-                    event_type=DataEventType.EXPLORATION_ADJUSTED,
-                    payload=payload,
+                publish_sync(
+                    DataEventType.EXPLORATION_ADJUSTED,
+                    payload,
                     source="FeedbackLoopController",
                 )
-                bus.publish(event)
 
                 logger.info(
                     f"[FeedbackLoopController] Exploration adjusted for {config_key}: "

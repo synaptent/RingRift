@@ -255,21 +255,22 @@ class TestMonitorBaseEventSubscription:
     @pytest.mark.asyncio
     async def test_subscribe_to_events(self):
         """Test event subscription on start."""
-        with patch("app.coordination.event_router.get_router") as mock_get_router:
-            mock_router = MagicMock()
-            mock_get_router.return_value = mock_router
+        with (
+            patch("app.coordination.event_router.subscribe") as mock_subscribe,
+            patch("app.coordination.event_router.unsubscribe") as mock_unsubscribe,
+        ):
 
             monitor = TestMonitor()
             await monitor.start()
 
             # Should have subscribed to test_event
-            mock_router.subscribe.assert_called()
+            mock_subscribe.assert_called()
             assert monitor._event_subscribed
 
             await monitor.stop()
 
             # Should have unsubscribed
-            mock_router.unsubscribe.assert_called()
+            mock_unsubscribe.assert_called()
 
     @pytest.mark.asyncio
     async def test_subscribe_disabled(self):
@@ -277,16 +278,16 @@ class TestMonitorBaseEventSubscription:
         config = MonitorConfig(subscribe_to_events=False)
         monitor = TestMonitor(config)
 
-        with patch("app.coordination.event_router.get_router") as mock_get_router:
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
             await monitor.start()
-            mock_get_router.assert_not_called()
+            mock_subscribe.assert_not_called()
             await monitor.stop()
 
     @pytest.mark.asyncio
     async def test_subscribe_import_error(self):
         """Test graceful handling of import error."""
         with patch(
-            "app.coordination.event_router.get_router",
+            "app.coordination.event_router.subscribe",
             side_effect=ImportError("No router"),
         ):
             monitor = TestMonitor()

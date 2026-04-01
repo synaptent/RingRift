@@ -282,8 +282,8 @@ def process_delegation_registry(results: dict[str, bool]) -> None:
         results: Dict to track success/failure of each subscription
     """
     try:
-        from app.coordination.event_router import DataEventType, get_event_bus
-        bus = get_event_bus()
+        from app.coordination.event_router import DataEventType, get_router
+        router = get_router()
     except ImportError as e:
         logger.warning(f"[Bootstrap] Cannot process delegation registry - event bus unavailable: {e}")
         for spec in DELEGATION_REGISTRY:
@@ -303,7 +303,7 @@ def process_delegation_registry(results: dict[str, bool]) -> None:
             handler = _create_delegation_handler(spec)
 
             # Subscribe to event
-            bus.subscribe(event_type, handler)
+            router.subscribe(event_type, handler)
             results[spec.name] = True
             logger.debug(f"[Bootstrap] {spec.description}")
 

@@ -51,6 +51,7 @@ import os
 import random
 import sys
 import time
+import warnings
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import (
@@ -254,10 +255,12 @@ except ImportError:
 
 # Quality bridge for quality-aware data selection (2025-12)
 try:
-    from app.training.quality_bridge import (
-        QualityBridge,
-        get_quality_bridge,
-    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        from app.training.quality_bridge import (
+            QualityBridge,
+            get_quality_bridge,
+        )
     HAS_QUALITY_BRIDGE = True
 except ImportError:
     HAS_QUALITY_BRIDGE = False

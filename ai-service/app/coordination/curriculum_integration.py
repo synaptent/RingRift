@@ -126,99 +126,93 @@ class MomentumToCurriculumBridge:
             return True
 
         try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
-
-            router = get_router()
-            if router is None:
-                logger.debug("[MomentumToCurriculumBridge] Event router not available")
-                return False
+            from app.coordination.event_router import DataEventType, subscribe
 
             # Use enum directly (router normalizes both enum and .value)
-            router.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
+            subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
 
             # Phase 21.2: Subscribe to SELFPLAY_RATE_CHANGED for Elo momentum → curriculum sync
             if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
-                router.subscribe(DataEventType.SELFPLAY_RATE_CHANGED, self._on_selfplay_rate_changed)
+                subscribe(DataEventType.SELFPLAY_RATE_CHANGED, self._on_selfplay_rate_changed)
 
             # December 2025: Subscribe to ELO_SIGNIFICANT_CHANGE for curriculum rebalance triggers
             if hasattr(DataEventType, 'ELO_SIGNIFICANT_CHANGE'):
-                router.subscribe(DataEventType.ELO_SIGNIFICANT_CHANGE, self._on_elo_significant_change)
+                subscribe(DataEventType.ELO_SIGNIFICANT_CHANGE, self._on_elo_significant_change)
 
             # December 2025: Subscribe to SELFPLAY_ALLOCATION_UPDATED to track allocation changes
             if hasattr(DataEventType, 'SELFPLAY_ALLOCATION_UPDATED'):
-                router.subscribe(DataEventType.SELFPLAY_ALLOCATION_UPDATED, self._on_selfplay_allocation_updated)
+                subscribe(DataEventType.SELFPLAY_ALLOCATION_UPDATED, self._on_selfplay_allocation_updated)
 
             # December 2025 Phase 2: Subscribe to MODEL_PROMOTED to rebalance curriculum
             # when a new model is promoted. This ensures curriculum weights are adjusted
             # based on the latest model strength.
             if hasattr(DataEventType, 'MODEL_PROMOTED'):
-                router.subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
+                subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
 
             # December 2025: Subscribe to TIER_PROMOTION to adjust curriculum when
             # difficulty tier changes (e.g., advancing from D4 to D5)
             if hasattr(DataEventType, 'TIER_PROMOTION'):
-                router.subscribe(DataEventType.TIER_PROMOTION, self._on_tier_promotion)
+                subscribe(DataEventType.TIER_PROMOTION, self._on_tier_promotion)
 
             # December 29, 2025: Subscribe to CROSSBOARD_PROMOTION to adjust curriculum when
             # a model achieves multi-config promotion (high Elo across multiple configurations)
             if hasattr(DataEventType, 'CROSSBOARD_PROMOTION'):
-                router.subscribe(DataEventType.CROSSBOARD_PROMOTION, self._on_crossboard_promotion)
+                subscribe(DataEventType.CROSSBOARD_PROMOTION, self._on_crossboard_promotion)
 
             # December 29, 2025: Subscribe to CURRICULUM_ADVANCEMENT_NEEDED to handle
             # stagnant configs (3+ evaluations with minimal Elo improvement).
             # Emitted by TrainingTriggerDaemon._signal_curriculum_advancement().
             if hasattr(DataEventType, 'CURRICULUM_ADVANCEMENT_NEEDED'):
-                router.subscribe(DataEventType.CURRICULUM_ADVANCEMENT_NEEDED, self._on_curriculum_advancement_needed)
+                subscribe(DataEventType.CURRICULUM_ADVANCEMENT_NEEDED, self._on_curriculum_advancement_needed)
 
             # January 2026 Sprint 10: Subscribe to ELO_VELOCITY_CHANGED for
             # velocity-based curriculum acceleration (+15-25 Elo improvement).
             # When learning is fast (high velocity), accelerate curriculum to capitalize.
             if hasattr(DataEventType, 'ELO_VELOCITY_CHANGED'):
-                router.subscribe(DataEventType.ELO_VELOCITY_CHANGED, self._on_elo_velocity_changed)
+                subscribe(DataEventType.ELO_VELOCITY_CHANGED, self._on_elo_velocity_changed)
 
             # January 2026 Sprint 10: Subscribe to CURRICULUM_ADVANCED for cross-board
             # propagation (+5-15 Elo). When one config advances, similar configs can benefit.
             if hasattr(DataEventType, 'CURRICULUM_ADVANCED'):
-                router.subscribe(DataEventType.CURRICULUM_ADVANCED, self._on_curriculum_advanced)
+                subscribe(DataEventType.CURRICULUM_ADVANCED, self._on_curriculum_advanced)
 
             # January 2026 Sprint 10: Subscribe to CURRICULUM_PROPAGATE to receive
             # curriculum advancements propagated from similar configs.
             if hasattr(DataEventType, 'CURRICULUM_PROPAGATE'):
-                router.subscribe(DataEventType.CURRICULUM_PROPAGATE, self._on_curriculum_propagate)
+                subscribe(DataEventType.CURRICULUM_PROPAGATE, self._on_curriculum_propagate)
 
             # January 2026 Sprint 10: Subscribe to REGRESSION_DETECTED for direct
             # curriculum response (+12-18 Elo). Previously took 2-3 cycles through
             # intermediate handlers. Direct subscription enables immediate difficulty
             # reduction when regression is detected.
             if hasattr(DataEventType, 'REGRESSION_DETECTED'):
-                router.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
+                subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
 
             # January 2026 Sprint 12: Subscribe to TRAINING_LOSS_ANOMALY for direct
             # curriculum response (+10-15 Elo). Loss anomalies indicate training data
             # quality issues. Reducing curriculum weight for affected configs prevents
             # learning from bad data.
             if hasattr(DataEventType, 'TRAINING_LOSS_ANOMALY'):
-                router.subscribe(DataEventType.TRAINING_LOSS_ANOMALY, self._on_loss_anomaly)
+                subscribe(DataEventType.TRAINING_LOSS_ANOMALY, self._on_loss_anomaly)
 
             # January 2026 Sprint 12: Subscribe to QUORUM_RECOVERY_STARTED for
             # curriculum adjustment during quorum recovery. When quorum is lost and
             # recovery starts, boost selfplay priority for affected configs to help
             # the cluster recover faster with fresh training data.
             if hasattr(DataEventType, 'QUORUM_RECOVERY_STARTED'):
-                router.subscribe(DataEventType.QUORUM_RECOVERY_STARTED, self._on_quorum_recovery)
+                subscribe(DataEventType.QUORUM_RECOVERY_STARTED, self._on_quorum_recovery)
 
             # Session 17.25: Subscribe to CURRICULUM_ROLLBACK to restore prior weights
             # after regression is detected. This undoes curriculum boosts that led to
             # regressions, allowing the model to recover.
             if hasattr(DataEventType, 'CURRICULUM_ROLLBACK'):
-                router.subscribe(DataEventType.CURRICULUM_ROLLBACK, self._on_curriculum_rollback)
+                subscribe(DataEventType.CURRICULUM_ROLLBACK, self._on_curriculum_rollback)
 
             # Jan 2026 P1: Subscribe to OPPONENT_DIVERSITY_NEEDED for stall escalation.
             # When a config has been stalled for 48+ hours, inject opponent diversity
             # to help break through local optimum.
             try:
-                router.subscribe("OPPONENT_DIVERSITY_NEEDED", self._on_opponent_diversity_needed)
+                subscribe("OPPONENT_DIVERSITY_NEEDED", self._on_opponent_diversity_needed)
             except (AttributeError, TypeError):
                 logger.debug("[MomentumToCurriculumBridge] OPPONENT_DIVERSITY_NEEDED not available")
 
@@ -246,57 +240,41 @@ class MomentumToCurriculumBridge:
             return
 
         try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
+            from app.coordination.event_router import DataEventType, unsubscribe
 
-            router = get_router()
-            if router:
-                router.unsubscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
-                if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
-                    router.unsubscribe(DataEventType.SELFPLAY_RATE_CHANGED, self._on_selfplay_rate_changed)
-                if hasattr(DataEventType, 'ELO_SIGNIFICANT_CHANGE'):
-                    router.unsubscribe(DataEventType.ELO_SIGNIFICANT_CHANGE, self._on_elo_significant_change)
-                # December 2025: Unsubscribe from SELFPLAY_ALLOCATION_UPDATED
-                if hasattr(DataEventType, 'SELFPLAY_ALLOCATION_UPDATED'):
-                    router.unsubscribe(DataEventType.SELFPLAY_ALLOCATION_UPDATED, self._on_selfplay_allocation_updated)
-                # December 2025 Phase 2: Unsubscribe from MODEL_PROMOTED
-                if hasattr(DataEventType, 'MODEL_PROMOTED'):
-                    router.unsubscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
-                # December 2025: Unsubscribe from TIER_PROMOTION
-                if hasattr(DataEventType, 'TIER_PROMOTION'):
-                    router.unsubscribe(DataEventType.TIER_PROMOTION, self._on_tier_promotion)
-                # December 29, 2025: Unsubscribe from CROSSBOARD_PROMOTION
-                if hasattr(DataEventType, 'CROSSBOARD_PROMOTION'):
-                    router.unsubscribe(DataEventType.CROSSBOARD_PROMOTION, self._on_crossboard_promotion)
-                # December 29, 2025: Unsubscribe from CURRICULUM_ADVANCEMENT_NEEDED
-                if hasattr(DataEventType, 'CURRICULUM_ADVANCEMENT_NEEDED'):
-                    router.unsubscribe(DataEventType.CURRICULUM_ADVANCEMENT_NEEDED, self._on_curriculum_advancement_needed)
-                # January 2026 Sprint 10: Unsubscribe from ELO_VELOCITY_CHANGED
-                if hasattr(DataEventType, 'ELO_VELOCITY_CHANGED'):
-                    router.unsubscribe(DataEventType.ELO_VELOCITY_CHANGED, self._on_elo_velocity_changed)
-                # January 2026 Sprint 10: Unsubscribe from CURRICULUM_ADVANCED
-                if hasattr(DataEventType, 'CURRICULUM_ADVANCED'):
-                    router.unsubscribe(DataEventType.CURRICULUM_ADVANCED, self._on_curriculum_advanced)
-                # January 2026 Sprint 10: Unsubscribe from CURRICULUM_PROPAGATE
-                if hasattr(DataEventType, 'CURRICULUM_PROPAGATE'):
-                    router.unsubscribe(DataEventType.CURRICULUM_PROPAGATE, self._on_curriculum_propagate)
-                # January 2026 Sprint 10: Unsubscribe from REGRESSION_DETECTED
-                if hasattr(DataEventType, 'REGRESSION_DETECTED'):
-                    router.unsubscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
-                # January 2026 Sprint 12: Unsubscribe from TRAINING_LOSS_ANOMALY
-                if hasattr(DataEventType, 'TRAINING_LOSS_ANOMALY'):
-                    router.unsubscribe(DataEventType.TRAINING_LOSS_ANOMALY, self._on_loss_anomaly)
-                # January 2026 Sprint 12: Unsubscribe from QUORUM_RECOVERY_STARTED
-                if hasattr(DataEventType, 'QUORUM_RECOVERY_STARTED'):
-                    router.unsubscribe(DataEventType.QUORUM_RECOVERY_STARTED, self._on_quorum_recovery)
-                # Session 17.25: Unsubscribe from CURRICULUM_ROLLBACK
-                if hasattr(DataEventType, 'CURRICULUM_ROLLBACK'):
-                    router.unsubscribe(DataEventType.CURRICULUM_ROLLBACK, self._on_curriculum_rollback)
-                # Jan 2026 P1: Unsubscribe from OPPONENT_DIVERSITY_NEEDED
-                try:
-                    router.unsubscribe("OPPONENT_DIVERSITY_NEEDED", self._on_opponent_diversity_needed)
-                except (AttributeError, TypeError):
-                    pass
+            unsubscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_completed)
+            if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
+                unsubscribe(DataEventType.SELFPLAY_RATE_CHANGED, self._on_selfplay_rate_changed)
+            if hasattr(DataEventType, 'ELO_SIGNIFICANT_CHANGE'):
+                unsubscribe(DataEventType.ELO_SIGNIFICANT_CHANGE, self._on_elo_significant_change)
+            if hasattr(DataEventType, 'SELFPLAY_ALLOCATION_UPDATED'):
+                unsubscribe(DataEventType.SELFPLAY_ALLOCATION_UPDATED, self._on_selfplay_allocation_updated)
+            if hasattr(DataEventType, 'MODEL_PROMOTED'):
+                unsubscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
+            if hasattr(DataEventType, 'TIER_PROMOTION'):
+                unsubscribe(DataEventType.TIER_PROMOTION, self._on_tier_promotion)
+            if hasattr(DataEventType, 'CROSSBOARD_PROMOTION'):
+                unsubscribe(DataEventType.CROSSBOARD_PROMOTION, self._on_crossboard_promotion)
+            if hasattr(DataEventType, 'CURRICULUM_ADVANCEMENT_NEEDED'):
+                unsubscribe(DataEventType.CURRICULUM_ADVANCEMENT_NEEDED, self._on_curriculum_advancement_needed)
+            if hasattr(DataEventType, 'ELO_VELOCITY_CHANGED'):
+                unsubscribe(DataEventType.ELO_VELOCITY_CHANGED, self._on_elo_velocity_changed)
+            if hasattr(DataEventType, 'CURRICULUM_ADVANCED'):
+                unsubscribe(DataEventType.CURRICULUM_ADVANCED, self._on_curriculum_advanced)
+            if hasattr(DataEventType, 'CURRICULUM_PROPAGATE'):
+                unsubscribe(DataEventType.CURRICULUM_PROPAGATE, self._on_curriculum_propagate)
+            if hasattr(DataEventType, 'REGRESSION_DETECTED'):
+                unsubscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
+            if hasattr(DataEventType, 'TRAINING_LOSS_ANOMALY'):
+                unsubscribe(DataEventType.TRAINING_LOSS_ANOMALY, self._on_loss_anomaly)
+            if hasattr(DataEventType, 'QUORUM_RECOVERY_STARTED'):
+                unsubscribe(DataEventType.QUORUM_RECOVERY_STARTED, self._on_quorum_recovery)
+            if hasattr(DataEventType, 'CURRICULUM_ROLLBACK'):
+                unsubscribe(DataEventType.CURRICULUM_ROLLBACK, self._on_curriculum_rollback)
+            try:
+                unsubscribe("OPPONENT_DIVERSITY_NEEDED", self._on_opponent_diversity_needed)
+            except (AttributeError, TypeError):
+                pass
             self._event_subscribed = False
         except (ImportError, AttributeError, TypeError, RuntimeError):
             # ImportError: modules not available
@@ -1219,24 +1197,22 @@ class MomentumToCurriculumBridge:
             boost_factor: Amount to boost exploration (0.1-0.3)
         """
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish_sync
 
-            router = get_router()
-            if router:
-                # Emit exploration boost event for handlers to pick up
-                router.emit(
-                    "EXPLORATION_BOOST",
-                    {
-                        "config_key": config_key,
-                        "boost_factor": 1.0 + boost_factor,  # Convert to multiplier
-                        "source": "loss_anomaly",
-                        "duration_games": 200,  # Shorter duration for anomaly recovery
-                    },
-                )
-                logger.info(
-                    f"[MomentumToCurriculumBridge] Emitted exploration boost for {config_key}: "
-                    f"+{boost_factor*100:.0f}% (loss anomaly recovery)"
-                )
+            publish_sync(
+                "EXPLORATION_BOOST",
+                {
+                    "config_key": config_key,
+                    "boost_factor": 1.0 + boost_factor,  # Convert to multiplier
+                    "source": "loss_anomaly",
+                    "duration_games": 200,  # Shorter duration for anomaly recovery
+                },
+                source="MomentumToCurriculumBridge",
+            )
+            logger.info(
+                f"[MomentumToCurriculumBridge] Emitted exploration boost for {config_key}: "
+                f"+{boost_factor*100:.0f}% (loss anomaly recovery)"
+            )
         except (ImportError, AttributeError) as e:
             logger.debug(f"[MomentumToCurriculumBridge] Could not emit exploration boost: {e}")
 
@@ -2239,15 +2215,10 @@ class PromotionCompletedToCurriculumWatcher:
             return True
 
         try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
-            if router is None:
-                logger.debug("[PromotionCompletedToCurriculumWatcher] Event router not available")
-                return False
+            from app.coordination.event_router import subscribe
 
             # Subscribe to PROMOTION_COMPLETED (string type, as emitted by auto_promotion_daemon)
-            router.subscribe("PROMOTION_COMPLETED", self._on_promotion_completed)
+            subscribe("PROMOTION_COMPLETED", self._on_promotion_completed)
             self._subscribed = True
             logger.info("[PromotionCompletedToCurriculumWatcher] Subscribed to PROMOTION_COMPLETED")
             return True
@@ -2262,11 +2233,9 @@ class PromotionCompletedToCurriculumWatcher:
             return
 
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import unsubscribe
 
-            router = get_router()
-            if router:
-                router.unsubscribe("PROMOTION_COMPLETED", self._on_promotion_completed)
+            unsubscribe("PROMOTION_COMPLETED", self._on_promotion_completed)
             self._subscribed = False
         except (ImportError, AttributeError, TypeError, RuntimeError):
             pass
@@ -2849,13 +2818,10 @@ class QualityToTemperatureWatcher:
             return True
 
         try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
+            from app.coordination.event_router import DataEventType, subscribe
 
-            router = get_router()
-            # P0.6 Dec 2025: Use DataEventType enum for type-safe subscriptions
-            router.subscribe(DataEventType.QUALITY_FEEDBACK_ADJUSTED, self._on_quality_adjusted)
-            router.subscribe(DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_updated)
+            subscribe(DataEventType.QUALITY_FEEDBACK_ADJUSTED, self._on_quality_adjusted)
+            subscribe(DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_updated)
             self._subscribed = True
             logger.info("[QualityToTemperatureWatcher] Subscribed to quality events")
             return True
@@ -2873,13 +2839,10 @@ class QualityToTemperatureWatcher:
             return
 
         try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
+            from app.coordination.event_router import DataEventType, unsubscribe
 
-            router = get_router()
-            # P0.6 Dec 2025: Use DataEventType enum for type-safe unsubscriptions
-            router.unsubscribe(DataEventType.QUALITY_FEEDBACK_ADJUSTED, self._on_quality_adjusted)
-            router.unsubscribe(DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_updated)
+            unsubscribe(DataEventType.QUALITY_FEEDBACK_ADJUSTED, self._on_quality_adjusted)
+            unsubscribe(DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_updated)
             self._subscribed = False
         except (ImportError, AttributeError, TypeError, RuntimeError):
             # ImportError: event_router not available

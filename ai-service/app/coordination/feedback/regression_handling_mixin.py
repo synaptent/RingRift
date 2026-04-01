@@ -66,6 +66,8 @@ def _safe_create_task(coro, context: str = "") -> asyncio.Task | None:
         )
         return task
     except RuntimeError as e:
+        if hasattr(coro, "close"):
+            coro.close()
         logger.debug(f"[RegressionHandling] Could not create task for {context}: {e}")
         return None
 
@@ -293,35 +295,27 @@ class RegressionHandlingMixin:
 
                 # Emit CURRICULUM_ROLLBACK event for downstream consumers
                 try:
-                    from app.coordination.event_router import DataEventType, get_event_bus
+                    from app.coordination.event_router import DataEventType, publish_sync
 
-                    bus = get_event_bus()
-                    if bus:
-                        from app.coordination.event_router import DataEvent
-
-                        event_obj = DataEvent(
-                            event_type=DataEventType.CURRICULUM_ROLLBACK
-                            if hasattr(DataEventType, "CURRICULUM_ROLLBACK")
-                            else DataEventType.CURRICULUM_ADVANCED,
-                            payload={
-                                "config_key": config_key,
-                                "old_tier": old_tier,
-                                "new_tier": new_tier,
-                                "trigger": "regression_detected",
-                                "elo_drop": elo_drop,
-                                "consecutive_regressions": consecutive_count,  # Fixed: was undefined variable
-                                "direction": "rollback",
-                                "source": "RegressionHandlingMixin",
-                            },
-                            source="RegressionHandlingMixin",
-                        )
-                        _safe_create_task(
-                            bus.publish(event_obj),
-                            context=f"emit_curriculum_rollback:{config_key}",
-                        )
-                        logger.info(
-                            f"[RegressionHandling] Emitted CURRICULUM_ROLLBACK for {config_key}"
-                        )
+                    publish_sync(
+                        DataEventType.CURRICULUM_ROLLBACK
+                        if hasattr(DataEventType, "CURRICULUM_ROLLBACK")
+                        else DataEventType.CURRICULUM_ADVANCED,
+                        {
+                            "config_key": config_key,
+                            "old_tier": old_tier,
+                            "new_tier": new_tier,
+                            "trigger": "regression_detected",
+                            "elo_drop": elo_drop,
+                            "consecutive_regressions": consecutive_count,  # Fixed: was undefined variable
+                            "direction": "rollback",
+                            "source": "RegressionHandlingMixin",
+                        },
+                        source="RegressionHandlingMixin",
+                    )
+                    logger.info(
+                        f"[RegressionHandling] Emitted CURRICULUM_ROLLBACK for {config_key}"
+                    )
                 except (AttributeError, TypeError, ImportError, RuntimeError) as emit_err:
                     logger.debug(
                         f"[RegressionHandling] Failed to emit curriculum event: {emit_err}"

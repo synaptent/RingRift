@@ -24,7 +24,26 @@ import time
 from typing import Any
 
 from .event_types import DataEventType, DataEvent
-from .event_bus import get_event_bus
+from .event_bus import get_event_bus as _get_legacy_event_bus
+
+
+def get_event_bus():
+    """Get the event bus without routing active code through deprecated accessors.
+
+    Prefer the non-deprecated compatibility shim exposed by the unified event
+    router. Fall back to the legacy data-event bus during early bootstrap or in
+    older standalone paths where the router layer is not available yet.
+    """
+    try:
+        from app.coordination.event_router import get_event_bus as get_router_event_bus
+
+        bus = get_router_event_bus()
+        if bus is not None:
+            return bus
+    except (ImportError, RuntimeError, AttributeError):
+        pass
+
+    return _get_legacy_event_bus()
 
 
 # Convenience functions for common events
@@ -3059,4 +3078,3 @@ async def emit_parity_failure_rate_changed(
         },
         source=source,
     ))
-

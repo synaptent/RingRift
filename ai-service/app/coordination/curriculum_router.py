@@ -218,12 +218,7 @@ class CurriculumSignalBridge(ABC):
             return False
 
         try:
-            from app.coordination.event_router import DataEventType, get_router
-
-            router = get_router()
-            if router is None:
-                logger.debug(f"[{self.WATCHER_NAME}] Event router not available")
-                return False
+            from app.coordination.event_router import DataEventType, subscribe
 
             # Subscribe to each event type
             for event_type in self.EVENT_TYPES:
@@ -235,7 +230,7 @@ class CurriculumSignalBridge(ABC):
                     except (KeyError, AttributeError):
                         pass  # Use string as-is
 
-                router.subscribe(event_type, self._handle_event)
+                subscribe(event_type, self._handle_event)
 
             self._subscribed = True
             event_names = [
@@ -254,17 +249,15 @@ class CurriculumSignalBridge(ABC):
             return
 
         try:
-            from app.coordination.event_router import DataEventType, get_router
+            from app.coordination.event_router import DataEventType, unsubscribe
 
-            router = get_router()
-            if router:
-                for event_type in self.EVENT_TYPES:
-                    if isinstance(event_type, str):
-                        try:
-                            event_type = DataEventType[event_type]
-                        except (KeyError, AttributeError):
-                            pass
-                    router.unsubscribe(event_type, self._handle_event)
+            for event_type in self.EVENT_TYPES:
+                if isinstance(event_type, str):
+                    try:
+                        event_type = DataEventType[event_type]
+                    except (KeyError, AttributeError):
+                        pass
+                unsubscribe(event_type, self._handle_event)
 
             self._subscribed = False
             logger.info(f"[{self.WATCHER_NAME}] Unsubscribed from events")
@@ -392,11 +385,7 @@ class CurriculumSignalBridge(ABC):
             adjustment: The weight adjustment that was made
         """
         try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
-            if router is None:
-                return
+            from app.coordination.event_router import publish_sync
 
             payload = {
                 "trigger": adjustment.trigger,
@@ -408,7 +397,7 @@ class CurriculumSignalBridge(ABC):
                 **adjustment.details,
             }
 
-            router.publish_sync(
+            publish_sync(
                 "CURRICULUM_REBALANCED",
                 payload,
                 source=self.WATCHER_NAME,

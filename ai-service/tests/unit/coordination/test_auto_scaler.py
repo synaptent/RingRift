@@ -605,6 +605,24 @@ class TestMonitoringAwareAutoScaler:
         scaler = MonitoringAwareAutoScaler(config=config)
         assert scaler.config.max_instances == 100
 
+    def test_subscribe_to_monitoring_events_uses_router_helper(self):
+        """Should subscribe monitoring events through the unified helper."""
+        from app.coordination.event_router import DataEventType
+
+        scaler = MonitoringAwareAutoScaler()
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            result = scaler.subscribe_to_monitoring_events()
+
+        assert result is True
+        assert scaler._event_subscribed is True
+        subscribed = [(call.args[0], call.args[1]) for call in mock_subscribe.call_args_list]
+        assert (DataEventType.RESOURCE_CONSTRAINT, scaler._on_resource_constraint) in subscribed
+        assert (DataEventType.NODE_UNHEALTHY, scaler._on_node_unhealthy) in subscribed
+        assert (DataEventType.P2P_CLUSTER_UNHEALTHY, scaler._on_cluster_unhealthy) in subscribed
+        assert (DataEventType.P2P_CLUSTER_HEALTHY, scaler._on_cluster_healthy) in subscribed
+        assert (DataEventType.HEALTH_ALERT, scaler._on_health_alert) in subscribed
+
 
 # =============================================================================
 # Test ScalingAction Enum

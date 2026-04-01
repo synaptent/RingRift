@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import logging
 import time
+import warnings
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Final
@@ -776,7 +777,9 @@ def collect_quality_metrics_from_bridge() -> bool:
         True if metrics were collected successfully
     """
     try:
-        from app.training.quality_bridge import get_quality_bridge
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            from app.training.quality_bridge import get_quality_bridge
 
         bridge = get_quality_bridge()
         status = bridge.get_status()

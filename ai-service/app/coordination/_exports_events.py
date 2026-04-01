@@ -4,6 +4,8 @@ December 2025: Extracted from __init__.py to improve maintainability.
 This module consolidates all event-related imports (router, emitters, cross-process).
 """
 
+import warnings
+
 # Cross-process event queue exports (via event_router for consolidation)
 from app.coordination.event_router import (
     CrossProcessEvent,
@@ -16,31 +18,36 @@ from app.coordination.event_router import (
     cp_publish as publish_event,
     get_cross_process_queue as get_event_queue,
     reset_cross_process_queue as reset_event_queue,
+    get_stage_event_bus,
     subscribe_process,
+    StageCompletionResult,
+    StageEvent,
 )
 
 # Event Emitters (December 2025 - centralized event emission)
-from app.coordination.event_emitters import (
-    emit_backpressure_activated,
-    emit_backpressure_released,
-    emit_cache_invalidated,
-    emit_evaluation_complete,
-    emit_host_offline,
-    emit_host_online,
-    emit_hyperparameter_updated,
-    emit_node_recovered,
-    emit_optimization_triggered,
-    emit_plateau_detected,
-    emit_promotion_complete,
-    emit_quality_updated,
-    emit_regression_detected,
-    emit_selfplay_complete,
-    emit_sync_complete,
-    emit_task_complete,
-    emit_training_complete,
-    emit_training_complete_sync,
-    emit_training_started,
-)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from app.coordination.event_emitters import (
+        emit_backpressure_activated,
+        emit_backpressure_released,
+        emit_cache_invalidated,
+        emit_evaluation_complete,
+        emit_host_offline,
+        emit_host_online,
+        emit_hyperparameter_updated,
+        emit_node_recovered,
+        emit_optimization_triggered,
+        emit_plateau_detected,
+        emit_promotion_complete,
+        emit_quality_updated,
+        emit_regression_detected,
+        emit_selfplay_complete,
+        emit_sync_complete,
+        emit_task_complete,
+        emit_training_complete,
+        emit_training_complete_sync,
+        emit_training_started,
+    )
 
 # Unified Event Router (December 2025 - single API for all event systems)
 from app.coordination.event_router import (
@@ -62,16 +69,15 @@ from app.coordination.event_router import (
 )
 
 # Stage Events exports (event-driven pipeline orchestration)
-from app.coordination.stage_events import (
-    StageCompletionCallback,
-    StageCompletionResult,
-    StageEvent,
-    StageEventBus,
-    create_pipeline_callbacks,
-    get_event_bus as get_stage_event_bus,
-    register_standard_callbacks,
-    reset_event_bus as reset_stage_event_bus,
-)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from app.coordination.stage_events import (
+        StageCompletionCallback,
+        StageEventBus,
+        create_pipeline_callbacks,
+        register_standard_callbacks,
+        reset_event_bus as reset_stage_event_bus,
+    )
 
 # Integration Bridge (December 2025 - C2 consolidation)
 from app.coordination.integration_bridge import (

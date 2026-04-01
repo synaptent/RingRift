@@ -233,12 +233,11 @@ class ClusterConsolidationDaemon(HandlerBase):
             return
 
         try:
-            from app.coordination.event_router import get_event_bus
+            from app.coordination.event_router import subscribe
             from app.distributed.data_events import DataEventType
 
-            bus = get_event_bus()
-            bus.subscribe(DataEventType.NEW_GAMES_AVAILABLE, self._on_new_games_available)
-            bus.subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
+            subscribe(DataEventType.NEW_GAMES_AVAILABLE, self._on_new_games_available)
+            subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
 
             self._subscribed = True
             logger.info("[ClusterConsolidation] Subscribed to events")
@@ -252,12 +251,11 @@ class ClusterConsolidationDaemon(HandlerBase):
             return
 
         try:
-            from app.coordination.event_router import get_event_bus
+            from app.coordination.event_router import unsubscribe
             from app.distributed.data_events import DataEventType
 
-            bus = get_event_bus()
-            bus.unsubscribe(DataEventType.NEW_GAMES_AVAILABLE, self._on_new_games_available)
-            bus.unsubscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
+            unsubscribe(DataEventType.NEW_GAMES_AVAILABLE, self._on_new_games_available)
+            unsubscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
 
             self._subscribed = False
         except Exception as e:

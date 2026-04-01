@@ -70,11 +70,7 @@ def emit_allocation_updated(
         config_priorities: Optional priority dict for including exploration/curriculum data
     """
     try:
-        from app.coordination.event_router import DataEventType, get_event_bus
-
-        bus = get_event_bus()
-        if bus is None:
-            return
+        from app.coordination.event_router import DataEventType, publish_sync
 
         # Build allocation summary
         if allocation:
@@ -100,7 +96,11 @@ def emit_allocation_updated(
             payload["exploration_boost"] = priority.exploration_boost
             payload["curriculum_weight"] = priority.curriculum_weight
 
-        bus.emit(DataEventType.SELFPLAY_ALLOCATION_UPDATED, payload)
+        publish_sync(
+            DataEventType.SELFPLAY_ALLOCATION_UPDATED,
+            payload,
+            source="allocation_events",
+        )
         logger.debug(
             f"[allocation_events] Emitted SELFPLAY_ALLOCATION_UPDATED: "
             f"trigger={trigger}, games={total_games}, configs={len(configs_allocated)}"
@@ -129,11 +129,7 @@ def emit_starvation_alert(
         tier: Starvation tier ("ULTRA", "EMERGENCY", "CRITICAL")
     """
     try:
-        from app.coordination.event_router import DataEventType, get_event_bus
-
-        bus = get_event_bus()
-        if bus is None:
-            return
+        from app.coordination.event_router import DataEventType, publish_sync
 
         payload = {
             "config_key": config_key,
@@ -144,7 +140,11 @@ def emit_starvation_alert(
             "timestamp": time.time(),
         }
 
-        bus.emit(DataEventType.DATA_STARVATION_CRITICAL, payload)
+        publish_sync(
+            DataEventType.DATA_STARVATION_CRITICAL,
+            payload,
+            source="allocation_events",
+        )
         logger.info(
             f"[allocation_events] Emitted DATA_STARVATION_CRITICAL: "
             f"{config_key} ({tier} tier, {game_count} games)"
@@ -174,11 +174,7 @@ def emit_idle_node_work_injected(
         reason: Why work was injected
     """
     try:
-        from app.coordination.event_router import DataEventType, get_event_bus
-
-        bus = get_event_bus()
-        if bus is None:
-            return
+        from app.coordination.event_router import DataEventType, publish_sync
 
         payload = {
             "node_id": node_id,
@@ -188,7 +184,11 @@ def emit_idle_node_work_injected(
             "timestamp": time.time(),
         }
 
-        bus.emit(DataEventType.IDLE_NODE_WORK_INJECTED, payload)
+        publish_sync(
+            DataEventType.IDLE_NODE_WORK_INJECTED,
+            payload,
+            source="allocation_events",
+        )
         logger.debug(
             f"[allocation_events] Emitted IDLE_NODE_WORK_INJECTED: "
             f"node={node_id}, config={config_key}, games={games}"

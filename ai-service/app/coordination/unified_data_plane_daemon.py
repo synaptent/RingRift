@@ -259,17 +259,15 @@ class EventBridge:
         self._running = True
 
         try:
-            from app.coordination.event_router import get_event_bus
+            from app.coordination.event_router import subscribe
 
-            bus = get_event_bus()
-            if bus:
-                for event_type in self._subscribed_events:
-                    bus.subscribe(event_type, self._handle_event)
-                    self._subscriptions.append(event_type)
+            for event_type in self._subscribed_events:
+                subscribe(event_type, self._handle_event)
+                self._subscriptions.append(event_type)
 
-                logger.info(
-                    f"[EventBridge] Subscribed to {len(self._subscriptions)} events"
-                )
+            logger.info(
+                f"[EventBridge] Subscribed to {len(self._subscriptions)} events"
+            )
         except ImportError:
             logger.warning("[EventBridge] Event router not available")
         except Exception as e:
@@ -280,15 +278,13 @@ class EventBridge:
         self._running = False
 
         try:
-            from app.coordination.event_router import get_event_bus
+            from app.coordination.event_router import unsubscribe
 
-            bus = get_event_bus()
-            if bus:
-                for event_type in self._subscriptions:
-                    try:
-                        bus.unsubscribe(event_type, self._handle_event)
-                    except (ValueError, KeyError, AttributeError):
-                        pass  # Subscription already removed
+            for event_type in self._subscriptions:
+                try:
+                    unsubscribe(event_type, self._handle_event)
+                except (ValueError, KeyError, AttributeError):
+                    pass  # Subscription already removed
         except (ImportError, AttributeError):
             pass  # Event bus not available
 

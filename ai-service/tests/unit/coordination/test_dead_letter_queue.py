@@ -661,6 +661,49 @@ class TestDLQRetryDaemon:
         assert "dlq" in metrics
         assert "running" in metrics
 
+    def test_emit_purge_event_uses_publish_sync(self, dlq: DeadLetterQueue) -> None:
+        """Purge notifications should publish via the sync router surface."""
+        daemon = DLQRetryDaemon(dlq=dlq)
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            daemon._emit_purge_event(3, reason="stale")
+
+        mock_publish_sync.assert_called_once()
+        event_type, payload = mock_publish_sync.call_args.args[:2]
+        assert event_type.value == "dlq_events_purged"
+        assert payload["count"] == 3
+        assert payload["reason"] == "stale"
+        assert mock_publish_sync.call_args.kwargs["source"] == "DLQRetryDaemon"
+
+    def test_emit_stale_events_uses_publish_sync(self, dlq: DeadLetterQueue) -> None:
+        """Stale-event notifications should publish via the sync router surface."""
+        daemon = DLQRetryDaemon(dlq=dlq)
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            daemon._emit_stale_events(5, ["TRAINING_FAILED", "SYNC_FAILED"])
+
+        mock_publish_sync.assert_called_once()
+        event_type, payload = mock_publish_sync.call_args.args[:2]
+        assert event_type.value == "dlq_stale_events"
+        assert payload["stale_count"] == 5
+        assert payload["event_types"] == ["TRAINING_FAILED", "SYNC_FAILED"]
+        assert payload["max_stale_hours"] == daemon.max_stale_hours
+        assert mock_publish_sync.call_args.kwargs["source"] == "DLQRetryDaemon"
+
+    def test_emit_replayed_events_uses_publish_sync(self, dlq: DeadLetterQueue) -> None:
+        """Replay notifications should publish via the sync router surface."""
+        daemon = DLQRetryDaemon(dlq=dlq)
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            daemon._emit_replayed_events(2, ["MODEL_PROMOTED"])
+
+        mock_publish_sync.assert_called_once()
+        event_type, payload = mock_publish_sync.call_args.args[:2]
+        assert event_type.value == "dlq_events_replayed"
+        assert payload["recovered_count"] == 2
+        assert payload["event_types"] == ["MODEL_PROMOTED"]
+        assert mock_publish_sync.call_args.kwargs["source"] == "DLQRetryDaemon"
+
     def test_health_check_not_running(self, dlq: DeadLetterQueue) -> None:
         """Test health check when daemon is not running."""
         daemon = DLQRetryDaemon(dlq=dlq)

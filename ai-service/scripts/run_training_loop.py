@@ -365,7 +365,7 @@ def trigger_manual_pipeline(args: argparse.Namespace) -> bool:
     Returns:
         True if triggered successfully
     """
-    from app.coordination.event_router import get_router, StageEvent
+    from app.coordination.event_router import publish_sync, StageEvent
 
     config_key = f"{args.board_type}_{args.num_players}p"
 
@@ -376,8 +376,7 @@ def trigger_manual_pipeline(args: argparse.Namespace) -> bool:
         return True
 
     # Emit a synthetic SELFPLAY_COMPLETE event to trigger the pipeline
-    router = get_router()
-    router.publish(
+    publish_sync(
         event_type=StageEvent.SELFPLAY_COMPLETE,
         payload={
             "config_key": config_key,
@@ -387,6 +386,7 @@ def trigger_manual_pipeline(args: argparse.Namespace) -> bool:
             "total_samples": 0,
             "source": "manual_trigger",
         },
+        source="manual_trigger",
     )
 
     logger.info("Pipeline triggered")

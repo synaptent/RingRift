@@ -201,16 +201,14 @@ class TestBridgeInitialization:
 class TestSubscription:
     """Tests for event subscription/unsubscription."""
 
-    def test_subscribe_success(self, simple_bridge, mock_router):
+    def test_subscribe_success(self, simple_bridge):
         """Test successful subscription."""
-        with patch(
-            "app.coordination.event_router.get_router", return_value=mock_router
-        ):
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
             result = simple_bridge.subscribe()
 
         assert result is True
         assert simple_bridge._subscribed is True
-        mock_router.subscribe.assert_called()
+        mock_subscribe.assert_called_once_with("TEST_EVENT", simple_bridge._handle_event)
 
     def test_subscribe_already_subscribed(self, simple_bridge, mock_router):
         """Test subscribe when already subscribed returns True."""
@@ -218,10 +216,11 @@ class TestSubscription:
         result = simple_bridge.subscribe()
         assert result is True
 
-    def test_subscribe_no_router(self, simple_bridge):
-        """Test subscribe fails gracefully when router unavailable."""
+    def test_subscribe_handles_router_error(self, simple_bridge):
+        """Test subscribe fails gracefully when helper raises."""
         with patch(
-            "app.coordination.event_router.get_router", return_value=None
+            "app.coordination.event_router.subscribe",
+            side_effect=RuntimeError("router unavailable"),
         ):
             result = simple_bridge.subscribe()
 
@@ -242,17 +241,15 @@ class TestSubscription:
         result = bridge.subscribe()
         assert result is False
 
-    def test_unsubscribe(self, simple_bridge, mock_router):
+    def test_unsubscribe(self, simple_bridge):
         """Test unsubscription."""
         simple_bridge._subscribed = True
 
-        with patch(
-            "app.coordination.event_router.get_router", return_value=mock_router
-        ):
+        with patch("app.coordination.event_router.unsubscribe") as mock_unsubscribe:
             simple_bridge.unsubscribe()
 
         assert simple_bridge._subscribed is False
-        mock_router.unsubscribe.assert_called()
+        mock_unsubscribe.assert_called_once_with("TEST_EVENT", simple_bridge._handle_event)
 
     def test_unsubscribe_when_not_subscribed(self, simple_bridge):
         """Test unsubscribe does nothing when not subscribed."""
@@ -419,7 +416,7 @@ class TestWeightAdjustmentLogic:
 class TestEventEmission:
     """Tests for CURRICULUM_REBALANCED event emission."""
 
-    def test_emit_rebalance_event(self, simple_bridge, mock_router):
+    def test_emit_rebalance_event(self, simple_bridge):
         """Test rebalance event is emitted."""
         adjustment = WeightAdjustment(
             config_key="hex8_2p",
@@ -430,13 +427,11 @@ class TestEventEmission:
             details={"severity": "high"},
         )
 
-        with patch(
-            "app.coordination.event_router.get_router", return_value=mock_router
-        ):
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
             simple_bridge._emit_rebalance_event(adjustment)
 
-        mock_router.publish_sync.assert_called_once()
-        call_args = mock_router.publish_sync.call_args
+        mock_publish_sync.assert_called_once()
+        call_args = mock_publish_sync.call_args
 
         assert call_args[0][0] == "CURRICULUM_REBALANCED"
         payload = call_args[0][1]
@@ -445,7 +440,7 @@ class TestEventEmission:
         assert payload["new_weights"] == {"hex8_2p": 1.2}
         assert payload["severity"] == "high"
 
-    def test_emit_disabled_in_config(self, mock_router, mock_curriculum_feedback):
+    def test_emit_disabled_in_config(self, mock_curriculum_feedback):
         """Test event emission can be disabled via config."""
         config = CurriculumSignalConfig(emit_rebalance_events=False)
         bridge = SimpleBridge(config=config)
@@ -456,12 +451,12 @@ class TestEventEmission:
             "app.training.curriculum_feedback.get_curriculum_feedback",
             return_value=mock_curriculum_feedback,
         ), patch(
-            "app.coordination.event_router.get_router", return_value=mock_router
-        ):
+            "app.coordination.event_router.publish_sync"
+        ) as mock_publish_sync:
             bridge._handle_event(event)
 
         # Event should NOT be emitted
-        mock_router.publish_sync.assert_not_called()
+        mock_publish_sync.assert_not_called()
 
 
 # =============================================================================

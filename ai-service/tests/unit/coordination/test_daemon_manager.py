@@ -10,6 +10,7 @@ long-running background tasks.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -217,9 +218,95 @@ class TestDaemonManagerInit:
         """Default factories should be registered."""
         manager = DaemonManager()
 
-        assert DaemonType.SYNC_COORDINATOR in manager._factories
         assert DaemonType.EVENT_ROUTER in manager._factories
-        assert DaemonType.HEALTH_CHECK in manager._factories
+        assert DaemonType.HEALTH_SERVER in manager._factories
+
+
+class TestDaemonManagerEventEmission:
+    """Focused tests for daemon-manager event delivery paths."""
+
+    def setup_method(self):
+        DaemonManager.reset_instance()
+        reset_daemon_manager()
+
+    @pytest.mark.asyncio
+    async def test_emit_degraded_mode_event_uses_publish_sync(self):
+        """Sync degraded-mode emission should schedule through publish_sync."""
+        manager = DaemonManager()
+        mock_router = MagicMock()
+
+        with patch("app.coordination.event_router.get_router", return_value=mock_router), \
+             patch("asyncio.get_running_loop", return_value=MagicMock()):
+            manager._emit_degraded_mode_event(DaemonType.QUEUE_MONITOR, restart_count=3)
+
+        mock_router.publish_sync.assert_called_once()
+        event_type, payload = mock_router.publish_sync.call_args.args[:2]
+        assert event_type == "daemon.degraded_mode"
+        assert payload["daemon_name"] == DaemonType.QUEUE_MONITOR.value
+        assert payload["restart_count"] == 3
+
+    @pytest.mark.asyncio
+    async def test_emit_circuit_breaker_event_awaits_router_publish(self):
+        """Async circuit-breaker emission should await router.publish."""
+        manager = DaemonManager()
+        mock_router = MagicMock()
+        mock_router.publish = AsyncMock()
+
+        with patch("app.coordination.event_router.get_router", return_value=mock_router):
+            await manager._emit_circuit_breaker_event(7, DaemonType.HEALTH_CHECK)
+
+        mock_router.publish.assert_awaited_once()
+        event_type = mock_router.publish.await_args.args[0]
+        assert event_type == "daemon.cascade_breaker_tripped"
+        payload = mock_router.publish.await_args.args[1]
+        assert payload["restart_count"] == 7
+        assert payload["triggered_by"] == DaemonType.HEALTH_CHECK.value
+        assert "threshold" in payload
+        assert "window_seconds" in payload
+        assert "cooldown_seconds" in payload
+
+    def test_emit_memory_constraint_uses_publish_sync(self):
+        """Memory constraint emission should use sync router publishing."""
+        manager = DaemonManager()
+        published = {}
+
+        def fake_publish_sync(event_type, payload=None, source=""):
+            published["event_type"] = event_type
+            published["payload"] = payload
+            published["source"] = source
+
+        with patch("app.coordination.event_router.publish_sync", side_effect=fake_publish_sync):
+            manager._emit_memory_constraint({"percent": 92.5, "available_gb": 3.2})
+
+        assert published["event_type"].value == "resource_constraint"
+        assert published["payload"]["constraint_type"] == "memory"
+        assert published["payload"]["memory_percent"] == 92.5
+        assert published["payload"]["available_gb"] == 3.2
+        assert published["source"] == "DaemonManager"
+
+    @pytest.mark.asyncio
+    async def test_emit_daemons_ready_awaits_router_publish(self):
+        """Readiness emission should await router.publish instead of dropping the coroutine."""
+        manager = DaemonManager()
+        manager._lifecycle = MagicMock()
+        manager._lifecycle.get_daemon_states.return_value = {
+            DaemonType.EVENT_ROUTER: DaemonState.RUNNING,
+            DaemonType.SELFPLAY_SCHEDULER: DaemonState.RUNNING,
+            DaemonType.FEEDBACK_LOOP: DaemonState.RUNNING,
+            DaemonType.QUEUE_MONITOR: DaemonState.RUNNING,
+        }
+        mock_router = MagicMock()
+        mock_router.publish = AsyncMock()
+
+        with patch("app.coordination.event_router.get_router", return_value=mock_router):
+            await manager._emit_daemons_ready()
+
+        mock_router.publish.assert_awaited_once()
+        event_type, payload = mock_router.publish.await_args.args[:2]
+        assert event_type in {"system.daemons_ready", "all_critical_daemons_ready", "ALL_CRITICAL_DAEMONS_READY"}
+        assert payload["total_ready"] == 4
+        assert payload["critical_ready"] == 3
+        assert payload["fully_ready"] is True
 
 
 # =============================================================================
@@ -2054,19 +2141,29 @@ class TestCheckHealth:
                 await asyncio.sleep(0.1)
 
         manager.register_factory(DaemonType.EVENT_ROUTER, factory)
-        await manager.start(DaemonType.EVENT_ROUTER, wait_for_deps=False)
-
         info = manager._daemons[DaemonType.EVENT_ROUTER]
+        info.state = DaemonState.RUNNING
+        info.task = asyncio.create_task(asyncio.sleep(3600))
         info.instance = UnhealthyDaemon()
-        # Set start_time far in the past to simulate past startup grace period
-        info.start_time = time.time() - 120  # 2 minutes ago (past 60s grace period)
+        info.start_time = time.time() - 120
+        info.startup_grace_period = 0.0
+        manager._check_single_daemon_health = AsyncMock(
+            return_value=(DaemonType.EVENT_ROUTER, {"healthy": False, "message": "Unhealthy"})
+        )
+        manager.stop = AsyncMock()
+        manager.start = AsyncMock()
 
-        await manager._check_health()
+        try:
+            await manager._check_health()
 
-        # Should have recorded error from unhealthy check
-        assert info.last_error is not None or info.restart_count > 0
-
-        await manager.shutdown()
+            # Should record the health failure and attempt a restart.
+            assert info.last_error == "Health check failed: Unhealthy"
+            manager.stop.assert_awaited_once_with(DaemonType.EVENT_ROUTER)
+            manager.start.assert_awaited_once_with(DaemonType.EVENT_ROUTER)
+        finally:
+            info.task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await info.task
 
 
 # =============================================================================

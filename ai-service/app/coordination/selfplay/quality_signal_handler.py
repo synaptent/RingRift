@@ -208,16 +208,18 @@ class SelfplayQualitySignalMixin:
 
                 # Emit a target update event to propagate the boost
                 try:
-                    from app.coordination.event_router import DataEventType, get_event_bus
+                    from app.coordination.event_router import DataEventType, publish_sync
 
-                    bus = get_event_bus()
-                    if bus:
-                        bus.emit(DataEventType.SELFPLAY_TARGET_UPDATED, {
+                    publish_sync(
+                        DataEventType.SELFPLAY_TARGET_UPDATED,
+                        {
                             "config_key": config_key,
                             "priority": "high",
                             "reason": f"training_blocked:{reason}",
                             "exploration_boost": priority.exploration_boost,
-                        })
+                        },
+                        source="selfplay_quality_signal_handler",
+                    )
                 except (ImportError, RuntimeError, AttributeError, TypeError) as emit_err:
                     logger.debug(f"[SelfplayScheduler] Failed to emit target update: {emit_err}")
             else:
@@ -355,7 +357,7 @@ class SelfplayQualitySignalMixin:
         - Regression (need different exploration)
         """
         try:
-            from app.config.coordination_defaults import SelfplayDefaults
+            from app.config.coordination_defaults import SelfplayPriorityWeightDefaults
             from app.coordination.event_utils import extract_config_key
 
             payload = event.payload if hasattr(event, "payload") else event
@@ -365,7 +367,11 @@ class SelfplayQualitySignalMixin:
             epochs_completed = payload.get("epochs_completed", 0)
 
             # Get stale data threshold from config
-            stale_threshold = getattr(SelfplayDefaults, "STALE_DATA_THRESHOLD", STALE_DATA_THRESHOLD)
+            stale_threshold = getattr(
+                SelfplayPriorityWeightDefaults,
+                "STALE_DATA_THRESHOLD",
+                STALE_DATA_THRESHOLD,
+            )
 
             if config_key in self._config_priorities:
                 priority = self._config_priorities[config_key]
@@ -398,20 +404,22 @@ class SelfplayQualitySignalMixin:
 
                 # Emit SELFPLAY_TARGET_UPDATED to trigger immediate selfplay allocation
                 try:
-                    from app.coordination.event_router import DataEventType, get_event_bus
+                    from app.coordination.event_router import DataEventType, publish_sync
 
-                    bus = get_event_bus()
-                    if bus:
-                        bus.emit(DataEventType.SELFPLAY_TARGET_UPDATED, {
+                    publish_sync(
+                        DataEventType.SELFPLAY_TARGET_UPDATED,
+                        {
                             "config_key": config_key,
                             "priority": "urgent",
                             "reason": f"training_early_stopped:{reason}",
                             "exploration_boost": priority.exploration_boost,
                             "curriculum_weight": priority.curriculum_weight,
-                        })
-                        logger.debug(
-                            f"[SelfplayScheduler] Emitted urgent SELFPLAY_TARGET_UPDATED for {config_key}"
-                        )
+                        },
+                        source="selfplay_quality_signal_handler",
+                    )
+                    logger.debug(
+                        f"[SelfplayScheduler] Emitted urgent SELFPLAY_TARGET_UPDATED for {config_key}"
+                    )
                 except (ImportError, RuntimeError, AttributeError, TypeError) as emit_err:
                     logger.debug(f"[SelfplayScheduler] Failed to emit target update: {emit_err}")
             else:

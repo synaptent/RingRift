@@ -234,15 +234,10 @@ class MaintenanceDaemon(HandlerBase):
         disk space warnings never triggered cleanup.
         """
         try:
-            from app.coordination.event_router import DataEventType, get_router
-
-            router = get_router()
-            if router is None:
-                logger.debug("[Maintenance] Event router not available")
-                return
+            from app.coordination.event_router import DataEventType, subscribe
 
             # Subscribe to DISK_SPACE_LOW to trigger cleanup
-            router.subscribe(
+            subscribe(
                 DataEventType.DISK_SPACE_LOW.value,
                 self._on_disk_space_low,
             )

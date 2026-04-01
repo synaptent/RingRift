@@ -233,6 +233,41 @@ class TestRecordTrainingInCurriculum:
         # May or may not increment depending on curriculum_feedback availability
         # At minimum, should not raise
 
+    def test_emit_curriculum_training_feedback_uses_publish_sync(self, handler, monkeypatch):
+        """Training feedback should publish synchronously from sync handler code."""
+        published = {}
+
+        class StubFeedback:
+            weight_min = 0.5
+            weight_max = 2.0
+
+            def __init__(self):
+                self._current_weights = {"hex8_2p": 1.0}
+
+        def fake_publish_sync(event_type, payload=None, source=""):
+            published["event_type"] = event_type
+            published["payload"] = payload
+            published["source"] = source
+
+        monkeypatch.setattr(
+            "app.training.curriculum_feedback.get_curriculum_feedback",
+            lambda: StubFeedback(),
+        )
+        monkeypatch.setattr(
+            "app.coordination.event_router.publish_sync",
+            fake_publish_sync,
+        )
+
+        handler.emit_curriculum_training_feedback(
+            "hex8_2p",
+            policy_accuracy=0.25,
+            value_accuracy=0.6,
+        )
+
+        assert published["source"] == "curriculum_feedback_handler"
+        assert published["payload"]["config"] == "hex8_2p"
+        assert published["payload"]["trigger"] == "training_complete"
+
 
 class TestEventHandlers:
     """Tests for event handlers."""

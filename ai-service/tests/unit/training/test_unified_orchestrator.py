@@ -7,6 +7,8 @@ Tests cover:
 - Factory functions
 """
 
+import importlib
+import warnings
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,6 +19,20 @@ import pytest
 
 class TestOrchestratorConfig:
     """Tests for OrchestratorConfig dataclass."""
+
+    def test_import_does_not_emit_quality_bridge_deprecation_warning(self):
+        """Unified orchestrator import should not warn about internal quality-bridge compatibility."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            module = importlib.import_module("app.training.unified_orchestrator")
+            importlib.reload(module)
+
+        warning_text = [
+            str(w.message)
+            for w in caught
+            if issubclass(w.category, DeprecationWarning)
+        ]
+        assert not any("quality_bridge" in msg for msg in warning_text)
 
     def test_default_values(self):
         """Test default configuration values."""

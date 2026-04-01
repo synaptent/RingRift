@@ -39,7 +39,7 @@ class TestEvaluationConfig:
         assert config.early_stopping_enabled is True
         assert config.early_stopping_confidence == 0.95
         assert config.early_stopping_min_games == 20
-        assert config.max_concurrent_evaluations == 12
+        assert config.max_concurrent_evaluations == 1
         assert config.evaluation_timeout_seconds == 300.0
         assert config.dedup_cooldown_seconds == 30.0
         assert config.max_queue_depth == 200
@@ -254,6 +254,34 @@ class TestBackpressure:
 
         assert daemon.config.backpressure_threshold == 30
         assert daemon.config.backpressure_release_threshold == 10
+
+    def test_emit_backpressure_uses_publish_sync(self):
+        """Backpressure events should publish through the unified router helper."""
+        daemon = EvaluationDaemon()
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            daemon._emit_backpressure(queue_depth=200, activate=True)
+
+        mock_publish_sync.assert_called_once()
+        args, kwargs = mock_publish_sync.call_args
+        assert args[0] == "EVALUATION_BACKPRESSURE"
+        assert args[1]["queue_depth"] == 200
+        assert args[1]["backpressure_active"] is True
+        assert kwargs["source"] == "EvaluationDaemon"
+
+    def test_emit_backpressure_release_uses_publish_sync(self):
+        """Backpressure release should publish through the unified router helper."""
+        daemon = EvaluationDaemon()
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            daemon._emit_backpressure(queue_depth=20, activate=False)
+
+        mock_publish_sync.assert_called_once()
+        args, kwargs = mock_publish_sync.call_args
+        assert args[0] == "EVALUATION_BACKPRESSURE_RELEASED"
+        assert args[1]["queue_depth"] == 20
+        assert args[1]["backpressure_active"] is False
+        assert kwargs["source"] == "EvaluationDaemon"
 
 
 class TestStatusAndHealth:

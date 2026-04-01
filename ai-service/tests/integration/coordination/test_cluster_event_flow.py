@@ -273,10 +273,10 @@ class TestConsolidationEventFlow:
         config = ClusterConsolidationConfig(coordinator_only=False, enabled=True)
         daemon = ClusterConsolidationDaemon(config=config)
 
-        # Mock the event bus getter (imported inside _subscribe_to_events)
+        # Mock the router subscribe helper imported inside _subscribe_to_events.
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
+            "app.coordination.event_router.subscribe",
+            side_effect=mock_event_bus.subscribe,
         ):
             await daemon._subscribe_to_events()
 
@@ -299,8 +299,11 @@ class TestConsolidationEventFlow:
 
         # First subscribe, then unsubscribe
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
+            "app.coordination.event_router.subscribe",
+            side_effect=mock_event_bus.subscribe,
+        ), patch(
+            "app.coordination.event_router.unsubscribe",
+            side_effect=mock_event_bus.unsubscribe,
         ):
             await daemon._subscribe_to_events()
             await daemon._unsubscribe_from_events()
@@ -567,7 +570,7 @@ class TestClusterConsolidationConfig:
 
         assert config.enabled is True
         assert config.cycle_interval_seconds == 300  # 5 minutes
-        assert config.max_concurrent_syncs == 5
+        assert config.max_concurrent_syncs == 1  # Feb 2026: reduced to prevent OOM
         assert config.coordinator_only is True
         assert config.min_moves_for_valid == 5
         assert config.sync_timeout_seconds == 120

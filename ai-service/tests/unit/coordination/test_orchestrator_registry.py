@@ -839,7 +839,11 @@ class TestConvenienceFunctions:
 
     def test_get_registry(self, mock_registry, monkeypatch):
         """Test get_registry returns singleton."""
-        OrchestratorRegistry._instance = mock_registry
+        monkeypatch.setattr(
+            OrchestratorRegistry,
+            "get_instance",
+            classmethod(lambda cls: mock_registry),
+        )
 
         result = get_registry()
 
@@ -847,7 +851,11 @@ class TestConvenienceFunctions:
 
     def test_acquire_orchestrator_role(self, mock_registry, monkeypatch):
         """Test acquire_orchestrator_role convenience function."""
-        OrchestratorRegistry._instance = mock_registry
+        monkeypatch.setattr(
+            OrchestratorRegistry,
+            "get_instance",
+            classmethod(lambda cls: mock_registry),
+        )
 
         result = acquire_orchestrator_role(OrchestratorRole.CLUSTER_ORCHESTRATOR)
 
@@ -858,7 +866,11 @@ class TestConvenienceFunctions:
 
     def test_release_orchestrator_role(self, mock_registry, monkeypatch):
         """Test release_orchestrator_role convenience function."""
-        OrchestratorRegistry._instance = mock_registry
+        monkeypatch.setattr(
+            OrchestratorRegistry,
+            "get_instance",
+            classmethod(lambda cls: mock_registry),
+        )
 
         acquire_orchestrator_role(OrchestratorRole.CLUSTER_ORCHESTRATOR)
         release_orchestrator_role()
@@ -867,7 +879,11 @@ class TestConvenienceFunctions:
 
     def test_is_orchestrator_role_available(self, mock_registry, monkeypatch):
         """Test is_orchestrator_role_available function."""
-        OrchestratorRegistry._instance = mock_registry
+        monkeypatch.setattr(
+            OrchestratorRegistry,
+            "get_instance",
+            classmethod(lambda cls: mock_registry),
+        )
 
         assert is_orchestrator_role_available(OrchestratorRole.CLUSTER_ORCHESTRATOR) is True
 
@@ -880,7 +896,11 @@ class TestConvenienceFunctions:
 
     def test_orchestrator_role_context_manager(self, mock_registry, monkeypatch):
         """Test orchestrator_role context manager."""
-        OrchestratorRegistry._instance = mock_registry
+        monkeypatch.setattr(
+            OrchestratorRegistry,
+            "get_instance",
+            classmethod(lambda cls: mock_registry),
+        )
 
         with orchestrator_role(OrchestratorRole.CLUSTER_ORCHESTRATOR) as registry:
             assert registry._my_role == OrchestratorRole.CLUSTER_ORCHESTRATOR
@@ -890,7 +910,11 @@ class TestConvenienceFunctions:
 
     def test_orchestrator_role_context_manager_failure(self, mock_registry, monkeypatch):
         """Test context manager raises on failed acquisition."""
-        OrchestratorRegistry._instance = mock_registry
+        monkeypatch.setattr(
+            OrchestratorRegistry,
+            "get_instance",
+            classmethod(lambda cls: mock_registry),
+        )
 
         # Acquire the role first
         mock_registry.acquire_role(OrchestratorRole.CLUSTER_ORCHESTRATOR)

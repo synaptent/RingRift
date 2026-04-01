@@ -2383,20 +2383,19 @@ class WorkQueue:
 
         # Emit event for coordination layer
         try:
-            from app.coordination.event_router import get_event_bus
-            from app.core.async_context import fire_and_forget
-            bus = get_event_bus()
-            coro = bus.publish("BACKPRESSURE_ACTIVATED", {
-                "pending_count": pending_count,
-                "trigger": trigger,
-                "soft_limit": BACKPRESSURE_SOFT_LIMIT,
-                "hard_limit": BACKPRESSURE_HARD_LIMIT,
-                "timestamp": time.time(),
-            })
-            try:
-                fire_and_forget(coro)
-            except (RuntimeError, TypeError, AttributeError):
-                coro.close()  # Event loop not available
+            from app.coordination.event_router import publish_sync
+
+            publish_sync(
+                "BACKPRESSURE_ACTIVATED",
+                {
+                    "pending_count": pending_count,
+                    "trigger": trigger,
+                    "soft_limit": BACKPRESSURE_SOFT_LIMIT,
+                    "hard_limit": BACKPRESSURE_HARD_LIMIT,
+                    "timestamp": time.time(),
+                },
+                source="WorkQueue",
+            )
         except ImportError:
             pass  # Event system not available
 
@@ -2414,18 +2413,17 @@ class WorkQueue:
 
         # Emit event for coordination layer
         try:
-            from app.coordination.event_router import get_event_bus
-            from app.core.async_context import fire_and_forget
-            bus = get_event_bus()
-            coro = bus.publish("BACKPRESSURE_RELEASED", {
-                "pending_count": pending_count,
-                "recovery_threshold": BACKPRESSURE_RECOVERY_THRESHOLD,
-                "timestamp": time.time(),
-            })
-            try:
-                fire_and_forget(coro)
-            except (RuntimeError, TypeError, AttributeError):
-                coro.close()  # Event loop not available
+            from app.coordination.event_router import publish_sync
+
+            publish_sync(
+                "BACKPRESSURE_RELEASED",
+                {
+                    "pending_count": pending_count,
+                    "recovery_threshold": BACKPRESSURE_RECOVERY_THRESHOLD,
+                    "timestamp": time.time(),
+                },
+                source="WorkQueue",
+            )
         except ImportError:
             pass  # Event system not available
 
@@ -3137,11 +3135,7 @@ class WorkQueue:
             **extra: Additional payload fields
         """
         try:
-            from app.coordination.event_router import get_event_bus, DataEventType
-
-            bus = get_event_bus()
-            if bus is None:
-                return
+            from app.coordination.event_router import DataEventType, publish_sync
 
             # Map string event types to DataEventType enum
             event_type_map = {
@@ -3168,14 +3162,7 @@ class WorkQueue:
                 **extra,
             }
 
-            # Use fire-and-forget for non-blocking event emission
-            import asyncio
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(bus.publish(typed_event, payload))
-            except RuntimeError:
-                # No running loop - use sync publish
-                bus.publish_sync(typed_event, payload)
+            publish_sync(typed_event, payload, source="WorkQueue")
 
         except ImportError:
             pass  # Event system not available

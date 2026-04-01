@@ -145,9 +145,9 @@ class TestResourceMonitoringCoordinatorInit:
 
     def test_init_default_values(self, coordinator):
         """Test default initialization."""
-        assert coordinator.backpressure_gpu_threshold == 90.0
-        assert coordinator.backpressure_memory_threshold == 85.0
-        assert coordinator.backpressure_disk_threshold == 90.0
+        assert coordinator.backpressure_gpu_threshold == 70.0
+        assert coordinator.backpressure_memory_threshold == 70.0
+        assert coordinator.backpressure_disk_threshold == 75.0
 
     def test_init_custom_values(self):
         """Test custom initialization."""
@@ -159,6 +159,26 @@ class TestResourceMonitoringCoordinatorInit:
         assert coord.backpressure_gpu_threshold == 80.0
         assert coord.backpressure_memory_threshold == 75.0
         assert coord.max_backpressure_history == 100
+
+
+class TestResourceMonitoringCoordinatorSubscriptions:
+    """Tests for event subscription wiring."""
+
+    def test_subscribe_to_events_uses_router_helper(self, coordinator):
+        """Should subscribe resource events through the unified helper."""
+        from app.coordination.event_router import DataEventType
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            result = coordinator.subscribe_to_events()
+
+        assert result is True
+        assert coordinator._subscribed is True
+        subscribed = [(call.args[0], call.args[1]) for call in mock_subscribe.call_args_list]
+        assert (DataEventType.CLUSTER_CAPACITY_CHANGED, coordinator._on_cluster_capacity_changed) in subscribed
+        assert (DataEventType.NODE_CAPACITY_UPDATED, coordinator._on_node_capacity_updated) in subscribed
+        assert (DataEventType.BACKPRESSURE_ACTIVATED, coordinator._on_backpressure_activated) in subscribed
+        assert (DataEventType.RESOURCE_CONSTRAINT, coordinator._on_resource_constraint) in subscribed
+        assert (DataEventType.JOB_PREEMPTED, coordinator._on_job_preempted) in subscribed
 
 
 # =============================================================================

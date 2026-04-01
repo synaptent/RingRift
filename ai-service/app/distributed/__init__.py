@@ -11,6 +11,8 @@ This module provides:
 - Memory profiling and peak tracking utilities
 """
 
+import warnings
+
 from .client import (
     DistributedEvaluator,
     EvaluationStats,
@@ -173,25 +175,30 @@ from .sync_coordinator import (
     sync_models,
     sync_training_data,
 )
-from .sync_orchestrator import (
-    FullSyncResult,
-    SyncOrchestrator,
-    SyncOrchestratorConfig,
-    SyncOrchestratorState,
-    SyncResult,
-    get_sync_orchestrator,
-    reset_sync_orchestrator,
-)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", PendingDeprecationWarning)
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from .sync_orchestrator import (
+        FullSyncResult,
+        SyncOrchestrator,
+        SyncOrchestratorConfig,
+        SyncOrchestratorState,
+        SyncResult,
+        get_sync_orchestrator,
+        reset_sync_orchestrator,
+    )
 from .sync_utils import (
     rsync_directory,
     rsync_file,
     rsync_push_file,
 )
-from .unified_data_sync import (
-    SyncConfig,
-    UnifiedDataSyncService,
-    load_hosts_from_yaml,
-)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from .unified_data_sync import (
+        SyncConfig,
+        UnifiedDataSyncService,
+        load_hosts_from_yaml,
+    )
 
 # Unified data sync components
 from .unified_manifest import (

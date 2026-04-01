@@ -197,18 +197,15 @@ class ResourceMonitoringCoordinator:
             return True
 
         try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType, subscribe
 
             # Use enum directly (router normalizes both enum and .value)
-            router.subscribe(DataEventType.CLUSTER_CAPACITY_CHANGED, self._on_cluster_capacity_changed)
-            router.subscribe(DataEventType.NODE_CAPACITY_UPDATED, self._on_node_capacity_updated)
-            router.subscribe(DataEventType.BACKPRESSURE_ACTIVATED, self._on_backpressure_activated)
-            router.subscribe(DataEventType.BACKPRESSURE_RELEASED, self._on_backpressure_released)
-            router.subscribe(DataEventType.RESOURCE_CONSTRAINT, self._on_resource_constraint)
-            router.subscribe(DataEventType.JOB_PREEMPTED, self._on_job_preempted)
+            subscribe(DataEventType.CLUSTER_CAPACITY_CHANGED, self._on_cluster_capacity_changed)
+            subscribe(DataEventType.NODE_CAPACITY_UPDATED, self._on_node_capacity_updated)
+            subscribe(DataEventType.BACKPRESSURE_ACTIVATED, self._on_backpressure_activated)
+            subscribe(DataEventType.BACKPRESSURE_RELEASED, self._on_backpressure_released)
+            subscribe(DataEventType.RESOURCE_CONSTRAINT, self._on_resource_constraint)
+            subscribe(DataEventType.JOB_PREEMPTED, self._on_job_preempted)
 
             self._subscribed = True
             logger.info("[ResourceMonitoringCoordinator] Subscribed to resource events")
@@ -645,18 +642,19 @@ class ResourceMonitoringCoordinator:
             # Emit event
             try:
                 from app.coordination.event_router import emit_cluster_capacity_changed
-                from app.core.async_context import fire_and_forget
 
-                fire_and_forget(
-                    emit_cluster_capacity_changed(
-                        total_gpus=total_gpus,
-                        available_gpus=available_gpus,
-                        total_nodes=total_nodes,
-                        healthy_nodes=healthy_nodes,
-                        source="resource_monitoring_coordinator",
-                    ),
-                    name="emit_cluster_capacity_changed",
+                coro = emit_cluster_capacity_changed(
+                    total_gpus=total_gpus,
+                    available_gpus=available_gpus,
+                    total_nodes=total_nodes,
+                    healthy_nodes=healthy_nodes,
+                    source="resource_monitoring_coordinator",
                 )
+                try:
+                    fire_and_forget(coro, name="emit_cluster_capacity_changed")
+                except RuntimeError:
+                    coro.close()
+                    raise
 
                 self._last_emitted_capacity = {
                     "total_gpus": total_gpus,
@@ -680,17 +678,18 @@ class ResourceMonitoringCoordinator:
             # Capacity dropped below minimum - emit CAPACITY_LOW
             try:
                 from app.distributed.data_events import emit_capacity_low
-                from app.core.async_context import fire_and_forget
 
-                fire_and_forget(
-                    emit_capacity_low(
-                        current_gpus=available_gpus,
-                        min_gpus=min_gpus,
-                        provider="",  # Cluster-wide
-                        source="resource_monitoring_coordinator",
-                    ),
-                    name="emit_capacity_low",
+                coro = emit_capacity_low(
+                    current_gpus=available_gpus,
+                    min_gpus=min_gpus,
+                    provider="",  # Cluster-wide
+                    source="resource_monitoring_coordinator",
                 )
+                try:
+                    fire_and_forget(coro, name="emit_capacity_low")
+                except RuntimeError:
+                    coro.close()
+                    raise
                 self._capacity_was_low = True
                 logger.warning(
                     f"[ResourceMonitoringCoordinator] CAPACITY_LOW: "
@@ -704,16 +703,17 @@ class ResourceMonitoringCoordinator:
             # Capacity restored above minimum - emit CAPACITY_RESTORED
             try:
                 from app.distributed.data_events import emit_capacity_restored
-                from app.core.async_context import fire_and_forget
 
-                fire_and_forget(
-                    emit_capacity_restored(
-                        current_gpus=available_gpus,
-                        min_gpus=min_gpus,
-                        source="resource_monitoring_coordinator",
-                    ),
-                    name="emit_capacity_restored",
+                coro = emit_capacity_restored(
+                    current_gpus=available_gpus,
+                    min_gpus=min_gpus,
+                    source="resource_monitoring_coordinator",
                 )
+                try:
+                    fire_and_forget(coro, name="emit_capacity_restored")
+                except RuntimeError:
+                    coro.close()
+                    raise
                 self._capacity_was_low = False
                 logger.info(
                     f"[ResourceMonitoringCoordinator] CAPACITY_RESTORED: "

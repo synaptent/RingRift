@@ -46,6 +46,7 @@ import os
 import threading
 import time
 import uuid
+import warnings
 from collections import Counter, deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -98,11 +99,12 @@ try:
         emit_training_early_stopped,
         emit_training_loss_anomaly,
         emit_training_loss_trend,
-        get_event_bus as get_data_event_bus,
     )
+    import app.distributed.data_events.event_bus as _data_event_bus_module
     HAS_DATA_EVENTS = True
 except ImportError:
     HAS_DATA_EVENTS = False
+    _data_event_bus_module = None
     DataEventType = None
     DataEvent = None
     EventBus = None
@@ -132,15 +134,18 @@ except ImportError:
     emit_training_loss_trend = None
 
 try:
-    from app.coordination.stage_events import (
-        StageCompletionResult,
-        StageEvent,
-        get_event_bus as get_stage_event_bus,
-    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        import app.coordination.stage_events as _stage_events_module
+
+    StageCompletionResult = _stage_events_module.StageCompletionResult
+    StageEvent = _stage_events_module.StageEvent
     HAS_STAGE_EVENTS = True
 except ImportError:
     HAS_STAGE_EVENTS = False
+    _stage_events_module = None
     StageEvent = None
+    StageCompletionResult = None
 
 try:
     from app.coordination.cross_process_events import (
@@ -255,6 +260,30 @@ def _validate_event_subsystems() -> None:
 
 # Validate at module load time
 _validate_event_subsystems()
+
+
+def _get_data_event_bus_internal() -> "EventBus | None":
+    """Return the data-event singleton without using deprecated public getters."""
+    if not HAS_DATA_EVENTS or _data_event_bus_module is None:
+        return None
+
+    bus = _data_event_bus_module._event_bus
+    if bus is None:
+        bus = _data_event_bus_module.EventBus()
+        _data_event_bus_module._event_bus = bus
+    return bus
+
+
+def _get_stage_event_bus_internal() -> "StageEventBus | None":
+    """Return the stage-event singleton without using deprecated public getters."""
+    if not HAS_STAGE_EVENTS or _stage_events_module is None:
+        return None
+
+    bus = _stage_events_module._global_event_bus
+    if bus is None:
+        bus = _stage_events_module.StageEventBus()
+        _stage_events_module._global_event_bus = bus
+    return bus
 
 
 class EventSource(str, Enum):
@@ -431,18 +460,20 @@ class UnifiedEventRouter:
         """Set up bidirectional bridges with existing event buses."""
         # Bridge: StageEventBus -> Router
         if HAS_STAGE_EVENTS:
-            stage_bus = get_stage_event_bus()
-            for event in StageEvent:
-                stage_bus.subscribe(event, self._on_stage_event)
+            stage_bus = _get_stage_event_bus_internal()
+            if stage_bus is not None:
+                for event in StageEvent:
+                    stage_bus.subscribe(event, self._on_stage_event)
 
         # Bridge: DataEventBus -> Router (December 27, 2025)
         # This ensures events published via emit_host_offline(), emit_leader_elected(), etc.
         # reach coordinators that subscribe via get_router().subscribe()
         if HAS_DATA_EVENTS:
-            data_bus = get_data_event_bus()
-            # Subscribe to all DataEventType values
-            for event_type in DataEventType:
-                data_bus.subscribe(event_type, self._on_data_bus_event)
+            data_bus = _get_data_event_bus_internal()
+            if data_bus is not None:
+                # Subscribe to all DataEventType values
+                for event_type in DataEventType:
+                    data_bus.subscribe(event_type, self._on_data_bus_event)
 
         # Bridge: CrossProcessEventQueue -> Router (via poller)
         # Use stable=True to resume from last acked event on restart
@@ -730,12 +761,16 @@ class UnifiedEventRouter:
         # Route to EventBus (data_events.py) after direct dispatch. Don't bridge to
         # cross-process again; the router handles that separately below.
         if data_event is not None:
-            await get_data_event_bus().publish(data_event, bridge_cross_process=False)
+            data_bus = _get_data_event_bus_internal()
+            if data_bus is not None:
+                await data_bus.publish(data_event, bridge_cross_process=False)
 
         # Route to StageEventBus (stage_events.py) after direct dispatch so the
         # stage-bus bridge does not double-deliver to router subscribers.
         if stage_result is not None:
-            await get_stage_event_bus().emit(stage_result)
+            stage_bus = _get_stage_event_bus_internal()
+            if stage_bus is not None:
+                await stage_bus.emit(stage_result)
 
         # Route to CrossProcessEventQueue
         if route_to_cross_process and HAS_CROSS_PROCESS:
@@ -1889,6 +1924,11 @@ def get_router() -> UnifiedEventRouter:
         return _router
 
 
+def get_event_router() -> UnifiedEventRouter:
+    """Backward-compatible alias for the global event router singleton."""
+    return get_router()
+
+
 def reset_router() -> None:
     """Reset the global router (for testing)."""
     global _router, _router_runtime_loop
@@ -2141,6 +2181,7 @@ __all__ = [  # noqa: RUF022
     # Exceptions (Phase 5.1 - Dec 29, 2025)
     "EventHandlerTimeout",
     # Global access
+    "get_event_router",
     "get_router",
     # Convenience functions
     "publish",
@@ -2220,9 +2261,12 @@ __all__ = [  # noqa: RUF022
 # Many files import: from app.coordination.event_router import get_event_bus
 def get_event_bus() -> "EventBus | None":
     """Get the data event bus (re-exported for backward compatibility)."""
-    if HAS_DATA_EVENTS:
-        return get_data_event_bus()
-    return None
+    return _get_data_event_bus_internal()
+
+
+def get_stage_event_bus() -> "StageEventBus | None":
+    """Get the stage event bus without routing through deprecated compatibility APIs."""
+    return _get_stage_event_bus_internal()
 
 
 # =============================================================================

@@ -259,6 +259,184 @@ class TestSelfplaySchedulerEventHandling:
         assert scheduler._elo_velocity.get("hex8_2p") == 25.0
         assert scheduler._elo_velocity.get("nonexistent") is None
 
+    def test_training_blocked_by_quality_uses_publish_sync(self):
+        """Blocked training should trigger a sync selfplay target update."""
+        scheduler = get_selfplay_scheduler()
+        scheduler._config_priorities["hex8_2p"] = ConfigPriority(
+            config_key="hex8_2p",
+            exploration_boost=1.0,
+        )
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "reason": "stale_data",
+            "data_age_hours": 12.0,
+        }
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            scheduler._on_training_blocked_by_quality(event)
+
+        mock_publish_sync.assert_called_once()
+        event_type, payload = mock_publish_sync.call_args.args[:2]
+        assert event_type.value == "selfplay_target_updated"
+        assert payload["config_key"] == "hex8_2p"
+        assert payload["priority"] == "high"
+        assert payload["reason"] == "training_blocked:stale_data"
+        assert payload["exploration_boost"] == 1.5
+        assert mock_publish_sync.call_args.kwargs["source"] == "selfplay_quality_signal_handler"
+
+    def test_training_early_stopped_uses_publish_sync(self):
+        """Early-stopped training should trigger an urgent sync target update."""
+        scheduler = get_selfplay_scheduler()
+        scheduler._config_priorities["hex8_2p"] = ConfigPriority(
+            config_key="hex8_2p",
+            exploration_boost=1.0,
+            curriculum_weight=1.0,
+            staleness_hours=0.0,
+        )
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "reason": "plateau",
+            "final_loss": 0.42,
+            "epochs_completed": 4,
+        }
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            scheduler._on_training_early_stopped(event)
+
+        mock_publish_sync.assert_called_once()
+        event_type, payload = mock_publish_sync.call_args.args[:2]
+        assert event_type.value == "selfplay_target_updated"
+        assert payload["config_key"] == "hex8_2p"
+        assert payload["priority"] == "urgent"
+        assert payload["reason"] == "training_early_stopped:plateau"
+        assert payload["exploration_boost"] == 1.3
+        assert payload["curriculum_weight"] == 1.3
+        assert mock_publish_sync.call_args.kwargs["source"] == "selfplay_quality_signal_handler"
+
+    def test_elo_velocity_changed_uses_publish_sync_for_rate_and_target(self):
+        """Velocity changes should publish both rate and target updates via router."""
+        scheduler = get_selfplay_scheduler()
+        scheduler._config_priorities["hex8_2p"] = ConfigPriority(
+            config_key="hex8_2p",
+            momentum_multiplier=1.0,
+            exploration_boost=1.0,
+        )
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "velocity": 8.0,
+            "previous_velocity": 4.0,
+            "trend": "accelerating",
+        }
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            scheduler._on_elo_velocity_changed(event)
+
+        rate_call = next(
+            call for call in mock_publish_sync.call_args_list
+            if call.args[0].value == "selfplay_rate_changed"
+        )
+        target_call = next(
+            call for call in mock_publish_sync.call_args_list
+            if call.args[0].value == "selfplay_target_updated"
+        )
+        assert rate_call.args[0].value == "selfplay_rate_changed"
+        assert rate_call.args[1]["config_key"] == "hex8_2p"
+        assert rate_call.args[1]["change_percent"] == pytest.approx(20.0)
+        assert rate_call.kwargs["source"] == "selfplay_velocity_mixin"
+        assert target_call.args[0].value == "selfplay_target_updated"
+        assert target_call.args[1]["reason"] == "velocity_changed:accelerating"
+        assert target_call.args[1]["momentum_multiplier"] == pytest.approx(1.2)
+        assert target_call.kwargs["source"] == "selfplay_velocity_mixin"
+
+    def test_exploration_boost_uses_publish_sync(self):
+        """Anomaly-driven exploration boosts should publish sync target updates."""
+        scheduler = get_selfplay_scheduler()
+        scheduler._config_priorities["hex8_2p"] = ConfigPriority(
+            config_key="hex8_2p",
+            exploration_boost=1.0,
+        )
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "boost_factor": 1.4,
+            "reason": "regression_detected",
+            "anomaly_count": 3,
+        }
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            scheduler._on_exploration_boost(event)
+
+        target_call = next(
+            call for call in mock_publish_sync.call_args_list
+            if call.args[0].value == "selfplay_target_updated"
+        )
+        event_type, payload = target_call.args[:2]
+        assert event_type.value == "selfplay_target_updated"
+        assert payload["config_key"] == "hex8_2p"
+        assert payload["priority"] == "high"
+        assert payload["exploration_boost"] == 1.4
+        assert payload["anomaly_count"] == 3
+        assert target_call.kwargs["source"] == "selfplay_velocity_mixin"
+
+    def test_exploration_adjusted_uses_publish_sync(self):
+        """Quality-driven exploration adjustments should publish sync target updates."""
+        scheduler = get_selfplay_scheduler()
+        scheduler._config_priorities["hex8_2p"] = ConfigPriority(
+            config_key="hex8_2p",
+            exploration_boost=1.0,
+        )
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "hex8_2p",
+            "quality_score": 0.3,
+            "trend": "declining",
+            "position_difficulty": "harder",
+            "mcts_budget_multiplier": 1.5,
+            "exploration_temp_boost": 0.2,
+        }
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            scheduler._on_exploration_adjusted(event)
+
+        mock_publish_sync.assert_called_once()
+        event_type, payload = mock_publish_sync.call_args.args[:2]
+        assert event_type.value == "selfplay_target_updated"
+        assert payload["config_key"] == "hex8_2p"
+        assert payload["priority"] == "high"
+        assert payload["reason"] == "quality_exploration:declining"
+        assert payload["exploration_boost"] == pytest.approx(1.4)
+        assert payload["quality_score"] == 0.3
+        assert mock_publish_sync.call_args.kwargs["source"] == "selfplay_velocity_mixin"
+
+    def test_decay_expired_boosts_uses_publish_sync(self):
+        """Expired exploration boosts should publish sync reset events."""
+        scheduler = get_selfplay_scheduler()
+        scheduler._config_priorities["hex8_2p"] = ConfigPriority(
+            config_key="hex8_2p",
+            exploration_boost=1.6,
+            exploration_boost_expires_at=1.0,
+        )
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            decayed = scheduler._decay_expired_boosts(now=2.0)
+
+        assert decayed == 1
+        mock_publish_sync.assert_called_once()
+        event_type, payload = mock_publish_sync.call_args.args[:2]
+        assert event_type.value == "selfplay_target_updated"
+        assert payload["config_key"] == "hex8_2p"
+        assert payload["reason"] == "exploration_boost_expired"
+        assert payload["exploration_boost"] == 1.0
+        assert mock_publish_sync.call_args.kwargs["source"] == "selfplay_velocity_mixin"
+
 
 class TestSelfplaySchedulerDynamicWeights:
     """Test dynamic weight computation based on cluster state."""

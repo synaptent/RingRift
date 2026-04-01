@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import time
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -192,7 +193,9 @@ class TrainingDataCoordinator(SingletonMixin):
         """Lazily get QualityBridge instance."""
         if self._quality_bridge is None and self._config.enable_quality_scoring:
             try:
-                from app.training.quality_bridge import get_quality_bridge
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore", DeprecationWarning)
+                    from app.training.quality_bridge import get_quality_bridge
                 self._quality_bridge = get_quality_bridge()
                 logger.debug("QualityBridge initialized")
             except ImportError:

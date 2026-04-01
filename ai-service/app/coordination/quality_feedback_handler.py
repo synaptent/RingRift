@@ -79,6 +79,8 @@ def _safe_create_task(coro, context: str = "") -> asyncio.Task | None:
         task.add_done_callback(lambda t: _handle_task_error(t, context))
         return task
     except RuntimeError as e:
+        if hasattr(coro, "close"):
+            coro.close()
         logger.debug(f"[QualityFeedbackHandler] Could not create task for {context}: {e}")
         return None
 
@@ -273,17 +275,16 @@ class QualityFeedbackHandler(HandlerBase):
 
             priority = "high" if reason in ("training_loss_anomaly", "training_loss_degrading") else "normal"
 
-            try:
-                _safe_create_task(
-                    emit_quality_check_requested(
-                        config_key=config_key,
-                        reason=reason,
-                        source="QualityFeedbackHandler",
-                        priority=priority,
-                    ),
-                    context=f"emit_quality_check_requested:{config_key}",
-                )
-            except RuntimeError:
+            task = _safe_create_task(
+                emit_quality_check_requested(
+                    config_key=config_key,
+                    reason=reason,
+                    source="QualityFeedbackHandler",
+                    priority=priority,
+                ),
+                context=f"emit_quality_check_requested:{config_key}",
+            )
+            if task is None:
                 asyncio.run(emit_quality_check_requested(
                     config_key=config_key,
                     reason=reason,
@@ -452,7 +453,7 @@ class QualityFeedbackHandler(HandlerBase):
             # Trigger more selfplay to improve quality
             if HAS_SELFPLAY_EVENTS and emit_selfplay_target_updated:
                 try:
-                    _safe_create_task(
+                    task = _safe_create_task(
                         emit_selfplay_target_updated(
                             config_key=config,
                             target_games=1000,
@@ -462,6 +463,16 @@ class QualityFeedbackHandler(HandlerBase):
                         ),
                         "selfplay_target_emit"
                     )
+                    if task is None:
+                        asyncio.run(
+                            emit_selfplay_target_updated(
+                                config_key=config,
+                                target_games=1000,
+                                reason="quality_check_failed",
+                                priority=8,
+                                source="quality_feedback_handler",
+                            )
+                        )
                 except (ImportError, AttributeError) as e:
                     logger.debug(f"[QualityFeedbackHandler] Emitter not available: {e}")
                 except (TypeError, ValueError) as e:
@@ -507,7 +518,7 @@ class QualityFeedbackHandler(HandlerBase):
             # Trigger exploration boost for poor quality
             if HAS_EXPLORATION_EVENTS and emit_exploration_boost:
                 try:
-                    _safe_create_task(
+                    task = _safe_create_task(
                         emit_exploration_boost(
                             config_key=config_key,
                             boost_factor=1.5,
@@ -516,6 +527,15 @@ class QualityFeedbackHandler(HandlerBase):
                         ),
                         "quality_exploration_boost_emit"
                     )
+                    if task is None:
+                        asyncio.run(
+                            emit_exploration_boost(
+                                config_key=config_key,
+                                boost_factor=1.5,
+                                reason=f"quality_feedback_{adjustment_type}",
+                                source="quality_feedback_handler",
+                            )
+                        )
                 except (ImportError, RuntimeError, asyncio.CancelledError) as e:
                     logger.debug(f"Failed to emit exploration boost: {e}")
         else:
@@ -614,8 +634,7 @@ class QualityFeedbackHandler(HandlerBase):
         - Declining trend → boost exploration temperature
         """
         try:
-            from app.coordination.event_router import DataEventType, get_event_bus
-            from app.distributed.data_events import DataEvent
+            from app.coordination.event_router import DataEventType, publish_sync
 
             # Determine exploration adjustments based on quality
             if quality_score < 0.5:
@@ -654,13 +673,11 @@ class QualityFeedbackHandler(HandlerBase):
                     "timestamp": time.time(),
                 }
 
-                bus = get_event_bus()
-                event = DataEvent(
-                    event_type=DataEventType.EXPLORATION_ADJUSTED,
-                    payload=payload,
+                publish_sync(
+                    DataEventType.EXPLORATION_ADJUSTED,
+                    payload,
                     source="QualityFeedbackHandler",
                 )
-                bus.publish(event)
 
                 logger.info(
                     f"[QualityFeedbackHandler] Exploration adjusted for {config_key}: "

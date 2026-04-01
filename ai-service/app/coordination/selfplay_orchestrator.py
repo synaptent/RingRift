@@ -787,14 +787,18 @@ class SelfplayOrchestrator:
 
                 router = get_event_router()
                 if router:
-                    router.publish(DataEventType.QUALITY_FEEDBACK_ADJUSTED.value, {
-                        "config_key": config_key,
-                        "quality_score": quality_score,
-                        "adjustment_type": adjustment_type,
-                        "budget_multiplier": multiplier,
-                        "old_multiplier": old_multiplier,
-                        "timestamp": time.time(),
-                    })
+                    router.publish_sync(
+                        DataEventType.QUALITY_FEEDBACK_ADJUSTED.value,
+                        {
+                            "config_key": config_key,
+                            "quality_score": quality_score,
+                            "adjustment_type": adjustment_type,
+                            "budget_multiplier": multiplier,
+                            "old_multiplier": old_multiplier,
+                            "timestamp": time.time(),
+                        },
+                        "SelfplayOrchestrator",
+                    )
             except Exception as e:
                 logger.debug(f"Failed to emit QUALITY_FEEDBACK_ADJUSTED: {e}")
 
@@ -815,16 +819,20 @@ class SelfplayOrchestrator:
                 if router:
                     # Emit CURRICULUM_REBALANCED to trigger immediate scheduler update
                     # Use boost_allocation to prioritize this config for selfplay
-                    router.publish("CURRICULUM_REBALANCED", {
-                        "trigger": "quality_critical_drop",
-                        "changed_configs": [config_key],
-                        "action": "boost_allocation",
-                        "factor": 1.5,  # 50% boost for critical quality drops
-                        "quality_drop": quality_drop,
-                        "new_quality": quality_score,
-                        "old_quality": old_quality,
-                        "timestamp": time.time(),
-                    })
+                    router.publish_sync(
+                        "CURRICULUM_REBALANCED",
+                        {
+                            "trigger": "quality_critical_drop",
+                            "changed_configs": [config_key],
+                            "action": "boost_allocation",
+                            "factor": 1.5,  # 50% boost for critical quality drops
+                            "quality_drop": quality_drop,
+                            "new_quality": quality_score,
+                            "old_quality": old_quality,
+                            "timestamp": time.time(),
+                        },
+                        "SelfplayOrchestrator",
+                    )
             except Exception as e:
                 logger.debug(f"Failed to emit CURRICULUM_REBALANCED for quality drop: {e}")
 
@@ -1114,7 +1122,7 @@ class SelfplayOrchestrator:
             from app.coordination.event_router import get_router
 
             router = get_router()
-            router.publish(
+            router.publish_sync(
                 "REQUEST_SELFPLAY_QUEUED",
                 {
                     "task_id": task_id,
@@ -1146,7 +1154,7 @@ class SelfplayOrchestrator:
             from app.coordination.event_router import get_router
 
             router = get_router()
-            router.publish(
+            router.publish_sync(
                 "SELFPLAY_BUDGET_ADJUSTED",
                 {
                     "config_key": config_key,
@@ -1175,7 +1183,7 @@ class SelfplayOrchestrator:
             from app.coordination.event_router import get_router
 
             router = get_router()
-            router.publish(
+            router.publish_sync(
                 "CURRICULUM_ALLOCATION_CHANGED",
                 {
                     "changed_weights": changed_weights,

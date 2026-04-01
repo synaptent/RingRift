@@ -6,7 +6,7 @@ Tests the state machine infrastructure used across coordination components.
 from __future__ import annotations
 
 from enum import Enum
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -554,6 +554,23 @@ class TestStateMachineBase:
         success = machine.transition_to(AllocationState.RUNNING, force=True)
         assert success is True
         assert machine.state == AllocationState.RUNNING
+
+    def test_transition_emits_state_change_via_publish_sync(self):
+        """Should emit state changes through the unified router helper."""
+        machine = PriorityStateMachine()
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            success = machine.transition_to(PriorityState.HIGH, reason="test")
+
+        assert success is True
+        mock_publish_sync.assert_called_once()
+        args, kwargs = mock_publish_sync.call_args
+        assert args[0] == "STATE_CHANGED"
+        assert args[1]["machine"] == "PriorityStateMachine"
+        assert args[1]["from_state"] == "NORMAL"
+        assert args[1]["to_state"] == "HIGH"
+        assert args[1]["reason"] == "test"
+        assert kwargs["source"] == "state_machine_base"
 
 
 # =============================================================================

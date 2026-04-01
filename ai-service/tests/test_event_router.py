@@ -7,6 +7,7 @@ Tests the event routing layer that consolidates:
 """
 
 import asyncio
+import warnings
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -16,7 +17,9 @@ from app.coordination.event_router import (
     EventSource,
     RouterEvent,
     UnifiedEventRouter,
+    get_event_bus,
     get_router,
+    get_stage_event_bus,
     publish,
     publish_sync,
     reset_router,
@@ -357,6 +360,26 @@ class TestModuleLevelFunctions:
         result = unsubscribe("test", callback)
 
         assert result is True
+
+    def test_get_event_bus_does_not_warn(self):
+        """Compatibility bus accessor should not route through deprecated getter warnings."""
+        reset_router()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            bus = get_event_bus()
+
+        assert bus is not None
+        assert not [w for w in caught if issubclass(w.category, DeprecationWarning)]
+
+    def test_get_stage_event_bus_does_not_warn(self):
+        """Stage bus accessor should not route through deprecated getter warnings."""
+        reset_router()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            bus = get_stage_event_bus()
+
+        assert bus is not None
+        assert not [w for w in caught if issubclass(w.category, DeprecationWarning)]
 
 
 class TestCallbackErrorHandling:

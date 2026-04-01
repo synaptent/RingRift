@@ -1029,7 +1029,7 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 from app.coordination.event_router import get_router
 
                 router = get_router()
-                router.publish(
+                router.publish_sync(
                     "daemon.degraded_mode",
                     {
                         "daemon_name": daemon_type.value,
@@ -1358,7 +1358,7 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             from app.coordination.event_router import get_router
 
             router = get_router()
-            router.publish(
+            await router.publish(
                 "daemon.cascade_breaker_tripped",
                 {
                     "restart_count": restart_count,
@@ -1405,7 +1405,7 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                     from app.coordination.event_router import get_router
 
                     router = get_router()
-                    router.publish(
+                    await router.publish(
                         "daemon.cascade_recovery_complete",
                         {
                             "restarted_daemons": restarted,
@@ -2459,7 +2459,7 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
 
             # Check if ALL_CRITICAL_DAEMONS_READY event type exists
             if hasattr(DataEventType, "ALL_CRITICAL_DAEMONS_READY"):
-                router.publish(
+                await router.publish(
                     DataEventType.ALL_CRITICAL_DAEMONS_READY.value,
                     event_data,
                 )
@@ -2469,7 +2469,7 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 )
             else:
                 # Fallback: emit as generic SYSTEM_STATUS event
-                router.publish(
+                await router.publish(
                     "system.daemons_ready",
                     event_data,
                 )
@@ -3084,15 +3084,11 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         December 2025: Integrated with event system for pipeline coordination.
         """
         try:
-            from app.coordination.event_router import (
-                DataEvent,
-                DataEventType,
-                get_event_bus,
-            )
+            from app.coordination.event_router import DataEventType, publish_sync
 
-            event = DataEvent(
-                event_type=DataEventType.RESOURCE_CONSTRAINT,
-                payload={
+            publish_sync(
+                DataEventType.RESOURCE_CONSTRAINT,
+                {
                     "constraint_type": "memory",
                     "memory_percent": memory_info.get("percent", 0),
                     "available_gb": memory_info.get("available_gb", 0),
@@ -3100,16 +3096,6 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 },
                 source="DaemonManager",
             )
-
-            import asyncio
-
-            bus = get_event_bus()
-            try:
-                loop = asyncio.get_running_loop()
-                fire_and_forget(bus.publish(event), name="memory_constraint_event")
-            except RuntimeError:
-                # Not in async context - cannot emit event
-                logger.debug("Skipping memory constraint event - not in async context")
         except Exception as e:
             logger.debug(f"Best-effort memory constraint event failed: {e}")
 

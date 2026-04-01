@@ -77,6 +77,53 @@ class TestMomentumToCurriculumBridge:
             assert isinstance(key, str)
             assert isinstance(value, float)
 
+    def test_subscribe_to_events_uses_router_helpers(self):
+        """Main bridge should subscribe through unified router helpers."""
+        bridge = MomentumToCurriculumBridge()
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            result = bridge._subscribe_to_events()
+
+        assert result is True
+        assert bridge._event_subscribed is True
+        subscribed = [(call.args[0], call.args[1]) for call in mock_subscribe.call_args_list]
+        from app.coordination.event_router import DataEventType
+        assert (DataEventType.EVALUATION_COMPLETED, bridge._on_evaluation_completed) in subscribed
+        if hasattr(DataEventType, "SELFPLAY_RATE_CHANGED"):
+            assert (DataEventType.SELFPLAY_RATE_CHANGED, bridge._on_selfplay_rate_changed) in subscribed
+        if hasattr(DataEventType, "REGRESSION_DETECTED"):
+            assert (DataEventType.REGRESSION_DETECTED, bridge._on_regression_detected) in subscribed
+        assert ("OPPONENT_DIVERSITY_NEEDED", bridge._on_opponent_diversity_needed) in subscribed
+
+    def test_unsubscribe_from_events_uses_router_helpers(self):
+        """Main bridge should unsubscribe through unified router helpers."""
+        bridge = MomentumToCurriculumBridge()
+        bridge._event_subscribed = True
+
+        with patch("app.coordination.event_router.unsubscribe") as mock_unsubscribe:
+            bridge._unsubscribe_from_events()
+
+        from app.coordination.event_router import DataEventType
+        unsubscribed = [(call.args[0], call.args[1]) for call in mock_unsubscribe.call_args_list]
+        assert (DataEventType.EVALUATION_COMPLETED, bridge._on_evaluation_completed) in unsubscribed
+        assert ("OPPONENT_DIVERSITY_NEEDED", bridge._on_opponent_diversity_needed) in unsubscribed
+        assert bridge._event_subscribed is False
+
+    def test_apply_exploration_boost_for_anomaly_uses_publish_sync(self):
+        """Loss anomaly boost should publish through the unified router helper."""
+        bridge = MomentumToCurriculumBridge()
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            bridge._apply_exploration_boost_for_anomaly("hex8_2p", 0.2)
+
+        mock_publish_sync.assert_called_once()
+        args, kwargs = mock_publish_sync.call_args
+        assert args[0] == "EXPLORATION_BOOST"
+        assert args[1]["config_key"] == "hex8_2p"
+        assert args[1]["boost_factor"] == pytest.approx(1.2)
+        assert args[1]["source"] == "loss_anomaly"
+        assert kwargs["source"] == "MomentumToCurriculumBridge"
+
 
 # =============================================================================
 # PFSPWeaknessWatcher Tests
@@ -208,6 +255,36 @@ class TestQualityToTemperatureWatcher:
 
         # Original should be unchanged
         assert watcher._quality_boosts["hex8_2p"] == 1.3
+
+    def test_subscribe_uses_router_helpers(self):
+        """Quality watcher should subscribe through unified router helpers."""
+        from app.coordination.event_router import DataEventType
+
+        watcher = QualityToTemperatureWatcher()
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            result = watcher.subscribe()
+
+        assert result is True
+        assert watcher._subscribed is True
+        subscribed = [(call.args[0], call.args[1]) for call in mock_subscribe.call_args_list]
+        assert (DataEventType.QUALITY_FEEDBACK_ADJUSTED, watcher._on_quality_adjusted) in subscribed
+        assert (DataEventType.QUALITY_SCORE_UPDATED, watcher._on_quality_updated) in subscribed
+
+    def test_unsubscribe_uses_router_helpers(self):
+        """Quality watcher should unsubscribe through unified router helpers."""
+        from app.coordination.event_router import DataEventType
+
+        watcher = QualityToTemperatureWatcher()
+        watcher._subscribed = True
+
+        with patch("app.coordination.event_router.unsubscribe") as mock_unsubscribe:
+            watcher.unsubscribe()
+
+        unsubscribed = [(call.args[0], call.args[1]) for call in mock_unsubscribe.call_args_list]
+        assert (DataEventType.QUALITY_FEEDBACK_ADJUSTED, watcher._on_quality_adjusted) in unsubscribed
+        assert (DataEventType.QUALITY_SCORE_UPDATED, watcher._on_quality_updated) in unsubscribed
+        assert watcher._subscribed is False
 
 
 # =============================================================================
@@ -537,6 +614,32 @@ class TestPromotionCompletedToCurriculumWatcher:
         # Will likely return False since event router may not be fully initialized
         result = watcher.subscribe()
         assert isinstance(result, bool)
+
+    def test_subscribe_uses_router_helpers(self):
+        """Promotion-completed watcher should subscribe through unified router helpers."""
+        from app.coordination.curriculum_integration import PromotionCompletedToCurriculumWatcher
+
+        watcher = PromotionCompletedToCurriculumWatcher()
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            result = watcher.subscribe()
+
+        assert result is True
+        assert watcher._subscribed is True
+        mock_subscribe.assert_called_once_with("PROMOTION_COMPLETED", watcher._on_promotion_completed)
+
+    def test_unsubscribe_uses_router_helpers(self):
+        """Promotion-completed watcher should unsubscribe through unified router helpers."""
+        from app.coordination.curriculum_integration import PromotionCompletedToCurriculumWatcher
+
+        watcher = PromotionCompletedToCurriculumWatcher()
+        watcher._subscribed = True
+
+        with patch("app.coordination.event_router.unsubscribe") as mock_unsubscribe:
+            watcher.unsubscribe()
+
+        mock_unsubscribe.assert_called_once_with("PROMOTION_COMPLETED", watcher._on_promotion_completed)
+        assert watcher._subscribed is False
 
     def test_health_check_returns_result(self):
         """health_check returns a HealthCheckResult."""

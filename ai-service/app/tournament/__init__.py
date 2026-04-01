@@ -27,6 +27,7 @@ For more control, use the lower-level APIs:
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import TYPE_CHECKING, Any, Union
 
 if TYPE_CHECKING:
@@ -57,13 +58,19 @@ from .orchestrator import (
 from .runner import MatchResult, TournamentResults, TournamentRunner
 from .recording import TournamentRecordingOptions
 from .scheduler import Match, MatchStatus, RoundRobinScheduler, SwissScheduler, TournamentScheduler
-from .unified_elo_db import (
-    EloDatabase,
-    MatchRecord,
-    UnifiedEloRating,
-    get_elo_database,
-    reset_elo_database,
-)
+with warnings.catch_warnings():
+    warnings.filterwarnings(
+        "ignore",
+        message="unified_elo_db is deprecated since 2025-12.*",
+        category=DeprecationWarning,
+    )
+    from .unified_elo_db import (
+        EloDatabase,
+        MatchRecord,
+        UnifiedEloRating,
+        get_elo_database,
+        reset_elo_database,
+    )
 
 # Composite ELO System (Sprint 1-5)
 from .composite_gauntlet import (

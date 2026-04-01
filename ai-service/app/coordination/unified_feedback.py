@@ -300,36 +300,31 @@ class UnifiedFeedbackOrchestrator:
             return
 
         try:
-            from app.coordination.event_router import DataEventType, get_event_bus
-
-            bus = get_event_bus()
-            if bus is None:
-                logger.warning("[UnifiedFeedbackOrchestrator] Event bus not available")
-                return
+            from app.coordination.event_router import DataEventType, subscribe
 
             # Core pipeline events
-            bus.subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
-            bus.subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
-            bus.subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_complete)
-            bus.subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_complete)
+            subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
+            subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
+            subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_complete)
+            subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_complete)
 
             # Quality & anomaly events
-            bus.subscribe(DataEventType.TRAINING_LOSS_ANOMALY, self._on_loss_anomaly)
-            bus.subscribe(DataEventType.QUALITY_DEGRADED, self._on_quality_degraded)
-            bus.subscribe(DataEventType.PLATEAU_DETECTED, self._on_plateau_detected)
-            bus.subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
+            subscribe(DataEventType.TRAINING_LOSS_ANOMALY, self._on_loss_anomaly)
+            subscribe(DataEventType.QUALITY_DEGRADED, self._on_quality_degraded)
+            subscribe(DataEventType.PLATEAU_DETECTED, self._on_plateau_detected)
+            subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
 
             # Data freshness events
-            bus.subscribe(DataEventType.DATA_FRESH, self._on_data_fresh)
-            bus.subscribe(DataEventType.DATA_STALE, self._on_data_stale)
+            subscribe(DataEventType.DATA_FRESH, self._on_data_fresh)
+            subscribe(DataEventType.DATA_STALE, self._on_data_stale)
 
             # Elo momentum events
             if hasattr(DataEventType, "ELO_VELOCITY_CHANGED"):
-                bus.subscribe(DataEventType.ELO_VELOCITY_CHANGED, self._on_elo_velocity_changed)
+                subscribe(DataEventType.ELO_VELOCITY_CHANGED, self._on_elo_velocity_changed)
 
             # Quality penalty events
             if hasattr(DataEventType, "QUALITY_PENALTY_APPLIED"):
-                bus.subscribe(DataEventType.QUALITY_PENALTY_APPLIED, self._on_quality_penalty)
+                subscribe(DataEventType.QUALITY_PENALTY_APPLIED, self._on_quality_penalty)
 
             logger.info("[UnifiedFeedbackOrchestrator] Subscribed to events")
 
@@ -346,26 +341,24 @@ class UnifiedFeedbackOrchestrator:
             return
 
         try:
-            from app.coordination.event_router import DataEventType, get_event_bus
+            from app.coordination.event_router import DataEventType, unsubscribe
 
-            bus = get_event_bus()
-            if bus:
-                bus.unsubscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
-                bus.unsubscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
-                bus.unsubscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_complete)
-                bus.unsubscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_complete)
-                bus.unsubscribe(DataEventType.TRAINING_LOSS_ANOMALY, self._on_loss_anomaly)
-                bus.unsubscribe(DataEventType.QUALITY_DEGRADED, self._on_quality_degraded)
-                bus.unsubscribe(DataEventType.PLATEAU_DETECTED, self._on_plateau_detected)
-                bus.unsubscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
-                bus.unsubscribe(DataEventType.DATA_FRESH, self._on_data_fresh)
-                bus.unsubscribe(DataEventType.DATA_STALE, self._on_data_stale)
+            unsubscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
+            unsubscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
+            unsubscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_complete)
+            unsubscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_complete)
+            unsubscribe(DataEventType.TRAINING_LOSS_ANOMALY, self._on_loss_anomaly)
+            unsubscribe(DataEventType.QUALITY_DEGRADED, self._on_quality_degraded)
+            unsubscribe(DataEventType.PLATEAU_DETECTED, self._on_plateau_detected)
+            unsubscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
+            unsubscribe(DataEventType.DATA_FRESH, self._on_data_fresh)
+            unsubscribe(DataEventType.DATA_STALE, self._on_data_stale)
 
-                if hasattr(DataEventType, "ELO_VELOCITY_CHANGED"):
-                    bus.unsubscribe(DataEventType.ELO_VELOCITY_CHANGED, self._on_elo_velocity_changed)
+            if hasattr(DataEventType, "ELO_VELOCITY_CHANGED"):
+                unsubscribe(DataEventType.ELO_VELOCITY_CHANGED, self._on_elo_velocity_changed)
 
-                if hasattr(DataEventType, "QUALITY_PENALTY_APPLIED"):
-                    bus.unsubscribe(DataEventType.QUALITY_PENALTY_APPLIED, self._on_quality_penalty)
+            if hasattr(DataEventType, "QUALITY_PENALTY_APPLIED"):
+                unsubscribe(DataEventType.QUALITY_PENALTY_APPLIED, self._on_quality_penalty)
 
             self._subscribed = False
 

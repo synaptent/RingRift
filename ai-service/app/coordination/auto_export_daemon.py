@@ -1481,31 +1481,30 @@ class AutoExportDaemon(HandlerBase):
     ) -> None:
         """Emit NPZ_EXPORT_STARTED event."""
         try:
-            from app.coordination.event_router import (
-                StageCompletionResult,
-                StageEvent,
-                get_stage_event_bus,
-            )
+            from app.coordination.event_emission_helpers import safe_emit_event_async
 
             # Dec 30, 2025: Use consolidated parse_config_key utility
             parsed = parse_config_key(config_key)
             board_type = parsed.board_type if parsed else config_key
             num_players = parsed.num_players if parsed else 2
 
-            bus = get_stage_event_bus()
-            await bus.emit(
-                StageCompletionResult(
-                    event=StageEvent.NPZ_EXPORT_STARTED,
-                    success=True,
-                    iteration=0,  # Export is not iteration-based
-                    timestamp=datetime.datetime.now().isoformat(),
-                    board_type=board_type,
-                    num_players=num_players,
-                    metadata={
+            await safe_emit_event_async(
+                "NPZ_EXPORT_STARTED",
+                {
+                    "config": config_key,
+                    "config_key": config_key,
+                    "games_pending": games_pending,
+                    "success": True,
+                    "iteration": 0,
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "metadata": {
                         "config": config_key,
                         "games_pending": games_pending,
                     },
-                )
+                },
+                context="AutoExportDaemon",
             )
             logger.debug(f"[AutoExportDaemon] Emitted NPZ_EXPORT_STARTED for {config_key}")
 
@@ -1517,11 +1516,7 @@ class AutoExportDaemon(HandlerBase):
     ) -> None:
         """Emit NPZ_EXPORT_COMPLETE event."""
         try:
-            from app.coordination.event_router import (
-                StageCompletionResult,
-                StageEvent,
-                get_stage_event_bus,
-            )
+            from app.coordination.event_emission_helpers import safe_emit_event_async
 
             state = self._export_states.get(config_key)
             # Dec 30, 2025: Use consolidated parse_config_key utility
@@ -1529,22 +1524,29 @@ class AutoExportDaemon(HandlerBase):
             board_type = parsed.board_type if parsed else config_key
             num_players = parsed.num_players if parsed else 2
 
-            bus = get_stage_event_bus()
-            await bus.emit(
-                StageCompletionResult(
-                    event=StageEvent.NPZ_EXPORT_COMPLETE,
-                    success=True,
-                    iteration=0,  # Export is not iteration-based
-                    timestamp=datetime.datetime.now().isoformat(),
-                    board_type=board_type,
-                    num_players=num_players,
-                    metadata={
+            await safe_emit_event_async(
+                "NPZ_EXPORT_COMPLETE",
+                {
+                    "config": config_key,
+                    "config_key": config_key,
+                    "output_path": str(output_path),
+                    "samples": samples,
+                    "samples_exported": samples,
+                    "games_exported": state.last_export_games if state else 0,
+                    "success": True,
+                    "iteration": 0,
+                    "timestamp": datetime.datetime.now().isoformat(),
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "metadata": {
                         "config": config_key,
                         "output_path": str(output_path),
                         "samples": samples,
+                        "samples_exported": samples,
                         "games_exported": state.last_export_games if state else 0,
                     },
-                )
+                },
+                context="AutoExportDaemon",
             )
             logger.debug(f"[AutoExportDaemon] Emitted NPZ_EXPORT_COMPLETE for {config_key}")
 

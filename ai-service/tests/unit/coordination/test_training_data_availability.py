@@ -199,32 +199,36 @@ class TestCheckGpuAvailability:
 
     async def test_returns_false_on_timeout(self):
         """Should return False on timeout."""
-        mock_process = AsyncMock()
-        mock_process.communicate = AsyncMock(side_effect=asyncio.TimeoutError)
+        class TimeoutProcess:
+            async def communicate(self):
+                raise asyncio.TimeoutError
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_process):
-            with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
-                result = await check_gpu_availability()
-                assert result is False
+        with patch("asyncio.create_subprocess_exec", return_value=TimeoutProcess()):
+            result = await check_gpu_availability()
+            assert result is False
 
     async def test_returns_true_when_gpu_idle(self):
         """Should return True when at least one GPU is idle."""
-        mock_process = AsyncMock()
-        mock_process.returncode = 0
-        mock_process.communicate = AsyncMock(return_value=(b"75\n30\n", b""))
+        class IdleProcess:
+            returncode = 0
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_process):
+            async def communicate(self):
+                return (b"75\n30\n", b"")
+
+        with patch("asyncio.create_subprocess_exec", return_value=IdleProcess()):
             result = await check_gpu_availability(gpu_idle_threshold_percent=50.0)
 
         assert result is True
 
     async def test_returns_false_when_all_gpus_busy(self):
         """Should return False when all GPUs exceed the idle threshold."""
-        mock_process = AsyncMock()
-        mock_process.returncode = 0
-        mock_process.communicate = AsyncMock(return_value=(b"75\n65\n", b""))
+        class BusyProcess:
+            returncode = 0
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_process):
+            async def communicate(self):
+                return (b"75\n65\n", b"")
+
+        with patch("asyncio.create_subprocess_exec", return_value=BusyProcess()):
             result = await check_gpu_availability(gpu_idle_threshold_percent=50.0)
 
         assert result is False
@@ -235,11 +239,13 @@ class TestCheckGpuAvailability:
         When nvidia-smi returns non-numeric output, the function should
         fail closed rather than assuming GPU availability.
         """
-        mock_process = AsyncMock()
-        mock_process.returncode = 1  # Non-zero return code
-        mock_process.communicate = AsyncMock(return_value=(b"", b"error"))
+        class ErrorProcess:
+            returncode = 1
 
-        with patch("asyncio.create_subprocess_exec", return_value=mock_process):
+            async def communicate(self):
+                return (b"", b"error")
+
+        with patch("asyncio.create_subprocess_exec", return_value=ErrorProcess()):
             result = await check_gpu_availability()
             assert result is False
 
@@ -250,10 +256,15 @@ class TestCheckClusterAvailability:
 
     async def test_returns_false_on_timeout(self):
         """Should return False on timeout."""
+        class TimeoutSession:
+            async def __aenter__(self):
+                raise asyncio.TimeoutError
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
         with patch("aiohttp.ClientSession") as mock_session:
-            mock_session.return_value.__aenter__ = AsyncMock(
-                side_effect=asyncio.TimeoutError
-            )
+            mock_session.return_value = TimeoutSession()
             result = await check_cluster_availability()
             assert result is False
 
@@ -267,28 +278,42 @@ class TestCheckClusterAvailability:
 
     async def test_returns_false_on_connection_error(self):
         """Should return False on connection error."""
-        with patch("aiohttp.ClientSession") as mock_session:
-            mock_get = AsyncMock()
-            mock_get.__aenter__ = AsyncMock(side_effect=ConnectionError)
-            mock_session_ctx = AsyncMock()
-            mock_session_ctx.get = MagicMock(return_value=mock_get)
-            mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_session_ctx)
-            mock_session.return_value.__aexit__ = AsyncMock()
+        class FailingRequest:
+            async def __aenter__(self):
+                raise ConnectionError
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+        class FakeSession:
+            def get(self, *_args, **_kwargs):
+                return FailingRequest()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+        with patch("aiohttp.ClientSession", return_value=FakeSession()):
 
             result = await check_cluster_availability()
             assert result is False
 
     async def test_returns_false_on_no_alive_peers(self):
         """Should return False when no alive peers."""
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value={"alive_peers": 0})
 
         with patch("aiohttp.ClientSession") as mock_session:
-            mock_ctx = AsyncMock()
-            mock_ctx.get = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_response), __aexit__=AsyncMock()))
+            mock_request = MagicMock()
+            mock_request.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_request.__aexit__ = AsyncMock(return_value=None)
+            mock_ctx = MagicMock()
+            mock_ctx.get = MagicMock(return_value=mock_request)
             mock_session.return_value.__aenter__ = AsyncMock(return_value=mock_ctx)
-            mock_session.return_value.__aexit__ = AsyncMock()
+            mock_session.return_value.__aexit__ = AsyncMock(return_value=None)
 
             result = await check_cluster_availability()
             assert result is False
@@ -326,47 +351,71 @@ class TestDataAvailabilityCheckerAsync:
         """check_gpu_availability should delegate with config threshold."""
         config = DataAvailabilityConfig(gpu_idle_threshold_percent=30.0)
         checker = DataAvailabilityChecker(config)
+        calls: list[float] = []
+
+        async def fake_check(threshold: float) -> bool:
+            calls.append(threshold)
+            return True
 
         with patch(
             "app.coordination.training_data_availability.check_gpu_availability",
-            new_callable=AsyncMock,
-            return_value=True,
-        ) as mock_check:
+            new=fake_check,
+        ):
             result = await checker.check_gpu_availability()
             assert result is True
-            mock_check.assert_called_once_with(30.0)
+            assert calls == [30.0]
 
     async def test_check_cluster_availability_delegates(self):
         """check_cluster_availability should delegate with config timeout."""
         config = DataAvailabilityConfig(cluster_availability_timeout_seconds=10.0)
         checker = DataAvailabilityChecker(config)
+        calls: list[float] = []
+
+        async def fake_check(timeout_seconds: float) -> bool:
+            calls.append(timeout_seconds)
+            return True
 
         with patch(
             "app.coordination.training_data_availability.check_cluster_availability",
-            new_callable=AsyncMock,
-            return_value=True,
-        ) as mock_check:
+            new=fake_check,
+        ):
             result = await checker.check_cluster_availability()
             assert result is True
-            mock_check.assert_called_once_with(10.0)
+            assert calls == [10.0]
 
     async def test_ensure_fresh_data_local_only_mode_exists(self):
         """ensure_fresh_data in local-only mode should return True if NPZ exists."""
         config = DataAvailabilityConfig(local_only_mode=True)
         checker = DataAvailabilityChecker(config)
 
-        with patch("pathlib.Path.exists", return_value=True):
-            result = await checker.ensure_fresh_data("hex8", 2)
-            assert result is True
+        with tempfile.TemporaryDirectory() as tmpdir:
+            training_dir = Path(tmpdir) / "data" / "training"
+            training_dir.mkdir(parents=True)
+            (training_dir / "hex8_2p.npz").touch()
+
+            cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                result = await checker.ensure_fresh_data("hex8", 2)
+            finally:
+                os.chdir(cwd)
+
+        assert result is True
 
     async def test_ensure_fresh_data_local_only_mode_missing(self):
         """ensure_fresh_data in local-only mode should return False if NPZ missing."""
         config = DataAvailabilityConfig(local_only_mode=True)
         checker = DataAvailabilityChecker(config)
 
-        with patch("pathlib.Path.exists", return_value=False):
-            result = await checker.ensure_fresh_data("hex8", 2)
-            assert result is False
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                result = await checker.ensure_fresh_data("hex8", 2)
+            finally:
+                os.chdir(cwd)
+
+        assert result is False
 
     async def test_ensure_fresh_data_uses_freshness_checker(self):
         """ensure_fresh_data should use DataFreshnessChecker when not local-only.

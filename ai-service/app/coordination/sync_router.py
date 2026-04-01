@@ -1940,7 +1940,7 @@ class SyncRouter:
             from app.coordination.event_router import get_router
 
             router = get_router()
-            router.publish(
+            await router.publish(
                 "SYNC_CAPACITY_REFRESHED",
                 {
                     "change_type": change_type,
@@ -1963,18 +1963,13 @@ class SyncRouter:
     ) -> None:
         """Emit a sync routing decision event."""
         try:
-            from app.coordination.event_router import (
-                DataEvent,
-                DataEventType,
-                get_event_bus,
-            )
+            from app.coordination.event_router import DataEventType, get_router
 
-            # Dec 2025: Explicit null check before publish
-            bus = get_event_bus()
-            if bus is not None:
-                await bus.publish(DataEvent(
-                    event_type=DataEventType.SYNC_REQUEST.value,
-                    payload={
+            router = get_router()
+            if router is not None:
+                await router.publish(
+                    DataEventType.SYNC_REQUEST,
+                    {
                         "source": source,
                         "targets": targets,
                         "data_type": data_type.value,
@@ -1982,7 +1977,7 @@ class SyncRouter:
                         "router": "SyncRouter",
                     },
                     source="SyncRouter",
-                ))
+                )
 
         except (ImportError, RuntimeError, OSError, AttributeError) as e:
             # Event emission infrastructure errors

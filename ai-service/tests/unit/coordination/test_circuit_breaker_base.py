@@ -748,6 +748,48 @@ class TestCircuitBreakerCallback:
         # Callback was called despite error
         callback.assert_called_once()
 
+    def test_state_change_event_uses_publish_sync(self) -> None:
+        """State change event emission should use sync router publish."""
+        from app.coordination.circuit_breaker_base import OperationCircuitBreaker
+
+        config = CircuitConfig(operation_type="ssh", jitter_factor=0.0)
+        cb = OperationCircuitBreaker(config=config)
+        published = {}
+
+        def fake_publish_sync(event_type, payload=None, source=""):
+            published["event_type"] = event_type
+            published["payload"] = payload
+            published["source"] = source
+
+        with patch("app.coordination.event_router.publish_sync", side_effect=fake_publish_sync):
+            cb._emit_state_change_event("node-1", CircuitState.CLOSED, CircuitState.OPEN)
+
+        assert published["event_type"] == "circuit_breaker_opened"
+        assert published["payload"]["target"] == "node-1"
+        assert published["payload"]["new_state"] == "open"
+        assert published["source"] == "circuit_breaker_base"
+
+    def test_escalation_event_uses_publish_sync(self) -> None:
+        """Escalation event emission should use sync router publish."""
+        from app.coordination.circuit_breaker_base import OperationCircuitBreaker
+
+        config = CircuitConfig(operation_type="ssh", jitter_factor=0.0)
+        cb = OperationCircuitBreaker(config=config)
+        published = {}
+
+        def fake_publish_sync(event_type, payload=None, source=""):
+            published["event_type"] = event_type
+            published["payload"] = payload
+            published["source"] = source
+
+        with patch("app.coordination.event_router.publish_sync", side_effect=fake_publish_sync):
+            cb._emit_escalation_event("node-1", old_tier=1, new_tier=2, consecutive_opens=3)
+
+        assert published["event_type"] == "escalation_tier_changed"
+        assert published["payload"]["target"] == "node-1"
+        assert published["payload"]["new_tier"] == 2
+        assert published["source"] == "circuit_breaker_base"
+
 
 # =============================================================================
 # CircuitBreakerBase tests - Preemptive failures

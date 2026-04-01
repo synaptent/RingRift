@@ -479,3 +479,34 @@ class TestModuleFunctions:
         checkpoint_games(host="vast-12345", games_generated=100, games_synced=50)
         evacuation_id = request_evacuation("vast-12345")
         assert evacuation_id > 0
+
+
+class TestEmergencySyncEvents:
+    """Tests for emergency sync event emission."""
+
+    def test_record_emergency_sync_uses_publish_sync(self, tmp_path: Path):
+        """Should emit completion through the unified router helper."""
+        from app.coordination.ephemeral_data_guard import EphemeralDataGuard
+
+        EphemeralDataGuard.reset_instance()
+        guard = EphemeralDataGuard(db_path=tmp_path / "ephemeral_guard.db")
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            guard.record_emergency_sync(
+                host="vast-12345",
+                files_synced=3,
+                files_failed=1,
+                files_skipped=2,
+            )
+
+        mock_publish_sync.assert_called_once()
+        args, kwargs = mock_publish_sync.call_args
+        assert args[0] == "EMERGENCY_SYNC_COMPLETED"
+        assert args[1]["host"] == "vast-12345"
+        assert args[1]["files_synced"] == 3
+        assert args[1]["files_failed"] == 1
+        assert args[1]["files_skipped"] == 2
+        assert args[1]["success"] is False
+        assert kwargs["source"] == "ephemeral_data_guard"
+
+        EphemeralDataGuard.reset_instance()

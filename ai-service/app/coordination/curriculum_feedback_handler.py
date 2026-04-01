@@ -65,6 +65,8 @@ def _safe_create_task(coro, context: str = "") -> asyncio.Task | None:
         task.add_done_callback(lambda t: _handle_task_error(t, context))
         return task
     except RuntimeError as e:
+        if hasattr(coro, "close"):
+            coro.close()
         logger.debug(f"[CurriculumFeedbackHandler] Could not create task for {context}: {e}")
         return None
 
@@ -335,7 +337,7 @@ class CurriculumFeedbackHandler(HandlerBase):
             value_accuracy: Value head accuracy
         """
         try:
-            from app.coordination.event_router import DataEvent, DataEventType, get_event_bus
+            from app.coordination.event_router import DataEventType, publish_sync
             from app.training.curriculum_feedback import get_curriculum_feedback
 
             feedback = get_curriculum_feedback()
@@ -363,11 +365,10 @@ class CurriculumFeedbackHandler(HandlerBase):
                     f"policy_acc={policy_accuracy:.2%} → weight {current_weight:.2f} → {new_weight:.2f}"
                 )
 
-            # Emit CURRICULUM_REBALANCED event for downstream listeners
-            bus = get_event_bus()
-            event = DataEvent(
-                event_type=DataEventType.CURRICULUM_REBALANCED,
-                payload={
+            # Emit CURRICULUM_REBALANCED event for downstream listeners.
+            publish_sync(
+                DataEventType.CURRICULUM_REBALANCED,
+                {
                     "config": config_key,
                     "trigger": "training_complete",
                     "policy_accuracy": policy_accuracy,
@@ -378,11 +379,6 @@ class CurriculumFeedbackHandler(HandlerBase):
                 },
                 source="curriculum_feedback_handler",
             )
-
-            try:
-                _safe_create_task(bus.publish(event), "curriculum_event_publish")
-            except RuntimeError:
-                asyncio.run(bus.publish(event))
 
             logger.debug("[CurriculumFeedbackHandler] Emitted CURRICULUM_REBALANCED (training_complete)")
 

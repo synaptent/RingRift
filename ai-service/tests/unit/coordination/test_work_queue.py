@@ -261,6 +261,65 @@ class TestWorkQueue:
         assert queue.items["test"].status == WorkStatus.RUNNING
         assert queue.items["test"].started_at > 0
 
+    def test_activate_backpressure_uses_publish_sync(self, queue):
+        """Backpressure activation should publish synchronously from sync queue code."""
+        published = {}
+
+        def fake_publish_sync(event_type, payload=None, source=""):
+            published["event_type"] = event_type
+            published["payload"] = payload
+            published["source"] = source
+
+        with patch("app.coordination.event_router.publish_sync", side_effect=fake_publish_sync):
+            queue._activate_backpressure(2500, "test_overflow")
+
+        assert published["event_type"] == "BACKPRESSURE_ACTIVATED"
+        assert published["payload"]["pending_count"] == 2500
+        assert published["payload"]["trigger"] == "test_overflow"
+        assert published["source"] == "WorkQueue"
+
+    def test_deactivate_backpressure_uses_publish_sync(self, queue):
+        """Backpressure release should publish synchronously from sync queue code."""
+        published = {}
+
+        def fake_publish_sync(event_type, payload=None, source=""):
+            published["event_type"] = event_type
+            published["payload"] = payload
+            published["source"] = source
+
+        with patch("app.coordination.event_router.publish_sync", side_effect=fake_publish_sync):
+            queue._deactivate_backpressure(400)
+
+        assert published["event_type"] == "BACKPRESSURE_RELEASED"
+        assert published["payload"]["pending_count"] == 400
+        assert published["source"] == "WorkQueue"
+
+    def test_emit_work_event_uses_publish_sync(self, queue):
+        """Work queue events should go through the unified sync publish helper."""
+        item = WorkItem(
+            work_id="work-123",
+            work_type=WorkType.TRAINING,
+            priority=90,
+            config={"board_type": "hex8", "num_players": 2},
+            claimed_by="node-7",
+            attempts=2,
+        )
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            queue._emit_work_event("WORK_COMPLETED", item, result_path="/tmp/model.pth")
+
+        mock_publish_sync.assert_called_once()
+        args, kwargs = mock_publish_sync.call_args
+        assert getattr(args[0], "value", args[0]) == "work_completed"
+        assert args[1]["work_id"] == "work-123"
+        assert args[1]["work_type"] == "training"
+        assert args[1]["board_type"] == "hex8"
+        assert args[1]["num_players"] == 2
+        assert args[1]["claimed_by"] == "node-7"
+        assert args[1]["attempts"] == 2
+        assert args[1]["result_path"] == "/tmp/model.pth"
+        assert kwargs["source"] == "WorkQueue"
+
     def test_start_work_not_claimed(self, queue):
         """Test starting unclaimed work fails."""
         queue.add_work(WorkItem(work_id="test"))

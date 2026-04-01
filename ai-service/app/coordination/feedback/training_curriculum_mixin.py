@@ -13,7 +13,6 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from typing import TYPE_CHECKING
@@ -30,26 +29,6 @@ if TYPE_CHECKING:
     from app.coordination.feedback_loop_controller import FeedbackState
 
 logger = logging.getLogger(__name__)
-
-
-def _safe_create_task(coro, context: str = "") -> asyncio.Task | None:
-    """Create a task with basic error handling.
-
-    Note: This is a local helper. The main controller has a more sophisticated
-    version with error tracking. This is used for mixin independence.
-    """
-    try:
-        task = asyncio.create_task(coro)
-        task.add_done_callback(
-            lambda t: logger.debug(f"[TrainingCurriculum] Task {context} done")
-            if not t.cancelled() and t.exception() is None
-            else logger.warning(f"[TrainingCurriculum] Task {context} failed: {t.exception()}")
-            if t.exception() else None
-        )
-        return task
-    except RuntimeError as e:
-        logger.debug(f"[TrainingCurriculum] Could not create task for {context}: {e}")
-        return None
 
 
 class TrainingCurriculumFeedbackMixin:
@@ -80,7 +59,7 @@ class TrainingCurriculumFeedbackMixin:
         triggering curriculum weight adjustments.
         """
         try:
-            from app.coordination.event_router import DataEvent, DataEventType, get_event_bus
+            from app.coordination.event_router import DataEventType, publish_sync
             from app.training.curriculum_feedback import get_curriculum_feedback
 
             feedback = get_curriculum_feedback()
@@ -107,11 +86,9 @@ class TrainingCurriculumFeedbackMixin:
                     f"policy_acc={policy_accuracy:.2%} -> weight {current_weight:.2f} -> {new_weight:.2f}"
                 )
 
-            # Emit CURRICULUM_REBALANCED event for downstream listeners
-            bus = get_event_bus()
-            event = DataEvent(
-                event_type=DataEventType.CURRICULUM_REBALANCED,
-                payload={
+            publish_sync(
+                DataEventType.CURRICULUM_REBALANCED,
+                {
                     "config": config_key,
                     "trigger": "training_complete",
                     "policy_accuracy": policy_accuracy,
@@ -122,11 +99,6 @@ class TrainingCurriculumFeedbackMixin:
                 },
                 source="training_curriculum_mixin",
             )
-
-            try:
-                _safe_create_task(bus.publish(event), "curriculum_event_publish")
-            except RuntimeError:
-                asyncio.run(bus.publish(event))
 
             logger.debug("[TrainingCurriculum] Emitted CURRICULUM_REBALANCED (training_complete)")
 

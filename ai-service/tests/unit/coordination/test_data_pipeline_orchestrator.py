@@ -348,6 +348,15 @@ def reset_orchestrator_singleton():
     module._pipeline_orchestrator = None
 
 
+@pytest.fixture(autouse=True)
+def disable_pipeline_circuit_breaker_persistence(monkeypatch):
+    """Keep PipelineCircuitBreaker tests independent of on-disk state."""
+    from app.coordination.data_pipeline_orchestrator import PipelineCircuitBreaker
+
+    monkeypatch.setattr(PipelineCircuitBreaker, "_load_state", lambda self: None)
+    monkeypatch.setattr(PipelineCircuitBreaker, "_save_state", lambda self: None)
+
+
 class TestDataPipelineOrchestratorInit:
     """Tests for DataPipelineOrchestrator initialization."""
 
@@ -387,6 +396,74 @@ class TestDataPipelineOrchestratorInit:
 
         assert orchestrator._circuit_breaker is not None
         assert isinstance(orchestrator._circuit_breaker, PipelineCircuitBreaker)
+
+
+class TestDataPipelineOrchestratorSubscriptions:
+    """Tests for router subscription wiring."""
+
+    def test_subscribe_local_only_events_uses_router_helper(self, mock_config):
+        """Should subscribe local-only events through the unified helper."""
+        from app.coordination.data_pipeline_orchestrator import DataPipelineOrchestrator
+
+        orchestrator = DataPipelineOrchestrator(config=mock_config)
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            orchestrator._subscribe_local_only_events()
+
+        subscribed = [(call.args[0], call.args[1]) for call in mock_subscribe.call_args_list]
+        assert ("LOCAL_NPZ_CREATED", orchestrator._on_local_event) in subscribed
+        assert ("LOCAL_GAME_SAVED", orchestrator._on_local_event) in subscribed
+        assert ("LOCAL_MODEL_SAVED", orchestrator._on_local_event) in subscribed
+
+    def test_subscribe_to_events_uses_router_helper(self, mock_config):
+        """Should subscribe stage events through the unified helper."""
+        from app.coordination.data_pipeline_orchestrator import (
+            DataPipelineOrchestrator,
+        )
+        from app.coordination.event_router import StageEvent
+
+        orchestrator = DataPipelineOrchestrator(config=mock_config)
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            result = orchestrator.subscribe_to_events()
+
+        assert result is True
+        assert orchestrator._subscribed is True
+        assert orchestrator._prefer_stage_events is True
+        subscribed = [(call.args[0], call.args[1]) for call in mock_subscribe.call_args_list]
+        assert (StageEvent.SELFPLAY_COMPLETE, orchestrator._on_selfplay_complete) in subscribed
+        assert (StageEvent.NPZ_EXPORT_COMPLETE, orchestrator._on_npz_export_complete) in subscribed
+        assert (StageEvent.TRAINING_COMPLETE, orchestrator._on_training_complete) in subscribed
+        assert (StageEvent.PROMOTION_COMPLETE, orchestrator._on_promotion_complete) in subscribed
+
+    def test_subscribe_to_data_events_uses_router_helper(self, mock_config):
+        """Should subscribe data events through the unified helper."""
+        from app.coordination.data_pipeline_orchestrator import DataPipelineOrchestrator
+        from app.coordination.event_router import DataEventType
+
+        orchestrator = DataPipelineOrchestrator(config=mock_config)
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            result = orchestrator.subscribe_to_data_events()
+
+        assert result is True
+        subscribed = [(call.args[0], call.args[1]) for call in mock_subscribe.call_args_list]
+        assert (
+            DataEventType.QUALITY_DISTRIBUTION_CHANGED.value,
+            orchestrator._on_quality_distribution_changed,
+        ) in subscribed
+        assert (
+            DataEventType.SELFPLAY_COMPLETE.value,
+            orchestrator._on_data_selfplay_complete,
+        ) in subscribed
+        assert (
+            DataEventType.REPAIR_COMPLETED.value,
+            orchestrator._on_repair_completed,
+        ) in subscribed
+        assert (
+            DataEventType.PARTITION_HEALED.value,
+            orchestrator._on_partition_healed,
+        ) in subscribed
 
 
 class TestDataPipelineOrchestratorStatus:
@@ -441,6 +518,7 @@ class TestDataPipelineOrchestratorTransitions:
         orchestrator = DataPipelineOrchestrator(config=mock_config)
 
         orchestrator._transition_to(PipelineStage.SELFPLAY, iteration=1)
+        orchestrator._last_transition_time = 0.0  # Bypass rapid-transition throttle for test
         orchestrator._transition_to(PipelineStage.TRAINING, iteration=1)
 
         assert len(orchestrator._transitions) >= 2
@@ -747,6 +825,46 @@ class TestDataPipelineOrchestratorCircuitBreaker:
         orchestrator._circuit_breaker.reset()
 
         assert orchestrator._circuit_breaker.is_closed
+
+
+# =============================================================================
+# DataPipelineOrchestrator Constraint Event Tests
+# =============================================================================
+
+
+class TestDataPipelineOrchestratorConstraintEvents:
+    """Tests for resource-constraint event emission."""
+
+    def test_emit_resource_constraint_uses_publish_sync(self, mock_config):
+        """Constraint emission should publish synchronously from sync code."""
+        from app.coordination.data_pipeline_orchestrator import DataPipelineOrchestrator
+
+        orchestrator = DataPipelineOrchestrator(config=mock_config)
+        published = {}
+
+        def fake_publish_sync(event_type, payload=None, source=""):
+            published["event_type"] = event_type
+            published["payload"] = payload
+            published["source"] = source
+
+        with patch("app.coordination.event_router.publish_sync", side_effect=fake_publish_sync):
+            orchestrator._emit_resource_constraint("disk_usage_high", 91.5)
+
+        assert published["source"] == "data_pipeline_orchestrator"
+        assert published["payload"]["constraint_type"] == "disk_usage_high"
+        assert published["payload"]["value"] == 91.5
+
+    def test_emit_resource_constraint_respects_cooldown(self, mock_config):
+        """Repeated identical constraints inside the cooldown should not republish."""
+        from app.coordination.data_pipeline_orchestrator import DataPipelineOrchestrator
+
+        orchestrator = DataPipelineOrchestrator(config=mock_config)
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            orchestrator._emit_resource_constraint("disk_usage_high", 91.5)
+            orchestrator._emit_resource_constraint("disk_usage_high", 92.0)
+
+        mock_publish_sync.assert_called_once()
 
 
 # =============================================================================

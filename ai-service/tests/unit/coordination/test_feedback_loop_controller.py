@@ -11,11 +11,13 @@ Tests the core feedback loop orchestration including:
 Dec 30, 2025: Created comprehensive test coverage for this critical 3,631 LOC module.
 """
 
+import inspect
 import pytest
 import time
 from unittest.mock import MagicMock, patch, AsyncMock
 
 from app.coordination.feedback_loop_controller import (
+    AdaptiveTrainingSignal,
     FeedbackState,
     FeedbackLoopController,
     get_feedback_loop_controller,
@@ -416,6 +418,203 @@ class TestFeedbackLoopControllerIntegration:
         assert state.last_training_accuracy == 0.75
 
 
+class TestFeedbackLoopControllerQualityEventPaths:
+    """Tests for sync quality-event emission paths on the controller."""
+
+    def setup_method(self):
+        """Reset singleton before each test."""
+        reset_feedback_loop_controller()
+
+    def test_trigger_quality_check_runs_sync_fallback_without_loop(self, monkeypatch):
+        """Quality-check requests should not be dropped outside a running loop."""
+        from app.coordination.feedback.quality_events_mixin import QualityEventsMixin
+
+        controller = get_feedback_loop_controller()
+        run_calls = []
+        emitter = AsyncMock()
+
+        def fake_create_task(coro, context=""):
+            coro.close()
+            return None
+
+        def fake_run(coro):
+            run_calls.append(coro)
+            coro.close()
+
+        monkeypatch.setattr(
+            "app.coordination.feedback_loop_controller._safe_create_task",
+            fake_create_task,
+        )
+        monkeypatch.setattr(
+            "app.coordination.event_router.emit_quality_check_requested",
+            emitter,
+        )
+        monkeypatch.setattr(
+            "app.coordination.feedback.quality_events_mixin.asyncio.run",
+            fake_run,
+        )
+
+        QualityEventsMixin._trigger_quality_check(controller, "hex8_2p", "training_loss_anomaly")
+
+        assert len(run_calls) == 1
+
+    def test_emit_exploration_adjustment_uses_publish_sync(self, monkeypatch):
+        """Controller quality mixin should publish sync events from sync handlers."""
+        controller = get_feedback_loop_controller()
+        published = {}
+
+        def fake_publish_sync(event_type, payload=None, source=""):
+            published["event_type"] = event_type
+            published["payload"] = payload
+            published["source"] = source
+
+        monkeypatch.setattr(
+            "app.coordination.event_router.publish_sync",
+            fake_publish_sync,
+        )
+
+        controller._emit_exploration_adjustment("hex8_2p", 0.3, "declining")
+
+        assert published["source"] == "FeedbackLoopController"
+        assert published["payload"]["config_key"] == "hex8_2p"
+
+    def test_emit_curriculum_training_feedback_uses_publish_sync(self, monkeypatch):
+        """Curriculum feedback should publish via the unified sync router surface."""
+        controller = get_feedback_loop_controller()
+        published = {}
+
+        class FakeCurriculumFeedback:
+            def __init__(self):
+                self._current_weights = {"hex8_2p": 1.0}
+                self.weight_min = 0.5
+                self.weight_max = 2.5
+
+        def fake_publish_sync(event_type, payload=None, source=""):
+            published["event_type"] = event_type
+            published["payload"] = payload
+            published["source"] = source
+
+        monkeypatch.setattr(
+            "app.training.curriculum_feedback.get_curriculum_feedback",
+            lambda: FakeCurriculumFeedback(),
+        )
+        monkeypatch.setattr(
+            "app.coordination.event_router.publish_sync",
+            fake_publish_sync,
+        )
+
+        controller._emit_curriculum_training_feedback("hex8_2p", 0.40, 0.72)
+
+        assert published["source"] == "training_curriculum_mixin"
+        assert published["payload"]["config"] == "hex8_2p"
+        assert published["payload"]["trigger"] == "training_complete"
+        assert published["payload"]["adjustment"] > 0.0
+
+    def test_emit_selfplay_adjustment_uses_publish_sync(self, monkeypatch):
+        """Elo velocity feedback should publish selfplay adjustments synchronously."""
+        controller = get_feedback_loop_controller()
+        published = {}
+        state = controller._get_or_create_state("hex8_2p")
+        state.current_search_budget = 500
+        state.current_exploration_boost = 1.4
+        state.current_training_intensity = "high"
+
+        def fake_publish_sync(event_type, payload=None, source=""):
+            published["event_type"] = event_type
+            published["payload"] = payload
+            published["source"] = source
+
+        monkeypatch.setattr(
+            "app.coordination.event_router.publish_sync",
+            fake_publish_sync,
+        )
+
+        controller._emit_selfplay_adjustment("hex8_2p", state, elo_gap=600.0, velocity=1.0)
+
+        assert published["source"] == "elo_velocity_mixin"
+        assert published["payload"]["config_key"] == "hex8_2p"
+        assert published["payload"]["search_budget"] == 500
+        assert published["payload"]["priority"] == "HIGH"
+
+    def test_emit_adaptive_training_signal_uses_publish_sync(self, monkeypatch):
+        """Adaptive training signals should use the unified sync router surface."""
+        controller = get_feedback_loop_controller()
+        published = {}
+        signal = AdaptiveTrainingSignal(
+            learning_rate_multiplier=0.5,
+            batch_size_multiplier=1.5,
+            gradient_clip_enabled=True,
+            reason="plateau detected",
+        )
+
+        def fake_publish_sync(event_type, payload=None, source=""):
+            published["event_type"] = event_type
+            published["payload"] = payload
+            published["source"] = source
+
+        monkeypatch.setattr(
+            "app.coordination.event_router.publish_sync",
+            fake_publish_sync,
+        )
+
+        controller._emit_adaptive_training_signal("hex8_2p", signal)
+
+        assert published["source"] == "elo_velocity_mixin"
+        assert published["payload"]["config_key"] == "hex8_2p"
+        assert published["payload"]["learning_rate_multiplier"] == 0.5
+        assert published["payload"]["reason"] == "plateau detected"
+
+    def test_regression_curriculum_rollback_uses_publish_sync(self, monkeypatch):
+        """Regression-triggered curriculum rollback should publish synchronously."""
+        controller = get_feedback_loop_controller()
+        controller._regression_cooldowns.clear()
+        published = {}
+
+        def fake_publish_sync(event_type, payload=None, source=""):
+            published["event_type"] = event_type
+            published["payload"] = payload
+            published["source"] = source
+
+        async def fake_emit_exploration_boost(**kwargs):
+            return None
+
+        def fake_create_task(coro, context=""):
+            coro.close()
+            return None
+
+        monkeypatch.setattr(
+            "app.coordination.event_router.publish_sync",
+            fake_publish_sync,
+        )
+        monkeypatch.setattr(
+            "app.coordination.event_router.emit_exploration_boost",
+            fake_emit_exploration_boost,
+        )
+        monkeypatch.setattr(
+            "app.coordination.feedback.regression_handling_mixin._safe_create_task",
+            fake_create_task,
+        )
+
+        state = controller._get_or_create_state("rollback_config")
+        state.curriculum_tier = 2
+
+        event = MagicMock()
+        event.payload = {
+            "config_key": "rollback_config",
+            "elo_drop": 75.0,
+            "consecutive_count": 2,
+            "severity": "severe",
+        }
+
+        controller._on_regression_detected(event)
+
+        assert published["source"] == "RegressionHandlingMixin"
+        assert published["payload"]["config_key"] == "rollback_config"
+        assert published["payload"]["direction"] == "rollback"
+        assert published["payload"]["old_tier"] == 2
+        assert published["payload"]["new_tier"] == 1
+
+
 class TestFeedbackLoopEventHandlers:
     """Test FeedbackLoopController event handlers."""
 
@@ -730,7 +929,8 @@ class TestFeedbackLoopEventHandlers:
         # Tracks work_failed_count, not consecutive_failures
         assert hasattr(state, 'work_failed_count') or True  # May be added dynamically
 
-    def test_event_handler_exception_safety(self):
+    @pytest.mark.asyncio
+    async def test_event_handler_exception_safety(self):
         """Test event handlers don't raise on malformed events."""
         controller = get_feedback_loop_controller()
 
@@ -751,7 +951,9 @@ class TestFeedbackLoopEventHandlers:
 
             # Should not raise
             try:
-                handler(event)
+                result = handler(event)
+                if inspect.isawaitable(result):
+                    await result
             except Exception as e:
                 pytest.fail(f"{handler.__name__} raised {e} with None payload")
 

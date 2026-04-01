@@ -190,6 +190,61 @@ class TestAutoExportDaemon:
             result = daemon._parse_sample_count(output)
             assert result == expected, f"Failed for: {output}"
 
+    @pytest.mark.asyncio
+    async def test_emit_export_started_uses_unified_event_helper(self, daemon):
+        """Export-start notifications should go through the unified event helper."""
+        with patch(
+            "app.coordination.event_emission_helpers.safe_emit_event_async",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_emit:
+            await daemon._emit_export_started("hex8_2p", games_pending=125)
+
+        mock_emit.assert_awaited_once()
+        event_type, payload = mock_emit.await_args.args[:2]
+        assert event_type == "NPZ_EXPORT_STARTED"
+        assert payload["config"] == "hex8_2p"
+        assert payload["config_key"] == "hex8_2p"
+        assert payload["games_pending"] == 125
+        assert payload["board_type"] == "hex8"
+        assert payload["num_players"] == 2
+        assert payload["success"] is True
+        assert payload["iteration"] == 0
+
+    @pytest.mark.asyncio
+    async def test_emit_export_complete_uses_unified_event_helper(self, daemon, tmp_path):
+        """Export-complete notifications should go through the unified event helper."""
+        daemon._export_states["hex8_2p"] = ConfigExportState(
+            config_key="hex8_2p",
+            board_type="hex8",
+            num_players=2,
+            games_since_last_export=0,
+            last_export_games=77,
+        )
+        output_path = tmp_path / "hex8_2p.npz"
+        output_path.write_bytes(b"npz")
+
+        with patch(
+            "app.coordination.event_emission_helpers.safe_emit_event_async",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_emit:
+            await daemon._emit_export_complete("hex8_2p", output_path, samples=456)
+
+        mock_emit.assert_awaited_once()
+        event_type, payload = mock_emit.await_args.args[:2]
+        assert event_type == "NPZ_EXPORT_COMPLETE"
+        assert payload["config"] == "hex8_2p"
+        assert payload["config_key"] == "hex8_2p"
+        assert payload["output_path"] == str(output_path)
+        assert payload["samples"] == 456
+        assert payload["samples_exported"] == 456
+        assert payload["games_exported"] == 77
+        assert payload["board_type"] == "hex8"
+        assert payload["num_players"] == 2
+        assert payload["success"] is True
+        assert payload["iteration"] == 0
+
     def test_config_defaults(self):
         """Test AutoExportConfig default values.
 

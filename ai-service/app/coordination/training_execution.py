@@ -605,11 +605,7 @@ async def emit_training_complete(
         True if event was emitted successfully
     """
     try:
-        from app.coordination.event_router import (
-            StageEvent,
-            StageCompletionResult,
-            get_stage_event_bus,
-        )
+        from app.coordination.event_emission_helpers import safe_emit_event_async
 
         # Verify model exists if success
         if model_path and success:
@@ -619,22 +615,24 @@ async def emit_training_complete(
                     "EvaluationDaemon may fail"
                 )
 
-        bus = get_stage_event_bus()
-        await bus.emit(
-            StageCompletionResult(
-                event=StageEvent.TRAINING_COMPLETE if success else StageEvent.TRAINING_FAILED,
-                success=success,
-                timestamp=datetime.datetime.now().isoformat(),
-                metadata={
-                    "config": config_key,
-                    "board_type": board_type,
-                    "num_players": num_players,
-                    "samples_trained": sample_count,
-                    "model_path": model_path,
-                    "checkpoint_path": model_path,
-                },
-            )
+        event_type = "TRAINING_COMPLETE" if success else "TRAINING_FAILED"
+        emitted = await safe_emit_event_async(
+            event_type,
+            {
+                "config": config_key,
+                "config_key": config_key,
+                "board_type": board_type,
+                "num_players": num_players,
+                "samples_trained": sample_count,
+                "model_path": model_path,
+                "checkpoint_path": model_path,
+                "success": success,
+                "timestamp": datetime.datetime.now().isoformat(),
+            },
+            context="emit_training_complete",
         )
+        if not emitted:
+            return False
         logger.info(
             f"[emit_training_complete] Emitted TRAINING_{'COMPLETE' if success else 'FAILED'} "
             f"for {config_key} (model_path={model_path})"

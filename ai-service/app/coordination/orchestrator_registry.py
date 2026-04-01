@@ -1336,9 +1336,8 @@ class CrossCoordinatorHealthProtocol:
         """Emit a health event to the event bus."""
         try:
             from app.coordination.event_router import (
-                DataEvent,
                 DataEventType,
-                get_event_bus,
+                get_router,
             )
 
             # December 27, 2025: Guard against DataEventType being None when import fails
@@ -1352,23 +1351,18 @@ class CrossCoordinatorHealthProtocol:
                 else DataEventType.COORDINATOR_UNHEALTHY
             )
 
-            event = DataEvent(
-                event_type=event_type,
-                payload=health.to_dict(),
-                source="cross_coordinator_health",
-            )
-
-            bus = get_event_bus()
+            payload = health.to_dict()
+            router = get_router()
             import asyncio
             try:
                 asyncio.get_running_loop()
                 fire_and_forget(
-                    bus.publish(event),
+                    router.publish(event_type, payload, source="cross_coordinator_health"),
                     name="orchestrator_health_event",
                 )
             except RuntimeError:
-                if hasattr(bus, 'publish_sync'):
-                    bus.publish_sync(event)
+                if hasattr(router, "publish_sync"):
+                    router.publish_sync(event_type, payload, source="cross_coordinator_health")
 
         except Exception as e:
             logger.debug(f"Failed to emit health event: {e}")

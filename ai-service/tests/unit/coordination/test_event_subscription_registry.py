@@ -3,6 +3,7 @@
 December 29, 2025: Test coverage for declarative event subscription registry.
 """
 
+import importlib
 import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 
@@ -189,8 +190,7 @@ class TestProcessInitCallRegistry:
         """Test processing populates results dict."""
         results = {}
 
-        # Patch builtins.__import__ which is used internally by __import__()
-        with patch("builtins.__import__", side_effect=ImportError("Test import error")):
+        with patch.object(importlib, "import_module", side_effect=ImportError("Test import error")):
             process_init_call_registry(results)
 
         # Should have entries for each spec (all False due to import failure)
@@ -211,16 +211,14 @@ class TestProcessInitCallRegistry:
         mock_module = MagicMock()
         mock_module.test_func = mock_func
 
-        # Save original __import__
-        original_import = __import__
+        original_import_module = importlib.import_module
 
-        def mock_import(name, globals=None, locals=None, fromlist=(), level=0):
+        def mock_import_module(name):
             if name == "app.test.module":
                 return mock_module
-            # Fall through to real import for everything else
-            return original_import(name, globals, locals, fromlist, level)
+            return original_import_module(name)
 
-        with patch("builtins.__import__", side_effect=mock_import):
+        with patch.object(importlib, "import_module", side_effect=mock_import_module):
             with patch("app.coordination.event_subscription_registry.INIT_CALL_REGISTRY", (
                 InitCallSpec(
                     name="test_init",
@@ -272,7 +270,7 @@ class TestProcessDelegationRegistry:
 
         with patch.dict("sys.modules", {
             "app.coordination.event_router": MagicMock(
-                get_event_bus=MagicMock(return_value=mock_bus),
+                get_router=MagicMock(return_value=mock_bus),
                 DataEventType=mock_event_type,
             )
         }):

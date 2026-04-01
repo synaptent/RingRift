@@ -10,14 +10,13 @@ from unittest.mock import MagicMock, patch
 class TestEmitAllocationUpdated:
     """Tests for emit_allocation_updated function."""
 
-    def test_handles_none_bus_gracefully(self):
-        """Test handles missing event bus without error."""
+    def test_handles_publish_errors_gracefully(self):
+        """Test router publish failures are swallowed."""
         from app.coordination.selfplay.allocation_events import emit_allocation_updated
 
-        # Should not raise when bus is None
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=None,
+            "app.coordination.event_router.publish_sync",
+            side_effect=RuntimeError("test error"),
         ):
             emit_allocation_updated(
                 allocation={"hex8_2p": {"node1": 100}},
@@ -29,10 +28,10 @@ class TestEmitAllocationUpdated:
         """Test emits event with allocation dictionary."""
         from app.coordination.selfplay.allocation_events import emit_allocation_updated
 
-        mock_bus = MagicMock()
+        mock_publish = MagicMock()
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_bus,
+            "app.coordination.event_router.publish_sync",
+            mock_publish,
         ):
             emit_allocation_updated(
                 allocation={"hex8_2p": {"node1": 50, "node2": 50}},
@@ -40,22 +39,23 @@ class TestEmitAllocationUpdated:
                 trigger="allocate_batch",
             )
 
-        assert mock_bus.emit.called
-        call_args = mock_bus.emit.call_args
+        assert mock_publish.called
+        call_args = mock_publish.call_args
         payload = call_args[0][1]
         assert payload["trigger"] == "allocate_batch"
         assert payload["total_games"] == 100
         assert "hex8_2p" in payload["configs"]
         assert payload["node_count"] == 2
+        assert call_args.kwargs["source"] == "allocation_events"
 
     def test_emits_event_with_single_config(self):
         """Test emits event with single config key."""
         from app.coordination.selfplay.allocation_events import emit_allocation_updated
 
-        mock_bus = MagicMock()
+        mock_publish = MagicMock()
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_bus,
+            "app.coordination.event_router.publish_sync",
+            mock_publish,
         ):
             emit_allocation_updated(
                 allocation=None,
@@ -64,8 +64,8 @@ class TestEmitAllocationUpdated:
                 config_key="square8_4p",
             )
 
-        assert mock_bus.emit.called
-        payload = mock_bus.emit.call_args[0][1]
+        assert mock_publish.called
+        payload = mock_publish.call_args[0][1]
         assert "square8_4p" in payload["configs"]
 
     def test_includes_exploration_boost_from_priorities(self):
@@ -73,14 +73,14 @@ class TestEmitAllocationUpdated:
         from app.coordination.selfplay.allocation_events import emit_allocation_updated
         from app.coordination.selfplay_priority_types import ConfigPriority
 
-        mock_bus = MagicMock()
+        mock_publish = MagicMock()
         mock_priority = MagicMock(spec=ConfigPriority)
         mock_priority.exploration_boost = 0.15
         mock_priority.curriculum_weight = 1.2
 
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_bus,
+            "app.coordination.event_router.publish_sync",
+            mock_publish,
         ):
             emit_allocation_updated(
                 allocation=None,
@@ -90,7 +90,7 @@ class TestEmitAllocationUpdated:
                 config_priorities={"hex8_2p": mock_priority},
             )
 
-        payload = mock_bus.emit.call_args[0][1]
+        payload = mock_publish.call_args[0][1]
         assert payload["exploration_boost"] == 0.15
         assert payload["curriculum_weight"] == 1.2
 
@@ -99,7 +99,7 @@ class TestEmitAllocationUpdated:
         from app.coordination.selfplay.allocation_events import emit_allocation_updated
 
         with patch(
-            "app.coordination.event_router.get_event_bus",
+            "app.coordination.event_router.publish_sync",
             side_effect=RuntimeError("test error"),
         ):
             # Should not raise
@@ -113,13 +113,13 @@ class TestEmitAllocationUpdated:
 class TestEmitStarvationAlert:
     """Tests for emit_starvation_alert function."""
 
-    def test_handles_none_bus_gracefully(self):
-        """Test handles missing event bus without error."""
+    def test_handles_publish_errors_gracefully(self):
+        """Test router publish failures are swallowed."""
         from app.coordination.selfplay.allocation_events import emit_starvation_alert
 
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=None,
+            "app.coordination.event_router.publish_sync",
+            side_effect=RuntimeError("test error"),
         ):
             emit_starvation_alert(
                 config_key="hex8_4p",
@@ -131,10 +131,10 @@ class TestEmitStarvationAlert:
         """Test emits event with starvation details."""
         from app.coordination.selfplay.allocation_events import emit_starvation_alert
 
-        mock_bus = MagicMock()
+        mock_publish = MagicMock()
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_bus,
+            "app.coordination.event_router.publish_sync",
+            mock_publish,
         ):
             emit_starvation_alert(
                 config_key="square19_3p",
@@ -142,21 +142,22 @@ class TestEmitStarvationAlert:
                 tier="EMERGENCY",
             )
 
-        assert mock_bus.emit.called
-        payload = mock_bus.emit.call_args[0][1]
+        assert mock_publish.called
+        payload = mock_publish.call_args[0][1]
         assert payload["config_key"] == "square19_3p"
         assert payload["game_count"] == 10
         assert payload["tier"] == "EMERGENCY"
         assert "threshold" in payload
         assert "multiplier" in payload
         assert "timestamp" in payload
+        assert mock_publish.call_args.kwargs["source"] == "allocation_events"
 
     def test_handles_exception_gracefully(self):
         """Test handles exceptions without raising."""
         from app.coordination.selfplay.allocation_events import emit_starvation_alert
 
         with patch(
-            "app.coordination.event_router.get_event_bus",
+            "app.coordination.event_router.publish_sync",
             side_effect=RuntimeError("test error"),
         ):
             emit_starvation_alert(
@@ -169,13 +170,13 @@ class TestEmitStarvationAlert:
 class TestEmitIdleNodeWorkInjected:
     """Tests for emit_idle_node_work_injected function."""
 
-    def test_handles_none_bus_gracefully(self):
-        """Test handles missing event bus without error."""
+    def test_handles_publish_errors_gracefully(self):
+        """Test router publish failures are swallowed."""
         from app.coordination.selfplay.allocation_events import emit_idle_node_work_injected
 
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=None,
+            "app.coordination.event_router.publish_sync",
+            side_effect=RuntimeError("test error"),
         ):
             emit_idle_node_work_injected(
                 node_id="worker-1",
@@ -187,10 +188,10 @@ class TestEmitIdleNodeWorkInjected:
         """Test emits event with work injection details."""
         from app.coordination.selfplay.allocation_events import emit_idle_node_work_injected
 
-        mock_bus = MagicMock()
+        mock_publish = MagicMock()
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_bus,
+            "app.coordination.event_router.publish_sync",
+            mock_publish,
         ):
             emit_idle_node_work_injected(
                 node_id="vast-12345",
@@ -199,22 +200,23 @@ class TestEmitIdleNodeWorkInjected:
                 reason="idle_threshold_exceeded",
             )
 
-        assert mock_bus.emit.called
-        payload = mock_bus.emit.call_args[0][1]
+        assert mock_publish.called
+        payload = mock_publish.call_args[0][1]
         assert payload["node_id"] == "vast-12345"
         assert payload["config_key"] == "square8_4p"
         assert payload["games"] == 200
         assert payload["reason"] == "idle_threshold_exceeded"
         assert "timestamp" in payload
+        assert mock_publish.call_args.kwargs["source"] == "allocation_events"
 
     def test_default_reason(self):
         """Test default reason is applied."""
         from app.coordination.selfplay.allocation_events import emit_idle_node_work_injected
 
-        mock_bus = MagicMock()
+        mock_publish = MagicMock()
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_bus,
+            "app.coordination.event_router.publish_sync",
+            mock_publish,
         ):
             emit_idle_node_work_injected(
                 node_id="worker-1",
@@ -222,7 +224,7 @@ class TestEmitIdleNodeWorkInjected:
                 games=100,
             )
 
-        payload = mock_bus.emit.call_args[0][1]
+        payload = mock_publish.call_args[0][1]
         assert payload["reason"] == "idle_threshold_exceeded"
 
 

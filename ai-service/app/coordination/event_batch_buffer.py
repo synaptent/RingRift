@@ -36,6 +36,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
@@ -364,11 +365,17 @@ class EventBuffer:
 
     async def _call_flush_handler(self, events: list[BufferedEvent]) -> None:
         """Call flush handler with timeout."""
+        task: asyncio.Task[Any] | None = None
         try:
             result = self._on_flush(events)  # type: ignore
             if asyncio.iscoroutine(result):
-                await asyncio.wait_for(result, timeout=self.config.max_batch_publish_time)
+                task = asyncio.create_task(result)
+                await asyncio.wait_for(task, timeout=self.config.max_batch_publish_time)
         except asyncio.TimeoutError:
+            if task is not None and not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
             logger.warning(f"EventBuffer flush handler timed out ({len(events)} events)")
         except Exception as e:
             logger.error(f"EventBuffer flush handler error: {e}")
@@ -777,11 +784,9 @@ async def shutdown_batch_publisher() -> None:
 async def _default_publish_handler(event_type: str, payload: dict[str, Any]) -> None:
     """Default handler that routes to event router."""
     try:
-        from app.coordination.event_router import get_event_bus
+        from app.coordination.event_router import publish
 
-        bus = get_event_bus()
-        if bus:
-            bus.publish(event_type, payload)
+        await publish(event_type, payload, source="event_batch_buffer")
     except (ImportError, AttributeError, TypeError, RuntimeError) as e:
         # Dec 29, 2025: Narrowed from bare Exception
         # ImportError: event_router not available

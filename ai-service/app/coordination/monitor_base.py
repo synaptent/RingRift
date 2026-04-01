@@ -252,13 +252,10 @@ class MonitorBase(BaseDaemon[MonitorConfigT], Generic[MonitorConfigT]):
             return True
 
         try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
-            self._event_router = router
+            from app.coordination.event_router import subscribe
 
             for event_type, handler in subscriptions.items():
-                router.subscribe(event_type, handler)
+                subscribe(event_type, handler)
                 self._event_subscriptions[event_type] = handler
                 logger.debug(f"[{self._get_daemon_name()}] Subscribed to: {event_type}")
 
@@ -277,12 +274,14 @@ class MonitorBase(BaseDaemon[MonitorConfigT], Generic[MonitorConfigT]):
 
     def _unsubscribe_all_events(self) -> None:
         """Unsubscribe from all events."""
-        if not self._event_subscribed or not self._event_router:
+        if not self._event_subscribed:
             return
 
         try:
+            from app.coordination.event_router import unsubscribe
+
             for event_type in self._event_subscriptions:
-                self._event_router.unsubscribe(event_type, self._event_subscriptions[event_type])
+                unsubscribe(event_type, self._event_subscriptions[event_type])
             self._event_subscriptions.clear()
             self._event_subscribed = False
             logger.debug(f"[{self._get_daemon_name()}] Unsubscribed from all events")

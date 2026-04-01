@@ -947,23 +947,17 @@ class DLQRetryDaemon:
     def _emit_purge_event(self, count: int, reason: str) -> None:
         """Emit DLQ_EVENTS_PURGED event when events are cleaned up."""
         try:
-            from app.distributed.data_events import DataEvent, DataEventType
+            from app.coordination.event_router import DataEventType, publish_sync
 
-            event = DataEvent(
-                event_type=DataEventType.DLQ_EVENTS_PURGED,
-                payload={
+            publish_sync(
+                DataEventType.DLQ_EVENTS_PURGED,
+                {
                     "count": count,
                     "reason": reason,
                     "timestamp": datetime.now().isoformat(),
                 },
                 source="DLQRetryDaemon",
             )
-
-            from app.coordination.event_router import get_event_bus
-
-            bus = get_event_bus()
-            if bus:
-                bus.publish(event)
         except Exception as e:
             logger.debug(f"[DLQRetryDaemon] Failed to emit purge event: {e}")
 
@@ -974,11 +968,11 @@ class DLQRetryDaemon:
         UnifiedHealthManager subscribes to this for health monitoring.
         """
         try:
-            from app.distributed.data_events import DataEvent, DataEventType
+            from app.coordination.event_router import DataEventType, publish_sync
 
-            event = DataEvent(
-                event_type=DataEventType.DLQ_STALE_EVENTS,
-                payload={
+            publish_sync(
+                DataEventType.DLQ_STALE_EVENTS,
+                {
                     "stale_count": stale_count,
                     "event_types": event_types,
                     "max_stale_hours": self.max_stale_hours,
@@ -986,12 +980,6 @@ class DLQRetryDaemon:
                 },
                 source="DLQRetryDaemon",
             )
-
-            from app.coordination.event_router import get_event_bus
-
-            bus = get_event_bus()
-            if bus:
-                bus.publish(event)
         except Exception as e:
             logger.debug(f"[DLQRetryDaemon] Failed to emit stale events: {e}")
 
@@ -1002,23 +990,17 @@ class DLQRetryDaemon:
         UnifiedHealthManager subscribes to this for health monitoring.
         """
         try:
-            from app.distributed.data_events import DataEvent, DataEventType
+            from app.coordination.event_router import DataEventType, publish_sync
 
-            event = DataEvent(
-                event_type=DataEventType.DLQ_EVENTS_REPLAYED,
-                payload={
+            publish_sync(
+                DataEventType.DLQ_EVENTS_REPLAYED,
+                {
                     "recovered_count": recovered_count,
                     "event_types": event_types,
                     "timestamp": datetime.now().isoformat(),
                 },
                 source="DLQRetryDaemon",
             )
-
-            from app.coordination.event_router import get_event_bus
-
-            bus = get_event_bus()
-            if bus:
-                bus.publish(event)
         except Exception as e:
             logger.debug(f"[DLQRetryDaemon] Failed to emit replayed events: {e}")
 
@@ -1045,7 +1027,7 @@ class DLQRetryDaemon:
         dlq_stats = self.dlq.get_stats() if self.dlq else {}
 
         # Daemon is healthy if running and DLQ is accessible
-        is_healthy = self.is_running and self._task is not None
+        is_healthy = self._running and self._task is not None
         if self._task and self._task.done() and not self._task.cancelled():
             # Task crashed unexpectedly
             is_healthy = False

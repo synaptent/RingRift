@@ -437,15 +437,8 @@ class ParityValidationDaemon(HandlerBase):
     def _emit_validation_complete(self, summary: ParityValidationSummary) -> None:
         """Emit PARITY_VALIDATION_COMPLETED event."""
         try:
+            from app.coordination.event_router import publish_sync
             from app.distributed.data_events import DataEventType
-
-            # Try to get event bus
-            try:
-                from app.coordination.event_router import get_event_bus
-
-                bus = get_event_bus()
-            except ImportError:
-                return
 
             payload = {
                 "databases_scanned": summary.databases_scanned,
@@ -456,9 +449,10 @@ class ParityValidationDaemon(HandlerBase):
                 "source": "ParityValidationDaemon",
             }
 
-            bus.publish_event(
+            publish_sync(
                 DataEventType.PARITY_VALIDATION_COMPLETED.value,
                 payload,
+                source="ParityValidationDaemon",
             )
 
             logger.debug(

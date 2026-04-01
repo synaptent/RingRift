@@ -398,22 +398,20 @@ class EphemeralDataGuard:
 
             # Emit event for coordination layer
             try:
-                from app.coordination.event_router import get_event_bus
-                from app.core.async_context import fire_and_forget
-                bus = get_event_bus()
-                coro = bus.publish("EMERGENCY_SYNC_COMPLETED", {
-                    "host": host,
-                    "files_synced": files_synced,
-                    "files_failed": files_failed,
-                    "files_skipped": files_skipped,
-                    "success": files_failed == 0 and files_skipped == 0,
-                    "timestamp": time.time(),
-                })
-                try:
-                    fire_and_forget(coro)
-                except RuntimeError:
-                    # Event loop not running or closed
-                    coro.close()
+                from app.coordination.event_router import publish_sync
+
+                publish_sync(
+                    "EMERGENCY_SYNC_COMPLETED",
+                    {
+                        "host": host,
+                        "files_synced": files_synced,
+                        "files_failed": files_failed,
+                        "files_skipped": files_skipped,
+                        "success": files_failed == 0 and files_skipped == 0,
+                        "timestamp": time.time(),
+                    },
+                    source="ephemeral_data_guard",
+                )
             except ImportError:
                 pass
 

@@ -558,19 +558,14 @@ class MonitoringAwareAutoScaler(AutoScaler):
             True if successfully subscribed
         """
         try:
-            from app.coordination.event_router import (
-                DataEventType,
-                get_event_bus,
-            )
-
-            bus = get_event_bus()
+            from app.coordination.event_router import DataEventType, subscribe
 
             # Subscribe to relevant monitoring events
-            bus.subscribe(DataEventType.RESOURCE_CONSTRAINT, self._on_resource_constraint)
-            bus.subscribe(DataEventType.NODE_UNHEALTHY, self._on_node_unhealthy)
-            bus.subscribe(DataEventType.P2P_CLUSTER_UNHEALTHY, self._on_cluster_unhealthy)
-            bus.subscribe(DataEventType.P2P_CLUSTER_HEALTHY, self._on_cluster_healthy)
-            bus.subscribe(DataEventType.HEALTH_ALERT, self._on_health_alert)
+            subscribe(DataEventType.RESOURCE_CONSTRAINT, self._on_resource_constraint)
+            subscribe(DataEventType.NODE_UNHEALTHY, self._on_node_unhealthy)
+            subscribe(DataEventType.P2P_CLUSTER_UNHEALTHY, self._on_cluster_unhealthy)
+            subscribe(DataEventType.P2P_CLUSTER_HEALTHY, self._on_cluster_healthy)
+            subscribe(DataEventType.HEALTH_ALERT, self._on_health_alert)
 
             self._event_subscribed = True
             logger.info("[MonitoringAwareAutoScaler] Subscribed to monitoring events")

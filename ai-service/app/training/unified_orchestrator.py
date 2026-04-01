@@ -43,6 +43,7 @@ Usage:
 from __future__ import annotations
 
 import logging
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -129,10 +130,12 @@ except ImportError:
 
 # Quality bridge for quality-weighted sampling (December 2025)
 try:
-    from app.training.quality_bridge import (
-        QualityBridge,
-        get_quality_bridge,
-    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        from app.training.quality_bridge import (
+            QualityBridge,
+            get_quality_bridge,
+        )
     _HAS_QUALITY_BRIDGE = True
 except ImportError:
     _HAS_QUALITY_BRIDGE = False
@@ -521,7 +524,9 @@ class QualityBridgeWrapper:
             return
 
         try:
-            from app.training.quality_bridge import QualityBridgeConfig
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                from app.training.quality_bridge import QualityBridgeConfig
 
             bridge_config = QualityBridgeConfig(
                 enable_quality_scoring=True,

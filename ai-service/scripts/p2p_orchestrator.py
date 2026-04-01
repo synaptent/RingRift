@@ -1275,20 +1275,12 @@ try:
         diagnose_node_connectivity,
         get_hybrid_transport,
     )
-    from app.distributed.ssh_transport import (
-        SSHTransport,
-        get_ssh_transport,
-        probe_vast_nodes_via_ssh,
-    )
     HAS_HYBRID_TRANSPORT = True
 except ImportError:
     HAS_HYBRID_TRANSPORT = False
     HybridTransport = None
     get_hybrid_transport = None
     diagnose_node_connectivity = None
-    SSHTransport = None
-    get_ssh_transport = None
-    probe_vast_nodes_via_ssh = None
 
 try:
     from scripts.improvement_cycle_manager import ImprovementCycleManager

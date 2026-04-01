@@ -8,7 +8,7 @@ import socket
 import time
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
 import pytest
 
@@ -758,6 +758,64 @@ class TestSyncRouterEventHandlers:
 
             # Node should no longer be under backpressure
             assert not router.is_under_backpressure("recovered-node")
+
+    @pytest.mark.asyncio
+    async def test_emit_capacity_refresh_awaits_router_publish(self, mock_manifest, mock_cluster_config):
+        """Capacity refresh events should be awaited instead of dropped."""
+        with patch("app.coordination.sync_router.load_cluster_config", return_value=mock_cluster_config), \
+             patch("app.coordination.sync_router.get_host_provider", return_value="local"):
+            from app.coordination.sync_router import SyncRouter
+
+            router = SyncRouter(manifest=mock_manifest)
+
+        mock_router = MagicMock()
+        mock_router.publish = AsyncMock()
+        with patch("app.coordination.event_router.get_router", return_value=mock_router):
+            await router._emit_capacity_refresh("node_joined", "node-1", 4, 3)
+
+        mock_router.publish.assert_awaited_once_with(
+            "SYNC_CAPACITY_REFRESHED",
+            {
+                "change_type": "node_joined",
+                "node_id": "node-1",
+                "total_nodes": 4,
+                "gpu_nodes": 3,
+                "router": "SyncRouter",
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_emit_sync_routing_decision_uses_router_publish(self, mock_manifest, mock_cluster_config):
+        """Routing-decision emission should go through the unified router."""
+        with patch("app.coordination.sync_router.load_cluster_config", return_value=mock_cluster_config), \
+             patch("app.coordination.sync_router.get_host_provider", return_value="local"):
+            from app.coordination.event_router import DataEventType
+            from app.coordination.sync_router import SyncRouter
+            from app.distributed.cluster_manifest import DataType
+
+            router = SyncRouter(manifest=mock_manifest)
+
+        mock_router = MagicMock()
+        mock_router.publish = AsyncMock()
+        with patch("app.coordination.event_router.get_router", return_value=mock_router):
+            await router._emit_sync_routing_decision(
+                source="source-node",
+                targets=["target-a", "target-b"],
+                data_type=DataType.MODEL,
+                reason="fresh_model",
+            )
+
+        mock_router.publish.assert_awaited_once_with(
+            DataEventType.SYNC_REQUEST,
+            {
+                "source": "source-node",
+                "targets": ["target-a", "target-b"],
+                "data_type": DataType.MODEL.value,
+                "reason": "fresh_model",
+                "router": "SyncRouter",
+            },
+            source="SyncRouter",
+        )
 
 
 # =============================================================================

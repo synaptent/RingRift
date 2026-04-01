@@ -1212,7 +1212,6 @@ class TestGetStatusDetails:
         daemon._stats.orphan_dbs_recovered = 1
 
         status = daemon.get_status()
-
         assert status["stats"]["logs_rotated"] == 5
         assert status["stats"]["bytes_reclaimed_logs_mb"] == 10.0
         assert status["stats"]["databases_vacuumed"] == 3
@@ -1258,6 +1257,23 @@ class TestGetStatusDetails:
         assert status["last_runs"]["dlq_cleanup"] == 4000.0
         assert status["last_runs"]["queue_cleanup"] == 5000.0
         assert status["last_runs"]["orphan_detection"] == 6000.0
+
+
+class TestEventSubscriptions:
+    """Focused tests for event subscription plumbing."""
+
+    @pytest.mark.asyncio
+    async def test_subscribe_to_disk_events_uses_router_helper(self):
+        """Disk warning subscription should go through the router helper."""
+        daemon = MaintenanceDaemon()
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            await daemon._subscribe_to_disk_events()
+
+        mock_subscribe.assert_called_once_with(
+            "disk_space_low",
+            daemon._on_disk_space_low,
+        )
 
 
 # =============================================================================

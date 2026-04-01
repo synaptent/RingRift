@@ -47,6 +47,8 @@ def _safe_create_task(coro, context: str = "") -> asyncio.Task | None:
         )
         return task
     except RuntimeError as e:
+        if hasattr(coro, "close"):
+            coro.close()
         logger.debug(f"[EvaluationFeedback] Could not create task for {context}: {e}")
         return None
 

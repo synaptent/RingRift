@@ -146,41 +146,48 @@ class SelfplayVelocityMixin:
                     f"Boosted exploration {old_boost:.2f} → {priority.exploration_boost:.2f}"
                 )
 
-            # Emit SELFPLAY_RATE_CHANGED if momentum changed by >20%
-            if abs(priority.momentum_multiplier - old_momentum) / max(old_momentum, 0.01) > 0.20:
+            # Emit SELFPLAY_RATE_CHANGED if momentum changed by 20% or more.
+            # The accelerating path applies a 1.2x multiplier, so strict >20%
+            # made this branch effectively unreachable.
+            relative_change = abs(priority.momentum_multiplier - old_momentum) / max(old_momentum, 0.01)
+            if relative_change + 1e-9 >= 0.20:
                 change_percent = ((priority.momentum_multiplier - old_momentum) / old_momentum) * 100.0
                 try:
-                    from app.coordination.event_router import DataEventType, get_event_bus
+                    from app.coordination.event_router import DataEventType, publish_sync
 
-                    bus = get_event_bus()
-                    if bus:
-                        bus.emit(DataEventType.SELFPLAY_RATE_CHANGED, {
+                    publish_sync(
+                        DataEventType.SELFPLAY_RATE_CHANGED,
+                        {
                             "config_key": config_key,
                             "old_rate": old_momentum,
                             "new_rate": priority.momentum_multiplier,
                             "change_percent": change_percent,
                             "reason": f"elo_momentum:{trend}",
-                        })
-                        logger.debug(
-                            f"[SelfplayScheduler] Emitted SELFPLAY_RATE_CHANGED for {config_key}: "
-                            f"{old_momentum:.2f} → {priority.momentum_multiplier:.2f} ({change_percent:+.1f}%)"
-                        )
+                        },
+                        source="selfplay_velocity_mixin",
+                    )
+                    logger.debug(
+                        f"[SelfplayScheduler] Emitted SELFPLAY_RATE_CHANGED for {config_key}: "
+                        f"{old_momentum:.2f} → {priority.momentum_multiplier:.2f} ({change_percent:+.1f}%)"
+                    )
                 except (ImportError, RuntimeError, AttributeError, TypeError) as emit_err:
                     logger.debug(f"[SelfplayScheduler] Failed to emit SELFPLAY_RATE_CHANGED: {emit_err}")
 
             # Emit SELFPLAY_TARGET_UPDATED for downstream consumers
             try:
-                from app.coordination.event_router import DataEventType, get_event_bus
+                from app.coordination.event_router import DataEventType, publish_sync
 
-                bus = get_event_bus()
-                if bus:
-                    bus.emit(DataEventType.SELFPLAY_TARGET_UPDATED, {
+                publish_sync(
+                    DataEventType.SELFPLAY_TARGET_UPDATED,
+                    {
                         "config_key": config_key,
                         "priority": "normal",
                         "reason": f"velocity_changed:{trend}",
                         "momentum_multiplier": priority.momentum_multiplier,
                         "exploration_boost": priority.exploration_boost,
-                    })
+                    },
+                    source="selfplay_velocity_mixin",
+                )
             except (ImportError, RuntimeError, AttributeError, TypeError) as emit_err:
                 logger.debug(f"[SelfplayScheduler] Failed to emit target update: {emit_err}")
 
@@ -360,17 +367,19 @@ class SelfplayVelocityMixin:
 
             # Emit SELFPLAY_TARGET_UPDATED for downstream consumers
             try:
-                from app.coordination.event_router import DataEventType, get_event_bus
+                from app.coordination.event_router import DataEventType, publish_sync
 
-                bus = get_event_bus()
-                if bus:
-                    bus.emit(DataEventType.SELFPLAY_TARGET_UPDATED, {
+                publish_sync(
+                    DataEventType.SELFPLAY_TARGET_UPDATED,
+                    {
                         "config_key": config_key,
                         "priority": "high" if boost_factor > 1.3 else "normal",
                         "reason": f"exploration_boost:{reason}",
                         "exploration_boost": priority.exploration_boost,
                         "anomaly_count": anomaly_count,
-                    })
+                    },
+                    source="selfplay_velocity_mixin",
+                )
             except (ImportError, RuntimeError, AttributeError, TypeError) as emit_err:
                 logger.debug(f"[SelfplayScheduler] Failed to emit target update: {emit_err}")
 
@@ -467,17 +476,19 @@ class SelfplayVelocityMixin:
             # Emit SELFPLAY_TARGET_UPDATED to propagate changes downstream
             if priority.exploration_boost > old_boost:
                 try:
-                    from app.coordination.event_router import DataEventType, get_event_bus
+                    from app.coordination.event_router import DataEventType, publish_sync
 
-                    bus = get_event_bus()
-                    if bus:
-                        bus.emit(DataEventType.SELFPLAY_TARGET_UPDATED, {
+                    publish_sync(
+                        DataEventType.SELFPLAY_TARGET_UPDATED,
+                        {
                             "config_key": config_key,
                             "priority": "high" if quality_score < 0.5 else "normal",
                             "reason": f"quality_exploration:{trend}",
                             "exploration_boost": priority.exploration_boost,
                             "quality_score": quality_score,
-                        })
+                        },
+                        source="selfplay_velocity_mixin",
+                    )
                 except (ImportError, RuntimeError, AttributeError, TypeError) as emit_err:
                     logger.debug(f"[SelfplayScheduler] Failed to emit target update: {emit_err}")
 
@@ -770,16 +781,18 @@ class SelfplayVelocityMixin:
 
             # Emit event for downstream consumers
             try:
-                from app.coordination.event_router import get_event_bus, DataEventType
+                from app.coordination.event_router import DataEventType, publish_sync
 
-                bus = get_event_bus()
-                if bus:
-                    bus.emit(DataEventType.SELFPLAY_TARGET_UPDATED, {
+                publish_sync(
+                    DataEventType.SELFPLAY_TARGET_UPDATED,
+                    {
                         "config_key": config_key,
                         "priority": "normal",
                         "reason": "exploration_boost_expired",
                         "exploration_boost": 1.0,
-                    })
+                    },
+                    source="selfplay_velocity_mixin",
+                )
             except (ImportError, RuntimeError, AttributeError, TypeError) as emit_err:
                 logger.debug(f"[SelfplayScheduler] Failed to emit boost decay: {emit_err}")
 

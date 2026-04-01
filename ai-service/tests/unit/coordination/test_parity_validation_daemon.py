@@ -337,13 +337,14 @@ class TestParityValidationDaemon:
             scan_time=datetime.now(timezone.utc).isoformat(),
         )
 
-        with patch("app.coordination.event_router.get_event_bus") as mock_get_bus:
-            mock_bus = MagicMock()
-            mock_get_bus.return_value = mock_bus
-
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
             daemon._emit_validation_complete(summary)
 
-            mock_bus.publish_event.assert_called_once()
+            mock_publish_sync.assert_called_once()
+            args, kwargs = mock_publish_sync.call_args
+            assert args[0] == "parity_validation_completed"
+            assert args[1]["total_games_validated"] == 50
+            assert kwargs["source"] == "ParityValidationDaemon"
 
 
 class TestModuleLevelHelpers:

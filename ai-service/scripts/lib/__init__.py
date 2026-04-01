@@ -43,6 +43,8 @@ Usage:
     from scripts.lib.hosts import get_hosts, get_host, HostConfig, get_active_hosts
 """
 
+import warnings
+
 from scripts.lib.logging_config import (
     setup_logging,
     setup_script_logging,
@@ -85,18 +87,20 @@ from scripts.lib.alerts import (
     check_cpu_alert,
 )
 
-from scripts.lib.data_quality import (
-    VictoryType,
-    VICTORY_TYPE_VALUE,
-    GameLengthConfig,
-    QualityScores,
-    GameQuality,
-    QualityWeights,
-    GameQualityScorer,
-    QualityFilter,
-    QualityStats,
-    compute_quality_stats,
-)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from scripts.lib.data_quality import (
+        VictoryType,
+        VICTORY_TYPE_VALUE,
+        GameLengthConfig,
+        QualityScores,
+        GameQuality,
+        QualityWeights,
+        GameQualityScorer,
+        QualityFilter,
+        QualityStats,
+        compute_quality_stats,
+    )
 
 from scripts.lib.cluster import (
     ClusterManager,
@@ -123,14 +127,16 @@ from scripts.lib.database import (
     check_integrity,
 )
 
-from scripts.lib.retry import (
-    RetryConfig,
-    RetryAttempt,
-    retry,
-    retry_on_exception,
-    retry_async,
-    with_timeout,
-)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from scripts.lib.retry import (
+        RetryConfig,
+        RetryAttempt,
+        retry,
+        retry_on_exception,
+        retry_async,
+        with_timeout,
+    )
 
 from scripts.lib.paths import (
     AI_SERVICE_ROOT,

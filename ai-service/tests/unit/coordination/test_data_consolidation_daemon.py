@@ -38,7 +38,6 @@ def config(temp_data_dir):
         canonical_dir=temp_data_dir,
         min_games_for_consolidation=5,
         check_interval_seconds=1.0,
-        min_moves_for_valid=3,
         batch_size=10,
         deduplicate=True,
         validate_before_merge=True,
@@ -531,6 +530,46 @@ class TestSingletonPattern:
             assert daemon1 is not daemon2
 
         reset_consolidation_daemon()
+
+
+class TestEventSubscriptions:
+    """Test router subscription helpers."""
+
+    @pytest.mark.asyncio
+    async def test_subscribe_to_events_uses_router_helpers(self, config):
+        """Subscription should go through unified router helpers."""
+        from app.distributed.data_events import DataEventType
+
+        with patch.object(DataConsolidationDaemon, '_subscribe_to_events', new_callable=AsyncMock):
+            daemon = DataConsolidationDaemon(config=config)
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            await daemon._subscribe_to_events()
+
+        assert mock_subscribe.call_count == 2
+        subscribed = [call.args[0].value for call in mock_subscribe.call_args_list]
+        assert DataEventType.NEW_GAMES_AVAILABLE.value in subscribed
+        assert DataEventType.SELFPLAY_COMPLETE.value in subscribed
+        assert daemon._subscribed is True
+
+    @pytest.mark.asyncio
+    async def test_unsubscribe_from_events_uses_router_helpers(self, config):
+        """Unsubscription should go through unified router helpers."""
+        from app.distributed.data_events import DataEventType
+
+        with patch.object(DataConsolidationDaemon, '_subscribe_to_events', new_callable=AsyncMock):
+            daemon = DataConsolidationDaemon(config=config)
+
+        daemon._subscribed = True
+
+        with patch("app.coordination.event_router.unsubscribe") as mock_unsubscribe:
+            await daemon._unsubscribe_from_events()
+
+        assert mock_unsubscribe.call_count == 2
+        unsubscribed = [call.args[0].value for call in mock_unsubscribe.call_args_list]
+        assert DataEventType.NEW_GAMES_AVAILABLE.value in unsubscribed
+        assert DataEventType.SELFPLAY_COMPLETE.value in unsubscribed
+        assert daemon._subscribed is False
 
 
 class TestAllConfigs:

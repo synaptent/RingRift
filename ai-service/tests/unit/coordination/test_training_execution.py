@@ -491,71 +491,52 @@ class TestEmitTrainingComplete:
     """Tests for emit_training_complete function."""
 
     @pytest.mark.asyncio
-    async def test_successful_emission(self):
+    async def test_successful_emission(self, tmp_path):
         """Test successful event emission."""
-        mock_bus = AsyncMock()
-        mock_bus.emit = AsyncMock()
+        model_path = tmp_path / "test_model.pth"
+        model_path.write_text("ok")
 
-        # Create mock modules for imports inside function
-        mock_event_router = MagicMock()
-        mock_event_router.get_stage_event_bus = MagicMock(return_value=mock_bus)
-        mock_event_router.StageEvent = MagicMock()
-        mock_event_router.StageCompletionResult = MagicMock()
-
-        with patch.dict(
-            "sys.modules",
-            {"app.coordination.event_router": mock_event_router},
-        ):
-            # Need to reload to pick up the mocked module
-            import importlib
-            import app.coordination.training_execution as te
-            importlib.reload(te)
-
-            result = await te.emit_training_complete(
+        with patch(
+            "app.coordination.event_emission_helpers.safe_emit_event_async",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_emit:
+            result = await emit_training_complete(
                 config_key="hex8_2p",
                 success=True,
-                model_path="/tmp/test_model.pth",
+                model_path=str(model_path),
+                board_type="hex8",
+                num_players=2,
+                sample_count=1234,
             )
 
-        # Result depends on whether the mock was set up correctly
-        # For this test, we'll just verify it runs without error
-        assert result in (True, False)
+        assert result is True
+        mock_emit.assert_awaited_once()
+        event_type, payload = mock_emit.await_args.args[:2]
+        assert event_type == "TRAINING_COMPLETE"
+        assert payload["config"] == "hex8_2p"
+        assert payload["config_key"] == "hex8_2p"
+        assert payload["board_type"] == "hex8"
+        assert payload["num_players"] == 2
+        assert payload["samples_trained"] == 1234
+        assert payload["model_path"] == str(model_path)
+        assert payload["checkpoint_path"] == str(model_path)
+        assert payload["success"] is True
 
     @pytest.mark.asyncio
     async def test_emission_failure(self):
         """Test graceful handling of emission failure."""
-        import sys
-
-        # Create a module that raises an exception when bus.emit is called
-        class FailingModule:
-            """Module that raises exceptions on any attribute access."""
-
-            def __getattr__(self, name):
-                if name == "get_stage_event_bus":
-
-                    def failing_bus():
-                        mock = MagicMock()
-                        mock.emit = AsyncMock(side_effect=Exception("Test error"))
-                        return mock
-
-                    return failing_bus
-                raise AttributeError(f"No attribute {name}")
-
-        original = sys.modules.get("app.coordination.event_router")
-        sys.modules["app.coordination.event_router"] = FailingModule()
-
-        try:
+        with patch(
+            "app.coordination.event_emission_helpers.safe_emit_event_async",
+            new_callable=AsyncMock,
+            side_effect=Exception("Test error"),
+        ):
             result = await emit_training_complete(
                 config_key="hex8_2p",
                 success=True,
             )
-            # Should return False due to exception in emit
-            assert result is False
-        finally:
-            if original is not None:
-                sys.modules["app.coordination.event_router"] = original
-            else:
-                sys.modules.pop("app.coordination.event_router", None)
+
+        assert result is False
 
 
 class TestEmitTrainingFailed:

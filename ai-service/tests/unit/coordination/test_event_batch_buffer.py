@@ -361,7 +361,9 @@ class TestEventBuffer:
     @pytest.mark.asyncio
     async def test_flush_handler_timeout(self):
         """Test flush handler timeout handling."""
-        slow_handler = AsyncMock(side_effect=lambda _: asyncio.sleep(10))
+        async def slow_handler(_events):
+            await asyncio.sleep(10)
+
         config = BatchConfig(max_batch_publish_time=0.1)
         buffer = EventBuffer(config=config, on_flush=slow_handler)
 
@@ -713,6 +715,24 @@ class TestBatchPublisherSingleton:
         assert "CUSTOM_EVENT" in publisher._coalesce_types
 
         await shutdown_batch_publisher()
+
+
+class TestDefaultPublishHandler:
+    """Tests for the default router-backed publish handler."""
+
+    @pytest.mark.asyncio
+    async def test_awaits_router_publish(self):
+        """The default handler should await the router publish path."""
+        import app.coordination.event_batch_buffer as module
+
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+            await module._default_publish_handler("TEST_EVENT", {"value": 1})
+
+            mock_publish.assert_awaited_once_with(
+                "TEST_EVENT",
+                {"value": 1},
+                source="event_batch_buffer",
+            )
 
 
 # =============================================================================

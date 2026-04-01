@@ -85,7 +85,7 @@ class TestDataPlaneConfig:
         assert config.manifest_broadcast_interval == 120.0
         assert config.min_replication_factor == 3
         assert config.target_replication_factor == 5
-        assert config.max_concurrent_syncs == 5
+        assert config.max_concurrent_syncs == 1  # Feb 2026: reduced to prevent OOM
         assert config.s3_enabled is False
         assert config.owc_enabled is False
 
@@ -254,10 +254,10 @@ class TestEventBridge:
 
         bridge = EventBridge(MagicMock())
 
-        # The import in EventBridge.start() is from app.coordination.event_router
+        # EventBridge.start() now uses the router subscribe helper directly.
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
+            "app.coordination.event_router.subscribe",
+            side_effect=mock_event_bus.subscribe,
         ):
             await bridge.start()
 
@@ -287,8 +287,8 @@ class TestEventBridge:
         bridge._subscriptions = ["SELFPLAY_COMPLETE", "TRAINING_COMPLETED"]
 
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
+            "app.coordination.event_router.unsubscribe",
+            side_effect=mock_event_bus.unsubscribe,
         ):
             await bridge.stop()
 

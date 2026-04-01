@@ -238,11 +238,9 @@ class NodeDataAgent(HandlerBase):
     async def _subscribe_to_events(self) -> None:
         """Subscribe to relevant events."""
         try:
-            from app.coordination.event_router import get_event_bus
-
-            bus = get_event_bus()
+            from app.coordination.event_router import subscribe
             for event_type, handler in self._get_event_subscriptions().items():
-                bus.subscribe(event_type, handler)
+                subscribe(event_type, handler)
 
             logger.debug("[NodeDataAgent] Subscribed to events")
         except ImportError:
@@ -251,11 +249,9 @@ class NodeDataAgent(HandlerBase):
     async def _unsubscribe_from_events(self) -> None:
         """Unsubscribe from events."""
         try:
-            from app.coordination.event_router import get_event_bus
-
-            bus = get_event_bus()
+            from app.coordination.event_router import unsubscribe
             for event_type, handler in self._get_event_subscriptions().items():
-                bus.unsubscribe(event_type, handler)
+                unsubscribe(event_type, handler)
         except Exception:
             pass
 

@@ -61,6 +61,8 @@ Migration Guide:
 
 from __future__ import annotations
 
+import warnings
+
 # =============================================================================
 # Re-exports from event_router.py (main routing infrastructure)
 # =============================================================================
@@ -171,50 +173,52 @@ from app.coordination.event_mappings import (
 # Re-exports from event_emitters.py (typed emit functions)
 # =============================================================================
 
-from app.coordination.event_emitters import (
-    emit_backpressure_activated,
-    emit_backpressure_released,
-    emit_cache_invalidated,
-    emit_coordinator_health_degraded,
-    emit_coordinator_healthy,
-    emit_coordinator_heartbeat,
-    emit_coordinator_shutdown,
-    emit_coordinator_unhealthy,
-    emit_curriculum_rebalanced,
-    emit_curriculum_updated,
-    emit_evaluation_complete,
-    emit_game_quality_score,
-    emit_handler_failed,
-    emit_handler_timeout,
-    emit_health_check_failed,
-    emit_health_check_passed,
-    emit_hyperparameter_updated,
-    emit_model_corrupted,
-    emit_new_games,
-    emit_node_recovered,
-    emit_node_unhealthy,
-    emit_optimization_triggered,
-    emit_p2p_cluster_healthy,
-    emit_p2p_cluster_unhealthy,
-    emit_p2p_node_dead,
-    emit_plateau_detected,
-    emit_promotion_complete,
-    emit_promotion_complete_sync,
-    emit_quality_updated,
-    emit_regression_detected,
-    emit_repair_completed,
-    emit_repair_failed,
-    emit_selfplay_complete,
-    emit_sync_complete,
-    emit_task_abandoned,
-    emit_task_complete,
-    emit_task_orphaned,
-    emit_training_complete,
-    emit_training_complete_sync,
-    emit_training_rollback_completed,
-    emit_training_rollback_needed,
-    emit_training_triggered,
-)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from app.coordination.event_emitters import (
+        emit_backpressure_activated,
+        emit_backpressure_released,
+        emit_cache_invalidated,
+        emit_coordinator_health_degraded,
+        emit_coordinator_healthy,
+        emit_coordinator_heartbeat,
+        emit_coordinator_shutdown,
+        emit_coordinator_unhealthy,
+        emit_curriculum_rebalanced,
+        emit_curriculum_updated,
+        emit_evaluation_complete,
+        emit_game_quality_score,
+        emit_handler_failed,
+        emit_handler_timeout,
+        emit_health_check_failed,
+        emit_health_check_passed,
+        emit_hyperparameter_updated,
+        emit_model_corrupted,
+        emit_new_games,
+        emit_node_recovered,
+        emit_node_unhealthy,
+        emit_optimization_triggered,
+        emit_p2p_cluster_healthy,
+        emit_p2p_cluster_unhealthy,
+        emit_p2p_node_dead,
+        emit_plateau_detected,
+        emit_promotion_complete,
+        emit_promotion_complete_sync,
+        emit_quality_updated,
+        emit_regression_detected,
+        emit_repair_completed,
+        emit_repair_failed,
+        emit_selfplay_complete,
+        emit_sync_complete,
+        emit_task_abandoned,
+        emit_task_complete,
+        emit_task_orphaned,
+        emit_training_complete,
+        emit_training_complete_sync,
+        emit_training_rollback_completed,
+        emit_training_rollback_needed,
+        emit_training_triggered,
+    )
 
 # Note: emit_training_started already imported from event_router
 

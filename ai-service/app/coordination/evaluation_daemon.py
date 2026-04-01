@@ -2805,9 +2805,7 @@ class EvaluationDaemon(HandlerBase):
             activate: True to activate backpressure, False to release.
         """
         try:
-            from app.coordination.event_router import get_event_bus
-
-            bus = get_event_bus()
+            from app.coordination.event_router import publish_sync
             if activate:
                 self._backpressure_active = True
                 self._backpressure_stats["backpressure_activations"] += 1
@@ -2831,7 +2829,7 @@ class EvaluationDaemon(HandlerBase):
                 )
 
             # Emit event for TrainingTriggerDaemon and other subscribers
-            bus.publish_sync(
+            publish_sync(
                 event_type,
                 {
                     "queue_depth": queue_depth,
@@ -2841,6 +2839,7 @@ class EvaluationDaemon(HandlerBase):
                     "source": "EvaluationDaemon",
                     "timestamp": time.time(),
                 },
+                source="EvaluationDaemon",
             )
         except ImportError:
             logger.debug("[EvaluationDaemon] Event bus not available for backpressure")

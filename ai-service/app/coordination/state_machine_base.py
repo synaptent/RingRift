@@ -428,20 +428,19 @@ class StateMachineBase(ABC, Generic[S]):
     ) -> None:
         """Emit event on state change. Override in subclasses for custom events."""
         try:
-            from app.coordination.event_router import get_event_bus
+            from app.coordination.event_router import publish_sync
 
-            bus = get_event_bus()
-            if bus:
-                bus.publish(
-                    "STATE_CHANGED",
-                    {
-                        "machine": self.__class__.__name__,
-                        "from_state": from_state.name if hasattr(from_state, "name") else str(from_state),
-                        "to_state": to_state.name if hasattr(to_state, "name") else str(to_state),
-                        "reason": reason,
-                        "timestamp": time.time(),
-                    },
-                )
+            publish_sync(
+                "STATE_CHANGED",
+                {
+                    "machine": self.__class__.__name__,
+                    "from_state": from_state.name if hasattr(from_state, "name") else str(from_state),
+                    "to_state": to_state.name if hasattr(to_state, "name") else str(to_state),
+                    "reason": reason,
+                    "timestamp": time.time(),
+                },
+                source="state_machine_base",
+            )
         except Exception as e:
             # Event emission is optional - log at debug level for visibility
             logger.debug(f"State change event emission failed: {e}")
