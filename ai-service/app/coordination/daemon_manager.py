@@ -2682,10 +2682,10 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
 
         # Phase 1: Collect daemons needing checks (under lock with timeout)
         # December 30, 2025: Added timeout to prevent indefinite blocking
-        async with self._with_lock_timeout("health_check_phase1", timeout=5.0) as acquired:
+        async with self._with_lock_timeout("health_check_phase1", timeout=30.0) as acquired:
             if not acquired:
                 # Lock timeout - skip this health check cycle
-                logger.debug("Skipping health check cycle: lock acquisition timeout")
+                logger.warning("Skipping health check cycle: lock acquisition timeout (30s)")
                 return
 
             current_time = time.time()
@@ -2815,7 +2815,7 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             except ImportError:
                 analyzer = None
 
-            async with self._with_lock_timeout("health_check_phase3", timeout=5.0) as acquired:
+            async with self._with_lock_timeout("health_check_phase3", timeout=30.0) as acquired:
                 if not acquired:
                     # Lock timeout - skip processing, will retry next cycle
                     logger.warning("Skipping health result processing: lock acquisition timeout")

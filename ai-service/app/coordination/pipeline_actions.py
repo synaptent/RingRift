@@ -900,6 +900,16 @@ async def trigger_training(
         StageCompletionResult with training results
     """
     config = config or ActionConfig()
+
+    # Coordinator nodes (M3 Mac, no CUDA) must not train locally — dispatch via work queue
+    from app.config.env import env as _env
+    if _env.is_coordinator:
+        logger.warning(f"[trigger_training] Skipping local training on coordinator (no CUDA)")
+        return StageCompletionResult(
+            success=False, stage="training", iteration=iteration,
+            duration_seconds=0.0, error="Coordinator cannot train locally (no CUDA)",
+        )
+
     root = _get_ai_service_root()
     start_time = time.time()
     last_error = None

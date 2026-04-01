@@ -185,12 +185,10 @@ def _is_dlq_retry_event(event: "RouterEvent") -> bool:
 
 # Handler timeout to prevent hung event handlers from blocking dispatch
 # Environment variable override: RINGRIFT_EVENT_HANDLER_TIMEOUT
-# December 29, 2025: Increased from 30s to 600s (10 min) for autonomous operation
-# - Gauntlet evaluation: 500s+ (50 games)
-# - Data sync: 600s+ (network transfers)
-# - NPZ export: 300s+ (sample encoding)
+# April 2026: Reduced from 600s to 120s. Long operations (gauntlet, sync, export)
+# should use fire_and_forget() instead of blocking the event dispatch loop.
 DEFAULT_HANDLER_TIMEOUT_SECONDS = float(
-    os.environ.get("RINGRIFT_EVENT_HANDLER_TIMEOUT", "600.0")
+    os.environ.get("RINGRIFT_EVENT_HANDLER_TIMEOUT", "120.0")
 )
 
 

@@ -696,7 +696,7 @@ def _default_task_error_handler(task: asyncio.Task) -> None:
 # Without this, safe_create_task tasks accumulate in the event loop (599+ after 10h)
 # and starve the event loop, causing HTTP server unresponsiveness.
 _tracked_tasks: set[asyncio.Task] = set()
-_TASK_GC_THRESHOLD = 50  # Reap done tasks when set exceeds this size
+_TASK_GC_THRESHOLD = 500  # Reap done tasks when set exceeds this size
 
 
 def _reap_done_tasks() -> int:

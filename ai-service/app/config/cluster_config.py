@@ -795,7 +795,7 @@ class ClusterNode:
         February 2026: Added 'archived' status for terminated/offline nodes
         preserved for configuration history.
         """
-        return self.status not in ("terminated", "offline", "setup", "retired", "archived")
+        return self.status not in ("terminated", "offline", "setup", "retired", "archived", "stopped")
 
     @property
     def is_gpu_node(self) -> bool:
