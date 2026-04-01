@@ -687,7 +687,13 @@ class MasterLoopController:
                     logger.warning(f"[MasterLoop] Failed to load persisted state: {e}")
                     return 0
 
-        restored_count = await asyncio.to_thread(_load_sync)
+        try:
+            restored_count = await asyncio.wait_for(
+                asyncio.to_thread(_load_sync), timeout=30.0
+            )
+        except asyncio.TimeoutError:
+            logger.warning("[MasterLoop] State load timed out after 30s")
+            restored_count = 0
         if restored_count > 0:
             logger.info(f"[MasterLoop] Restored persisted state for {restored_count} configs")
 
@@ -734,7 +740,10 @@ class MasterLoopController:
                     # Dec 29, 2025: Narrowed from bare Exception
                     logger.warning(f"[MasterLoop] Failed to save persisted state: {e}")
 
-        await asyncio.to_thread(_save_sync)
+        try:
+            await asyncio.wait_for(asyncio.to_thread(_save_sync), timeout=30.0)
+        except asyncio.TimeoutError:
+            logger.warning("[MasterLoop] State save timed out after 30s — skipping")
 
     async def _maybe_save_state(self) -> None:
         """Save state if enough time has passed since last save.
@@ -3244,8 +3253,12 @@ async def main() -> None:
         daemon_profile=args.profile,
     )
 
-    # Handle signals
+    # Increase thread pool to handle 15+ concurrent SSH health checks + DB ops
+    import concurrent.futures
     loop = asyncio.get_event_loop()
+    loop.set_default_executor(concurrent.futures.ThreadPoolExecutor(max_workers=32))
+
+    # Handle signals
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, lambda: asyncio.create_task(controller.stop()))
 

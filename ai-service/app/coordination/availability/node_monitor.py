@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -112,6 +113,7 @@ class NodeMonitor(HandlerBase):
 
         self._nodes: list[ClusterNode] = nodes or []
         self._failure_counts: dict[str, int] = {}
+        self._ssh_semaphore = asyncio.Semaphore(5)  # max 5 concurrent SSH checks
         self._last_healthy: dict[str, datetime] = {}
         # SSH-specific tracking (Dec 30, 2025)
         self._ssh_failure_counts: dict[str, int] = {}
@@ -266,6 +268,11 @@ class NodeMonitor(HandlerBase):
 
     async def _check_ssh(self, node: ClusterNode) -> NodeHealthResult:
         """Check SSH connectivity with event emission (Dec 30, 2025 enhancement)."""
+        async with self._ssh_semaphore:
+            return await self._check_ssh_inner(node)
+
+    async def _check_ssh_inner(self, node: ClusterNode) -> NodeHealthResult:
+        """Inner SSH check (semaphore-limited)."""
         start_time = time.time()
         ip = getattr(node, "best_ip", None) or getattr(node, "tailscale_ip", None)
         user = getattr(node, "ssh_user", "root")
@@ -283,14 +290,22 @@ class NodeMonitor(HandlerBase):
             return result
 
         try:
-            proc = await asyncio.create_subprocess_exec(
+            ssh_args = [
                 "ssh",
                 "-o", f"ConnectTimeout={int(self.config.ssh_timeout_seconds)}",
                 "-o", "StrictHostKeyChecking=no",
                 "-o", "BatchMode=yes",
                 "-p", str(port),
-                f"{user}@{ip}",
-                "echo ok",
+            ]
+            # Use the node's configured SSH key (from distributed_hosts.yaml)
+            key_path = getattr(node, "ssh_key", None)
+            if key_path:
+                expanded = os.path.expanduser(key_path)
+                if os.path.exists(expanded):
+                    ssh_args.extend(["-i", expanded, "-o", "IdentitiesOnly=yes"])
+            ssh_args.extend([f"{user}@{ip}", "echo ok"])
+            proc = await asyncio.create_subprocess_exec(
+                *ssh_args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
