@@ -36,11 +36,19 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
                     datefmt="%Y-%m-%d %H:%M:%S")
 logger = logging.getLogger("minimal_alphazero")
 
+# Defaults — overridden by --board-type and --num-players CLI args
 BOARD_TYPE = "hex8"
 BOARD_ENUM = BoardType.HEX8
 NUM_PLAYERS = 2
 MODEL_VERSION = "v2"
 MAX_MOVES = 800
+
+BOARD_TYPE_MAP = {
+    "hex8": BoardType.HEX8,
+    "hexagonal": BoardType.HEXAGONAL,
+    "square8": BoardType.SQUARE8,
+    "square19": BoardType.SQUARE19,
+}
 
 
 def _make_ai(player: int, model_path: str, budget: int,
@@ -133,7 +141,8 @@ def run_selfplay(model_path: str, n_games: int, out: Path, budget: int,
     # Use os.urandom for entropy instead of Python random (which may share state)
     seed = int.from_bytes(os.urandom(4), "big")
     logger.info(f"  selfplay seed={seed}")
-    wins, done_n, t0 = {1: 0, 2: 0}, 0, time.time()
+    wins = {p: 0 for p in range(1, NUM_PLAYERS + 1)}
+    done_n, t0 = 0, time.time()
     with open(out, "w") as f:
         for i in range(n_games):
             try:
@@ -144,12 +153,16 @@ def run_selfplay(model_path: str, n_games: int, out: Path, budget: int,
                     wins[w] += 1
                 done_n += 1
                 if (i + 1) % max(1, n_games // 10) == 0:
-                    logger.info(f"  selfplay {i+1}/{n_games} P1={wins[1]} P2={wins[2]} ({time.time()-t0:.0f}s)")
+                    wstr = " ".join(f"P{p}={wins[p]}" for p in sorted(wins))
+                    logger.info(f"  selfplay {i+1}/{n_games} {wstr} ({time.time()-t0:.0f}s)")
             except Exception as e:
                 logger.warning(f"  game {i} failed: {e}")
     el = time.time() - t0
     logger.info(f"  selfplay done: {done_n}/{n_games} in {el:.0f}s")
-    return {"completed": done_n, "p1_wins": wins[1], "p2_wins": wins[2], "elapsed_s": el}
+    result: dict[str, Any] = {"completed": done_n, "elapsed_s": el}
+    for p in wins:
+        result[f"p{p}_wins"] = wins[p]
+    return result
 
 
 def export_npz(jsonl: Path, npz: Path) -> bool:
@@ -264,8 +277,14 @@ def evaluate(cand: str, best: str, n_games: int, budget: int) -> dict:
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Minimal AlphaZero loop (hex8 2p)")
+    global BOARD_TYPE, BOARD_ENUM, NUM_PLAYERS
+
+    ap = argparse.ArgumentParser(description="Minimal AlphaZero loop")
     ap.add_argument("--model", required=True, help="Starting model checkpoint")
+    ap.add_argument("--board-type", type=str, default="hex8",
+                    choices=list(BOARD_TYPE_MAP.keys()),
+                    help="Board type (default: hex8)")
+    ap.add_argument("--num-players", type=int, default=2, choices=[2, 3, 4])
     ap.add_argument("--iterations", type=int, default=20)
     ap.add_argument("--games-per-iter", type=int, default=300)
     ap.add_argument("--eval-games", type=int, default=100)
@@ -279,6 +298,11 @@ def main() -> None:
     ap.add_argument("--work-dir", type=str, default="data/minimal_loop")
     ap.add_argument("--log-file", type=str, default=None)
     args = ap.parse_args()
+
+    # Set globals from CLI args
+    BOARD_TYPE = args.board_type
+    BOARD_ENUM = BOARD_TYPE_MAP[args.board_type]
+    NUM_PLAYERS = args.num_players
 
     wdir = Path(args.work_dir)
     wdir.mkdir(parents=True, exist_ok=True)
