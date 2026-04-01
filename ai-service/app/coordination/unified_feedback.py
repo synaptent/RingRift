@@ -936,34 +936,32 @@ class UnifiedFeedbackOrchestrator:
             state: Updated feedback state
         """
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish_sync
 
-            router = get_router()
-            if router:
-                # Emit consolidated event
-                router.publish_sync(
-                    "FEEDBACK_SIGNALS_UPDATED",
-                    {
-                        "config_key": state.config_key,
-                        "signals": {
-                            "training_intensity": state.training_intensity,
-                            "exploration_boost": state.exploration_boost,
-                            "curriculum_weight": state.curriculum_weight,
-                            "data_freshness_hours": state.data_freshness_hours,
-                        },
-                        "metrics": {
-                            "selfplay_quality": state.last_selfplay_quality,
-                            "training_accuracy": state.last_training_accuracy,
-                            "elo": state.last_evaluation_elo,
-                            "elo_velocity": state.elo_velocity,
-                        },
-                        "timestamp": time.time(),
+            # Emit consolidated event
+            publish_sync(
+                "FEEDBACK_SIGNALS_UPDATED",
+                {
+                    "config_key": state.config_key,
+                    "signals": {
+                        "training_intensity": state.training_intensity,
+                        "exploration_boost": state.exploration_boost,
+                        "curriculum_weight": state.curriculum_weight,
+                        "data_freshness_hours": state.data_freshness_hours,
                     },
-                    source="unified_feedback_orchestrator",
-                )
+                    "metrics": {
+                        "selfplay_quality": state.last_selfplay_quality,
+                        "training_accuracy": state.last_training_accuracy,
+                        "elo": state.last_evaluation_elo,
+                        "elo_velocity": state.elo_velocity,
+                    },
+                    "timestamp": time.time(),
+                },
+                source="unified_feedback_orchestrator",
+            )
 
-                # Also emit individual signal change events for backward compatibility
-                self._emit_individual_signals(state)
+            # Also emit individual signal change events for backward compatibility
+            self._emit_individual_signals(state)
 
         except Exception as e:
             logger.debug(f"[UnifiedFeedbackOrchestrator] Error emitting event: {e}")
@@ -975,14 +973,10 @@ class UnifiedFeedbackOrchestrator:
             state: Feedback state
         """
         try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
-            if not router:
-                return
+            from app.coordination.event_router import publish_sync
 
             # Training intensity changed
-            router.publish_sync(
+            publish_sync(
                 "TRAINING_INTENSITY_CHANGED",
                 {
                     "config_key": state.config_key,
@@ -993,7 +987,7 @@ class UnifiedFeedbackOrchestrator:
             )
 
             # Exploration boost changed
-            router.publish_sync(
+            publish_sync(
                 "EXPLORATION_BOOST",
                 {
                     "config_key": state.config_key,
@@ -1004,7 +998,7 @@ class UnifiedFeedbackOrchestrator:
             )
 
             # Curriculum weight changed
-            router.publish_sync(
+            publish_sync(
                 "CURRICULUM_REBALANCED",
                 {
                     "trigger": "unified_feedback",

@@ -688,6 +688,24 @@ class TestRecoveryExecution:
         result = await daemon._restart_lambda_node(node)
         assert result is False
 
+    def test_emit_recovery_event_uses_publish_sync_helper(self, daemon):
+        """Should emit recovery actions through the unified sync helper."""
+        node = NodeInfo(
+            node_id="node-1",
+            host="1.1.1.1",
+            provider=NodeProvider.LAMBDA,
+            consecutive_failures=3,
+        )
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish:
+            daemon._emit_recovery_event(node, NodeRecoveryAction.NOTIFY, success=True)
+
+        mock_publish.assert_called_once()
+        assert mock_publish.call_args.kwargs["event_type"] == "node_recovery_triggered"
+        payload = mock_publish.call_args.kwargs["payload"]
+        assert payload["node_id"] == "node-1"
+        assert payload["action"] == NodeRecoveryAction.NOTIFY.value
+
     @pytest.mark.asyncio
     async def test_restart_lambda_without_instance_id(self, daemon):
         """Should fail Lambda restart without instance ID."""

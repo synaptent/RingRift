@@ -675,6 +675,23 @@ class TestEventWiring:
                 except (ImportError, AttributeError):
                     pass  # Expected if data_events/DataEventType not available
 
+    def test_wire_training_events_uses_router_helper(self, temp_db_path):
+        """Should wire training events through the unified helper."""
+        from app.coordination.event_router import DataEventType
+        from app.coordination.training_coordinator import wire_training_events
+
+        with patch.object(TrainingCoordinator, '_get_db_path', return_value=temp_db_path):
+            with patch.object(TrainingCoordinator, '_get_node_ip', return_value="127.0.0.1"):
+                with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+                    coordinator = wire_training_events()
+
+        assert coordinator is not None
+        subscribed_types = [call.args[0] for call in mock_subscribe.call_args_list]
+        assert DataEventType.TRAINING_STARTED in subscribed_types
+        assert DataEventType.TRAINING_PROGRESS in subscribed_types
+        assert DataEventType.TRAINING_COMPLETED in subscribed_types
+        assert DataEventType.TRAINING_FAILED in subscribed_types
+
 
 # =============================================================================
 # Context Manager Tests

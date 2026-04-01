@@ -6,8 +6,10 @@ WORK_FAILED).
 """
 
 import asyncio
-import pytest
 import time
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.coordination.work_queue_monitor_daemon import (
     WorkQueueMonitorDaemon,
@@ -238,6 +240,47 @@ class TestWorkQueueMonitorDaemon:
 
         stats = daemon.get_queue_stats()
         assert stats.stuck_job_count == 1
+
+    @pytest.mark.asyncio
+    async def test_emit_backpressure_event_uses_publish_helper(self):
+        """Should emit backpressure transitions through the unified helper."""
+        daemon = WorkQueueMonitorDaemon()
+
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+            await daemon._emit_backpressure_event(active=True, queue_depth=123)
+
+        mock_publish.assert_awaited_once()
+        assert mock_publish.await_args.kwargs["event_type"] == "BACKPRESSURE_ACTIVATED"
+        assert mock_publish.await_args.kwargs["payload"]["queue_depth"] == 123
+
+    @pytest.mark.asyncio
+    async def test_emit_node_overload_event_uses_publish_helper(self):
+        """Should emit node overload through the unified helper."""
+        daemon = WorkQueueMonitorDaemon()
+
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+            await daemon._emit_node_overload_event(node_id="gpu-node-1", job_count=9)
+
+        mock_publish.assert_awaited_once()
+        assert mock_publish.await_args.kwargs["event_type"] == "NODE_OVERLOADED"
+        assert mock_publish.await_args.kwargs["payload"]["node_id"] == "gpu-node-1"
+
+    @pytest.mark.asyncio
+    async def test_emit_stuck_job_event_uses_publish_helper(self):
+        """Should emit stuck-job alerts through the unified helper."""
+        daemon = WorkQueueMonitorDaemon()
+        job = JobTracker(
+            work_id="stuck-1",
+            work_type="training",
+            claimed_by="gpu-node-2",
+        )
+
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+            await daemon._emit_stuck_job_event(job, stuck_duration=600.0)
+
+        mock_publish.assert_awaited_once()
+        assert mock_publish.await_args.kwargs["event_type"] == "STUCK_JOB_DETECTED"
+        assert mock_publish.await_args.kwargs["payload"]["work_id"] == "stuck-1"
 
 
 class TestConstants:

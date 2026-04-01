@@ -278,10 +278,9 @@ class QualityFeedbackMixin:
                 # This closes the feedback loop from selfplay quality -> scheduler priorities
                 try:
                     # Jan 2026: Migrated to event_router (app.coordination.data_events deprecated Q2 2026)
-                    from app.coordination.event_router import DataEventType, get_router
+                    from app.coordination.event_router import DataEventType, publish_sync
 
-                    router = get_router()
-                    router.publish_sync(
+                    publish_sync(
                         DataEventType.CURRICULUM_REBALANCED,
                         {
                             "config_key": config_key,

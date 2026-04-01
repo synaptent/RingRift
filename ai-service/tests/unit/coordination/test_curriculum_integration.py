@@ -124,6 +124,41 @@ class TestMomentumToCurriculumBridge:
         assert args[1]["source"] == "loss_anomaly"
         assert kwargs["source"] == "MomentumToCurriculumBridge"
 
+    def test_emit_curriculum_propagate_uses_publish_sync(self):
+        """Propagation events should use the unified router helper."""
+        bridge = MomentumToCurriculumBridge()
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            bridge._emit_curriculum_propagate(
+                "hex8_2p",
+                "hex8_3p",
+                "tier_2",
+                "promotion_success",
+                0.8,
+            )
+
+        mock_publish_sync.assert_called_once()
+        args, kwargs = mock_publish_sync.call_args
+        assert args[0] == "CURRICULUM_PROPAGATE"
+        assert args[1]["source_config"] == "hex8_2p"
+        assert args[1]["target_config"] == "hex8_3p"
+        assert args[1]["propagation_weight"] == pytest.approx(0.8)
+        assert kwargs["source"] == "curriculum_integration"
+
+    def test_emit_rebalance_event_uses_publish_sync(self):
+        """Momentum bridge rebalance events should use the unified router helper."""
+        bridge = MomentumToCurriculumBridge()
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            bridge._emit_rebalance_event(["hex8_2p"], {"hex8_2p": 1.4})
+
+        mock_publish_sync.assert_called_once()
+        args, kwargs = mock_publish_sync.call_args
+        assert args[0] == "CURRICULUM_REBALANCED"
+        assert args[1]["changed_configs"] == ["hex8_2p"]
+        assert args[1]["new_weights"] == {"hex8_2p": 1.4}
+        assert kwargs["source"] == "momentum_curriculum_bridge"
+
 
 # =============================================================================
 # PFSPWeaknessWatcher Tests
@@ -166,6 +201,28 @@ class TestPFSPWeaknessWatcher:
 
         assert watcher._extract_config("model_unknown") == "model_unknown"
         assert watcher._extract_config("simple") == "simple"
+
+    def test_emit_opponent_mastered_uses_publish_sync(self):
+        """PFSP mastery events should use the unified router helper."""
+        from app.coordination.event_router import DataEventType
+
+        watcher = PFSPWeaknessWatcher()
+        mastery = {
+            "current_model": "hex8_2p_v12",
+            "opponent": "baseline_v3",
+            "win_rate": 0.91,
+            "games": 24,
+        }
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            watcher._emit_opponent_mastered("hex8_2p", mastery)
+
+        mock_publish_sync.assert_called_once()
+        args, kwargs = mock_publish_sync.call_args
+        assert args[0] == DataEventType.OPPONENT_MASTERED
+        assert args[1]["config"] == "hex8_2p"
+        assert args[1]["opponent"] == "baseline_v3"
+        assert kwargs["source"] == "pfsp_weakness_watcher"
 
 
 # =============================================================================
@@ -640,6 +697,23 @@ class TestPromotionCompletedToCurriculumWatcher:
 
         mock_unsubscribe.assert_called_once_with("PROMOTION_COMPLETED", watcher._on_promotion_completed)
         assert watcher._subscribed is False
+
+    def test_emit_rebalance_event_uses_publish_sync(self):
+        """Promotion-completed watcher rebalance events should use the unified router helper."""
+        from app.coordination.curriculum_integration import PromotionCompletedToCurriculumWatcher
+
+        watcher = PromotionCompletedToCurriculumWatcher()
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            watcher._emit_rebalance_event("hex8_2p", 1.25, "promotion_success", 35.0)
+
+        mock_publish_sync.assert_called_once()
+        args, kwargs = mock_publish_sync.call_args
+        assert args[0] == "CURRICULUM_REBALANCED"
+        assert args[1]["changed_configs"] == ["hex8_2p"]
+        assert args[1]["new_weights"] == {"hex8_2p": 1.25}
+        assert args[1]["value"] == pytest.approx(35.0)
+        assert kwargs["source"] == "promotion_completed_curriculum_watcher"
 
     def test_health_check_returns_result(self):
         """health_check returns a HealthCheckResult."""

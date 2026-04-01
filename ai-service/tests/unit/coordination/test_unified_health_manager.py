@@ -1132,6 +1132,48 @@ class TestDecember2025EventHandlers:
         assert manager._errors[0].severity == ErrorSeverity.CRITICAL
 
     @pytest.mark.asyncio
+    async def test_on_coordinator_health_degraded_critical_uses_publish_helper(self, manager, mock_event_payload):
+        """Critical coordinator health should emit recovery via unified publish helper."""
+        event = mock_event_payload({
+            "coordinator_name": "data_pipeline",
+            "reason": "fatal error",
+            "health_score": 0.1,
+            "node_id": "coordinator-1",
+        })
+
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+            await manager._on_coordinator_health_degraded(event)
+
+        mock_publish.assert_awaited_once()
+        assert mock_publish.await_args.kwargs["event_type"] == "recovery_initiated"
+        assert mock_publish.await_args.kwargs["payload"]["component"] == "data_pipeline"
+
+    @pytest.mark.asyncio
+    async def test_on_regression_critical_uses_publish_helper_for_rollback(self, manager, mock_event_payload):
+        """Successful auto-rollback should emit through the unified publish helper."""
+        from app.coordination.event_router import DataEventType
+
+        manager._rollback_manager = MagicMock()
+        manager._rollback_manager.rollback_model.return_value = {
+            "success": True,
+            "from_version": 12,
+            "to_version": 11,
+        }
+        event = mock_event_payload({
+            "model_id": "hex8_2p_candidate",
+            "config_key": "hex8_2p",
+            "severity": "critical",
+            "win_rate": 0.42,
+        })
+
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+            await manager._on_regression_critical(event)
+
+        mock_publish.assert_awaited_once()
+        assert mock_publish.await_args.kwargs["event_type"] == DataEventType.MODEL_PROMOTED
+        assert mock_publish.await_args.kwargs["payload"]["action"] == "rollback"
+
+    @pytest.mark.asyncio
     async def test_on_coordinator_shutdown(self, manager, mock_event_payload):
         """Should handle COORDINATOR_SHUTDOWN event."""
         event = mock_event_payload({
@@ -1222,6 +1264,24 @@ class TestDecember2025EventHandlers:
         # Should record error
         assert len(manager._errors) == 1
         assert manager._errors[0].component == "cluster"
+
+    @pytest.mark.asyncio
+    async def test_on_cluster_stall_detected_uses_publish_sync_helper(self, manager, mock_event_payload):
+        """Cluster stalls should emit NODE_UNHEALTHY via the sync helper."""
+        from app.coordination.event_router import DataEventType
+
+        event = mock_event_payload({
+            "stalled_nodes": ["node-1", "node-2"],
+            "stall_duration_seconds": 300,
+            "last_game_progress": 0,
+        })
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            await manager._on_cluster_stall_detected(event)
+
+        assert mock_publish_sync.call_count == 2
+        event_types = [call.kwargs["event_type"] for call in mock_publish_sync.call_args_list]
+        assert event_types == [DataEventType.NODE_UNHEALTHY, DataEventType.NODE_UNHEALTHY]
 
     @pytest.mark.asyncio
     async def test_on_daemon_started(self, manager, mock_event_payload):

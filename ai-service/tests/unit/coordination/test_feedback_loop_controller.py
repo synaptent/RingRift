@@ -510,6 +510,35 @@ class TestFeedbackLoopControllerQualityEventPaths:
         assert published["payload"]["trigger"] == "training_complete"
         assert published["payload"]["adjustment"] > 0.0
 
+    def test_update_curriculum_weight_from_selfplay_uses_publish_sync(self, monkeypatch):
+        """Quality feedback curriculum updates should use the unified sync router helper."""
+        controller = get_feedback_loop_controller()
+        published = {}
+
+        class FakeCurriculumFeedback:
+            def __init__(self):
+                self._current_weights = {"hex8_2p": 1.0}
+
+        def fake_publish_sync(event_type, payload=None, source=""):
+            published["event_type"] = event_type
+            published["payload"] = payload
+            published["source"] = source
+
+        monkeypatch.setattr(
+            "app.training.curriculum_feedback.get_curriculum_feedback",
+            lambda: FakeCurriculumFeedback(),
+        )
+        monkeypatch.setattr(
+            "app.coordination.event_router.publish_sync",
+            fake_publish_sync,
+        )
+
+        controller._update_curriculum_weight_from_selfplay("hex8_2p", 0.40)
+
+        assert published["payload"]["config_key"] == "hex8_2p"
+        assert published["payload"]["reason"] == "selfplay_quality_0.40"
+        assert published["source"] == "QualityFeedbackMixin"
+
     def test_emit_selfplay_adjustment_uses_publish_sync(self, monkeypatch):
         """Elo velocity feedback should publish selfplay adjustments synchronously."""
         controller = get_feedback_loop_controller()

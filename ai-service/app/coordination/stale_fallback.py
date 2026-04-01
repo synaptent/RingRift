@@ -462,22 +462,20 @@ class TrainingFallbackController:
     ) -> None:
         """Emit event when fallback is triggered."""
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish_sync
 
-            router = get_router()
-            if router:
-                router.publish_sync(
-                    event_type="STALE_TRAINING_FALLBACK",
-                    payload={
-                        "config_key": config_key,
-                        "data_age_hours": data_age_hours,
-                        "sync_failures": sync_failures,
-                        "elapsed_time": elapsed_time,
-                        "reason": reason,
-                        "timestamp": time.time(),
-                    },
-                    source="TrainingFallbackController",
-                )
+            publish_sync(
+                event_type="STALE_TRAINING_FALLBACK",
+                payload={
+                    "config_key": config_key,
+                    "data_age_hours": data_age_hours,
+                    "sync_failures": sync_failures,
+                    "elapsed_time": elapsed_time,
+                    "reason": reason,
+                    "timestamp": time.time(),
+                },
+                source="TrainingFallbackController",
+            )
         except Exception as e:
             logger.debug(f"[StaleFallback] Could not emit fallback event: {e}")
 

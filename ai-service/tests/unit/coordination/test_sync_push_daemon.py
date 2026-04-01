@@ -426,6 +426,16 @@ class TestPushPendingFiles:
 
                 assert mock_push.call_count <= 2
 
+    @pytest.mark.asyncio
+    async def test_emit_event_uses_publish_helper(self, daemon):
+        """Test pipeline events use the unified publish helper."""
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+            await daemon._emit_event("SYNC_COMPLETED", {"config_key": "hex8_2p"})
+
+        mock_publish.assert_awaited_once()
+        assert mock_publish.await_args.kwargs["event_type"] == "SYNC_COMPLETED"
+        assert mock_publish.await_args.kwargs["payload"]["config_key"] == "hex8_2p"
+
 
 # =============================================================================
 # TestSafeCleanup

@@ -2773,10 +2773,7 @@ def wire_training_events() -> TrainingCoordinator:
 
     try:
         # Use unified event router (consolidated from data_events)
-        from app.coordination.event_router import get_router
-        from app.coordination.event_router import DataEventType  # Types still needed
-
-        router = get_router()
+        from app.coordination.event_router import DataEventType, subscribe
 
         def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
@@ -2825,10 +2822,10 @@ def wire_training_events() -> TrainingCoordinator:
             if job_id:
                 coordinator.complete_training(job_id, status="failed", error=error)
 
-        router.subscribe(DataEventType.TRAINING_STARTED.value, _on_training_started)
-        router.subscribe(DataEventType.TRAINING_PROGRESS.value, _on_training_progress)
-        router.subscribe(DataEventType.TRAINING_COMPLETED.value, _on_training_completed)
-        router.subscribe(DataEventType.TRAINING_FAILED.value, _on_training_failed)
+        subscribe(DataEventType.TRAINING_STARTED, _on_training_started)
+        subscribe(DataEventType.TRAINING_PROGRESS, _on_training_progress)
+        subscribe(DataEventType.TRAINING_COMPLETED, _on_training_completed)
+        subscribe(DataEventType.TRAINING_FAILED, _on_training_failed)
 
         logger.info("[TrainingCoordinator] Wired to event router (TRAINING_STARTED, TRAINING_PROGRESS, TRAINING_COMPLETED, TRAINING_FAILED)")
 

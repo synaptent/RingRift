@@ -202,6 +202,54 @@ class TestUnifiedFeedbackOrchestrator:
         # The implementation creates on demand
         assert state is not None or state is None  # Accept both behaviors
 
+    def test_emit_signals_updated_uses_publish_sync(self, orchestrator):
+        """Consolidated signal emission should use the unified router helper."""
+        state = FeedbackState(
+            config_key="hex8_2p",
+            training_intensity="hot_path",
+            exploration_boost=1.3,
+            curriculum_weight=1.2,
+            data_freshness_hours=0.25,
+            last_selfplay_quality=0.81,
+            last_training_accuracy=0.74,
+            last_evaluation_elo=1234.0,
+            elo_velocity=18.0,
+        )
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            orchestrator._emit_signals_updated(state)
+
+        assert mock_publish_sync.call_count == 4
+        first_args, first_kwargs = mock_publish_sync.call_args_list[0]
+        assert first_args[0] == "FEEDBACK_SIGNALS_UPDATED"
+        assert first_args[1]["config_key"] == "hex8_2p"
+        assert first_args[1]["signals"]["exploration_boost"] == pytest.approx(1.3)
+        assert first_kwargs["source"] == "unified_feedback_orchestrator"
+
+    def test_emit_individual_signals_uses_publish_sync(self, orchestrator):
+        """Individual signal emission should use the unified router helper."""
+        state = FeedbackState(
+            config_key="square8_2p",
+            training_intensity="reduced",
+            exploration_boost=1.1,
+            curriculum_weight=0.9,
+            last_selfplay_quality=0.42,
+        )
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            orchestrator._emit_individual_signals(state)
+
+        event_types = [call.args[0] for call in mock_publish_sync.call_args_list]
+        assert event_types == [
+            "TRAINING_INTENSITY_CHANGED",
+            "EXPLORATION_BOOST",
+            "CURRICULUM_REBALANCED",
+        ]
+        assert all(
+            call.kwargs["source"] == "unified_feedback_orchestrator"
+            for call in mock_publish_sync.call_args_list
+        )
+
     @pytest.mark.asyncio
     async def test_start_stop(self, orchestrator):
         """Should start and stop cleanly."""

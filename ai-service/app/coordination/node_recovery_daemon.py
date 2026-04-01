@@ -1204,13 +1204,11 @@ class NodeRecoveryDaemon(HandlerBase):
     ) -> None:
         """Emit event for recovery action."""
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish_sync
 
-            router = get_router()
-            # Phase 22.2 fix: Use publish_sync instead of emit (which doesn't exist)
-            router.publish_sync(
-                "node_recovery_triggered",
-                {
+            publish_sync(
+                event_type="node_recovery_triggered",
+                payload={
                     "node_id": node.node_id,
                     "provider": node.provider.value,
                     "action": action.value,

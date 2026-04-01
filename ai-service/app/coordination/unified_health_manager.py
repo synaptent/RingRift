@@ -877,18 +877,18 @@ class UnifiedHealthManager(HandlerBase):
                 )
                 # Emit rollback event
                 try:
-                    from app.coordination.event_router import get_router, DataEventType
+                    from app.coordination.event_router import DataEventType, publish
 
-                    router = get_router()
-                    await router.publish(
-                        DataEventType.MODEL_PROMOTED.value,  # Re-use promotion event for rollback
-                        {
+                    await publish(
+                        event_type=DataEventType.MODEL_PROMOTED,  # Re-use promotion event for rollback
+                        payload={
                             "model_id": config_key,
                             "action": "rollback",
                             "from_version": result.get("from_version"),
                             "to_version": result.get("to_version"),
                             "reason": "auto_regression_critical",
-                        }
+                        },
+                        source="UnifiedHealthManager",
                     )
                 except (RuntimeError, OSError, ConnectionError) as e:
                     logger.warning(f"Could not emit rollback event: {e}")
@@ -1088,20 +1088,19 @@ class UnifiedHealthManager(HandlerBase):
         if severity == ErrorSeverity.CRITICAL:
             # Emit recovery event to attempt coordinator restart
             try:
-                from app.coordination.event_router import get_router
-
-                router = get_router()
+                from app.coordination.event_router import publish
 
                 # Emit recovery initiation
-                await router.publish(
-                    "recovery_initiated",
-                    {
+                await publish(
+                    event_type="recovery_initiated",
+                    payload={
                         "error_id": error.error_id,
                         "component": coordinator_name,
                         "node_id": node_id,
                         "strategy": "coordinator_restart",
                         "health_score": health_score,
                     },
+                    source="UnifiedHealthManager",
                 )
                 logger.info(
                     f"[UnifiedHealthManager] Initiated recovery for degraded "
@@ -1366,15 +1365,17 @@ class UnifiedHealthManager(HandlerBase):
         # Emit NODE_UNHEALTHY for each stalled node to trigger recovery
         # Jan 2026: Migrated to event_router (app.coordination.data_events deprecated Q2 2026)
         try:
-            from app.coordination.event_router import DataEventType, get_router
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType, publish_sync
             for node_id in stalled_nodes:
-                router.emit(DataEventType.NODE_UNHEALTHY, {
-                    "node_id": node_id,
-                    "reason": "cluster_stall",
-                    "stall_duration_seconds": stall_duration_seconds,
-                })
+                publish_sync(
+                    event_type=DataEventType.NODE_UNHEALTHY,
+                    payload={
+                        "node_id": node_id,
+                        "reason": "cluster_stall",
+                        "stall_duration_seconds": stall_duration_seconds,
+                    },
+                    source="UnifiedHealthManager",
+                )
         except ImportError:
             logger.debug("[UnifiedHealthManager] data_events not available for recovery trigger")
 

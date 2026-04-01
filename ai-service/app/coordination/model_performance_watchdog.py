@@ -223,7 +223,13 @@ class ModelPerformanceWatchdog(HandlerBase):
                 "timestamp": now,
             }
 
-            await router.publish(DataEventType.REGRESSION_DETECTED, payload)
+            from app.coordination.event_router import publish
+
+            await publish(
+                event_type=DataEventType.REGRESSION_DETECTED,
+                payload=payload,
+                source="ModelPerformanceWatchdog",
+            )
             self._last_alert_time[perf.model_id] = now
 
             logger.warning(

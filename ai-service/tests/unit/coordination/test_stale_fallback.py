@@ -411,11 +411,7 @@ class TestEventEmission:
 
         controller = TrainingFallbackController()
 
-        # Patch at the import location inside _emit_fallback_event
-        with patch("app.coordination.event_router.get_router") as mock_get_router:
-            mock_router = MagicMock()
-            mock_get_router.return_value = mock_router
-
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
             controller.should_allow_training(
                 config_key="hex8_2p",
                 data_age_hours=2.0,
@@ -423,8 +419,8 @@ class TestEventEmission:
                 games_available=1000,
             )
 
-            mock_router.publish_sync.assert_called_once()
-            call_kwargs = mock_router.publish_sync.call_args[1]
+            mock_publish_sync.assert_called_once()
+            call_kwargs = mock_publish_sync.call_args[1]
             assert call_kwargs["event_type"] == "STALE_TRAINING_FALLBACK"
             assert call_kwargs["payload"]["config_key"] == "hex8_2p"
 
@@ -441,11 +437,7 @@ class TestEventEmission:
 
         controller = TrainingFallbackController()
 
-        # Patch at the import location inside _emit_fallback_event
-        with patch("app.coordination.event_router.get_router") as mock_get_router:
-            mock_router = MagicMock()
-            mock_get_router.return_value = mock_router
-
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
             controller.should_allow_training(
                 config_key="hex8_2p",
                 data_age_hours=2.0,
@@ -453,7 +445,7 @@ class TestEventEmission:
                 games_available=1000,
             )
 
-            mock_router.publish_sync.assert_not_called()
+            mock_publish_sync.assert_not_called()
 
 
 # =============================================================================

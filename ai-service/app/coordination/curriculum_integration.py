@@ -1522,26 +1522,24 @@ class MomentumToCurriculumBridge:
             propagation_weight: Weight for this propagation (0.0-1.0)
         """
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish_sync
 
-            router = get_router()
-            if router:
-                router.publish_sync(
-                    "CURRICULUM_PROPAGATE",
-                    {
-                        "source_config": source_config,
-                        "target_config": target_config,
-                        "advancement_tier": advancement_tier,
-                        "original_trigger": original_trigger,
-                        "propagation_weight": propagation_weight,
-                        "timestamp": time.time(),
-                    },
-                    source="curriculum_integration",
-                )
-                logger.debug(
-                    f"[MomentumToCurriculumBridge] Emitted CURRICULUM_PROPAGATE: "
-                    f"{source_config} -> {target_config} @ {propagation_weight:.0%}"
-                )
+            publish_sync(
+                "CURRICULUM_PROPAGATE",
+                {
+                    "source_config": source_config,
+                    "target_config": target_config,
+                    "advancement_tier": advancement_tier,
+                    "original_trigger": original_trigger,
+                    "propagation_weight": propagation_weight,
+                    "timestamp": time.time(),
+                },
+                source="curriculum_integration",
+            )
+            logger.debug(
+                f"[MomentumToCurriculumBridge] Emitted CURRICULUM_PROPAGATE: "
+                f"{source_config} -> {target_config} @ {propagation_weight:.0%}"
+            )
         except (ImportError, AttributeError, TypeError, RuntimeError) as e:
             logger.debug(f"Failed to emit curriculum propagate event: {e}")
 
@@ -1753,10 +1751,9 @@ class MomentumToCurriculumBridge:
     ) -> None:
         """Emit CURRICULUM_REBALANCED event."""
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish_sync
 
-            router = get_router()
-            router.publish_sync(
+            publish_sync(
                 "CURRICULUM_REBALANCED",
                 {
                     "trigger": "momentum_sync",
@@ -1787,10 +1784,9 @@ class MomentumToCurriculumBridge:
         rolled back due to regression. Enables monitoring dashboards and alerts.
         """
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish_sync
 
-            router = get_router()
-            router.publish_sync(
+            publish_sync(
                 "CURRICULUM_ROLLBACK_COMPLETED",
                 {
                     "config_key": config_key,
@@ -2011,12 +2007,10 @@ class PFSPWeaknessWatcher:
     def _emit_opponent_mastered(self, config_key: str, mastery: dict[str, Any]) -> None:
         """Emit OPPONENT_MASTERED event."""
         try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
+            from app.coordination.event_router import DataEventType, publish_sync
 
-            router = get_router()
             # P1.4 Dec 2025: Use DataEventType enum for type-safe emission
-            router.publish_sync(
+            publish_sync(
                 DataEventType.OPPONENT_MASTERED,
                 {
                     "config": config_key,
@@ -2384,10 +2378,9 @@ class PromotionCompletedToCurriculumWatcher:
     ) -> None:
         """Emit CURRICULUM_REBALANCED event for downstream systems."""
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish_sync
 
-            router = get_router()
-            router.publish_sync(
+            publish_sync(
                 "CURRICULUM_REBALANCED",
                 {
                     "trigger": trigger,
@@ -2919,10 +2912,9 @@ class QualityToTemperatureWatcher:
     def _emit_exploration_boost(self, config_key: str, boost: float) -> None:
         """Emit EXPLORATION_BOOST event."""
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish_sync
 
-            router = get_router()
-            router.publish_sync(
+            publish_sync(
                 "EXPLORATION_BOOST",
                 {
                     "config": config_key,

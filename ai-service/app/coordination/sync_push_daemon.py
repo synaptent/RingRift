@@ -48,6 +48,7 @@ from typing import Any
 
 import aiohttp
 
+from app.config.node_identity import get_node_id_safe
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 from app.coordination.protocols import CoordinatorStatus
 from app.coordination.sync_integrity import compute_file_checksum
@@ -221,6 +222,7 @@ class SyncPushDaemon(HandlerBase):
 
         self._manifest: ClusterManifest | None = None
         self._session: aiohttp.ClientSession | None = None
+        self.node_id = get_node_id_safe()
 
         # Statistics
         self._files_pushed = 0
@@ -293,13 +295,18 @@ class SyncPushDaemon(HandlerBase):
             return
 
         try:
-            router = get_router()
-            await router.publish(event_type, {
-                **payload,
-                "source": self.name,
-                "node_id": self.node_id,
-                "timestamp": time.time(),
-            })
+            from app.coordination.event_router import publish
+
+            await publish(
+                event_type=event_type,
+                payload={
+                    **payload,
+                    "source": self.name,
+                    "node_id": self.node_id,
+                    "timestamp": time.time(),
+                },
+                source=self.name,
+            )
         except (RuntimeError, OSError, ConnectionError, TimeoutError) as e:
             # Narrow to event bus errors (December 2025 exception narrowing)
             logger.debug(f"[{self.name}] Failed to emit {event_type}: {e}")

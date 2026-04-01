@@ -388,18 +388,17 @@ class WorkQueueMonitorDaemon(HandlerBase):
     async def _emit_backpressure_event(self, active: bool, queue_depth: int) -> None:
         """Emit backpressure activation/deactivation event."""
         try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
+            from app.coordination.event_router import publish
             event_type = "BACKPRESSURE_ACTIVATED" if active else "BACKPRESSURE_DEACTIVATED"
-            await router.publish(
-                event_type,
-                {
+            await publish(
+                event_type=event_type,
+                payload={
                     "active": active,
                     "queue_depth": queue_depth,
                     "threshold": self._backpressure_threshold,
                     "timestamp": time.time(),
                 },
+                source=self.name,
             )
         except Exception as e:
             logger.debug(f"[{self.name}] Failed to emit backpressure event: {e}")
@@ -407,17 +406,17 @@ class WorkQueueMonitorDaemon(HandlerBase):
     async def _emit_node_overload_event(self, node_id: str, job_count: int) -> None:
         """Emit node overload event."""
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish
 
-            router = get_router()
-            await router.publish(
-                "NODE_OVERLOADED",
-                {
+            await publish(
+                event_type="NODE_OVERLOADED",
+                payload={
                     "node_id": node_id,
                     "job_count": job_count,
                     "threshold": self._node_overload_threshold,
                     "timestamp": time.time(),
                 },
+                source=self.name,
             )
         except Exception as e:
             logger.debug(f"[{self.name}] Failed to emit overload event: {e}")
@@ -425,12 +424,11 @@ class WorkQueueMonitorDaemon(HandlerBase):
     async def _emit_stuck_job_event(self, job: JobTracker, stuck_duration: float) -> None:
         """Emit stuck job detected event."""
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish
 
-            router = get_router()
-            await router.publish(
-                "STUCK_JOB_DETECTED",
-                {
+            await publish(
+                event_type="STUCK_JOB_DETECTED",
+                payload={
                     "work_id": job.work_id,
                     "work_type": job.work_type,
                     "claimed_by": job.claimed_by,
@@ -438,6 +436,7 @@ class WorkQueueMonitorDaemon(HandlerBase):
                     "threshold": self._stuck_job_threshold_seconds,
                     "timestamp": time.time(),
                 },
+                source=self.name,
             )
         except Exception as e:
             logger.debug(f"[{self.name}] Failed to emit stuck job event: {e}")
