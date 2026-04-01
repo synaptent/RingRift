@@ -311,6 +311,25 @@ class TestAlertCallbacks:
 
         good_callback.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_emit_alert_uses_publish_helper(self, mock_manager):
+        """Watchdog alerts should publish through the unified helper."""
+        watchdog = DaemonWatchdog(manager=mock_manager)
+
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+            await watchdog._emit_alert(
+                WatchdogAlert.DAEMON_CRASHED,
+                daemon_name="test_daemon",
+                details={"error": "boom"},
+            )
+
+        mock_publish.assert_awaited_once()
+        args, kwargs = mock_publish.await_args
+        assert kwargs["event_type"].value == "daemon_status_changed"
+        assert kwargs["source"] == "DaemonWatchdog"
+        assert kwargs["payload"]["watchdog_alert"] == "daemon_crashed"
+        assert kwargs["payload"]["daemon_name"] == "test_daemon"
+
 
 # =============================================================================
 # Health Record Tests

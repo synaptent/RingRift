@@ -646,11 +646,16 @@ class TestEventWiring:
         """Test event wiring initialization."""
         TransferVerifier.reset_instance()
 
-        # Should return verifier even if event bus not available
-        verifier = wire_transfer_verifier_events()
+        from app.coordination.event_router import DataEventType
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            verifier = wire_transfer_verifier_events()
 
         assert verifier is not None
         assert isinstance(verifier, TransferVerifier)
+        event_type, handler = mock_subscribe.call_args.args
+        assert event_type == DataEventType.DATA_SYNC_COMPLETED
+        assert callable(handler)
 
         TransferVerifier.reset_instance()
 

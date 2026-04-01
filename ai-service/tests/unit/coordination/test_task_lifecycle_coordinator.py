@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 from unittest.mock import patch
 
@@ -84,6 +85,42 @@ class TestTaskLifecycleCoordinatorInit:
         assert stats.active_tasks == 0
         assert stats.orphaned_tasks == 0
         assert stats.total_spawned == 0
+
+
+class TestTaskLifecycleCoordinatorSubscriptions:
+    """Tests for event subscription wiring."""
+
+    def test_subscribe_to_events_uses_router_helper(self, coordinator):
+        """Should subscribe task and host events through the unified helper."""
+        from app.coordination.event_router import DataEventType
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            result = coordinator.subscribe_to_events()
+
+        assert result is True
+        assert coordinator._subscribed is True
+        subscribed = [(call.args[0], call.args[1]) for call in mock_subscribe.call_args_list]
+        assert (DataEventType.TASK_SPAWNED, coordinator._on_task_spawned) in subscribed
+        assert (DataEventType.TASK_COMPLETED, coordinator._on_task_completed) in subscribed
+        assert (DataEventType.TASK_FAILED, coordinator._on_task_failed) in subscribed
+        assert (DataEventType.TASK_HEARTBEAT, coordinator._on_task_heartbeat) in subscribed
+        assert (DataEventType.TASK_ORPHANED, coordinator._on_task_orphaned) in subscribed
+        assert (DataEventType.TASK_CANCELLED, coordinator._on_task_cancelled) in subscribed
+        assert (DataEventType.HOST_ONLINE, coordinator._on_host_online) in subscribed
+        assert (DataEventType.HOST_OFFLINE, coordinator._on_host_offline) in subscribed
+        assert (DataEventType.NODE_RECOVERED, coordinator._on_node_recovered) in subscribed
+
+    def test_emit_orphan_event_serializes_float_heartbeat(self, coordinator):
+        """Should emit orphan events even though heartbeat is stored as a float."""
+        task = coordinator.register_task("task-001", "selfplay", "gpu-1")
+        task.last_heartbeat = 1_700_000_000.0
+
+        with patch("app.coordination.event_emission_helpers.safe_emit_event", return_value=True) as mock_emit:
+            coordinator._emit_orphan_event(task)
+
+        payload = mock_emit.call_args.args[1]
+        assert payload["task_id"] == "task-001"
+        assert payload["last_heartbeat"] == datetime.fromtimestamp(task.last_heartbeat).isoformat()
 
 
 # =============================================================================

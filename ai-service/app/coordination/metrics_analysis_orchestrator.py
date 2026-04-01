@@ -365,24 +365,21 @@ class MetricsAnalysisOrchestrator:
             return True
 
         try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
+            from app.coordination.event_router import DataEventType, subscribe
 
-            router = get_router()
-
-            router.subscribe(DataEventType.METRICS_UPDATED.value, self._on_metrics_updated)
-            router.subscribe(DataEventType.ELO_UPDATED.value, self._on_elo_updated)
-            router.subscribe(DataEventType.TRAINING_PROGRESS.value, self._on_training_progress)
-            router.subscribe(DataEventType.EVALUATION_PROGRESS.value, self._on_evaluation_progress)
+            subscribe(DataEventType.METRICS_UPDATED, self._on_metrics_updated)
+            subscribe(DataEventType.ELO_UPDATED, self._on_elo_updated)
+            subscribe(DataEventType.TRAINING_PROGRESS, self._on_training_progress)
+            subscribe(DataEventType.EVALUATION_PROGRESS, self._on_evaluation_progress)
 
             # Subscribe to cache events for window reset (December 2025)
-            router.subscribe(DataEventType.CACHE_INVALIDATED.value, self._on_cache_invalidated)
+            subscribe(DataEventType.CACHE_INVALIDATED, self._on_cache_invalidated)
 
             # December 2025: Subscribe to batch scheduling events for pipeline tracking
             if hasattr(DataEventType, 'BATCH_SCHEDULED'):
-                router.subscribe(DataEventType.BATCH_SCHEDULED.value, self._on_batch_scheduled)
+                subscribe(DataEventType.BATCH_SCHEDULED, self._on_batch_scheduled)
             if hasattr(DataEventType, 'BATCH_DISPATCHED'):
-                router.subscribe(DataEventType.BATCH_DISPATCHED.value, self._on_batch_dispatched)
+                subscribe(DataEventType.BATCH_DISPATCHED, self._on_batch_dispatched)
 
             self._subscribed = True
             logger.info("[MetricsAnalysisOrchestrator] Subscribed to metrics + evaluation + batch events")

@@ -378,26 +378,24 @@ class PipelineTriggerMixin(PipelineMixinBase):
             iteration: Pipeline iteration
         """
         try:
-            from app.coordination.event_router import DataEventType, get_router
+            from app.coordination.event_router import DataEventType, publish
 
-            router = get_router()
-            if router:
-                await router.publish(
-                    event_type=DataEventType.SELFPLAY_TARGET_UPDATED,
-                    payload={
-                        "config": make_config_key(board_type, num_players),
-                        "board_type": board_type,
-                        "num_players": num_players,
-                        "extra_games": 2000,  # Request more data
-                        "reason": "quality_gate_failed",
-                        "quality_score": self._last_quality_score,
-                        "iteration": iteration,
-                    },
-                    source="DataPipelineOrchestrator",
-                )
-                logger.info(
-                    f"[QualityGate] Triggered data regeneration for {board_type}_{num_players}p"
-                )
+            await publish(
+                event_type=DataEventType.SELFPLAY_TARGET_UPDATED,
+                payload={
+                    "config": make_config_key(board_type, num_players),
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "extra_games": 2000,  # Request more data
+                    "reason": "quality_gate_failed",
+                    "quality_score": self._last_quality_score,
+                    "iteration": iteration,
+                },
+                source="DataPipelineOrchestrator",
+            )
+            logger.info(
+                f"[QualityGate] Triggered data regeneration for {board_type}_{num_players}p"
+            )
         except Exception as e:
             logger.warning(f"[QualityGate] Failed to trigger data regeneration: {e}")
 

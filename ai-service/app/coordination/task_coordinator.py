@@ -72,6 +72,7 @@ from app.coordination.singleton_mixin import SingletonMixin
 from app.coordination.task_coordinator_reservations import (
     ReservationManager,
     get_reservation_manager,
+    reset_reservation_manager,
 )
 
 logger = logging.getLogger(__name__)
@@ -882,6 +883,7 @@ class TaskCoordinator(SingletonMixin):
                 instance = cls.get_instance()
                 instance._shutdown()
             super().reset_instance()
+            reset_reservation_manager()
 
     def __init__(self):
         # Configuration
@@ -2023,10 +2025,7 @@ def wire_task_coordinator_events() -> TaskCoordinator:
 
     try:
         # Use unified event router (consolidated from data_events)
-        from app.coordination.event_router import get_router
-        from app.coordination.event_router import DataEventType  # Types still needed
-
-        router = get_router()
+        from app.coordination.event_router import DataEventType, subscribe
 
         def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
@@ -2077,11 +2076,11 @@ def wire_task_coordinator_events() -> TaskCoordinator:
             if task_id:
                 coordinator.unregister_task(task_id)
 
-        router.subscribe(DataEventType.TASK_SPAWNED.value, _on_task_spawned)
-        router.subscribe(DataEventType.TASK_HEARTBEAT.value, _on_task_heartbeat)
-        router.subscribe(DataEventType.TASK_COMPLETED.value, _on_task_completed)
-        router.subscribe(DataEventType.TASK_FAILED.value, _on_task_failed)
-        router.subscribe(DataEventType.TASK_CANCELLED.value, _on_task_cancelled)
+        subscribe(DataEventType.TASK_SPAWNED, _on_task_spawned)
+        subscribe(DataEventType.TASK_HEARTBEAT, _on_task_heartbeat)
+        subscribe(DataEventType.TASK_COMPLETED, _on_task_completed)
+        subscribe(DataEventType.TASK_FAILED, _on_task_failed)
+        subscribe(DataEventType.TASK_CANCELLED, _on_task_cancelled)
 
         logger.info("[TaskCoordinator] Wired to event router (TASK_SPAWNED, TASK_HEARTBEAT, TASK_COMPLETED, TASK_FAILED, TASK_CANCELLED)")
 

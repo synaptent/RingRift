@@ -81,7 +81,7 @@ class DaemonEventHandlers:
             return
 
         try:
-            from app.coordination.event_router import get_router, DataEventType
+            from app.coordination.event_router import get_router, subscribe, DataEventType
 
             if DataEventType is None:
                 logger.debug("[DaemonEventHandlers] DataEventType not available, skipping event subscription")
@@ -93,55 +93,55 @@ class DaemonEventHandlers:
                 return
 
             # Core critical events
-            router.subscribe(DataEventType.REGRESSION_CRITICAL.value, self._on_regression_critical)
+            subscribe(DataEventType.REGRESSION_CRITICAL, self._on_regression_critical)
 
             # P0.3 (December 2025): Feedback loop events
             if hasattr(DataEventType, 'SELFPLAY_TARGET_UPDATED'):
-                router.subscribe(DataEventType.SELFPLAY_TARGET_UPDATED.value, self._on_selfplay_target_updated)
+                subscribe(DataEventType.SELFPLAY_TARGET_UPDATED, self._on_selfplay_target_updated)
                 logger.debug("[DaemonEventHandlers] Subscribed to SELFPLAY_TARGET_UPDATED")
 
             if hasattr(DataEventType, 'EXPLORATION_BOOST'):
-                router.subscribe(DataEventType.EXPLORATION_BOOST.value, self._on_exploration_boost)
+                subscribe(DataEventType.EXPLORATION_BOOST, self._on_exploration_boost)
                 logger.debug("[DaemonEventHandlers] Subscribed to EXPLORATION_BOOST")
 
             if hasattr(DataEventType, 'DAEMON_STATUS_CHANGED'):
-                router.subscribe(DataEventType.DAEMON_STATUS_CHANGED.value, self._on_daemon_status_changed)
+                subscribe(DataEventType.DAEMON_STATUS_CHANGED, self._on_daemon_status_changed)
                 logger.debug("[DaemonEventHandlers] Subscribed to DAEMON_STATUS_CHANGED")
 
             # Dec 27, 2025: P2P cluster events
             if hasattr(DataEventType, 'HOST_OFFLINE'):
-                router.subscribe(DataEventType.HOST_OFFLINE.value, self._on_host_offline)
+                subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
                 logger.debug("[DaemonEventHandlers] Subscribed to HOST_OFFLINE")
 
             if hasattr(DataEventType, 'HOST_ONLINE'):
-                router.subscribe(DataEventType.HOST_ONLINE.value, self._on_host_online)
+                subscribe(DataEventType.HOST_ONLINE, self._on_host_online)
                 logger.debug("[DaemonEventHandlers] Subscribed to HOST_ONLINE")
 
             if hasattr(DataEventType, 'LEADER_ELECTED'):
-                router.subscribe(DataEventType.LEADER_ELECTED.value, self._on_leader_elected)
+                subscribe(DataEventType.LEADER_ELECTED, self._on_leader_elected)
                 logger.debug("[DaemonEventHandlers] Subscribed to LEADER_ELECTED")
 
             # December 2025: Backpressure events
             if hasattr(DataEventType, 'BACKPRESSURE_ACTIVATED'):
-                router.subscribe(DataEventType.BACKPRESSURE_ACTIVATED.value, self._on_backpressure_activated)
+                subscribe(DataEventType.BACKPRESSURE_ACTIVATED, self._on_backpressure_activated)
                 logger.debug("[DaemonEventHandlers] Subscribed to BACKPRESSURE_ACTIVATED")
 
             if hasattr(DataEventType, 'BACKPRESSURE_RELEASED'):
-                router.subscribe(DataEventType.BACKPRESSURE_RELEASED.value, self._on_backpressure_released)
+                subscribe(DataEventType.BACKPRESSURE_RELEASED, self._on_backpressure_released)
                 logger.debug("[DaemonEventHandlers] Subscribed to BACKPRESSURE_RELEASED")
 
             # December 2025: Disk space events
             if hasattr(DataEventType, 'DISK_SPACE_LOW'):
-                router.subscribe(DataEventType.DISK_SPACE_LOW.value, self._on_disk_space_low)
+                subscribe(DataEventType.DISK_SPACE_LOW, self._on_disk_space_low)
                 logger.debug("[DaemonEventHandlers] Subscribed to DISK_SPACE_LOW")
 
             # January 2026: Split-brain detection and resolution
             if hasattr(DataEventType, 'SPLIT_BRAIN_DETECTED'):
-                router.subscribe(DataEventType.SPLIT_BRAIN_DETECTED.value, self._on_split_brain_detected)
+                subscribe(DataEventType.SPLIT_BRAIN_DETECTED, self._on_split_brain_detected)
                 logger.debug("[DaemonEventHandlers] Subscribed to SPLIT_BRAIN_DETECTED")
 
             if hasattr(DataEventType, 'SPLIT_BRAIN_RESOLVED'):
-                router.subscribe(DataEventType.SPLIT_BRAIN_RESOLVED.value, self._on_split_brain_resolved)
+                subscribe(DataEventType.SPLIT_BRAIN_RESOLVED, self._on_split_brain_resolved)
                 logger.debug("[DaemonEventHandlers] Subscribed to SPLIT_BRAIN_RESOLVED")
 
             logger.info("[DaemonEventHandlers] Subscribed to critical events (Phase 5, P0.3, P2P cluster, backpressure, disk space, split-brain detection/resolution)")

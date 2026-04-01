@@ -81,6 +81,53 @@ class TestModelLifecycleCoordinatorInit:
         assert stats.total_promotions == 0
 
 
+class TestModelLifecycleCoordinatorSubscriptions:
+    """Tests for event subscription wiring."""
+
+    def test_subscribe_to_events_uses_router_helper(self, coordinator):
+        """Should subscribe model events through the unified helper."""
+        from app.coordination.event_router import DataEventType
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            result = coordinator.subscribe_to_events()
+
+        assert result is True
+        assert coordinator._subscribed is True
+        subscribed = [(call.args[0], call.args[1]) for call in mock_subscribe.call_args_list]
+        assert (DataEventType.CHECKPOINT_SAVED, coordinator._on_checkpoint_saved) in subscribed
+        assert (DataEventType.CHECKPOINT_LOADED, coordinator._on_checkpoint_loaded) in subscribed
+        assert (DataEventType.MODEL_PROMOTED, coordinator._on_model_promoted) in subscribed
+        assert (DataEventType.PROMOTION_ROLLED_BACK, coordinator._on_promotion_rolled_back) in subscribed
+        assert (DataEventType.PROMOTION_FAILED, coordinator._on_promotion_failed) in subscribed
+        assert (DataEventType.TRAINING_COMPLETED, coordinator._on_training_completed) in subscribed
+        assert (DataEventType.ELO_UPDATED, coordinator._on_elo_updated) in subscribed
+        assert (DataEventType.MODEL_CORRUPTED, coordinator._on_model_corrupted) in subscribed
+        assert (DataEventType.MODEL_NOT_FOUND, coordinator._on_model_not_found) in subscribed
+        assert (DataEventType.REGRESSION_DETECTED, coordinator._on_regression_detected) in subscribed
+
+    def test_unsubscribe_from_events_uses_router_helper(self, coordinator):
+        """Should unsubscribe model events through the unified helper."""
+        from app.coordination.event_router import DataEventType
+
+        coordinator._subscribed = True
+
+        with patch("app.coordination.event_router.unsubscribe") as mock_unsubscribe:
+            coordinator.unsubscribe_from_events()
+
+        assert coordinator._subscribed is False
+        unsubscribed = [(call.args[0], call.args[1]) for call in mock_unsubscribe.call_args_list]
+        assert (DataEventType.CHECKPOINT_SAVED, coordinator._on_checkpoint_saved) in unsubscribed
+        assert (DataEventType.CHECKPOINT_LOADED, coordinator._on_checkpoint_loaded) in unsubscribed
+        assert (DataEventType.MODEL_PROMOTED, coordinator._on_model_promoted) in unsubscribed
+        assert (DataEventType.PROMOTION_ROLLED_BACK, coordinator._on_promotion_rolled_back) in unsubscribed
+        assert (DataEventType.PROMOTION_FAILED, coordinator._on_promotion_failed) in unsubscribed
+        assert (DataEventType.TRAINING_COMPLETED, coordinator._on_training_completed) in unsubscribed
+        assert (DataEventType.ELO_UPDATED, coordinator._on_elo_updated) in unsubscribed
+        assert (DataEventType.MODEL_CORRUPTED, coordinator._on_model_corrupted) in unsubscribed
+        assert (DataEventType.MODEL_NOT_FOUND, coordinator._on_model_not_found) in unsubscribed
+        assert (DataEventType.REGRESSION_DETECTED, coordinator._on_regression_detected) in unsubscribed
+
+
 # =============================================================================
 # Model Registration Tests
 # =============================================================================

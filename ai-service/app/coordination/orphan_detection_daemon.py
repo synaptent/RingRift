@@ -509,22 +509,19 @@ class OrphanDetectionDaemon(HandlerBase):
     async def _emit_registration_event(self, registered: list[OrphanInfo]) -> None:
         """Emit ORPHAN_GAMES_REGISTERED event."""
         try:
-            from app.coordination.event_router import get_router, DataEventType
-
-            router = get_router()
-            if router is None:
-                return
+            from app.coordination.event_router import DataEventType, publish
 
             total_games = sum(o.game_count for o in registered)
 
-            await router.publish(
-                DataEventType.ORPHAN_GAMES_REGISTERED,
-                {
+            await publish(
+                event_type=DataEventType.ORPHAN_GAMES_REGISTERED,
+                payload={
                     "registered_count": len(registered),
                     "total_games": total_games,
                     "registered_paths": [str(o.path) for o in registered],
                     "timestamp": time.time(),
                 },
+                source="OrphanDetectionDaemon",
             )
             logger.info(f"Emitted ORPHAN_GAMES_REGISTERED: {len(registered)} databases")
 
@@ -536,19 +533,14 @@ class OrphanDetectionDaemon(HandlerBase):
     async def _emit_detection_event(self, orphans: list[OrphanInfo]) -> None:
         """Emit ORPHAN_GAMES_DETECTED event."""
         try:
-            from app.coordination.event_router import get_router, DataEventType
-
-            router = get_router()
-            if router is None:
-                logger.debug("Event router not available")
-                return
+            from app.coordination.event_router import DataEventType, publish
 
             total_games = sum(o.game_count for o in orphans)
             total_bytes = sum(o.file_size_bytes for o in orphans)
 
-            await router.publish(
-                DataEventType.ORPHAN_GAMES_DETECTED,
-                {
+            await publish(
+                event_type=DataEventType.ORPHAN_GAMES_DETECTED,
+                payload={
                     "orphan_count": len(orphans),
                     "total_games": total_games,
                     "total_bytes": total_bytes,
@@ -556,6 +548,7 @@ class OrphanDetectionDaemon(HandlerBase):
                     "board_types": list({o.board_type for o in orphans if o.board_type}),
                     "timestamp": time.time(),
                 },
+                source="OrphanDetectionDaemon",
             )
             logger.info(
                 f"Emitted ORPHAN_GAMES_DETECTED: {len(orphans)} orphans, "

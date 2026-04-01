@@ -351,6 +351,19 @@ class TestCacheCoordinationOrchestrator:
         assert orch.max_entries_per_node == 500
         assert orch.stale_threshold_seconds == 900.0
 
+    def test_subscribe_to_events_uses_router_helper(self, orchestrator):
+        """Should subscribe cache invalidation events through the unified helper."""
+        from app.coordination.event_router import DataEventType
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            result = orchestrator.subscribe_to_events()
+
+        assert result is True
+        assert orchestrator._subscribed is True
+        subscribed = [(call.args[0], call.args[1]) for call in mock_subscribe.call_args_list]
+        assert (DataEventType.MODEL_PROMOTED, orchestrator._on_model_promoted) in subscribed
+        assert (DataEventType.PROMOTION_ROLLED_BACK, orchestrator._on_promotion_rolled_back) in subscribed
+
     def test_register_cache(self, orchestrator):
         """Test registering a cache entry."""
         entry = orchestrator.register_cache(

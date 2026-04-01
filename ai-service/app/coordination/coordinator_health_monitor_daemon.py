@@ -263,12 +263,11 @@ class CoordinatorHealthMonitorDaemon(HandlerBase):
     async def _emit_cluster_health_event(self) -> None:
         """Emit event when cluster health changes significantly."""
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish
 
             summary = self.get_health_summary()
 
-            router = get_router()
-            await router.publish(
+            await publish(
                 "CLUSTER_COORDINATOR_HEALTH_CHANGED",
                 {
                     "cluster_healthy": summary.cluster_healthy,

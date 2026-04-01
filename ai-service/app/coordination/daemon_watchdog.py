@@ -148,18 +148,16 @@ class DaemonWatchdog:
 
         # Emit through event router if available
         try:
-            from app.coordination.event_router import get_router, DataEventType
+            from app.coordination.event_router import DataEventType, publish
 
-            router = get_router()
-            if router:
-                await router.publish(
-                    event_type=DataEventType.DAEMON_STATUS_CHANGED,
-                    payload={
-                        "watchdog_alert": alert_type.value,
-                        **details,
-                    },
-                    source="DaemonWatchdog",
-                )
+            await publish(
+                event_type=DataEventType.DAEMON_STATUS_CHANGED,
+                payload={
+                    "watchdog_alert": alert_type.value,
+                    **details,
+                },
+                source="DaemonWatchdog",
+            )
         except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.debug(f"Event router not available for alert: {e}")
 

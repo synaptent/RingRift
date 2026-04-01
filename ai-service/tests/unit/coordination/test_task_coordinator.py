@@ -450,6 +450,8 @@ class TestTaskLimits:
 
     def test_default_values(self):
         """Should have sensible default values."""
+        from app.config.thresholds import DISK_PRODUCTION_HALT_PERCENT
+
         limits = TaskLimits()
 
         # Per-node limits
@@ -471,7 +473,7 @@ class TestTaskLimits:
         assert limits.max_selfplay_spawns_per_minute == 30
 
         # Resource thresholds
-        assert limits.halt_on_disk_percent == 70.0
+        assert limits.halt_on_disk_percent == float(DISK_PRODUCTION_HALT_PERCENT)
         assert limits.halt_on_memory_percent == 95.0
         assert limits.halt_on_cpu_percent == 95.0
 
@@ -1136,12 +1138,12 @@ class TestTaskCoordinator:
 
     def test_resource_check(self, coordinator):
         """Should auto-pause on critical resource thresholds (Dec 2025)."""
-        # Update with high disk usage - triggers auto-pause at 70% threshold
+        # Update with disk usage above the current centralized halt threshold.
         coordinator.update_node_resources(
             "node-1",
             cpu_percent=50,
             memory_percent=60,
-            disk_percent=85,  # Above 70% halt_on_disk_percent threshold
+            disk_percent=coordinator.limits.halt_on_disk_percent + 1,
         )
 
         # December 2025: Coordinator now auto-pauses when disk >= halt threshold
@@ -1409,6 +1411,47 @@ class TestUtilityFunctions:
             if "RINGRIFT_COORDINATOR_DIR" in os.environ:
                 del os.environ["RINGRIFT_COORDINATOR_DIR"]
 
+    def test_reset_instance_clears_reservation_manager(self):
+        """Should clear extracted gauntlet reservations on coordinator reset."""
+        tmpdir = tempfile.mkdtemp()
+        os.environ["RINGRIFT_COORDINATOR_DIR"] = tmpdir
+
+        try:
+            coord = get_coordinator()
+            coord.reserve_for_gauntlet(["node-1"])
+            assert coord.is_reserved_for_gauntlet("node-1") is True
+
+            TaskCoordinator.reset_instance()
+
+            fresh = get_coordinator()
+            assert fresh.is_reserved_for_gauntlet("node-1") is False
+        finally:
+            if "RINGRIFT_COORDINATOR_DIR" in os.environ:
+                del os.environ["RINGRIFT_COORDINATOR_DIR"]
+
+    def test_wire_task_coordinator_events_uses_router_helper(self):
+        """Should wire task lifecycle events through the unified helper."""
+        from app.coordination.event_router import DataEventType
+        from app.coordination.task_coordinator import wire_task_coordinator_events
+
+        tmpdir = tempfile.mkdtemp()
+        os.environ["RINGRIFT_COORDINATOR_DIR"] = tmpdir
+
+        try:
+            with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+                coordinator = wire_task_coordinator_events()
+
+            assert isinstance(coordinator, TaskCoordinator)
+            subscribed_types = [call.args[0] for call in mock_subscribe.call_args_list]
+            assert DataEventType.TASK_SPAWNED in subscribed_types
+            assert DataEventType.TASK_HEARTBEAT in subscribed_types
+            assert DataEventType.TASK_COMPLETED in subscribed_types
+            assert DataEventType.TASK_FAILED in subscribed_types
+            assert DataEventType.TASK_CANCELLED in subscribed_types
+        finally:
+            if "RINGRIFT_COORDINATOR_DIR" in os.environ:
+                del os.environ["RINGRIFT_COORDINATOR_DIR"]
+
 
 # ============================================
 # Tests for TaskHeartbeatMonitor
@@ -1560,7 +1603,7 @@ class TestTaskCoordinatorIntegration:
             "node-1",
             cpu_percent=50,
             memory_percent=60,
-            disk_percent=75,
+            disk_percent=coordinator.limits.halt_on_disk_percent + 1,
         )
 
         time.sleep(coordinator.limits.spawn_cooldown_seconds + 0.01)

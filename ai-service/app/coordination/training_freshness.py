@@ -798,7 +798,7 @@ class TrainingFreshnessChecker:
             result: Freshness check result
         """
         try:
-            from app.coordination.event_router import get_router, DataEventType
+            from app.coordination.event_router import DataEventType, publish
 
             event_type_map = {
                 "fresh": DataEventType.DATA_FRESH,
@@ -809,21 +809,19 @@ class TrainingFreshnessChecker:
             if not event_type:
                 return
 
-            router = get_router()
-            if router:
-                await router.publish(
-                    event_type=event_type,
-                    payload={
-                        "node_id": self.node_id,
-                        "board_type": board_type,
-                        "num_players": num_players,
-                        "is_fresh": result.is_fresh,
-                        "data_age_hours": result.data_age_hours,
-                        "games_available": result.games_available,
-                        "timestamp": time.time(),
-                    },
-                    source="TrainingFreshnessChecker",
-                )
+            await publish(
+                event_type=event_type,
+                payload={
+                    "node_id": self.node_id,
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "is_fresh": result.is_fresh,
+                    "data_age_hours": result.data_age_hours,
+                    "games_available": result.games_available,
+                    "timestamp": time.time(),
+                },
+                source="TrainingFreshnessChecker",
+            )
         except Exception as e:
             logger.debug(f"Could not emit {event_kind} event: {e}")
 

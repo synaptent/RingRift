@@ -32,6 +32,7 @@ import asyncio
 import logging
 import os
 import shutil
+import socket
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -395,6 +396,7 @@ class DiskSpaceManagerDaemon(HandlerBase):
             config=self._daemon_config,
             cycle_interval=float(self._daemon_config.check_interval_seconds),
         )
+        self.node_id = socket.gethostname()
         self._root_path = self._find_ai_service_root()
         self._last_cleanup_time: float = 0.0
         self._bytes_cleaned: int = 0
@@ -593,10 +595,9 @@ class DiskSpaceManagerDaemon(HandlerBase):
     async def _emit_cleanup_event(self, bytes_freed: int) -> None:
         """Emit cleanup completed event."""
         try:
-            from app.coordination.event_router import DataEventType, get_router
+            from app.coordination.event_router import DataEventType, publish
 
-            router = get_router()
-            await router.publish(
+            await publish(
                 DataEventType.DISK_CLEANUP_TRIGGERED,
                 {
                     "host": self.node_id,

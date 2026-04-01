@@ -208,18 +208,15 @@ class OptimizationCoordinator:
             return True
 
         try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
+            from app.coordination.event_router import DataEventType, subscribe
 
-            router = get_router()
-
-            router.subscribe(DataEventType.PLATEAU_DETECTED.value, self._on_plateau_detected)
-            router.subscribe(DataEventType.CMAES_TRIGGERED.value, self._on_cmaes_triggered)
-            router.subscribe(DataEventType.CMAES_COMPLETED.value, self._on_cmaes_completed)
-            router.subscribe(DataEventType.NAS_TRIGGERED.value, self._on_nas_triggered)
-            router.subscribe(DataEventType.NAS_COMPLETED.value, self._on_nas_completed)
-            router.subscribe(DataEventType.TRAINING_PROGRESS.value, self._on_training_progress)
-            router.subscribe(DataEventType.HYPERPARAMETER_UPDATED.value, self._on_hyperparameter_updated)
+            subscribe(DataEventType.PLATEAU_DETECTED, self._on_plateau_detected)
+            subscribe(DataEventType.CMAES_TRIGGERED, self._on_cmaes_triggered)
+            subscribe(DataEventType.CMAES_COMPLETED, self._on_cmaes_completed)
+            subscribe(DataEventType.NAS_TRIGGERED, self._on_nas_triggered)
+            subscribe(DataEventType.NAS_COMPLETED, self._on_nas_completed)
+            subscribe(DataEventType.TRAINING_PROGRESS, self._on_training_progress)
+            subscribe(DataEventType.HYPERPARAMETER_UPDATED, self._on_hyperparameter_updated)
 
             self._subscribed = True
             logger.info("[OptimizationCoordinator] Subscribed to optimization events")

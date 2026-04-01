@@ -651,12 +651,9 @@ class TestTriggerDataRegeneration:
     async def test_data_regeneration_publishes_event(self, mock_host, caplog):
         """Verify data regeneration publishes SELFPLAY_TARGET_UPDATED event."""
         with patch(
-            "app.coordination.event_router.get_router"
-        ) as mock_get_router:
-            mock_router = MagicMock()
-            mock_router.publish = AsyncMock()
-            mock_get_router.return_value = mock_router
-
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+        ) as mock_publish:
             with caplog.at_level(logging.INFO):
                 await mock_host._trigger_data_regeneration(
                     board_type="hex8",
@@ -664,38 +661,21 @@ class TestTriggerDataRegeneration:
                     iteration=5
                 )
 
-        mock_router.publish.assert_called_once()
-        call_kwargs = mock_router.publish.call_args.kwargs
+        mock_publish.assert_awaited_once()
+        call_kwargs = mock_publish.await_args.kwargs
         assert call_kwargs["payload"]["extra_games"] == 2000
         assert call_kwargs["payload"]["reason"] == "quality_gate_failed"
         assert call_kwargs["payload"]["quality_score"] == 0.75
         assert "Triggered data regeneration" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_data_regeneration_handles_missing_router(self, mock_host, caplog):
-        """Verify data regeneration handles missing router gracefully."""
+    async def test_data_regeneration_handles_publish_exception(self, mock_host, caplog):
+        """Verify data regeneration logs warning on publish failure."""
         with patch(
-            "app.coordination.event_router.get_router"
-        ) as mock_get_router:
-            mock_get_router.return_value = None
-
-            # Should not raise
-            await mock_host._trigger_data_regeneration(
-                board_type="hex8",
-                num_players=2,
-                iteration=5
-            )
-
-    @pytest.mark.asyncio
-    async def test_data_regeneration_handles_exception(self, mock_host, caplog):
-        """Verify data regeneration logs warning on exception."""
-        with patch(
-            "app.coordination.event_router.get_router"
-        ) as mock_get_router:
-            mock_router = MagicMock()
-            mock_router.publish = AsyncMock(side_effect=RuntimeError("Publish failed"))
-            mock_get_router.return_value = mock_router
-
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("Publish failed"),
+        ):
             with caplog.at_level(logging.WARNING):
                 await mock_host._trigger_data_regeneration(
                     board_type="square8",

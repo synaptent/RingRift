@@ -765,10 +765,7 @@ def wire_orchestrator_events() -> MultiProviderOrchestrator:
     orchestrator = get_orchestrator()
 
     try:
-        from app.coordination.event_router import get_router
-        from app.coordination.event_router import DataEventType
-
-        router = get_router()
+        from app.coordination.event_router import DataEventType, subscribe
 
         def _event_payload(event: Any) -> dict[str, Any]:
             if isinstance(event, dict):
@@ -806,9 +803,9 @@ def wire_orchestrator_events() -> MultiProviderOrchestrator:
             except RuntimeError:
                 pass  # No event loop, skip
 
-        router.subscribe(DataEventType.HOST_ONLINE.value, _on_host_online)
-        router.subscribe(DataEventType.HOST_OFFLINE.value, _on_host_offline)
-        router.subscribe(DataEventType.CLUSTER_STATUS_CHANGED.value, _on_cluster_changed)
+        subscribe(DataEventType.HOST_ONLINE, _on_host_online)
+        subscribe(DataEventType.HOST_OFFLINE, _on_host_offline)
+        subscribe(DataEventType.CLUSTER_STATUS_CHANGED, _on_cluster_changed)
 
         logger.info("[Orchestrator] Wired to event bus (HOST_ONLINE, HOST_OFFLINE, CLUSTER_STATUS_CHANGED)")
 

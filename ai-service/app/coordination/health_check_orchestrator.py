@@ -258,13 +258,12 @@ class HealthCheckOrchestrator:
         to P2P heartbeat failures immediately rather than waiting for next health check.
         """
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import subscribe
             from app.distributed.data_events import DataEventType
 
-            router = get_router()
-            router.subscribe(DataEventType.P2P_NODE_DEAD, self._on_node_dead)
-            router.subscribe(DataEventType.P2P_NODES_DEAD, self._on_nodes_dead)
-            router.subscribe(DataEventType.HOST_OFFLINE, self._on_node_dead)
+            subscribe(DataEventType.P2P_NODE_DEAD, self._on_node_dead)
+            subscribe(DataEventType.P2P_NODES_DEAD, self._on_nodes_dead)
+            subscribe(DataEventType.HOST_OFFLINE, self._on_node_dead)
             logger.info("[HealthCheckOrchestrator] Subscribed to P2P node death events")
         except ImportError as e:
             logger.debug(f"[HealthCheckOrchestrator] Event router not available: {e}")

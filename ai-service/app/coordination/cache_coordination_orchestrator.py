@@ -209,14 +209,11 @@ class CacheCoordinationOrchestrator:
             return True
 
         try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType, subscribe
 
             # Listen for model promotion to invalidate old caches
-            router.subscribe(DataEventType.MODEL_PROMOTED.value, self._on_model_promoted)
-            router.subscribe(DataEventType.PROMOTION_ROLLED_BACK.value, self._on_promotion_rolled_back)
+            subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
+            subscribe(DataEventType.PROMOTION_ROLLED_BACK, self._on_promotion_rolled_back)
 
             self._subscribed = True
             logger.info("[CacheCoordinationOrchestrator] Subscribed to events")

@@ -210,6 +210,18 @@ class TestHealthCheckOrchestratorInit:
             assert orch.check_interval == 120.0
             assert orch.p2p_port == 9000
 
+    def test_subscribe_to_events_uses_router_helper(self, orchestrator):
+        """Should subscribe fast-failure events through the unified helper."""
+        from app.distributed.data_events import DataEventType
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            orchestrator._subscribe_to_events()
+
+        subscribed = [(call.args[0], call.args[1]) for call in mock_subscribe.call_args_list]
+        assert (DataEventType.P2P_NODE_DEAD, orchestrator._on_node_dead) in subscribed
+        assert (DataEventType.P2P_NODES_DEAD, orchestrator._on_nodes_dead) in subscribed
+        assert (DataEventType.HOST_OFFLINE, orchestrator._on_node_dead) in subscribed
+
 
 # =============================================================================
 # Node Query Tests

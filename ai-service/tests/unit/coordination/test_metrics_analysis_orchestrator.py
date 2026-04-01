@@ -501,6 +501,22 @@ class TestMetricsAnalysisOrchestrator:
         assert orch.plateau_threshold == 0.01
         assert orch.plateau_window == 5
 
+    def test_subscribe_to_events_uses_router_helper(self, orchestrator):
+        """Should subscribe metrics events through the unified helper."""
+        from app.coordination.event_router import DataEventType
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            result = orchestrator.subscribe_to_events()
+
+        assert result is True
+        assert orchestrator._subscribed is True
+        subscribed = [(call.args[0], call.args[1]) for call in mock_subscribe.call_args_list]
+        assert (DataEventType.METRICS_UPDATED, orchestrator._on_metrics_updated) in subscribed
+        assert (DataEventType.ELO_UPDATED, orchestrator._on_elo_updated) in subscribed
+        assert (DataEventType.TRAINING_PROGRESS, orchestrator._on_training_progress) in subscribed
+        assert (DataEventType.EVALUATION_PROGRESS, orchestrator._on_evaluation_progress) in subscribed
+        assert (DataEventType.CACHE_INVALIDATED, orchestrator._on_cache_invalidated) in subscribed
+
     def test_record_metric_creates_tracker(self, orchestrator):
         """Test recording metric creates tracker."""
         orchestrator.record_metric("test_metric", 0.5)

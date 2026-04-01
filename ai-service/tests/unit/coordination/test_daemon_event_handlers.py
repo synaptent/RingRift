@@ -97,6 +97,26 @@ class TestSubscribeToEvents:
         assert handlers._subscribed is True
 
     @pytest.mark.asyncio
+    async def test_subscribe_uses_router_helper(self):
+        """Test that subscribe_to_events routes subscriptions through helper."""
+        from app.coordination.daemon_event_handlers import DaemonEventHandlers
+        from app.coordination.event_router import DataEventType
+
+        mock_manager = MagicMock()
+        handlers = DaemonEventHandlers(mock_manager)
+
+        with patch("app.coordination.event_router.get_router", return_value=MagicMock()):
+            with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+                with patch.object(handlers, "_wire_rollback_handler"):
+                    await handlers.subscribe_to_events()
+
+        subscribed_types = [call.args[0] for call in mock_subscribe.call_args_list]
+        assert DataEventType.REGRESSION_CRITICAL in subscribed_types
+        assert DataEventType.HOST_OFFLINE in subscribed_types
+        assert DataEventType.HOST_ONLINE in subscribed_types
+        assert DataEventType.BACKPRESSURE_ACTIVATED in subscribed_types
+
+    @pytest.mark.asyncio
     async def test_subscribe_skips_if_already_subscribed(self):
         """Test that subscribing is skipped if already subscribed."""
         from app.coordination.daemon_event_handlers import DaemonEventHandlers
@@ -1195,8 +1215,8 @@ class TestOnSplitBrainDetected:
             DaemonType.SELFPLAY_COORDINATOR: MockDaemonInfo(
                 daemon_type=DaemonType.SELFPLAY_COORDINATOR, state=DaemonState.RUNNING
             ),
-            DaemonType.CONTINUOUS_TRAINING_LOOP: MockDaemonInfo(
-                daemon_type=DaemonType.CONTINUOUS_TRAINING_LOOP, state=DaemonState.RUNNING
+            DaemonType.AUTO_EXPORT: MockDaemonInfo(
+                daemon_type=DaemonType.AUTO_EXPORT, state=DaemonState.RUNNING
             ),
             DaemonType.AUTO_SYNC: MockDaemonInfo(
                 daemon_type=DaemonType.AUTO_SYNC, state=DaemonState.RUNNING

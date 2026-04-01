@@ -178,6 +178,15 @@ class TestLeadershipQueries:
         assert coordinator.is_leader()  # default domain
         assert coordinator.get_leader() == "test-node-1"
 
+    def test_subscribe_to_events_uses_router_helper(self, coordinator):
+        """Leadership subscription should go through the unified helper."""
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            result = coordinator.subscribe_to_events()
+
+        assert result is True
+        assert coordinator._subscribed is True
+        assert mock_subscribe.call_count == 5
+
 
 # =============================================================================
 # Event Handler Tests

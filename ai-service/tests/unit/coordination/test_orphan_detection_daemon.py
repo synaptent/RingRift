@@ -207,6 +207,8 @@ class TestOrphanDetectionDaemon:
     @pytest.mark.asyncio
     async def test_emit_detection_event(self, daemon):
         """Test emission of ORPHAN_GAMES_DETECTED event."""
+        from app.coordination.event_router import DataEventType
+
         orphans = [
             OrphanInfo(
                 path=Path("/data/games/db1.db"),
@@ -226,23 +228,22 @@ class TestOrphanDetectionDaemon:
             ),
         ]
 
-        with patch("app.coordination.event_router.get_router") as mock_router:
-            mock_router.return_value = MagicMock()
-            mock_router.return_value.publish = AsyncMock()
-
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
             await daemon._emit_detection_event(orphans)
 
-            mock_router.return_value.publish.assert_called_once()
-            call_args = mock_router.return_value.publish.call_args
-            payload = call_args[0][1]
+            mock_publish.assert_awaited_once()
+            payload = mock_publish.await_args.kwargs["payload"]
 
             assert payload["orphan_count"] == 2
             assert payload["total_games"] == 150
             assert payload["total_bytes"] == 1500000
+            assert mock_publish.await_args.kwargs["event_type"] == DataEventType.ORPHAN_GAMES_DETECTED
 
     @pytest.mark.asyncio
     async def test_emit_registration_event(self, daemon):
         """Test emission of ORPHAN_GAMES_REGISTERED event."""
+        from app.coordination.event_router import DataEventType
+
         registered = [
             OrphanInfo(
                 path=Path("/data/games/db1.db"),
@@ -254,18 +255,15 @@ class TestOrphanDetectionDaemon:
             ),
         ]
 
-        with patch("app.coordination.event_router.get_router") as mock_router:
-            mock_router.return_value = MagicMock()
-            mock_router.return_value.publish = AsyncMock()
-
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
             await daemon._emit_registration_event(registered)
 
-            mock_router.return_value.publish.assert_called_once()
-            call_args = mock_router.return_value.publish.call_args
-            payload = call_args[0][1]
+            mock_publish.assert_awaited_once()
+            payload = mock_publish.await_args.kwargs["payload"]
 
             assert payload["registered_count"] == 1
             assert payload["total_games"] == 100
+            assert mock_publish.await_args.kwargs["event_type"] == DataEventType.ORPHAN_GAMES_REGISTERED
 
     @pytest.mark.asyncio
     async def test_register_orphans(self, daemon):
@@ -332,15 +330,14 @@ class TestOrphanDetectionDaemon:
     @pytest.mark.asyncio
     async def test_stop_unsubscribes_events(self, daemon):
         """Test that stop() unsubscribes from events."""
-        mock_callback = MagicMock()
-        daemon._event_subscription = mock_callback
+        mock_unsub = MagicMock()
+        daemon._event_subscriptions = {"database_created": mock_unsub}
         daemon._running = True
 
-        with patch("app.coordination.event_router.unsubscribe") as mock_unsubscribe:
-            await daemon.stop()
+        await daemon.stop()
 
         assert daemon._running is False
-        mock_unsubscribe.assert_called_once()
+        mock_unsub.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_force_scan(self, daemon, temp_games_dir):
@@ -370,13 +367,17 @@ class TestOrphanDetectionEventSubscription:
 
     @pytest.mark.asyncio
     async def test_subscribe_to_database_events(self, daemon):
-        """Test subscription to DATABASE_CREATED events."""
-        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
-            await daemon._subscribe_to_database_events()
+        """Test HandlerBase subscribes to DATABASE_CREATED events."""
+        unsubscribe = MagicMock()
+        mock_router = MagicMock()
+        mock_router.subscribe.return_value = unsubscribe
 
-            mock_subscribe.assert_called_once()
-            # Verify subscription is stored for cleanup
-            assert daemon._event_subscription is not None
+        with patch("app.coordination.event_router.get_router", return_value=mock_router):
+            result = daemon._subscribe_all_events()
+
+        assert result is True
+        mock_router.subscribe.assert_called_once()
+        assert daemon._event_subscriptions
 
     @pytest.mark.asyncio
     async def test_register_database_from_event(self, daemon):

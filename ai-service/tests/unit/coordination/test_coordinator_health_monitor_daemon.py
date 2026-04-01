@@ -6,8 +6,10 @@ COORDINATOR_HEALTH_DEGRADED, COORDINATOR_SHUTDOWN, COORDINATOR_HEARTBEAT).
 """
 
 import asyncio
-import pytest
 import time
+from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from app.coordination.coordinator_health_monitor_daemon import (
     CoordinatorHealthMonitorDaemon,
@@ -299,6 +301,24 @@ class TestCoordinatorHealthMonitorDaemon:
 
         summary = daemon.get_health_summary()
         assert summary.stale_count == 1
+
+    @pytest.mark.asyncio
+    async def test_emit_cluster_health_event_uses_publish_helper(self):
+        """Cluster health changes should publish through the unified helper."""
+        daemon = CoordinatorHealthMonitorDaemon()
+        daemon._coordinators["healthy-1"] = CoordinatorInfo(
+            name="healthy-1",
+            state=CoordinatorState.HEALTHY,
+        )
+
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+            await daemon._emit_cluster_health_event()
+
+        mock_publish.assert_awaited_once()
+        args, kwargs = mock_publish.await_args
+        assert args[0] == "CLUSTER_COORDINATOR_HEALTH_CHANGED"
+        assert args[1]["cluster_healthy"] is True
+        assert args[1]["healthy_count"] == 1
 
 
 class TestConstants:

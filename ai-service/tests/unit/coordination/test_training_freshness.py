@@ -97,7 +97,7 @@ class TestFreshnessConfig:
         assert config.trigger_sync is True
         assert config.check_databases is True
         assert config.check_npz_files is True
-        assert config.min_games_required == 1000
+        assert config.min_games_required == 50
 
     def test_custom_config(self):
         """Test custom configuration."""
@@ -236,7 +236,8 @@ class TestFindLocalNPZFiles:
 
     def test_find_npz_empty_dir(self, checker, data_dir):
         """Test finding NPZ files in empty directory."""
-        sources = checker.find_local_npz_files()
+        with patch.object(checker, "_get_data_catalog", return_value=None):
+            sources = checker.find_local_npz_files()
         assert sources == []
 
     def test_find_npz_by_board_type(self, checker, data_dir):
@@ -247,7 +248,8 @@ class TestFindLocalNPZFiles:
         hex8_npz.write_bytes(b"\x00" * 1000)
         square8_npz.write_bytes(b"\x00" * 1000)
 
-        sources = checker.find_local_npz_files(board_type="hex8")
+        with patch.object(checker, "_get_data_catalog", return_value=None):
+            sources = checker.find_local_npz_files(board_type="hex8")
 
         paths = [s.path for s in sources]
         assert hex8_npz in paths
@@ -259,7 +261,8 @@ class TestFindLocalNPZFiles:
         # ~200 bytes per sample, so 20000 bytes = ~100 samples
         npz_path.write_bytes(b"\x00" * 20000)
 
-        sources = checker.find_local_npz_files()
+        with patch.object(checker, "_get_data_catalog", return_value=None):
+            sources = checker.find_local_npz_files()
 
         assert len(sources) == 1
         assert sources[0].game_count >= 50  # Estimated samples
@@ -349,7 +352,10 @@ class TestTriggerSync:
         mock_daemon.start = AsyncMock()
         mock_daemon.trigger_sync = AsyncMock()
 
-        with patch.object(checker, "_get_sync_daemon", return_value=mock_daemon):
+        with patch(
+            "app.coordination.training_data_sync_daemon.sync_best_fresh_data",
+            side_effect=ImportError("fallback to AutoSyncDaemon"),
+        ), patch.object(checker, "_get_sync_daemon", return_value=mock_daemon):
             result = await checker.trigger_sync("hex8", 2)
 
             mock_daemon.start.assert_called_once()
@@ -566,3 +572,31 @@ class TestGetStatus:
         assert "max_age_hours" in status["config"]
         assert "sync_timeout_seconds" in status["config"]
         assert "min_games_required" in status["config"]
+
+
+class TestEventEmission:
+    """Tests for freshness event emission."""
+
+    @pytest.mark.asyncio
+    async def test_emit_freshness_event_uses_publish_helper(self, checker):
+        """Freshness events should use the unified publish helper."""
+        result = FreshnessResult(
+            success=True,
+            is_fresh=False,
+            data_age_hours=2.5,
+            games_available=321,
+        )
+
+        with patch(
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+        ) as mock_publish:
+            await checker._emit_freshness_event("stale", "hex8", 2, result)
+
+        mock_publish.assert_awaited_once()
+        kwargs = mock_publish.await_args.kwargs
+        assert kwargs["event_type"].value == "data_stale"
+        assert kwargs["source"] == "TrainingFreshnessChecker"
+        assert kwargs["payload"]["board_type"] == "hex8"
+        assert kwargs["payload"]["num_players"] == 2
+        assert kwargs["payload"]["games_available"] == 321

@@ -43,6 +43,7 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -172,22 +173,18 @@ class TaskLifecycleCoordinator:
             return True
 
         try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
-
-            router = get_router()
-
-            router.subscribe(DataEventType.TASK_SPAWNED.value, self._on_task_spawned)
-            router.subscribe(DataEventType.TASK_COMPLETED.value, self._on_task_completed)
-            router.subscribe(DataEventType.TASK_FAILED.value, self._on_task_failed)
-            router.subscribe(DataEventType.TASK_HEARTBEAT.value, self._on_task_heartbeat)
-            router.subscribe(DataEventType.TASK_ORPHANED.value, self._on_task_orphaned)
-            router.subscribe(DataEventType.TASK_CANCELLED.value, self._on_task_cancelled)
+            from app.coordination.event_router import DataEventType, subscribe
 
             # Subscribe to host/node events (December 2025)
-            router.subscribe(DataEventType.HOST_ONLINE.value, self._on_host_online)
-            router.subscribe(DataEventType.HOST_OFFLINE.value, self._on_host_offline)
-            router.subscribe(DataEventType.NODE_RECOVERED.value, self._on_node_recovered)
+            subscribe(DataEventType.TASK_SPAWNED, self._on_task_spawned)
+            subscribe(DataEventType.TASK_COMPLETED, self._on_task_completed)
+            subscribe(DataEventType.TASK_FAILED, self._on_task_failed)
+            subscribe(DataEventType.TASK_HEARTBEAT, self._on_task_heartbeat)
+            subscribe(DataEventType.TASK_ORPHANED, self._on_task_orphaned)
+            subscribe(DataEventType.TASK_CANCELLED, self._on_task_cancelled)
+            subscribe(DataEventType.HOST_ONLINE, self._on_host_online)
+            subscribe(DataEventType.HOST_OFFLINE, self._on_host_offline)
+            subscribe(DataEventType.NODE_RECOVERED, self._on_node_recovered)
 
             self._subscribed = True
             logger.info("[TaskLifecycleCoordinator] Subscribed to task and host events")
@@ -524,7 +521,11 @@ class TaskLifecycleCoordinator:
                 "task_id": task.task_id,
                 "task_type": task.task_type,
                 "node_id": task.node_id,
-                "last_heartbeat": task.last_heartbeat.isoformat() if task.last_heartbeat else None,
+                "last_heartbeat": (
+                    datetime.fromtimestamp(task.last_heartbeat).isoformat()
+                    if task.last_heartbeat
+                    else None
+                ),
                 "reason": f"no heartbeat for {task.time_since_heartbeat:.0f}s",
             },
             context="task_lifecycle_coordinator",

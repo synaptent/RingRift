@@ -147,6 +147,28 @@ class TestOptimizationCoordinatorInit:
         assert len(coordinator.get_plateau_history()) == 0
 
 
+class TestOptimizationCoordinatorSubscriptions:
+    """Tests for event subscription wiring."""
+
+    def test_subscribe_to_events_uses_router_helper(self, coordinator):
+        """Should subscribe optimization events through the unified helper."""
+        from app.coordination.event_router import DataEventType
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            result = coordinator.subscribe_to_events()
+
+        assert result is True
+        assert coordinator._subscribed is True
+        subscribed = [(call.args[0], call.args[1]) for call in mock_subscribe.call_args_list]
+        assert (DataEventType.PLATEAU_DETECTED, coordinator._on_plateau_detected) in subscribed
+        assert (DataEventType.CMAES_TRIGGERED, coordinator._on_cmaes_triggered) in subscribed
+        assert (DataEventType.CMAES_COMPLETED, coordinator._on_cmaes_completed) in subscribed
+        assert (DataEventType.NAS_TRIGGERED, coordinator._on_nas_triggered) in subscribed
+        assert (DataEventType.NAS_COMPLETED, coordinator._on_nas_completed) in subscribed
+        assert (DataEventType.TRAINING_PROGRESS, coordinator._on_training_progress) in subscribed
+        assert (DataEventType.HYPERPARAMETER_UPDATED, coordinator._on_hyperparameter_updated) in subscribed
+
+
 # =============================================================================
 # Metric Tracking Tests
 # =============================================================================

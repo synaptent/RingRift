@@ -19,6 +19,7 @@ import pytest
 from app.coordination.quality_monitor_daemon import (
     QualityMonitorConfig,
     QualityMonitorDaemon,
+    QualityResult,
     QualityState,
     create_quality_monitor,
 )
@@ -579,16 +580,15 @@ class TestEventEmission:
         """Test event emission for low quality."""
         daemon._last_event_time = 0  # Reset cooldown
 
-        mock_router = MagicMock()
-        mock_router.publish = AsyncMock()
-
-        # Patch at the source module where imports happen
         with patch(
-            "app.coordination.event_router.get_router",
-            return_value=mock_router,
-        ), patch(
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+        ) as mock_publish, patch(
             "app.coordination.event_router.DataEventType",
             mock_event_type,
+        ), patch(
+            "time.time",
+            return_value=1234.0,
         ):
             # Jan 7, 2026: Updated to use QualityResult for Sprint 2.1
             quality_result = QualityResult(
@@ -601,7 +601,12 @@ class TestEventEmission:
             )
 
             # Should emit LOW_QUALITY_DATA_WARNING
-            mock_router.publish.assert_called_once()
+            mock_publish.assert_awaited_once()
+            args = mock_publish.await_args.args
+            assert args[0] == "LOW_QUALITY_DATA_WARNING"
+            assert args[1]["quality_score"] == 0.4
+            assert args[1]["old_state"] == "good"
+            assert args[1]["new_state"] == "poor"
 
     @pytest.mark.asyncio
     async def test_emit_quality_event_high_quality(
@@ -610,15 +615,15 @@ class TestEventEmission:
         """Test event emission for high quality recovery."""
         daemon._last_event_time = 0
 
-        mock_router = MagicMock()
-        mock_router.publish = AsyncMock()
-
         with patch(
-            "app.coordination.event_router.get_router",
-            return_value=mock_router,
-        ), patch(
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+        ) as mock_publish, patch(
             "app.coordination.event_router.DataEventType",
             mock_event_type,
+        ), patch(
+            "time.time",
+            return_value=1234.0,
         ):
             # Jan 7, 2026: Updated to use QualityResult for Sprint 2.1
             quality_result = QualityResult(
@@ -630,7 +635,12 @@ class TestEventEmission:
                 old_state=QualityState.DEGRADED,
             )
 
-            mock_router.publish.assert_called_once()
+            mock_publish.assert_awaited_once()
+            args = mock_publish.await_args.args
+            assert args[0] == "HIGH_QUALITY_DATA_AVAILABLE"
+            assert args[1]["quality_score"] == 0.85
+            assert args[1]["old_state"] == "degraded"
+            assert args[1]["new_state"] == "good"
 
     @pytest.mark.asyncio
     async def test_emit_quality_event_cooldown(
@@ -638,14 +648,12 @@ class TestEventEmission:
     ) -> None:
         """Test event cooldown."""
         daemon._last_event_time = time.time()  # Recent event
-
-        mock_router = MagicMock()
-        mock_router.publish = AsyncMock()
+        daemon.last_quality = 0.5  # Avoid critical-drop cooldown bypass
 
         with patch(
-            "app.coordination.event_router.get_router",
-            return_value=mock_router,
-        ):
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+        ) as mock_publish:
             # Jan 7, 2026: Updated to use QualityResult for Sprint 2.1
             quality_result = QualityResult(
                 quality_score=0.4, sample_count=50, variance=0.01
@@ -657,7 +665,7 @@ class TestEventEmission:
             )
 
             # Should skip due to cooldown
-            mock_router.publish.assert_not_called()
+            mock_publish.assert_not_awaited()
 
 
 # ============================================================================
@@ -1045,7 +1053,7 @@ class TestEventEmissionEdgeCases:
         daemon._last_event_time = 0
 
         with patch(
-            "app.coordination.event_router.get_router",
+            "app.coordination.event_router.publish",
             side_effect=ImportError("No module"),
         ):
             # Jan 7, 2026: Updated to use QualityResult for Sprint 2.1
@@ -1064,16 +1072,22 @@ class TestEventEmissionEdgeCases:
         self, daemon: QualityMonitorDaemon
     ) -> None:
         """Test QUALITY_CHECK_FAILED event emission."""
-        # Mock the internal emit method to verify it can be called
-        with patch.object(
-            daemon, "_emit_quality_check_failed", new_callable=AsyncMock
-        ) as mock_emit:
-            await mock_emit(
+        with patch(
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+        ) as mock_publish:
+            await daemon._emit_quality_check_failed(
                 reason="Test failure",
                 config_key="hex8_2p",
                 check_type="periodic",
             )
-            mock_emit.assert_called_once()
+
+        mock_publish.assert_awaited_once()
+        args = mock_publish.await_args.args
+        assert args[0].value == "quality_check_failed"
+        assert args[1]["reason"] == "Test failure"
+        assert args[1]["config_key"] == "hex8_2p"
+        assert args[1]["check_type"] == "periodic"
 
     @pytest.mark.asyncio
     async def test_emit_quality_check_failed_handles_error(

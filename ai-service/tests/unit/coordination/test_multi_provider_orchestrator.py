@@ -424,6 +424,20 @@ class TestModuleFunctions:
             # Result should be a dict of node_name -> success
             assert isinstance(result, dict)
 
+    def test_wire_orchestrator_events_uses_router_helper(self):
+        """Should wire cluster events through the unified helper."""
+        from app.coordination.event_router import DataEventType
+        from app.coordination.multi_provider_orchestrator import wire_orchestrator_events
+
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            orchestrator = wire_orchestrator_events()
+
+        assert orchestrator is not None
+        event_types = [call.args[0] for call in mock_subscribe.call_args_list]
+        assert DataEventType.HOST_ONLINE in event_types
+        assert DataEventType.HOST_OFFLINE in event_types
+        assert DataEventType.CLUSTER_STATUS_CHANGED in event_types
+
 
 # =============================================================================
 # Integration Tests

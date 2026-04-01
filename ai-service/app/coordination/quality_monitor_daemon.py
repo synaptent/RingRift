@@ -254,10 +254,9 @@ class QualityMonitorDaemon(HandlerBase):
         Enables FeedbackLoopController to react to quality failures.
         """
         try:
-            from app.coordination.event_router import DataEventType, get_router
+            from app.coordination.event_router import DataEventType, publish
 
-            router = get_router()
-            await router.publish(
+            await publish(
                 DataEventType.QUALITY_CHECK_FAILED,
                 {
                     "reason": reason,
@@ -559,9 +558,7 @@ class QualityMonitorDaemon(HandlerBase):
         Jan 7, 2026: Updated to accept QualityResult for Sprint 2.1 confidence metrics.
         """
         try:
-            from app.coordination.event_router import DataEventType, get_router
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType, publish
 
             # Jan 7, 2026: Include confidence metrics in payload for Sprint 2.1
             payload = {
@@ -598,7 +595,7 @@ class QualityMonitorDaemon(HandlerBase):
 
             if quality_result.quality_score < self.config.warning_threshold:
                 # Quality dropped below warning threshold
-                await router.publish(DataEventType.LOW_QUALITY_DATA_WARNING, payload)
+                await publish(DataEventType.LOW_QUALITY_DATA_WARNING, payload)
                 logger.warning(
                     f"Low quality warning: {quality_result.quality_score:.3f} "
                     f"(state: {new_state.value}, ci: ±{quality_result.confidence_interval:.3f})"
@@ -607,14 +604,14 @@ class QualityMonitorDaemon(HandlerBase):
                 QualityState.DEGRADED, QualityState.POOR, QualityState.UNKNOWN
             ):
                 # Quality recovered to good threshold
-                await router.publish(DataEventType.HIGH_QUALITY_DATA_AVAILABLE, payload)
+                await publish(DataEventType.HIGH_QUALITY_DATA_AVAILABLE, payload)
                 logger.info(
                     f"High quality data available: {quality_result.quality_score:.3f} "
                     f"(state: {new_state.value}, samples: {quality_result.sample_count})"
                 )
             else:
                 # Just report the quality update
-                await router.publish(DataEventType.QUALITY_SCORE_UPDATED, payload)
+                await publish(DataEventType.QUALITY_SCORE_UPDATED, payload)
                 logger.debug(
                     f"Quality updated: {quality_result.quality_score:.3f} "
                     f"(state: {new_state.value}, trend: {quality_result.trend})"

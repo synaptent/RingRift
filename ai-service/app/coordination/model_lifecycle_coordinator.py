@@ -203,21 +203,18 @@ class ModelLifecycleCoordinator:
             return True
 
         try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
+            from app.coordination.event_router import DataEventType, subscribe
 
-            router = get_router()
-
-            router.subscribe(DataEventType.CHECKPOINT_SAVED.value, self._on_checkpoint_saved)
-            router.subscribe(DataEventType.CHECKPOINT_LOADED.value, self._on_checkpoint_loaded)
-            router.subscribe(DataEventType.MODEL_PROMOTED.value, self._on_model_promoted)
-            router.subscribe(DataEventType.PROMOTION_ROLLED_BACK.value, self._on_promotion_rolled_back)
-            router.subscribe(DataEventType.PROMOTION_FAILED.value, self._on_promotion_failed)
-            router.subscribe(DataEventType.TRAINING_COMPLETED.value, self._on_training_completed)
-            router.subscribe(DataEventType.ELO_UPDATED.value, self._on_elo_updated)
-            router.subscribe(DataEventType.MODEL_CORRUPTED.value, self._on_model_corrupted)
-            router.subscribe(DataEventType.MODEL_NOT_FOUND.value, self._on_model_not_found)
-            router.subscribe(DataEventType.REGRESSION_DETECTED.value, self._on_regression_detected)
+            subscribe(DataEventType.CHECKPOINT_SAVED, self._on_checkpoint_saved)
+            subscribe(DataEventType.CHECKPOINT_LOADED, self._on_checkpoint_loaded)
+            subscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
+            subscribe(DataEventType.PROMOTION_ROLLED_BACK, self._on_promotion_rolled_back)
+            subscribe(DataEventType.PROMOTION_FAILED, self._on_promotion_failed)
+            subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_completed)
+            subscribe(DataEventType.ELO_UPDATED, self._on_elo_updated)
+            subscribe(DataEventType.MODEL_CORRUPTED, self._on_model_corrupted)
+            subscribe(DataEventType.MODEL_NOT_FOUND, self._on_model_not_found)
+            subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
 
             self._subscribed = True
             logger.info("[ModelLifecycleCoordinator] Subscribed to model events")
@@ -240,22 +237,19 @@ class ModelLifecycleCoordinator:
             return
 
         try:
-            from app.coordination.event_router import get_router
-            from app.coordination.event_router import DataEventType
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType, unsubscribe
 
             # Unsubscribe from all events
-            router.unsubscribe(DataEventType.CHECKPOINT_SAVED.value, self._on_checkpoint_saved)
-            router.unsubscribe(DataEventType.CHECKPOINT_LOADED.value, self._on_checkpoint_loaded)
-            router.unsubscribe(DataEventType.MODEL_PROMOTED.value, self._on_model_promoted)
-            router.unsubscribe(DataEventType.PROMOTION_ROLLED_BACK.value, self._on_promotion_rolled_back)
-            router.unsubscribe(DataEventType.PROMOTION_FAILED.value, self._on_promotion_failed)
-            router.unsubscribe(DataEventType.TRAINING_COMPLETED.value, self._on_training_completed)
-            router.unsubscribe(DataEventType.ELO_UPDATED.value, self._on_elo_updated)
-            router.unsubscribe(DataEventType.MODEL_CORRUPTED.value, self._on_model_corrupted)
-            router.unsubscribe(DataEventType.MODEL_NOT_FOUND.value, self._on_model_not_found)
-            router.unsubscribe(DataEventType.REGRESSION_DETECTED.value, self._on_regression_detected)
+            unsubscribe(DataEventType.CHECKPOINT_SAVED, self._on_checkpoint_saved)
+            unsubscribe(DataEventType.CHECKPOINT_LOADED, self._on_checkpoint_loaded)
+            unsubscribe(DataEventType.MODEL_PROMOTED, self._on_model_promoted)
+            unsubscribe(DataEventType.PROMOTION_ROLLED_BACK, self._on_promotion_rolled_back)
+            unsubscribe(DataEventType.PROMOTION_FAILED, self._on_promotion_failed)
+            unsubscribe(DataEventType.TRAINING_COMPLETED, self._on_training_completed)
+            unsubscribe(DataEventType.ELO_UPDATED, self._on_elo_updated)
+            unsubscribe(DataEventType.MODEL_CORRUPTED, self._on_model_corrupted)
+            unsubscribe(DataEventType.MODEL_NOT_FOUND, self._on_model_not_found)
+            unsubscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
 
             logger.info("[ModelLifecycleCoordinator] Unsubscribed from model events")
 

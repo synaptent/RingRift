@@ -729,19 +729,14 @@ class TestEventEmission:
         """Test cleanup event emission."""
         daemon.config.emit_events = True
 
-        # Mock the event router module
-        mock_router = MagicMock()
-        mock_router.publish = AsyncMock()
-
-        with patch.dict("sys.modules", {
-            "app.coordination.event_router": MagicMock(
-                DataEventType=MagicMock(DISK_CLEANUP_TRIGGERED="disk_cleanup_triggered"),
-                get_router=MagicMock(return_value=mock_router)
-            )
-        }):
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
             await daemon._emit_cleanup_event(1024 * 1024)
-            # Should complete without error
-            # The actual call may or may not happen depending on imports
+
+        mock_publish.assert_awaited_once()
+        args, kwargs = mock_publish.await_args
+        assert args[0].value == "disk_cleanup_triggered"
+        assert args[1]["host"] == daemon.node_id
+        assert args[1]["bytes_freed"] == 1024 * 1024
 
 
 # ============================================================================
