@@ -146,11 +146,17 @@ class NodeMonitor(HandlerBase):
             logger.debug("NodeMonitor: No nodes configured")
             return
 
-        # Check all nodes concurrently
-        tasks = [self._check_node_health(node) for node in self._nodes]
+        # Skip stopped/inactive nodes to avoid wasting SSH timeout budget
+        active_nodes = [
+            n for n in self._nodes
+            if getattr(n, "status", "active") != "stopped"
+        ]
+
+        # Check all active nodes concurrently
+        tasks = [self._check_node_health(node) for node in active_nodes]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        for node, result in zip(self._nodes, results):
+        for node, result in zip(active_nodes, results):
             if isinstance(result, Exception):
                 logger.error(f"Error checking node {node.name}: {result}")
                 result = NodeHealthResult(
