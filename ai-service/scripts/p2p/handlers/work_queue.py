@@ -2015,13 +2015,18 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 return self._work_queue_unavailable()
 
             work_type_filter = request.query.get("work_type", None)
+            include_pending = request.query.get("include_pending", "").lower() in ("true", "1", "yes")
             flushed = 0
 
             from app.coordination.types import WorkStatus
 
+            flush_statuses = {WorkStatus.FAILED, WorkStatus.TIMEOUT}
+            if include_pending:
+                flush_statuses.add(WorkStatus.PENDING)
+
             with wq.lock:
                 for item in list(wq.items.values()):
-                    if item.status not in (WorkStatus.FAILED, WorkStatus.TIMEOUT):
+                    if item.status not in flush_statuses:
                         continue
                     if work_type_filter and item.work_type != work_type_filter:
                         continue
@@ -2030,7 +2035,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     wq._save_item(item)
                     flushed += 1
 
-            logger.info(f"Flushed {flushed} stale work items (type={work_type_filter or 'all'})")
+            logger.info(f"Flushed {flushed} work items (type={work_type_filter or 'all'}, pending={include_pending})")
             return self.json_response({
                 "status": "flushed",
                 "items_flushed": flushed,
