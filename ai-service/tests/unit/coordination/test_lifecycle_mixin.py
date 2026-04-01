@@ -434,27 +434,25 @@ class TestEventSubscriptionMixin:
 
     @pytest.mark.asyncio
     async def test_subscribe_to_events_no_bus(self):
-        """Test _subscribe_to_events handles missing event bus."""
+        """Test _subscribe_to_events handles missing event system."""
         component = ConcreteEventMixin()
 
         with patch(
-            "app.coordination.event_router.get_event_bus", return_value=None
+            "app.coordination.event_router.subscribe", side_effect=ImportError("no router")
         ):
             await component._subscribe_to_events()
 
         # Should complete without error
-        assert component._event_bus is None
+        assert component._subscription_ids == []
 
     @pytest.mark.asyncio
     async def test_unsubscribe_from_events(self):
         """Test _unsubscribe_from_events clears subscriptions."""
         component = ConcreteEventMixin()
-        component._subscription_ids = ["sub1", "sub2"]
+        component._subscription_ids = [("EVENT_A", lambda x: None), ("EVENT_B", lambda x: None)]
 
-        mock_bus = MagicMock()
-        component._event_bus = mock_bus
-
-        await component._unsubscribe_from_events()
+        with patch("app.coordination.event_router.unsubscribe"):
+            await component._unsubscribe_from_events()
 
         assert component._subscription_ids == []
         assert mock_bus.unsubscribe.call_count == 2

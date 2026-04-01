@@ -168,7 +168,7 @@ def create_remapping_handler(
     """
     async def handler(event: dict[str, Any]) -> None:
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish
 
             # Transform payload
             if transform:
@@ -182,8 +182,7 @@ def create_remapping_handler(
                 payload = event.copy()
 
             # Emit remapped event
-            router = get_router()
-            await router.publish_async(target_event_type, payload)
+            await publish(target_event_type, payload, source="remapping_handler")
 
         except ImportError:
             logger.debug(f"Cannot remap to {target_event_type}: event_router not available")

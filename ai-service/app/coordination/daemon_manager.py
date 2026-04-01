@@ -1026,10 +1026,9 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
 
             # Emit via event router if available
             try:
-                from app.coordination.event_router import get_router
+                from app.coordination.event_router import publish_sync
 
-                router = get_router()
-                router.publish_sync(
+                publish_sync(
                     "daemon.degraded_mode",
                     {
                         "daemon_name": daemon_type.value,
@@ -1037,8 +1036,8 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                         "restart_count": restart_count,
                         "is_critical": is_critical,
                         "retry_interval_seconds": retry_interval,
-                        "source": "DaemonManager",
                     },
+                    source="DaemonManager",
                 )
                 logger.info(f"Emitted DAEMON_DEGRADED_MODE for {daemon_type.value}")
             except Exception as e:
@@ -1355,10 +1354,9 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             triggered_by: Daemon that caused the breaker to trip
         """
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish
 
-            router = get_router()
-            await router.publish(
+            await publish(
                 "daemon.cascade_breaker_tripped",
                 {
                     "restart_count": restart_count,
@@ -1367,6 +1365,7 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                     "cooldown_seconds": CASCADE_COOLDOWN_SECONDS,
                     "triggered_by": triggered_by.value,
                 },
+                source="DaemonManager",
             )
         except Exception as e:
             logger.debug(f"Failed to emit circuit breaker event: {e}")
@@ -1402,15 +1401,15 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
 
                 # Emit recovery event
                 try:
-                    from app.coordination.event_router import get_router
+                    from app.coordination.event_router import publish
 
-                    router = get_router()
-                    await router.publish(
+                    await publish(
                         "daemon.cascade_recovery_complete",
                         {
                             "restarted_daemons": restarted,
                             "count": len(restarted),
                         },
+                        source="DaemonManager",
                     )
                 except (ImportError, RuntimeError, AttributeError):
                     pass
@@ -2423,12 +2422,7 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         - subscription_status: Whether critical subscriptions are active
         """
         try:
-            from app.coordination.event_router import get_router, DataEventType
-
-            router = get_router()
-            if router is None:
-                logger.debug("[DaemonManager] Event router not available for readiness signal")
-                return
+            from app.coordination.event_router import publish, DataEventType
 
             # Collect ready daemons
             ready_daemons = [
@@ -2459,9 +2453,10 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
 
             # Check if ALL_CRITICAL_DAEMONS_READY event type exists
             if hasattr(DataEventType, "ALL_CRITICAL_DAEMONS_READY"):
-                await router.publish(
+                await publish(
                     DataEventType.ALL_CRITICAL_DAEMONS_READY.value,
                     event_data,
+                    source="DaemonManager",
                 )
                 logger.info(
                     f"[DaemonManager] Emitted ALL_CRITICAL_DAEMONS_READY: "
@@ -2469,9 +2464,10 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                 )
             else:
                 # Fallback: emit as generic SYSTEM_STATUS event
-                await router.publish(
+                await publish(
                     "system.daemons_ready",
                     event_data,
+                    source="DaemonManager",
                 )
                 logger.info(
                     f"[DaemonManager] Emitted system.daemons_ready: "
@@ -3534,11 +3530,10 @@ daemon_manager_running_daemons {sum(1 for d in manager._daemons.values() if d.st
                         return web.json_response({"error": "missing event_type"}, status=400)
 
                     try:
-                        from app.coordination.event_router import get_router
-                        router = get_router()
+                        from app.coordination.event_router import publish_sync
                         # Use thread-safe event emission
                         thread_asyncio.get_event_loop().run_in_executor(
-                            None, lambda: router.publish_sync(event_type, payload, source=source)
+                            None, lambda: publish_sync(event_type, payload, source=source)
                         )
                         return web.json_response({"status": "ok", "event_type": event_type})
                     except Exception as e:

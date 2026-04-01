@@ -446,6 +446,132 @@ class TestEventHandling:
 
             mock_analyze.assert_called_once()
 
+
+class TestEventEmissionHelpers:
+    """Test direct event emission helpers use the unified publish helper."""
+
+    @pytest.mark.asyncio
+    async def test_trigger_extra_selfplay_uses_publish_helper(self, controller, weak_evaluation):
+        from app.coordination.event_router import DataEventType
+
+        with patch("app.coordination.gauntlet_feedback_controller.publish", new_callable=AsyncMock) as mock_publish:
+            await controller._trigger_extra_selfplay(weak_evaluation)
+
+        mock_publish.assert_awaited_once()
+        _, kwargs = mock_publish.call_args
+        assert kwargs["event_type"] == DataEventType.SELFPLAY_TARGET_UPDATED
+        assert kwargs["payload"]["config"] == "hex8_2p"
+        assert kwargs["payload"]["extra_games"] == controller.config.extra_selfplay_games
+        assert kwargs["source"] == controller.name
+
+    @pytest.mark.asyncio
+    async def test_advance_curriculum_stage_uses_publish_helper(self, controller, average_evaluation):
+        from app.coordination.event_router import DataEventType
+
+        with patch("app.coordination.gauntlet_feedback_controller.publish", new_callable=AsyncMock) as mock_publish:
+            await controller._advance_curriculum_stage(average_evaluation)
+
+        mock_publish.assert_awaited_once()
+        _, kwargs = mock_publish.call_args
+        assert kwargs["event_type"] == DataEventType.CURRICULUM_ADVANCED
+        assert kwargs["payload"]["config"] == "hex8_2p"
+        assert kwargs["payload"]["reason"] == "elo_plateau"
+
+    @pytest.mark.asyncio
+    async def test_emit_regression_detected_uses_publish_helper(self, controller, average_evaluation):
+        from app.coordination.event_router import DataEventType
+
+        tracker = ConfigTracker()
+        tracker.consecutive_regressions = 2
+        controller._config_trackers["hex8_2p"] = tracker
+
+        with patch("app.coordination.gauntlet_feedback_controller.publish", new_callable=AsyncMock) as mock_publish:
+            await controller._emit_regression_detected(average_evaluation, 75.0)
+
+        mock_publish.assert_awaited_once()
+        _, kwargs = mock_publish.call_args
+        assert kwargs["event_type"] == DataEventType.REGRESSION_DETECTED
+        assert kwargs["payload"]["config_key"] == "hex8_2p"
+        assert kwargs["payload"]["elo_drop"] == pytest.approx(75.0)
+        assert kwargs["payload"]["consecutive_regressions"] == 2
+
+    @pytest.mark.asyncio
+    async def test_emit_rollback_consideration_uses_publish_helper(self, controller, average_evaluation):
+        from app.coordination.event_router import DataEventType
+
+        tracker = ConfigTracker()
+        tracker.consecutive_regressions = 3
+        controller._config_trackers["hex8_2p"] = tracker
+
+        with patch("app.coordination.gauntlet_feedback_controller.publish", new_callable=AsyncMock) as mock_publish:
+            await controller._emit_rollback_consideration(
+                average_evaluation,
+                severity="consecutive",
+                elo_drop=90.0,
+            )
+
+        mock_publish.assert_awaited_once()
+        _, kwargs = mock_publish.call_args
+        assert kwargs["event_type"] == DataEventType.REGRESSION_CRITICAL
+        assert kwargs["payload"]["config_key"] == "hex8_2p"
+        assert kwargs["payload"]["recommendation"] == "rollback"
+        assert "consecutive_regressions_3" in kwargs["payload"]["reason"]
+
+    @pytest.mark.asyncio
+    async def test_emit_hyperparameter_update_uses_publish_helper(self, controller):
+        from app.coordination.event_router import DataEventType
+
+        with patch("app.coordination.gauntlet_feedback_controller.publish", new_callable=AsyncMock) as mock_publish:
+            with patch("app.coordination.gauntlet_feedback_controller.record_hyperparameter_update") as mock_record:
+                await controller._emit_hyperparameter_update(
+                    config_key="hex8_2p",
+                    board_type="hex8",
+                    num_players=2,
+                    parameter="epoch_multiplier",
+                    old_value=1.0,
+                    new_value=1.5,
+                    reason="weak_performance",
+                )
+
+        mock_publish.assert_awaited_once()
+        _, kwargs = mock_publish.call_args
+        assert kwargs["event_type"] == DataEventType.HYPERPARAMETER_UPDATED
+        assert kwargs["payload"]["parameter"] == "epoch_multiplier"
+        assert kwargs["payload"]["new_value"] == pytest.approx(1.5)
+        mock_record.assert_called_once_with("hex8_2p", "epoch_multiplier", 1.5, "weak_performance")
+
+    @pytest.mark.asyncio
+    async def test_emit_plateau_detected_uses_publish_helper(self, controller):
+        from app.coordination.event_router import DataEventType
+
+        with patch("app.coordination.gauntlet_feedback_controller.publish", new_callable=AsyncMock) as mock_publish:
+            await controller._emit_plateau_detected("hex8_2p", 1180.0, 5)
+
+        mock_publish.assert_awaited_once()
+        _, kwargs = mock_publish.call_args
+        assert kwargs["event_type"] == DataEventType.PLATEAU_DETECTED
+        assert kwargs["payload"]["config_key"] == "hex8_2p"
+        assert kwargs["payload"]["window_size"] == 5
+
+    @pytest.mark.asyncio
+    async def test_emit_adaptive_params_changed_uses_publish_helper(self, controller):
+        from app.coordination.event_router import DataEventType
+
+        with patch("app.coordination.gauntlet_feedback_controller.publish", new_callable=AsyncMock) as mock_publish:
+            await controller._emit_adaptive_params_changed(
+                config_key="hex8_2p",
+                board_type="hex8",
+                num_players=2,
+                actions_taken=[FeedbackAction.TRIGGER_EXTRA_SELFPLAY],
+            )
+
+        mock_publish.assert_awaited_once()
+        _, kwargs = mock_publish.call_args
+        assert kwargs["event_type"] == DataEventType.ADAPTIVE_PARAMS_CHANGED
+        assert kwargs["payload"]["config_key"] == "hex8_2p"
+        assert kwargs["payload"]["temperature_multiplier"] == pytest.approx(1.2)
+        assert kwargs["payload"]["search_budget_multiplier"] == pytest.approx(1.3)
+
     @pytest.mark.asyncio
     async def test_handles_missing_fields_gracefully(self, controller):
         """Gracefully handles events with missing fields."""

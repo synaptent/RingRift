@@ -428,8 +428,7 @@ class EventSubscriptionMixin:
 
     def __init__(self) -> None:
         """Initialize event subscription mixin."""
-        self._subscription_ids: list[str] = []
-        self._event_bus: Any = None
+        self._subscription_ids: list[tuple[Any, Any]] = []
 
     def _get_event_subscriptions(self) -> dict[str, Any]:
         """Get event subscriptions. Override in subclasses.
@@ -442,18 +441,13 @@ class EventSubscriptionMixin:
     async def _subscribe_to_events(self) -> None:
         """Subscribe to all configured events."""
         try:
-            from app.coordination.event_router import get_event_bus
-
-            self._event_bus = get_event_bus()
-            if not self._event_bus:
-                return
+            from app.coordination.event_router import subscribe
 
             subscriptions = self._get_event_subscriptions()
             for event_type, handler in subscriptions.items():
                 try:
-                    sub_id = self._event_bus.subscribe(event_type, handler)
-                    if sub_id:
-                        self._subscription_ids.append(sub_id)
+                    subscribe(event_type, handler)
+                    self._subscription_ids.append((event_type, handler))
                 except Exception as e:
                     name = getattr(self, "_lifecycle_name", self.__class__.__name__)
                     logger.debug(f"[{name}] Failed to subscribe to {event_type}: {e}")
@@ -463,18 +457,23 @@ class EventSubscriptionMixin:
 
     async def _unsubscribe_from_events(self) -> None:
         """Unsubscribe from all events."""
-        if not self._event_bus:
+        if not self._subscription_ids:
             return
 
-        for sub_id in self._subscription_ids:
-            try:
-                self._event_bus.unsubscribe(sub_id)
-            except (KeyError, ValueError, AttributeError) as e:
-                # Dec 29, 2025: Narrowed from bare Exception
-                # KeyError: subscription ID not found (already unsubscribed)
-                # ValueError: invalid subscription ID format
-                # AttributeError: event_bus is None
-                logger.debug(f"Unsubscribe warning for {sub_id}: {e}")
+        try:
+            from app.coordination.event_router import unsubscribe
+
+            for event_type, handler in self._subscription_ids:
+                try:
+                    unsubscribe(event_type, handler)
+                except (KeyError, ValueError, AttributeError) as e:
+                    # Dec 29, 2025: Narrowed from bare Exception
+                    # KeyError: subscription not found (already unsubscribed)
+                    # ValueError: invalid subscription format
+                    # AttributeError: router is None
+                    logger.debug(f"Unsubscribe warning for {event_type}: {e}")
+        except ImportError:
+            pass
 
         self._subscription_ids.clear()
 

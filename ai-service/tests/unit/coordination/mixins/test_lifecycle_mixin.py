@@ -540,7 +540,6 @@ class TestEventSubscriptionMixin:
         """Test EventSubscriptionMixin initialization."""
         mixin = EventSubscriptionMixin()
         assert mixin._subscription_ids == []
-        assert mixin._event_bus is None
 
     def test_get_event_subscriptions_default(self):
         """Test default _get_event_subscriptions returns empty dict."""
@@ -549,13 +548,13 @@ class TestEventSubscriptionMixin:
 
     @pytest.mark.asyncio
     async def test_subscribe_to_events_no_bus(self):
-        """Test _subscribe_to_events without event bus."""
+        """Test _subscribe_to_events without event system."""
         mixin = EventSubscriptionMixin()
 
         # Patch at the source where it's imported
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=None,
+            "app.coordination.event_router.subscribe",
+            side_effect=ImportError("no router"),
         ):
             await mixin._subscribe_to_events()
 
@@ -563,46 +562,49 @@ class TestEventSubscriptionMixin:
 
     @pytest.mark.asyncio
     async def test_subscribe_to_events_with_bus(self):
-        """Test _subscribe_to_events with mock event bus."""
+        """Test _subscribe_to_events with mock subscribe."""
         mixin = EventSubscriptionMixin()
 
-        mock_bus = MagicMock()
-        mock_bus.subscribe.return_value = "sub_123"
-
-        mixin._get_event_subscriptions = lambda: {"TEST_EVENT": lambda x: None}
+        mock_subscribe = MagicMock()
+        handler = lambda x: None
+        mixin._get_event_subscriptions = lambda: {"TEST_EVENT": handler}
 
         # Patch at the source where it's imported
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_bus,
+            "app.coordination.event_router.subscribe",
+            mock_subscribe,
         ):
             await mixin._subscribe_to_events()
 
-        assert "sub_123" in mixin._subscription_ids
-        mock_bus.subscribe.assert_called_once()
+        assert ("TEST_EVENT", handler) in mixin._subscription_ids
+        mock_subscribe.assert_called_once_with("TEST_EVENT", handler)
 
     @pytest.mark.asyncio
     async def test_unsubscribe_from_events(self):
         """Test _unsubscribe_from_events."""
         mixin = EventSubscriptionMixin()
-        mixin._event_bus = MagicMock()
-        mixin._subscription_ids = ["sub_1", "sub_2"]
+        handler_1 = lambda x: None
+        handler_2 = lambda x: None
+        mixin._subscription_ids = [("EVENT_A", handler_1), ("EVENT_B", handler_2)]
 
-        await mixin._unsubscribe_from_events()
+        mock_unsubscribe = MagicMock()
+        with patch("app.coordination.event_router.unsubscribe", mock_unsubscribe):
+            await mixin._unsubscribe_from_events()
 
-        assert mixin._event_bus.unsubscribe.call_count == 2
+        assert mock_unsubscribe.call_count == 2
         assert mixin._subscription_ids == []
 
     @pytest.mark.asyncio
     async def test_unsubscribe_handles_missing_subscriptions(self):
         """Test _unsubscribe_from_events handles missing subscriptions."""
         mixin = EventSubscriptionMixin()
-        mixin._event_bus = MagicMock()
-        mixin._event_bus.unsubscribe.side_effect = KeyError("not found")
-        mixin._subscription_ids = ["sub_1"]
+        handler = lambda x: None
+        mixin._subscription_ids = [("EVENT_A", handler)]
 
-        # Should not raise
-        await mixin._unsubscribe_from_events()
+        mock_unsubscribe = MagicMock(side_effect=KeyError("not found"))
+        with patch("app.coordination.event_router.unsubscribe", mock_unsubscribe):
+            # Should not raise
+            await mixin._unsubscribe_from_events()
 
 
 # =============================================================================

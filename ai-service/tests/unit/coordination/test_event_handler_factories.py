@@ -115,51 +115,42 @@ class TestCreateRemappingHandler:
     @pytest.mark.asyncio
     async def test_remaps_event_type(self):
         """Test that event is re-emitted with new type."""
-        with patch("app.coordination.event_router.get_router") as mock_get_router:
-            mock_router = MagicMock()
-            mock_router.publish_async = AsyncMock()
-            mock_get_router.return_value = mock_router
-
+        mock_publish = AsyncMock()
+        with patch("app.coordination.event_router.publish", mock_publish):
             handler = create_remapping_handler("NEW_EVENT_TYPE")
             await handler({"original": "data"})
 
-            mock_router.publish_async.assert_called_once()
-            call_args = mock_router.publish_async.call_args
+            mock_publish.assert_called_once()
+            call_args = mock_publish.call_args
             assert call_args[0][0] == "NEW_EVENT_TYPE"
             assert call_args[0][1]["original"] == "data"
 
     @pytest.mark.asyncio
     async def test_key_mapping(self):
         """Test that keys are remapped."""
-        with patch("app.coordination.event_router.get_router") as mock_get_router:
-            mock_router = MagicMock()
-            mock_router.publish_async = AsyncMock()
-            mock_get_router.return_value = mock_router
-
+        mock_publish = AsyncMock()
+        with patch("app.coordination.event_router.publish", mock_publish):
             handler = create_remapping_handler(
                 "REMAPPED_EVENT",
                 source_key_mapping={"old_key": "new_key"},
             )
             await handler({"old_key": "value"})
 
-            call_args = mock_router.publish_async.call_args
+            call_args = mock_publish.call_args
             assert call_args[0][1]["new_key"] == "value"
 
     @pytest.mark.asyncio
     async def test_transform_function(self):
         """Test custom transform function."""
-        with patch("app.coordination.event_router.get_router") as mock_get_router:
-            mock_router = MagicMock()
-            mock_router.publish_async = AsyncMock()
-            mock_get_router.return_value = mock_router
-
+        mock_publish = AsyncMock()
+        with patch("app.coordination.event_router.publish", mock_publish):
             def transform(event):
                 return {"transformed": True, "count": event.get("count", 0) * 2}
 
             handler = create_remapping_handler("TRANSFORMED", transform=transform)
             await handler({"count": 5})
 
-            call_args = mock_router.publish_async.call_args
+            call_args = mock_publish.call_args
             assert call_args[0][1]["transformed"] is True
             assert call_args[0][1]["count"] == 10
 

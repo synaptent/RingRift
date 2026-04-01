@@ -2071,36 +2071,34 @@ class DataPipelineOrchestrator(
             npz_path: Path to the NPZ file that failed quality check
         """
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish
 
-            router = get_router()
-            if router:
-                board_type, num_players = self._get_board_config()
-                # December 30, 2025: Include config_key for SelfplayScheduler integration
-                config_key = make_config_key(board_type, num_players) if board_type and num_players else ""
-                await router.publish(
-                    event_type="TRAINING_BLOCKED_BY_QUALITY",
-                    payload={
-                        "iteration": iteration,
-                        "npz_path": npz_path,
-                        "board_type": board_type,
-                        "num_players": num_players,
-                        "config_key": config_key,  # Added for SelfplayScheduler
-                        "quality_score": self._last_quality_score,
-                        "threshold": self.quality_gate_threshold,
-                        "quality_history": self._quality_check_history[-5:],
-                        "recommendation": "trigger_data_regeneration",
-                        "reason": "quality_gate_failed",
-                    },
-                    source="DataPipelineOrchestrator",
-                )
-                logger.info(
-                    f"[QualityGate] Emitted TRAINING_BLOCKED_BY_QUALITY for iteration {iteration}"
-                )
+            board_type, num_players = self._get_board_config()
+            # December 30, 2025: Include config_key for SelfplayScheduler integration
+            config_key = make_config_key(board_type, num_players) if board_type and num_players else ""
+            await publish(
+                event_type="TRAINING_BLOCKED_BY_QUALITY",
+                payload={
+                    "iteration": iteration,
+                    "npz_path": npz_path,
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "config_key": config_key,  # Added for SelfplayScheduler
+                    "quality_score": self._last_quality_score,
+                    "threshold": self.quality_gate_threshold,
+                    "quality_history": self._quality_check_history[-5:],
+                    "recommendation": "trigger_data_regeneration",
+                    "reason": "quality_gate_failed",
+                },
+                source="DataPipelineOrchestrator",
+            )
+            logger.info(
+                f"[QualityGate] Emitted TRAINING_BLOCKED_BY_QUALITY for iteration {iteration}"
+            )
 
-                # Also trigger data regeneration if we have enough info
-                if board_type and num_players:
-                    await self._trigger_data_regeneration(board_type, num_players, iteration)
+            # Also trigger data regeneration if we have enough info
+            if board_type and num_players:
+                await self._trigger_data_regeneration(board_type, num_players, iteration)
 
         except (RuntimeError, ValueError, TypeError, AttributeError, KeyError, ImportError) as e:
             logger.warning(f"[QualityGate] Failed to emit quality block event: {e}")
@@ -2114,11 +2112,7 @@ class DataPipelineOrchestrator(
         Emits SELFPLAY_TARGET_UPDATED to boost data generation for blocked configs.
         """
         try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
-            if not router:
-                return
+            from app.coordination.event_router import publish
 
             config_key = make_config_key(board_type, num_players)
 
@@ -2128,7 +2122,7 @@ class DataPipelineOrchestrator(
             additional_games = int(200 * (1.0 - quality_score))
             additional_games = max(100, min(500, additional_games))
 
-            await router.publish(
+            await publish(
                 event_type="SELFPLAY_TARGET_UPDATED",
                 payload={
                     "config_key": config_key,
@@ -2909,20 +2903,18 @@ class DataPipelineOrchestrator(
         December 29, 2025: Part of pipeline → scheduler wiring.
         """
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish_sync
 
-            router = get_router()
-            if router:
-                router.publish_sync(
-                    "SELFPLAY_TARGET_UPDATED",
-                    {
-                        "config_key": config_key,
-                        "games_needed": games_needed,
-                        "source": "data_pipeline_orchestrator",
-                        "timestamp": time.time(),
-                    },
-                    source="data_pipeline_orchestrator",
-                )
+            publish_sync(
+                "SELFPLAY_TARGET_UPDATED",
+                {
+                    "config_key": config_key,
+                    "games_needed": games_needed,
+                    "source": "data_pipeline_orchestrator",
+                    "timestamp": time.time(),
+                },
+                source="data_pipeline_orchestrator",
+            )
         except (AttributeError, ImportError, RuntimeError) as e:
             logger.debug(f"[DataPipelineOrchestrator] Failed to emit target update: {e}")
 
@@ -2965,32 +2957,30 @@ class DataPipelineOrchestrator(
         December 29, 2025: Phase 7 - Closes the regression → curriculum feedback loop.
         """
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish_sync
 
-            router = get_router()
-            if router:
-                # Calculate reduction factor based on regression severity
-                if abs(elo_loss) > 100:
-                    factor = 0.3  # Severe regression: reduce to 30%
-                else:
-                    factor = 0.5  # Moderate regression: reduce to 50%
+            # Calculate reduction factor based on regression severity
+            if abs(elo_loss) > 100:
+                factor = 0.3  # Severe regression: reduce to 30%
+            else:
+                factor = 0.5  # Moderate regression: reduce to 50%
 
-                router.publish_sync(
-                    "CURRICULUM_REBALANCED",
-                    {
-                        "trigger": "regression_detected",
-                        "changed_configs": [config_key],
-                        "action": "reduce_allocation",
-                        "factor": factor,
-                        "elo_loss": elo_loss,
-                        "timestamp": time.time(),
-                    },
-                    source="data_pipeline_orchestrator",
-                )
-                logger.info(
-                    f"[DataPipelineOrchestrator] Emitted curriculum emergency update: "
-                    f"config={config_key}, factor={factor}, elo_loss={elo_loss:.0f}"
-                )
+            publish_sync(
+                "CURRICULUM_REBALANCED",
+                {
+                    "trigger": "regression_detected",
+                    "changed_configs": [config_key],
+                    "action": "reduce_allocation",
+                    "factor": factor,
+                    "elo_loss": elo_loss,
+                    "timestamp": time.time(),
+                },
+                source="data_pipeline_orchestrator",
+            )
+            logger.info(
+                f"[DataPipelineOrchestrator] Emitted curriculum emergency update: "
+                f"config={config_key}, factor={factor}, elo_loss={elo_loss:.0f}"
+            )
         except (ImportError, AttributeError, TypeError, RuntimeError) as e:
             logger.debug(f"[DataPipelineOrchestrator] Could not emit curriculum update: {e}")
 

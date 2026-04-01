@@ -896,6 +896,80 @@ class TestDataPipelineOrchestratorQualityGate:
 
         assert orchestrator.quality_gate_threshold == 0.75
 
+    @pytest.mark.asyncio
+    async def test_emit_training_blocked_by_quality_uses_publish_helper(self, mock_config):
+        """Quality-block events should use the unified async publish helper."""
+        from app.coordination.data_pipeline_orchestrator import DataPipelineOrchestrator
+
+        orchestrator = DataPipelineOrchestrator(config=mock_config)
+        orchestrator._last_quality_score = 0.42
+        orchestrator._quality_check_history.extend([0.61, 0.55, 0.42])
+
+        with patch.object(orchestrator, "_get_board_config", return_value=("hex8", 2)):
+            with patch.object(orchestrator, "_trigger_data_regeneration", new_callable=AsyncMock) as mock_regen:
+                with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+                    await orchestrator._emit_training_blocked_by_quality(3, "/tmp/iter_003.npz")
+
+        mock_publish.assert_awaited_once()
+        _, kwargs = mock_publish.call_args
+        assert kwargs["event_type"] == "TRAINING_BLOCKED_BY_QUALITY"
+        assert kwargs["payload"]["config_key"] == "hex8_2p"
+        assert kwargs["payload"]["quality_score"] == pytest.approx(0.42)
+        assert kwargs["payload"]["reason"] == "quality_gate_failed"
+        mock_regen.assert_awaited_once_with("hex8", 2, 3)
+
+    @pytest.mark.asyncio
+    async def test_trigger_data_regeneration_uses_publish_helper(self, mock_config):
+        """Regeneration requests should use the unified async publish helper."""
+        from app.coordination.data_pipeline_orchestrator import DataPipelineOrchestrator
+
+        orchestrator = DataPipelineOrchestrator(config=mock_config)
+        orchestrator._last_quality_score = 0.25
+
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+            await orchestrator._trigger_data_regeneration("hex8", 2, 7)
+
+        mock_publish.assert_awaited_once()
+        _, kwargs = mock_publish.call_args
+        assert kwargs["event_type"] == "SELFPLAY_TARGET_UPDATED"
+        assert kwargs["payload"]["config_key"] == "hex8_2p"
+        assert kwargs["payload"]["priority"] == "high"
+        assert kwargs["payload"]["iteration"] == 7
+        assert kwargs["payload"]["target_games"] == 150
+
+    def test_emit_selfplay_target_updated_uses_publish_sync(self, mock_config):
+        """Selfplay-target sync events should use the unified sync helper."""
+        from app.coordination.data_pipeline_orchestrator import DataPipelineOrchestrator
+
+        orchestrator = DataPipelineOrchestrator(config=mock_config)
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            orchestrator._emit_selfplay_target_updated("hex8_2p", 320)
+
+        mock_publish_sync.assert_called_once()
+        args, kwargs = mock_publish_sync.call_args
+        assert kwargs["source"] == "data_pipeline_orchestrator"
+        assert args[0] == "SELFPLAY_TARGET_UPDATED"
+        assert args[1]["config_key"] == "hex8_2p"
+        assert args[1]["games_needed"] == 320
+
+    def test_emit_curriculum_emergency_update_uses_publish_sync(self, mock_config):
+        """Regression curriculum updates should use the unified sync helper."""
+        from app.coordination.data_pipeline_orchestrator import DataPipelineOrchestrator
+
+        orchestrator = DataPipelineOrchestrator(config=mock_config)
+
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            orchestrator._emit_curriculum_emergency_update("hex8_2p", 120.0)
+
+        mock_publish_sync.assert_called_once()
+        args, kwargs = mock_publish_sync.call_args
+        assert kwargs["source"] == "data_pipeline_orchestrator"
+        assert args[0] == "CURRICULUM_REBALANCED"
+        assert args[1]["changed_configs"] == ["hex8_2p"]
+        assert args[1]["factor"] == pytest.approx(0.3)
+        assert args[1]["elo_loss"] == pytest.approx(120.0)
+
 
 # =============================================================================
 # CircuitBreakerState Enum Tests

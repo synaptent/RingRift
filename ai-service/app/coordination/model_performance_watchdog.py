@@ -204,13 +204,11 @@ class ModelPerformanceWatchdog(HandlerBase):
             return
 
         try:
-            from app.coordination.event_router import DataEventType, get_router
+            from app.coordination.event_router import DataEventType, publish
 
             if DataEventType is None:
                 logger.debug("DataEventType not available, skipping degradation alert")
                 return
-
-            router = get_router()
 
             payload = {
                 "model_id": perf.model_id,
@@ -222,8 +220,6 @@ class ModelPerformanceWatchdog(HandlerBase):
                 "severity": "moderate" if perf.win_rate_vs_heuristic >= 0.45 else "severe",
                 "timestamp": now,
             }
-
-            from app.coordination.event_router import publish
 
             await publish(
                 event_type=DataEventType.REGRESSION_DETECTED,

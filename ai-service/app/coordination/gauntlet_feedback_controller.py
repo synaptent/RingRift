@@ -51,7 +51,7 @@ from app.training.regression_detector import (
     RegressionSeverity,
 )
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
-from app.coordination.event_router import DataEventType
+from app.coordination.event_router import DataEventType, publish
 from app.coordination.handler_base import BaseEventHandler, EventHandlerConfig
 
 logger = logging.getLogger(__name__)
@@ -505,26 +505,22 @@ class GauntletFeedbackController(BaseEventHandler):
         Emits SELFPLAY_TARGET_UPDATED event.
         """
         try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
-            if router:
-                await router.publish(
-                    event_type=DataEventType.SELFPLAY_TARGET_UPDATED,
-                    payload={
-                        "config": record.config_key,
-                        "board_type": record.board_type,
-                        "num_players": record.num_players,
-                        "extra_games": self.config.extra_selfplay_games,
-                        "reason": "weak_performance",
-                        "win_rate_vs_random": record.win_rate_vs_random,
-                    },
-                    source=self.name,
-                )
-                logger.info(
-                    f"[{self.name}] Triggered {self.config.extra_selfplay_games} extra selfplay games "
-                    f"for {record.config_key}"
-                )
+            await publish(
+                event_type=DataEventType.SELFPLAY_TARGET_UPDATED,
+                payload={
+                    "config": record.config_key,
+                    "board_type": record.board_type,
+                    "num_players": record.num_players,
+                    "extra_games": self.config.extra_selfplay_games,
+                    "reason": "weak_performance",
+                    "win_rate_vs_random": record.win_rate_vs_random,
+                },
+                source=self.name,
+            )
+            logger.info(
+                f"[{self.name}] Triggered {self.config.extra_selfplay_games} extra selfplay games "
+                f"for {record.config_key}"
+            )
         except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"[{self.name}] Failed to emit selfplay target update: {e}")
 
@@ -549,22 +545,18 @@ class GauntletFeedbackController(BaseEventHandler):
         Emits CURRICULUM_ADVANCED event.
         """
         try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
-            if router:
-                await router.publish(
-                    event_type=DataEventType.CURRICULUM_ADVANCED,
-                    payload={
-                        "config": record.config_key,
-                        "board_type": record.board_type,
-                        "num_players": record.num_players,
-                        "current_elo": record.elo,
-                        "reason": "elo_plateau",
-                    },
-                    source=self.name,
-                )
-                logger.info(f"[{self.name}] Advanced curriculum for {record.config_key}")
+            await publish(
+                event_type=DataEventType.CURRICULUM_ADVANCED,
+                payload={
+                    "config": record.config_key,
+                    "board_type": record.board_type,
+                    "num_players": record.num_players,
+                    "current_elo": record.elo,
+                    "reason": "elo_plateau",
+                },
+                source=self.name,
+            )
+            logger.info(f"[{self.name}] Advanced curriculum for {record.config_key}")
         except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"[{self.name}] Failed to emit curriculum advancement: {e}")
 
@@ -581,32 +573,28 @@ class GauntletFeedbackController(BaseEventHandler):
             elo_drop: The ELO drop amount
         """
         try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
-            if router:
-                await router.publish(
-                    event_type=DataEventType.REGRESSION_DETECTED,
-                    payload={
-                        "config": record.config_key,
-                        "config_key": record.config_key,  # Alias for compatibility
-                        "board_type": record.board_type,
-                        "num_players": record.num_players,
-                        "current_elo": record.elo,
-                        "elo_drop": elo_drop,
-                        "consecutive_regressions": self._config_trackers[
-                            record.config_key
-                        ].consecutive_regressions,
-                        "win_rate_vs_random": record.win_rate_vs_random,
-                        "win_rate_vs_heuristic": record.win_rate_vs_heuristic,
-                        "source": self.name,
-                    },
-                    source=self.name,
-                )
-                logger.info(
-                    f"[{self.name}] Emitted REGRESSION_DETECTED for {record.config_key} "
-                    f"(ELO drop: {elo_drop:.0f})"
-                )
+            await publish(
+                event_type=DataEventType.REGRESSION_DETECTED,
+                payload={
+                    "config": record.config_key,
+                    "config_key": record.config_key,  # Alias for compatibility
+                    "board_type": record.board_type,
+                    "num_players": record.num_players,
+                    "current_elo": record.elo,
+                    "elo_drop": elo_drop,
+                    "consecutive_regressions": self._config_trackers[
+                        record.config_key
+                    ].consecutive_regressions,
+                    "win_rate_vs_random": record.win_rate_vs_random,
+                    "win_rate_vs_heuristic": record.win_rate_vs_heuristic,
+                    "source": self.name,
+                },
+                source=self.name,
+            )
+            logger.info(
+                f"[{self.name}] Emitted REGRESSION_DETECTED for {record.config_key} "
+                f"(ELO drop: {elo_drop:.0f})"
+            )
         except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"[{self.name}] Failed to emit regression detected: {e}")
 
@@ -627,37 +615,33 @@ class GauntletFeedbackController(BaseEventHandler):
             elo_drop: The ELO drop amount
         """
         try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
-            if router:
-                await router.publish(
-                    event_type=DataEventType.REGRESSION_CRITICAL,
-                    payload={
-                        "config": record.config_key,
-                        "config_key": record.config_key,  # Alias for compatibility
-                        "board_type": record.board_type,
-                        "num_players": record.num_players,
-                        "current_elo": record.elo,
-                        "elo_drop": elo_drop,
-                        "severity": severity,
-                        "consecutive_regressions": self._config_trackers[
-                            record.config_key
-                        ].consecutive_regressions,
-                        "recommendation": "rollback",
-                        "reason": (
-                            f"severe_elo_drop_{elo_drop:.0f}"
-                            if severity == "severe"
-                            else f"consecutive_regressions_{self._config_trackers[record.config_key].consecutive_regressions}"
-                        ),
-                        "source": self.name,
-                    },
-                    source=self.name,
-                )
-                logger.warning(
-                    f"[{self.name}] Emitted REGRESSION_CRITICAL for {record.config_key} "
-                    f"(severity: {severity}, ELO drop: {elo_drop:.0f}) - rollback recommended"
-                )
+            await publish(
+                event_type=DataEventType.REGRESSION_CRITICAL,
+                payload={
+                    "config": record.config_key,
+                    "config_key": record.config_key,  # Alias for compatibility
+                    "board_type": record.board_type,
+                    "num_players": record.num_players,
+                    "current_elo": record.elo,
+                    "elo_drop": elo_drop,
+                    "severity": severity,
+                    "consecutive_regressions": self._config_trackers[
+                        record.config_key
+                    ].consecutive_regressions,
+                    "recommendation": "rollback",
+                    "reason": (
+                        f"severe_elo_drop_{elo_drop:.0f}"
+                        if severity == "severe"
+                        else f"consecutive_regressions_{self._config_trackers[record.config_key].consecutive_regressions}"
+                    ),
+                    "source": self.name,
+                },
+                source=self.name,
+            )
+            logger.warning(
+                f"[{self.name}] Emitted REGRESSION_CRITICAL for {record.config_key} "
+                f"(severity: {severity}, ELO drop: {elo_drop:.0f}) - rollback recommended"
+            )
         except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"[{self.name}] Failed to emit regression critical: {e}")
 
@@ -687,30 +671,26 @@ class GauntletFeedbackController(BaseEventHandler):
             reason: Reason for update
         """
         try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
-            if router:
-                await router.publish(
-                    event_type=DataEventType.HYPERPARAMETER_UPDATED,
-                    payload={
-                        "config": config_key,
-                        "board_type": board_type,
-                        "num_players": num_players,
-                        "parameter": parameter,
-                        "old_value": old_value,
-                        "new_value": new_value,
-                        "reason": reason,
-                        "source": self.name,
-                    },
-                    source=self.name,
-                )
-                # Record for synchronous consumption by train.py
-                record_hyperparameter_update(config_key, parameter, new_value, reason)
-                logger.info(
-                    f"[{self.name}] Emitted HYPERPARAMETER_UPDATED: "
-                    f"{parameter} {old_value} -> {new_value} for {config_key}"
-                )
+            await publish(
+                event_type=DataEventType.HYPERPARAMETER_UPDATED,
+                payload={
+                    "config": config_key,
+                    "board_type": board_type,
+                    "num_players": num_players,
+                    "parameter": parameter,
+                    "old_value": old_value,
+                    "new_value": new_value,
+                    "reason": reason,
+                    "source": self.name,
+                },
+                source=self.name,
+            )
+            # Record for synchronous consumption by train.py
+            record_hyperparameter_update(config_key, parameter, new_value, reason)
+            logger.info(
+                f"[{self.name}] Emitted HYPERPARAMETER_UPDATED: "
+                f"{parameter} {old_value} -> {new_value} for {config_key}"
+            )
         except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"[{self.name}] Failed to emit hyperparameter update: {e}")
 
@@ -732,26 +712,22 @@ class GauntletFeedbackController(BaseEventHandler):
             window_size: Number of evaluations in plateau window
         """
         try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
-            if router:
-                await router.publish(
-                    event_type=DataEventType.PLATEAU_DETECTED,
-                    payload={
-                        "config_key": config_key,
-                        "config": config_key,  # Alias for compatibility
-                        "current_elo": current_elo,
-                        "window_size": window_size,
-                        "variance_threshold": self.config.plateau_variance_threshold,
-                        "source": self.name,
-                    },
-                    source=self.name,
-                )
-                logger.info(
-                    f"[{self.name}] Emitted PLATEAU_DETECTED: "
-                    f"ELO={current_elo:.0f} for {config_key}"
-                )
+            await publish(
+                event_type=DataEventType.PLATEAU_DETECTED,
+                payload={
+                    "config_key": config_key,
+                    "config": config_key,  # Alias for compatibility
+                    "current_elo": current_elo,
+                    "window_size": window_size,
+                    "variance_threshold": self.config.plateau_variance_threshold,
+                    "source": self.name,
+                },
+                source=self.name,
+            )
+            logger.info(
+                f"[{self.name}] Emitted PLATEAU_DETECTED: "
+                f"ELO={current_elo:.0f} for {config_key}"
+            )
         except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.warning(f"[{self.name}] Failed to emit plateau detected: {e}")
 
@@ -776,8 +752,6 @@ class GauntletFeedbackController(BaseEventHandler):
             reason: Reason for the adjustments
         """
         try:
-            from app.coordination.event_router import DataEventType, DataEvent, get_router
-
             # Build payload based on actions taken
             payload = {
                 "config_key": config_key,
@@ -807,19 +781,16 @@ class GauntletFeedbackController(BaseEventHandler):
                 # No adjustments needed
                 return
 
-            router = get_router()
-            if router:
-                event = DataEvent(
-                    event_type=DataEventType.ADAPTIVE_PARAMS_CHANGED,
-                    payload=payload,
-                    source=self.name,
-                )
-                await router.publish_async(DataEventType.ADAPTIVE_PARAMS_CHANGED.value, event)
-                logger.info(
-                    f"[{self.name}] Emitted ADAPTIVE_PARAMS_CHANGED for {config_key}: "
-                    f"temp={payload.get('temperature_multiplier', 1.0):.2f}, "
-                    f"budget={payload.get('search_budget_multiplier', 1.0):.2f}"
-                )
+            await publish(
+                event_type=DataEventType.ADAPTIVE_PARAMS_CHANGED,
+                payload=payload,
+                source=self.name,
+            )
+            logger.info(
+                f"[{self.name}] Emitted ADAPTIVE_PARAMS_CHANGED for {config_key}: "
+                f"temp={payload.get('temperature_multiplier', 1.0):.2f}, "
+                f"budget={payload.get('search_budget_multiplier', 1.0):.2f}"
+            )
 
         except (ImportError, RuntimeError, ValueError, AttributeError) as e:
             logger.debug(f"[{self.name}] Failed to emit ADAPTIVE_PARAMS_CHANGED: {e}")

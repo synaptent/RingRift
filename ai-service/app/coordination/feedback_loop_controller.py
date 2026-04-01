@@ -450,13 +450,14 @@ class FeedbackLoopController(SelfplayFeedbackMixin, RegressionHandlingMixin, Eva
         """Check if controller is running."""
         return self._running
 
-    def _safe_subscribe(self, bus: Any, event_type: Any, handler: Any) -> None:
+    def _safe_subscribe(self, event_type: Any, handler: Any) -> None:
         """Subscribe to an event and track it for safe unsubscription.
 
         January 2026: Helper to track which events were actually subscribed,
         enabling safe unsubscription without errors.
         """
-        bus.subscribe(event_type, handler)
+        from app.coordination.event_router import subscribe
+        subscribe(event_type, handler)
         self._subscribed_events.add((event_type, handler))
 
     def _subscribe_to_events(self) -> None:
@@ -492,35 +493,33 @@ class FeedbackLoopController(SelfplayFeedbackMixin, RegressionHandlingMixin, Eva
             pass  # Unified orchestrator not initialized yet
 
         try:
-            from app.coordination.event_router import DataEventType, get_router
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType
 
             # Core feedback events - skip if unified orchestrator is handling them
             if not unified_running:
-                self._safe_subscribe(router, DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
-                self._safe_subscribe(router, DataEventType.TRAINING_COMPLETED, self._on_training_complete)
-                self._safe_subscribe(router, DataEventType.EVALUATION_COMPLETED, self._on_evaluation_complete)
-                self._safe_subscribe(router, DataEventType.MODEL_PROMOTED, self._on_promotion_complete)
+                self._safe_subscribe(DataEventType.SELFPLAY_COMPLETE, self._on_selfplay_complete)
+                self._safe_subscribe(DataEventType.TRAINING_COMPLETED, self._on_training_complete)
+                self._safe_subscribe(DataEventType.EVALUATION_COMPLETED, self._on_evaluation_complete)
+                self._safe_subscribe(DataEventType.MODEL_PROMOTED, self._on_promotion_complete)
 
             # Work queue events - FeedbackLoopController only (not in unified)
-            self._safe_subscribe(router, DataEventType.WORK_COMPLETED, self._on_work_completed)
+            self._safe_subscribe(DataEventType.WORK_COMPLETED, self._on_work_completed)
 
             # Phase 27: Subscribe to work failure events (December 2025)
             # Closes gap: WORK_FAILED/WORK_TIMEOUT events were orphaned
             if hasattr(DataEventType, 'WORK_FAILED'):
-                self._safe_subscribe(router, DataEventType.WORK_FAILED, self._on_work_failed)
+                self._safe_subscribe(DataEventType.WORK_FAILED, self._on_work_failed)
             if hasattr(DataEventType, 'WORK_TIMEOUT'):
-                self._safe_subscribe(router, DataEventType.WORK_TIMEOUT, self._on_work_timeout)
+                self._safe_subscribe(DataEventType.WORK_TIMEOUT, self._on_work_timeout)
 
             # Phase 23.1: Subscribe to selfplay rate change events for monitoring
             if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
-                self._safe_subscribe(router, DataEventType.SELFPLAY_RATE_CHANGED, self._on_selfplay_rate_changed)
+                self._safe_subscribe(DataEventType.SELFPLAY_RATE_CHANGED, self._on_selfplay_rate_changed)
 
             # Subscribe to DATABASE_CREATED for data awareness (December 2025 - Phase 4A.3)
             # This provides early visibility into new databases before DataPipelineOrchestrator
             if hasattr(DataEventType, 'DATABASE_CREATED'):
-                self._safe_subscribe(router, DataEventType.DATABASE_CREATED, self._on_database_created)
+                self._safe_subscribe(DataEventType.DATABASE_CREATED, self._on_database_created)
 
             # Phase 8: Subscribe to training loss anomaly events (December 2025)
             # Closes critical feedback loop: training loss anomaly → quality check/exploration boost
@@ -530,104 +529,104 @@ class FeedbackLoopController(SelfplayFeedbackMixin, RegressionHandlingMixin, Eva
 
             # TRAINING_LOSS_ANOMALY overlaps with unified orchestrator
             if not unified_running and hasattr(DataEventType, 'TRAINING_LOSS_ANOMALY'):
-                self._safe_subscribe(router, DataEventType.TRAINING_LOSS_ANOMALY, self._on_training_loss_anomaly)
+                self._safe_subscribe(DataEventType.TRAINING_LOSS_ANOMALY, self._on_training_loss_anomaly)
                 event_count += 1
             # TRAINING_LOSS_TREND is FeedbackLoopController-only (unified doesn't handle it)
             if hasattr(DataEventType, 'TRAINING_LOSS_TREND'):
-                self._safe_subscribe(router, DataEventType.TRAINING_LOSS_TREND, self._on_training_loss_trend)
+                self._safe_subscribe(DataEventType.TRAINING_LOSS_TREND, self._on_training_loss_trend)
                 event_count += 1
 
             # QUALITY_DEGRADED overlaps with unified orchestrator (P1.1 Dec 2025)
             if not unified_running and hasattr(DataEventType, 'QUALITY_DEGRADED'):
-                self._safe_subscribe(router, DataEventType.QUALITY_DEGRADED, self._on_quality_degraded_for_training)
+                self._safe_subscribe(DataEventType.QUALITY_DEGRADED, self._on_quality_degraded_for_training)
                 event_count += 1
 
             # P10-LOOP-2 (Dec 2025): EVALUATION_FAILED is FeedbackLoopController-only
             if hasattr(DataEventType, 'EVALUATION_FAILED'):
-                self._safe_subscribe(router, DataEventType.EVALUATION_FAILED, self._on_evaluation_failed)
+                self._safe_subscribe(DataEventType.EVALUATION_FAILED, self._on_evaluation_failed)
                 event_count += 1
 
             # REGRESSION_DETECTED overlaps with unified orchestrator (Dec 2025)
             if not unified_running and hasattr(DataEventType, 'REGRESSION_DETECTED'):
-                self._safe_subscribe(router, DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
+                self._safe_subscribe(DataEventType.REGRESSION_DETECTED, self._on_regression_detected)
                 event_count += 1
 
             # Dec 2025: Subscribe to DAEMON_STATUS_CHANGED for health monitoring
             if hasattr(DataEventType, 'DAEMON_STATUS_CHANGED'):
-                self._safe_subscribe(router, DataEventType.DAEMON_STATUS_CHANGED, self._on_daemon_status_changed)
+                self._safe_subscribe(DataEventType.DAEMON_STATUS_CHANGED, self._on_daemon_status_changed)
                 event_count += 1
 
             # Dec 2025: Subscribe to P2P_CLUSTER_UNHEALTHY for cluster health feedback
             if hasattr(DataEventType, 'P2P_CLUSTER_UNHEALTHY'):
-                self._safe_subscribe(router, DataEventType.P2P_CLUSTER_UNHEALTHY, self._on_p2p_cluster_unhealthy)
+                self._safe_subscribe(DataEventType.P2P_CLUSTER_UNHEALTHY, self._on_p2p_cluster_unhealthy)
                 event_count += 1
 
             # Dec 2025: Subscribe to TRAINING_ROLLBACK_NEEDED for rollback coordination
             if hasattr(DataEventType, 'TRAINING_ROLLBACK_NEEDED'):
-                self._safe_subscribe(router, DataEventType.TRAINING_ROLLBACK_NEEDED, self._on_training_rollback_needed)
+                self._safe_subscribe(DataEventType.TRAINING_ROLLBACK_NEEDED, self._on_training_rollback_needed)
                 event_count += 1
 
             # Dec 28, 2025: Subscribe to TRAINING_ROLLBACK_COMPLETED for post-rollback recovery
             # Closes feedback loop: rollback complete → update state, resume training with adjustments
             if hasattr(DataEventType, 'TRAINING_ROLLBACK_COMPLETED'):
-                self._safe_subscribe(router, DataEventType.TRAINING_ROLLBACK_COMPLETED, self._on_training_rollback_completed)
+                self._safe_subscribe(DataEventType.TRAINING_ROLLBACK_COMPLETED, self._on_training_rollback_completed)
                 event_count += 1
 
             # Dec 2025: Subscribe to QUALITY_CHECK_FAILED for quality feedback
             if hasattr(DataEventType, 'QUALITY_CHECK_FAILED'):
-                self._safe_subscribe(router, DataEventType.QUALITY_CHECK_FAILED, self._on_quality_check_failed)
+                self._safe_subscribe(DataEventType.QUALITY_CHECK_FAILED, self._on_quality_check_failed)
                 event_count += 1
 
             # Dec 2025: Subscribe to QUALITY_FEEDBACK_ADJUSTED for dynamic training adjustments
             # Closes feedback loop: quality assessment → training intensity/exploration adjustments
             if hasattr(DataEventType, 'QUALITY_FEEDBACK_ADJUSTED'):
-                self._safe_subscribe(router, DataEventType.QUALITY_FEEDBACK_ADJUSTED, self._on_quality_feedback_adjusted)
+                self._safe_subscribe(DataEventType.QUALITY_FEEDBACK_ADJUSTED, self._on_quality_feedback_adjusted)
                 event_count += 1
 
             # Dec 2025: Subscribe to CPU_PIPELINE_JOB_COMPLETED for Vast.ai CPU selfplay jobs
             # Closes integration gap: CPU selfplay completions now trigger downstream pipeline
             if hasattr(DataEventType, 'CPU_PIPELINE_JOB_COMPLETED'):
-                self._safe_subscribe(router, DataEventType.CPU_PIPELINE_JOB_COMPLETED, self._on_cpu_pipeline_job_completed)
+                self._safe_subscribe(DataEventType.CPU_PIPELINE_JOB_COMPLETED, self._on_cpu_pipeline_job_completed)
                 event_count += 1
 
             # Dec 2025: Subscribe to HIGH_QUALITY_DATA_AVAILABLE for quality recovery
             # Closes feedback loop: quality recovery → reduce exploration, resume normal training
             if hasattr(DataEventType, 'HIGH_QUALITY_DATA_AVAILABLE'):
-                self._safe_subscribe(router, DataEventType.HIGH_QUALITY_DATA_AVAILABLE, self._on_high_quality_data_available)
+                self._safe_subscribe(DataEventType.HIGH_QUALITY_DATA_AVAILABLE, self._on_high_quality_data_available)
                 event_count += 1
 
             # Dec 27, 2025: Subscribe to QUALITY_SCORE_UPDATED for quality tracking
             # Closes feedback loop: quality monitoring → training intensity adjustments
             if hasattr(DataEventType, 'QUALITY_SCORE_UPDATED'):
-                self._safe_subscribe(router, DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_score_updated)
+                self._safe_subscribe(DataEventType.QUALITY_SCORE_UPDATED, self._on_quality_score_updated)
                 event_count += 1
 
             # Dec 27, 2025: Subscribe to CLUSTER_CAPACITY_CHANGED for resource adjustments
             # Closes feedback loop: cluster capacity changes → selfplay/training rate adjustments
             if hasattr(DataEventType, 'CLUSTER_CAPACITY_CHANGED'):
-                self._safe_subscribe(router, DataEventType.CLUSTER_CAPACITY_CHANGED, self._on_cluster_capacity_changed)
+                self._safe_subscribe(DataEventType.CLUSTER_CAPACITY_CHANGED, self._on_cluster_capacity_changed)
                 event_count += 1
 
             # Dec 27, 2025: Subscribe to HEALTH_CHECK_PASSED/FAILED for node health tracking
             # Closes feedback loop: node health changes → training scheduling adjustments
             if hasattr(DataEventType, 'HEALTH_CHECK_PASSED'):
-                self._safe_subscribe(router, DataEventType.HEALTH_CHECK_PASSED, self._on_health_check_passed)
+                self._safe_subscribe(DataEventType.HEALTH_CHECK_PASSED, self._on_health_check_passed)
                 event_count += 1
             if hasattr(DataEventType, 'HEALTH_CHECK_FAILED'):
-                self._safe_subscribe(router, DataEventType.HEALTH_CHECK_FAILED, self._on_health_check_failed)
+                self._safe_subscribe(DataEventType.HEALTH_CHECK_FAILED, self._on_health_check_failed)
                 event_count += 1
 
             # Dec 29, 2025: Subscribe to PLATEAU_DETECTED for exploration boost
             # Closes feedback loop: plateau detection → exploration boost → break out of plateau
             if hasattr(DataEventType, 'PLATEAU_DETECTED'):
-                self._safe_subscribe(router, DataEventType.PLATEAU_DETECTED, self._on_plateau_detected)
+                self._safe_subscribe(DataEventType.PLATEAU_DETECTED, self._on_plateau_detected)
                 event_count += 1
 
             # Jan 3, 2026: Subscribe to TRAINING_TIMEOUT_REACHED for timeout recovery
             # Closes feedback loop: training timeout → exploration boost, selfplay priority bump
             # Critical gap fix: event was emitted at training_trigger_daemon.py:3314 but had no handler
             if hasattr(DataEventType, 'TRAINING_TIMEOUT_REACHED'):
-                self._safe_subscribe(router, DataEventType.TRAINING_TIMEOUT_REACHED, self._on_training_timeout_reached)
+                self._safe_subscribe(DataEventType.TRAINING_TIMEOUT_REACHED, self._on_training_timeout_reached)
                 event_count += 1
 
             logger.info(f"[FeedbackLoopController] Subscribed to {event_count} event types")
@@ -654,14 +653,12 @@ class FeedbackLoopController(SelfplayFeedbackMixin, RegressionHandlingMixin, Eva
             return
 
         try:
-            from app.coordination.event_router import get_router
-
-            router = get_router()
+            from app.coordination.event_router import unsubscribe
 
             # Only unsubscribe from events we actually subscribed to
             for event_type, handler in list(self._subscribed_events):
                 try:
-                    router.unsubscribe(event_type, handler)
+                    unsubscribe(event_type, handler)
                 except (ValueError, KeyError) as e:
                     # Handler not found - may have been unsubscribed elsewhere
                     logger.debug(f"[FeedbackLoopController] Handler not found during unsubscribe: {e}")
@@ -749,11 +746,7 @@ class FeedbackLoopController(SelfplayFeedbackMixin, RegressionHandlingMixin, Eva
         created by new selfplay processes would miss feedback events.
         """
         try:
-            from app.coordination.event_router import DataEventType, get_router
-
-            router = get_router()
-            if router is None:
-                return
+            from app.coordination.event_router import DataEventType
 
             def on_scheduler_registered(event) -> None:
                 """Wire exploration boost when new scheduler registers."""
@@ -781,7 +774,7 @@ class FeedbackLoopController(SelfplayFeedbackMixin, RegressionHandlingMixin, Eva
 
             # P0.6 Dec 2025: Use DataEventType enum for type-safe subscription
             # January 2026: Track subscription for safe unsubscription
-            self._safe_subscribe(router, DataEventType.SCHEDULER_REGISTERED, on_scheduler_registered)
+            self._safe_subscribe(DataEventType.SCHEDULER_REGISTERED, on_scheduler_registered)
             logger.debug("[FeedbackLoopController] Subscribed to SCHEDULER_REGISTERED")
 
         except (AttributeError, TypeError, RuntimeError) as e:

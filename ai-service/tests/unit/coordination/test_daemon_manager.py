@@ -233,32 +233,31 @@ class TestDaemonManagerEventEmission:
     async def test_emit_degraded_mode_event_uses_publish_sync(self):
         """Sync degraded-mode emission should schedule through publish_sync."""
         manager = DaemonManager()
-        mock_router = MagicMock()
+        mock_publish_sync = MagicMock()
 
-        with patch("app.coordination.event_router.get_router", return_value=mock_router), \
+        with patch("app.coordination.event_router.publish_sync", mock_publish_sync), \
              patch("asyncio.get_running_loop", return_value=MagicMock()):
             manager._emit_degraded_mode_event(DaemonType.QUEUE_MONITOR, restart_count=3)
 
-        mock_router.publish_sync.assert_called_once()
-        event_type, payload = mock_router.publish_sync.call_args.args[:2]
+        mock_publish_sync.assert_called_once()
+        event_type, payload = mock_publish_sync.call_args.args[:2]
         assert event_type == "daemon.degraded_mode"
         assert payload["daemon_name"] == DaemonType.QUEUE_MONITOR.value
         assert payload["restart_count"] == 3
 
     @pytest.mark.asyncio
     async def test_emit_circuit_breaker_event_awaits_router_publish(self):
-        """Async circuit-breaker emission should await router.publish."""
+        """Async circuit-breaker emission should await publish."""
         manager = DaemonManager()
-        mock_router = MagicMock()
-        mock_router.publish = AsyncMock()
+        mock_publish = AsyncMock()
 
-        with patch("app.coordination.event_router.get_router", return_value=mock_router):
+        with patch("app.coordination.event_router.publish", mock_publish):
             await manager._emit_circuit_breaker_event(7, DaemonType.HEALTH_CHECK)
 
-        mock_router.publish.assert_awaited_once()
-        event_type = mock_router.publish.await_args.args[0]
+        mock_publish.assert_awaited_once()
+        event_type = mock_publish.await_args.args[0]
         assert event_type == "daemon.cascade_breaker_tripped"
-        payload = mock_router.publish.await_args.args[1]
+        payload = mock_publish.await_args.args[1]
         assert payload["restart_count"] == 7
         assert payload["triggered_by"] == DaemonType.HEALTH_CHECK.value
         assert "threshold" in payload
@@ -286,7 +285,7 @@ class TestDaemonManagerEventEmission:
 
     @pytest.mark.asyncio
     async def test_emit_daemons_ready_awaits_router_publish(self):
-        """Readiness emission should await router.publish instead of dropping the coroutine."""
+        """Readiness emission should await publish instead of dropping the coroutine."""
         manager = DaemonManager()
         manager._lifecycle = MagicMock()
         manager._lifecycle.get_daemon_states.return_value = {
@@ -295,14 +294,13 @@ class TestDaemonManagerEventEmission:
             DaemonType.FEEDBACK_LOOP: DaemonState.RUNNING,
             DaemonType.QUEUE_MONITOR: DaemonState.RUNNING,
         }
-        mock_router = MagicMock()
-        mock_router.publish = AsyncMock()
+        mock_publish = AsyncMock()
 
-        with patch("app.coordination.event_router.get_router", return_value=mock_router):
+        with patch("app.coordination.event_router.publish", mock_publish):
             await manager._emit_daemons_ready()
 
-        mock_router.publish.assert_awaited_once()
-        event_type, payload = mock_router.publish.await_args.args[:2]
+        mock_publish.assert_awaited_once()
+        event_type, payload = mock_publish.await_args.args[:2]
         assert event_type in {"system.daemons_ready", "all_critical_daemons_ready", "ALL_CRITICAL_DAEMONS_READY"}
         assert payload["total_ready"] == 4
         assert payload["critical_ready"] == 3

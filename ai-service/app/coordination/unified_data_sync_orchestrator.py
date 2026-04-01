@@ -20,6 +20,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from app.coordination.event_router import publish
 from app.coordination.handler_base import HandlerBase
 from app.distributed.cluster_manifest import (
     ClusterManifest,
@@ -270,10 +271,7 @@ class UnifiedDataSyncOrchestrator(HandlerBase):
     async def _trigger_s3_backup(self, request: dict[str, Any]) -> None:
         """Trigger S3 backup for a database."""
         try:
-            from app.coordination.event_router import get_event_router
-
-            router = get_event_router()
-            await router.publish(
+            await publish(
                 event_type="BACKUP_REQUESTED",
                 payload={
                     "db_path": request["db_path"],
@@ -292,10 +290,7 @@ class UnifiedDataSyncOrchestrator(HandlerBase):
     async def _trigger_owc_backup(self, request: dict[str, Any]) -> None:
         """Trigger OWC backup for a database."""
         try:
-            from app.coordination.event_router import get_event_router
-
-            router = get_event_router()
-            await router.publish(
+            await publish(
                 event_type="BACKUP_REQUESTED",
                 payload={
                     "db_path": request["db_path"],

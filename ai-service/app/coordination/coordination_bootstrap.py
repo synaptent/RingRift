@@ -999,10 +999,9 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
     # 1. Wire CLUSTER_SYNC_COMPLETE to DataPipelineOrchestrator
     try:
         from app.coordination.data_pipeline_orchestrator import get_pipeline_orchestrator
-        from app.coordination.event_router import DataEventType, get_router
+        from app.coordination.event_router import DataEventType, subscribe
 
         pipeline = get_pipeline_orchestrator()
-        router = get_router()
 
         async def on_cluster_sync_complete(event):
             """Handle CLUSTER_SYNC_COMPLETE - trigger NPZ export."""
@@ -1012,7 +1011,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
             # Emit sync complete to pipeline (will trigger export if auto_trigger)
             await pipeline._on_sync_complete(event.payload)
 
-        router.subscribe(DataEventType.DATA_SYNC_COMPLETED, on_cluster_sync_complete)
+        subscribe(DataEventType.DATA_SYNC_COMPLETED, on_cluster_sync_complete)
         results["cluster_sync_to_pipeline"] = True
         logger.debug("[Bootstrap] Wired CLUSTER_SYNC_COMPLETE -> DataPipelineOrchestrator")
 
@@ -1023,10 +1022,9 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
     # 2. Wire MODEL_SYNC_COMPLETE to ModelLifecycleCoordinator
     try:
         from app.coordination.model_lifecycle_coordinator import get_model_coordinator
-        from app.coordination.event_router import DataEventType, get_router
+        from app.coordination.event_router import DataEventType, subscribe
 
         model_coord = get_model_coordinator()
-        router = get_router()
 
         async def on_model_sync_complete(event):
             """Handle MODEL_SYNC_COMPLETE - trigger cache refresh."""
@@ -1035,7 +1033,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
             elif hasattr(model_coord, "refresh_model_cache"):
                 model_coord.refresh_model_cache()
 
-        router.subscribe(DataEventType.P2P_MODEL_SYNCED, on_model_sync_complete)
+        subscribe(DataEventType.P2P_MODEL_SYNCED, on_model_sync_complete)
         results["model_sync_to_lifecycle"] = True
         logger.debug("[Bootstrap] Wired MODEL_SYNC_COMPLETE -> ModelLifecycleCoordinator")
 
@@ -1045,11 +1043,10 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
 
     # 3. Wire SELFPLAY_COMPLETE to SyncCoordinator (for auto-trigger sync)
     try:
-        from app.coordination.event_router import DataEventType, get_router
+        from app.coordination.event_router import DataEventType, publish, subscribe
         from app.coordination.sync_facade import get_sync_facade, SyncRequest
 
         sync_facade = get_sync_facade()
-        router = get_router()
 
         async def on_selfplay_complete_for_sync(event):
             """Handle SELFPLAY_COMPLETE - trigger data sync if quality passes gate."""
@@ -1073,7 +1070,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
                 )
                 # Emit low quality event for feedback loop
                 try:
-                    await router.publish(
+                    await publish(
                         "LOW_QUALITY_DETECTED",
                         {
                             "config": payload.get("config", ""),
@@ -1103,7 +1100,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
                 )
                 await sync_facade.sync(request)
 
-        router.subscribe(DataEventType.SELFPLAY_COMPLETE, on_selfplay_complete_for_sync)
+        subscribe(DataEventType.SELFPLAY_COMPLETE, on_selfplay_complete_for_sync)
         results["selfplay_to_sync"] = True
         logger.debug("[Bootstrap] Wired SELFPLAY_COMPLETE -> SyncCoordinator")
 
@@ -1125,9 +1122,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
     # 9. Wire MODEL_DISTRIBUTION_FAILED to alert/tracking system
     # December 2025: Critical for handling distribution failures
     try:
-        from app.coordination.event_router import DataEventType, get_router
-
-        router = get_router()
+        from app.coordination.event_router import DataEventType, publish, subscribe
 
         async def on_model_distribution_failed(event):
             """Handle model distribution failure - log alert for monitoring."""
@@ -1143,7 +1138,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
 
             # Emit health alert for monitoring systems
             try:
-                await router.publish(
+                await publish(
                     "HEALTH_ALERT",
                     {
                         "alert_type": "model_distribution_failed",
@@ -1157,7 +1152,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
             except (AttributeError, TypeError, RuntimeError) as alert_err:
                 logger.debug(f"[Bootstrap] Could not emit alert: {alert_err}")
 
-        router.subscribe(DataEventType.MODEL_DISTRIBUTION_FAILED, on_model_distribution_failed)
+        subscribe(DataEventType.MODEL_DISTRIBUTION_FAILED, on_model_distribution_failed)
         results["model_distribution_failed_handler"] = True
         logger.debug("[Bootstrap] Wired MODEL_DISTRIBUTION_FAILED -> alert handler")
 
@@ -1168,9 +1163,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
     # 10. Wire EVALUATION_STARTED to metrics tracking
     # December 2025: Complements EVALUATION_COMPLETED for full lifecycle tracking
     try:
-        from app.coordination.event_router import DataEventType, get_router
-
-        router = get_router()
+        from app.coordination.event_router import DataEventType, subscribe
 
         async def on_evaluation_started(event):
             """Track evaluation start for metrics/dashboard."""
@@ -1183,7 +1176,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
                 f"({games_planned} games planned)"
             )
 
-        router.subscribe(DataEventType.EVALUATION_STARTED, on_evaluation_started)
+        subscribe(DataEventType.EVALUATION_STARTED, on_evaluation_started)
         results["evaluation_started_tracking"] = True
         logger.debug("[Bootstrap] Wired EVALUATION_STARTED -> metrics tracking")
 
@@ -1196,9 +1189,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
 
     # 14. Wire DATA_SYNC_FAILED to backpressure activation (December 2025)
     try:
-        from app.coordination.event_router import DataEventType, get_router
-
-        router = get_router()
+        from app.coordination.event_router import DataEventType, subscribe
 
         async def on_sync_failed(event):
             """Handle DATA_SYNC_FAILED - activate backpressure, retry with different transport."""
@@ -1221,7 +1212,7 @@ def _wire_missing_event_subscriptions() -> dict[str, bool]:
             except (ImportError, AttributeError):
                 pass  # Scheduler not available
 
-        router.subscribe(DataEventType.DATA_SYNC_FAILED, on_sync_failed)
+        subscribe(DataEventType.DATA_SYNC_FAILED, on_sync_failed)
         results["sync_failed_handler"] = True
         logger.debug("[Bootstrap] Wired DATA_SYNC_FAILED -> backpressure activation")
 
