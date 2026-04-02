@@ -19,13 +19,10 @@ import sys
 
 import pytest
 
-# TODO-SELF-PLAY-STABILITY: These tests run multiple full self-play games
-# with mixed AI engines which can exceed timeout limits. Even with reduced
-# game counts (3), the territory processing and AI selection overhead can
-# cause timeouts in CI. Skip pending optimization or async test execution.
-pytestmark = pytest.mark.skip(
-    reason="TODO-SELF-PLAY-STABILITY: multi-game self-play timeouts"
-)
+# Mark all tests in this module as slow (they run full games).
+# Formerly skipped due to timeout concerns, but 3-game runs complete
+# well within the 60s timeout on modern hardware.
+pytestmark = pytest.mark.slow
 
 # Ensure `app.*` imports resolve when running pytest from ai-service/
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -79,12 +76,12 @@ def _build_mixed_ai_pool(game_index: int) -> dict[int, BaseAI]:
         ]
     else:
         # Light band for CI and memory-conscious stability runs: Random,
-        # Heuristic, and low-depth Minimax only.
+        # Heuristic, and pure Minimax only.  Difficulties 4+ require NN
+        # model checkpoints that may not be present in CI environments.
         difficulty_choices = [
-            1,
-            2,
-            4,
-            5,
+            1,  # Random
+            2,  # Heuristic
+            3,  # Minimax (no NN dependency)
         ]
 
     game_rng = random.Random(42 + game_index)
