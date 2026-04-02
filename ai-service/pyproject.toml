@@ -20,7 +20,7 @@ test = [
 # Start with a permissive configuration to establish baseline
 # These settings can be tightened as type coverage improves
 #
-# Current baseline (2025-12-06): 557 errors in 36 files
+# Current baseline (2026-04-01): 277 errors in 152 files (down from 557 in 36 files)
 # Strategy: Start with a passing config, then incrementally tighten:
 # 1. Enable mypy with relaxed settings (this config)
 # 2. Fix critical parity modules (board_manager, rules_engine, game_state)

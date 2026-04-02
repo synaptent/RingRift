@@ -66,7 +66,7 @@ def reset_hetzner_circuit_breaker() -> None:
 
 # Hetzner server types (CPU only)
 HETZNER_PLANS = {
-    # type: (vCPUs, RAM GB, cost_per_hour)
+    # (vCPUs, RAM GB, cost_per_hour)
     "cx22": (2, 4, 0.007),
     "cx32": (4, 8, 0.014),
     "cx42": (8, 16, 0.028),
