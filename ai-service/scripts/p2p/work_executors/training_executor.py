@@ -1120,23 +1120,34 @@ async def execute_training_work(
 
             return True
         else:
-            truncated = output[-8000:] if output else "no output"
+            truncated = output[-50000:] if output else "no output"
             logger.error(
                 f"Training failed: {config_key}/{model_version}: "
-                f"returncode={proc.returncode}, output={truncated}"
+                f"returncode={proc.returncode}, output={truncated[-2000:]}"
             )
-            # Mar 4, 2026: Include OOM/CUDA keywords in error string so the
-            # coordinator's retryable check can detect transient GPU failures.
-            # Previously, "subprocess_failed:rc=1" was never retried because
-            # it didn't contain "cuda" or "out of memory".
+            # Classify error for coordinator retry logic
             if "out of memory" in output.lower() or "outofmemoryerror" in output.lower():
                 work_item["error"] = f"cuda_oom:rc={proc.returncode}:{config_key}"
             elif "cuda" in output.lower() and proc.returncode == 1:
                 work_item["error"] = f"cuda_error:rc={proc.returncode}:{config_key}"
             else:
                 work_item["error"] = f"subprocess_failed:rc={proc.returncode}:{config_key}"
+            # Store full error context so coordinator can debug without SSH
+            work_item["result"] = {
+                "subprocess_output_tail": truncated[-10000:],
+                "returncode": proc.returncode,
+                "config_key": config_key,
+                "model_version": model_version,
+            }
             return False
     except Exception as e:
         logger.exception(f"Training subprocess error for {config_key}: {e}")
         work_item["error"] = f"training_exception:{config_key}:{e}"
+        import traceback
+        work_item["result"] = {
+            "exception": str(e),
+            "traceback": traceback.format_exc()[-5000:],
+            "config_key": config_key,
+            "model_version": model_version,
+        }
         return False
