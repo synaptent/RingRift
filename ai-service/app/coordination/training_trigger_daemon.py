@@ -1878,18 +1878,14 @@ class TrainingTriggerDaemon(HandlerBase):
             logger.debug(f"[TrainingTriggerDaemon] {config_key}: Cannot train - {reason}")
             return False
 
-        # December 30, 2025: Iterate over architectures for this config
-        # January 4, 2026: Sort by priority (highest first) for multi-architecture training
-        architectures = sorted(
-            self._architecture_config.get_architectures_for_config(config_key),
-            key=lambda a: a.priority,
-            reverse=True,  # Highest priority first (v5: 35%, v4: 20%, etc.)
-        )
-        if not architectures:
-            # Fallback to default v5 if no architectures configured
-            architectures = [ArchitectureSpec(
-                name="v5", enabled=True, configs=["*"], priority=1.0
-            )]
+        # April 2026: Only train with the canonical model architecture (v2).
+        # Multi-architecture training (v3/v4/v5/v5-heavy-large) crashes because
+        # init weights from canonical v2 models are incompatible with other archs,
+        # causing 4/5 dispatches to fail with cuda_error:rc=1 and accumulating
+        # failure counts that block all future training for that config.
+        architectures = [ArchitectureSpec(
+            name="v2", enabled=True, configs=["*"], priority=1.0
+        )]
 
         triggered_any = False
         for arch in architectures:
