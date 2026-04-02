@@ -1653,7 +1653,7 @@ class TrainingTriggerDaemon(HandlerBase):
             )
 
             # Trigger training check (will go through normal validation)
-            can_train, reason = await self._check_training_readiness(config_key, state)
+            can_train, reason = await self._check_training_conditions(config_key)
             if can_train:
                 success = await self._trigger_training(config_key, state)
                 if success:
