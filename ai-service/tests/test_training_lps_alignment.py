@@ -28,7 +28,7 @@ from app.models import (
     RingStack,
     TimeControl,
 )
-from app.rules.core import count_rings_in_play_for_player
+from app.rules.core import count_rings_in_play_for_player, infer_total_rings_in_play
 from app.training.env import RingRiftEnv
 from app.training.tournament import (
     VICTORY_REASONS,
@@ -79,7 +79,7 @@ def _make_two_player_state() -> GameState:
         lastMoveAt=now,
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,
@@ -145,7 +145,7 @@ class TestVictoryReasonInference(unittest.TestCase):
         state.board.eliminated_rings["1"] = state.victory_threshold
 
         reason = infer_victory_reason(state)
-        self.assertEqual(reason, "elimination")
+        self.assertEqual(reason, "ring_elimination")
 
     def test_infer_territory_victory(self) -> None:
         """Verify territory victory is correctly inferred."""
@@ -194,7 +194,7 @@ class TestVictoryReasonInference(unittest.TestCase):
     def test_victory_reasons_all_present(self) -> None:
         """Verify all expected victory reasons are defined."""
         expected = [
-            "elimination",
+            "ring_elimination",
             "territory",
             "last_player_standing",
             "structural",

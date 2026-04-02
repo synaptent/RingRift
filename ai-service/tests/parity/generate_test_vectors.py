@@ -22,25 +22,28 @@ from app.models import (  # type: ignore[import]
     RingStack,
     TimeControl,
 )
+from app.rules.core import infer_total_rings_in_play  # type: ignore[import]
 
 
 def create_initial_state():
+    board = BoardState(type=BoardType.SQUARE8, size=8)
+    players = [
+        Player(
+            id="p1", username="Player 1", type="human", playerNumber=1,
+            isReady=True, timeRemaining=600, ringsInHand=20,
+            eliminatedRings=0, territorySpaces=0, aiDifficulty=None
+        ),
+        Player(
+            id="p2", username="Player 2", type="human", playerNumber=2,
+            isReady=True, timeRemaining=600, ringsInHand=20,
+            eliminatedRings=0, territorySpaces=0, aiDifficulty=None
+        )
+    ]
     return GameState(
         id="test-game",
         boardType=BoardType.SQUARE8,
-        board=BoardState(type=BoardType.SQUARE8, size=8),
-        players=[
-            Player(
-                id="p1", username="Player 1", type="human", playerNumber=1,
-                isReady=True, timeRemaining=600, ringsInHand=20,
-                eliminatedRings=0, territorySpaces=0, aiDifficulty=None
-            ),
-            Player(
-                id="p2", username="Player 2", type="human", playerNumber=2,
-                isReady=True, timeRemaining=600, ringsInHand=20,
-                eliminatedRings=0, territorySpaces=0, aiDifficulty=None
-            )
-        ],
+        board=board,
+        players=players,
         currentPhase=GamePhase.RING_PLACEMENT,
         currentPlayer=1,
         moveHistory=[],
@@ -50,7 +53,7 @@ def create_initial_state():
         lastMoveAt=datetime.now(),
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10

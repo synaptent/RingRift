@@ -254,10 +254,12 @@ class AutonomousQueuePopulationLoop(BaseLoop):
         This was causing OOM on coordinator nodes.
 
         Returns:
-            True if selfplay is enabled (or config can't be read), False if disabled
+            True if selfplay is explicitly enabled for this node, False otherwise.
+            Unknown config/role state fails closed to avoid scheduling selfplay on
+            coordinator-style nodes.
         """
         if self._selfplay_enabled_checked:
-            return self._selfplay_enabled if self._selfplay_enabled is not None else True
+            return self._selfplay_enabled if self._selfplay_enabled is not None else False
 
         self._selfplay_enabled_checked = True
 
@@ -268,7 +270,8 @@ class AutonomousQueuePopulationLoop(BaseLoop):
             node_id = getattr(self._orchestrator, "node_id", None)
             hostname = socket.gethostname()
             if not node_id:
-                return True  # Can't determine, allow by default
+                self._selfplay_enabled = True
+                return True  # Can't determine node identity, preserve legacy allow-default
 
             # Check for cached cluster config
             cluster_config = getattr(self._orchestrator, "_cluster_config", None)
@@ -331,9 +334,11 @@ class AutonomousQueuePopulationLoop(BaseLoop):
                 self._selfplay_enabled = False
                 return False
 
+            self._selfplay_enabled = False
             return False  # Fail closed if node role/config cannot be determined
         except Exception as e:
             logger.debug(f"[AutonomousQueue] Error checking selfplay_enabled config: {e}")
+            self._selfplay_enabled = False
             return False  # Fail closed on config/role detection errors
 
     def start_background(self) -> asyncio.Task | None:

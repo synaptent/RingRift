@@ -634,9 +634,9 @@ class TestEventEmissionHelpers:
 
     @pytest.mark.asyncio
     async def test_emit_failure_event_success(self):
-        """_emit_failure_event calls event emitter correctly."""
+        """_emit_failure_event delegates to safe event emission."""
         with patch(
-            "app.coordination.event_emitters.emit_handler_failed",
+            "app.coordination.handler_resilience.safe_emit_event_async",
             new_callable=AsyncMock,
         ) as mock_emit:
             from app.coordination.handler_resilience import _emit_failure_event
@@ -649,18 +649,23 @@ class TestEventEmissionHelpers:
             )
 
             mock_emit.assert_called_once_with(
-                handler_name="test_handler",
-                event_type="TEST_EVENT",
-                error="ValueError: oops",
-                coordinator="TestCoord",
+                "HANDLER_FAILED",
+                {
+                    "handler_name": "test_handler",
+                    "event_type": "TEST_EVENT",
+                    "error": "ValueError: oops",
+                    "coordinator": "TestCoord",
+                },
+                context="handler_resilience",
             )
 
     @pytest.mark.asyncio
     async def test_emit_failure_event_handles_error(self):
-        """_emit_failure_event handles import/emit errors gracefully."""
+        """_emit_failure_event tolerates a failed safe emit result."""
         with patch(
-            "app.coordination.event_emitters.emit_handler_failed",
-            side_effect=RuntimeError("emit failed"),
+            "app.coordination.handler_resilience.safe_emit_event_async",
+            new_callable=AsyncMock,
+            return_value=False,
         ):
             from app.coordination.handler_resilience import _emit_failure_event
 
@@ -674,9 +679,9 @@ class TestEventEmissionHelpers:
 
     @pytest.mark.asyncio
     async def test_emit_timeout_event_success(self):
-        """_emit_timeout_event calls event emitter correctly."""
+        """_emit_timeout_event delegates to safe event emission."""
         with patch(
-            "app.coordination.event_emitters.emit_handler_timeout",
+            "app.coordination.handler_resilience.safe_emit_event_async",
             new_callable=AsyncMock,
         ) as mock_emit:
             from app.coordination.handler_resilience import _emit_timeout_event
@@ -689,17 +694,21 @@ class TestEventEmissionHelpers:
             )
 
             mock_emit.assert_called_once_with(
-                handler_name="slow_handler",
-                event_type="SLOW_EVENT",
-                timeout_seconds=30.0,
-                coordinator="TestCoord",
+                "HANDLER_TIMEOUT",
+                {
+                    "handler_name": "slow_handler",
+                    "event_type": "SLOW_EVENT",
+                    "timeout_seconds": 30.0,
+                    "coordinator": "TestCoord",
+                },
+                context="handler_resilience",
             )
 
     @pytest.mark.asyncio
     async def test_emit_health_degraded_success(self):
-        """_emit_health_degraded calls event emitter correctly."""
+        """_emit_health_degraded delegates to safe event emission."""
         with patch(
-            "app.coordination.event_emitters.emit_coordinator_health_degraded",
+            "app.coordination.handler_resilience.safe_emit_event_async",
             new_callable=AsyncMock,
         ) as mock_emit:
             from app.coordination.handler_resilience import _emit_health_degraded
@@ -710,11 +719,16 @@ class TestEventEmissionHelpers:
                 consecutive_failures=5,
             )
 
-            mock_emit.assert_called_once()
-            call_args = mock_emit.call_args[1]
-            assert call_args["coordinator_name"] == "TestCoord"
-            assert "bad_handler" in call_args["reason"]
-            assert call_args["health_score"] == 0.5
+            mock_emit.assert_called_once_with(
+                "COORDINATOR_HEALTH_DEGRADED",
+                {
+                    "coordinator_name": "TestCoord",
+                    "reason": "Handler bad_handler has 5 consecutive failures",
+                    "health_score": 0.5,
+                    "issues": ["bad_handler: 5 consecutive failures"],
+                },
+                context="handler_resilience",
+            )
 
 
 # =============================================================================

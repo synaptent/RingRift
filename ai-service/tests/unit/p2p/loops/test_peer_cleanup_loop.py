@@ -88,9 +88,9 @@ class TestPeerCleanupConfig:
         """Test default configuration values."""
         config = PeerCleanupConfig()
         assert config.cleanup_interval_seconds == 300.0
-        assert config.tier1_stale_seconds == 3600.0
-        assert config.tier2_purge_seconds == 21600.0
-        assert config.tier3_cache_purge_seconds == 86400.0
+        assert config.tier1_stale_seconds == 1200.0
+        assert config.tier2_purge_seconds == 2400.0
+        assert config.tier3_cache_purge_seconds == 14400.0
         assert config.max_purge_per_cycle == 20
         assert config.enabled is True
         assert config.dry_run is False

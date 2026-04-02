@@ -147,10 +147,10 @@ class MetricCatalog(SingletonMixin):
     def get_instance(cls) -> MetricCatalog:
         """Get singleton instance.
 
-        Uses SingletonMixin._get_or_create_instance() for thread safety.
+        Uses SingletonMixin.get_instance() for thread-safe construction.
         Automatically registers all metrics on first access.
         """
-        instance = cls._get_or_create_instance()
+        instance = super().get_instance()
         if not instance._initialized:
             with cls._lock:
                 if not instance._initialized:

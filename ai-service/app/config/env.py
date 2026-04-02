@@ -60,6 +60,10 @@ class RingRiftEnv:
 
         Falls back to hostname if resolution fails (for backward compatibility).
         """
+        env_id = os.environ.get("RINGRIFT_NODE_ID")
+        if env_id:
+            return env_id
+
         try:
             from app.config.node_identity import get_node_id_safe
 

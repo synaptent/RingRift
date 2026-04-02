@@ -17,6 +17,7 @@ from app.models import (  # type: ignore
     Player,
     TimeControl,
 )
+from app.rules.core import infer_total_rings_in_play  # type: ignore
 from app.training.territory_dataset_validation import (  # type: ignore
     iter_territory_dataset_errors,
     validate_territory_example,
@@ -67,7 +68,7 @@ def _make_minimal_game_state(board_type: BoardType = BoardType.SQUARE8) -> dict[
         lastMoveAt=datetime.now(timezone.utc),
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,
@@ -160,4 +161,3 @@ def test_iter_territory_dataset_errors_reports_line_numbers(tmp_path) -> None:
     # Validator only checks for missing required fields, not value validation
     assert any("game_state" in m for m in messages_for_second)
     assert any("engine_mode" in m for m in messages_for_second)
-

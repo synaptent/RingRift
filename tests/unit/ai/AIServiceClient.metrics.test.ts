@@ -1,5 +1,6 @@
 import { AIServiceClient } from '../../../src/server/services/AIServiceClient';
 import { GameState } from '../../../src/shared/types/game';
+import { getConfiguredTotalRingsInPlay } from '../../utils/fixtures';
 
 // Shared mocks for axios – declared with `var` so they can be assigned
 // inside the jest.mock factory without TDZ issues.
@@ -94,7 +95,7 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: 2,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: getConfiguredTotalRingsInPlay('square8', 2),
     totalRingsEliminated: 0,
     victoryThreshold: 0,
     territoryVictoryThreshold: 0,

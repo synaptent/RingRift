@@ -54,6 +54,13 @@ def reset_singleton():
     reset_sync_mutex()
 
 
+@pytest.fixture
+def multi_host_capacity():
+    """Temporarily raise the cluster-wide sync cap for multi-host tests."""
+    with patch("app.coordination.sync_mutex.MAX_GLOBAL_CONCURRENT_SYNCS", 8):
+        yield
+
+
 class TestSyncLockInfo:
     """Tests for SyncLockInfo dataclass."""
 
@@ -130,7 +137,7 @@ class TestSyncMutexAcquisition:
         result = mutex.acquire("test-host", "rsync", wait=False)
         assert result is False
 
-    def test_acquire_different_hosts(self, mutex):
+    def test_acquire_different_hosts(self, mutex, multi_host_capacity):
         """Should allow locks on different hosts."""
         result1 = mutex.acquire("host-1", "rsync")
         result2 = mutex.acquire("host-2", "rsync")
@@ -176,7 +183,7 @@ class TestSyncMutexRelease:
         result = mutex.release("nonexistent-host")
         assert result is False
 
-    def test_release_all_for_process(self, mutex):
+    def test_release_all_for_process(self, mutex, multi_host_capacity):
         """Should release all locks held by this process."""
         mutex.acquire("host-1", "rsync")
         mutex.acquire("host-2", "rsync")
@@ -213,7 +220,7 @@ class TestSyncMutexExpiration:
         assert info.operation == "rsync"
         assert info.holder_pid == os.getpid()
 
-    def test_get_all_locks(self, mutex):
+    def test_get_all_locks(self, mutex, multi_host_capacity):
         """Should return all active locks."""
         mutex.acquire("host-1", "rsync")
         mutex.acquire("host-2", "scp")
@@ -281,7 +288,7 @@ class TestSyncMutexStats:
         assert stats["active_locks"] == 0
         assert stats["locks"] == []
 
-    def test_get_stats_with_locks(self, mutex):
+    def test_get_stats_with_locks(self, mutex, multi_host_capacity):
         """Stats should show active locks."""
         mutex.acquire("host-1", "rsync")
         mutex.acquire("host-2", "scp")
@@ -404,7 +411,7 @@ class TestSyncMutexThreadSafety:
         assert sum(acquired_count) == 1
         mutex.close()
 
-    def test_concurrent_access_different_hosts(self, temp_db):
+    def test_concurrent_access_different_hosts(self, temp_db, multi_host_capacity):
         """Multiple threads should access different hosts concurrently."""
         mutex = SyncMutex(temp_db)
         results = {}

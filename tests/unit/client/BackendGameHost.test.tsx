@@ -12,6 +12,7 @@ import type {
   Position,
 } from '../../../src/shared/types/game';
 import { BackendGameHost } from '../../../src/client/pages/BackendGameHost';
+import { inferTotalRingsInPlay } from '../../utils/fixtures';
 
 jest.mock('../../../src/client/hooks/useIsMobile', () => ({
   __esModule: true,
@@ -277,6 +278,7 @@ function createGameState(phase: GamePhase = 'movement'): GameState {
     capHeight: 1,
     controllingPlayer: 1,
   });
+  const totalRingsInPlay = inferTotalRingsInPlay(players, board);
 
   return {
     id: 'game-123',
@@ -294,7 +296,7 @@ function createGameState(phase: GamePhase = 'movement'): GameState {
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: 2,
-    totalRingsInPlay: 0,
+    totalRingsInPlay,
     totalRingsEliminated: 0,
     victoryThreshold: 10,
     territoryVictoryThreshold: 32,
@@ -1363,6 +1365,7 @@ describe('BackendGameHost (React host behaviour)', () => {
     });
 
     const players = createPlayers();
+    const totalRingsInPlay = inferTotalRingsInPlay(players, board);
 
     mockGameState = {
       id: 'game-hex',
@@ -1380,7 +1383,7 @@ describe('BackendGameHost (React host behaviour)', () => {
       lastMoveAt: new Date(),
       isRated: false,
       maxPlayers: players.length,
-      totalRingsInPlay: 0,
+      totalRingsInPlay,
       totalRingsEliminated: 0,
       victoryThreshold: 10,
       territoryVictoryThreshold: 32,

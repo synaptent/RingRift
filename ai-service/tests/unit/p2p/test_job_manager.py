@@ -61,8 +61,21 @@ class TestSearchEngineModes:
 
     def test_search_engine_modes_constant(self):
         """Test SEARCH_ENGINE_MODES contains expected modes."""
-        expected = {"maxn", "brs", "mcts", "gumbel-mcts",
-                   "policy-only", "nn-descent", "nn-minimax"}
+        expected = {
+            "maxn",
+            "brs",
+            "mcts",
+            "mcts-only",
+            "gumbel-mcts",
+            "gumbel-mcts-only",
+            "gumbel",
+            "gpu-gumbel",
+            "policy-only",
+            "nn-descent",
+            "descent-only",
+            "nn-minimax",
+            "diverse",
+        }
         assert expected == JobManager.SEARCH_ENGINE_MODES
 
     def test_heuristic_not_in_search_modes(self):

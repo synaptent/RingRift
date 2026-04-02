@@ -456,12 +456,15 @@ class TestTriggerTransfer:
         """Test triggering 2p→3p transfer."""
         orchestrator._states["hex8"].model_2p = "models/hex8_2p.pth"
 
-        with patch.object(orchestrator, "_emit_event", new_callable=AsyncMock) as mock_emit:
+        with patch(
+            "app.coordination.cascade_training.safe_emit_event",
+            return_value=True,
+        ) as mock_emit:
             await orchestrator._trigger_transfer("hex8", 2, 3)
 
             mock_emit.assert_called_once()
-            args = mock_emit.call_args[0]
-            assert args[0] == "CASCADE_TRANSFER_TRIGGERED"
+            args = mock_emit.call_args.args
+            assert args[0] == "cascade_transfer_triggered"
             assert args[1]["board_type"] == "hex8"
             assert args[1]["source_players"] == 2
             assert args[1]["target_players"] == 3
@@ -471,7 +474,10 @@ class TestTriggerTransfer:
         """Test transfer not triggered without source model."""
         orchestrator._states["hex8"].model_2p = None
 
-        with patch.object(orchestrator, "_emit_event", new_callable=AsyncMock) as mock_emit:
+        with patch(
+            "app.coordination.cascade_training.safe_emit_event",
+            return_value=True,
+        ) as mock_emit:
             await orchestrator._trigger_transfer("hex8", 2, 3)
             mock_emit.assert_not_called()
 

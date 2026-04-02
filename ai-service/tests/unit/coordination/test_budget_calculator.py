@@ -82,19 +82,19 @@ class TestGetAdaptiveBudgetForGames:
     """
 
     def test_bootstrap_tier1_under_100_games(self):
-        """< 100 games with low Elo returns bootstrap tier 1 budget (64)."""
+        """< 100 games with low Elo returns bootstrap tier 1 budget (150)."""
         assert get_adaptive_budget_for_games(0, 1200) == GUMBEL_BUDGET_BOOTSTRAP_TIER1
         assert get_adaptive_budget_for_games(50, 1400) == GUMBEL_BUDGET_BOOTSTRAP_TIER1
         assert get_adaptive_budget_for_games(99, 1500) == GUMBEL_BUDGET_BOOTSTRAP_TIER1
 
     def test_bootstrap_tier2_100_to_500_games(self):
-        """100-499 games with low Elo returns bootstrap tier 2 budget (150)."""
+        """100-499 games with low Elo returns bootstrap tier 2 budget (300)."""
         assert get_adaptive_budget_for_games(100, 1200) == GUMBEL_BUDGET_BOOTSTRAP_TIER2
         assert get_adaptive_budget_for_games(250, 1400) == GUMBEL_BUDGET_BOOTSTRAP_TIER2
         assert get_adaptive_budget_for_games(499, 1500) == GUMBEL_BUDGET_BOOTSTRAP_TIER2
 
     def test_bootstrap_tier3_500_to_1000_games(self):
-        """500-999 games with low Elo returns bootstrap tier 3 budget (200)."""
+        """500-999 games with low Elo returns bootstrap tier 3 budget (500)."""
         assert get_adaptive_budget_for_games(500, 1200) == GUMBEL_BUDGET_BOOTSTRAP_TIER3
         assert get_adaptive_budget_for_games(750, 1400) == GUMBEL_BUDGET_BOOTSTRAP_TIER3
         assert get_adaptive_budget_for_games(999, 1500) == GUMBEL_BUDGET_BOOTSTRAP_TIER3

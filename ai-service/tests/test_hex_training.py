@@ -105,7 +105,7 @@ def create_hex_game_state(
         lastMoveAt=datetime.now(),
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,  # Total rings placed on board (empty state)
+        totalRingsInPlay=rings_per_player * 2,
         totalRingsEliminated=0,
         victoryThreshold=rings_per_player,  # RR-CANON-R061: 2p threshold == ringsPerPlayer
         territoryVictoryThreshold=235,
@@ -195,7 +195,11 @@ class TestHexStateEncoder:
         features, globals_vec = encoder.encode(hex_state)
 
         # Check shapes
-        assert features.shape == (10, HEX_BOARD_SIZE, HEX_BOARD_SIZE)
+        assert features.shape == (
+            encoder.NUM_CHANNELS * 4,
+            HEX_BOARD_SIZE,
+            HEX_BOARD_SIZE,
+        )
         assert globals_vec.shape == (20,)
 
         # All features should be zero for empty board
@@ -848,7 +852,7 @@ class TestHexTrainingIntegration:
 
         # Create model
         model = HexNeuralNet_v2(
-            in_channels=10,  # Single frame
+            in_channels=features.shape[0],
             global_features=20,
             num_res_blocks=1,
             num_filters=16,

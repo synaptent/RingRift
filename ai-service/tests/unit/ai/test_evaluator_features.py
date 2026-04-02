@@ -9,7 +9,7 @@ Tests cover the 5 new heuristic features added in Phase 3.1:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 from unittest.mock import MagicMock, patch
 
@@ -48,6 +48,10 @@ class MockStack:
     def top_player(self) -> int:
         return self.rings[-1] if self.rings else 0
 
+    @property
+    def controlling_player(self) -> int:
+        return self.controller
+
 
 @dataclass
 class MockPlayer:
@@ -60,6 +64,10 @@ class MockPlayer:
     territory_count: int
     stacks: List[MockStack]
 
+    @property
+    def player_number(self) -> int:
+        return self.number
+
 
 @dataclass
 class MockBoard:
@@ -68,6 +76,7 @@ class MockBoard:
     size: int
     cells: Dict
     stacks: Dict[MockPosition, MockStack]
+    collapsed_spaces: set = field(default_factory=set)
 
     def get_all_cells(self) -> List[MockPosition]:
         return list(self.cells.keys())
@@ -100,7 +109,11 @@ def mock_geometry():
     geometry.center_positions = []
     geometry.all_positions = []
     geometry.get_neighbors = MagicMock(return_value=[])
+    geometry.get_adjacent_keys = MagicMock(return_value=[])
     geometry.get_line_of_sight = MagicMock(return_value=[])
+    geometry.get_los_directions = MagicMock(return_value=[])
+    geometry.get_center_positions = MagicMock(return_value=[])
+    geometry.get_all_board_keys = MagicMock(return_value=[])
     return geometry
 
 
@@ -287,7 +300,7 @@ class TestTacticalEvaluatorChainCapture:
         evaluator = TacticalEvaluator()
         # With default empty state, should return 0 (no vulnerability)
         # This tests the method exists and returns a numeric value
-        assert isinstance(evaluator._weights.chain_capture_risk, float)
+        assert isinstance(evaluator.weights.chain_capture_risk, float)
 
     def test_evaluate_tactical_includes_chain_capture(self, basic_2p_state, mock_geometry):
         """Test that evaluate_tactical includes chain capture scores."""
@@ -296,10 +309,9 @@ class TestTacticalEvaluatorChainCapture:
         evaluator = TacticalEvaluator()
         evaluator.set_geometry(mock_geometry)
 
-        # The score should be a TacticalScore with chain capture fields
-        score = evaluator.evaluate_tactical(basic_2p_state, player_idx=0)
-        assert hasattr(score, "chain_capture_risk")
-        assert hasattr(score, "chain_capture_potential")
+        breakdown = evaluator.get_breakdown(basic_2p_state, player_idx=0)
+        assert "chain_capture_risk" in breakdown
+        assert "chain_capture_potential" in breakdown
 
     def test_set_weights_updates_chain_capture(self):
         """Test that set_weights properly updates chain capture weights."""
@@ -312,8 +324,8 @@ class TestTacticalEvaluatorChainCapture:
         }
         evaluator.set_weights(weights)
 
-        assert evaluator._weights.chain_capture_risk == 15.0
-        assert evaluator._weights.chain_capture_potential == 12.0
+        assert evaluator.weights.chain_capture_risk == 15.0
+        assert evaluator.weights.chain_capture_potential == 12.0
 
 
 # =============================================================================
@@ -354,7 +366,7 @@ class TestStrategicScore:
             victory_proximity=5.0,
             opponent_victory_threat=0.0,
             forced_elimination_risk=0.0,
-            lps_advantage=0.0,
+            lps_action_advantage=0.0,
             multi_leader_threat=0.0,
             tempo_advantage=5.0,
         )
@@ -369,7 +381,7 @@ class TestStrategicScore:
             victory_proximity=0.0,
             opponent_victory_threat=0.0,
             forced_elimination_risk=0.0,
-            lps_advantage=0.0,
+            lps_action_advantage=0.0,
             multi_leader_threat=0.0,
             tempo_advantage=5.0,
         )
@@ -400,8 +412,8 @@ class TestStrategicEvaluatorTempo:
         }
         evaluator.set_weights(weights)
 
-        assert evaluator._weights.tempo_advantage == 10.0
-        assert evaluator._weights.forcing_move_value == 5.0
+        assert evaluator.weights.tempo_advantage == 10.0
+        assert evaluator.weights.forcing_move_value == 5.0
 
     def test_evaluate_includes_tempo(self, basic_2p_state, mock_geometry):
         """Test that evaluate_strategic_all includes tempo score."""
@@ -410,8 +422,8 @@ class TestStrategicEvaluatorTempo:
         evaluator = StrategicEvaluator()
         evaluator.set_geometry(mock_geometry)
 
-        score = evaluator.evaluate_strategic_all(basic_2p_state, player_idx=0)
-        assert hasattr(score, "tempo_advantage")
+        breakdown = evaluator.get_breakdown(basic_2p_state, player_idx=0)
+        assert "tempo_advantage" in breakdown
 
 
 # =============================================================================
@@ -449,9 +461,7 @@ class TestEndgameScore:
 
         score = EndgameScore(
             total=10.0,
-            recovery_pressure=0.0,
-            capture_momentum=0.0,
-            ring_preservation=0.0,
+            recovery_potential=0.0,
             phase_transition=5.0,
         )
         assert score.phase_transition == 5.0
@@ -462,9 +472,7 @@ class TestEndgameScore:
 
         score = EndgameScore(
             total=10.0,
-            recovery_pressure=0.0,
-            capture_momentum=0.0,
-            ring_preservation=0.0,
+            recovery_potential=0.0,
             phase_transition=5.0,
         )
         d = score.to_dict()
@@ -493,8 +501,8 @@ class TestEndgameEvaluatorPhaseTransition:
         }
         evaluator.set_weights(weights)
 
-        assert evaluator._weights.endgame_aggression == 8.0
-        assert evaluator._weights.phase_transition_bonus == 6.0
+        assert evaluator.weights.endgame_aggression == 8.0
+        assert evaluator.weights.phase_transition_bonus == 6.0
 
 
 # =============================================================================
@@ -534,7 +542,7 @@ class TestPositionalScoreStackSynergy:
             total=10.0,
             territory=5.0,
             center_control=2.0,
-            closure_potential=1.0,
+            territory_closure=1.0,
             stack_synergy=5.0,
             expansion_potential=3.0,
         )
@@ -562,8 +570,8 @@ class TestPositionalEvaluatorStackSynergy:
         }
         evaluator.set_weights(weights)
 
-        assert evaluator._weights.stack_synergy == 8.0
-        assert evaluator._weights.mutual_defense == 6.0
+        assert evaluator.weights.stack_synergy == 8.0
+        assert evaluator.weights.mutual_defense == 6.0
 
 
 # =============================================================================
@@ -603,7 +611,7 @@ class TestPositionalScoreExpansion:
             total=10.0,
             territory=5.0,
             center_control=2.0,
-            closure_potential=1.0,
+            territory_closure=1.0,
             stack_synergy=0.0,
             expansion_potential=5.0,
         )
@@ -631,8 +639,8 @@ class TestPositionalEvaluatorExpansion:
         }
         evaluator.set_weights(weights)
 
-        assert evaluator._weights.expansion_potential == 10.0
-        assert evaluator._weights.frontier_strength == 8.0
+        assert evaluator.weights.expansion_potential == 10.0
+        assert evaluator.weights.frontier_strength == 8.0
 
 
 # =============================================================================

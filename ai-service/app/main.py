@@ -19,7 +19,7 @@ from typing import Any, TypedDict
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, root_validator, validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 try:
     from typing import Self  # Python 3.11+
@@ -508,19 +508,17 @@ class MoveRequest(BaseModel):
         description="Optional RNG seed for deterministic AI behavior"
     )
 
-    @root_validator(skip_on_failure=True)
-    def validate_player_number(cls, values: dict) -> dict:
+    @model_validator(mode="after")
+    def validate_player_number(self) -> Self:
         """Ensure player_number is valid for the given game_state."""
-        game_state = values.get("game_state")
-        player_number = values.get("player_number")
-        players = getattr(game_state, "players", None) if game_state else None
+        players = getattr(self.game_state, "players", None)
         if not players:
             raise ValueError("game_state.players cannot be empty")
-        if player_number and player_number > len(players):
+        if self.player_number > len(players):
             raise ValueError(
-                f"player_number {player_number} exceeds number of players ({len(players)})"
+                f"player_number {self.player_number} exceeds number of players ({len(players)})"
             )
-        return values
+        return self
 
 
 class MoveResponse(BaseModel):
@@ -564,25 +562,24 @@ class BatchMoveRequest(BaseModel):
         description="Simulation budget per move"
     )
 
-    @validator("game_states")
-    def validate_game_states_length(cls, v):
+    @field_validator("game_states")
+    @classmethod
+    def validate_game_states_length(cls, v: list[GameState]) -> list[GameState]:
         if len(v) < 1:
             raise ValueError("game_states must have at least 1 item")
         if len(v) > 64:
             raise ValueError("game_states cannot exceed 64 items")
         return v
 
-    @root_validator(skip_on_failure=True)
-    def validate_lengths(cls, values: dict) -> dict:
+    @model_validator(mode="after")
+    def validate_lengths(self) -> Self:
         """Ensure game_states and player_numbers have matching lengths."""
-        game_states = values.get("game_states", [])
-        player_numbers = values.get("player_numbers", [])
-        if len(game_states) != len(player_numbers):
+        if len(self.game_states) != len(self.player_numbers):
             raise ValueError(
-                f"game_states ({len(game_states)}) and player_numbers "
-                f"({len(player_numbers)}) must have the same length"
+                f"game_states ({len(self.game_states)}) and player_numbers "
+                f"({len(self.player_numbers)}) must have the same length"
             )
-        return values
+        return self
 
 
 class BatchMoveItem(BaseModel):
@@ -606,19 +603,17 @@ class EvaluationRequest(BaseModel):
     game_state: GameState
     player_number: int = Field(ge=1, description="Player number (1-indexed)")
 
-    @root_validator(skip_on_failure=True)
-    def validate_player_number(cls, values: dict) -> dict:
+    @model_validator(mode="after")
+    def validate_player_number(self) -> Self:
         """Ensure player_number is valid for the given game_state."""
-        game_state = values.get("game_state")
-        player_number = values.get("player_number")
-        players = getattr(game_state, "players", None) if game_state else None
+        players = getattr(self.game_state, "players", None)
         if not players:
             raise ValueError("game_state.players cannot be empty")
-        if player_number and player_number > len(players):
+        if self.player_number > len(players):
             raise ValueError(
-                f"player_number {player_number} exceeds number of players ({len(players)})"
+                f"player_number {self.player_number} exceeds number of players ({len(players)})"
             )
-        return values
+        return self
 
 
 class EvaluationResponse(BaseModel):

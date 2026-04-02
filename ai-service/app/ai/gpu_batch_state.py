@@ -529,7 +529,7 @@ class BatchGameState:
             raise ValueError("game_states list cannot be empty")
 
         from app.models import BoardType
-        from app.rules.core import get_rings_per_player
+        from app.rules.core import get_rings_per_player, infer_total_rings_in_play
 
         batch_size = len(game_states)
         first_game = game_states[0]
@@ -747,7 +747,7 @@ class BatchGameState:
             RingStack,
             TimeControl,
         )
-        from app.rules.core import get_rings_per_player
+        from app.rules.core import get_rings_per_player, infer_total_rings_in_play
 
         # Determine board type from size
         if self.board_size == 19:
@@ -902,10 +902,7 @@ class BatchGameState:
         }
         cpu_status = status_map.get(gpu_status, CPUGameStatus.ACTIVE)
 
-        # Compute total rings in play
-        total_rings_in_play = 0
-        for stack in stacks.values():
-            total_rings_in_play += len(stack.rings)
+        total_rings_in_play = infer_total_rings_in_play(players, board)
 
         # Current timestamp for metadata
         now = datetime.now()

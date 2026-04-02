@@ -684,14 +684,32 @@ class EloService:
             # January 2026: Add is_deployable column for filtering ephemeral checkpoints
             cursor = conn.execute("PRAGMA table_info(participants)")
             participant_columns = {row[1] for row in cursor.fetchall()}
-            if "is_deployable" not in participant_columns:
-                conn.execute("ALTER TABLE participants ADD COLUMN is_deployable INTEGER DEFAULT 0")
+            participant_column_migrations = {
+                "nn_model_id": "TEXT",
+                "nn_model_path": "TEXT",
+                "ai_algorithm": "TEXT",
+                "algorithm_config": "TEXT",
+                "is_composite": "INTEGER DEFAULT 0",
+                "is_deployable": "INTEGER DEFAULT 0",
+            }
+            added_participant_columns: list[str] = []
+            for column_name, column_def in participant_column_migrations.items():
+                if column_name in participant_columns:
+                    continue
+                conn.execute(
+                    f"ALTER TABLE participants ADD COLUMN {column_name} {column_def}"
+                )
+                participant_columns.add(column_name)
+                added_participant_columns.append(column_name)
+                logger.info(f"Migrated participants: added {column_name} column")
+
+            if "is_deployable" in added_participant_columns:
                 # Mark existing canonical models as deployable
                 conn.execute("""
                     UPDATE participants SET is_deployable = 1
                     WHERE model_path LIKE '%canonical_%' OR model_path LIKE '%ringrift_best_%'
                 """)
-                logger.info("Migrated participants: added is_deployable column")
+                logger.info("Migrated participants: backfilled is_deployable for canonical models")
 
             # January 2026: Add harness tracking columns for composite Elo
             cursor = conn.execute("PRAGMA table_info(elo_ratings)")
@@ -1770,12 +1788,12 @@ class EloService:
                 )
 
                 # Record match history in local SQLite for queries
-                # Note: id is INTEGER PRIMARY KEY AUTOINCREMENT, so we use game_id for UUID
+                # match_history uses a TEXT primary key column named `id`.
                 # Jan 11, 2026: Added harness_type column for multi-harness evaluation tracking
                 with self._transaction() as conn:
                     conn.execute("""
                         INSERT INTO match_history
-                        (game_id, participant_ids, winner_id, game_length, duration_sec,
+                        (id, participant_ids, winner_id, game_length, duration_sec,
                          board_type, num_players, timestamp, elo_before, elo_after,
                          tournament_id, metadata, harness_type)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1936,11 +1954,11 @@ class EloService:
                         logger.info(f"[EloService] REPLACE succeeded for {pid}")
 
             # Record match with optional metadata (e.g., weight profiles used)
-            # Note: id is INTEGER PRIMARY KEY AUTOINCREMENT, so we use game_id for UUID
+            # match_history uses a TEXT primary key column named `id`.
             # Jan 11, 2026: Added harness_type column for multi-harness evaluation tracking
             conn.execute("""
                 INSERT INTO match_history
-                (game_id, participant_ids, winner_id, game_length, duration_sec,
+                (id, participant_ids, winner_id, game_length, duration_sec,
                  board_type, num_players, timestamp, elo_before, elo_after,
                  tournament_id, metadata, harness_type)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

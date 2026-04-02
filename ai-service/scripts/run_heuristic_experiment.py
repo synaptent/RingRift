@@ -86,6 +86,7 @@ from app.models import (  # type: ignore
 from app.rules.default_engine import (  # type: ignore
     DefaultRulesEngine,
 )
+from app.rules.core import infer_total_rings_in_play  # type: ignore
 from app.training.env import (  # type: ignore
     get_two_player_training_kwargs,
 )
@@ -209,7 +210,7 @@ def create_empty_game_state(
         lastMoveAt=now,
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,

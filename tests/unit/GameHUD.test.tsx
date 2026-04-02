@@ -5,6 +5,7 @@ import { GameHUD } from '../../src/client/components/GameHUD';
 import { toHUDViewModel } from '../../src/client/adapters/gameViewModels';
 import { GameState, Player, BoardState, PlayerChoice } from '../../src/shared/types/game';
 import type { GameEndExplanation } from '../../src/shared/engine/gameEndExplanation';
+import { inferTotalRingsInPlay } from '../utils/fixtures';
 
 // Helper to create a minimal test GameState
 function createTestGameState(overrides: Partial<GameState> = {}): GameState {
@@ -43,6 +44,7 @@ function createTestGameState(overrides: Partial<GameState> = {}): GameState {
       territorySpaces: 0,
     },
   ];
+  const totalRingsInPlay = inferTotalRingsInPlay(defaultPlayers, defaultBoard);
 
   return {
     id: 'test-game',
@@ -60,7 +62,7 @@ function createTestGameState(overrides: Partial<GameState> = {}): GameState {
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: 2,
-    totalRingsInPlay: 0,
+    totalRingsInPlay,
     totalRingsEliminated: 0,
     victoryThreshold: 10,
     territoryVictoryThreshold: 32,

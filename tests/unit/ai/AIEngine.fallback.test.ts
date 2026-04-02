@@ -2,6 +2,7 @@ import { AIEngine } from '../../../src/server/game/ai/AIEngine';
 import { getAIServiceClient } from '../../../src/server/services/AIServiceClient';
 import { GameState, Move, AIProfile } from '../../../src/shared/types/game';
 import { logger } from '../../../src/server/utils/logger';
+import { getConfiguredTotalRingsInPlay } from '../../utils/fixtures';
 
 // Mock dependencies
 jest.mock('../../../src/server/services/AIServiceClient');
@@ -113,7 +114,7 @@ describe('AIEngine Fallback Handling', () => {
       lastMoveAt: new Date(),
       isRated: false,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: getConfiguredTotalRingsInPlay('square8', 2),
       totalRingsEliminated: 0,
       victoryThreshold: 0,
       territoryVictoryThreshold: 0,

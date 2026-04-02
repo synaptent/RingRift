@@ -54,8 +54,8 @@ class TestReplicationAlertLevel:
         assert ReplicationAlertLevel.CRITICAL.value == "critical"
 
     def test_alert_level_count(self):
-        """Should have exactly 3 alert levels."""
-        assert len(ReplicationAlertLevel) == 3
+        """Should have exactly 4 alert levels."""
+        assert len(ReplicationAlertLevel) == 4
 
 
 # =============================================================================
@@ -302,7 +302,7 @@ class TestUnifiedReplicationDaemonInit:
         assert daemon.config.min_replicas == 2
         assert daemon._running is False
         assert daemon._monitor_task is None
-        assert daemon._repair_task is None
+        assert daemon._task is None
 
     def test_init_with_custom_config(self):
         """Should accept custom config."""
@@ -343,31 +343,28 @@ class TestSingleton:
         """Reset singleton before each test."""
         reset_replication_daemon()
 
-    @pytest.mark.asyncio
-    async def test_get_replication_daemon_creates_singleton(self):
+    def test_get_replication_daemon_creates_singleton(self):
         """get_replication_daemon should create singleton."""
-        daemon1 = await get_replication_daemon()
-        daemon2 = await get_replication_daemon()
+        daemon1 = get_replication_daemon()
+        daemon2 = get_replication_daemon()
 
         assert daemon1 is daemon2
 
-    @pytest.mark.asyncio
-    async def test_reset_clears_singleton(self):
+    def test_reset_clears_singleton(self):
         """reset_replication_daemon should clear singleton."""
-        daemon1 = await get_replication_daemon()
+        daemon1 = get_replication_daemon()
         reset_replication_daemon()
-        daemon2 = await get_replication_daemon()
+        daemon2 = get_replication_daemon()
 
         assert daemon1 is not daemon2
 
-    @pytest.mark.asyncio
-    async def test_config_only_used_on_first_call(self):
+    def test_config_only_used_on_first_call(self):
         """Config should only be applied on first call."""
         config1 = UnifiedReplicationConfig(min_replicas=5)
         config2 = UnifiedReplicationConfig(min_replicas=10)
 
-        daemon1 = await get_replication_daemon(config1)
-        daemon2 = await get_replication_daemon(config2)
+        daemon1 = get_replication_daemon(config1)
+        daemon2 = get_replication_daemon(config2)
 
         assert daemon1.config.min_replicas == 5
         assert daemon2.config.min_replicas == 5  # Same instance
@@ -387,17 +384,17 @@ class TestDaemonStartStop:
 
     @pytest.mark.asyncio
     async def test_start_creates_tasks(self):
-        """start() should create monitor and repair tasks."""
+        """start() should create monitor and main-loop tasks."""
         daemon = UnifiedReplicationDaemon()
 
         # Mock the loops to avoid actual execution
         with patch.object(daemon, "_monitor_loop", new_callable=AsyncMock), \
-             patch.object(daemon, "_repair_loop", new_callable=AsyncMock):
+             patch.object(daemon, "_main_loop", new_callable=AsyncMock):
             await daemon.start()
 
             assert daemon._running is True
             assert daemon._monitor_task is not None
-            assert daemon._repair_task is not None
+            assert daemon._task is not None
 
             await daemon.stop()
 
@@ -407,7 +404,7 @@ class TestDaemonStartStop:
         daemon = UnifiedReplicationDaemon()
         daemon._running = True
 
-        with patch("app.coordination.unified_replication_daemon.logger") as mock_logger:
+        with patch("app.coordination.handler_base.logger") as mock_logger:
             await daemon.start()
             mock_logger.warning.assert_called()
 
@@ -418,7 +415,7 @@ class TestDaemonStartStop:
 
         # Mock the loops
         with patch.object(daemon, "_monitor_loop", new_callable=AsyncMock), \
-             patch.object(daemon, "_repair_loop", new_callable=AsyncMock):
+             patch.object(daemon, "_main_loop", new_callable=AsyncMock):
             await daemon.start()
             await daemon.stop()
 
@@ -887,8 +884,8 @@ class TestStatusReporting:
         """Status should include repair statistics."""
         daemon = UnifiedReplicationDaemon()
         daemon._repair_stats = RepairStats(
-            total_repairs_attempted=50,
-            total_repairs_successful=45,
+            jobs_processed=50,
+            jobs_succeeded=45,
         )
 
         status = daemon.get_status()

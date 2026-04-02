@@ -440,17 +440,19 @@ class TestDistributedNNGauntletBaselines:
             db_path.unlink()
 
     def test_select_baselines_many_models(self, gauntlet_with_many_models):
-        """Should select best, median, lower quartile, and random_ai."""
+        """Should select canonical, model, heuristic, and random baselines."""
         baselines = gauntlet_with_many_models.select_baselines("square8_2p")
 
-        assert len(baselines) == 4
+        assert len(baselines) == 5
+        assert baselines[0] == "ringrift_best_square8_2p"
         # Best model should be model_09 (rating 1900)
-        assert baselines[0] == "model_09"
+        assert baselines[1] == "model_09"
+        assert "heuristic" in baselines
         # Should include random_ai
         assert "random_ai" in baselines
 
     def test_select_baselines_no_models(self):
-        """Should return just random_ai if no models."""
+        """Should return the default mixed baselines if no models."""
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
             db_path = Path(f.name)
 
@@ -472,7 +474,12 @@ class TestDistributedNNGauntletBaselines:
             g._init_gauntlet_tables()
             baselines = g.select_baselines("square8_2p")
 
-        assert baselines == ["random_ai"]
+        assert baselines == [
+            "ringrift_best_square8_2p",
+            "ringrift_best_square8_2p:policy_only:t0p3",
+            "heuristic",
+            "random_ai",
+        ]
         db_path.unlink()
 
 

@@ -807,7 +807,8 @@ class TestConstants:
     def test_leaderless_timeout(self):
         """Test LEADERLESS_TRAINING_TIMEOUT constant.
 
-        Dec 2025: Reduced from 180s to 30s for faster decentralized operation.
-        With reliable failure detection, we can trigger local training quickly.
+        Dec 2025-Jan 2026: Tightened from 180s and later floor-raised to 45s
+        via centralized constants to keep decentralized training responsive
+        without flapping too aggressively.
         """
-        assert LEADERLESS_TRAINING_TIMEOUT == 30  # Quick failover
+        assert LEADERLESS_TRAINING_TIMEOUT == 45

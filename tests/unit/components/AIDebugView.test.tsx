@@ -3,50 +3,54 @@ import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { AIDebugView } from '../../../src/client/components/AIDebugView';
 import { GameState, BoardType } from '../../../src/shared/types/game';
+import { inferTotalRingsInPlay } from '../../utils/fixtures';
 
 // Helper to create a minimal GameState for testing
 function createMinimalGameState(overrides: Partial<GameState> = {}): GameState {
+  const board = {
+    stacks: new Map(),
+    markers: new Map(),
+    collapsedSpaces: new Map(),
+    territories: new Map(),
+    formedLines: [],
+    eliminatedRings: {},
+    size: 8,
+    type: 'square8' as const,
+  };
+  const players = [
+    {
+      id: 'player-1',
+      username: 'Player 1',
+      type: 'human',
+      playerNumber: 1,
+      isReady: true,
+      timeRemaining: 300,
+      ringsInHand: 18,
+      eliminatedRings: 0,
+      territorySpaces: 0,
+    },
+    {
+      id: 'player-2',
+      username: 'AI Bot',
+      type: 'ai',
+      playerNumber: 2,
+      isReady: true,
+      timeRemaining: 300,
+      ringsInHand: 18,
+      eliminatedRings: 0,
+      territorySpaces: 0,
+      aiProfile: {
+        difficulty: 5,
+        aiType: 'heuristic',
+      },
+    },
+  ];
+
   return {
     id: 'test-game-1',
     boardType: 'square8' as BoardType,
-    board: {
-      stacks: new Map(),
-      markers: new Map(),
-      collapsedSpaces: new Map(),
-      territories: new Map(),
-      formedLines: [],
-      eliminatedRings: {},
-      size: 8,
-      type: 'square8',
-    },
-    players: [
-      {
-        id: 'player-1',
-        username: 'Player 1',
-        type: 'human',
-        playerNumber: 1,
-        isReady: true,
-        timeRemaining: 300,
-        ringsInHand: 18,
-        eliminatedRings: 0,
-        territorySpaces: 0,
-      },
-      {
-        id: 'player-2',
-        username: 'AI Bot',
-        type: 'ai',
-        playerNumber: 2,
-        isReady: true,
-        timeRemaining: 300,
-        ringsInHand: 18,
-        eliminatedRings: 0,
-        territorySpaces: 0,
-        aiProfile: {
-          difficulty: 5,
-          aiType: 'heuristic',
-        },
-      },
-    ],
+    board,
+    players,
     currentPhase: 'ring_placement',
     currentPlayer: 1,
     moveHistory: [],
@@ -58,7 +62,7 @@ function createMinimalGameState(overrides: Partial<GameState> = {}): GameState {
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: 2,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferTotalRingsInPlay(players, board),
     totalRingsEliminated: 0,
     victoryThreshold: 18,
     territoryVictoryThreshold: 32,

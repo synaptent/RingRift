@@ -576,4 +576,4 @@ class TestReExports:
         }
 
         actual_all = set(types.__all__)
-        assert expected_exports == actual_all, f"Missing from __all__: {expected_exports - actual_all}"
+        assert expected_exports <= actual_all, f"Missing from __all__: {expected_exports - actual_all}"

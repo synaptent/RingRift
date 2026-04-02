@@ -27,6 +27,7 @@ import type {
   Move,
   GameResult,
 } from '../../../src/shared/types/game';
+import { inferTotalRingsInPlay } from '../../utils/fixtures';
 
 // Define connection status type
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
@@ -485,43 +486,46 @@ function useGame(): GameContextType {
 
 // Helper to create mock game state
 function createMockGameState(overrides: Partial<GameState> = {}): GameState {
+  const board = {
+    stacks: new Map(),
+    markers: new Map(),
+    collapsedSpaces: new Map(),
+    territories: new Map(),
+    formedLines: [],
+    eliminatedRings: {},
+    size: 8,
+    type: 'square8' as const,
+  };
+  const players = [
+    {
+      id: 'player-1',
+      username: 'Player1',
+      type: 'human',
+      playerNumber: 1,
+      isReady: true,
+      timeRemaining: 600,
+      ringsInHand: 18,
+      eliminatedRings: 0,
+      territorySpaces: 0,
+    },
+    {
+      id: 'player-2',
+      username: 'Player2',
+      type: 'human',
+      playerNumber: 2,
+      isReady: true,
+      timeRemaining: 600,
+      ringsInHand: 18,
+      eliminatedRings: 0,
+      territorySpaces: 0,
+    },
+  ];
+
   return {
     id: 'game-123',
     boardType: 'square8',
-    board: {
-      stacks: new Map(),
-      markers: new Map(),
-      collapsedSpaces: new Map(),
-      territories: new Map(),
-      formedLines: [],
-      eliminatedRings: {},
-      size: 8,
-      type: 'square8',
-    },
-    players: [
-      {
-        id: 'player-1',
-        username: 'Player1',
-        type: 'human',
-        playerNumber: 1,
-        isReady: true,
-        timeRemaining: 600,
-        ringsInHand: 18,
-        eliminatedRings: 0,
-        territorySpaces: 0,
-      },
-      {
-        id: 'player-2',
-        username: 'Player2',
-        type: 'human',
-        playerNumber: 2,
-        isReady: true,
-        timeRemaining: 600,
-        ringsInHand: 18,
-        eliminatedRings: 0,
-        territorySpaces: 0,
-      },
-    ],
+    board,
+    players,
     currentPhase: 'ring_placement' as GamePhase,
     currentPlayer: 1,
     moveHistory: [],
@@ -533,7 +537,7 @@ function createMockGameState(overrides: Partial<GameState> = {}): GameState {
     lastMoveAt: new Date(),
     isRated: true,
     maxPlayers: 2,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferTotalRingsInPlay(players, board),
     totalRingsEliminated: 0,
     victoryThreshold: 10,
     territoryVictoryThreshold: 33,

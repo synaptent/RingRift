@@ -201,6 +201,34 @@ class S3NodeSyncDaemon(HandlerBase):
         # Local manifest cache
         self._local_manifest: FileManifest | None = None
 
+    @property
+    def _errors(self) -> int:
+        """Backward-compat alias for HandlerBase error count."""
+        return self._stats.errors_count
+
+    @_errors.setter
+    def _errors(self, value: int) -> None:
+        """Backward-compat alias for HandlerBase error count."""
+        self._stats.errors_count = value
+
+    def _schedule_event_task(self, coro: Any, *, context: str) -> bool:
+        """Schedule an event-triggered background task with error accounting."""
+        try:
+            task = self._safe_create_task(coro, context=context)
+        except Exception as e:
+            if hasattr(coro, "close"):
+                coro.close()
+            self._record_error(f"Error creating task for {context}: {e}", e)
+            return False
+
+        if task is None:
+            if hasattr(coro, "close"):
+                coro.close()
+            self._record_error(f"Error creating task for {context}: task not scheduled")
+            return False
+
+        return True
+
     # =========================================================================
     # HandlerBase Implementation
     # =========================================================================
@@ -293,9 +321,11 @@ class S3NodeSyncDaemon(HandlerBase):
 
             logger.info(f"Training completed for {config_key}, triggering S3 push")
 
-            # Use HandlerBase's safe task creation
-            if self._running:
-                self._safe_create_task(self._push_models(), context="S3 push models after training")
+            if self._running and not self._schedule_event_task(
+                self._push_models(),
+                context="S3 push models after training",
+            ):
+                return
             self._record_success()
 
         except (KeyError, TypeError, ValueError) as e:
@@ -318,8 +348,11 @@ class S3NodeSyncDaemon(HandlerBase):
                     f"Selfplay batch complete ({games_count} games for {config_key}), "
                     f"triggering S3 push"
                 )
-                if self._running:
-                    self._safe_create_task(self._push_games(), context="S3 push games")
+                if self._running and not self._schedule_event_task(
+                    self._push_games(),
+                    context="S3 push games",
+                ):
+                    return
             else:
                 logger.debug(f"Selfplay batch too small ({games_count} < 100), skipping S3 sync")
             self._record_success()
@@ -339,8 +372,11 @@ class S3NodeSyncDaemon(HandlerBase):
 
             logger.info(f"Model promoted ({config_key}), triggering high-priority S3 push")
 
-            if self._running:
-                self._safe_create_task(self._push_models(), context="S3 push promoted model")
+            if self._running and not self._schedule_event_task(
+                self._push_models(),
+                context="S3 push promoted model",
+            ):
+                return
             self._record_success()
 
         except (KeyError, TypeError, ValueError) as e:

@@ -22,6 +22,7 @@ import type {
   TimeControl,
 } from '../../src/shared/engine';
 import type { PendingDecision } from '../../src/shared/engine/orchestration/types';
+import { inferTotalRingsInPlay } from '../utils/fixtures';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Test Helpers
@@ -74,7 +75,7 @@ function createTestGameState(boardType: BoardType = 'square8', numPlayers: numbe
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: numPlayers,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferTotalRingsInPlay(players, board),
     totalRingsEliminated: 0,
     victoryThreshold: config.ringsPerPlayer, // Per RR-CANON-R061
     territoryVictoryThreshold: Math.floor(config.totalSpaces / 2) + 1,

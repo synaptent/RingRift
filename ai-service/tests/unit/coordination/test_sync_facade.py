@@ -322,13 +322,28 @@ class TestSyncMethod:
     @pytest.mark.asyncio
     async def test_sync_tracks_failed_responses_in_stats(self, facade):
         """Should track failed responses in stats."""
-        with patch.object(facade, "_sync_via_auto_sync") as mock_sync:
-            mock_sync.return_value = SyncResponse(
+        with (
+            patch.object(facade, "_sync_via_auto_sync") as mock_auto_sync,
+            patch.object(facade, "_sync_via_router") as mock_router,
+            patch.object(facade, "_sync_via_distributed") as mock_distributed,
+        ):
+            mock_auto_sync.return_value = SyncResponse(
                 success=False,
                 backend_used=SyncBackend.AUTO_SYNC,
-                errors=["Failed"],
+                errors=["Auto sync failed"],
             )
-            await facade.sync("games")
+            mock_router.return_value = SyncResponse(
+                success=False,
+                backend_used=SyncBackend.ROUTER,
+                errors=["Router failed"],
+            )
+            mock_distributed.return_value = SyncResponse(
+                success=False,
+                backend_used=SyncBackend.DISTRIBUTED,
+                errors=["Distributed failed"],
+            )
+            response = await facade.sync("games")
+            assert response.success is False
             stats = facade.get_stats()
             assert stats["total_errors"] == 1
 

@@ -84,9 +84,13 @@ class HexStateEncoder:
     State encoder for hexagonal boards.
 
     Converts hex game states to feature tensors suitable for HexNeuralNet.
-    The encoder outputs feature tensors of shape (C, H, W) where:
+    `encode_state()` produces base feature tensors of shape (C, H, W) where:
     - C = 10 channels (stacks, markers, collapsed, liberties, line potential)
     - H = W = 25 (for canonical N=12 hex board, embedded in 25x25 grid)
+
+    `encode()` is the public inference path and returns 4-frame history-stacked
+    features with shape (40, H, W) by replicating the current frame when
+    historical context is unavailable.
 
     Coordinate Systems:
     - Axial coordinates (q, r): Used in game state, q+r+s=0 with s=-q-r

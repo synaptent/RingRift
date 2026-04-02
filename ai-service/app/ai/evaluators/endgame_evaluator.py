@@ -189,6 +189,10 @@ class EndgameEvaluator:
             from ..fast_geometry import FastGeometry
             self._fast_geo = FastGeometry.get_instance()
         return self._fast_geo
+
+    def set_geometry(self, fast_geo: "FastGeometry") -> None:
+        """Set geometry provider for backward compatibility and tests."""
+        self._fast_geo = fast_geo
     
     def evaluate_endgame_all(
         self,
@@ -209,7 +213,15 @@ class EndgameEvaluator:
         """
         result = self._compute_all_features(state, player_idx)
         return result.total
-    
+
+    def evaluate_endgame(
+        self,
+        state: "GameState",
+        player_idx: int,
+    ) -> float:
+        """Backward-compatible alias for evaluate_endgame_all()."""
+        return self.evaluate_endgame_all(state, player_idx)
+
     def get_breakdown(
         self,
         state: "GameState",

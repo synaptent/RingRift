@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
+from app.config.thresholds import DISK_CRITICAL_PERCENT, DISK_PRODUCTION_HALT_PERCENT
 from app.coordination.resource_targets import (
     # Enums
     HostTier,
@@ -75,8 +76,8 @@ class TestUtilizationTargets:
         assert targets.memory_critical == 80.0
 
         # Disk targets
-        assert targets.disk_warn == 65.0
-        assert targets.disk_critical == 70.0
+        assert targets.disk_warn == float(DISK_PRODUCTION_HALT_PERCENT)
+        assert targets.disk_critical == float(DISK_CRITICAL_PERCENT)
 
     def test_custom_values(self):
         """Verify custom target values can be set."""

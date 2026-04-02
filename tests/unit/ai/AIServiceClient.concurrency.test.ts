@@ -1,6 +1,7 @@
 import { AIServiceClient } from '../../../src/server/services/AIServiceClient';
 import { GameState } from '../../../src/shared/types/game';
 import { createCancellationSource } from '../../../src/shared/utils/cancellation';
+import { getConfiguredTotalRingsInPlay } from '../../utils/fixtures';
 
 // Mock axios so that AIServiceClient does not perform real HTTP calls.
 // We use `var` for the mock handles because Jest hoists `jest.mock` calls,
@@ -83,7 +84,7 @@ describe('AIServiceClient concurrency backpressure', () => {
       lastMoveAt: new Date(),
       isRated: false,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: getConfiguredTotalRingsInPlay('square8', 2),
       totalRingsEliminated: 0,
       victoryThreshold: 0,
       territoryVictoryThreshold: 0,
@@ -134,7 +135,7 @@ describe('AIServiceClient concurrency backpressure', () => {
       lastMoveAt: new Date(),
       isRated: false,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: getConfiguredTotalRingsInPlay('square8', 2),
       totalRingsEliminated: 0,
       victoryThreshold: 0,
       territoryVictoryThreshold: 0,

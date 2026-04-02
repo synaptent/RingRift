@@ -198,7 +198,8 @@ class TestConsensusFallback:
 
         result = coord.is_leader()
         assert isinstance(result, bool)
-        mock_orchestrator.is_leader.assert_called()
+        assert result is False
+        mock_orchestrator.is_leader.assert_not_called()
 
     def test_is_leader_uses_raft_when_available(
         self, mock_orchestrator, mock_raft_queue

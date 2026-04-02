@@ -78,6 +78,7 @@ def _make_game_state(
     ]
 
     now = datetime.now()
+    total_rings_in_play = sum(player.rings_in_hand for player in players)
 
     return GameState(
         id="test-fe-fixture",
@@ -92,7 +93,7 @@ def _make_game_state(
         lastMoveAt=now,
         isRated=False,
         maxPlayers=num_players,
-        totalRingsInPlay=0,
+        totalRingsInPlay=total_rings_in_play,
         totalRingsEliminated=0,
         victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer
         territoryVictoryThreshold=33,

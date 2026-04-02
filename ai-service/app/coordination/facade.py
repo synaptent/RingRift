@@ -498,10 +498,8 @@ class CoordinationFacade:
         """Check if node is available via monitor."""
         monitor = self._get_node_monitor()
         if monitor is None:
-            # Monitor is optional — allow tasks when it's not bootstrapped yet.
-            # Codex adversarial review: blocking here causes availability regression.
-            logger.debug(f"Node monitor unavailable for {node_id}, allowing (monitor optional)")
-            return True
+            logger.debug(f"Node monitor unavailable for {node_id}, denying availability")
+            return False
         try:
             return monitor.is_node_available(node_id)
         except (AttributeError, RuntimeError, TypeError) as e:

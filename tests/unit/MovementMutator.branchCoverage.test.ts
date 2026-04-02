@@ -15,49 +15,52 @@ import { mutateMovement } from '../../src/shared/engine/mutators/MovementMutator
 import type { GameState, MoveStackAction, RingStack } from '../../src/shared/engine/types';
 import type { Position, BoardType } from '../../src/shared/types/game';
 import { positionToString } from '../../src/shared/types/game';
+import { inferTotalRingsInPlay } from '../utils/fixtures';
 
 // Helper to create a position
 const pos = (x: number, y: number): Position => ({ x, y });
 
 // Helper to create a minimal GameState
 function makeGameState(overrides: Partial<GameState> = {}): GameState {
+  const board = {
+    type: 'square8' as BoardType,
+    size: 8,
+    stacks: new Map(),
+    markers: new Map(),
+    collapsedSpaces: new Map(),
+    formedLines: [],
+    territories: new Map(),
+    eliminatedRings: { 1: 0, 2: 0 },
+  };
+  const players = [
+    {
+      id: 'p1',
+      username: 'Player1',
+      playerNumber: 1,
+      type: 'human',
+      isReady: true,
+      timeRemaining: 600000,
+      ringsInHand: 10,
+      eliminatedRings: 0,
+      territorySpaces: 0,
+    },
+    {
+      id: 'p2',
+      username: 'Player2',
+      playerNumber: 2,
+      type: 'human',
+      isReady: true,
+      timeRemaining: 600000,
+      ringsInHand: 10,
+      eliminatedRings: 0,
+      territorySpaces: 0,
+    },
+  ];
   return {
     id: 'test-game',
     boardType: 'square8',
-    board: {
-      type: 'square8' as BoardType,
-      size: 8,
-      stacks: new Map(),
-      markers: new Map(),
-      collapsedSpaces: new Map(),
-      formedLines: [],
-      territories: new Map(),
-      eliminatedRings: { 1: 0, 2: 0 },
-    },
-    players: [
-      {
-        id: 'p1',
-        username: 'Player1',
-        playerNumber: 1,
-        type: 'human',
-        isReady: true,
-        timeRemaining: 600000,
-        ringsInHand: 10,
-        eliminatedRings: 0,
-        territorySpaces: 0,
-      },
-      {
-        id: 'p2',
-        username: 'Player2',
-        playerNumber: 2,
-        type: 'human',
-        isReady: true,
-        timeRemaining: 600000,
-        ringsInHand: 10,
-        eliminatedRings: 0,
-        territorySpaces: 0,
-      },
-    ],
+    board,
+    players,
     currentPlayer: 1,
     currentPhase: 'movement',
     moveHistory: [],
@@ -70,7 +73,7 @@ function makeGameState(overrides: Partial<GameState> = {}): GameState {
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: 2,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferTotalRingsInPlay(players, board),
     totalRingsEliminated: 0,
     victoryThreshold: 15,
     territoryVictoryThreshold: 8,

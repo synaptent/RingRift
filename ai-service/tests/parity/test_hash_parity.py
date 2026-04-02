@@ -11,7 +11,7 @@ This enables meaningful cross-engine parity testing.
 import pytest
 
 from app.db.game_replay import _compute_state_hash, _fingerprint_state, _simple_hash
-from app.rules.core import hash_game_state
+from app.rules.core import hash_game_state, infer_total_rings_in_play
 
 
 class TestSimpleHash:
@@ -68,6 +68,30 @@ def _create_test_state():
     )
 
     now = datetime.now(timezone.utc)
+    players = [
+        Player(
+            id="p1",
+            username="Player1",
+            type="human",
+            player_number=1,
+            is_ready=True,
+            time_remaining=600,
+            rings_in_hand=18,
+            eliminated_rings=0,
+            territory_spaces=0,
+        ),
+        Player(
+            id="p2",
+            username="Player2",
+            type="human",
+            player_number=2,
+            is_ready=True,
+            time_remaining=600,
+            rings_in_hand=18,
+            eliminated_rings=0,
+            territory_spaces=0,
+        ),
+    ]
 
     return GameState(
         id="test-game-id",
@@ -75,30 +99,7 @@ def _create_test_state():
         board=board,
         current_player=1,
         current_phase=GamePhase.RING_PLACEMENT,
-        players=[
-            Player(
-                id="p1",
-                username="Player1",
-                type="human",
-                player_number=1,
-                is_ready=True,
-                time_remaining=600,
-                rings_in_hand=18,
-                eliminated_rings=0,
-                territory_spaces=0,
-            ),
-            Player(
-                id="p2",
-                username="Player2",
-                type="human",
-                player_number=2,
-                is_ready=True,
-                time_remaining=600,
-                rings_in_hand=18,
-                eliminated_rings=0,
-                territory_spaces=0,
-            ),
-        ],
+        players=players,
         game_status="active",
         move_history=[],
         time_control=time_control,
@@ -106,7 +107,7 @@ def _create_test_state():
         last_move_at=now,
         is_rated=False,
         max_players=2,
-        total_rings_in_play=0,
+        total_rings_in_play=infer_total_rings_in_play(players, board),
         total_rings_eliminated=0,
         victory_threshold=12,
         territory_victory_threshold=10,

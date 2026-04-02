@@ -99,7 +99,7 @@ from app.models import (  # type: ignore
     Player,
     TimeControl,
 )
-from app.rules.core import BOARD_CONFIGS  # type: ignore
+from app.rules.core import BOARD_CONFIGS, infer_total_rings_in_play  # type: ignore
 from app.rules.default_engine import (  # type: ignore
     DefaultRulesEngine,
 )
@@ -386,7 +386,7 @@ def create_game_state(
         lastMoveAt=now,
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer
         territoryVictoryThreshold=33,  # >50% of 64 spaces

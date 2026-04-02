@@ -203,11 +203,10 @@ class TestRecoveryEngine:
 
         result = engine.health_check()
 
-        assert "healthy" in result
-        assert result["healthy"] is True
-        assert "message" in result
-        assert "details" in result
-        assert "queue_size" in result["details"]
+        assert result.healthy is True
+        assert result.message is not None
+        assert result.details is not None
+        assert "queue_size" in result.details
 
 
 class TestRecoveryEngineEventHandlers:

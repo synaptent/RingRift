@@ -6,6 +6,7 @@ import { BackendGameHost } from '../../src/client/pages/BackendGameHost';
 import { useGame } from '../../src/client/contexts/GameContext';
 import { useAuth } from '../../src/client/contexts/AuthContext';
 import type { GameState, BoardState, Player } from '../../src/shared/types/game';
+import { inferTotalRingsInPlay } from '../utils/fixtures';
 
 jest.mock('../../src/client/contexts/GameContext', () => ({
   useGame: jest.fn(),
@@ -136,7 +137,7 @@ function createTestGameState(): GameState {
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: 2,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferTotalRingsInPlay(players, board),
     totalRingsEliminated: 0,
     victoryThreshold: 10,
     territoryVictoryThreshold: 32,

@@ -59,6 +59,15 @@ function revivePlayers(rawPlayers: any[]): Player[] {
   }));
 }
 
+function inferTotalRingsInPlay(players: Player[], board: BoardState): number {
+  const ringsInHand = players.reduce((sum, player) => sum + player.ringsInHand, 0);
+  const ringsOnBoard = Array.from(board.stacks.values()).reduce(
+    (sum, stack) => sum + stack.rings.length,
+    0
+  );
+  return ringsInHand + ringsOnBoard;
+}
+
 function main() {
   const bundlePath = process.argv[2];
   if (!bundlePath) {
@@ -73,6 +82,7 @@ function main() {
   }
   const board = reviveBoard(tsState.board);
   const players = revivePlayers(tsState.players);
+  const totalRingsInPlay = inferTotalRingsInPlay(players, board);
   const state: GameState = {
     ...tsState,
     board,
@@ -87,7 +97,7 @@ function main() {
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: players.length,
-    totalRingsInPlay: 0,
+    totalRingsInPlay,
     totalRingsEliminated: tsState.totalRingsEliminated ?? 0,
     victoryThreshold: tsState.victoryThreshold ?? 0,
     territoryVictoryThreshold: tsState.territoryVictoryThreshold ?? 0,

@@ -219,7 +219,8 @@ class TestGetRaftPartners:
         consensus = TestableConsensusMixin()
         consensus.voter_node_ids = []
 
-        result = consensus._get_raft_partners()
+        with patch("app.config.cluster_config.get_raft_members", return_value=[]):
+            result = consensus._get_raft_partners()
 
         assert result == []
 
@@ -232,37 +233,45 @@ class TestGetRaftPartners:
         # Add peers
         consensus.peers["voter-2"] = MockNodeInfo(
             node_id="voter-2",
-            endpoint="192.168.1.2:8770",
+            host="192.168.1.2",
         )
         consensus.peers["voter-3"] = MockNodeInfo(
             node_id="voter-3",
-            endpoint="192.168.1.3:8770",
+            host="192.168.1.3",
         )
 
-        result = consensus._get_raft_partners()
+        with patch(
+            "app.config.cluster_config.get_raft_members",
+            return_value=["voter-1", "voter-2", "voter-3"],
+        ):
+            result = consensus._get_raft_partners()
 
         # Should include voter-2 and voter-3 but not voter-1 (self)
         assert len(result) == 2
         assert "192.168.1.2:4321" in result  # Raft port 4321
         assert "192.168.1.3:4321" in result
 
-    def test_only_includes_peers_with_endpoint(self):
-        """Test that only peers with endpoints are included."""
+    def test_only_includes_peers_with_host(self):
+        """Test that only peers with usable hosts are included."""
         consensus = TestableConsensusMixin()
         consensus.voter_node_ids = ["voter-1", "voter-2"]
 
-        # Add peer without endpoint
+        # Add peer without host
         consensus.peers["voter-1"] = MockNodeInfo(
             node_id="voter-1",
-            endpoint="",  # No endpoint
+            host="",
         )
-        # Add peer with endpoint
+        # Add peer with host
         consensus.peers["voter-2"] = MockNodeInfo(
             node_id="voter-2",
-            endpoint="192.168.1.2:8770",
+            host="192.168.1.2",
         )
 
-        result = consensus._get_raft_partners()
+        with patch(
+            "app.config.cluster_config.get_raft_members",
+            return_value=["voter-1", "voter-2"],
+        ):
+            result = consensus._get_raft_partners()
 
         assert len(result) == 1
         assert "192.168.1.2:4321" in result
@@ -583,7 +592,7 @@ class TestGetRaftStatus:
         consensus._raft_initialized = False
         consensus._raft_init_error = None
 
-        with patch("scripts.p2p.consensus_mixin.RAFT_ENABLED", False):
+        with patch.object(consensus_mixin_module, "RAFT_ENABLED", False):
             result = consensus.get_raft_status()
 
         assert "raft_enabled" in result
@@ -644,19 +653,19 @@ class TestConsensusHealthCheck:
         consensus = TestableConsensusMixin()
         consensus._raft_initialized = False
 
-        with patch("scripts.p2p.consensus_mixin.RAFT_ENABLED", False):
+        with patch.object(consensus_mixin_module, "RAFT_ENABLED", False):
             result = consensus.consensus_health_check()
 
         assert result["is_healthy"] is True
         assert result["raft_enabled"] is False
 
-    @patch("scripts.p2p.consensus_mixin.RAFT_ENABLED", True)
     def test_healthy_when_raft_initialized(self):
         """Test that healthy is True when Raft is initialized."""
         consensus = TestableConsensusMixin()
         consensus._raft_initialized = True
 
-        result = consensus.consensus_health_check()
+        with patch.object(consensus_mixin_module, "RAFT_ENABLED", True):
+            result = consensus.consensus_health_check()
 
         assert result["is_healthy"] is True
         assert result["raft_initialized"] is True
@@ -667,7 +676,8 @@ class TestConsensusHealthCheck:
         consensus._raft_initialized = False
         consensus._raft_init_error = "no Raft partners available"
 
-        result = consensus.consensus_health_check()
+        with patch.object(consensus_mixin_module, "RAFT_ENABLED", False):
+            result = consensus.consensus_health_check()
 
         # Healthy because RAFT_ENABLED is False at module level
         assert result["is_healthy"] is True
@@ -679,7 +689,7 @@ class TestConsensusHealthCheck:
         consensus._raft_initialized = False
         consensus._raft_init_error = None
 
-        with patch("scripts.p2p.consensus_mixin.RAFT_ENABLED", False):
+        with patch.object(consensus_mixin_module, "RAFT_ENABLED", False):
             result = consensus.consensus_health_check()
 
         required_fields = [
@@ -732,16 +742,13 @@ class TestModuleExports:
 
     def test_exports_consensus_mixin(self):
         """Test that ConsensusMixin is exported."""
-        from scripts.p2p.consensus_mixin import ConsensusMixin as ExportedMixin
-        assert ExportedMixin is not None
+        assert consensus_mixin_module.ConsensusMixin is ConsensusMixin
 
     def test_exports_constants(self):
         """Test that constants are exported."""
-        from scripts.p2p.consensus_mixin import (
-            CONSENSUS_MODE,
-            PYSYNCOBJ_AVAILABLE,
-            RAFT_ENABLED,
+        assert consensus_mixin_module.RAFT_ENABLED is not None or consensus_mixin_module.RAFT_ENABLED is False
+        assert consensus_mixin_module.CONSENSUS_MODE is not None
+        assert (
+            consensus_mixin_module.PYSYNCOBJ_AVAILABLE is not None
+            or consensus_mixin_module.PYSYNCOBJ_AVAILABLE is False
         )
-        assert RAFT_ENABLED is not None or RAFT_ENABLED is False
-        assert CONSENSUS_MODE is not None
-        assert PYSYNCOBJ_AVAILABLE is not None or PYSYNCOBJ_AVAILABLE is False

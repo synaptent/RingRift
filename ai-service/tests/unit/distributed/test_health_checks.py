@@ -1664,7 +1664,7 @@ class TestIssueDetection:
         mock_mem.available = 8 * (1024**3)
 
         mock_disk = MagicMock()
-        mock_disk.percent = 67.0  # Between 65 (warning) and 70 (critical)
+        mock_disk.percent = 75.0  # Between 70 (warning) and 90 (critical)
         mock_disk.free = 30 * (1024**3)
 
         with patch("app.distributed.health_checks.psutil.virtual_memory", return_value=mock_mem):

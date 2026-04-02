@@ -22,6 +22,7 @@ from app.models import (  # type: ignore
     RingStack,
     TimeControl,
 )
+from app.rules.core import infer_total_rings_in_play  # type: ignore
 from app.rules.phase_machine import PhaseTransitionInput, advance_phases
 
 
@@ -85,7 +86,7 @@ def _make_minimal_state(
         lastMoveAt=now,
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,

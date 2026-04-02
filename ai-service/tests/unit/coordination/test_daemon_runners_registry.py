@@ -40,10 +40,11 @@ class TestInstantiationStyle:
         assert InstantiationStyle.FACTORY.value == "factory"
         assert InstantiationStyle.WITH_CONFIG.value == "with_config"
         assert InstantiationStyle.ASYNC_FACTORY.value == "async_factory"
+        assert InstantiationStyle.CUSTOM.value == "custom"
 
     def test_enum_count(self):
         """Test expected number of styles."""
-        assert len(InstantiationStyle) == 5
+        assert len(InstantiationStyle) == 6
 
 
 class TestWaitStyle:
@@ -161,7 +162,8 @@ class TestRunnerSpecsRegistry:
     def test_all_specs_have_class_name(self):
         """Test all specs have class_name field."""
         for name, spec in RUNNER_SPECS.items():
-            assert spec.class_name, f"Spec {name} missing class_name"
+            if spec.style != InstantiationStyle.CUSTOM:
+                assert spec.class_name, f"Spec {name} missing class_name"
 
     def test_factory_specs_have_factory_func(self):
         """Test FACTORY style specs have factory_func."""
@@ -215,11 +217,10 @@ class TestGetRunnerSpec:
         spec = get_runner_spec("nonexistent_daemon")
         assert spec is None
 
-    def test_get_deprecated_spec(self):
-        """Test getting a deprecated spec still works."""
+    def test_get_legacy_runner_not_in_specs(self):
+        """Legacy shims are exposed via get_runner(), not RUNNER_SPECS."""
         spec = get_runner_spec("sync_coordinator")
-        assert spec is not None
-        assert spec.deprecated is True
+        assert spec is None
 
 
 class TestCreateRunnerFromSpec:
@@ -295,7 +296,7 @@ class TestRegistryDaemonTypeCoverage:
     """Test registry covers all DaemonType values."""
 
     def test_registry_covers_daemon_types(self):
-        """Test registry has entries for most DaemonType values."""
+        """RUNNER_SPECS intentionally omits legacy-only runner shims."""
         from app.coordination.daemon_types import DaemonType
 
         # Get all daemon type names
@@ -307,9 +308,45 @@ class TestRegistryDaemonTypeCoverage:
         # Check coverage
         missing = daemon_names - registry_names
 
-        # Allow some missing (new types added but not yet in registry)
-        # But there should be at most 10 missing
-        assert len(missing) <= 10, f"Too many DaemonTypes missing from registry: {missing}"
+        expected_legacy_only = {
+            "backlog_evaluation",
+            "canonical_model_watchdog",
+            "cluster_data_sync",
+            "comprehensive_consolidation",
+            "comprehensive_model_scan",
+            "continuous_training_loop",
+            "data_availability",
+            "distillation",
+            "elo_progress",
+            "ephemeral_sync",
+            "export_watchdog",
+            "external_drive_sync",
+            "health_check",
+            "lambda_idle",
+            "node_data_agent",
+            "node_health_monitor",
+            "npz_distribution",
+            "online_merge",
+            "owc_sync_manager",
+            "pipeline_health_watchdog",
+            "production_game_import",
+            "replication_monitor",
+            "replication_repair",
+            "s3_push",
+            "s3_sync",
+            "selfplay_scheduler",
+            "socket_leak_recovery",
+            "sync_coordinator",
+            "system_health_monitor",
+            "training_coordinator",
+            "training_data_recovery",
+            "training_watchdog",
+            "unified_backup",
+            "unified_data_catalog",
+            "unified_data_sync_orchestrator",
+            "vast_idle",
+        }
+        assert missing == expected_legacy_only
 
 
 class TestSpecCategorization:
@@ -332,12 +369,9 @@ class TestSpecCategorization:
         assert count >= 3
 
     def test_deprecated_count(self):
-        """Test number of deprecated specs."""
+        """Runner specs no longer carry deprecated entries."""
         count = sum(1 for s in RUNNER_SPECS.values() if s.deprecated)
-        # Should have some deprecated specs
-        assert count >= 3
-        # But not too many
-        assert count <= 15
+        assert count == 0
 
 
 class TestSpecModulePaths:

@@ -29,7 +29,7 @@ Usage:
         try:
             subprocess.run(["rsync", "-avz", ...])
         finally:
-            release_sync_lock("host-1", "rsync")
+            release_sync_lock("host-1")
 """
 
 from __future__ import annotations
@@ -42,7 +42,6 @@ import socket
 import sqlite3
 import threading
 import time
-import weakref
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -149,7 +148,7 @@ class SyncMutex:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
         # Track all connections for cleanup on process exit (Dec 2025)
-        self._all_connections: weakref.WeakSet[sqlite3.Connection] = weakref.WeakSet()
+        self._all_connections: set[sqlite3.Connection] = set()
         self._connections_lock = threading.Lock()
         self._init_db()
 
@@ -562,7 +561,10 @@ class SyncMutex:
     def close(self) -> None:
         """Close the current thread's database connection."""
         if hasattr(self._local, "conn") and self._local.conn:
-            self._local.conn.close()
+            conn = self._local.conn
+            with self._connections_lock:
+                self._all_connections.discard(conn)
+            conn.close()
             self._local.conn = None
 
     def close_all(self) -> int:

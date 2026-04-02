@@ -19,7 +19,7 @@ Usage:
     budget = get_adaptive_budget_for_elo(1650)  # Returns GUMBEL_BUDGET_QUALITY
 
     # Get budget accounting for bootstrap phase
-    budget = get_adaptive_budget_for_games(game_count=50, elo=1200)  # Returns 64 (bootstrap)
+    budget = get_adaptive_budget_for_games(game_count=50, elo=1200)  # Returns 150 (bootstrap)
 
     # Compute target games needed
     target = compute_target_games("hex8_2p", current_elo=1450)  # Returns ~225000
@@ -231,9 +231,9 @@ def get_adaptive_budget_for_games(game_count: int, elo: float) -> int:
     transition to Elo-based quality budgets.
 
     Bootstrap tiers (game_count < threshold):
-    - <100 games:  64 budget (THROUGHPUT - max speed for rapid bootstrap)
-    - <500 games:  150 budget (faster iteration, acceptable quality)
-    - <1000 games: 200 budget (balanced speed/quality)
+    - <100 games:  150 budget (quality-preserving bootstrap)
+    - <500 games:  300 budget (faster iteration, acceptable quality)
+    - <1000 games: 500 budget (balanced speed/quality)
     - >=1000 games: Use Elo-based adaptive budget (STANDARD/QUALITY/ULTIMATE/MASTER)
 
     Args:
@@ -245,11 +245,11 @@ def get_adaptive_budget_for_games(game_count: int, elo: float) -> int:
 
     Examples:
         >>> get_adaptive_budget_for_games(50, 1200)   # Bootstrap tier 1
-        64
-        >>> get_adaptive_budget_for_games(300, 1400)  # Bootstrap tier 2
         150
+        >>> get_adaptive_budget_for_games(300, 1400)  # Bootstrap tier 2
+        300
         >>> get_adaptive_budget_for_games(750, 1450)  # Bootstrap tier 3
-        200
+        500
         >>> get_adaptive_budget_for_games(2000, 1800) # Mature - uses Elo-based
         3200
     """
@@ -262,16 +262,16 @@ def get_adaptive_budget_for_games(game_count: int, elo: float) -> int:
 
     # Bootstrap phase: prioritize game generation speed
     if game_count < BOOTSTRAP_TIER1_GAME_THRESHOLD:
-        # Very starved (<100 games): maximum throughput
-        return GUMBEL_BUDGET_BOOTSTRAP_TIER1  # 64
+        # Very starved (<100 games): minimum acceptable quality
+        return GUMBEL_BUDGET_BOOTSTRAP_TIER1  # 150
 
     if game_count < BOOTSTRAP_TIER2_GAME_THRESHOLD:
         # Moderately starved (<500 games): fast iteration
-        return GUMBEL_BUDGET_BOOTSTRAP_TIER2  # 150
+        return GUMBEL_BUDGET_BOOTSTRAP_TIER2  # 300
 
     if game_count < BOOTSTRAP_TIER3_GAME_THRESHOLD:
         # Somewhat starved (<1000 games): balanced
-        return GUMBEL_BUDGET_BOOTSTRAP_TIER3  # 200
+        return GUMBEL_BUDGET_BOOTSTRAP_TIER3  # 500
 
     # Mature phase (>=1000 games): use Elo-based quality budget
     return get_adaptive_budget_for_elo(elo)
@@ -422,7 +422,7 @@ def get_budget_tier_name(budget: int) -> str:
     Examples:
         >>> get_budget_tier_name(3200)
         "MASTER"
-        >>> get_budget_tier_name(64)
+        >>> get_budget_tier_name(150)
         "BOOTSTRAP_TIER1"
     """
     budget_names = {

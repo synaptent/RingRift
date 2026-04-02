@@ -4,6 +4,7 @@ import '@testing-library/jest-dom';
 import { GameHUD } from '../../src/client/components/GameHUD';
 import { toHUDViewModel } from '../../src/client/adapters/gameViewModels';
 import type { GameState, Player, BoardState } from '../../src/shared/types/game';
+import { inferTotalRingsInPlay } from '../utils/fixtures';
 
 function createTestGameState(overrides: Partial<GameState> = {}): GameState {
   const board: BoardState = {
@@ -43,6 +44,7 @@ function createTestGameState(overrides: Partial<GameState> = {}): GameState {
       aiProfile: { difficulty: 5, aiType: 'heuristic' },
     },
   ];
+  const totalRingsInPlay = inferTotalRingsInPlay(players, board);
 
   const base: GameState = {
     id: 'game-1',
@@ -60,7 +62,7 @@ function createTestGameState(overrides: Partial<GameState> = {}): GameState {
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: 2,
-    totalRingsInPlay: 0,
+    totalRingsInPlay,
     totalRingsEliminated: 0,
     victoryThreshold: 10,
     territoryVictoryThreshold: 32,

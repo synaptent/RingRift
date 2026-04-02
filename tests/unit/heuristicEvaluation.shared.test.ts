@@ -3,6 +3,7 @@ import {
   evaluateHeuristicState,
   HEURISTIC_WEIGHTS_V1_BALANCED,
 } from '../../src/shared/engine/heuristicEvaluation';
+import { inferTotalRingsInPlay } from '../utils/fixtures';
 
 /**
  * Unit tests for the minimal TS-side heuristic evaluator used by
@@ -71,7 +72,7 @@ describe('heuristicEvaluation.evaluateHeuristicState', () => {
       lastMoveAt: new Date(),
       isRated: false,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: inferTotalRingsInPlay(players, board),
       totalRingsEliminated: 0,
       victoryThreshold: 10,
       territoryVictoryThreshold: 33,

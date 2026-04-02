@@ -30,6 +30,7 @@ from app.rules.validators.capture import CaptureValidator
 from app.rules.validators.line import LineValidator
 from app.rules.validators.territory import TerritoryValidator
 from app.rules.validators.recovery import RecoveryValidator
+from app.rules.core import infer_total_rings_in_play
 
 
 # ============================================================================
@@ -125,7 +126,7 @@ def placement_state_square(basic_players, empty_board_square):
         timeControl=TimeControl(initialTime=600, increment=0, type="blitz"),
         gameStatus=GameStatus.ACTIVE,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(basic_players, empty_board_square),
         totalRingsEliminated=0,
         victoryThreshold=18,
         territoryVictoryThreshold=33,
@@ -152,7 +153,7 @@ def placement_state_hex(basic_players, empty_board_hex):
         timeControl=TimeControl(initialTime=600, increment=0, type="blitz"),
         gameStatus=GameStatus.ACTIVE,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(basic_players, empty_board_hex),
         totalRingsEliminated=0,
         victoryThreshold=18,
         territoryVictoryThreshold=31,
@@ -942,12 +943,12 @@ class TestValidatorsMultiBoard:
             currentPlayer=1,
             moveHistory=[],
             timeControl=TimeControl(initialTime=600, increment=0, type="blitz"),
-            gameStatus=GameStatus.ACTIVE,
-            maxPlayers=4,
-            totalRingsInPlay=0,
-            totalRingsEliminated=0,
-            victoryThreshold=30,  # 4-player threshold
-            territoryVictoryThreshold=17,
+        gameStatus=GameStatus.ACTIVE,
+        maxPlayers=4,
+        totalRingsInPlay=infer_total_rings_in_play(four_players, empty_board_square),
+        totalRingsEliminated=0,
+        victoryThreshold=30,  # 4-player threshold
+        territoryVictoryThreshold=17,
             chainCaptureState=None,
             mustMoveFromStackKey=None,
             createdAt=now,

@@ -1,5 +1,6 @@
 import type { GameState, GameResult, BoardState, Player } from '../../src/shared/types/game';
 import { getWeirdStateBanner } from '../../src/client/utils/gameStateWeirdness';
+import { inferTotalRingsInPlay } from '../utils/fixtures';
 
 jest.mock('../../src/shared/engine/globalActions', () => ({
   __esModule: true,
@@ -66,7 +67,7 @@ function createBaseGameState(overrides: Partial<GameState> = {}): GameState {
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: players.length,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferTotalRingsInPlay(players, board),
     totalRingsEliminated: 0,
     victoryThreshold: 10,
     territoryVictoryThreshold: 32,

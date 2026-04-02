@@ -23,6 +23,7 @@ from app.models import (
     TimeControl,
 )
 from app.rules import global_actions as ga
+from app.rules.core import infer_total_rings_in_play
 
 
 def _make_two_player_state() -> GameState:
@@ -55,6 +56,7 @@ def _make_two_player_state() -> GameState:
             territorySpaces=0,
         ),
     ]
+    total_rings_in_play = sum(player.rings_in_hand for player in players)
     return GameState(
         id="ringcap-test",
         boardType=BoardType.SQUARE8,
@@ -68,7 +70,7 @@ def _make_two_player_state() -> GameState:
         lastMoveAt=now,
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=total_rings_in_play,
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,
@@ -123,6 +125,7 @@ def _make_three_player_state() -> GameState:
             territorySpaces=0,
         ),
     ]
+    total_rings_in_play = sum(player.rings_in_hand for player in players)
     return GameState(
         id="lps-test",
         boardType=BoardType.SQUARE8,
@@ -136,7 +139,7 @@ def _make_three_player_state() -> GameState:
         lastMoveAt=now,
         isRated=False,
         maxPlayers=3,
-        totalRingsInPlay=0,
+        totalRingsInPlay=total_rings_in_play,
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,
@@ -432,7 +435,7 @@ def test_lps_victory_can_be_awarded_at_turn_start_even_if_ring_placement_is_anm(
         lastMoveAt=now,
         isRated=False,
         maxPlayers=3,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,
@@ -515,7 +518,7 @@ def test_lps_round_finalization_includes_players_with_buried_rings() -> None:
         lastMoveAt=now,
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,

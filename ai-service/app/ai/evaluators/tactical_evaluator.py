@@ -173,6 +173,10 @@ class TacticalEvaluator:
             from ..fast_geometry import FastGeometry
             self._fast_geo = FastGeometry.get_instance()
         return self._fast_geo
+
+    def set_geometry(self, fast_geo: "FastGeometry") -> None:
+        """Set geometry provider for backward compatibility and tests."""
+        self._fast_geo = fast_geo
     
     def evaluate_tactical(
         self,

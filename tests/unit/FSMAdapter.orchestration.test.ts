@@ -16,6 +16,7 @@ import {
   type PhaseTransitionContext,
 } from '../../src/shared/engine/fsm/FSMAdapter';
 import type { GameState, Move, BoardState, Player, RingStack } from '../../src/shared/types/game';
+import { inferTotalRingsInPlay } from '../utils/fixtures';
 
 describe('FSMAdapter orchestration integration', () => {
   // Helper to create a minimal game state
@@ -55,6 +56,7 @@ describe('FSMAdapter orchestration integration', () => {
         territorySpaces: 0,
       } as unknown as Player,
     ];
+    const totalRingsInPlay = inferTotalRingsInPlay(players, board);
 
     const base: GameState = {
       id: 'fsm-test',
@@ -72,7 +74,7 @@ describe('FSMAdapter orchestration integration', () => {
       lastMoveAt: new Date(),
       isRated: false,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay,
       totalRingsEliminated: 0,
       victoryThreshold: 10,
       territoryVictoryThreshold: 33,

@@ -10,6 +10,7 @@ import type {
   ContinueChainAction,
 } from '../../../src/shared/engine/types';
 import type { BoardType, Position, RingStack } from '../../../src/shared/types/game';
+import { inferTotalRingsInPlay } from '../../utils/fixtures';
 
 function posStr(x: number, y: number): string {
   return `${x},${y}`;
@@ -48,20 +49,21 @@ function createMinimalState(
       reserveRings: 0,
       territorySpaces: 0,
     }));
+  const board = {
+    type: boardType,
+    size: boardSize,
+    stacks: overrides.stacks ?? new Map(),
+    markers: overrides.markers ?? new Map(),
+    collapsedSpaces: overrides.collapsedSpaces ?? new Map(),
+    rings: new Map(),
+    territories: new Map(),
+    formedLines: [],
+    eliminatedRings: {},
+    geometry: { type: boardType, size: boardSize },
+  };
 
   return {
-    board: {
-      type: boardType,
-      size: boardSize,
-      stacks: overrides.stacks ?? new Map(),
-      markers: overrides.markers ?? new Map(),
-      collapsedSpaces: overrides.collapsedSpaces ?? new Map(),
-      rings: new Map(),
-      territories: new Map(),
-      formedLines: [],
-      eliminatedRings: {},
-      geometry: { type: boardType, size: boardSize },
-    },
+    board,
     currentPhase: overrides.currentPhase ?? 'movement',
     currentPlayer: overrides.currentPlayer ?? 1,
     players,
@@ -70,7 +72,7 @@ function createMinimalState(
     moveHistory: [],
     pendingDecision: null,
     victoryCondition: null,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferTotalRingsInPlay(players, board),
     totalRingsEliminated: 0,
   } as unknown as GameState;
 }

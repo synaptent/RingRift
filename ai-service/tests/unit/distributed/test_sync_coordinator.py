@@ -565,6 +565,8 @@ class TestSyncCoordinatorDiscovery:
         """Test source discovery with force refresh bypasses cache."""
         from app.distributed.sync_coordinator import SyncCoordinator
 
+        mock_transport_config.enable_aria2 = False
+
         coordinator = SyncCoordinator(
             provider=mock_storage_provider,
             config=mock_transport_config,

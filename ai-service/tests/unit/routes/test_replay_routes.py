@@ -17,6 +17,8 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import warnings
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +27,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.db.game_replay import GameReplayDB
+from app.game_engine import GameEngine
 from app.models import (
     BoardType,
     GamePhase,
@@ -36,6 +39,43 @@ from app.models import (
 )
 from app.routes.replay import reset_replay_db, router
 from app.training.initial_state import create_initial_state
+
+
+def _build_legal_move_sequence(
+    initial_state: GameState,
+    move_count: int,
+) -> tuple[list[Move], GameState]:
+    """Generate a canonical move sequence including required bookkeeping moves."""
+    state = initial_state.model_copy(deep=True)
+    moves: list[Move] = []
+
+    for index in range(move_count):
+        legal_moves = GameEngine.get_valid_moves(state, state.current_player)
+        if legal_moves:
+            base_move = legal_moves[0]
+        else:
+            requirement = GameEngine.get_phase_requirement(state, state.current_player)
+            assert requirement is not None, f"No legal or bookkeeping move at step {index + 1}"
+            synthesized = GameEngine.synthesize_bookkeeping_move(requirement, state)
+            assert synthesized is not None, f"Failed to synthesize bookkeeping move at step {index + 1}"
+            base_move = synthesized
+
+        move = base_move.model_copy(
+            update={
+                "id": f"m{index + 1}",
+                "move_number": index + 1,
+                "timestamp": datetime.now(),
+            }
+        )
+        moves.append(move)
+        state = GameEngine.apply_move(state, move, trace_mode=True)
+
+    return moves, state
+
+
+def _moves_payload(moves: list[Move]) -> list[dict[str, Any]]:
+    """Serialize moves for replay route POST payloads."""
+    return [move.model_dump(mode="json", by_alias=True) for move in moves]
 
 
 @pytest.fixture
@@ -106,10 +146,10 @@ def sample_completed_game_state(sample_game_state) -> GameState:
 @pytest.fixture
 def populated_db(db):
     """Create a database with sample games for testing."""
-    # Use store_game with empty move lists since we disabled canonical enforcement
     # Game 1: Completed hex8 2-player game
     initial_state_1 = create_initial_state(board_type=BoardType.HEX8, num_players=2)
-    final_state_1 = initial_state_1.model_copy(deep=True)
+    moves_1, replayed_state_1 = _build_legal_move_sequence(initial_state_1, move_count=5)
+    final_state_1 = replayed_state_1.model_copy(deep=True)
     final_state_1.game_status = GameStatus.COMPLETED
     final_state_1.winner = 1
 
@@ -117,13 +157,14 @@ def populated_db(db):
         game_id="game-hex8-2p-1",
         initial_state=initial_state_1,
         final_state=final_state_1,
-        moves=[],  # Empty moves list
-        metadata={"source": "test", "termination_reason": "elimination"},
+        moves=moves_1,
+        metadata={"source": "test", "termination_reason": "ring_elimination"},
     )
 
     # Game 2: Completed square8 2-player game with more moves
     initial_state_2 = create_initial_state(board_type=BoardType.SQUARE8, num_players=2)
-    final_state_2 = initial_state_2.model_copy(deep=True)
+    moves_2, replayed_state_2 = _build_legal_move_sequence(initial_state_2, move_count=8)
+    final_state_2 = replayed_state_2.model_copy(deep=True)
     final_state_2.game_status = GameStatus.COMPLETED
     final_state_2.winner = 2
 
@@ -131,18 +172,19 @@ def populated_db(db):
         game_id="game-square8-2p-1",
         initial_state=initial_state_2,
         final_state=final_state_2,
-        moves=[],  # Empty moves list
-        metadata={"source": "selfplay", "termination_reason": "elimination"},
+        moves=moves_2,
+        metadata={"source": "selfplay", "termination_reason": "ring_elimination"},
     )
 
     # Game 3: In-progress square8 3-player game
     initial_state_3 = create_initial_state(board_type=BoardType.SQUARE8, num_players=3)
+    moves_3, replayed_state_3 = _build_legal_move_sequence(initial_state_3, move_count=5)
 
     db.store_game(
         game_id="game-square8-3p-1",
         initial_state=initial_state_3,
-        final_state=initial_state_3,
-        moves=[],  # Empty moves list
+        final_state=replayed_state_3,
+        moves=moves_3,
         metadata={"source": "test"},
     )
 
@@ -196,12 +238,12 @@ class TestListGames:
 
     def test_list_games_with_termination_reason_filter(self, client, populated_db):
         """Test filtering games by termination reason."""
-        response = client.get("/api/replay/games?termination_reason=elimination")
+        response = client.get("/api/replay/games?termination_reason=ring_elimination")
         assert response.status_code == 200
 
         data = response.json()
         assert data["total"] == 2
-        assert all(g["terminationReason"] == "elimination" for g in data["games"])
+        assert all(g["terminationReason"] == "ring_elimination" for g in data["games"])
 
     def test_list_games_with_source_filter(self, client, populated_db):
         """Test filtering games by source."""
@@ -214,21 +256,21 @@ class TestListGames:
 
     def test_list_games_with_min_moves_filter(self, client, populated_db):
         """Test filtering games by minimum move count."""
-        response = client.get("/api/replay/games?min_moves=3")
+        response = client.get("/api/replay/games?min_moves=6")
         assert response.status_code == 200
 
         data = response.json()
         assert data["total"] == 1
-        assert data["games"][0]["totalMoves"] >= 3
+        assert data["games"][0]["totalMoves"] >= 6
 
     def test_list_games_with_max_moves_filter(self, client, populated_db):
         """Test filtering games by maximum move count."""
-        response = client.get("/api/replay/games?max_moves=2")
+        response = client.get("/api/replay/games?max_moves=5")
         assert response.status_code == 200
 
         data = response.json()
         assert data["total"] == 2
-        assert all(g["totalMoves"] <= 2 for g in data["games"])
+        assert all(g["totalMoves"] <= 5 for g in data["games"])
 
     def test_list_games_with_multiple_filters(self, client, populated_db):
         """Test combining multiple filters."""
@@ -359,7 +401,7 @@ class TestGetMoves:
         data = response.json()
         assert "moves" in data
         assert "hasMore" in data
-        assert len(data["moves"]) == 2
+        assert len(data["moves"]) == 5
         assert data["hasMore"] is False
 
     def test_get_moves_with_range(self, client, populated_db):
@@ -422,7 +464,7 @@ class TestGetState:
         assert "moveNumber" in data
         assert "totalMoves" in data
         assert data["moveNumber"] == 0
-        assert data["totalMoves"] == 2
+        assert data["totalMoves"] == 5
 
     def test_get_state_at_move(self, client, populated_db):
         """Test getting state at a specific move."""
@@ -443,9 +485,8 @@ class TestGetState:
 
         # Check required GameState fields (using camelCase for JSON)
         assert "boardType" in game_state
-        assert "numPlayers" in game_state
         assert "currentPlayer" in game_state
-        assert "gamePhase" in game_state
+        assert "currentPhase" in game_state
         assert "gameStatus" in game_state
         assert "players" in game_state
 
@@ -465,9 +506,11 @@ class TestGetState:
 
     def test_get_state_with_legacy_flag(self, client, populated_db):
         """Test using legacy replay flag."""
-        response = client.get(
-            "/api/replay/games/game-hex8-2p-1/state?move_number=1&legacy=true"
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            response = client.get(
+                "/api/replay/games/game-hex8-2p-1/state?move_number=1&legacy=true"
+            )
         # Should work (legacy mode is backward compatible)
         assert response.status_code == 200
 
@@ -558,19 +601,17 @@ class TestStoreGame:
         self, client, sample_game_state, sample_completed_game_state
     ):
         """Test successfully storing a game."""
+        moves, _ = _build_legal_move_sequence(sample_game_state, move_count=5)
         payload = {
             "gameId": "test-store-game-1",
             "initialState": sample_game_state.model_dump(mode='json', by_alias=True),
             "finalState": sample_completed_game_state.model_dump(mode='json', by_alias=True),
-            "moves": [
-                {
-                    "id": "m1",
-                    "type": "place_ring",
-                    "player": 1,
-                    "to": {"x": 0, "y": 0},
-                }
-            ],
-            "metadata": {"source": "sandbox", "custom_field": "test_value"},
+            "moves": _moves_payload(moves),
+            "metadata": {
+                "source": "sandbox",
+                "custom_field": "test_value",
+                "termination_reason": "ring_elimination",
+            },
         }
 
         response = client.post("/api/replay/games", json=payload)
@@ -579,23 +620,17 @@ class TestStoreGame:
         data = response.json()
         assert data["success"] is True
         assert data["gameId"] == "test-store-game-1"
-        assert data["totalMoves"] == 1
+        assert data["totalMoves"] == 5
 
     def test_store_game_auto_generate_id(
         self, client, sample_game_state, sample_completed_game_state
     ):
         """Test storing a game without providing game ID."""
+        moves, _ = _build_legal_move_sequence(sample_game_state, move_count=5)
         payload = {
             "initialState": sample_game_state.model_dump(mode='json', by_alias=True),
             "finalState": sample_completed_game_state.model_dump(mode='json', by_alias=True),
-            "moves": [
-                {
-                    "id": "m1",
-                    "type": "place_ring",
-                    "player": 1,
-                    "to": {"x": 0, "y": 0},
-                }
-            ],
+            "moves": _moves_payload(moves),
         }
 
         response = client.post("/api/replay/games", json=payload)
@@ -610,17 +645,11 @@ class TestStoreGame:
         self, client, sample_game_state, sample_completed_game_state
     ):
         """Test storing a game with player choices."""
+        moves, _ = _build_legal_move_sequence(sample_game_state, move_count=5)
         payload = {
             "initialState": sample_game_state.model_dump(mode='json', by_alias=True),
             "finalState": sample_completed_game_state.model_dump(mode='json', by_alias=True),
-            "moves": [
-                {
-                    "id": "m1",
-                    "type": "place_ring",
-                    "player": 1,
-                    "to": {"x": 0, "y": 0},
-                }
-            ],
+            "moves": _moves_payload(moves),
             "choices": [
                 {
                     "choiceType": "line_order",
@@ -686,18 +715,12 @@ class TestStoreGame:
         self, client, sample_game_state, sample_completed_game_state
     ):
         """Test that source defaults to 'sandbox' when not provided."""
+        moves, _ = _build_legal_move_sequence(sample_game_state, move_count=5)
         payload = {
             "gameId": "test-default-source",
             "initialState": sample_game_state.model_dump(mode='json', by_alias=True),
             "finalState": sample_completed_game_state.model_dump(mode='json', by_alias=True),
-            "moves": [
-                {
-                    "id": "m1",
-                    "type": "place_ring",
-                    "player": 1,
-                    "to": {"x": 0, "y": 0},
-                }
-            ],
+            "moves": _moves_payload(moves),
         }
 
         response = client.post("/api/replay/games", json=payload)
@@ -723,8 +746,8 @@ class TestErrorHandling:
     def test_invalid_game_id_format(self, client, populated_db):
         """Test various invalid game ID formats."""
         # Empty string
-        response = client.get("/api/replay/games/")
-        assert response.status_code in [404, 405]  # Not found or method not allowed
+        response = client.get("/api/replay/games/", follow_redirects=False)
+        assert response.status_code in [307, 404, 405]
 
         # Special characters should work (URLEncoded)
         response = client.get("/api/replay/games/test%20game%20id")
@@ -749,7 +772,7 @@ class TestErrorHandling:
         """Test POST with malformed JSON."""
         response = client.post(
             "/api/replay/games",
-            data="invalid json{{{",
+            content="invalid json{{{",
             headers={"Content-Type": "application/json"},
         )
         assert response.status_code == 422

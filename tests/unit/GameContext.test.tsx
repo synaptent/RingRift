@@ -19,6 +19,7 @@ import { GameProvider, useGame } from '../../src/client/contexts/GameContext';
 import type { GameEventHandlers, ConnectionStatus } from '../../src/client/domain/GameAPI';
 import type { GameStateUpdateMessage, GameOverMessage } from '../../src/shared/types/websocket';
 import type { GameState, PlayerChoice, Move } from '../../src/shared/types/game';
+import { getConfiguredTotalRingsInPlay, inferTotalRingsInPlay } from '../utils/fixtures';
 
 // Mock dependencies
 const mockConnect = jest.fn();
@@ -71,6 +72,51 @@ jest.mock('../../src/client/utils/errorReporting', () => ({
   isErrorReportingEnabled: jest.fn(() => false),
   extractErrorMessage: jest.fn((error: any, fallback: string) => error?.message || fallback),
 }));
+
+function createMockGameState(overrides: Partial<GameState> = {}): GameState {
+  const board =
+    overrides.board ??
+    ({
+      stacks: new Map(),
+      markers: new Map(),
+      collapsedSpaces: new Map(),
+      territories: new Map(),
+      formedLines: [],
+      eliminatedRings: {},
+      size: 8,
+      type: 'square8' as const,
+    } as const);
+  const players = overrides.players ?? [];
+  const maxPlayers = overrides.maxPlayers ?? 2;
+  const boardType = overrides.boardType ?? 'square8';
+  const totalRingsInPlay =
+    players.length > 0
+      ? inferTotalRingsInPlay(players, board)
+      : getConfiguredTotalRingsInPlay(boardType, maxPlayers);
+
+  return {
+    id: 'game-123',
+    boardType,
+    currentPlayer: 1,
+    currentPhase: 'ring_placement',
+    players,
+    board,
+    moveHistory: [],
+    history: [],
+    timeControl: { initialTime: 600, increment: 0, type: 'blitz' },
+    spectators: [],
+    gameStatus: 'active',
+    createdAt: new Date(),
+    lastMoveAt: new Date(),
+    isRated: false,
+    maxPlayers,
+    totalRingsInPlay,
+    totalRingsEliminated: 0,
+    victoryThreshold: 5,
+    territoryVictoryThreshold: 32,
+    ...overrides,
+  } as GameState;
+}
 
 describe('GameContext', () => {
   beforeEach(() => {
@@ -198,11 +244,7 @@ describe('GameContext', () => {
         await result.current.connectToGame('game-123');
       });
 
-      const mockGameState = {
-        id: 'game-123',
-        boardType: 'square8',
-        currentPlayer: 1,
-        currentPhase: 'ring_placement',
+      const mockGameState = createMockGameState({
         players: [
           {
             id: 'user1',
@@ -227,30 +269,7 @@ describe('GameContext', () => {
             territorySpaces: 0,
           },
         ],
-        board: {
-          stacks: new Map(),
-          markers: new Map(),
-          collapsedSpaces: new Map(),
-          territories: new Map(),
-          formedLines: [],
-          eliminatedRings: {},
-          size: 8,
-          type: 'square8' as const,
-        },
-        moveHistory: [],
-        history: [],
-        timeControl: { initialTime: 600, increment: 0, type: 'blitz' as const },
-        spectators: [],
-        gameStatus: 'active' as const,
-        createdAt: new Date(),
-        lastMoveAt: new Date(),
-        isRated: false,
-        maxPlayers: 2,
-        totalRingsInPlay: 0,
-        totalRingsEliminated: 0,
-        victoryThreshold: 5,
-        territoryVictoryThreshold: 32,
-      } as GameState;
+      });
 
       const gameStatePayload: GameStateUpdateMessage = {
         type: 'game_update',
@@ -307,36 +326,11 @@ describe('GameContext', () => {
       const renderCount = { count: 0 };
       const originalGameState = result.current.gameState;
 
-      const mockGameState = {
-        id: 'game-123',
-        boardType: 'square8' as const,
+      const mockGameState = createMockGameState({
         currentPlayer: 2,
         currentPhase: 'movement' as const,
         players: [],
-        board: {
-          stacks: new Map(),
-          markers: new Map(),
-          collapsedSpaces: new Map(),
-          territories: new Map(),
-          formedLines: [],
-          eliminatedRings: {},
-          size: 8,
-          type: 'square8' as const,
-        },
-        moveHistory: [],
-        history: [],
-        timeControl: { initialTime: 600, increment: 0, type: 'blitz' as const },
-        spectators: [],
-        gameStatus: 'active' as const,
-        createdAt: new Date(),
-        lastMoveAt: new Date(),
-        isRated: false,
-        maxPlayers: 2,
-        totalRingsInPlay: 0,
-        totalRingsEliminated: 0,
-        victoryThreshold: 5,
-        territoryVictoryThreshold: 32,
-      } as GameState;
+      });
 
       act(() => {
         capturedHandlers?.onGameState({
@@ -363,36 +357,11 @@ describe('GameContext', () => {
         await result.current.connectToGame('game-123');
       });
 
-      const mockGameState = {
-        id: 'game-123',
-        boardType: 'square8' as const,
+      const mockGameState = createMockGameState({
         currentPlayer: 1,
         currentPhase: 'ring_placement' as const,
         players: [],
-        board: {
-          stacks: new Map(),
-          markers: new Map(),
-          collapsedSpaces: new Map(),
-          territories: new Map(),
-          formedLines: [],
-          eliminatedRings: {},
-          size: 8,
-          type: 'square8' as const,
-        },
-        moveHistory: [],
-        history: [],
-        timeControl: { initialTime: 600, increment: 0, type: 'blitz' as const },
-        spectators: [],
-        gameStatus: 'active' as const,
-        createdAt: new Date(),
-        lastMoveAt: new Date(),
-        isRated: false,
-        maxPlayers: 2,
-        totalRingsInPlay: 0,
-        totalRingsEliminated: 0,
-        victoryThreshold: 5,
-        territoryVictoryThreshold: 32,
-      } as GameState;
+      });
 
       act(() => {
         capturedHandlers?.onGameState({
@@ -439,36 +408,12 @@ describe('GameContext', () => {
             type: 'game_update',
             data: {
               gameId: 'game-123',
-              gameState: {
-                id: 'game-123',
-                boardType: 'square8' as const,
+              gameState: createMockGameState({
                 currentPlayer: i % 2 === 0 ? 2 : 1,
                 currentPhase: 'movement' as const,
                 players: [],
-                board: {
-                  stacks: new Map(),
-                  markers: new Map(),
-                  collapsedSpaces: new Map(),
-                  territories: new Map(),
-                  formedLines: [],
-                  eliminatedRings: {},
-                  size: 8,
-                  type: 'square8' as const,
-                },
                 moveHistory: new Array(i),
-                history: [],
-                timeControl: { initialTime: 600, increment: 0, type: 'blitz' as const },
-                spectators: [],
-                gameStatus: 'active' as const,
-                createdAt: new Date(),
-                lastMoveAt: new Date(),
-                isRated: false,
-                maxPlayers: 2,
-                totalRingsInPlay: 0,
-                totalRingsEliminated: 0,
-                victoryThreshold: 5,
-                territoryVictoryThreshold: 32,
-              } as any,
+              }) as any,
               validMoves: [],
             },
             timestamp: new Date().toISOString(),

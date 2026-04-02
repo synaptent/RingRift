@@ -2,9 +2,9 @@
 """Unit tests for move data integrity enforcement in game_replay.py (December 2025).
 
 Tests the Phase 6 Move Data Integrity Enforcement:
-- v14 schema includes orphaned_games table and trigger
+- current schema includes orphaned_games table and trigger
 - store_game() rejects games with fewer than MIN_MOVES_REQUIRED moves
-- Schema version is 14
+- Schema version matches the live GameReplayDB constant
 
 Test fixtures create temporary SQLite databases for testing without
 affecting production data.
@@ -17,20 +17,21 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from app.db.game_replay import GameReplayDB, SCHEMA_VERSION, GameWriter
+from app.db.move_data_validator import MIN_MOVES_REQUIRED
 from app.errors import InvalidGameError
 
 
-class TestSchemaVersion14:
-    """Tests for v14 schema migration."""
+class TestSchemaVersion:
+    """Tests for the current schema version and integrity trigger."""
 
     @pytest.fixture
     def temp_db_path(self, tmp_path):
         """Create a temporary database path."""
         return tmp_path / "test_migration.db"
 
-    def test_schema_version_is_14(self):
-        """Test that SCHEMA_VERSION is 14."""
-        assert SCHEMA_VERSION == 14
+    def test_schema_version_matches_current(self):
+        """Test that SCHEMA_VERSION matches the current live schema."""
+        assert SCHEMA_VERSION == 18
 
     def test_fresh_database_has_orphaned_games_table(self, temp_db_path):
         """Test that fresh database has orphaned_games table."""
@@ -60,8 +61,8 @@ class TestSchemaVersion14:
         assert result is not None
         assert result[0] == "enforce_moves_on_complete"
 
-    def test_trigger_blocks_completing_game_without_moves(self, temp_db_path):
-        """Test that trigger prevents completing games with 0 moves."""
+    def test_trigger_blocks_completing_game_without_required_moves(self, temp_db_path):
+        """Test that trigger prevents completing games below MIN_MOVES_REQUIRED."""
         db = GameReplayDB(str(temp_db_path))
 
         conn = sqlite3.connect(str(temp_db_path))
@@ -70,8 +71,10 @@ class TestSchemaVersion14:
             """
             INSERT INTO games (game_id, board_type, num_players, total_moves, total_turns,
                              game_status, created_at, schema_version)
-            VALUES ('trigger-test', 'hex8', 2, 0, 0, 'in_progress', datetime('now'), 14)
+            VALUES ('trigger-test', 'hex8', 2, 0, 0, 'in_progress', datetime('now'), ?)
         """
+            ,
+            (SCHEMA_VERSION,),
         )
         conn.commit()
 
@@ -82,7 +85,8 @@ class TestSchemaVersion14:
             )
             conn.commit()
 
-        assert "Cannot complete game without moves" in str(exc_info.value)
+        assert f"fewer than {MIN_MOVES_REQUIRED} moves" in str(exc_info.value)
+        assert "MIN_MOVES_REQUIRED" in str(exc_info.value)
         conn.close()
 
     def test_trigger_allows_completing_game_with_moves(self, temp_db_path):
@@ -95,8 +99,10 @@ class TestSchemaVersion14:
             """
             INSERT INTO games (game_id, board_type, num_players, total_moves, total_turns,
                              game_status, created_at, schema_version)
-            VALUES ('trigger-test-ok', 'hex8', 2, 10, 5, 'in_progress', datetime('now'), 14)
+            VALUES ('trigger-test-ok', 'hex8', 2, 10, 5, 'in_progress', datetime('now'), ?)
         """
+            ,
+            (SCHEMA_VERSION,),
         )
         conn.commit()
 
@@ -162,11 +168,11 @@ class TestMinMovesConstant:
 
     def test_min_moves_is_positive(self):
         """Test that MIN_MOVES_REQUIRED is at least 1."""
-        assert GameReplayDB.MIN_MOVES_REQUIRED >= 1
+        assert MIN_MOVES_REQUIRED >= 1
 
-    def test_min_moves_is_exactly_one(self):
-        """Test that MIN_MOVES_REQUIRED is exactly 1."""
-        assert GameReplayDB.MIN_MOVES_REQUIRED == 1
+    def test_min_moves_matches_validator_constant(self):
+        """Test that MIN_MOVES_REQUIRED matches the live validator constant."""
+        assert MIN_MOVES_REQUIRED == 5
 
 
 class TestStoreGameEnforcement:
@@ -194,7 +200,8 @@ class TestStoreGameEnforcement:
                 metadata={"board_type": "hex8", "num_players": 2},
             )
 
-        assert "0 moves" in str(exc_info.value)
+        assert "only 0 moves provided" in str(exc_info.value)
+        assert f"minimum is {MIN_MOVES_REQUIRED}" in str(exc_info.value)
 
 
 class TestGameWriterEnforcement:
@@ -208,14 +215,18 @@ class TestGameWriterEnforcement:
         return db
 
     def test_finalize_aborts_flag_exists(self):
-        """Test that finalize raises InvalidGameError for 0 moves (from code review)."""
-        # This is a code-level check - verify the abort behavior exists
-        # by checking the source contains the right error handling
-        import inspect
-        source = inspect.getsource(GameWriter.finalize)
+        """Test that finalize aborts and raises InvalidGameError for insufficient moves."""
+        mock_db = MagicMock()
+        initial_state = MagicMock()
+        initial_state.current_player = 1
+        writer = GameWriter(mock_db, "test-finalize-empty", initial_state)
 
-        assert "InvalidGameError" in source
-        assert "0 moves" in source or "move_count == 0" in source
+        with pytest.raises(InvalidGameError) as exc_info:
+            writer.finalize(MagicMock())
+
+        mock_db._delete_game.assert_called_once_with("test-finalize-empty")
+        assert "Cannot finalize game with 0 moves" in str(exc_info.value)
+        assert f"minimum required: {MIN_MOVES_REQUIRED}" in str(exc_info.value)
 
     def test_exit_cleans_up_on_exception(self):
         """Test that __exit__ handles cleanup on exception (from code review)."""

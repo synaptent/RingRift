@@ -31,7 +31,6 @@ from enum import Enum
 from typing import Any, Optional
 
 from app.coordination.contracts import HealthCheckResult
-from app.coordination.event_emission_helpers import safe_emit_event
 from app.coordination.event_router import get_event_payload
 from app.coordination.handler_base import HandlerBase
 
@@ -125,6 +124,8 @@ class ConnectivityRecoveryCoordinator(HandlerBase):
     4. Escalates persistent failures
     5. Generates alerts for human intervention
     """
+
+    _event_source = "connectivity_recovery"
 
     def __init__(self, config: Optional[RecoveryConfig] = None):
         """Initialize the coordinator."""
@@ -377,10 +378,9 @@ class ConnectivityRecoveryCoordinator(HandlerBase):
                 logger.info(f"SSH recovery succeeded for {node_name}")
 
                 # Emit recovery event
-                safe_emit_event(
+                await self._emit_event(
                     "TAILSCALE_RECOVERED",
                     {"node_name": node_name, "recovery_method": "ssh"},
-                    context="connectivity_recovery",
                 )
 
             return success
@@ -408,7 +408,7 @@ class ConnectivityRecoveryCoordinator(HandlerBase):
 
         # Get authkey from environment for reauthorization
         authkey = os.environ.get("TAILSCALE_AUTH_KEY", "")
-        authkey_arg = f"--authkey={authkey}" if authkey else ""
+        authkey_arg = f" --authkey={authkey}" if authkey else ""
 
         if is_container:
             # Container: Use userspace networking (Vast.ai, RunPod, etc.)
@@ -418,7 +418,7 @@ sleep 2
 mkdir -p /var/lib/tailscale /var/run/tailscale
 nohup tailscaled --tun=userspace-networking --statedir=/var/lib/tailscale > /tmp/tailscaled.log 2>&1 &
 sleep 5
-tailscale up {authkey_arg} --accept-routes --hostname='{hostname}'
+tailscale up{authkey_arg} --accept-routes --hostname='{hostname}'
 tailscale ip -4
 """
         else:
@@ -430,7 +430,7 @@ systemctl restart tailscaled 2>/dev/null || {{
     tailscaled --state=/var/lib/tailscale/tailscaled.state &
     sleep 5
 }}
-tailscale up {authkey_arg} --accept-routes --hostname='{hostname}'
+tailscale up{authkey_arg} --accept-routes --hostname='{hostname}'
 tailscale ip -4
 """
 
@@ -512,19 +512,30 @@ tailscale ip -4
         )
 
         # Emit escalation event
-        safe_emit_event(
+        await self._emit_event(
             "CONNECTIVITY_RECOVERY_ESCALATED",
             {
                 "node_name": node_name,
                 "recovery_attempts": state.recovery_attempts,
                 "consecutive_failures": state.consecutive_failures,
             },
-            context="connectivity_recovery",
         )
 
         # Send Slack alert if configured
         if self._config.slack_webhook:
             await self._send_slack_alert(node_name, state)
+
+    async def _emit_event(
+        self,
+        event_type: str,
+        payload: dict[str, Any],
+    ) -> bool:
+        """Emit a coordinator event without letting router failures leak upward."""
+        try:
+            return await self._safe_emit_event_async(event_type, payload)
+        except Exception as e:
+            logger.debug(f"Failed to emit {event_type}: {e}")
+            return False
 
     async def _send_slack_alert(
         self,

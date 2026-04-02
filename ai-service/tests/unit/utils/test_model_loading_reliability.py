@@ -201,7 +201,8 @@ class TestLoadingStatistics:
         stats = get_loading_stats()
         expected_keys = {
             "success", "fallback_fresh", "corruption",
-            "checksum_fail", "magic_byte_fail", "metadata_fail", "file_not_found"
+            "checksum_fail", "magic_byte_fail", "metadata_fail", "file_not_found",
+            "architecture_mismatch",
         }
         assert set(stats.keys()) == expected_keys
 

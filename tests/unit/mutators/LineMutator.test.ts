@@ -13,6 +13,7 @@ import type {
   ChooseLineRewardAction,
 } from '../../../src/shared/engine/types';
 import type { BoardState, BoardType, Position, RingStack } from '../../../src/shared/types/game';
+import { inferTotalRingsInPlay } from '../../utils/fixtures';
 
 function posStr(x: number, y: number): string {
   return `${x},${y}`;
@@ -62,7 +63,13 @@ function createMinimalState(
       positions: Position[];
       direction: { x: number; y: number };
     }>;
-    players: Array<{ playerNumber: number; ringsInHand: number; eliminated: boolean }>;
+    players: Array<{
+      playerNumber: number;
+      ringsInHand: number;
+      eliminated: boolean;
+      eliminatedRings?: number;
+      territorySpaces?: number;
+    }>;
   }>
 ): GameState {
   const boardType = overrides.boardType ?? 'square8';
@@ -75,6 +82,8 @@ function createMinimalState(
       playerNumber: i + 1,
       ringsInHand: 10,
       eliminated: false,
+      eliminatedRings: 0,
+      territorySpaces: 0,
       score: 0,
       reserveStacks: 0,
       reserveRings: 0,
@@ -97,7 +106,17 @@ function createMinimalState(
     moveHistory: [],
     pendingDecision: null,
     victoryCondition: null,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferTotalRingsInPlay(
+      players,
+      createMinimalBoard({
+        type: boardType,
+        size: boardSize,
+        stacks: overrides.stacks,
+        markers: overrides.markers,
+        collapsedSpaces: overrides.collapsedSpaces,
+        formedLines: overrides.formedLines,
+      })
+    ),
     totalRingsEliminated: 0,
   };
   return base as unknown as GameState;
@@ -185,8 +204,20 @@ describe('LineMutator', () => {
         stacks,
         formedLines: [{ player: 1, length: 3, positions, direction: { x: 1, y: 0 } }],
         players: [
-          { playerNumber: 1, ringsInHand: 5, eliminated: false },
-          { playerNumber: 2, ringsInHand: 5, eliminated: false },
+          {
+            playerNumber: 1,
+            ringsInHand: 5,
+            eliminated: false,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
+          {
+            playerNumber: 2,
+            ringsInHand: 5,
+            eliminated: false,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
         ],
       });
 
@@ -401,9 +432,27 @@ describe('LineMutator', () => {
         currentPlayer: 1,
         formedLines: [{ player: 1, length: 3, positions, direction: { x: 1, y: 0 } }],
         players: [
-          { playerNumber: 1, ringsInHand: 10, eliminated: false },
-          { playerNumber: 2, ringsInHand: 10, eliminated: false },
-          { playerNumber: 3, ringsInHand: 10, eliminated: false },
+          {
+            playerNumber: 1,
+            ringsInHand: 10,
+            eliminated: false,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
+          {
+            playerNumber: 2,
+            ringsInHand: 10,
+            eliminated: false,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
+          {
+            playerNumber: 3,
+            ringsInHand: 10,
+            eliminated: false,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
         ],
       });
 
@@ -467,8 +516,20 @@ describe('LineMutator', () => {
         currentPlayer: 99, // Non-existent player
         formedLines: [{ player: 1, length: 3, positions, direction: { x: 1, y: 0 } }],
         players: [
-          { playerNumber: 1, ringsInHand: 10, eliminated: false },
-          { playerNumber: 2, ringsInHand: 10, eliminated: false },
+          {
+            playerNumber: 1,
+            ringsInHand: 10,
+            eliminated: false,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
+          {
+            playerNumber: 2,
+            ringsInHand: 10,
+            eliminated: false,
+            eliminatedRings: 0,
+            territorySpaces: 0,
+          },
         ],
       });
 

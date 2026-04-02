@@ -6,6 +6,7 @@ import {
   evaluateHeuristicState,
   getHeuristicWeightsTS,
 } from '../../src/shared/engine/heuristicEvaluation';
+import { inferTotalRingsInPlay } from '../utils/fixtures';
 
 interface HeuristicFixtureState {
   id: string;
@@ -127,7 +128,7 @@ function buildGameState(entry: HeuristicFixtureState): GameState {
     lastMoveAt: new Date(0),
     isRated: false,
     maxPlayers: players.length,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferTotalRingsInPlay(players, board),
     totalRingsEliminated: 0,
     victoryThreshold: 0,
     territoryVictoryThreshold: 0,

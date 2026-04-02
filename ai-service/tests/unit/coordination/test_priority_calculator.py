@@ -531,8 +531,8 @@ class TestConstants:
     def test_player_count_multipliers(self):
         """Test player count multiplier values."""
         assert PLAYER_COUNT_ALLOCATION_MULTIPLIER[2] == 1.0
-        assert PLAYER_COUNT_ALLOCATION_MULTIPLIER[3] == 0.75
-        assert PLAYER_COUNT_ALLOCATION_MULTIPLIER[4] == 0.75
+        assert PLAYER_COUNT_ALLOCATION_MULTIPLIER[3] == 1.2
+        assert PLAYER_COUNT_ALLOCATION_MULTIPLIER[4] == 1.2
 
 
 # =============================================================================

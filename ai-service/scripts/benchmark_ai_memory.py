@@ -128,6 +128,7 @@ def run_single_benchmark(config: BenchmarkConfig) -> MemoryProfile:
     from app.ai.minimax_ai import MinimaxAI
     from app.ai.random_ai import RandomAI
     from app.models import AIConfig, BoardState, BoardType, GamePhase, GameState, GameStatus, Player, TimeControl
+    from app.rules.core import infer_total_rings_in_play
     from app.rules.default_engine import DefaultRulesEngine
 
     AI_CLASSES = {
@@ -191,7 +192,7 @@ def run_single_benchmark(config: BenchmarkConfig) -> MemoryProfile:
         lastMoveAt=dt.now(),
         isRated=False,
         maxPlayers=config.num_players,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,

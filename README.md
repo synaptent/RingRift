@@ -109,6 +109,14 @@ pip install -r requirements.txt
 uvicorn app.main:app --port 8001 --reload
 ```
 
+That starts the FastAPI service in inference-only mode by default. To boot the
+full coordination/training runtime on a dedicated node, opt in explicitly:
+
+```bash
+cd ai-service
+RINGRIFT_ORCHESTRATION=true uvicorn app.main:app --port 8001 --reload
+```
+
 ---
 
 ## Features

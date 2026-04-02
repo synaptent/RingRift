@@ -24,6 +24,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.config.thresholds import DISK_PRODUCTION_HALT_PERCENT
 from app.coordination.auto_sync_daemon import (
     AutoSyncConfig,
     AutoSyncDaemon,
@@ -143,11 +144,11 @@ class TestAutoSyncConfig:
         assert config.gossip_interval_seconds == 30
         assert config.exclude_hosts == []
         assert config.skip_nfs_sync is True
-        # Dec 2025: increased for faster parallel sync (was 4)
-        assert config.max_concurrent_syncs == 6
+        # Feb 2026: reduced to 1 to prevent OOM from parallel syncs
+        assert config.max_concurrent_syncs == 1
         assert config.min_games_to_sync == 10
         assert config.bandwidth_limit_mbps == 20
-        assert config.max_disk_usage_percent == 70.0
+        assert config.max_disk_usage_percent == float(DISK_PRODUCTION_HALT_PERCENT)
         assert config.target_disk_usage_percent == 60.0
         assert config.auto_cleanup_enabled is True
 
@@ -1403,23 +1404,20 @@ class TestReverseSyncPullStrategy:
     @pytest.mark.asyncio
     async def test_emit_pull_sync_completed(self, pull_daemon):
         """Test event emission for PULL sync completion."""
-        # Dec 28, 2025: data_events is in app.distributed, not app.coordination
         with patch(
-            "app.distributed.data_events.emit_data_event",
-            new_callable=AsyncMock
+            "app.coordination.sync_pull_mixin.safe_emit_event",
+            return_value=True,
         ) as mock_emit:
             await pull_daemon._emit_pull_sync_completed(100, 3)
 
             mock_emit.assert_called_once()
             call_args = mock_emit.call_args
-            # Check event type
-            from app.distributed.data_events import DataEventType
-            assert call_args[0][0] == DataEventType.DATA_SYNC_COMPLETED
-            # Check payload
-            payload = call_args[0][1]
+            assert call_args.args[0] == "data_sync_completed"
+            payload = call_args.args[1]
             assert payload["sync_type"] == "pull"
             assert payload["games_synced"] == 100
             assert payload["sources_count"] == 3
+            assert call_args.kwargs["context"] == "SyncPullMixin"
 
     @pytest.mark.asyncio
     async def test_sync_cycle_uses_pull_for_pull_strategy(self, pull_daemon):

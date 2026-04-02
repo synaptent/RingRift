@@ -11,6 +11,7 @@ import {
   ActionAvailabilityDelegates,
 } from '../../src/shared/engine/playerStateHelpers';
 import type { GameState, BoardState, RingStack } from '../../src/shared/types/game';
+import { inferTotalRingsInPlay } from '../utils/fixtures';
 
 function createMinimalBoard(
   overrides: Partial<{
@@ -43,9 +44,10 @@ function createMinimalState(
     { playerNumber: 1, ringsInHand: 10, eliminated: false },
     { playerNumber: 2, ringsInHand: 10, eliminated: false },
   ];
+  const board = createMinimalBoard({ stacks: overrides.stacks });
 
   return {
-    board: createMinimalBoard({ stacks: overrides.stacks }),
+    board,
     currentPhase: 'movement',
     currentPlayer: overrides.currentPlayer ?? 1,
     players,
@@ -54,7 +56,7 @@ function createMinimalState(
     moveHistory: [],
     pendingDecision: null,
     victoryCondition: null,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferTotalRingsInPlay(players, board),
     totalRingsEliminated: 0,
   } as unknown as GameState;
 }

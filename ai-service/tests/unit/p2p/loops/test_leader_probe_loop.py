@@ -972,8 +972,8 @@ class TestDynamicThreshold:
         loop = LeaderProbeLoop(orchestrator, failure_threshold=6)
         orchestrator._check_quorum_health = MagicMock(return_value=None)
 
-        # Add high latency samples (>2s)
-        loop._latency_history.extend([2.5, 2.8, 3.0])
+        # Add very high latency samples (>5s)
+        loop._latency_history.extend([5.5, 5.8, 6.0])
 
         threshold = loop._compute_dynamic_failure_threshold()
 
@@ -986,8 +986,8 @@ class TestDynamicThreshold:
         loop = LeaderProbeLoop(orchestrator, failure_threshold=6)
         orchestrator._check_quorum_health = MagicMock(return_value=None)
 
-        # Add moderate latency samples (>1s)
-        loop._latency_history.extend([1.2, 1.3, 1.1])
+        # Add elevated latency samples (>3s)
+        loop._latency_history.extend([3.2, 3.4, 3.1])
 
         threshold = loop._compute_dynamic_failure_threshold()
 
@@ -1046,7 +1046,7 @@ class TestDynamicThreshold:
 
         threshold = loop._compute_dynamic_failure_threshold()
 
-        # DEGRADED (+2) + moderate latency (+1) = 9
+        # DEGRADED (+2) + relay-range latency (+0) = 8 under the relaxed Jan 2026 thresholds
         assert threshold >= 8
 
     def test_get_status_includes_dynamic_threshold(self) -> None:

@@ -39,15 +39,16 @@ import logging
 import time
 from dataclasses import dataclass, field
 
-from app.coordination.event_emission_helpers import safe_emit_event
-from app.coordination.event_handler_utils import extract_config_key, extract_model_path
-from app.coordination.event_utils import parse_config_key
 from pathlib import Path
 from typing import Any, Callable, ClassVar
 
+from app.coordination.event_emission_helpers import safe_emit_event
+from app.coordination.event_handler_utils import extract_config_key, extract_model_path
+from app.coordination.event_utils import parse_config_key
 from app.coordination.handler_base import HandlerBase, HealthCheckResult
 
 logger = logging.getLogger(__name__)
+DEFAULT_STATE_PATH = Path("data/nnue_training_state.json")
 
 
 @dataclass
@@ -84,6 +85,7 @@ class NNUETrainingConfig:
     max_concurrent_trainings: int = 2
     min_time_between_trainings: float = 3600.0  # 1 hour minimum gap
     training_timeout_seconds: float = 7200.0  # 2 hour timeout
+    state_path: Path | None = None  # Path to persist state (None = use default)
 
     def get_threshold(self, config_key: str) -> int:
         """Get game threshold for a config key."""
@@ -154,7 +156,7 @@ class NNUETrainingDaemon(HandlerBase):
         )
 
         self._state = NNUETrainingState()
-        self._state_path = Path("data/nnue_training_state.json")
+        self._state_path = self._nnue_config.state_path or DEFAULT_STATE_PATH
         self._load_state()
 
         # Current game counts (refreshed each cycle)

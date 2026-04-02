@@ -15,7 +15,7 @@ import os
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.db.game_replay import GameReplayDB
 from app.utils.error_utils import sanitize_error_detail
@@ -511,14 +511,19 @@ class StoreGameRequest(BaseModel):
     choices: list[dict[str, Any]] | None = Field(None, description="List of choices (max 1000)")
     metadata: dict[str, Any] | None = Field(None, description="Optional metadata")
 
-    @validator("moves")
-    def validate_moves_length(cls, v):
+    @field_validator("moves")
+    @classmethod
+    def validate_moves_length(cls, v: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if len(v) > 10000:
             raise ValueError("moves list cannot exceed 10000 items")
         return v
 
-    @validator("choices")
-    def validate_choices_length(cls, v):
+    @field_validator("choices")
+    @classmethod
+    def validate_choices_length(
+        cls,
+        v: list[dict[str, Any]] | None,
+    ) -> list[dict[str, Any]] | None:
         if v is not None and len(v) > 1000:
             raise ValueError("choices list cannot exceed 1000 items")
         return v
@@ -576,6 +581,21 @@ async def store_game(request: StoreGameRequest):
         else:
             metadata.setdefault("source", "sandbox")
 
+        # Infer a canonical termination reason for completed games when callers
+        # omit it. This keeps sandbox callers lightweight while still satisfying
+        # the recording quality gate.
+        if metadata.get("termination_reason") is None:
+            from app.utils.victory_type import derive_victory_type
+
+            final_status = (
+                final_state.game_status.value
+                if hasattr(final_state.game_status, "value")
+                else str(final_state.game_status)
+            )
+            if final_status in ("completed", "finished"):
+                termination_reason, _ = derive_victory_type(final_state)
+                metadata["termination_reason"] = termination_reason
+
         # Validate game quality before storing
         from app.db.unified_recording import RecordingQualityGate
 
@@ -605,6 +625,8 @@ async def store_game(request: StoreGameRequest):
             success=True,
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error storing game: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=sanitize_error_detail(e))

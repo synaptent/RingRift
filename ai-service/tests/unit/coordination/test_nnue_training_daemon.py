@@ -30,7 +30,7 @@ def reset_daemon():
 
 
 @pytest.fixture
-def config():
+def config(tmp_path):
     """Create a test configuration."""
     return NNUETrainingConfig(
         game_thresholds={
@@ -42,15 +42,14 @@ def config():
         max_concurrent_trainings=2,
         min_time_between_trainings=60.0,
         training_timeout_seconds=120.0,
+        state_path=tmp_path / "nnue_state.json",
     )
 
 
 @pytest.fixture
-def daemon(reset_daemon, config, tmp_path):
+def daemon(reset_daemon, config):
     """Create a daemon with test config and temp state path."""
-    daemon = NNUETrainingDaemon(config=config)
-    daemon._state_path = tmp_path / "nnue_state.json"
-    return daemon
+    return NNUETrainingDaemon(config=config)
 
 
 # =============================================================================

@@ -17,6 +17,7 @@ import { getAIServiceClient } from '../../../src/server/services/AIServiceClient
 import { GameState, Move, AIProfile } from '../../../src/shared/types/game';
 import { logger } from '../../../src/server/utils/logger';
 import { getServiceStatusManager } from '../../../src/server/services/ServiceStatusManager';
+import { getConfiguredTotalRingsInPlay } from '../../utils/fixtures';
 
 // Mock axios
 
@@ -161,7 +162,7 @@ describe('AIServiceClient - Recovery Scenarios', () => {
       lastMoveAt: new Date(),
       isRated: false,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: getConfiguredTotalRingsInPlay('square8', 2),
       totalRingsEliminated: 0,
       victoryThreshold: 0,
       territoryVictoryThreshold: 0,

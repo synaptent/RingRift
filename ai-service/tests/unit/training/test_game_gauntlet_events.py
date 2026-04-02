@@ -63,6 +63,11 @@ def test_evaluation_progress_payload_includes_config_key_and_board_type(monkeypa
     )
 
     assert captured_events, "Expected evaluation progress events to be published"
-    payload = captured_events[0].payload
+    progress_event = next(
+        event
+        for event in captured_events
+        if getattr(event, "payload", {}).get("config_key") == "square19_2p"
+    )
+    payload = progress_event.payload
     assert payload["config_key"] == "square19_2p"
     assert payload["board_type"] == "square19"

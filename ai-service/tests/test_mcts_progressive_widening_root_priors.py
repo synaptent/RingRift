@@ -58,6 +58,7 @@ def _make_square19_state() -> GameState:
             territorySpaces=0,
         ),
     ]
+    total_rings_in_play = sum(player.rings_in_hand for player in players)
     return GameState(
         id="pw-test",
         boardType=BoardType.SQUARE19,
@@ -71,7 +72,7 @@ def _make_square19_state() -> GameState:
         lastMoveAt=now,
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=total_rings_in_play,
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,

@@ -1110,7 +1110,7 @@ class AutoSyncDaemon(
                 return await self._sync_cycle_inner()
             finally:
                 # C5 fix: Release distributed lock
-                await asyncio.to_thread(release_sync_lock, lock_key, "auto_sync")
+                await asyncio.to_thread(release_sync_lock, lock_key)
 
     async def _sync_cycle_inner(self) -> int:
         """Inner sync cycle logic (called with locks held)."""

@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.config.coordination_defaults import get_ssh_connect_timeout
 from app.distributed.manifest_replication import (
     ManifestReplicator,
     ReplicaHost,
@@ -211,7 +212,7 @@ class TestManifestReplicator:
         host = ReplicaHost(name="test", ssh_host="192.168.1.1")
         args = replicator._build_ssh_args(host)
 
-        assert "-o ConnectTimeout=30" in args
+        assert f"-o ConnectTimeout={int(get_ssh_connect_timeout('default'))}" in args
         assert "-o StrictHostKeyChecking=no" in args
         assert "-o BatchMode=yes" in args
         assert "-p" not in args  # Default port, no -p flag

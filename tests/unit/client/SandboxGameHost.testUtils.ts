@@ -70,6 +70,9 @@ export function createSandboxGameState(overrides: Partial<GameState> = {}): Game
   });
 
   const players = createPlayers(overrides.players as Player[] | undefined);
+  const inferredTotalRingsInPlay =
+    players.reduce((sum, player) => sum + player.ringsInHand, 0) +
+    Array.from(board.stacks.values()).reduce((sum, stack) => sum + stack.rings.length, 0);
 
   const base: GameState = {
     id: 'sandbox-1',
@@ -87,7 +90,7 @@ export function createSandboxGameState(overrides: Partial<GameState> = {}): Game
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: players.length,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferredTotalRingsInPlay,
     totalRingsEliminated: 0,
     victoryThreshold: 10,
     territoryVictoryThreshold: 32,

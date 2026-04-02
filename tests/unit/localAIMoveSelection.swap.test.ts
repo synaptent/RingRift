@@ -3,6 +3,7 @@ import {
   type LocalAIRng,
 } from '../../src/shared/engine/localAIMoveSelection';
 import type { GameState, Move, RingStack } from '../../src/shared/types/game';
+import { getConfiguredTotalRingsInPlay } from '../utils/fixtures';
 
 function makeSeededRng(seed: number): LocalAIRng {
   let s = seed >>> 0;
@@ -61,7 +62,7 @@ function makeBaseGameState(): GameState {
     gameStatus: 'active',
     isRated: false,
     maxPlayers: 2,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: getConfiguredTotalRingsInPlay('square8', 2),
     totalRingsEliminated: 0,
     victoryThreshold: 0,
     territoryVictoryThreshold: 0,

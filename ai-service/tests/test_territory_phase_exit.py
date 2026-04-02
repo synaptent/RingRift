@@ -15,6 +15,7 @@ from app.models import (
     Territory,
     TimeControl,
 )
+from app.rules.core import infer_total_rings_in_play
 
 
 def test_eliminate_rings_from_stack_ends_turn_when_territory_complete() -> None:
@@ -109,7 +110,7 @@ def test_eliminate_rings_from_stack_ends_turn_when_territory_complete() -> None:
         lastMoveAt=now,
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=999,
         territoryVictoryThreshold=999,

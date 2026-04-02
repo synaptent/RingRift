@@ -23,6 +23,7 @@ Auto-Update:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import shutil
@@ -88,7 +89,11 @@ class AdminHandlersMixin(BaseP2PHandler):
             has_local_changes = self._check_local_changes()
 
             # Check for remote updates (this does a git fetch)
-            has_updates, _, remote_commit = await self._check_for_updates()
+            update_result = self._check_for_updates()
+            if inspect.isawaitable(update_result):
+                has_updates, _, remote_commit = await update_result
+            else:
+                has_updates, _, remote_commit = update_result
             commits_behind = 0
             if has_updates and local_commit and remote_commit:
                 commits_behind = self._get_commits_behind(local_commit, remote_commit)
@@ -127,7 +132,11 @@ class AdminHandlersMixin(BaseP2PHandler):
 
         try:
             # Check for updates first
-            has_updates, local_commit, remote_commit = await self._check_for_updates()
+            update_result = self._check_for_updates()
+            if inspect.isawaitable(update_result):
+                has_updates, local_commit, remote_commit = await update_result
+            else:
+                has_updates, local_commit, remote_commit = update_result
 
             if not has_updates:
                 return self.json_response({

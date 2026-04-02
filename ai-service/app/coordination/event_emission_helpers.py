@@ -93,51 +93,23 @@ def safe_emit_event(
         logger.log(log_level, f"[{context}] {log_before}")
 
     try:
-        # Lazy imports to avoid circular dependencies
-        # Jan 5, 2026: Use EventRouter instead of EventBus directly.
-        # EventRouter properly handles string event types and converts to DataEventType enum.
-        # Previously used EventBus which caused "'str' object has no attribute 'value'" error
-        # when DataEvent was created with string instead of DataEventType enum.
-        from app.coordination.event_router import get_router
+        # Delegate actual emission to the router's compatibility helper so
+        # sync callers keep working even when no event loop is currently running.
+        from app.coordination.event_router import safe_emit_event as router_safe_emit
 
-        router = get_router()
-        if router is None:
-            logger.debug(f"[{context}] Event router unavailable for {event_type_str}")
-            return False
+        emitted = router_safe_emit(
+            event_type_str,
+            payload or {},
+            source=source,
+            log_on_failure=False,
+        )
 
-        # router.publish() is async - schedule it properly
-        try:
-            loop = asyncio.get_running_loop()
-            # Schedule as fire-and-forget task
-            # EventRouter.publish() handles string→enum conversion internally
-            task = loop.create_task(
-                router.publish(event_type_str, payload or {}, source)
-            )
-            # Add error callback to log failures without crashing
-            task.add_done_callback(
-                lambda t: (
-                    logger.debug(
-                        f"[{context}] Event {event_type_str} publish failed: {t.exception()}"
-                    )
-                    if t.exception()
-                    else None
-                )
-            )
+        if emitted and log_after:
+            logger.log(log_level, f"[{context}] {log_after}")
 
-            # Log after successful scheduling
-            if log_after:
-                logger.log(log_level, f"[{context}] {log_after}")
+        return emitted
 
-            return True
-
-        except RuntimeError:
-            # No running event loop - can't schedule async publish
-            logger.debug(
-                f"[{context}] No event loop, {event_type_str} event not published"
-            )
-            return False
-
-    except (AttributeError, ImportError, TypeError) as e:
+    except (AttributeError, ImportError, TypeError, RuntimeError) as e:
         # AttributeError - router missing attribute
         # ImportError - module unavailable during shutdown
         # TypeError - wrong signature

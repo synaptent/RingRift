@@ -751,6 +751,7 @@ class TestDaemonEventEmission:
     @pytest.mark.asyncio
     async def test_emit_sync_event_success(self, mock_data_source, sync_config):
         """Test emitting sync event on success."""
+        sync_config.emit_events = True
         daemon = TrainingDataSyncDaemon(config=sync_config)
         daemon._running = True
 
@@ -763,7 +764,7 @@ class TestDaemonEventEmission:
         )
 
         with patch(
-            "app.distributed.data_events.emit_data_event"
+            "app.coordination.training_data_sync_daemon.safe_emit_event"
         ) as mock_emit:
             await daemon._emit_sync_event(result)
 

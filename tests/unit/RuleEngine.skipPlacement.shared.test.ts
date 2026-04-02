@@ -9,6 +9,7 @@ import type {
   TimeControl,
 } from '../../src/shared/types/game';
 import { evaluateSkipPlacementEligibilityAggregate } from '../../src/shared/engine';
+import { inferTotalRingsInPlay } from '../utils/fixtures';
 
 class FakeBoardManagerForSkipPlacement {
   constructor(public boardType: BoardType) {}
@@ -99,7 +100,7 @@ function createBaseRingPlacementState(boardType: BoardType = 'square8'): GameSta
     lastMoveAt: now,
     isRated: false,
     maxPlayers: 2,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferTotalRingsInPlay(players, board),
     totalRingsEliminated: 0,
     victoryThreshold: 0,
     territoryVictoryThreshold: 0,

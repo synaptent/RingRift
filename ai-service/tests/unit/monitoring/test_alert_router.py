@@ -135,7 +135,7 @@ class TestSlackIntegration:
             alert_type="test",
             message="Test",
         )
-        result = asyncio.get_event_loop().run_until_complete(slack.send(alert))
+        result = asyncio.run(slack.send(alert))
         assert result is False
 
     def test_color_mapping(self):
@@ -184,7 +184,7 @@ class TestDiscordIntegration:
             alert_type="test",
             message="Test",
         )
-        result = asyncio.get_event_loop().run_until_complete(discord.send(alert))
+        result = asyncio.run(discord.send(alert))
         assert result is False
 
     @pytest.mark.asyncio
@@ -215,7 +215,7 @@ class TestPagerDutyIntegration:
             alert_type="test",
             message="Test",
         )
-        result = asyncio.get_event_loop().run_until_complete(pagerduty.page(alert))
+        result = asyncio.run(pagerduty.page(alert))
         assert result is False
 
     def test_severity_mapping(self):

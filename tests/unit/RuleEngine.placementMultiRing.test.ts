@@ -9,6 +9,7 @@ import {
   TimeControl,
   positionToString,
 } from '../../src/shared/types/game';
+import { inferTotalRingsInPlay } from '../utils/fixtures';
 
 // Minimal BoardManager stub for placement tests
 class FakeBoardManager {
@@ -95,7 +96,7 @@ function createBaseGameState(boardType: BoardType = 'square8'): GameState {
     lastMoveAt: now,
     isRated: false,
     maxPlayers: players.length,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferTotalRingsInPlay(players, board),
     totalRingsEliminated: 0,
     victoryThreshold: 0,
     territoryVictoryThreshold: 0,

@@ -30,7 +30,7 @@ import {
   Position,
 } from '../../src/shared/types/game';
 import { createLpsTrackingState, LpsTrackingState } from '../../src/shared/engine';
-import { createTestBoard, createTestPlayer } from '../utils/fixtures';
+import { createTestBoard, createTestPlayer, inferTotalRingsInPlay } from '../utils/fixtures';
 
 // Helper to create mock TurnEngineHooks with LPS support
 function createMockHooks(
@@ -88,7 +88,7 @@ describe('GameEngine turn sequence & forced elimination scenarios (backend)', ()
       lastMoveAt: now,
       isRated: false,
       maxPlayers: players.length,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: inferTotalRingsInPlay(players, boardState),
       totalRingsEliminated: 0,
       victoryThreshold: 0,
       territoryVictoryThreshold: 0,

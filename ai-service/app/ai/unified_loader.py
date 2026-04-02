@@ -836,7 +836,7 @@ class UnifiedModelLoader:
         # Cache if enabled
         if self.cache_enabled:
             with self._cache_lock:
-                if len(self._cache) >= self.max_cache_size:
+                while len(self._cache) >= self.max_cache_size:
                     oldest_key = next(iter(self._cache))
                     del self._cache[oldest_key]
                 self._cache[cache_key] = loaded

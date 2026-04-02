@@ -60,7 +60,14 @@ def _convert_ts_state_to_python(state_dict: dict) -> dict:
     result["players"] = players
 
     result.setdefault("maxPlayers", len(players) or 2)
-    result.setdefault("totalRingsInPlay", 0)
+    if "totalRingsInPlay" not in result:
+        total_rings_in_play = sum(int(player.get("ringsInHand", 0)) for player in players)
+        total_rings_in_play += sum(
+            len(stack.get("rings", []))
+            for stack in stacks.values()
+            if isinstance(stack, dict)
+        )
+        result["totalRingsInPlay"] = total_rings_in_play
     result.setdefault("totalRingsEliminated", 0)
     result.setdefault("victoryThreshold", 3)
     result.setdefault("territoryVictoryThreshold", 10)

@@ -39,6 +39,7 @@ from app.models import (
     Position,
     TimeControl,
 )
+from app.rules.core import infer_total_rings_in_play
 from app.routes import replay
 
 
@@ -49,36 +50,38 @@ def make_test_game_state(
     move_number: int = 0,
 ) -> GameState:
     """Create a minimal GameState for testing."""
+    board = BoardState(type=board_type, size=8)
+    players = [
+        Player(
+            id="p1",
+            username="Player1",
+            type="ai",
+            playerNumber=1,
+            isReady=True,
+            timeRemaining=600,
+            ringsInHand=19,
+            eliminatedRings=0,
+            territorySpaces=0,
+            aiDifficulty=5,
+        ),
+        Player(
+            id="p2",
+            username="Player2",
+            type="ai",
+            playerNumber=2,
+            isReady=True,
+            timeRemaining=600,
+            ringsInHand=19,
+            eliminatedRings=0,
+            territorySpaces=0,
+            aiDifficulty=5,
+        ),
+    ]
     return GameState(
         id=game_id,
         boardType=board_type,
-        board=BoardState(type=board_type, size=8),
-        players=[
-            Player(
-                id="p1",
-                username="Player1",
-                type="ai",
-                playerNumber=1,
-                isReady=True,
-                timeRemaining=600,
-                ringsInHand=19,
-                eliminatedRings=0,
-                territorySpaces=0,
-                aiDifficulty=5,
-            ),
-            Player(
-                id="p2",
-                username="Player2",
-                type="ai",
-                playerNumber=2,
-                isReady=True,
-                timeRemaining=600,
-                ringsInHand=19,
-                eliminatedRings=0,
-                territorySpaces=0,
-                aiDifficulty=5,
-            ),
-        ],
+        board=board,
+        players=players,
         currentPhase=GamePhase.RING_PLACEMENT,
         currentPlayer=current_player,
         moveHistory=[],
@@ -89,7 +92,7 @@ def make_test_game_state(
         lastMoveAt=datetime.now(),
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=18,  # RR-CANON-R061: ringsPerPlayer
         territoryVictoryThreshold=33,

@@ -280,7 +280,11 @@ class TestHetznerProviderCLI:
         mock_result.stderr = ""
         mock_result.returncode = 0
 
-        with patch("subprocess.run", return_value=mock_result):
+        with patch(
+            "app.coordination.providers.hetzner_provider.async_subprocess_run",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
             stdout, stderr, rc = await hetzner_provider._run_cli("server", "list")
 
             assert stdout == '{"status": "ok"}'
@@ -295,10 +299,14 @@ class TestHetznerProviderCLI:
         mock_result.stderr = ""
         mock_result.returncode = 0
 
-        with patch("subprocess.run", return_value=mock_result) as mock_run:
+        with patch(
+            "app.coordination.providers.hetzner_provider.async_subprocess_run",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ) as mock_run:
             await hetzner_provider._run_cli("server", "list")
 
-            call_args = mock_run.call_args[0][0]
+            call_args = mock_run.await_args.args[0]
             assert "-o" in call_args
             assert "json" in call_args
 
@@ -310,10 +318,14 @@ class TestHetznerProviderCLI:
         mock_result.stderr = ""
         mock_result.returncode = 0
 
-        with patch("subprocess.run", return_value=mock_result) as mock_run:
+        with patch(
+            "app.coordination.providers.hetzner_provider.async_subprocess_run",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ) as mock_run:
             await hetzner_provider._run_cli("server", "list")
 
-            call_kwargs = mock_run.call_args[1]
+            call_kwargs = mock_run.await_args.kwargs
             assert "HCLOUD_TOKEN" in call_kwargs["env"]
 
     @pytest.mark.asyncio

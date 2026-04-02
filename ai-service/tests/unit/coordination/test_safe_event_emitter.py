@@ -1,43 +1,19 @@
-"""Tests for SafeEventEmitterMixin and safe_emit_event.
+"""Tests for SafeEventEmitterMixin and module-level safe_emit_event.
 
-December 2025: Comprehensive test coverage for the unified safe event
-emission utility that consolidates 6 duplicate implementations.
-
-Tests cover:
-1. SafeEventEmitterMixin class
-   - Sync event emission
-   - Async event emission
-   - Error handling (ImportError, AttributeError, RuntimeError, TypeError)
-   - Event source tracking
-   - Return value semantics
-
-2. safe_emit_event module function
-   - Same error handling as mixin
-   - Custom source parameter
-
-3. Integration with event bus
-   - Lazy import behavior
-   - Fallback when bus unavailable
+These tests validate the current delegation contract:
+- mixin methods forward to event_emission_helpers
+- custom event sources become helper context/source
+- async emission preserves return values
+- the module remains lazily importable
 """
 
 from __future__ import annotations
 
-import asyncio
-import logging
-from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.coordination.safe_event_emitter import (
-    SafeEventEmitterMixin,
-    safe_emit_event,
-)
-
-
-# =============================================================================
-# Test fixtures
-# =============================================================================
+from app.coordination.safe_event_emitter import SafeEventEmitterMixin, safe_emit_event
 
 
 class TestEmitter(SafeEventEmitterMixin):
@@ -64,408 +40,226 @@ def custom_emitter() -> CustomSourceEmitter:
     return CustomSourceEmitter()
 
 
-@pytest.fixture
-def mock_event_bus():
-    """Create a mock event bus."""
-    bus = MagicMock()
-    bus.publish = MagicMock()
-    return bus
-
-
-# =============================================================================
-# SafeEventEmitterMixin Tests
-# =============================================================================
-
-
 class TestSafeEventEmitterMixin:
-    """Tests for SafeEventEmitterMixin class."""
+    """Tests for SafeEventEmitterMixin."""
 
     def test_event_source_default(self):
-        """Test default event source is 'unknown'."""
-        # Create class without overriding _event_source
+        """Default event source falls back to unknown."""
+
         class DefaultEmitter(SafeEventEmitterMixin):
             pass
 
-        emitter = DefaultEmitter()
-        assert emitter._event_source == "unknown"
+        assert DefaultEmitter()._event_source == "unknown"
 
     def test_event_source_custom(self, emitter: TestEmitter):
-        """Test custom event source is used."""
+        """Custom event source is exposed on the instance."""
         assert emitter._event_source == "TestEmitter"
 
-    def test_safe_emit_event_success(self, emitter: TestEmitter, mock_event_bus):
-        """Test successful event emission returns True."""
+    def test_safe_emit_event_delegates_to_helper(self, emitter: TestEmitter):
+        """Sync emission delegates to the consolidated helper."""
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
-        ):
+            "app.coordination.event_emission_helpers.safe_emit_event",
+            return_value=True,
+        ) as mock_emit:
             result = emitter._safe_emit_event("TEST_EVENT", {"key": "value"})
 
         assert result is True
-        mock_event_bus.publish.assert_called_once()
+        mock_emit.assert_called_once_with(
+            "TEST_EVENT",
+            {"key": "value"},
+            log_before=None,
+            log_after=None,
+            context="TestEmitter",
+            source="TestEmitter",
+        )
 
-    def test_safe_emit_event_with_payload(self, emitter: TestEmitter, mock_event_bus):
-        """Test event emission with payload."""
-        payload = {"board_type": "hex8", "num_players": 2, "games": 100}
-
+    def test_safe_emit_event_passes_none_payload_through(self, emitter: TestEmitter):
+        """None payload is delegated unchanged for helper normalization."""
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
-        ):
-            result = emitter._safe_emit_event("TRAINING_COMPLETED", payload)
+            "app.coordination.event_emission_helpers.safe_emit_event",
+            return_value=True,
+        ) as mock_emit:
+            emitter._safe_emit_event("EMPTY_EVENT", None)
 
-        assert result is True
-        call_args = mock_event_bus.publish.call_args
-        event = call_args[0][0]
-        assert event.payload == payload
-        assert event.event_type == "TRAINING_COMPLETED"
-        assert event.source == "TestEmitter"
+        mock_emit.assert_called_once_with(
+            "EMPTY_EVENT",
+            None,
+            log_before=None,
+            log_after=None,
+            context="TestEmitter",
+            source="TestEmitter",
+        )
 
-    def test_safe_emit_event_no_payload(self, emitter: TestEmitter, mock_event_bus):
-        """Test event emission without payload uses empty dict."""
+    def test_safe_emit_event_propagates_false(self, emitter: TestEmitter):
+        """False from the helper is returned to the caller."""
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
-        ):
-            result = emitter._safe_emit_event("SIMPLE_EVENT")
-
-        assert result is True
-        call_args = mock_event_bus.publish.call_args
-        event = call_args[0][0]
-        assert event.payload == {}
-
-    def test_safe_emit_event_bus_unavailable(self, emitter: TestEmitter):
-        """Test returns False when event bus is unavailable."""
-        with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=None,
+            "app.coordination.event_emission_helpers.safe_emit_event",
+            return_value=False,
         ):
             result = emitter._safe_emit_event("TEST_EVENT")
 
         assert result is False
 
-    def test_safe_emit_event_import_error(self, emitter: TestEmitter):
-        """Test handles ImportError gracefully."""
+    def test_safe_emit_event_uses_custom_source(
+        self, custom_emitter: CustomSourceEmitter
+    ):
+        """Custom emitters pass their own context and source."""
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            side_effect=ImportError("Module not found"),
-        ):
-            result = emitter._safe_emit_event("TEST_EVENT")
-
-        assert result is False
-
-    def test_safe_emit_event_attribute_error(self, emitter: TestEmitter, mock_event_bus):
-        """Test handles AttributeError gracefully."""
-        mock_event_bus.publish.side_effect = AttributeError("Missing attribute")
-
-        with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
-        ):
-            result = emitter._safe_emit_event("TEST_EVENT")
-
-        assert result is False
-
-    def test_safe_emit_event_runtime_error(self, emitter: TestEmitter):
-        """Test handles RuntimeError gracefully."""
-        with patch(
-            "app.coordination.event_router.get_event_bus",
-            side_effect=RuntimeError("No event loop"),
-        ):
-            result = emitter._safe_emit_event("TEST_EVENT")
-
-        assert result is False
-
-    def test_safe_emit_event_type_error(self, emitter: TestEmitter):
-        """Test handles TypeError gracefully."""
-        with patch(
-            "app.coordination.event_router.get_event_bus",
-            side_effect=TypeError("Wrong signature"),
-        ):
-            result = emitter._safe_emit_event("TEST_EVENT")
-
-        assert result is False
-
-    def test_custom_event_source(self, custom_emitter: CustomSourceEmitter, mock_event_bus):
-        """Test custom event source is used in emitted events."""
-        with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
-        ):
+            "app.coordination.event_emission_helpers.safe_emit_event",
+            return_value=True,
+        ) as mock_emit:
             custom_emitter._safe_emit_event("TEST_EVENT")
 
-        call_args = mock_event_bus.publish.call_args
-        event = call_args[0][0]
-        assert event.source == "CustomSource"
+        mock_emit.assert_called_once_with(
+            "TEST_EVENT",
+            None,
+            log_before=None,
+            log_after=None,
+            context="CustomSource",
+            source="CustomSource",
+        )
 
 
 class TestSafeEventEmitterMixinAsync:
-    """Tests for async event emission."""
+    """Tests for async emission."""
 
     @pytest.mark.asyncio
-    async def test_safe_emit_event_async_success(
-        self, emitter: TestEmitter, mock_event_bus
-    ):
-        """Test async event emission success."""
+    async def test_safe_emit_event_async_success(self, emitter: TestEmitter):
+        """Async emission returns the helper result."""
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
-        ):
-            result = await emitter._safe_emit_event_async("ASYNC_EVENT", {"async": True})
+            "app.coordination.event_emission_helpers.safe_emit_event_async",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_emit:
+            result = await emitter._safe_emit_event_async(
+                "ASYNC_EVENT",
+                {"async": True},
+            )
 
         assert result is True
-        mock_event_bus.publish.assert_called_once()
+        mock_emit.assert_awaited_once_with(
+            "ASYNC_EVENT",
+            {"async": True},
+            log_before=None,
+            log_after=None,
+            context="TestEmitter",
+            source="TestEmitter",
+        )
 
     @pytest.mark.asyncio
     async def test_safe_emit_event_async_failure(self, emitter: TestEmitter):
-        """Test async event emission failure returns False."""
+        """Async emission propagates a False helper result."""
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=None,
+            "app.coordination.event_emission_helpers.safe_emit_event_async",
+            new_callable=AsyncMock,
+            return_value=False,
         ):
             result = await emitter._safe_emit_event_async("ASYNC_EVENT")
 
         assert result is False
 
-    @pytest.mark.asyncio
-    async def test_safe_emit_event_async_runtime_error_fallback(
-        self, emitter: TestEmitter, mock_event_bus
-    ):
-        """Test async emission falls back to sync on RuntimeError."""
-        # First call to to_thread raises RuntimeError, triggering fallback
-        call_count = 0
-
-        def mock_to_thread(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise RuntimeError("No event loop")
-            return args[0](*args[1:])
-
-        with patch("asyncio.to_thread", side_effect=mock_to_thread):
-            with patch(
-                "app.coordination.event_router.get_event_bus",
-                return_value=mock_event_bus,
-            ):
-                # The fallback sync call should succeed
-                result = await emitter._safe_emit_event_async("FALLBACK_EVENT")
-
-        # Should return True from the fallback sync call
-        assert result is True
-
-
-# =============================================================================
-# Module-level safe_emit_event Tests
-# =============================================================================
-
 
 class TestSafeEmitEventFunction:
-    """Tests for safe_emit_event module-level function."""
+    """Tests for the module-level helper."""
 
-    def test_safe_emit_event_success(self, mock_event_bus):
-        """Test module-level emit success."""
+    def test_safe_emit_event_delegates_to_helper(self):
+        """Module helper forwards args and default source."""
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
-        ):
+            "app.coordination.event_emission_helpers.safe_emit_event",
+            return_value=True,
+        ) as mock_emit:
             result = safe_emit_event("MODULE_EVENT", {"key": "value"})
 
         assert result is True
-        mock_event_bus.publish.assert_called_once()
+        mock_emit.assert_called_once_with(
+            "MODULE_EVENT",
+            {"key": "value"},
+            log_before=None,
+            log_after=None,
+            context="module",
+            source="module",
+        )
 
-    def test_safe_emit_event_custom_source(self, mock_event_bus):
-        """Test custom source parameter."""
+    def test_safe_emit_event_custom_source(self):
+        """Custom source becomes both source and default context."""
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
-        ):
-            result = safe_emit_event(
+            "app.coordination.event_emission_helpers.safe_emit_event",
+            return_value=True,
+        ) as mock_emit:
+            safe_emit_event(
                 "MODULE_EVENT",
                 {"key": "value"},
                 source="my_custom_module",
             )
 
-        assert result is True
-        call_args = mock_event_bus.publish.call_args
-        event = call_args[0][0]
-        assert event.source == "my_custom_module"
+        mock_emit.assert_called_once_with(
+            "MODULE_EVENT",
+            {"key": "value"},
+            log_before=None,
+            log_after=None,
+            context="my_custom_module",
+            source="my_custom_module",
+        )
 
-    def test_safe_emit_event_default_source(self, mock_event_bus):
-        """Test default source is 'module'."""
+    def test_safe_emit_event_explicit_context(self):
+        """Explicit context overrides the source-derived default."""
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
-        ):
-            safe_emit_event("MODULE_EVENT")
+            "app.coordination.event_emission_helpers.safe_emit_event",
+            return_value=True,
+        ) as mock_emit:
+            safe_emit_event(
+                "MODULE_EVENT",
+                {"key": "value"},
+                source="source_name",
+                context="explicit_context",
+            )
 
-        call_args = mock_event_bus.publish.call_args
-        event = call_args[0][0]
-        assert event.source == "module"
+        mock_emit.assert_called_once_with(
+            "MODULE_EVENT",
+            {"key": "value"},
+            log_before=None,
+            log_after=None,
+            context="explicit_context",
+            source="source_name",
+        )
 
-    def test_safe_emit_event_bus_unavailable(self):
-        """Test returns False when bus unavailable."""
+    def test_safe_emit_event_propagates_false(self):
+        """Module helper returns False when the consolidated helper fails."""
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=None,
+            "app.coordination.event_emission_helpers.safe_emit_event",
+            return_value=False,
         ):
             result = safe_emit_event("MODULE_EVENT")
 
         assert result is False
-
-    def test_safe_emit_event_import_error(self):
-        """Test handles ImportError."""
-        with patch(
-            "app.coordination.event_router.get_event_bus",
-            side_effect=ImportError("No module"),
-        ):
-            result = safe_emit_event("MODULE_EVENT")
-
-        assert result is False
-
-    def test_safe_emit_event_no_payload(self, mock_event_bus):
-        """Test emission without payload."""
-        with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
-        ):
-            result = safe_emit_event("SIMPLE_EVENT")
-
-        assert result is True
-        call_args = mock_event_bus.publish.call_args
-        event = call_args[0][0]
-        assert event.payload == {}
-
-
-# =============================================================================
-# Integration Tests
-# =============================================================================
 
 
 class TestSafeEventEmitterIntegration:
-    """Integration tests verifying lazy import and event structure."""
+    """Lightweight integration coverage."""
 
     def test_lazy_import_avoids_circular_dependency(self):
-        """Test that imports happen lazily inside methods."""
-        # The module should import without errors
-        from app.coordination.safe_event_emitter import SafeEventEmitterMixin
+        """Creating an emitter does not require eager router imports."""
+        from app.coordination.safe_event_emitter import SafeEventEmitterMixin as ImportedMixin
 
-        # Creating instance should not trigger event_router import
-        emitter = TestEmitter()
-        assert emitter._event_source == "TestEmitter"
+        class LazyEmitter(ImportedMixin):
+            _event_source = "LazyEmitter"
 
-    def test_event_structure_matches_data_event(self, emitter: TestEmitter, mock_event_bus):
-        """Test emitted events have correct DataEvent structure."""
-        with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
-        ):
-            emitter._safe_emit_event(
-                "STRUCTURED_EVENT",
-                {"field1": "value1", "field2": 42},
-            )
+        assert LazyEmitter()._event_source == "LazyEmitter"
 
-        call_args = mock_event_bus.publish.call_args
-        event = call_args[0][0]
-
-        # Verify DataEvent attributes
-        assert hasattr(event, "event_type")
-        assert hasattr(event, "payload")
-        assert hasattr(event, "source")
-        assert event.event_type == "STRUCTURED_EVENT"
-        assert event.payload["field1"] == "value1"
-        assert event.payload["field2"] == 42
-
-    def test_multiple_emitters_use_correct_sources(self, mock_event_bus):
-        """Test multiple emitters track their sources correctly."""
-        emitter1 = TestEmitter()
-        emitter2 = CustomSourceEmitter()
+    def test_sync_helper_stays_usable_without_running_loop(self):
+        """The consolidated sync helper still works in a plain sync context."""
+        mock_safe_emit = MagicMock(return_value=True)
 
         with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
+            "app.coordination.event_router.safe_emit_event",
+            mock_safe_emit,
         ):
-            emitter1._safe_emit_event("EVENT_1")
-            emitter2._safe_emit_event("EVENT_2")
-
-        calls = mock_event_bus.publish.call_args_list
-        assert len(calls) == 2
-        assert calls[0][0][0].source == "TestEmitter"
-        assert calls[1][0][0].source == "CustomSource"
-
-
-# =============================================================================
-# Edge Cases
-# =============================================================================
-
-
-class TestEdgeCases:
-    """Edge case tests."""
-
-    def test_empty_event_type(self, emitter: TestEmitter, mock_event_bus):
-        """Test emission with empty event type."""
-        with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
-        ):
-            result = emitter._safe_emit_event("")
-
-        assert result is True  # Should still emit
-
-    def test_none_payload_converted_to_empty_dict(
-        self, emitter: TestEmitter, mock_event_bus
-    ):
-        """Test None payload is converted to empty dict."""
-        with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
-        ):
-            emitter._safe_emit_event("EVENT", None)
-
-        call_args = mock_event_bus.publish.call_args
-        event = call_args[0][0]
-        assert event.payload == {}
-
-    def test_complex_payload_structure(self, emitter: TestEmitter, mock_event_bus):
-        """Test emission with complex nested payload."""
-        payload = {
-            "config": {"board_type": "hex8", "num_players": 2},
-            "metrics": [1.0, 2.0, 3.0],
-            "nested": {"deep": {"value": True}},
-        }
-
-        with patch(
-            "app.coordination.event_router.get_event_bus",
-            return_value=mock_event_bus,
-        ):
-            result = emitter._safe_emit_event("COMPLEX_EVENT", payload)
+            result = safe_emit_event("SYNC_EVENT", {"value": 1}, source="sync_source")
 
         assert result is True
-        call_args = mock_event_bus.publish.call_args
-        event = call_args[0][0]
-        assert event.payload == payload
-
-
-class TestLogging:
-    """Tests for logging behavior."""
-
-    def test_logs_debug_on_bus_unavailable(self, emitter: TestEmitter, caplog):
-        """Test debug logging when bus unavailable."""
-        with caplog.at_level(logging.DEBUG):
-            with patch(
-                "app.coordination.event_router.get_event_bus",
-                return_value=None,
-            ):
-                emitter._safe_emit_event("TEST_EVENT")
-
-        assert "Event bus unavailable" in caplog.text
-
-    def test_logs_debug_on_emission_failure(self, emitter: TestEmitter, caplog):
-        """Test debug logging on emission failure."""
-        with caplog.at_level(logging.DEBUG):
-            with patch(
-                "app.coordination.event_router.get_event_bus",
-                side_effect=ImportError("Test error"),
-            ):
-                emitter._safe_emit_event("TEST_EVENT")
-
-        assert "Event emission failed" in caplog.text
+        mock_safe_emit.assert_called_once_with(
+            "SYNC_EVENT",
+            {"value": 1},
+            source="sync_source",
+            log_on_failure=False,
+        )

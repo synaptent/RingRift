@@ -24,6 +24,7 @@ from app.models import (
 )
 from app.rules.core import (
     count_buried_rings,
+    infer_total_rings_in_play,
     is_eligible_for_recovery,
     player_controls_any_stack,
     player_has_markers,
@@ -89,7 +90,7 @@ def create_test_state(
         lastMoveAt=now,
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,

@@ -40,6 +40,7 @@ from app.models import (
     RingStack,
     TimeControl,
 )
+from app.rules.core import infer_total_rings_in_play
 from app.rules import global_actions as ga
 
 
@@ -77,7 +78,7 @@ def _make_multiplayer_game_state(num_players: int = 3) -> GameState:
         lastMoveAt=now,
         isRated=False,
         maxPlayers=num_players,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,

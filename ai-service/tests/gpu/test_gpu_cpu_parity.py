@@ -151,6 +151,20 @@ class TestBoardConfigParity:
         )
 
 
+class TestGPUStateRoundTripParity:
+    """Verify CPU↔GPU state conversion preserves canonical counters."""
+
+    @pytest.fixture
+    def device(self):
+        return torch.device("cpu")
+
+    def test_to_game_state_preserves_total_rings_in_play(self, device, empty_square8_2p):
+        batch_state = BatchGameState.from_single_game(empty_square8_2p, device)
+        round_tripped = batch_state.to_game_state(0)
+
+        assert round_tripped.total_rings_in_play == empty_square8_2p.total_rings_in_play
+
+
 # =============================================================================
 # Line Length Parity Tests
 # =============================================================================

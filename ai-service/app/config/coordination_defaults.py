@@ -64,8 +64,13 @@ class LockDefaults:
     # Retry interval when waiting for lock (seconds)
     RETRY_INTERVAL: float = _env_float("RINGRIFT_LOCK_RETRY_INTERVAL", 1.0)
 
-    # Training-specific lock timeout (longer for training jobs)
-    TRAINING_LOCK_TIMEOUT: int = _env_int("RINGRIFT_TRAINING_LOCK_TIMEOUT", 7200)  # 2 hours
+    # Training-specific lock timeout (longer for training jobs).
+    # Keep this at least as large as the general lock timeout even when env
+    # overrides raise RINGRIFT_LOCK_TIMEOUT above the training default.
+    TRAINING_LOCK_TIMEOUT: int = max(
+        _env_int("RINGRIFT_TRAINING_LOCK_TIMEOUT", 7200),
+        LOCK_TIMEOUT,
+    )
 
 
 # =============================================================================

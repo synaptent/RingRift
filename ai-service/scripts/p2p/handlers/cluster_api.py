@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import time
 from dataclasses import asdict
@@ -353,7 +354,11 @@ class ClusterApiHandlersMixin:
             self_update: dict[str, Any] | None = None
             update_self = bool(include_self and (not node_ids or self.node_id in node_ids))
             if update_self:
-                has_updates, local_commit, remote_commit = await self._check_for_updates()
+                update_result = self._check_for_updates()
+                if inspect.isawaitable(update_result):
+                    has_updates, local_commit, remote_commit = await update_result
+                else:
+                    has_updates, local_commit, remote_commit = update_result
                 if not has_updates:
                     self_update = {
                         "node_id": self.node_id,

@@ -5,9 +5,10 @@ Mirrors src/shared/engine/core.ts
 from __future__ import annotations
 
 
+from collections.abc import Sequence
 from typing import Any, NamedTuple, Protocol
 
-from app.models import BoardState, BoardType, GameState, GameStatus, Position
+from app.models import BoardState, BoardType, GameState, GameStatus, Player, Position
 
 
 class BoardConfig(NamedTuple):
@@ -355,6 +356,16 @@ def count_rings_in_play_for_player(
             break
 
     return rings_on_board + rings_in_hand
+
+
+def infer_total_rings_in_play(
+    players: Sequence[Player],
+    board: BoardState,
+) -> int:
+    """Infer canonical total_rings_in_play from hands plus board stacks."""
+    return sum(player.rings_in_hand for player in players) + sum(
+        len(stack.rings) for stack in board.stacks.values()
+    )
 
 
 def hash_game_state(state: GameState) -> str:

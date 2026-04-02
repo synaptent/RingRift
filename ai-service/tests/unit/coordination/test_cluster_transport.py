@@ -1436,20 +1436,31 @@ class TestHTTPTransfer:
     """Tests for HTTP-based file transfer via P2P endpoints."""
 
     @pytest.mark.asyncio
-    async def test_http_transfer_push_not_supported(self):
-        """_transfer_via_http should reject push direction."""
+    async def test_http_transfer_push_delegates_to_http_push(self):
+        """_transfer_via_http should delegate push transfers to _http_push."""
         transport = ClusterTransport()
         node = NodeConfig(hostname="test-host")
 
-        result = await transport._transfer_via_http(
-            local_path=Path("/tmp/test.txt"),
-            remote_path="ai-service/models/test.pth",
-            node=node,
-            direction="push",
-        )
+        with patch.object(transport, "_http_push", new=AsyncMock()) as mock_http_push:
+            mock_http_push.return_value = TransportResult(
+                success=True,
+                transport_used="http",
+                bytes_transferred=1024,
+            )
 
-        assert result.success is False
-        assert "not implemented" in result.error.lower()
+            result = await transport._transfer_via_http(
+                local_path=Path("/tmp/test.txt"),
+                remote_path="ai-service/models/test.pth",
+                node=node,
+                direction="push",
+            )
+
+        assert result.success is True
+        mock_http_push.assert_awaited_once_with(
+            Path("/tmp/test.txt"),
+            "ai-service/models/test.pth",
+            node,
+        )
 
     @pytest.mark.asyncio
     async def test_http_transfer_models_path(self):

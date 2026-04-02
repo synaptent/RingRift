@@ -482,7 +482,8 @@ class TestWorkItemCreation:
         }
         loop = AutonomousQueuePopulationLoop(orchestrator)
 
-        item = loop._create_work_item()
+        with patch.object(loop, "_get_starved_configs", return_value=[]):
+            item = loop._create_work_item()
 
         assert item["config_key"] == "square8_4p"  # Highest priority
 
@@ -738,14 +739,14 @@ class TestSelfplayEnabledCheck:
 
         assert result is False
 
-    def test_returns_true_by_default(self) -> None:
-        """Test returns True when config can't be determined."""
+    def test_returns_false_when_config_cant_be_determined(self) -> None:
+        """Unknown node config should fail closed."""
         orchestrator = create_mock_orchestrator()
         loop = AutonomousQueuePopulationLoop(orchestrator)
 
         result = loop._is_selfplay_enabled_for_node()
 
-        assert result is True
+        assert result is False
 
     def test_caches_result(self) -> None:
         """Test that result is cached after first check."""

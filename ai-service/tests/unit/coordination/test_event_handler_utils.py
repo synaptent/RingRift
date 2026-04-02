@@ -243,9 +243,9 @@ class TestParseConfigKey:
         assert parse_config_key("no_underscore") == (None, None)
         assert parse_config_key("") == (None, None)
 
-    def test_returns_none_for_missing_p_suffix(self):
-        """Test returns (None, None) when 'p' suffix is missing."""
-        assert parse_config_key("hex8_2") == (None, None)
+    def test_accepts_canonical_shorthand_without_p_suffix(self):
+        """Test canonical parser also accepts shorthand config keys."""
+        assert parse_config_key("hex8_2") == ("hex8", 2)
         assert parse_config_key("square8_4x") == (None, None)
 
     def test_returns_none_for_non_numeric_players(self):

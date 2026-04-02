@@ -2693,7 +2693,7 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             for daemon_type, info in list(self._daemons.items()):
                 # Attempt recovery of FAILED daemons after cooldown period
                 if info.state == DaemonState.FAILED:
-                    if info.import_error:
+                    if info.import_error or not info.auto_restart or not self.config.auto_restart_failed:
                         continue
                     time_since_failure = current_time - info.last_failure_time
                     if time_since_failure >= self.config.recovery_cooldown:
@@ -2742,7 +2742,11 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                         info.last_error = str(info.task.exception())
                         info.last_failure_time = current_time
 
-                    if self.config.auto_restart_failed and info.restart_count < info.max_restarts:
+                    if (
+                        self.config.auto_restart_failed
+                        and info.auto_restart
+                        and info.restart_count < info.max_restarts
+                    ):
                         logger.warning(f"{daemon_type.value} died, restarting...")
                         daemons_to_restart.append(daemon_type)
                     else:
@@ -2845,7 +2849,11 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                             category = health_result.get('failure_category', 'unknown')
                             logger.warning(f"{daemon_type.value} health check failed ({category}): {message}")
                             info.last_error = f"Health check failed: {message}"
-                            if self.config.auto_restart_failed and info.restart_count < info.max_restarts:
+                            if (
+                                self.config.auto_restart_failed
+                                and info.auto_restart
+                                and info.restart_count < info.max_restarts
+                            ):
                                 daemons_to_restart.append(daemon_type)
                             else:
                                 info.state = DaemonState.FAILED
@@ -3421,10 +3429,10 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
         except (ImportError, RuntimeError, AttributeError) as e:
             logger.warning(f"Failed to collect event router metrics: {e}")
 
-        except ImportError as e:
-            logger.warning(f"MultiProviderOrchestrator dependencies not available: {e}")
-        except (RuntimeError, OSError, ConnectionError) as e:
-            logger.error(f"MultiProviderOrchestrator failed: {e}")
+        if metrics_blob:
+            lines.extend(["", metrics_blob.rstrip()])
+
+        return "\n".join(lines) + "\n"
 
     async def _create_health_server(self) -> None:
         """Create and run HTTP health server (December 2025).

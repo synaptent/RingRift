@@ -15,6 +15,7 @@ import { AIServiceClient } from '../../../src/server/services/AIServiceClient';
 import { GameState } from '../../../src/shared/types/game';
 import { logger } from '../../../src/server/utils/logger';
 import { getServiceStatusManager } from '../../../src/server/services/ServiceStatusManager';
+import { getConfiguredTotalRingsInPlay } from '../../utils/fixtures';
 
 // Mock axios so that AIServiceClient does not perform real HTTP calls.
 
@@ -138,7 +139,7 @@ describe('AIServiceClient - Outage Scenarios', () => {
       lastMoveAt: new Date(),
       isRated: false,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: getConfiguredTotalRingsInPlay('square8', 2),
       totalRingsEliminated: 0,
       victoryThreshold: 0,
       territoryVictoryThreshold: 0,

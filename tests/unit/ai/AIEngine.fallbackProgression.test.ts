@@ -15,6 +15,7 @@ import { getAIServiceClient } from '../../../src/server/services/AIServiceClient
 import { GameState, Move, AIProfile } from '../../../src/shared/types/game';
 import { logger } from '../../../src/server/utils/logger';
 import { getMetricsService } from '../../../src/server/services/MetricsService';
+import { getConfiguredTotalRingsInPlay } from '../../utils/fixtures';
 
 // Mock dependencies
 jest.mock('../../../src/server/services/AIServiceClient');
@@ -148,7 +149,7 @@ describe('AIEngine Fallback Progression', () => {
       lastMoveAt: new Date(),
       isRated: false,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: getConfiguredTotalRingsInPlay('square8', 2),
       totalRingsEliminated: 0,
       victoryThreshold: 0,
       territoryVictoryThreshold: 0,

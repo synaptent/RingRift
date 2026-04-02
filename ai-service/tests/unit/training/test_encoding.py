@@ -87,6 +87,9 @@ def create_hex_game_state(
         collapsedSpaces=collapsed_spaces or {},
         eliminatedRings={},
     )
+    total_rings_in_play = sum(player.rings_in_hand for player in players) + sum(
+        len(stack.rings) for stack in board.stacks.values()
+    )
 
     return GameState(
         id="test-hex",
@@ -102,7 +105,7 @@ def create_hex_game_state(
         lastMoveAt=datetime.now(),
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=total_rings_in_play,
         totalRingsEliminated=0,
         victoryThreshold=rings_per_player,
         territoryVictoryThreshold=235,
@@ -136,6 +139,9 @@ def create_square_game_state(
         collapsedSpaces=collapsed_spaces or {},
         eliminatedRings={},
     )
+    total_rings_in_play = sum(player.rings_in_hand for player in players) + sum(
+        len(stack.rings) for stack in board.stacks.values()
+    )
 
     return GameState(
         id="test-square",
@@ -151,7 +157,7 @@ def create_square_game_state(
         lastMoveAt=datetime.now(),
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=total_rings_in_play,
         totalRingsEliminated=0,
         victoryThreshold=rings_per_player,
         territoryVictoryThreshold=32,

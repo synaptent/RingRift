@@ -34,6 +34,7 @@ from app.rules.fsm import (
     compare_fsm_with_legacy,
     compute_fsm_orchestration,
 )
+from app.rules.core import infer_total_rings_in_play
 from app.rules.phase_machine import PhaseTransitionInput, advance_phases
 
 
@@ -91,7 +92,7 @@ def _make_game_state(
         lastMoveAt=now,
         isRated=False,
         maxPlayers=num_players,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,

@@ -70,7 +70,7 @@ class TestHasVoterQuorum:
         assert orch._has_voter_quorum() is True
 
     def test_three_voters_min_quorum(self):
-        """Three voters with at least 3 alive meets quorum."""
+        """Three voters meet quorum once 2 voters are alive."""
         orch = MockOrchestrator()
         orch.voter_node_ids = ["test-node", "peer-1", "peer-2"]
         orch.peers = {
@@ -79,18 +79,18 @@ class TestHasVoterQuorum:
         }
         assert orch._has_voter_quorum() is True
 
-    def test_five_voters_only_two_alive_fails(self):
-        """Five voters with only 2 alive fails quorum (need min 3)."""
+    def test_five_voters_only_one_alive_uses_emergency_quorum(self):
+        """Five voters fall back to emergency single-node quorum when only self is alive."""
         orch = MockOrchestrator()
         orch.voter_node_ids = ["test-node", "peer-1", "peer-2", "peer-3", "peer-4"]
         orch.peers = {
-            "peer-1": MockNodeInfo("peer-1", alive=True),
+            "peer-1": MockNodeInfo("peer-1", alive=False),
             "peer-2": MockNodeInfo("peer-2", alive=False),
             "peer-3": MockNodeInfo("peer-3", alive=False),
             "peer-4": MockNodeInfo("peer-4", alive=False),
         }
-        # Self + peer-1 = 2 alive, need 3
-        assert orch._has_voter_quorum() is False
+        # Dynamic quorum drops to 1 when only one voter is alive.
+        assert orch._has_voter_quorum() is True
 
     def test_five_voters_three_alive_passes(self):
         """Five voters with 3 alive passes quorum."""
@@ -178,7 +178,7 @@ class TestGetVoterQuorumStatus:
 
         assert status["total"] == 4
         assert status["alive"] == 3  # self + peer-1 + peer-3
-        assert status["quorum_required"] == 3
+        assert status["quorum_required"] == 2
         assert status["quorum_met"] is True
         assert "test-node" in status["alive_list"]
         assert "peer-1" in status["alive_list"]
@@ -242,13 +242,13 @@ class TestCheckQuorumStandalone:
         assert check_quorum(["test-node", "peer-1", "peer-2"], peers, "test-node") is True
 
     def test_three_voters_two_alive_fails(self):
-        """Three voters with only 2 alive fails (need 3)."""
+        """Three voters with 2 alive still meet the current quorum."""
         peers = {
             "peer-1": MockNodeInfo("peer-1", alive=True),
             "peer-2": MockNodeInfo("peer-2", alive=False),
         }
-        # self + peer-1 = 2, need 3
-        assert check_quorum(["test-node", "peer-1", "peer-2"], peers, "test-node") is False
+        # self + peer-1 = 2, which meets the min quorum of 2
+        assert check_quorum(["test-node", "peer-1", "peer-2"], peers, "test-node") is True
 
 
 class TestEdgeCases:
@@ -261,8 +261,8 @@ class TestEdgeCases:
         # peer-2 not in peers
         orch.peers = {"peer-1": MockNodeInfo("peer-1", alive=True)}
 
-        # self + peer-1 = 2, need 3
-        assert orch._has_voter_quorum() is False
+        # self + peer-1 = 2, which meets the min quorum of 2
+        assert orch._has_voter_quorum() is True
 
     def test_concurrent_access_to_peers(self):
         """Concurrent access to peers dict is protected by lock."""

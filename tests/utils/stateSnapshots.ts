@@ -1,9 +1,4 @@
-import {
-  GameState,
-  BoardState,
-  Player,
-  positionToString,
-} from '../../src/shared/types/game';
+import { GameState, BoardState, Player, positionToString } from '../../src/shared/types/game';
 
 export interface ComparableSnapshot {
   /** Arbitrary label for logging (e.g. 'backend-step-12'). */
@@ -131,7 +126,10 @@ export function snapshotsEqual(a: ComparableSnapshot, b: ComparableSnapshot): bo
  * Produce a minimal structured diff between two snapshots for logging.
  * This is intentionally shallow and focused on the most parity-relevant fields.
  */
-export function diffSnapshots(a: ComparableSnapshot, b: ComparableSnapshot): Record<string, unknown> {
+export function diffSnapshots(
+  a: ComparableSnapshot,
+  b: ComparableSnapshot
+): Record<string, unknown> {
   const diff: Record<string, unknown> = {};
 
   if (a.boardType !== b.boardType) {
@@ -178,6 +176,9 @@ export function snapshotFromBoardAndPlayers(
   board: BoardState,
   players: Player[]
 ): ComparableSnapshot {
+  const totalRingsInPlay =
+    players.reduce((sum, player) => sum + player.ringsInHand, 0) +
+    Array.from(board.stacks.values()).reduce((sum, stack) => sum + stack.rings.length, 0);
   const fakeState: GameState = {
     id: 'snapshot',
     boardType: board.type,
@@ -194,7 +195,7 @@ export function snapshotFromBoardAndPlayers(
     lastMoveAt: new Date(0),
     isRated: false,
     maxPlayers: players.length,
-    totalRingsInPlay: 0,
+    totalRingsInPlay,
     totalRingsEliminated: 0,
     victoryThreshold: 0,
     territoryVictoryThreshold: 0,

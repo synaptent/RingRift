@@ -41,6 +41,7 @@ from app.models import (
     Territory,
     TimeControl,
 )
+from app.rules.core import infer_total_rings_in_play
 
 
 def create_base_state(
@@ -73,10 +74,12 @@ def create_base_state(
             )
         )
 
+    board = BoardState(type=board_type, size=size)
+
     return GameState(
         id="phase-sequence-test",
         boardType=board_type,
-        board=BoardState(type=board_type, size=size),
+        board=board,
         players=players,
         currentPhase=phase,
         currentPlayer=1,
@@ -87,7 +90,7 @@ def create_base_state(
         lastMoveAt=datetime.now(),
         isRated=False,
         maxPlayers=num_players,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=12,
         territoryVictoryThreshold=33,

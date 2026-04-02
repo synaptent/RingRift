@@ -410,12 +410,13 @@ class RelayLeaderPropagatorMixin:
             elif isinstance(peer, dict) and "last_heartbeat" in peer:
                 return (time.time() - peer["last_heartbeat"]) < 60.0
 
-            # Unknown peer format — allow leader adoption rather than stalling convergence
+            # Unknown peer format - fail closed rather than adopting a leader
+            # whose liveness we cannot verify.
             logger.warning(
-                "Leader reachability check: unknown peer format for %s, allowing",
+                "Leader reachability check: unknown peer format for %s, denying",
                 leader_id,
             )
-            return True
+            return False
         except Exception as e:
             logger.error(f"Error verifying leader reachability for {leader_id}: {e}")
             return False

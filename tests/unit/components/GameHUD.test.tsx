@@ -5,6 +5,7 @@ import { GameHUD } from '../../../src/client/components/GameHUD';
 import type { GameState, Player } from '../../../src/shared/types/game';
 import type { HUDViewModel } from '../../../src/client/adapters/gameViewModels';
 import { TEACHING_TOPICS_COPY } from '../../../src/client/utils/rulesUxTelemetry';
+import { inferTotalRingsInPlay } from '../../utils/fixtures';
 
 function createPlayers(): Player[] {
   return [
@@ -37,19 +38,20 @@ function createPlayers(): Player[] {
 
 function createGameState(): GameState {
   const players = createPlayers();
+  const board = {
+    stacks: new Map(),
+    markers: new Map(),
+    collapsedSpaces: new Map(),
+    territories: new Map(),
+    formedLines: [],
+    eliminatedRings: {},
+    size: 8,
+    type: 'square8' as const,
+  };
   return {
     id: 'game-1',
     boardType: 'square8',
-    board: {
-      stacks: new Map(),
-      markers: new Map(),
-      collapsedSpaces: new Map(),
-      territories: new Map(),
-      formedLines: [],
-      eliminatedRings: {},
-      size: 8,
-      type: 'square8',
-    },
+    board,
     players,
     currentPhase: 'movement',
     currentPlayer: 1,
@@ -62,7 +64,7 @@ function createGameState(): GameState {
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: players.length,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferTotalRingsInPlay(players, board),
     totalRingsEliminated: 0,
     victoryThreshold: 10,
     territoryVictoryThreshold: 32,

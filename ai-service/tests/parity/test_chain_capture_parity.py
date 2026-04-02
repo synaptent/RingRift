@@ -41,6 +41,7 @@ from app.models import (
     RingStack,
     TimeControl,
 )
+from app.rules.core import infer_total_rings_in_play
 
 
 def create_base_state(
@@ -55,36 +56,39 @@ def create_base_state(
     else:
         size = 13  # Canonical hex: size=13, radius=12
 
+    players = [
+        Player(
+            id="p1",
+            username="Player1",
+            type="human",
+            playerNumber=1,
+            isReady=True,
+            timeRemaining=600,
+            ringsInHand=18,
+            eliminatedRings=0,
+            territorySpaces=0,
+            aiDifficulty=None,
+        ),
+        Player(
+            id="p2",
+            username="Player2",
+            type="human",
+            playerNumber=2,
+            isReady=True,
+            timeRemaining=600,
+            ringsInHand=18,
+            eliminatedRings=0,
+            territorySpaces=0,
+            aiDifficulty=None,
+        ),
+    ]
+    board = BoardState(type=board_type, size=size)
+
     return GameState(
         id="chain-capture-parity",
         boardType=board_type,
-        board=BoardState(type=board_type, size=size),
-        players=[
-            Player(
-                id="p1",
-                username="Player1",
-                type="human",
-                playerNumber=1,
-                isReady=True,
-                timeRemaining=600,
-                ringsInHand=18,
-                eliminatedRings=0,
-                territorySpaces=0,
-                aiDifficulty=None,
-            ),
-            Player(
-                id="p2",
-                username="Player2",
-                type="human",
-                playerNumber=2,
-                isReady=True,
-                timeRemaining=600,
-                ringsInHand=18,
-                eliminatedRings=0,
-                territorySpaces=0,
-                aiDifficulty=None,
-            ),
-        ],
+        board=board,
+        players=players,
         currentPhase=phase,
         currentPlayer=1,
         moveHistory=[],
@@ -94,7 +98,7 @@ def create_base_state(
         lastMoveAt=datetime.now(),
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,

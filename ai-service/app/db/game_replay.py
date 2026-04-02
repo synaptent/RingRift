@@ -2111,12 +2111,12 @@ class GameReplayDB:
     @property
     def _has_move_json_column(self) -> bool:
         """Check if game_moves table uses move_json schema."""
-        return "move_json" in (self._game_moves_columns or set())
+        return "move_json" in (getattr(self, "_game_moves_columns", None) or set())
 
     @property
     def _has_column_schema(self) -> bool:
         """Check if game_moves table uses column-based schema."""
-        cols = self._game_moves_columns or set()
+        cols = getattr(self, "_game_moves_columns", None) or set()
         return {"move_type", "position_q", "position_r"}.issubset(cols)
 
     def get_moves(
@@ -2437,7 +2437,7 @@ class GameReplayDB:
             results: Dict to update with parsed moves
         """
         # Guard: games table may not have a 'moves' column (column-based schemas)
-        if "moves" not in (self._schema_columns or set()):
+        if "moves" not in (getattr(self, "_schema_columns", None) or set()):
             return
 
         placeholders = ",".join("?" * len(game_ids))

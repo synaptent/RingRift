@@ -527,18 +527,23 @@ class TestRsyncOperations:
         mock_proc.communicate = AsyncMock(return_value=(b"success", b""))
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
-            with patch.object(sync_manager, "_merge_databases", return_value=True):
-                result = await sync_manager._rsync_pull(
-                    host="test-host",
-                    remote_path="/data/test.db",
-                    ssh_port=22,
-                )
+            with patch(
+                "app.coordination.database_sync_manager.validate_synced_database",
+                return_value=(True, []),
+            ) as mock_validate:
+                with patch.object(sync_manager, "_merge_databases", return_value=True):
+                    result = await sync_manager._rsync_pull(
+                        host="test-host",
+                        remote_path="/data/test.db",
+                        ssh_port=22,
+                    )
 
-                assert result is True
-                mock_exec.assert_called_once()
-                # Check rsync command was called
-                call_args = mock_exec.call_args[0]
-                assert call_args[0] == "rsync"
+                    assert result is True
+                    mock_exec.assert_called_once()
+                    mock_validate.assert_called_once()
+                    # Check rsync command was called
+                    call_args = mock_exec.call_args[0]
+                    assert call_args[0] == "rsync"
 
     @pytest.mark.asyncio
     async def test_rsync_pull_failure(self, sync_manager):

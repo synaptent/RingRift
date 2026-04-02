@@ -185,6 +185,35 @@ class TestSeedSelection:
         assert callable(_select_effective_seed)
 
 
+class TestStartupMode:
+    """Tests for startup-mode environment helpers."""
+
+    def test_coordination_disabled_by_default(self):
+        from app.main import _should_run_coordination_daemons
+
+        with patch.dict("os.environ", {}, clear=True):
+            assert _should_run_coordination_daemons() is False
+
+    def test_coordination_enabled_when_orchestration_flag_is_set(self):
+        from app.main import _should_run_coordination_daemons
+
+        with patch.dict("os.environ", {"RINGRIFT_ORCHESTRATION": "true"}, clear=True):
+            assert _should_run_coordination_daemons() is True
+
+    def test_inference_only_overrides_orchestration(self):
+        from app.main import _should_run_coordination_daemons
+
+        with patch.dict(
+            "os.environ",
+            {
+                "RINGRIFT_ORCHESTRATION": "true",
+                "RINGRIFT_INFERENCE_ONLY": "true",
+            },
+            clear=True,
+        ):
+            assert _should_run_coordination_daemons() is False
+
+
 # =============================================================================
 # Admin Endpoint Tests
 # =============================================================================

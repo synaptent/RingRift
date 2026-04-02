@@ -341,7 +341,7 @@ p2p_voters:
         }
 
         with patch("app.p2p.raft_state.HAS_CLUSTER_CONFIG", True), \
-             patch("app.p2p.raft_state.get_p2p_voters", return_value=["node-1", "node-2", "node-3"]), \
+             patch("app.p2p.raft_state.get_raft_members", return_value=["node-1", "node-2", "node-3"]), \
              patch("app.p2p.raft_state.get_cluster_nodes", return_value=mock_nodes):
             partners = load_raft_partner_addresses("node-1", bind_port=4321)
 

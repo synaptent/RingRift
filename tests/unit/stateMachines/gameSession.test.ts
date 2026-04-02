@@ -7,6 +7,7 @@ import {
   type GameSessionStatus,
 } from '../../../src/shared/stateMachines/gameSession';
 import type { GameState, GameResult } from '../../../src/shared/types/game';
+import { getConfiguredTotalRingsInPlay } from '../../utils/fixtures';
 
 describe('gameSession state machine', () => {
   // Create a minimal mock GameState for testing
@@ -35,7 +36,7 @@ describe('gameSession state machine', () => {
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: 2,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: getConfiguredTotalRingsInPlay('square8', 2),
     totalRingsEliminated: 0,
     victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
     territoryVictoryThreshold: 33,

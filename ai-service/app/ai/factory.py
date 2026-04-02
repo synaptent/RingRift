@@ -924,6 +924,7 @@ class AIFactory:
         *,
         rng_seed: int | None = None,
         nn_model_id: str | None = None,
+        allow_fresh_weights: bool = False,
     ) -> BaseAI:
         """Create an AI for tournament use.
 
@@ -942,6 +943,8 @@ class AIFactory:
             num_players: Number of players for context
             rng_seed: Optional RNG seed
             nn_model_id: Optional neural network model ID for NN-guided agents
+            allow_fresh_weights: Allow NN-backed agents to initialize without a
+                local checkpoint. Useful for offline tests and experiments.
 
         Returns:
             Configured AI instance
@@ -1008,7 +1011,7 @@ class AIFactory:
                 rng_seed=rng_seed,
                 nn_model_id=nn_model_id,
                 policy_temperature=temperature,
-                allow_fresh_weights=False,
+                allow_fresh_weights=allow_fresh_weights,
             )
             from app.ai.policy_only_ai import PolicyOnlyAI
             return PolicyOnlyAI(player_number, config, bt)
@@ -1033,7 +1036,7 @@ class AIFactory:
                 rng_seed=rng_seed,
                 nn_model_id=nn_model_id,
                 gumbel_simulation_budget=budget,
-                allow_fresh_weights=False,
+                allow_fresh_weights=allow_fresh_weights,
             )
             from app.ai.gumbel_mcts_ai import GumbelMCTSAI
             return GumbelMCTSAI(player_number, config, bt)
@@ -1275,6 +1278,7 @@ class AIFactory:
         top_k: int = 8,  # For hybrid mode
         temperature: float = 0.1,  # For hybrid mode
         eval_mode: str = "heuristic",  # For gpu/tensor modes: heuristic, nn, hybrid
+        allow_fresh_weights: bool = False,
     ) -> Any:
         """Create MCTS AI with specified acceleration mode.
 
@@ -1308,6 +1312,8 @@ class AIFactory:
             top_k: Number of candidates for hybrid mode
             temperature: Selection temperature for hybrid mode
             eval_mode: Evaluation mode for gpu/tensor - "heuristic", "nn", "hybrid"
+            allow_fresh_weights: Allow standard mode to initialize without a local
+                checkpoint. Useful for offline tests and experiments.
 
         Returns:
             MCTS instance appropriate for the selected mode
@@ -1362,6 +1368,7 @@ class AIFactory:
                 gumbel_num_sampled_actions=num_sampled_actions,
                 gumbel_simulation_budget=simulation_budget,
                 use_neural_net=neural_net is not None,
+                allow_fresh_weights=allow_fresh_weights,
             )
             mcts = GumbelMCTSAI(player_number, config, board_type_enum)
             if neural_net is not None:

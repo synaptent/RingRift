@@ -523,6 +523,27 @@ class NATManagementLoop(BaseLoop):
     async def _run_once(self) -> None:
         """Perform NAT management cycle."""
         now = time.time()
+        recovery_manager = getattr(self, "recovery_manager", None)
+        detect_nat = (
+            recovery_manager.detect_nat_type
+            if recovery_manager is not None
+            else self._detect_nat_type
+        )
+        probe_nat_blocked = (
+            recovery_manager.probe_nat_blocked_peers
+            if recovery_manager is not None
+            else self._probe_nat_blocked_peers
+        )
+        update_relay = (
+            recovery_manager.update_relay_preferences
+            if recovery_manager is not None
+            else self._update_relay_preferences
+        )
+        validate_relay = (
+            recovery_manager.validate_relay_assignments
+            if recovery_manager is not None and hasattr(recovery_manager, "validate_relay_assignments")
+            else self._validate_relay_assignments
+        )
 
         # Periodic STUN-like probe to detect external IP and NAT type
         if (
@@ -531,24 +552,20 @@ class NATManagementLoop(BaseLoop):
         ):
             self._last_stun_probe = now
             self._stun_probes_count += 1
-            # Jan 28, 2026: Uses recovery_manager directly
-            await self.recovery_manager.detect_nat_type()
+            await detect_nat()
 
         # Probe NAT-blocked peers for recovery
         self._nat_recovery_attempts += 1
-        # Jan 28, 2026: Uses recovery_manager directly
-        await self.recovery_manager.probe_nat_blocked_peers()
+        await probe_nat_blocked()
 
         # Update relay preferences based on connectivity
         self._relay_updates_count += 1
-        # Jan 28, 2026: Uses recovery_manager directly
-        await self.recovery_manager.update_relay_preferences()
+        await update_relay()
 
         # Dec 30, 2025: Validate existing relay assignments are healthy
-        # Jan 28, 2026: Uses recovery_manager directly
-        if hasattr(self, "recovery_manager") and self.recovery_manager:
+        if validate_relay is not None:
             self._relay_validations_count += 1
-            await self.recovery_manager.validate_relay_assignments()
+            await validate_relay()
 
     def get_nat_stats(self) -> dict[str, Any]:
         """Get NAT management statistics."""

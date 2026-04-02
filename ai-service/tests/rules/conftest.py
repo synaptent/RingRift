@@ -221,6 +221,9 @@ def create_game_state(
     size = get_board_size(board_type)
     board = BoardState(type=board_type, size=size)
     players = create_players(num_players, rings_per_player=rings_in_hand)
+    total_rings_in_play = sum(player.rings_in_hand for player in players) + sum(
+        len(stack.rings) for stack in board.stacks.values()
+    )
     now = datetime.now()
 
     return GameState(
@@ -236,7 +239,7 @@ def create_game_state(
         lastMoveAt=now,
         isRated=False,
         maxPlayers=num_players,
-        totalRingsInPlay=0,
+        totalRingsInPlay=total_rings_in_play,
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,

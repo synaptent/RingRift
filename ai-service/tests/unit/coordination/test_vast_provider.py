@@ -239,7 +239,11 @@ class TestVastProviderCLI:
         mock_result.stderr = ""
         mock_result.returncode = 0
 
-        with patch("subprocess.run", return_value=mock_result):
+        with patch(
+            "app.coordination.providers.vast_provider.async_subprocess_run",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
             stdout, stderr, rc = await vast_provider._run_cli("show", "instances")
 
             assert stdout == '{"status": "ok"}'
@@ -254,10 +258,14 @@ class TestVastProviderCLI:
         mock_result.stderr = ""
         mock_result.returncode = 0
 
-        with patch("subprocess.run", return_value=mock_result) as mock_run:
+        with patch(
+            "app.coordination.providers.vast_provider.async_subprocess_run",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ) as mock_run:
             await vast_provider._run_cli("show", "instances")
 
-            call_args = mock_run.call_args[0][0]
+            call_args = mock_run.await_args.args[0]
             assert "--raw" in call_args
 
     @pytest.mark.asyncio
@@ -268,7 +276,11 @@ class TestVastProviderCLI:
         mock_result.stderr = "Error: API key invalid"
         mock_result.returncode = 1
 
-        with patch("subprocess.run", return_value=mock_result):
+        with patch(
+            "app.coordination.providers.vast_provider.async_subprocess_run",
+            new_callable=AsyncMock,
+            return_value=mock_result,
+        ):
             stdout, stderr, rc = await vast_provider._run_cli("show", "instances")
 
             assert rc == 1

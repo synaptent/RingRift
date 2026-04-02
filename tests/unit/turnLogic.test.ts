@@ -16,47 +16,50 @@ import {
   type PerTurnState,
 } from '../../src/shared/engine/turnLogic';
 import type { GameState, GamePhase, Position } from '../../src/shared/types/game';
+import { inferTotalRingsInPlay } from '../utils/fixtures';
 
 describe('turnLogic', () => {
   // Helper to create a minimal game state
-  const createGameState = (overrides: Partial<GameState> = {}): GameState =>
-    ({
+  const createGameState = (overrides: Partial<GameState> = {}): GameState => {
+    const board = {
+      type: 'square8',
+      size: 8,
+      stacks: new Map(),
+      markers: new Map(),
+      collapsedSpaces: new Map(),
+      territories: new Map(),
+      formedLines: [],
+      eliminatedRings: { 1: 0, 2: 0 },
+    };
+    const players = [
+      {
+        id: 'p1',
+        username: 'Player1',
+        type: 'human',
+        playerNumber: 1,
+        isReady: true,
+        timeRemaining: 600000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0,
+      },
+      {
+        id: 'p2',
+        username: 'Player2',
+        type: 'human',
+        playerNumber: 2,
+        isReady: true,
+        timeRemaining: 600000,
+        ringsInHand: 18,
+        eliminatedRings: 0,
+        territorySpaces: 0,
+      },
+    ];
+    return {
       id: 'test-game',
       boardType: 'square8',
-      board: {
-        type: 'square8',
-        size: 8,
-        stacks: new Map(),
-        markers: new Map(),
-        collapsedSpaces: new Map(),
-        territories: new Map(),
-        formedLines: [],
-        eliminatedRings: { 1: 0, 2: 0 },
-      },
-      players: [
-        {
-          id: 'p1',
-          username: 'Player1',
-          type: 'human',
-          playerNumber: 1,
-          isReady: true,
-          timeRemaining: 600000,
-          ringsInHand: 18,
-          eliminatedRings: 0,
-          territorySpaces: 0,
-        },
-        {
-          id: 'p2',
-          username: 'Player2',
-          type: 'human',
-          playerNumber: 2,
-          isReady: true,
-          timeRemaining: 600000,
-          ringsInHand: 18,
-          eliminatedRings: 0,
-          territorySpaces: 0,
-        },
-      ],
+      board,
+      players,
       currentPlayer: 1,
       currentPhase: 'ring_placement',
       moveHistory: [],
@@ -69,12 +72,13 @@ describe('turnLogic', () => {
       lastMoveAt: new Date(),
       isRated: true,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: inferTotalRingsInPlay(players, board),
       totalRingsEliminated: 0,
       victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
       territoryVictoryThreshold: 33,
       ...overrides,
-    }) as GameState;
+    } as GameState;
+  };
 
   // Helper to create default per-turn state
   const createTurnState = (overrides: Partial<PerTurnState> = {}): PerTurnState => ({

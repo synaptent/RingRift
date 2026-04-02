@@ -4,6 +4,7 @@ import '@testing-library/jest-dom';
 import { GameHUD } from '../../../src/client/components/GameHUD';
 import type { HUDViewModel } from '../../../src/client/adapters/gameViewModels';
 import type { GameState, Player } from '../../../src/shared/types/game';
+import { inferTotalRingsInPlay } from '../../utils/fixtures';
 
 jest.useFakeTimers();
 
@@ -38,19 +39,20 @@ function basePlayers(): Player[] {
 
 function baseGameState(): GameState {
   const players = basePlayers();
+  const board = {
+    stacks: new Map(),
+    markers: new Map(),
+    collapsedSpaces: new Map(),
+    territories: new Map(),
+    formedLines: [],
+    eliminatedRings: {},
+    size: 8,
+    type: 'square8' as const,
+  };
   return {
     id: 'g1',
     boardType: 'square8',
-    board: {
-      stacks: new Map(),
-      markers: new Map(),
-      collapsedSpaces: new Map(),
-      territories: new Map(),
-      formedLines: [],
-      eliminatedRings: {},
-      size: 8,
-      type: 'square8',
-    },
+    board,
     players,
     currentPhase: 'movement',
     currentPlayer: 1,
@@ -63,7 +65,7 @@ function baseGameState(): GameState {
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: players.length,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferTotalRingsInPlay(players, board),
     totalRingsEliminated: 0,
     victoryThreshold: 10,
     territoryVictoryThreshold: 32,

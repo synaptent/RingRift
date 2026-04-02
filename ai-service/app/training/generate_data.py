@@ -640,6 +640,11 @@ def augment_data(
         # Get board_size from BOARD_CONFIGS (neural_net may be None for some engines)
         from app.rules.core import BOARD_CONFIGS
         board_size = BOARD_CONFIGS[board_type].size if board_type in BOARD_CONFIGS else 8
+        rings_per_player = (
+            BOARD_CONFIGS[board_type].rings_per_player
+            if board_type in BOARD_CONFIGS
+            else 18
+        )
 
         # Create a dummy game state for decoding/encoding context.
         from app.models import (
@@ -668,7 +673,7 @@ def augment_data(
             lastMoveAt=datetime.now(),
             isRated=False,
             maxPlayers=2,
-            totalRingsInPlay=0,
+            totalRingsInPlay=rings_per_player * 2,
             totalRingsEliminated=0,
             victoryThreshold=0,
             territoryVictoryThreshold=0,

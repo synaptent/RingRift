@@ -56,6 +56,9 @@ def _make_base_game_state() -> GameState:
             territorySpaces=0,
         ),
     ]
+    total_rings_in_play = sum(player.rings_in_hand for player in players) + sum(
+        len(stack.rings) for stack in board.stacks.values()
+    )
 
     now = datetime.now()
 
@@ -72,7 +75,7 @@ def _make_base_game_state() -> GameState:
         lastMoveAt=now,
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=total_rings_in_play,
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,

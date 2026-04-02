@@ -2,6 +2,7 @@ import { AIEngine } from '../../src/server/game/ai/AIEngine';
 import { getAIServiceClient } from '../../src/server/services/AIServiceClient';
 import { GameState, Move, AIProfile } from '../../src/shared/types/game';
 import { logger } from '../../src/server/utils/logger';
+import { inferTotalRingsInPlay } from '../utils/fixtures';
 
 // Mock dependencies
 jest.mock('../../src/server/services/AIServiceClient');
@@ -50,50 +51,53 @@ describe('AIEngine Fallback Handling', () => {
     // rngSeed, etc.). The cast via unknown avoids over-constraining the literal
     // against the full GameState interface while keeping the runtime shape
     // compatible for these tests.
+    const board = {
+      type: 'square8',
+      stacks: new Map(),
+      markers: new Map(),
+      collapsedSpaces: new Map(),
+      territories: new Map(),
+      formedLines: [],
+      pendingCaptureEvaluations: [],
+      eliminatedRings: new Map(),
+      size: 8,
+    };
+    const players = [
+      {
+        id: 'player1',
+        username: 'Player 1',
+        playerNumber: 1,
+        type: 'human',
+        isReady: true,
+        timeRemaining: 600000,
+        ringsInHand: 10,
+        eliminatedRings: 0,
+        territorySpaces: 0,
+      },
+      {
+        id: 'ai-player',
+        username: 'AI Player',
+        playerNumber: 2,
+        type: 'ai',
+        isReady: true,
+        timeRemaining: 600000,
+        ringsInHand: 10,
+        eliminatedRings: 0,
+        territorySpaces: 0,
+        aiDifficulty: 5,
+        aiProfile: {
+          difficulty: 5,
+          mode: 'service',
+          aiType: 'heuristic',
+        },
+      },
+    ];
+
     mockGameState = {
       id: 'test-game',
       boardType: 'square8',
-      board: {
-        type: 'square8',
-        stacks: new Map(),
-        markers: new Map(),
-        collapsedSpaces: new Map(),
-        territories: new Map(),
-        formedLines: [],
-        pendingCaptureEvaluations: [],
-        eliminatedRings: new Map(),
-        size: 8,
-      },
-      players: [
-        {
-          id: 'player1',
-          username: 'Player 1',
-          playerNumber: 1,
-          type: 'human',
-          isReady: true,
-          timeRemaining: 600000,
-          ringsInHand: 10,
-          eliminatedRings: 0,
-          territorySpaces: 0,
-        },
-        {
-          id: 'ai-player',
-          username: 'AI Player',
-          playerNumber: 2,
-          type: 'ai',
-          isReady: true,
-          timeRemaining: 600000,
-          ringsInHand: 10,
-          eliminatedRings: 0,
-          territorySpaces: 0,
-          aiDifficulty: 5,
-          aiProfile: {
-            difficulty: 5,
-            mode: 'service',
-            aiType: 'heuristic',
-          },
-        },
-      ],
+      board,
+      players,
       currentPlayer: 2,
       currentPhase: 'ring_placement',
       gameStatus: 'active',
@@ -105,7 +109,7 @@ describe('AIEngine Fallback Handling', () => {
       lastMoveAt: new Date(),
       isRated: false,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: inferTotalRingsInPlay(players, board),
       totalRingsEliminated: 0,
       victoryThreshold: 0,
       territoryVictoryThreshold: 0,

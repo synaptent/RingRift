@@ -38,6 +38,9 @@ from app.coordination.daemon_manager import (
 def manager_config():
     """Create test config with short intervals for faster tests."""
     return DaemonManagerConfig(
+        enable_coordination_wiring=False,
+        dependency_wait_timeout=0.1,
+        dependency_poll_interval=0.01,
         health_check_interval=0.1,  # 100ms for fast tests
         shutdown_timeout=1.0,
         recovery_cooldown=0.2,  # 200ms cooldown
@@ -53,13 +56,29 @@ def manager(manager_config):
     # Clear default factories to avoid loading heavy dependencies
     mgr._factories.clear()
     mgr._daemons.clear()
+    mgr._persisted_restart_counts.clear()
+    mgr._restart_timestamps.clear()
+    mgr._permanently_failed.clear()
+    mgr._degraded_daemons.clear()
+    mgr._save_restart_counts = MagicMock()
+    # Keep these tests unit-scoped: they call _check_health() directly and do not
+    # need the manager's background health/recovery loops.
+    mgr._ensure_health_loop_running = AsyncMock()
+    mgr._ensure_recovery_probing_running = AsyncMock()
     yield mgr
     # Cleanup - stop any running tasks
     mgr._running = False
     if mgr._shutdown_event:
         mgr._shutdown_event.set()
+    if mgr._health_task and not mgr._health_task.done():
+        task_loop = mgr._health_task.get_loop() if hasattr(mgr._health_task, "get_loop") else None
+        if task_loop is None or not task_loop.is_closed():
+            mgr._health_task.cancel()
     for info in list(mgr._daemons.values()):
         if info.task and not info.task.done():
+            task_loop = info.task.get_loop() if hasattr(info.task, "get_loop") else None
+            if task_loop is not None and task_loop.is_closed():
+                continue
             info.task.cancel()
     DaemonManager.reset_instance()
 

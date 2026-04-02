@@ -231,7 +231,7 @@ describe('sandboxAI line_processing pending elimination', () => {
       lastMoveAt: now,
       isRated: false,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: 3,
       totalRingsEliminated: 0,
       victoryThreshold: 0,
       territoryVictoryThreshold: 0,

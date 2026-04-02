@@ -32,6 +32,7 @@ from app.models import (
     Position,
     TimeControl,
 )
+from app.rules.core import infer_total_rings_in_play
 from app.rules.fsm import FSMValidationResult, validate_move_for_phase
 
 # Path to shared fixtures (relative to ai-service/)
@@ -130,7 +131,7 @@ def _make_game_state(
         lastMoveAt=now,
         isRated=False,
         maxPlayers=num_players,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,

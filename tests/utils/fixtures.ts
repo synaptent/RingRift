@@ -68,6 +68,21 @@ export function createTestPlayer(playerNumber: number, overrides: Partial<Player
   };
 }
 
+export function inferTotalRingsInPlay(
+  players: Array<Pick<Player, 'ringsInHand'>>,
+  board: Pick<BoardState, 'stacks'>
+): number {
+  return (
+    players.reduce((sum, player) => sum + player.ringsInHand, 0) +
+    Array.from(board.stacks.values()).reduce((sum, stack) => sum + stack.rings.length, 0)
+  );
+}
+
+export function getConfiguredTotalRingsInPlay(boardType: BoardType, maxPlayers: number): number {
+  const config = BOARD_CONFIGS[boardType];
+  return (config?.ringsPerPlayer ?? 0) * maxPlayers;
+}
+
 /**
  * Creates a minimal GameState for testing
  *
@@ -86,12 +101,14 @@ export function createTestGameState(
     numPlayers != null
       ? Array.from({ length: numPlayers }, (_, i) => createTestPlayer(i + 1))
       : [createTestPlayer(1), createTestPlayer(2)];
+  const players = stateOverrides.players || defaultPlayers;
+  const inferredTotalRingsInPlay = inferTotalRingsInPlay(players, board);
 
   return {
     id: 'test-game-123',
     boardType,
     board,
-    players: stateOverrides.players || defaultPlayers,
+    players,
     currentPlayer: 0,
     currentPhase: 'ring_placement',
     moveHistory: [],
@@ -105,7 +122,7 @@ export function createTestGameState(
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: numPlayers || 2,
-    totalRingsInPlay: 0,
+    totalRingsInPlay: inferredTotalRingsInPlay,
     totalRingsEliminated: 0,
     victoryThreshold: 10,
     territoryVictoryThreshold: 32,
@@ -136,6 +153,13 @@ export const BOARD_CONFIGS = {
     size: 25, // bounding box = 2*radius+1 = 25 for radius=12
     ringsPerPlayer: 96,
     minLineLength: 4, // Same as other boards
+    adjacencyType: 'hexagonal' as const,
+  },
+  hex8: {
+    type: 'hex8' as BoardType,
+    size: 9,
+    ringsPerPlayer: 18,
+    minLineLength: 4,
     adjacencyType: 'hexagonal' as const,
   },
 } as const;

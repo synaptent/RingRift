@@ -20,6 +20,8 @@ from typing import Literal
 
 from app.config.coordination_defaults import (
     build_ssh_options as centralized_build_ssh_options,
+    build_ssh_options_list as centralized_build_ssh_options_list,
+    get_ssh_connect_timeout,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,12 +46,48 @@ class SSHOptions:
 
         Uses centralized SSH config for consistent provider-aware timeouts.
         """
-        # Use centralized config for consistency
-        return centralized_build_ssh_options(
+        if not self.key_path:
+            return centralized_build_ssh_options(
+                key_path=self.key_path,
+                provider=self.provider,
+                include_keepalive=self.tcp_keepalive,
+            )
+
+        parts = centralized_build_ssh_options_list(
             key_path=self.key_path,
             provider=self.provider,
             include_keepalive=self.tcp_keepalive,
         )
+
+        def set_option(name: str, value: str) -> None:
+            prefix = f"{name}="
+            for idx, part in enumerate(parts):
+                if part.startswith(prefix):
+                    parts[idx] = f"{name}={value}"
+                    return
+            parts.extend(["-o", f"{name}={value}"])
+
+        def remove_option(name: str, value: str) -> None:
+            for idx in range(len(parts) - 1):
+                if parts[idx] == "-o" and parts[idx + 1] == f"{name}={value}":
+                    del parts[idx:idx + 2]
+                    return
+
+        default_timeout = int(get_ssh_connect_timeout(self.provider))
+        explicit_default_timeout = SSHOptions.__dataclass_fields__["connect_timeout"].default
+        effective_timeout = default_timeout
+        if self.provider == "default" or self.connect_timeout != explicit_default_timeout:
+            effective_timeout = int(self.connect_timeout)
+
+        set_option("ConnectTimeout", str(effective_timeout))
+
+        if self.strict_host_key_checking:
+            remove_option("StrictHostKeyChecking", "no")
+        else:
+            if "StrictHostKeyChecking=no" not in parts:
+                parts.extend(["-o", "StrictHostKeyChecking=no"])
+
+        return " ".join(parts)
 
 
 class TimeoutCalculator:

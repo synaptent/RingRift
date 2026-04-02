@@ -21,6 +21,7 @@ import {
   LineOrderChoice,
   CaptureDirectionChoice,
 } from '../../../src/shared/types/game';
+import { getConfiguredTotalRingsInPlay } from '../../utils/fixtures';
 
 jest.mock('../../../src/server/services/AIServiceClient');
 
@@ -117,7 +118,7 @@ describe('AIEngine service integration (profile-driven)', () => {
       lastMoveAt: new Date(),
       isRated: false,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: getConfiguredTotalRingsInPlay('square8', 2),
       totalRingsEliminated: 0,
       victoryThreshold: 0,
       territoryVictoryThreshold: 0,
@@ -227,7 +228,7 @@ describe('AIEngine service integration (profile-driven)', () => {
       lastMoveAt: new Date(),
       isRated: false,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: getConfiguredTotalRingsInPlay('square8', 2),
       totalRingsEliminated: 0,
       victoryThreshold: 0,
       territoryVictoryThreshold: 0,
@@ -587,7 +588,7 @@ describe('AIEngine service integration (profile-driven)', () => {
       lastMoveAt: new Date(),
       isRated: false,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: getConfiguredTotalRingsInPlay('square8', 2),
       totalRingsEliminated: 0,
       victoryThreshold: 0,
       territoryVictoryThreshold: 0,
@@ -689,7 +690,7 @@ describe('AIEngine service integration (profile-driven)', () => {
       lastMoveAt: new Date(),
       isRated: false,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: getConfiguredTotalRingsInPlay('square8', 2),
       totalRingsEliminated: 0,
       victoryThreshold: 0,
       territoryVictoryThreshold: 0,

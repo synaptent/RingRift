@@ -35,17 +35,17 @@ class TestConstants:
 
     def test_heartbeat_interval(self):
         """Should have reasonable heartbeat interval."""
-        assert HEARTBEAT_INTERVAL == 30
+        assert HEARTBEAT_INTERVAL == 15
 
     def test_peer_timeout(self):
         """Peer timeout should be longer than heartbeat interval."""
         assert PEER_TIMEOUT > HEARTBEAT_INTERVAL
-        assert PEER_TIMEOUT == 90
+        assert PEER_TIMEOUT == 180
 
     def test_leader_lease_duration(self):
         """Leader lease should be longer than peer timeout."""
         assert LEADER_LEASE_DURATION >= PEER_TIMEOUT
-        assert LEADER_LEASE_DURATION == 90
+        assert LEADER_LEASE_DURATION == 300
 
 
 # =============================================================================
@@ -107,8 +107,9 @@ class TestP2PConfig:
     def test_default_values(self):
         """Should have sensible defaults."""
         config = P2PConfig()
-        assert config.DISK_CRITICAL_THRESHOLD == 70
-        assert config.DISK_WARNING_THRESHOLD == 65
+        assert config.DISK_CRITICAL_THRESHOLD == 90
+        assert config.DISK_WARNING_THRESHOLD == 70
+        assert config.DISK_CLEANUP_THRESHOLD == 65
         assert config.MEMORY_CRITICAL_THRESHOLD == 95
         assert config.MEMORY_WARNING_THRESHOLD == 85
         assert config.LOAD_MAX_FOR_NEW_JOBS == 85

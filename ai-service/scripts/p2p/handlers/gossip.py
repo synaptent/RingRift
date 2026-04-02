@@ -245,6 +245,7 @@ class GossipHandlersMixin(BaseP2PHandler):
 
         # Jan 3, 2026 Sprint 13.3: Extract sender for per-peer lock
         sender_id = data.get("sender", "")
+        peer_lock = None
 
         try:
             self._record_gossip_metrics("received")
@@ -255,7 +256,6 @@ class GossipHandlersMixin(BaseP2PHandler):
 
             # Jan 3, 2026 Sprint 13.3: Acquire per-peer lock to serialize messages from same sender
             # This prevents concurrent message handling from the same peer corrupting state
-            peer_lock = None
             if sender_id and hasattr(self, "_get_peer_lock"):
                 peer_lock = self._get_peer_lock(sender_id)
                 try:

@@ -166,7 +166,7 @@ class TestLeaderElectionMixinQuorum:
         assert mixin._has_voter_quorum() is True
 
     def test_has_voter_quorum_two_alive_of_five(self) -> None:
-        """Test quorum fails with only 2 of 5 voters alive."""
+        """Test dynamic quorum accepts 2 alive voters out of 5."""
         voters = ["self", "peer1", "peer2", "peer3", "peer4"]
         peers = {
             "peer1": MockPeer("peer1", alive=True),
@@ -175,12 +175,12 @@ class TestLeaderElectionMixinQuorum:
             "peer4": MockPeer("peer4", alive=False),
         }
         mixin = self._create_mixin(node_id="self", voters=voters, peers=peers)
-        # 2 alive (self + peer1) < 3 required
-        assert mixin._has_voter_quorum() is False
+        # Dynamic quorum drops to 2 when only 2 voters are alive.
+        assert mixin._has_voter_quorum() is True
 
     def test_has_voter_quorum_uses_fixed_minimum(self) -> None:
-        """Test quorum uses fixed minimum of 3 (not majority)."""
-        # With 7 voters, majority would be 4, but we use min(3, len)
+        """Test dynamic quorum stays below majority when only 3 voters are alive."""
+        # With 7 configured voters and 3 alive, dynamic quorum is 2 rather than majority-of-total.
         voters = ["self", "peer1", "peer2", "peer3", "peer4", "peer5", "peer6"]
         peers = {
             "peer1": MockPeer("peer1", alive=True),
@@ -191,7 +191,7 @@ class TestLeaderElectionMixinQuorum:
             "peer6": MockPeer("peer6", alive=False),
         }
         mixin = self._create_mixin(node_id="self", voters=voters, peers=peers)
-        # 3 alive (self + peer1 + peer2) = 3 required, should pass
+        # 3 alive (self + peer1 + peer2) exceeds the dynamic quorum requirement.
         assert mixin._has_voter_quorum() is True
 
 
@@ -1034,10 +1034,11 @@ class TestConsensusMixinHealthCheck:
         """Test health check when Raft is disabled."""
         mixin = self._create_mixin()
 
-        health = mixin.consensus_health_check()
+        with patch("scripts.p2p.consensus_mixin.RAFT_ENABLED", False):
+            health = mixin.consensus_health_check()
 
         assert health["is_healthy"] is True
-        assert health["raft_enabled"] == RAFT_ENABLED
+        assert health["raft_enabled"] is False
 
     def test_health_check_wrapper(self) -> None:
         """Test health_check returns standard format."""

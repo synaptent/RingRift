@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { BackendGameHost } from '../../src/client/pages/BackendGameHost';
 import type { GameState, GameResult, BoardState, Player } from '../../src/shared/types/game';
 import * as difficultyCalibrationTelemetry from '../../src/client/utils/difficultyCalibrationTelemetry';
+import { getConfiguredTotalRingsInPlay } from '../utils/fixtures';
 
 // Mock AuthContext
 jest.mock('../../src/client/contexts/AuthContext', () => ({
@@ -105,7 +106,7 @@ const mockGameState: GameState = {
   lastMoveAt: new Date(),
   isRated: false,
   maxPlayers: 2,
-  totalRingsInPlay: 0,
+  totalRingsInPlay: getConfiguredTotalRingsInPlay('square8', 2),
   totalRingsEliminated: 0,
   victoryThreshold: 0,
   territoryVictoryThreshold: 0,

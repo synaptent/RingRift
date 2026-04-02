@@ -340,7 +340,7 @@ def deserialize_move(data: dict[str, Any]) -> Move | None:
 
 def serialize_game_state(state: GameState) -> dict[str, Any]:
     """Serialize a GameState to JSON-compatible dict."""
-    return {
+    payload = {
         "gameId": state.id,
         "board": serialize_board_state(state.board),
         "players": [serialize_player(p) for p in state.players],
@@ -359,6 +359,11 @@ def serialize_game_state(state: GameState) -> dict[str, Any]:
         "totalRingsInPlay": state.total_rings_in_play,
         "winner": state.winner,
     }
+    if state.lps_rounds_required is not None:
+        payload["lpsRoundsRequired"] = state.lps_rounds_required
+    if state.rules_options is not None:
+        payload["rulesOptions"] = state.rules_options
+    return payload
 
 
 def deserialize_game_state(data: dict[str, Any]) -> GameState:
@@ -382,6 +387,7 @@ def deserialize_game_state(data: dict[str, Any]) -> GameState:
     players: list[Player] = []
     for i, pdata in enumerate(players_data):
         players.append(deserialize_player(pdata, i))
+    parsed_player_count = len(players)
 
     # Ensure we have at least 2 players for the engine
     while len(players) < 2:
@@ -442,7 +448,15 @@ def deserialize_game_state(data: dict[str, Any]) -> GameState:
     max_players = int(data.get("maxPlayers", len(players)))
     victory_threshold_default = get_victory_threshold(board.type, max_players)
     territory_threshold_default = get_territory_victory_threshold(board.type)
-    total_rings_in_play_default = rings_per_player * max_players
+    inferred_total_rings_in_play = (
+        sum(getattr(p, "rings_in_hand", 0) for p in players[:parsed_player_count])
+        + sum(len(stack.rings) for stack in board.stacks.values())
+    )
+    total_rings_in_play_default = (
+        inferred_total_rings_in_play
+        if parsed_player_count >= max_players
+        else rings_per_player * max_players
+    )
     total_rings_eliminated_default = int(sum(getattr(p, "eliminated_rings", 0) for p in players))
 
     return GameState(
@@ -469,12 +483,14 @@ def deserialize_game_state(data: dict[str, Any]) -> GameState:
         victoryThreshold=data.get("victoryThreshold", victory_threshold_default),
         territoryVictoryThreshold=data.get("territoryVictoryThreshold", territory_threshold_default),
         territoryVictoryMinimum=data.get("territoryVictoryMinimum"),  # Optional for backward compat
+        lpsRoundsRequired=data.get("lpsRoundsRequired", 3),
         chainCaptureState=chain_capture_state,
         mustMoveFromStackKey=None,
         zobristHash=None,
         lpsRoundIndex=0,
         lpsCurrentRoundActorMask={},
         lpsExclusivePlayerForCompletedRound=None,
+        rulesOptions=data.get("rulesOptions"),
     )
 
 

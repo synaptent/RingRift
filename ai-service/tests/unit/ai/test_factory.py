@@ -556,6 +556,7 @@ class TestAIFactoryCreateForTournament:
             player_number=1,
             board_type="square8",
             num_players=2,
+            allow_fresh_weights=True,
         )
         from app.ai.gumbel_mcts_ai import GumbelMCTSAI
         assert isinstance(ai, GumbelMCTSAI)
@@ -567,6 +568,7 @@ class TestAIFactoryCreateForTournament:
             player_number=1,
             board_type="square8",
             num_players=2,
+            allow_fresh_weights=True,
         )
         from app.ai.gumbel_mcts_ai import GumbelMCTSAI
         assert isinstance(ai, GumbelMCTSAI)
@@ -579,6 +581,7 @@ class TestAIFactoryCreateForTournament:
             player_number=1,
             board_type="square8",
             num_players=2,
+            allow_fresh_weights=True,
         )
         from app.ai.policy_only_ai import PolicyOnlyAI
         assert isinstance(ai, PolicyOnlyAI)
@@ -617,18 +620,32 @@ class TestAIFactoryCreateMCTS:
 
     def test_create_standard_mode(self):
         """Creates standard mode MCTS."""
-        mcts = AIFactory.create_mcts("square8", mode="standard")
+        mcts = AIFactory.create_mcts(
+            "square8",
+            mode="standard",
+            allow_fresh_weights=True,
+        )
         from app.ai.gumbel_mcts_ai import GumbelMCTSAI
         assert isinstance(mcts, GumbelMCTSAI)
 
     def test_create_with_custom_budget(self):
         """Creates MCTS with custom simulation budget."""
-        mcts = AIFactory.create_mcts("square8", mode="standard", simulation_budget=300)
+        mcts = AIFactory.create_mcts(
+            "square8",
+            mode="standard",
+            simulation_budget=300,
+            allow_fresh_weights=True,
+        )
         assert mcts.config.gumbel_simulation_budget == 300
 
     def test_create_with_custom_sampled_actions(self):
         """Creates MCTS with custom num_sampled_actions."""
-        mcts = AIFactory.create_mcts("square8", mode="standard", num_sampled_actions=8)
+        mcts = AIFactory.create_mcts(
+            "square8",
+            mode="standard",
+            num_sampled_actions=8,
+            allow_fresh_weights=True,
+        )
         assert mcts.config.gumbel_num_sampled_actions == 8
 
     def test_unknown_mode_raises(self):

@@ -2484,9 +2484,9 @@ GUMBEL_DEFAULT_BUDGET = GUMBEL_BUDGET_STANDARD
 # Jan 12, 2026: CRITICAL FIX - Increased bootstrap budgets significantly.
 # Old values (64/150/200) produced weak training data plateauing at ~1400 Elo.
 # Higher budgets generate higher quality games even during bootstrap.
-GUMBEL_BUDGET_BOOTSTRAP_TIER1 = 64   # For <100 games: was 64, now 150 for quality
-GUMBEL_BUDGET_BOOTSTRAP_TIER2 = 150  # For <500 games: was 150, now 300
-GUMBEL_BUDGET_BOOTSTRAP_TIER3 = 300  # For <1000 games: was 200, now 500
+GUMBEL_BUDGET_BOOTSTRAP_TIER1 = 150  # For <100 games
+GUMBEL_BUDGET_BOOTSTRAP_TIER2 = 300  # For <500 games
+GUMBEL_BUDGET_BOOTSTRAP_TIER3 = 500  # For <1000 games
 # Above 1000 games: use Elo-based adaptive budget (STANDARD/QUALITY/ULTIMATE/MASTER)
 
 # Game count thresholds for bootstrap budget tiers

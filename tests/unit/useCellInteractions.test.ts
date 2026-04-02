@@ -22,6 +22,7 @@ import type {
   FacadeConnectionStatus,
   GameFacadeMode,
 } from '../../src/client/facades/GameFacade';
+import { inferTotalRingsInPlay } from '../utils/fixtures';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TEST FIXTURES
@@ -55,31 +56,34 @@ function createMove(overrides: Partial<Move> = {}): Move {
 }
 
 function createMockFacade(overrides: Partial<GameFacade> = {}): GameFacade {
+  const board = createMinimalBoardState();
+  const players = [
+    {
+      id: 'p1',
+      username: 'Player 1',
+      playerNumber: 1,
+      type: 'human',
+      ringsInHand: 10,
+      eliminatedRings: 0,
+      territorySpaces: 0,
+    } as any,
+    {
+      id: 'p2',
+      username: 'Player 2',
+      playerNumber: 2,
+      type: 'ai',
+      ringsInHand: 10,
+      eliminatedRings: 0,
+      territorySpaces: 0,
+    } as any,
+  ];
+
   return {
     gameState: {
       id: 'test-game',
       boardType: 'square8',
-      board: createMinimalBoardState(),
-      players: [
-        {
-          id: 'p1',
-          username: 'Player 1',
-          playerNumber: 1,
-          type: 'human',
-          ringsInHand: 10,
-          eliminatedRings: 0,
-          territorySpaces: 0,
-        } as any,
-        {
-          id: 'p2',
-          username: 'Player 2',
-          playerNumber: 2,
-          type: 'ai',
-          ringsInHand: 10,
-          eliminatedRings: 0,
-          territorySpaces: 0,
-        } as any,
-      ],
+      board,
+      players,
       currentPhase: 'movement',
       currentPlayer: 1,
       moveHistory: [],
@@ -91,7 +95,7 @@ function createMockFacade(overrides: Partial<GameFacade> = {}): GameFacade {
       lastMoveAt: new Date(),
       isRated: false,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: inferTotalRingsInPlay(players, board),
       totalRingsEliminated: 0,
       victoryThreshold: 12,
       territoryVictoryThreshold: 33,

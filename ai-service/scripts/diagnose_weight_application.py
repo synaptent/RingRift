@@ -15,6 +15,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from app.ai.heuristic_ai import HeuristicAI
 from app.ai.heuristic_weights import BASE_V1_BALANCED_WEIGHTS
 from app.models import AIConfig, BoardType
+from app.rules.core import infer_total_rings_in_play
 from app.training.eval_pools import load_state_pool
 
 
@@ -77,7 +78,7 @@ def test_weight_application():
                 lastMoveAt=now,
                 isRated=False,
                 maxPlayers=2,
-                totalRingsInPlay=0,
+                totalRingsInPlay=infer_total_rings_in_play(players, board),
                 totalRingsEliminated=0,
                 victoryThreshold=18,  # RR-CANON-R061: = ringsPerPlayer for 2-player games
                 territoryVictoryThreshold=33,

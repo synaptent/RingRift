@@ -17,7 +17,11 @@ from app.models import (
     RingStack,
     TimeControl,
 )
-from app.rules.core import get_territory_victory_threshold, get_victory_threshold
+from app.rules.core import (
+    get_territory_victory_threshold,
+    get_victory_threshold,
+    infer_total_rings_in_play,
+)
 
 
 def _make_minimal_hex_state(*, stacks: dict[str, RingStack]) -> GameState:
@@ -80,7 +84,7 @@ def _make_minimal_hex_state(*, stacks: dict[str, RingStack]) -> GameState:
         last_move_at=now,
         is_rated=False,
         max_players=num_players,
-        total_rings_in_play=0,
+        total_rings_in_play=infer_total_rings_in_play(players, board),
         total_rings_eliminated=0,
         victory_threshold=get_victory_threshold(board_type, num_players),
         territory_victory_threshold=get_territory_victory_threshold(board_type),

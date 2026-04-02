@@ -26,6 +26,7 @@ from app.models import (
     Territory,
     TimeControl,
 )
+from app.rules.core import infer_total_rings_in_play
 from tests.parity.test_ts_seed_plateau_snapshot_parity import (
     _build_game_state_from_snapshot,
     _normalise_for_comparison,
@@ -67,36 +68,39 @@ def create_base_state(board_type: BoardType) -> GameState:
         # Mirror TS BOARD_CONFIGS for hexagonal boards (size = 13, radius 12)
         size = 13
 
+    board = BoardState(type=board_type, size=size)
+    players = [
+        Player(
+            id="p1",
+            username="Player1",
+            type="human",
+            playerNumber=1,
+            isReady=True,
+            timeRemaining=600,
+            ringsInHand=18,
+            eliminatedRings=0,
+            territorySpaces=0,
+            aiDifficulty=None,
+        ),
+        Player(
+            id="p2",
+            username="Player2",
+            type="human",
+            playerNumber=2,
+            isReady=True,
+            timeRemaining=600,
+            ringsInHand=18,
+            eliminatedRings=0,
+            territorySpaces=0,
+            aiDifficulty=None,
+        ),
+    ]
+
     return GameState(
         id="line-territory-scenario",
         boardType=board_type,
-        board=BoardState(type=board_type, size=size),
-        players=[
-            Player(
-                id="p1",
-                username="Player1",
-                type="human",
-                playerNumber=1,
-                isReady=True,
-                timeRemaining=600,
-                ringsInHand=18,
-                eliminatedRings=0,
-                territorySpaces=0,
-                aiDifficulty=None,
-            ),
-            Player(
-                id="p2",
-                username="Player2",
-                type="human",
-                playerNumber=2,
-                isReady=True,
-                timeRemaining=600,
-                ringsInHand=18,
-                eliminatedRings=0,
-                territorySpaces=0,
-                aiDifficulty=None,
-            ),
-        ],
+        board=board,
+        players=players,
         currentPhase=GamePhase.LINE_PROCESSING,
         currentPlayer=1,
         moveHistory=[],
@@ -106,7 +110,7 @@ def create_base_state(board_type: BoardType) -> GameState:
         lastMoveAt=datetime.now(),
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10,

@@ -299,7 +299,7 @@ class TestS3NodeSyncDaemonInit:
 
         daemon = S3NodeSyncDaemon()
 
-        assert daemon.name == "S3NodeSyncDaemon-worker-42"
+        assert daemon.name == "s3_node_sync_worker-42"
 
 
 # =============================================================================
@@ -832,11 +832,13 @@ class TestS3NodeSyncDaemonEvents:
 
         event = {"config_key": "hex8_2p", "model_path": "models/canonical_hex8_2p.pth"}
 
-        with patch.object(daemon, "_push_models", new_callable=AsyncMock) as mock_push:
-            # Need to patch asyncio.create_task since we're not in async context
-            with patch("asyncio.create_task") as mock_task:
-                daemon._on_training_completed(event)
-                mock_task.assert_called_once()
+        def schedule_ok(coro, *, context):
+            coro.close()
+            return True
+
+        with patch.object(daemon, "_schedule_event_task", side_effect=schedule_ok) as mock_schedule:
+            daemon._on_training_completed(event)
+            mock_schedule.assert_called_once()
 
     def test_on_selfplay_complete_skips_small_batches(self, monkeypatch):
         """Test SELFPLAY_COMPLETE skips batches < 100 games."""
@@ -849,7 +851,7 @@ class TestS3NodeSyncDaemonEvents:
 
         event = {"config_key": "hex8_2p", "games_count": 50}
 
-        with patch("asyncio.create_task") as mock_task:
+        with patch.object(daemon, "_schedule_event_task") as mock_task:
             daemon._on_selfplay_complete(event)
             # Should NOT create task for small batch
             mock_task.assert_not_called()
@@ -865,7 +867,11 @@ class TestS3NodeSyncDaemonEvents:
 
         event = {"config_key": "hex8_2p", "games_count": 150}
 
-        with patch("asyncio.create_task") as mock_task:
+        def schedule_ok(coro, *, context):
+            coro.close()
+            return True
+
+        with patch.object(daemon, "_schedule_event_task", side_effect=schedule_ok) as mock_task:
             daemon._on_selfplay_complete(event)
             mock_task.assert_called_once()
 
@@ -880,7 +886,11 @@ class TestS3NodeSyncDaemonEvents:
 
         event = {"config_key": "hex8_2p", "model_path": "models/canonical_hex8_2p.pth"}
 
-        with patch("asyncio.create_task") as mock_task:
+        def schedule_ok(coro, *, context):
+            coro.close()
+            return True
+
+        with patch.object(daemon, "_schedule_event_task", side_effect=schedule_ok) as mock_task:
             daemon._on_model_promoted(event)
             mock_task.assert_called_once()
 
@@ -894,10 +904,7 @@ class TestS3NodeSyncDaemonEvents:
         daemon._running = True
         daemon._errors = 0
 
-        # Invalid event that will cause an error
-        event = None
-
-        with patch("asyncio.create_task", side_effect=Exception("test error")):
+        with patch.object(daemon, "_safe_create_task", side_effect=Exception("test error")):
             daemon._on_training_completed({"config_key": "test"})
 
         # Error should be incremented
@@ -923,13 +930,13 @@ class TestS3NodeSyncDaemonLifecycle:
 
         # Mock the sync operations
         with patch.object(daemon, "_run_push_cycle", new_callable=AsyncMock):
-            with patch.object(daemon, "_subscribe_to_events"):
+            with patch.object(daemon, "_subscribe_all_events"):
                 # Start in background and stop quickly
                 task = asyncio.create_task(daemon.start())
                 await asyncio.sleep(0.05)
 
                 assert daemon._running is True
-                assert daemon._start_time > 0
+                assert daemon._stats.started_at > 0
 
                 # Stop the daemon
                 daemon._running = False
@@ -955,16 +962,16 @@ class TestS3NodeSyncDaemonLifecycle:
             assert daemon._running is False
 
     def test_is_running(self, monkeypatch):
-        """Test is_running() returns correct state."""
+        """Test is_running property returns correct state."""
         from app.coordination.s3_node_sync_daemon import S3NodeSyncDaemon
 
         monkeypatch.setenv("RINGRIFT_NODE_ID", "test-node")
 
         daemon = S3NodeSyncDaemon()
 
-        assert daemon.is_running() is False
+        assert daemon.is_running is False
         daemon._running = True
-        assert daemon.is_running() is True
+        assert daemon.is_running is True
 
 
 # =============================================================================
@@ -1100,7 +1107,7 @@ class TestS3ConsolidationDaemonOps:
 
         async def track_copy(src, dst):
             copy_calls.append((src, dst))
-            return True
+            return True, "copied"
 
         with patch.object(daemon, "_s3_copy", new_callable=AsyncMock) as mock_copy:
             mock_copy.side_effect = track_copy
@@ -1146,7 +1153,7 @@ class TestS3ConsolidationDaemonOps:
         }
 
         with patch.object(daemon, "_s3_copy", new_callable=AsyncMock) as mock_copy:
-            mock_copy.return_value = True
+            mock_copy.return_value = (True, "copied")
             await daemon._consolidate_npz(manifests)
 
         # Should copy from node-1 (newer)

@@ -35,7 +35,7 @@ class TestIdleResourceConfig:
         assert config.enabled is True
         # Reduced from 60s to 15s for faster detection (Dec 2025)
         assert config.check_interval_seconds == 15
-        assert config.idle_threshold_percent == 10.0
+        assert config.idle_threshold_percent == 5.0
         # Dec 27 2025: Aggressive spawning - 15s idle before spawn (was 120)
         assert config.idle_duration_seconds == 15
         # Dec 27 2025: 10x increase for ML acceleration (was 4)
@@ -1062,7 +1062,7 @@ class TestNodeStateUpdate:
         idle_node = NodeStatus(
             node_id="transitioning-node",
             host="10.0.0.1",
-            gpu_utilization=5.0,
+            gpu_utilization=4.0,
         )
         daemon._update_node_state(idle_node)
 

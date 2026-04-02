@@ -272,7 +272,7 @@ class TestGumbelMCTSAIValidation:
 
     def test_get_gpu_tree_validation_stats(self):
         """Test that validation stats are accessible."""
-        config = AIConfig(difficulty=5)
+        config = AIConfig(difficulty=5, allow_fresh_weights=True)
         ai = GumbelMCTSAI(player_number=1, config=config, board_type=BoardType.SQUARE8)
 
         stats = ai.get_gpu_tree_validation_stats()
@@ -284,7 +284,7 @@ class TestGumbelMCTSAIValidation:
 
     def test_shadow_validation_disabled_by_default(self):
         """Test that shadow validation is disabled by default (rate=0)."""
-        config = AIConfig(difficulty=5)
+        config = AIConfig(difficulty=5, allow_fresh_weights=True)
         ai = GumbelMCTSAI(player_number=1, config=config, board_type=BoardType.SQUARE8)
 
         stats = ai.get_gpu_tree_validation_stats()

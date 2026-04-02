@@ -81,7 +81,7 @@ class TestMaintenanceConfig:
         """Should have queue cleanup settings."""
         config = MaintenanceConfig()
         assert config.queue_cleanup_interval_hours == 1.0
-        assert config.queue_stale_pending_hours == 24.0
+        assert config.queue_stale_pending_hours == 1.5
         assert config.queue_stale_claimed_hours == 1.0
         assert config.queue_cleanup_enabled is True
 
@@ -206,11 +206,18 @@ class TestMaintenanceDaemonLifecycle:
     @pytest.mark.asyncio
     async def test_start_idempotent(self, daemon):
         """Start should be idempotent."""
-        with patch.object(daemon, "_run_maintenance_cycle", new_callable=AsyncMock) as mock_cycle:
+        mock_task = MagicMock()
+        def _capture_task(coro, *args, **kwargs):
+            coro.close()
+            return mock_task
+
+        with patch("asyncio.create_task", side_effect=_capture_task) as mock_create_task:
             await daemon.start()
+            first_task = daemon._task
             await daemon.start()  # Second call should not restart
-            # Should only run initial cycle once
-            assert mock_cycle.await_count == 1
+            assert daemon._task is first_task
+            assert daemon._task is mock_task
+            mock_create_task.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_stop(self, daemon):
@@ -224,10 +231,10 @@ class TestMaintenanceDaemonLifecycle:
         """Start should initialize last run timestamps."""
         with patch.object(daemon, "_run_maintenance_cycle", new_callable=AsyncMock):
             await daemon.start()
-            assert daemon._stats.last_log_rotation > 0
-            assert daemon._stats.last_db_vacuum > 0
-            assert daemon._stats.last_archive_run > 0
-            assert daemon._stats.last_dlq_cleanup > 0
+            assert daemon._maintenance_stats.last_log_rotation > 0
+            assert daemon._maintenance_stats.last_db_vacuum > 0
+            assert daemon._maintenance_stats.last_archive_run > 0
+            assert daemon._maintenance_stats.last_dlq_cleanup > 0
 
 
 # =============================================================================
@@ -264,7 +271,7 @@ class TestMaintenanceCycle:
     async def test_cycle_runs_log_rotation_when_due(self, daemon):
         """Should run log rotation when interval elapsed."""
         # Set last run to far in past
-        daemon._stats.last_log_rotation = time.time() - 7200  # 2 hours ago
+        daemon._maintenance_stats.last_log_rotation = time.time() - 7200  # 2 hours ago
         with patch.object(daemon, "_rotate_logs", new_callable=AsyncMock) as mock_rotate:
             with patch.object(daemon, "_detect_orphan_files", new_callable=AsyncMock):
                 await daemon._run_maintenance_cycle()
@@ -273,7 +280,7 @@ class TestMaintenanceCycle:
     @pytest.mark.asyncio
     async def test_cycle_skips_log_rotation_when_not_due(self, daemon):
         """Should skip log rotation when interval not elapsed."""
-        daemon._stats.last_log_rotation = time.time()  # Just now
+        daemon._maintenance_stats.last_log_rotation = time.time()  # Just now
         with patch.object(daemon, "_rotate_logs", new_callable=AsyncMock) as mock_rotate:
             with patch.object(daemon, "_detect_orphan_files", new_callable=AsyncMock):
                 await daemon._run_maintenance_cycle()
@@ -282,7 +289,7 @@ class TestMaintenanceCycle:
     @pytest.mark.asyncio
     async def test_cycle_runs_archive_when_due(self, daemon):
         """Should run archive when daily interval elapsed."""
-        daemon._stats.last_archive_run = time.time() - 100000  # Far in past
+        daemon._maintenance_stats.last_archive_run = time.time() - 100000  # Far in past
         with patch.object(daemon, "_archive_old_games", new_callable=AsyncMock) as mock_archive:
             with patch.object(daemon, "_detect_orphan_files", new_callable=AsyncMock):
                 await daemon._run_maintenance_cycle()
@@ -291,7 +298,7 @@ class TestMaintenanceCycle:
     @pytest.mark.asyncio
     async def test_cycle_runs_vacuum_when_due(self, daemon):
         """Should run vacuum when weekly interval elapsed."""
-        daemon._stats.last_db_vacuum = time.time() - 1000000  # Far in past
+        daemon._maintenance_stats.last_db_vacuum = time.time() - 1000000  # Far in past
         with patch.object(daemon, "_vacuum_databases", new_callable=AsyncMock) as mock_vacuum:
             with patch.object(daemon, "_detect_orphan_files", new_callable=AsyncMock):
                 await daemon._run_maintenance_cycle()
@@ -300,7 +307,7 @@ class TestMaintenanceCycle:
     @pytest.mark.asyncio
     async def test_cycle_runs_queue_cleanup_when_due(self, daemon):
         """Should run queue cleanup when interval elapsed."""
-        daemon._stats.last_queue_cleanup = time.time() - 7200  # 2 hours ago
+        daemon._maintenance_stats.last_queue_cleanup = time.time() - 7200  # 2 hours ago
         with patch.object(
             daemon, "_cleanup_stale_queue_items", new_callable=AsyncMock
         ) as mock_cleanup:
@@ -311,7 +318,7 @@ class TestMaintenanceCycle:
     @pytest.mark.asyncio
     async def test_cycle_runs_orphan_detection_when_due(self, daemon):
         """Should run orphan detection when interval elapsed."""
-        daemon._stats.last_orphan_detection = time.time() - 100000  # Far in past
+        daemon._maintenance_stats.last_orphan_detection = time.time() - 100000  # Far in past
         with patch.object(
             daemon, "_detect_orphan_files", new_callable=AsyncMock
         ) as mock_orphan:
@@ -428,7 +435,7 @@ class TestDatabaseVacuum:
             await daemon._vacuum_databases()
 
             # VACUUM should have been called
-            assert daemon._stats.databases_vacuumed >= 1
+            assert daemon._maintenance_stats.databases_vacuumed >= 1
 
     @pytest.mark.asyncio
     async def test_vacuum_databases_dry_run(self):
@@ -450,7 +457,7 @@ class TestDatabaseVacuum:
             await daemon._vacuum_databases()
 
             # Stats should not be updated in dry run
-            assert daemon._stats.databases_vacuumed == 0
+            assert daemon._maintenance_stats.databases_vacuumed == 0
 
     @pytest.mark.asyncio
     async def test_vacuum_handles_corrupt_db(self, daemon):
@@ -484,8 +491,8 @@ class TestStatusAndHealth:
     def test_get_status(self, daemon):
         """Should return comprehensive status."""
         daemon._running = True
-        daemon._stats.logs_rotated = 5
-        daemon._stats.databases_vacuumed = 2
+        daemon._maintenance_stats.logs_rotated = 5
+        daemon._maintenance_stats.databases_vacuumed = 2
 
         status = daemon.get_status()
 
@@ -508,8 +515,8 @@ class TestStatusAndHealth:
     def test_health_check_running_healthy(self, daemon):
         """Should report healthy when running normally."""
         daemon._running = True
-        daemon._stats.last_log_rotation = time.time()
-        daemon._stats.last_db_vacuum = time.time()
+        daemon._maintenance_stats.last_log_rotation = time.time()
+        daemon._maintenance_stats.last_db_vacuum = time.time()
 
         health = daemon.health_check()
 
@@ -519,8 +526,8 @@ class TestStatusAndHealth:
     def test_health_check_log_rotation_overdue(self, daemon):
         """Should report degraded when log rotation overdue."""
         daemon._running = True
-        daemon._stats.last_log_rotation = time.time() - 20000  # Far overdue
-        daemon._stats.last_db_vacuum = time.time()
+        daemon._maintenance_stats.last_log_rotation = time.time() - 20000  # Far overdue
+        daemon._maintenance_stats.last_db_vacuum = time.time()
 
         health = daemon.health_check()
 
@@ -553,7 +560,7 @@ class TestSingleton:
         daemon2 = get_maintenance_daemon()
         # After reset, new instance
         assert daemon2._running is False
-        assert daemon2._stats.logs_rotated == 0
+        assert daemon2._maintenance_stats.logs_rotated == 0
 
 
 # =============================================================================
@@ -591,8 +598,8 @@ class TestQueueCleanup:
         ):
             await daemon._cleanup_stale_queue_items()
 
-            assert daemon._stats.queue_items_cleaned >= 5
-            assert daemon._stats.queue_items_reset >= 3
+            assert daemon._maintenance_stats.queue_items_cleaned >= 5
+            assert daemon._maintenance_stats.queue_items_reset >= 3
 
     @pytest.mark.asyncio
     async def test_queue_cleanup_dry_run(self):
@@ -658,7 +665,7 @@ class TestOrphanDetection:
             ):
                 await daemon._detect_orphan_files()
 
-                assert daemon._stats.orphan_dbs_found >= 1
+                assert daemon._maintenance_stats.orphan_dbs_found >= 1
 
     @pytest.mark.asyncio
     async def test_orphan_detection_handles_manifest_error(self, daemon):
@@ -815,7 +822,7 @@ class TestDLQCleanup:
         ):
             # Should not raise
             await daemon._cleanup_dlq()
-            assert daemon._stats.dlq_entries_cleaned == 0
+            assert daemon._maintenance_stats.dlq_entries_cleaned == 0
 
     @pytest.mark.asyncio
     async def test_dlq_cleanup_dry_run(self):
@@ -846,7 +853,7 @@ class TestDLQCleanup:
 
         with patch.dict("sys.modules", {"app.distributed.unified_manifest": mock_module}):
             await daemon._cleanup_dlq()
-            assert daemon._stats.dlq_entries_cleaned == 5
+            assert daemon._maintenance_stats.dlq_entries_cleaned == 5
 
     @pytest.mark.asyncio
     async def test_dlq_cleanup_handles_import_error(self, daemon):
@@ -886,7 +893,7 @@ class TestOrphanRecovery:
                 conn.execute("INSERT INTO games VALUES ('game_1')")
 
             mock_manifest = MagicMock()
-            mock_manifest.register_games_batch = MagicMock()
+            mock_manifest.register_database = MagicMock()
 
             with patch("socket.gethostname", return_value="test-node"):
                 with patch(
@@ -898,8 +905,8 @@ class TestOrphanRecovery:
                     )
 
             assert recovered == 1
-            mock_manifest.register_games_batch.assert_called_once()
-            call_kwargs = mock_manifest.register_games_batch.call_args.kwargs
+            mock_manifest.register_database.assert_called_once()
+            call_kwargs = mock_manifest.register_database.call_args.kwargs
             assert call_kwargs["board_type"] == "hex8"
             assert call_kwargs["num_players"] == 4
             assert call_kwargs["game_count"] == 1
@@ -921,7 +928,7 @@ class TestOrphanRecovery:
             )
 
             assert recovered == 0
-            mock_manifest.register_games_batch.assert_not_called()
+            mock_manifest.register_database.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_recover_orphan_databases_handles_invalid(self, daemon):
@@ -949,7 +956,7 @@ class TestOrphanRecovery:
                 conn.execute("INSERT INTO games VALUES ('game_1')")
 
             mock_manifest = MagicMock()
-            mock_manifest.register_games_batch = MagicMock()
+            mock_manifest.register_database = MagicMock()
 
             with patch("socket.gethostname", return_value="test-node"):
                 with patch(
@@ -960,7 +967,7 @@ class TestOrphanRecovery:
                         mock_manifest, [db_path]
                     )
 
-            call_kwargs = mock_manifest.register_games_batch.call_args.kwargs
+            call_kwargs = mock_manifest.register_database.call_args.kwargs
             assert call_kwargs["board_type"] == "square8"
             assert call_kwargs["num_players"] == 3
 
@@ -1147,10 +1154,10 @@ class TestHealthCheckEdgeCases:
         """Should include stats in health check details."""
         daemon = MaintenanceDaemon()
         daemon._running = True
-        daemon._stats.logs_rotated = 10
-        daemon._stats.databases_vacuumed = 5
-        daemon._stats.last_log_rotation = time.time()
-        daemon._stats.last_db_vacuum = time.time()
+        daemon._maintenance_stats.logs_rotated = 10
+        daemon._maintenance_stats.databases_vacuumed = 5
+        daemon._maintenance_stats.last_log_rotation = time.time()
+        daemon._maintenance_stats.last_db_vacuum = time.time()
 
         result = daemon.health_check()
 
@@ -1163,9 +1170,9 @@ class TestHealthCheckEdgeCases:
         """Should report degraded when vacuum is overdue."""
         daemon = MaintenanceDaemon()
         daemon._running = True
-        daemon._stats.last_log_rotation = time.time()
+        daemon._maintenance_stats.last_log_rotation = time.time()
         # Vacuum very overdue (> 1.5x interval)
-        daemon._stats.last_db_vacuum = time.time() - (
+        daemon._maintenance_stats.last_db_vacuum = time.time() - (
             daemon.config.db_vacuum_interval_hours * 3600 * 2
         )
 
@@ -1178,8 +1185,8 @@ class TestHealthCheckEdgeCases:
         """Should handle zero timestamps (never run)."""
         daemon = MaintenanceDaemon()
         daemon._running = True
-        daemon._stats.last_log_rotation = 0
-        daemon._stats.last_db_vacuum = 0
+        daemon._maintenance_stats.last_log_rotation = 0
+        daemon._maintenance_stats.last_db_vacuum = 0
 
         result = daemon.health_check()
 
@@ -1199,17 +1206,17 @@ class TestGetStatusDetails:
         """Should include all stat fields."""
         daemon = MaintenanceDaemon()
         daemon._running = True
-        daemon._stats.logs_rotated = 5
-        daemon._stats.bytes_reclaimed_logs = 10485760
-        daemon._stats.databases_vacuumed = 3
-        daemon._stats.games_archived = 100
-        daemon._stats.dlq_entries_cleaned = 10
-        daemon._stats.queue_items_cleaned = 20
-        daemon._stats.queue_items_reset = 5
-        daemon._stats.orphan_dbs_found = 2
-        daemon._stats.orphan_npz_found = 1
-        daemon._stats.orphan_models_found = 0
-        daemon._stats.orphan_dbs_recovered = 1
+        daemon._maintenance_stats.logs_rotated = 5
+        daemon._maintenance_stats.bytes_reclaimed_logs = 10485760
+        daemon._maintenance_stats.databases_vacuumed = 3
+        daemon._maintenance_stats.games_archived = 100
+        daemon._maintenance_stats.dlq_entries_cleaned = 10
+        daemon._maintenance_stats.queue_items_cleaned = 20
+        daemon._maintenance_stats.queue_items_reset = 5
+        daemon._maintenance_stats.orphan_dbs_found = 2
+        daemon._maintenance_stats.orphan_npz_found = 1
+        daemon._maintenance_stats.orphan_models_found = 0
+        daemon._maintenance_stats.orphan_dbs_recovered = 1
 
         status = daemon.get_status()
         assert status["stats"]["logs_rotated"] == 5
@@ -1242,12 +1249,12 @@ class TestGetStatusDetails:
     def test_get_status_includes_last_runs(self):
         """Should include last run timestamps."""
         daemon = MaintenanceDaemon()
-        daemon._stats.last_log_rotation = 1000.0
-        daemon._stats.last_db_vacuum = 2000.0
-        daemon._stats.last_archive_run = 3000.0
-        daemon._stats.last_dlq_cleanup = 4000.0
-        daemon._stats.last_queue_cleanup = 5000.0
-        daemon._stats.last_orphan_detection = 6000.0
+        daemon._maintenance_stats.last_log_rotation = 1000.0
+        daemon._maintenance_stats.last_db_vacuum = 2000.0
+        daemon._maintenance_stats.last_archive_run = 3000.0
+        daemon._maintenance_stats.last_dlq_cleanup = 4000.0
+        daemon._maintenance_stats.last_queue_cleanup = 5000.0
+        daemon._maintenance_stats.last_orphan_detection = 6000.0
 
         status = daemon.get_status()
 
@@ -1328,14 +1335,14 @@ class TestSingletonReset:
     def test_get_daemon_returns_fresh_stats_after_reset(self):
         """Should return fresh instance with zero stats after reset."""
         daemon1 = get_maintenance_daemon()
-        daemon1._stats.logs_rotated = 100
-        daemon1._stats.databases_vacuumed = 50
+        daemon1._maintenance_stats.logs_rotated = 100
+        daemon1._maintenance_stats.databases_vacuumed = 50
 
         reset_maintenance_daemon()
         daemon2 = get_maintenance_daemon()
 
-        assert daemon2._stats.logs_rotated == 0
-        assert daemon2._stats.databases_vacuumed == 0
+        assert daemon2._maintenance_stats.logs_rotated == 0
+        assert daemon2._maintenance_stats.databases_vacuumed == 0
 
     def test_singleton_survives_multiple_gets(self):
         """Should return same instance across multiple gets."""
@@ -1386,7 +1393,7 @@ class TestOrphanDetectionEdgeCases:
                 await daemon._detect_orphan_files()
 
                 # Only the actual file should be counted, not the symlink
-                assert daemon._stats.orphan_models_found == 1
+                assert daemon._maintenance_stats.orphan_models_found == 1
 
     @pytest.mark.asyncio
     async def test_detect_orphans_handles_missing_dirs(self):
@@ -1409,7 +1416,7 @@ class TestOrphanDetectionEdgeCases:
             with patch.dict("sys.modules", {"app.distributed.cluster_manifest": mock_module}):
                 # Should not raise
                 await daemon._detect_orphan_files()
-                assert daemon._stats.orphan_dbs_found == 0
+                assert daemon._maintenance_stats.orphan_dbs_found == 0
 
 
 # =============================================================================
@@ -1465,7 +1472,7 @@ class TestMaintenanceCycleFeatureFlags:
         """Should skip vacuum when db_maintenance_enabled is False."""
         config = MaintenanceConfig(db_maintenance_enabled=False)
         daemon = MaintenanceDaemon(config=config)
-        daemon._stats.last_db_vacuum = 0  # Very old
+        daemon._maintenance_stats.last_db_vacuum = 0  # Very old
 
         with patch.object(daemon, "_vacuum_databases", new_callable=AsyncMock) as mock_vacuum:
             with patch.object(daemon, "_rotate_logs", new_callable=AsyncMock):
@@ -1481,7 +1488,7 @@ class TestMaintenanceCycleFeatureFlags:
         """Should skip archive when archive_enabled is False."""
         config = MaintenanceConfig(archive_enabled=False)
         daemon = MaintenanceDaemon(config=config)
-        daemon._stats.last_archive_run = 0  # Very old
+        daemon._maintenance_stats.last_archive_run = 0  # Very old
 
         with patch.object(daemon, "_archive_old_games", new_callable=AsyncMock) as mock_archive:
             with patch.object(daemon, "_rotate_logs", new_callable=AsyncMock):
@@ -1497,7 +1504,7 @@ class TestMaintenanceCycleFeatureFlags:
         """Should skip queue cleanup when queue_cleanup_enabled is False."""
         config = MaintenanceConfig(queue_cleanup_enabled=False)
         daemon = MaintenanceDaemon(config=config)
-        daemon._stats.last_queue_cleanup = 0  # Very old
+        daemon._maintenance_stats.last_queue_cleanup = 0  # Very old
 
         with patch.object(daemon, "_cleanup_stale_queue_items", new_callable=AsyncMock) as mock_cleanup:
             with patch.object(daemon, "_rotate_logs", new_callable=AsyncMock):
@@ -1513,7 +1520,7 @@ class TestMaintenanceCycleFeatureFlags:
         """Should skip orphan detection when orphan_detection_enabled is False."""
         config = MaintenanceConfig(orphan_detection_enabled=False)
         daemon = MaintenanceDaemon(config=config)
-        daemon._stats.last_orphan_detection = 0  # Very old
+        daemon._maintenance_stats.last_orphan_detection = 0  # Very old
 
         with patch.object(daemon, "_detect_orphan_files", new_callable=AsyncMock) as mock_orphan:
             with patch.object(daemon, "_rotate_logs", new_callable=AsyncMock):

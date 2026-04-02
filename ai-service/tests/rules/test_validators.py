@@ -3,6 +3,7 @@ from datetime import datetime
 import pytest
 
 from app.models import BoardState, BoardType, GamePhase, GameState, Move, MoveType, Player, Position, TimeControl
+from app.rules.core import infer_total_rings_in_play
 from app.rules.validators.capture import CaptureValidator
 from app.rules.validators.line import LineValidator
 from app.rules.validators.movement import MovementValidator
@@ -12,22 +13,24 @@ from app.rules.validators.territory import TerritoryValidator
 
 @pytest.fixture
 def empty_game_state():
+    players = [
+        Player(
+            id="p1", username="p1", type="human", playerNumber=1,
+            isReady=True, timeRemaining=60, ringsInHand=18,
+            eliminatedRings=0, territorySpaces=0
+        ),
+        Player(
+            id="p2", username="p2", type="human", playerNumber=2,
+            isReady=True, timeRemaining=60, ringsInHand=18,
+            eliminatedRings=0, territorySpaces=0
+        )
+    ]
+    board = BoardState(type=BoardType.SQUARE8, size=8)
     return GameState(
         id="test",
         boardType=BoardType.SQUARE8,
-        board=BoardState(type=BoardType.SQUARE8, size=8),
-        players=[
-            Player(
-                id="p1", username="p1", type="human", playerNumber=1,
-                isReady=True, timeRemaining=60, ringsInHand=18,
-                eliminatedRings=0, territorySpaces=0
-            ),
-            Player(
-                id="p2", username="p2", type="human", playerNumber=2,
-                isReady=True, timeRemaining=60, ringsInHand=18,
-                eliminatedRings=0, territorySpaces=0
-            )
-        ],
+        board=board,
+        players=players,
         currentPhase=GamePhase.RING_PLACEMENT,
         currentPlayer=1,
         timeControl=TimeControl(initialTime=60, increment=0, type="blitz"),
@@ -36,7 +39,7 @@ def empty_game_state():
         lastMoveAt=datetime.now(),
         isRated=False,
         maxPlayers=2,
-        totalRingsInPlay=0,
+        totalRingsInPlay=infer_total_rings_in_play(players, board),
         totalRingsEliminated=0,
         victoryThreshold=3,
         territoryVictoryThreshold=10

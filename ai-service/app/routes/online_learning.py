@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,8 @@ class MoveRecord(BaseModel):
     Accepts both client format (type, from, to) and server format (move_type, from_pos, to_pos).
     """
 
+    model_config = ConfigDict(populate_by_name=True)
+
     move_type: str = Field(..., alias="type", description="Move type (place_ring, move_stack, etc.)")
     from_pos: dict[str, int] | None = Field(None, alias="from", description="Source position {x, y}")
     to_pos: dict[str, int] | None = Field(None, alias="to", description="Target position {x, y}")
@@ -43,9 +45,6 @@ class MoveRecord(BaseModel):
     capture_target: dict[str, int] | None = Field(
         None, alias="captureTarget", description="Capture target position {x, y}"
     )
-
-    class Config:
-        populate_by_name = True  # Allow both field names and aliases
 
 
 class LearnFromGameRequest(BaseModel):

@@ -145,9 +145,24 @@ class TournamentHandlersTestClass(TournamentHandlersMixin):
         async def _track_tournament(job_id: str) -> None:
             self._run_tournament_tasks.append(job_id)
 
+        async def _track_match(job_id: str, match_info: dict) -> dict:
+            self._play_match_tasks.append((job_id, match_info))
+            await asyncio.sleep(0.01)
+            return {
+                "job_id": job_id,
+                "match": match_info,
+                "winner": match_info.get("agent1"),
+            }
+
         self.job_manager = MockJobManager(run_tournament_callback=_track_tournament)
         # Share state dict reference so handler storage is visible to job_manager
         self.job_manager.distributed_tournament_state = self.distributed_tournament_state
+        self.tournament_manager = MagicMock()
+        self.tournament_manager.play_tournament_match = AsyncMock(side_effect=_track_match)
+
+    def get_peers_list_ro(self) -> list:
+        """Mirror the orchestrator's lock-free peer snapshot helper."""
+        return list(self.peers.values())
 
     def _propose_tournament(
         self,
@@ -171,12 +186,6 @@ class TournamentHandlersTestClass(TournamentHandlersMixin):
         """Mock tournament execution."""
         self._run_tournament_tasks.append(job_id)
         await asyncio.sleep(0.01)
-
-    async def _play_tournament_match(self, job_id: str, match_info: dict) -> None:
-        """Mock match execution."""
-        self._play_match_tasks.append((job_id, match_info))
-        await asyncio.sleep(0.01)
-
 
 class MockRequest:
     """Mock aiohttp Request for testing."""
