@@ -801,6 +801,7 @@ async def _wait_for_daemon(daemon: Any, check_interval: float = 10.0) -> None:
 
 from app.coordination.runners import (  # noqa: E402, F401
     # Sync runners
+    create_sync_coordinator,
     create_high_quality_sync,
     create_elo_sync,
     create_auto_sync,
@@ -816,15 +817,18 @@ from app.coordination.runners import (  # noqa: E402, F401
     create_unevaluated_model_scanner,
     create_stale_evaluation,
     create_comprehensive_model_scan,
+    create_ephemeral_sync,
     create_gossip_sync,
     # Event processing runners
     create_event_router,
     create_cross_process_poller,
     create_dlq_retry,
     # Health runners
+    create_health_check,
     create_queue_monitor,
     create_daemon_watchdog,
     create_health_server,
+    create_node_health_monitor,
     create_quality_monitor,
     create_model_performance_watchdog,
     create_cluster_monitor,
@@ -850,10 +854,14 @@ from app.coordination.runners import (  # noqa: E402, F401
     # Distribution runners
     create_model_sync,
     create_model_distribution,
+    create_npz_distribution,
+    create_replication_monitor,
+    create_replication_repair,
     create_data_server,
     # Resource runners
     create_idle_resource,
     create_cluster_utilization_watchdog,
+    create_lambda_idle,
     create_node_recovery,
     create_resource_optimizer,
     create_utilization_optimizer,
@@ -883,7 +891,10 @@ from app.coordination.runners import (  # noqa: E402, F401
     create_s3_consolidation,
     create_unified_backup,
     create_s3_push,
+    create_external_drive_sync,
+    create_cluster_data_sync,
     create_vast_cpu_pipeline,
+    create_vast_idle,
     create_p2p_backend,
     create_p2p_auto_deploy,
     create_metrics_analysis,
@@ -946,6 +957,7 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
     from app.coordination.daemon_types import DaemonType
 
     return {
+        DaemonType.SYNC_COORDINATOR.name: create_sync_coordinator,
         DaemonType.HIGH_QUALITY_SYNC.name: create_high_quality_sync,
         DaemonType.ELO_SYNC.name: create_elo_sync,
         DaemonType.AUTO_SYNC.name: create_auto_sync,
@@ -962,13 +974,16 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.UNEVALUATED_MODEL_SCANNER.name: create_unevaluated_model_scanner,
         DaemonType.STALE_EVALUATION.name: create_stale_evaluation,  # Jan 4, 2026: Sprint 17
         DaemonType.COMPREHENSIVE_MODEL_SCAN.name: create_comprehensive_model_scan,  # Jan 9, 2026: Sprint 17.9
+        DaemonType.EPHEMERAL_SYNC.name: create_ephemeral_sync,
         DaemonType.GOSSIP_SYNC.name: create_gossip_sync,
         DaemonType.EVENT_ROUTER.name: create_event_router,
         DaemonType.CROSS_PROCESS_POLLER.name: create_cross_process_poller,
         DaemonType.DLQ_RETRY.name: create_dlq_retry,
+        DaemonType.HEALTH_CHECK.name: create_health_check,
         DaemonType.QUEUE_MONITOR.name: create_queue_monitor,
         DaemonType.DAEMON_WATCHDOG.name: create_daemon_watchdog,
         DaemonType.HEALTH_SERVER.name: create_health_server,
+        DaemonType.NODE_HEALTH_MONITOR.name: create_node_health_monitor,
         DaemonType.QUALITY_MONITOR.name: create_quality_monitor,
         DaemonType.MODEL_PERFORMANCE_WATCHDOG.name: create_model_performance_watchdog,
         DaemonType.CLUSTER_MONITOR.name: create_cluster_monitor,
@@ -987,9 +1002,13 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.GAUNTLET_FEEDBACK.name: create_gauntlet_feedback,
         DaemonType.MODEL_SYNC.name: create_model_sync,
         DaemonType.MODEL_DISTRIBUTION.name: create_model_distribution,
+        DaemonType.NPZ_DISTRIBUTION.name: create_npz_distribution,
+        DaemonType.REPLICATION_MONITOR.name: create_replication_monitor,
+        DaemonType.REPLICATION_REPAIR.name: create_replication_repair,
         DaemonType.DATA_SERVER.name: create_data_server,
         DaemonType.IDLE_RESOURCE.name: create_idle_resource,
         DaemonType.CLUSTER_UTILIZATION_WATCHDOG.name: create_cluster_utilization_watchdog,
+        DaemonType.LAMBDA_IDLE.name: create_lambda_idle,
         DaemonType.NODE_RECOVERY.name: create_node_recovery,
         DaemonType.RESOURCE_OPTIMIZER.name: create_resource_optimizer,
         DaemonType.UTILIZATION_OPTIMIZER.name: create_utilization_optimizer,
@@ -1014,7 +1033,10 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.S3_CONSOLIDATION.name: create_s3_consolidation,
         DaemonType.UNIFIED_BACKUP.name: create_unified_backup,  # Jan 2026: OWC + S3 backup
         DaemonType.S3_PUSH.name: create_s3_push,  # Jan 2026: S3 backup push
+        DaemonType.EXTERNAL_DRIVE_SYNC.name: create_external_drive_sync,
+        DaemonType.CLUSTER_DATA_SYNC.name: create_cluster_data_sync,
         DaemonType.VAST_CPU_PIPELINE.name: create_vast_cpu_pipeline,
+        DaemonType.VAST_IDLE.name: create_vast_idle,
         DaemonType.P2P_BACKEND.name: create_p2p_backend,
         DaemonType.P2P_AUTO_DEPLOY.name: create_p2p_auto_deploy,
         DaemonType.METRICS_ANALYSIS.name: create_metrics_analysis,

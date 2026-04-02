@@ -1069,30 +1069,24 @@ class TestEventEmission:
     @pytest.mark.asyncio
     async def test_emit_sync_completed(self, daemon):
         """Test _emit_sync_completed emits event."""
-        # The method imports get_router locally, so we need to patch the module it's imported from
-        mock_router = AsyncMock()
-        mock_router.publish = AsyncMock()
-
         # Dec 29, 2025: Must also patch DataEventType to be non-None
         mock_event_type = MagicMock()
         mock_event_type.DATA_SYNC_COMPLETED = "data_sync_completed"
 
-        with patch("app.coordination.event_router.get_router", return_value=mock_router), \
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish, \
              patch("app.coordination.event_router.DataEventType", mock_event_type):
             await daemon._emit_sync_completed(games_synced=100, bytes_transferred=1000000)
 
             # Verify the publish was called
-            mock_router.publish.assert_called_once()
-            call_kwargs = mock_router.publish.call_args.kwargs
+            mock_publish.assert_awaited_once()
+            call_kwargs = mock_publish.call_args.kwargs
             assert call_kwargs["payload"]["games_synced"] == 100
             assert call_kwargs["payload"]["bytes_transferred"] == 1000000
 
     @pytest.mark.asyncio
     async def test_emit_sync_completed_no_router(self, daemon):
-        """Test _emit_sync_completed handles missing router gracefully."""
-        # When router is not available, should not raise
-        with patch("app.coordination.event_router.get_router", return_value=None):
-            # Should not raise
+        """Test _emit_sync_completed handles publish failures gracefully."""
+        with patch("app.coordination.event_router.publish", side_effect=RuntimeError("boom")):
             await daemon._emit_sync_completed(games_synced=100, bytes_transferred=1000000)
 
     @pytest.mark.asyncio
@@ -1124,6 +1118,25 @@ class TestEventEmission:
                 await daemon._emit_sync_failed("Test error")
             except ImportError:
                 pass  # Expected behavior - import failed
+
+    @pytest.mark.asyncio
+    async def test_emit_sync_verification_failed_uses_publish(self, daemon):
+        """Verification failures should publish through the unified async helper."""
+        mock_event_type = MagicMock()
+        mock_event_type.DATA_SYNC_FAILED = "data_sync_failed"
+        daemon._sync_stats.databases_verified = 4
+        daemon._sync_stats.databases_verification_failed = 1
+
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish, \
+             patch("app.coordination.event_router.DataEventType", mock_event_type):
+            await daemon._emit_sync_verification_failed("canonical_hex8_2p.db", "checksum mismatch")
+
+        mock_publish.assert_awaited_once()
+        call_kwargs = mock_publish.call_args.kwargs
+        assert call_kwargs["event_type"] == "data_sync_failed"
+        assert call_kwargs["payload"]["db_name"] == "canonical_hex8_2p.db"
+        assert call_kwargs["payload"]["verification_failed"] is True
+        assert call_kwargs["payload"]["total_verified"] == 4
 
 
 # ============================================

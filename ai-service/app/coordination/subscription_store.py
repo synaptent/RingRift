@@ -473,7 +473,7 @@ class SubscriptionStore:
 
         try:
             from app.coordination.dead_letter_queue import get_dead_letter_queue
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import has_subscribers
         except ImportError:
             logger.warning(
                 "[SubscriptionStore] Cannot replay DLQ - missing dependencies"
@@ -481,7 +481,6 @@ class SubscriptionStore:
             return 0
 
         dlq = get_dead_letter_queue()
-        router = get_router()
 
         # Get events older than min_age but not older than max_age
         cutoff = datetime.now() - timedelta(seconds=min_age_seconds)
@@ -520,7 +519,7 @@ class SubscriptionStore:
             event_id = event_row["event_id"]
 
             # Check if there are active subscribers
-            if not router.has_subscribers(event_type):
+            if not has_subscribers(event_type):
                 logger.debug(
                     f"[SubscriptionStore] Skipping DLQ replay for {event_type} - no subscribers"
                 )
@@ -528,7 +527,9 @@ class SubscriptionStore:
 
             try:
                 # Republish to router
-                await router.publish(
+                from app.coordination.event_router import publish
+
+                await publish(
                     event_type=event_type,
                     payload=payload,
                     source=f"dlq_replay:{event_id}",
@@ -620,15 +621,12 @@ class SubscriptionStore:
             return 0
 
         try:
-            from app.coordination.event_router import get_router
             from app.distributed.data_events import DataEventType
         except ImportError:
             logger.warning(
                 "[SubscriptionStore] Cannot emit alerts - missing dependencies"
             )
             return 0
-
-        router = get_router()
         alerts_emitted = 0
 
         for event_info in stale_events:
@@ -640,7 +638,9 @@ class SubscriptionStore:
 
             # Emit DLQ alert event
             try:
-                await router.publish(
+                from app.coordination.event_router import publish
+
+                await publish(
                     event_type="DLQ_STALE_EVENTS",
                     payload={
                         "event_type": event_info["event_type"],

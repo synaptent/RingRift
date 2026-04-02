@@ -25,8 +25,12 @@ logger = logging.getLogger(__name__)
 
 
 async def create_sync_coordinator() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): SYNC_COORDINATOR")
+    return
 
 
 async def create_high_quality_sync() -> None:
@@ -411,8 +415,12 @@ async def create_comprehensive_model_scan() -> None:
 
 
 async def create_ephemeral_sync() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): EPHEMERAL_SYNC")
+    return
 
 
 async def create_gossip_sync() -> None:

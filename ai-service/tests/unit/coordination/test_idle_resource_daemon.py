@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.coordination.idle_resource_daemon import (
     IdleResourceConfig,
     IdleResourceDaemon,
+    NodeIdleState,
     NodeStatus,
     SpawnAttempt,
     NodeSpawnHistory,
@@ -924,12 +925,99 @@ class TestSpawnEvent:
             host="10.0.0.1",
             gpu_memory_total_gb=24.0,
         )
-        # Should not crash even if event system not available
-        daemon._emit_spawn_event(
-            node=node,
-            config_key="hex8_2p",
-            games=100,
+        with patch("app.coordination.event_router.publish_sync") as mock_publish_sync:
+            daemon._emit_spawn_event(
+                node=node,
+                config_key="hex8_2p",
+                games=100,
+            )
+
+        mock_publish_sync.assert_called_once()
+        args, kwargs = mock_publish_sync.call_args
+        assert args[1]["node_id"] == "test-node"
+        assert args[1]["config"] == "hex8_2p"
+        assert args[1]["games"] == 100
+        assert kwargs["source"] == "idle_resource_daemon"
+
+    @pytest.mark.asyncio
+    async def test_broadcast_local_state_uses_publish_helper(self, daemon):
+        """Idle-state broadcast should use the unified async publish helper."""
+        state = NodeIdleState(
+            node_id="test-node",
+            host="10.0.0.1",
+            is_idle=True,
+            gpu_utilization=4.0,
+            gpu_memory_free_gb=18.0,
+            gpu_memory_total_gb=24.0,
+            idle_duration_seconds=900.0,
+            recommended_config="hex8_2p",
+            provider="lambda",
+            active_jobs=0,
         )
+
+        with patch.object(daemon, "_get_local_idle_state", return_value=state), \
+             patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+            await daemon._broadcast_local_state(force=True)
+
+        mock_publish.assert_awaited_once()
+        args, kwargs = mock_publish.call_args
+        assert args[0] == "idle_state_broadcast"
+        assert args[1]["node_id"] == "test-node"
+        assert args[1]["recommended_config"] == "hex8_2p"
+        assert kwargs["source"] == "idle_resource_daemon"
+
+
+# =============================================================================
+# Test Event Wiring
+# =============================================================================
+
+
+class TestEventWiring:
+    """Tests for router helper-based event wiring."""
+
+    @pytest.fixture
+    def daemon(self):
+        """Create daemon with default config."""
+        config = IdleResourceConfig()
+        return IdleResourceDaemon(config=config)
+
+    def test_wire_backpressure_events_uses_subscribe_helper(self, daemon):
+        """Backpressure subscriptions should use the unified subscribe helper."""
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            daemon._wire_backpressure_events()
+
+        assert mock_subscribe.call_count == 4
+        event_types = [call.args[0] for call in mock_subscribe.call_args_list]
+        assert "backpressure_activated" in event_types
+        assert "backpressure_released" in event_types
+        assert "memory_pressure" in event_types
+        assert "resource_constraint" in event_types
+
+    def test_wire_p2p_health_events_uses_subscribe_helper(self, daemon):
+        """P2P health subscriptions should go through the unified helper."""
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            daemon._wire_p2p_health_events()
+
+        event_types = [call.args[0] for call in mock_subscribe.call_args_list]
+        assert "node_unhealthy" in event_types
+        assert "node_recovered" in event_types
+        assert "cluster_underutilized" in event_types
+        assert "cluster_utilization_recovered" in event_types
+
+    def test_wire_cluster_and_feedback_events_use_subscribe_helper(self, daemon):
+        """Cluster-state and feedback subscriptions should use the helper."""
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
+            daemon._wire_cluster_state_events()
+            daemon._wire_selfplay_target_events()
+            daemon._wire_quality_events()
+            daemon._wire_selfplay_rate_events()
+
+        event_types = [call.args[0] for call in mock_subscribe.call_args_list]
+        assert "idle_state_broadcast" in event_types
+        assert "idle_state_request" in event_types
+        assert "selfplay_target_updated" in event_types
+        assert "quality_degraded" in event_types
+        assert "selfplay_rate_changed" in event_types
 
 
 # =============================================================================

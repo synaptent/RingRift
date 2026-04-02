@@ -1953,51 +1953,53 @@ class AutoPromotionDaemon(HandlerBase):
             candidate: PromotionCandidate that was promoted
         """
         try:
-            from app.coordination.event_router import DataEventType, emit_curriculum_advanced, get_router
+            from app.coordination.event_router import (
+                DataEventType,
+                emit_curriculum_advanced,
+                publish,
+            )
 
-            router = get_router()
-            if router:
-                # Feb 28, 2026: Parse config_key to include board_type/num_players
-                # in payload. Downstream consumers (distribution, S3, tournament)
-                # require these fields and log errors when they're None.
-                parsed = parse_config_key(candidate.config_key)
-                await router.publish(
-                    event_type=DataEventType.MODEL_PROMOTED,
-                    payload={
-                        "config_key": candidate.config_key,
-                        "model_path": candidate.model_path,
-                        "board_type": parsed.board_type if parsed else None,
-                        "num_players": parsed.num_players if parsed else None,
-                        "reason": "auto_promotion_daemon",
-                        "vs_random": candidate.evaluation_results.get("RANDOM", 0.0),
-                        "vs_heuristic": candidate.evaluation_results.get("HEURISTIC", 0.0),
-                        "timestamp": time.time(),
-                    },
+            # Feb 28, 2026: Parse config_key to include board_type/num_players
+            # in payload. Downstream consumers (distribution, S3, tournament)
+            # require these fields and log errors when they're None.
+            parsed = parse_config_key(candidate.config_key)
+            await publish(
+                event_type=DataEventType.MODEL_PROMOTED,
+                payload={
+                    "config_key": candidate.config_key,
+                    "model_path": candidate.model_path,
+                    "board_type": parsed.board_type if parsed else None,
+                    "num_players": parsed.num_players if parsed else None,
+                    "reason": "auto_promotion_daemon",
+                    "vs_random": candidate.evaluation_results.get("RANDOM", 0.0),
+                    "vs_heuristic": candidate.evaluation_results.get("HEURISTIC", 0.0),
+                    "timestamp": time.time(),
+                },
+                source="auto_promotion_daemon",
+            )
+            logger.info(
+                f"[AutoPromotion] Emitted MODEL_PROMOTED for {candidate.config_key}"
+            )
+
+            # P0.5 Dec 2025: Emit CURRICULUM_ADVANCED when consecutive promotions
+            # indicate curriculum tier progression readiness
+            if candidate.consecutive_passes >= 2:
+                # Determine tier from consecutive pass count
+                old_tier = f"TIER_{candidate.consecutive_passes - 1}"
+                new_tier = f"TIER_{candidate.consecutive_passes}"
+                await emit_curriculum_advanced(
+                    config=candidate.config_key,
+                    old_tier=old_tier,
+                    new_tier=new_tier,
+                    trigger_reason="consecutive_promotions",
+                    win_rate=candidate.evaluation_results.get("HEURISTIC", 0.0),
+                    games_at_tier=candidate.evaluation_games,
                     source="auto_promotion_daemon",
                 )
                 logger.info(
-                    f"[AutoPromotion] Emitted MODEL_PROMOTED for {candidate.config_key}"
+                    f"[AutoPromotion] Emitted CURRICULUM_ADVANCED for {candidate.config_key}: "
+                    f"{old_tier} → {new_tier}"
                 )
-
-                # P0.5 Dec 2025: Emit CURRICULUM_ADVANCED when consecutive promotions
-                # indicate curriculum tier progression readiness
-                if candidate.consecutive_passes >= 2:
-                    # Determine tier from consecutive pass count
-                    old_tier = f"TIER_{candidate.consecutive_passes - 1}"
-                    new_tier = f"TIER_{candidate.consecutive_passes}"
-                    await emit_curriculum_advanced(
-                        config=candidate.config_key,
-                        old_tier=old_tier,
-                        new_tier=new_tier,
-                        trigger_reason="consecutive_promotions",
-                        win_rate=candidate.evaluation_results.get("HEURISTIC", 0.0),
-                        games_at_tier=candidate.evaluation_games,
-                        source="auto_promotion_daemon",
-                    )
-                    logger.info(
-                        f"[AutoPromotion] Emitted CURRICULUM_ADVANCED for {candidate.config_key}: "
-                        f"{old_tier} → {new_tier}"
-                    )
         except Exception as e:  # noqa: BLE001
             logger.error(f"[AutoPromotion] Failed to emit promotion event: {e}")
 
@@ -2101,27 +2103,25 @@ class AutoPromotionDaemon(HandlerBase):
             error: Error message or reason for failure
         """
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish
             from app.events.types import RingRiftEventType
 
-            router = get_router()
-            if router:
-                await router.publish(
-                    event_type=RingRiftEventType.PROMOTION_FAILED,
-                    payload={
-                        "config_key": candidate.config_key,
-                        "config": candidate.config_key,  # Alternate key for compatibility
-                        "model_id": candidate.model_path,
-                        "error": error,
-                        "vs_random": candidate.evaluation_results.get("RANDOM", 0.0),
-                        "vs_heuristic": candidate.evaluation_results.get("HEURISTIC", 0.0),
-                        "timestamp": time.time(),
-                    },
-                    source="auto_promotion_daemon",
-                )
-                logger.info(
-                    f"[AutoPromotion] Emitted PROMOTION_FAILED for {candidate.config_key}: {error}"
-                )
+            await publish(
+                event_type=RingRiftEventType.PROMOTION_FAILED,
+                payload={
+                    "config_key": candidate.config_key,
+                    "config": candidate.config_key,  # Alternate key for compatibility
+                    "model_id": candidate.model_path,
+                    "error": error,
+                    "vs_random": candidate.evaluation_results.get("RANDOM", 0.0),
+                    "vs_heuristic": candidate.evaluation_results.get("HEURISTIC", 0.0),
+                    "timestamp": time.time(),
+                },
+                source="auto_promotion_daemon",
+            )
+            logger.info(
+                f"[AutoPromotion] Emitted PROMOTION_FAILED for {candidate.config_key}: {error}"
+            )
         except Exception as e:  # noqa: BLE001
             logger.error(f"[AutoPromotion] Failed to emit PROMOTION_FAILED event: {e}")
 
@@ -2141,33 +2141,31 @@ class AutoPromotionDaemon(HandlerBase):
             success: Whether promotion succeeded
         """
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish
 
-            router = get_router()
-            if router:
-                # Calculate Elo change
-                elo_change = candidate.estimated_elo - candidate.previous_elo
+            # Calculate Elo change
+            elo_change = candidate.estimated_elo - candidate.previous_elo
 
-                await router.publish(
-                    event_type="PROMOTION_COMPLETED",
-                    payload={
-                        "config_key": candidate.config_key,
-                        "success": success,
-                        "elo_change": elo_change,
-                        "estimated_elo": candidate.estimated_elo,
-                        "previous_elo": candidate.previous_elo,
-                        "consecutive_failures": candidate.consecutive_failures,
-                        "consecutive_passes": candidate.consecutive_passes,
-                        "vs_random": candidate.evaluation_results.get("RANDOM", 0.0),
-                        "vs_heuristic": candidate.evaluation_results.get("HEURISTIC", 0.0),
-                        "timestamp": time.time(),
-                    },
-                    source="auto_promotion_daemon",
-                )
-                logger.info(
-                    f"[AutoPromotion] Emitted PROMOTION_COMPLETED for {candidate.config_key}: "
-                    f"success={success}, elo_change={elo_change:+.0f}"
-                )
+            await publish(
+                event_type="PROMOTION_COMPLETED",
+                payload={
+                    "config_key": candidate.config_key,
+                    "success": success,
+                    "elo_change": elo_change,
+                    "estimated_elo": candidate.estimated_elo,
+                    "previous_elo": candidate.previous_elo,
+                    "consecutive_failures": candidate.consecutive_failures,
+                    "consecutive_passes": candidate.consecutive_passes,
+                    "vs_random": candidate.evaluation_results.get("RANDOM", 0.0),
+                    "vs_heuristic": candidate.evaluation_results.get("HEURISTIC", 0.0),
+                    "timestamp": time.time(),
+                },
+                source="auto_promotion_daemon",
+            )
+            logger.info(
+                f"[AutoPromotion] Emitted PROMOTION_COMPLETED for {candidate.config_key}: "
+                f"success={success}, elo_change={elo_change:+.0f}"
+            )
         except Exception as e:  # noqa: BLE001
             logger.error(f"[AutoPromotion] Failed to emit PROMOTION_COMPLETED event: {e}")
 

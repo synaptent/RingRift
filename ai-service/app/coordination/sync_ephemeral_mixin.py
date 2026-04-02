@@ -876,22 +876,20 @@ class SyncEphemeralMixin(SyncMixinBase):
         December 2025: Consolidated from ephemeral_sync.py
         """
         try:
-            from app.coordination.event_router import DataEventType, get_router
+            from app.coordination.event_router import DataEventType, publish
 
-            router = get_router()
-            if router:
-                await router.publish(
-                    event_type=DataEventType.GAME_SYNCED,
-                    payload={
-                        "node_id": self.node_id,
-                        "games_pushed": games_pushed,
-                        "target_nodes": target_nodes,
-                        "db_paths": db_paths,
-                        "is_ephemeral": self._is_ephemeral,
-                        "timestamp": time.time(),
-                    },
-                    source="AutoSyncDaemon",
-                )
+            await publish(
+                event_type=DataEventType.GAME_SYNCED,
+                payload={
+                    "node_id": self.node_id,
+                    "games_pushed": games_pushed,
+                    "target_nodes": target_nodes,
+                    "db_paths": db_paths,
+                    "is_ephemeral": self._is_ephemeral,
+                    "timestamp": time.time(),
+                },
+                source="AutoSyncDaemon",
+            )
         except (RuntimeError, AttributeError, ImportError) as e:
             logger.debug(f"[AutoSyncDaemon] Could not emit GAME_SYNCED event: {e}")
 

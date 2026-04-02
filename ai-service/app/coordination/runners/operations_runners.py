@@ -371,8 +371,12 @@ async def create_distillation() -> None:
 
 
 async def create_external_drive_sync() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): EXTERNAL_DRIVE_SYNC")
+    return
 
 
 async def create_vast_cpu_pipeline() -> None:
@@ -389,8 +393,12 @@ async def create_vast_cpu_pipeline() -> None:
 
 
 async def create_cluster_data_sync() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): CLUSTER_DATA_SYNC")
+    return
 
 
 async def create_p2p_backend() -> None:

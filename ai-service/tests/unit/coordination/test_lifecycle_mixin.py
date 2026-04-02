@@ -423,7 +423,6 @@ class TestEventSubscriptionMixin:
         """Test initial state."""
         component = ConcreteEventMixin()
         assert component._subscription_ids == []
-        assert component._event_bus is None
 
     def test_get_event_subscriptions(self):
         """Test _get_event_subscriptions returns handler dict."""
@@ -451,11 +450,12 @@ class TestEventSubscriptionMixin:
         component = ConcreteEventMixin()
         component._subscription_ids = [("EVENT_A", lambda x: None), ("EVENT_B", lambda x: None)]
 
-        with patch("app.coordination.event_router.unsubscribe"):
+        mock_unsub = MagicMock()
+        with patch("app.coordination.event_router.unsubscribe", mock_unsub):
             await component._unsubscribe_from_events()
 
         assert component._subscription_ids == []
-        assert mock_bus.unsubscribe.call_count == 2
+        assert mock_unsub.call_count == 2
 
 
 # =============================================================================

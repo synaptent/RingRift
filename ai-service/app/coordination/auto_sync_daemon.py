@@ -880,27 +880,25 @@ class AutoSyncDaemon(
         UnifiedBackupDaemon to push synced data to OWC/S3.
         """
         try:
-            from app.coordination.event_router import DataEventType, get_router
+            from app.coordination.event_router import DataEventType, publish
 
-            router = get_router()
-            if router:
-                await router.publish(
-                    event_type=DataEventType.DATA_SYNC_COMPLETED,
-                    payload={
-                        "node_id": self.node_id,
-                        "games_synced": games_synced,
-                        "bytes_transferred": bytes_transferred,
-                        "total_syncs": self._sync_stats.total_syncs,
-                        "successful_syncs": self._sync_stats.successful_syncs,
-                        # January 2026: Added for UnifiedBackupDaemon integration
-                        "db_path": db_path,
-                        "config_key": config_key,
-                        "needs_owc_backup": True,
-                        "needs_s3_backup": True,
-                        "source": "selfplay",
-                    },
-                    source="AutoSyncDaemon",
-                )
+            await publish(
+                event_type=DataEventType.DATA_SYNC_COMPLETED,
+                payload={
+                    "node_id": self.node_id,
+                    "games_synced": games_synced,
+                    "bytes_transferred": bytes_transferred,
+                    "total_syncs": self._sync_stats.total_syncs,
+                    "successful_syncs": self._sync_stats.successful_syncs,
+                    # January 2026: Added for UnifiedBackupDaemon integration
+                    "db_path": db_path,
+                    "config_key": config_key,
+                    "needs_owc_backup": True,
+                    "needs_s3_backup": True,
+                    "source": "selfplay",
+                },
+                source="AutoSyncDaemon",
+            )
         except (RuntimeError, OSError, ConnectionError) as e:
             logger.debug(f"Could not emit DATA_SYNC_COMPLETED: {e}")
 
@@ -1717,22 +1715,20 @@ class AutoSyncDaemon(
     async def _emit_sync_verification_failed(self, db_name: str, error: str) -> None:
         """Emit SYNC_VERIFICATION_FAILED event for feedback loop."""
         try:
-            from app.coordination.event_router import DataEventType, get_router
+            from app.coordination.event_router import DataEventType, publish
 
-            router = get_router()
-            if router:
-                await router.publish(
-                    event_type=DataEventType.DATA_SYNC_FAILED,
-                    payload={
-                        "node_id": self.node_id,
-                        "db_name": db_name,
-                        "error": error,
-                        "verification_failed": True,
-                        "total_verified": self._sync_stats.databases_verified,
-                        "total_failed": self._sync_stats.databases_verification_failed,
-                    },
-                    source="AutoSyncDaemon:verification",
-                )
+            await publish(
+                event_type=DataEventType.DATA_SYNC_FAILED,
+                payload={
+                    "node_id": self.node_id,
+                    "db_name": db_name,
+                    "error": error,
+                    "verification_failed": True,
+                    "total_verified": self._sync_stats.databases_verified,
+                    "total_failed": self._sync_stats.databases_verification_failed,
+                },
+                source="AutoSyncDaemon:verification",
+            )
         except (RuntimeError, OSError, ConnectionError) as e:
             logger.debug(f"Could not emit SYNC_VERIFICATION_FAILED: {e}")
 

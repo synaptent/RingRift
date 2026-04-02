@@ -384,7 +384,7 @@ class DeadLetterQueue:
             True if re-publish succeeded and router has subscribers
         """
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import has_subscribers, publish
         except ImportError:
             logger.warning(
                 f"[DLQ] Cannot retry {event.event_type} via router - "
@@ -392,10 +392,8 @@ class DeadLetterQueue:
             )
             return False
 
-        router = get_router()
-
         # Check if router has any subscribers for this event type
-        if not router.has_subscribers(event.event_type):
+        if not has_subscribers(event.event_type):
             logger.debug(
                 f"[DLQ] No router subscribers for {event.event_type}, "
                 f"skipping re-publish"
@@ -403,7 +401,7 @@ class DeadLetterQueue:
             return False
 
         try:
-            await router.publish(
+            await publish(
                 event_type=event.event_type,
                 payload=event.payload,
                 source=f"dlq_retry:{event.event_id}",

@@ -1190,6 +1190,7 @@ class TrainingCoordinator:
         """
         try:
             from app.coordination.event_router import emit_selfplay_target_updated
+            from app.core.async_context import safe_create_task
 
             # Calculate boost based on how bad quality is
             if quality_score < 0.3:
@@ -1208,8 +1209,7 @@ class TrainingCoordinator:
                 f"{config_key} target={new_target} (boost={boost_factor}x, quality={quality_score:.2f})"
             )
 
-            import asyncio
-            asyncio.create_task(
+            safe_create_task(
                 emit_selfplay_target_updated(
                     config_key=config_key,
                     target_games=new_target,
@@ -1218,7 +1218,8 @@ class TrainingCoordinator:
                     source="training_coordinator.py",
                     exploration_boost=boost_factor,
                     recovery_mode=True,
-                )
+                ),
+                name=f"training_coordinator_quality_boost_{config_key}",
             )
 
         except ImportError:
@@ -2234,30 +2235,28 @@ class TrainingCoordinator:
             payload: Event payload
         """
         try:
-            from app.coordination.event_router import get_router
             import asyncio
 
-            router = get_router()
-            if router is None:
-                return
+            from app.coordination.event_router import publish, publish_sync
+            from app.core.async_context import safe_create_task
 
             try:
-                loop = asyncio.get_running_loop()
-                asyncio.create_task(
-                    router.publish(
-                        event_type=event_type,
-                        payload=payload,
-                        source="TrainingCoordinator",
-                    )
-                )
+                asyncio.get_running_loop()
             except RuntimeError:
                 # No event loop running - use sync publish
-                asyncio.run(
-                    router.publish(
+                publish_sync(
+                    event_type=event_type,
+                    payload=payload,
+                    source="TrainingCoordinator",
+                )
+            else:
+                safe_create_task(
+                    publish(
                         event_type=event_type,
                         payload=payload,
                         source="TrainingCoordinator",
-                    )
+                    ),
+                    name=f"training_coordinator_emit_{event_type.lower()}",
                 )
         except Exception as e:
             logger.debug(f"Failed to emit {event_type}: {e}")

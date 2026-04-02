@@ -368,6 +368,17 @@ class ConfigurableDaemonAdapter(DaemonAdapter):
 # =============================================================================
 
 ADAPTER_SPECS: dict[DaemonType, DaemonAdapterSpec] = {
+    DaemonType.DISTILLATION: DaemonAdapterSpec(
+        daemon_type=DaemonType.DISTILLATION,
+        module_path="app.training.distillation_daemon",
+        class_name="DistillationDaemon",
+        role=OrchestratorRole.DISTILLATION_LEADER,
+        deprecated=True,
+        deprecated_message=(
+            "Distillation daemon adapter is deprecated; distillation now uses "
+            "the training pipeline directly."
+        ),
+    ),
     DaemonType.UNIFIED_PROMOTION: DaemonAdapterSpec(
         daemon_type=DaemonType.UNIFIED_PROMOTION,
         module_path="app.training.unified_promotion_daemon",
@@ -397,6 +408,34 @@ ADAPTER_SPECS: dict[DaemonType, DaemonAdapterSpec] = {
         module_path="app.coordination.data_cleanup_daemon",
         class_name="DataCleanupDaemon",
         role=None,
+    ),
+    DaemonType.EXTERNAL_DRIVE_SYNC: DaemonAdapterSpec(
+        daemon_type=DaemonType.EXTERNAL_DRIVE_SYNC,
+        module_path="app.coordination.external_drive_sync",
+        class_name="ExternalDriveSyncDaemon",
+        role=OrchestratorRole.EXTERNAL_SYNC_LEADER,
+    ),
+    DaemonType.CLUSTER_DATA_SYNC: DaemonAdapterSpec(
+        daemon_type=DaemonType.CLUSTER_DATA_SYNC,
+        module_path="app.coordination.cluster.sync",
+        class_name="SyncCoordinator",
+        role=OrchestratorRole.CLUSTER_DATA_SYNC_LEADER,
+        deprecated=True,
+        deprecated_message=(
+            "ClusterDataSync adapter is deprecated; use the unified sync "
+            "coordination stack instead."
+        ),
+    ),
+    DaemonType.NPZ_DISTRIBUTION: DaemonAdapterSpec(
+        daemon_type=DaemonType.NPZ_DISTRIBUTION,
+        module_path="app.coordination.unified_distribution_daemon",
+        class_name="UnifiedDistributionDaemon",
+        role=None,
+        deprecated=True,
+        deprecated_message=(
+            "NPZ distribution adapter is deprecated; unified distribution "
+            "daemon replaces dedicated NPZ distribution."
+        ),
     ),
 }
 
@@ -429,11 +468,16 @@ def _create_legacy_adapter(daemon_type: DaemonType) -> type[DaemonAdapter]:
 
 
 # Legacy classes - thin wrappers for backward compatibility
+# Legacy classes - thin wrappers for backward compatibility
+DistillationDaemonAdapter = _create_legacy_adapter(DaemonType.DISTILLATION)
 PromotionDaemonAdapter = _create_legacy_adapter(DaemonType.UNIFIED_PROMOTION)
 VastCpuPipelineAdapter = _create_legacy_adapter(DaemonType.VAST_CPU_PIPELINE)
 AutoSyncDaemonAdapter = _create_legacy_adapter(DaemonType.AUTO_SYNC)
 OrphanDetectionDaemonAdapter = _create_legacy_adapter(DaemonType.ORPHAN_DETECTION)
 DataCleanupDaemonAdapter = _create_legacy_adapter(DaemonType.DATA_CLEANUP)
+ExternalDriveSyncAdapter = _create_legacy_adapter(DaemonType.EXTERNAL_DRIVE_SYNC)
+ClusterDataSyncAdapter = _create_legacy_adapter(DaemonType.CLUSTER_DATA_SYNC)
+NPZDistributionDaemonAdapter = _create_legacy_adapter(DaemonType.NPZ_DISTRIBUTION)
 
 
 # =============================================================================
@@ -441,11 +485,15 @@ DataCleanupDaemonAdapter = _create_legacy_adapter(DaemonType.DATA_CLEANUP)
 # =============================================================================
 
 _ADAPTER_CLASSES: dict[DaemonType, type[DaemonAdapter]] = {
+    DaemonType.DISTILLATION: DistillationDaemonAdapter,
     DaemonType.UNIFIED_PROMOTION: PromotionDaemonAdapter,
     DaemonType.VAST_CPU_PIPELINE: VastCpuPipelineAdapter,
     DaemonType.AUTO_SYNC: AutoSyncDaemonAdapter,
     DaemonType.ORPHAN_DETECTION: OrphanDetectionDaemonAdapter,
     DaemonType.DATA_CLEANUP: DataCleanupDaemonAdapter,
+    DaemonType.EXTERNAL_DRIVE_SYNC: ExternalDriveSyncAdapter,
+    DaemonType.CLUSTER_DATA_SYNC: ClusterDataSyncAdapter,
+    DaemonType.NPZ_DISTRIBUTION: NPZDistributionDaemonAdapter,
 }
 
 
@@ -544,8 +592,12 @@ __all__ = [
     "DaemonAdapterSpec",
     "ConfigurableDaemonAdapter",
     # Legacy adapter classes (backward compatibility)
+    "DistillationDaemonAdapter",
     "AutoSyncDaemonAdapter",
+    "ClusterDataSyncAdapter",
     "DataCleanupDaemonAdapter",
+    "ExternalDriveSyncAdapter",
+    "NPZDistributionDaemonAdapter",
     "OrphanDetectionDaemonAdapter",
     "PromotionDaemonAdapter",
     "VastCpuPipelineAdapter",

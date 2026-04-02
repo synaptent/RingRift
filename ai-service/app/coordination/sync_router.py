@@ -1281,74 +1281,72 @@ class SyncRouter:
         - CLUSTER_CAPACITY_CHANGED: React to cluster membership changes
         """
         try:
-            from app.coordination.event_router import DataEventType, get_router
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType, subscribe
 
             # Subscribe to game events
-            router.subscribe(
+            subscribe(
                 DataEventType.NEW_GAMES_AVAILABLE.value,
                 self._on_new_games_available,
             )
 
             # Subscribe to training events
-            router.subscribe(
+            subscribe(
                 DataEventType.TRAINING_STARTED.value,
                 self._on_training_started,
             )
 
             # Subscribe to host events
-            router.subscribe(
+            subscribe(
                 DataEventType.HOST_ONLINE.value,
                 self._on_host_online,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.HOST_OFFLINE.value,
                 self._on_host_offline,
             )
 
             # Dec 2025: Subscribe to NODE_RECOVERED to re-enable sync
-            router.subscribe(
+            subscribe(
                 DataEventType.NODE_RECOVERED.value,
                 self._on_node_recovered,
             )
 
             # Subscribe to cluster capacity changes (Dec 2025 - P2P integration)
-            router.subscribe(
+            subscribe(
                 DataEventType.CLUSTER_CAPACITY_CHANGED.value,
                 self._on_cluster_capacity_changed,
             )
 
             # Dec 2025: Subscribe to MODEL_SYNC_REQUESTED to trigger model re-download
-            router.subscribe(
+            subscribe(
                 DataEventType.MODEL_SYNC_REQUESTED.value,
                 self._on_model_sync_requested,
             )
 
             # Dec 2025: Subscribe to SYNC_STALLED to track slow/unreliable nodes
-            router.subscribe(
+            subscribe(
                 DataEventType.SYNC_STALLED.value,
                 self._on_sync_stalled,
             )
 
             # Dec 29, 2025: Subscribe to SYNC_FAILURE_CRITICAL for multi-failure recovery
-            router.subscribe(
+            subscribe(
                 DataEventType.SYNC_FAILURE_CRITICAL.value,
                 self._on_sync_failure_critical,
             )
 
             # Dec 27, 2025: Subscribe to backpressure events
-            router.subscribe(
+            subscribe(
                 DataEventType.BACKPRESSURE_ACTIVATED.value,
                 self._on_backpressure_activated,
             )
-            router.subscribe(
+            subscribe(
                 DataEventType.BACKPRESSURE_RELEASED.value,
                 self._on_backpressure_released,
             )
 
             # Dec 2025: Subscribe to CONFIG_UPDATED for cluster config sync
-            router.subscribe(
+            subscribe(
                 DataEventType.CONFIG_UPDATED.value,
                 self._on_config_updated,
             )
@@ -1598,10 +1596,9 @@ class SyncRouter:
 
             # Also emit a MODEL_SYNC_STARTED event for tracking
             try:
-                from app.coordination.event_router import get_router
+                from app.coordination.event_router import publish
 
-                router = get_router()
-                await router.publish(
+                await publish(
                     "MODEL_SYNC_STARTED",
                     {
                         "model_id": model_id,
@@ -1609,6 +1606,7 @@ class SyncRouter:
                         "target_node": requesting_node,
                         "reason": reason,
                     },
+                    source="SyncRouter",
                 )
             except (ImportError, RuntimeError, OSError) as e:
                 # Event emission infrastructure errors
@@ -1937,10 +1935,9 @@ class SyncRouter:
     ) -> None:
         """Emit a capacity refresh event for downstream consumers."""
         try:
-            from app.coordination.event_router import get_router
+            from app.coordination.event_router import publish
 
-            router = get_router()
-            await router.publish(
+            await publish(
                 "SYNC_CAPACITY_REFRESHED",
                 {
                     "change_type": change_type,
@@ -1949,6 +1946,7 @@ class SyncRouter:
                     "gpu_nodes": gpu_nodes,
                     "router": "SyncRouter",
                 },
+                source="SyncRouter",
             )
         except (ImportError, RuntimeError, OSError, AttributeError) as e:
             # Event emission infrastructure errors
@@ -1963,21 +1961,19 @@ class SyncRouter:
     ) -> None:
         """Emit a sync routing decision event."""
         try:
-            from app.coordination.event_router import DataEventType, get_router
+            from app.coordination.event_router import DataEventType, publish
 
-            router = get_router()
-            if router is not None:
-                await router.publish(
-                    DataEventType.SYNC_REQUEST,
-                    {
-                        "source": source,
-                        "targets": targets,
-                        "data_type": data_type.value,
-                        "reason": reason,
-                        "router": "SyncRouter",
-                    },
-                    source="SyncRouter",
-                )
+            await publish(
+                DataEventType.SYNC_REQUEST,
+                {
+                    "source": source,
+                    "targets": targets,
+                    "data_type": data_type.value,
+                    "reason": reason,
+                    "router": "SyncRouter",
+                },
+                source="SyncRouter",
+            )
 
         except (ImportError, RuntimeError, OSError, AttributeError) as e:
             # Event emission infrastructure errors

@@ -24,8 +24,12 @@ logger = logging.getLogger(__name__)
 
 
 async def create_health_check() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): HEALTH_CHECK")
+    return
 
 
 async def create_queue_monitor() -> None:
@@ -55,8 +59,12 @@ async def create_daemon_watchdog() -> None:
 
 
 async def create_node_health_monitor() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): NODE_HEALTH_MONITOR")
+    return
 
 
 async def create_system_health_monitor() -> None:

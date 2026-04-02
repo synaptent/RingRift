@@ -156,13 +156,21 @@ async def create_adaptive_resources() -> None:
 
 
 async def create_lambda_idle() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): LAMBDA_IDLE")
+    return
 
 
 async def create_vast_idle() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): VAST_IDLE")
+    return
 
 
 async def create_multi_provider() -> None:

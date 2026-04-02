@@ -597,19 +597,27 @@ class TestEventEmission:
         target_nodes = ["node1", "node2"]
         db_paths = ["/tmp/db1.db"]
 
-        # Patch at source module since get_router is imported inside the method
-        with patch("app.coordination.event_router.get_router") as mock_router:
-            mock_router_instance = MagicMock()
-            mock_router_instance.publish = AsyncMock()
-            mock_router.return_value = mock_router_instance
-
+        with patch(
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+        ) as mock_publish:
             await mock_mixin._emit_game_synced(games_pushed, target_nodes, db_paths)
+            mock_publish.assert_awaited_once()
+            call_kwargs = mock_publish.await_args.kwargs
+            assert call_kwargs["event_type"].name == "GAME_SYNCED"
+            assert call_kwargs["payload"]["games_pushed"] == games_pushed
+            assert call_kwargs["payload"]["target_nodes"] == target_nodes
+            assert call_kwargs["payload"]["db_paths"] == db_paths
+            assert call_kwargs["source"] == "AutoSyncDaemon"
 
     @pytest.mark.asyncio
     async def test_event_emission_handles_missing_bus(self, mock_mixin):
-        """Test graceful handling when event bus unavailable."""
-        with patch("app.coordination.event_router.get_router", return_value=None):
-            # Should not raise - uses 0 for games_pushed
+        """Test graceful handling when unified publish helper fails."""
+        with patch(
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("boom"),
+        ):
             await mock_mixin._emit_game_synced(0, [], [])
 
 

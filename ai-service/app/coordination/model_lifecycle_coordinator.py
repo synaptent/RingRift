@@ -728,12 +728,10 @@ class ModelLifecycleCoordinator:
 
         # Attempt recovery via model distribution daemon
         try:
-            from app.coordination.event_router import get_router, DataEventType
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType, publish
 
             # Emit MODEL_SYNC_REQUESTED to trigger re-download from healthy nodes
-            await router.publish(
+            await publish(
                 DataEventType.MODEL_SYNC_REQUESTED.value,
                 {
                     "model_id": model_id,
@@ -743,6 +741,7 @@ class ModelLifecycleCoordinator:
                     "reason": f"corruption_recovery:{corruption_type}",
                     "priority": "high",
                 },
+                source="ModelLifecycleCoordinator",
             )
             logger.info(
                 f"[ModelLifecycleCoordinator] Requested model re-sync for {config_key} "
@@ -820,11 +819,9 @@ class ModelLifecycleCoordinator:
 
         # Emit MODEL_SYNC_REQUESTED to trigger download from healthy nodes
         try:
-            from app.coordination.event_router import get_router, DataEventType
+            from app.coordination.event_router import DataEventType, publish
 
-            router = get_router()
-
-            await router.publish(
+            await publish(
                 DataEventType.MODEL_SYNC_REQUESTED.value,
                 {
                     "model_id": model_id,
@@ -837,6 +834,7 @@ class ModelLifecycleCoordinator:
                     "reason": "model_not_found",
                     "priority": "high",
                 },
+                source="ModelLifecycleCoordinator",
             )
             logger.info(
                 f"[ModelLifecycleCoordinator] Requested model sync for {config_key} "
@@ -931,10 +929,9 @@ class ModelLifecycleCoordinator:
                     )
                     # Emit rollback event
                     try:
-                        from app.coordination.event_router import get_router, DataEventType
+                        from app.coordination.event_router import DataEventType, publish
 
-                        router = get_router()
-                        await router.publish(
+                        await publish(
                             DataEventType.PROMOTION_ROLLED_BACK.value,
                             {
                                 "from_model_id": model_id,
@@ -942,6 +939,7 @@ class ModelLifecycleCoordinator:
                                 "reason": f"auto_rollback:regression:{regression_type}",
                                 "triggered_by": "ModelLifecycleCoordinator",
                             },
+                            source="ModelLifecycleCoordinator",
                         )
                     except (ImportError, RuntimeError, OSError) as emit_err:
                         logger.debug(

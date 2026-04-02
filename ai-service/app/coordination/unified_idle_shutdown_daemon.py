@@ -77,12 +77,12 @@ except ImportError:
 
 # Event emission for tracking
 try:
-    from app.coordination.event_router import get_router, DataEventType
+    from app.coordination.event_router import DataEventType, publish
     HAS_EVENTS = True
 except ImportError:
     HAS_EVENTS = False
-    get_router = None
     DataEventType = None
+    publish = None
 
 
 # Provider-specific default configurations
@@ -690,10 +690,9 @@ class UnifiedIdleShutdownDaemon(HandlerBase):
                 self._cost_saved += node.cost_per_hour
 
                 # Emit event
-                if HAS_EVENTS and get_router:
+                if HAS_EVENTS and publish:
                     try:
-                        router = get_router()
-                        await router.publish(
+                        await publish(
                             DataEventType.NODE_TERMINATED,
                             {
                                 "instance_id": node.instance_id,

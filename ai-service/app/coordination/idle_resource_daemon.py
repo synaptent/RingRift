@@ -998,9 +998,7 @@ class IdleResourceDaemon(HandlerBase):
         reduce spawning cluster-wide to avoid overwhelming the pipeline.
         """
         try:
-            from app.coordination.event_router import DataEventType, get_router
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType, subscribe
 
             def _on_backpressure_activated(event: Any) -> None:
                 """Handle BACKPRESSURE_ACTIVATED - reduce spawn rate."""
@@ -1037,8 +1035,8 @@ class IdleResourceDaemon(HandlerBase):
                 if hasattr(self, "_backpressure_active") and len(self._backpressure_active) == 0:
                     self._backpressure_spawn_reduction = 1.0  # No reduction
 
-            router.subscribe(DataEventType.BACKPRESSURE_ACTIVATED.value, _on_backpressure_activated)
-            router.subscribe(DataEventType.BACKPRESSURE_RELEASED.value, _on_backpressure_released)
+            subscribe(DataEventType.BACKPRESSURE_ACTIVATED.value, _on_backpressure_activated)
+            subscribe(DataEventType.BACKPRESSURE_RELEASED.value, _on_backpressure_released)
 
             # December 29, 2025: Add MEMORY_PRESSURE handling (48-hour autonomous operation)
             def _on_memory_pressure(event: Any) -> None:
@@ -1065,9 +1063,9 @@ class IdleResourceDaemon(HandlerBase):
                 self._memory_pressure_active = False
                 self._memory_pressure_spawn_reduction = 1.0
 
-            router.subscribe(DataEventType.MEMORY_PRESSURE.value, _on_memory_pressure)
+            subscribe(DataEventType.MEMORY_PRESSURE.value, _on_memory_pressure)
             # Also listen for RESOURCE_CONSTRAINT as a signal to be cautious
-            router.subscribe(DataEventType.RESOURCE_CONSTRAINT.value, _on_memory_pressure)
+            subscribe(DataEventType.RESOURCE_CONSTRAINT.value, _on_memory_pressure)
 
             # Initialize memory pressure state
             self._memory_pressure_active = False
@@ -1100,9 +1098,7 @@ class IdleResourceDaemon(HandlerBase):
         - P2P_CLUSTER_UNHEALTHY: Reduce spawning cluster-wide
         """
         try:
-            from app.coordination.event_router import DataEventType, get_router
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType, subscribe
 
             # Track unhealthy nodes - skip them during spawn decisions
             if not hasattr(self, "_unhealthy_nodes"):
@@ -1162,13 +1158,13 @@ class IdleResourceDaemon(HandlerBase):
 
             # Subscribe to P2P health events
             if hasattr(DataEventType, 'NODE_UNHEALTHY'):
-                router.subscribe(DataEventType.NODE_UNHEALTHY.value, _on_node_unhealthy)
+                subscribe(DataEventType.NODE_UNHEALTHY.value, _on_node_unhealthy)
             if hasattr(DataEventType, 'NODE_RECOVERED'):
-                router.subscribe(DataEventType.NODE_RECOVERED.value, _on_node_recovered)
+                subscribe(DataEventType.NODE_RECOVERED.value, _on_node_recovered)
             if hasattr(DataEventType, 'P2P_CLUSTER_UNHEALTHY'):
-                router.subscribe(DataEventType.P2P_CLUSTER_UNHEALTHY.value, _on_cluster_unhealthy)
+                subscribe(DataEventType.P2P_CLUSTER_UNHEALTHY.value, _on_cluster_unhealthy)
             if hasattr(DataEventType, 'P2P_CLUSTER_HEALTHY'):
-                router.subscribe(DataEventType.P2P_CLUSTER_HEALTHY.value, _on_cluster_healthy)
+                subscribe(DataEventType.P2P_CLUSTER_HEALTHY.value, _on_cluster_healthy)
 
             # Dec 30, 2025: Subscribe to utilization watchdog events for proactive remediation
             def _on_cluster_underutilized(event: Any) -> None:
@@ -1206,9 +1202,12 @@ class IdleResourceDaemon(HandlerBase):
                     self.config.max_concurrent_spawns = 5  # Default value
 
             if hasattr(DataEventType, 'CLUSTER_UNDERUTILIZED'):
-                router.subscribe(DataEventType.CLUSTER_UNDERUTILIZED.value, _on_cluster_underutilized)
+                subscribe(DataEventType.CLUSTER_UNDERUTILIZED.value, _on_cluster_underutilized)
             if hasattr(DataEventType, 'CLUSTER_UTILIZATION_RECOVERED'):
-                router.subscribe(DataEventType.CLUSTER_UTILIZATION_RECOVERED.value, _on_cluster_utilization_recovered)
+                subscribe(
+                    DataEventType.CLUSTER_UTILIZATION_RECOVERED.value,
+                    _on_cluster_utilization_recovered,
+                )
 
             # Initialize health tracking
             self._unhealthy_nodes: set[str] = set()
@@ -1238,9 +1237,7 @@ class IdleResourceDaemon(HandlerBase):
         - IDLE_STATE_REQUEST: Respond with local idle state
         """
         try:
-            from app.coordination.event_router import DataEventType, get_router
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType, subscribe
 
             def _on_idle_state_broadcast(event: Any) -> None:
                 """Handle IDLE_STATE_BROADCAST from other nodes."""
@@ -1283,9 +1280,9 @@ class IdleResourceDaemon(HandlerBase):
 
             # Subscribe to cluster state events
             if hasattr(DataEventType, 'IDLE_STATE_BROADCAST'):
-                router.subscribe(DataEventType.IDLE_STATE_BROADCAST.value, _on_idle_state_broadcast)
+                subscribe(DataEventType.IDLE_STATE_BROADCAST.value, _on_idle_state_broadcast)
             if hasattr(DataEventType, 'IDLE_STATE_REQUEST'):
-                router.subscribe(DataEventType.IDLE_STATE_REQUEST.value, _on_idle_state_request)
+                subscribe(DataEventType.IDLE_STATE_REQUEST.value, _on_idle_state_request)
 
             logger.info(
                 "[IdleResourceDaemon] Subscribed to cluster idle state events "
@@ -1309,9 +1306,7 @@ class IdleResourceDaemon(HandlerBase):
         - SELFPLAY_TARGET_UPDATED: Update config priority for job spawning
         """
         try:
-            from app.coordination.event_router import DataEventType, get_router
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType, subscribe
 
             # Track priority configs - these should be preferred when spawning
             if not hasattr(self, "_priority_configs"):
@@ -1356,7 +1351,7 @@ class IdleResourceDaemon(HandlerBase):
 
             # Subscribe to the event
             if hasattr(DataEventType, 'SELFPLAY_TARGET_UPDATED'):
-                router.subscribe(DataEventType.SELFPLAY_TARGET_UPDATED.value, _on_selfplay_target_updated)
+                subscribe(DataEventType.SELFPLAY_TARGET_UPDATED.value, _on_selfplay_target_updated)
                 logger.info(
                     "[IdleResourceDaemon] Subscribed to SELFPLAY_TARGET_UPDATED "
                     "(feedback loop priority updates)"
@@ -1380,9 +1375,7 @@ class IdleResourceDaemon(HandlerBase):
         - QUALITY_DEGRADED: Reduce spawn rate for affected config
         """
         try:
-            from app.coordination.event_router import DataEventType, get_router
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType, subscribe
 
             # Track quality-degraded configs and their reduction factors
             if not hasattr(self, "_quality_degraded_configs"):
@@ -1424,7 +1417,7 @@ class IdleResourceDaemon(HandlerBase):
 
             # Subscribe to the event
             if hasattr(DataEventType, 'QUALITY_DEGRADED'):
-                router.subscribe(DataEventType.QUALITY_DEGRADED.value, _on_quality_degraded)
+                subscribe(DataEventType.QUALITY_DEGRADED.value, _on_quality_degraded)
                 logger.info(
                     "[IdleResourceDaemon] Subscribed to QUALITY_DEGRADED "
                     "(quality-based spawn reduction)"
@@ -1451,9 +1444,7 @@ class IdleResourceDaemon(HandlerBase):
         - SELFPLAY_RATE_CHANGED: Adjust GPU allocation targets for affected config
         """
         try:
-            from app.coordination.event_router import DataEventType, get_router
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType, subscribe
 
             # Track rate changes for spawning decisions
             if not hasattr(self, "_selfplay_rate_adjustments"):
@@ -1490,7 +1481,7 @@ class IdleResourceDaemon(HandlerBase):
 
             # Subscribe to the event
             if hasattr(DataEventType, 'SELFPLAY_RATE_CHANGED'):
-                router.subscribe(DataEventType.SELFPLAY_RATE_CHANGED.value, _on_selfplay_rate_changed)
+                subscribe(DataEventType.SELFPLAY_RATE_CHANGED.value, _on_selfplay_rate_changed)
                 logger.info(
                     "[IdleResourceDaemon] Subscribed to SELFPLAY_RATE_CHANGED "
                     "(GPU allocation adjustment on rate changes)"
@@ -1601,9 +1592,7 @@ class IdleResourceDaemon(HandlerBase):
         self._last_broadcast_time = now
 
         try:
-            from app.coordination.event_router import DataEventType, get_router
-
-            router = get_router()
+            from app.coordination.event_router import DataEventType, publish
 
             # Get local node's current state (via thread pool to avoid blocking)
             local_state = await asyncio.to_thread(self._get_local_idle_state)
@@ -1612,7 +1601,7 @@ class IdleResourceDaemon(HandlerBase):
 
             # Broadcast to cluster
             if hasattr(DataEventType, 'IDLE_STATE_BROADCAST'):
-                await router.publish(
+                await publish(
                     DataEventType.IDLE_STATE_BROADCAST.value,
                     {
                         "node_id": local_state.node_id,
@@ -2975,11 +2964,10 @@ class IdleResourceDaemon(HandlerBase):
     ) -> None:
         """Emit event for selfplay spawn."""
         try:
-            from app.coordination.event_router import get_router, DataEventType
+            from app.coordination.event_router import DataEventType, publish_sync
 
-            router = get_router()
             # Phase 22.2 fix: Use publish_sync instead of emit (which doesn't exist)
-            router.publish_sync(
+            publish_sync(
                 DataEventType.P2P_SELFPLAY_SCALED.value
                 if hasattr(DataEventType, 'P2P_SELFPLAY_SCALED')
                 else "p2p_selfplay_scaled",

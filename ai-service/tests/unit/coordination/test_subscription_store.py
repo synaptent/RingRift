@@ -4,10 +4,12 @@ P0 December 2025: Tests for SQLite-backed subscription persistence.
 """
 
 import asyncio
+import json
 import os
 import sqlite3
 import tempfile
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -429,6 +431,62 @@ class TestDLQIntegration:
         # Should handle gracefully
         assert count >= 0  # Either 0 or actual replayed count
 
+    @pytest.mark.asyncio
+    async def test_replay_stale_dlq_events_uses_publish_helper(self, tmp_path):
+        """DLQ replay should republish through the unified async helper."""
+        db_path = tmp_path / "test_subscriptions.db"
+        dlq_path = tmp_path / "test_dead_letter.db"
+        store = SubscriptionStore(db_path=db_path)
+
+        created_at = (datetime.now() - timedelta(minutes=10)).isoformat()
+        with sqlite3.connect(dlq_path) as conn:
+            conn.execute(
+                """
+                CREATE TABLE dead_letter (
+                    event_id TEXT PRIMARY KEY,
+                    event_type TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    retry_count INTEGER DEFAULT 0,
+                    last_retry_at TEXT
+                )
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO dead_letter (event_id, event_type, payload, created_at, retry_count)
+                VALUES (?, ?, ?, ?, 0)
+                """,
+                (
+                    "evt-1",
+                    "DATA_SYNC_COMPLETED",
+                    json.dumps({"config_key": "hex8_2p", "games": 120}),
+                    created_at,
+                ),
+            )
+            conn.commit()
+
+        mock_dlq = MagicMock(db_path=dlq_path)
+
+        with patch(
+            "app.coordination.dead_letter_queue.get_dead_letter_queue",
+            return_value=mock_dlq,
+        ), patch(
+            "app.coordination.event_router.has_subscribers",
+            return_value=True,
+        ), patch(
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+        ) as mock_publish:
+            replayed = await store.replay_stale_dlq_events()
+
+        assert replayed == 1
+        mock_publish.assert_awaited_once()
+        call_kwargs = mock_publish.call_args.kwargs
+        assert call_kwargs["event_type"] == "DATA_SYNC_COMPLETED"
+        assert call_kwargs["payload"]["config_key"] == "hex8_2p"
+        assert call_kwargs["source"] == "dlq_replay:evt-1"
+
     def test_check_stale_dlq_events_no_dlq(self, tmp_path):
         """Test check returns empty list when DLQ not available."""
         db_path = tmp_path / "test_subscriptions.db"
@@ -455,6 +513,33 @@ class TestDLQIntegration:
             assert "threshold_hours" in event
             assert isinstance(event["count"], int)
             assert event["threshold_hours"] == store.stale_dlq_alert_hours
+
+    @pytest.mark.asyncio
+    async def test_emit_stale_dlq_alerts_uses_publish_helper(self, tmp_path):
+        """Stale DLQ alerts should publish through the unified async helper."""
+        db_path = tmp_path / "test_subscriptions.db"
+        store = SubscriptionStore(db_path=db_path)
+
+        stale_events = [
+            {
+                "event_type": "TRAINING_COMPLETED",
+                "count": 3,
+                "oldest": "2026-03-30T00:00:00",
+                "threshold_hours": 24,
+            }
+        ]
+
+        with patch.object(store, "check_stale_dlq_events", return_value=stale_events), \
+             patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+            emitted = await store.emit_stale_dlq_alerts()
+
+        assert emitted == 1
+        mock_publish.assert_awaited_once()
+        call_kwargs = mock_publish.call_args.kwargs
+        assert call_kwargs["event_type"] == "DLQ_STALE_EVENTS"
+        assert call_kwargs["payload"]["event_type"] == "TRAINING_COMPLETED"
+        assert call_kwargs["payload"]["count"] == 3
+        assert call_kwargs["source"] == "subscription_store"
 
 
 class TestModuleConstants:

@@ -704,6 +704,34 @@ class TestDLQRetryDaemon:
         assert payload["event_types"] == ["MODEL_PROMOTED"]
         assert mock_publish_sync.call_args.kwargs["source"] == "DLQRetryDaemon"
 
+    @pytest.mark.asyncio
+    async def test_retry_via_router_uses_publish_helper(self, dlq: DeadLetterQueue) -> None:
+        """Router retries should use has_subscribers() plus the async publish helper."""
+        event = FailedEvent(
+            event_id="evt-123",
+            event_type="TRAINING_COMPLETED",
+            payload={"config_key": "hex8_2p"},
+            handler_name="test_handler",
+            error="boom",
+        )
+
+        with patch(
+            "app.coordination.event_router.has_subscribers",
+            return_value=True,
+        ) as mock_has_subscribers, patch(
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+        ) as mock_publish:
+            result = await dlq._retry_via_router(event)
+
+        assert result is True
+        mock_has_subscribers.assert_called_once_with("TRAINING_COMPLETED")
+        mock_publish.assert_awaited_once_with(
+            event_type="TRAINING_COMPLETED",
+            payload={"config_key": "hex8_2p"},
+            source="dlq_retry:evt-123",
+        )
+
     def test_health_check_not_running(self, dlq: DeadLetterQueue) -> None:
         """Test health check when daemon is not running."""
         daemon = DLQRetryDaemon(dlq=dlq)

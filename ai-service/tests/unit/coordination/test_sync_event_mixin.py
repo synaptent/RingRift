@@ -113,36 +113,38 @@ class TestEventSubscriptionWiring:
 
     def test_subscribe_to_events_sets_subscribed_flag(self, mock_mixin):
         """Test that _subscribe_to_events sets _subscribed = True."""
-        with patch("app.coordination.event_router.get_router") as mock_get_router:
-            mock_router = MagicMock()
-            mock_get_router.return_value = mock_router
-
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
             mock_mixin._subscribe_to_events()
 
             assert mock_mixin._subscribed is True
+            assert mock_subscribe.called
 
     def test_subscribe_to_events_skips_if_already_subscribed(self, mock_mixin):
         """Test that repeated calls don't double-subscribe."""
         mock_mixin._subscribed = True
 
-        with patch("app.coordination.event_router.get_router") as mock_get_router:
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
             mock_mixin._subscribe_to_events()
 
-            # Should not have called get_router
-            mock_get_router.assert_not_called()
+            # Should not have called subscribe
+            mock_subscribe.assert_not_called()
 
-    def test_subscribe_to_data_stale_event(self, mock_mixin, mock_event_bus):
+    def test_subscribe_to_data_stale_event(self, mock_mixin):
         """Test subscription to DATA_STALE event."""
-        with patch("app.coordination.event_router.get_router", return_value=mock_event_bus):
+        with patch("app.coordination.event_router.subscribe") as mock_subscribe:
             mock_mixin._subscribe_to_events()
 
-            # Check that subscribe was called
-            assert mock_event_bus.subscribe.called
+            subscribed = [(call.args[0], call.args[1]) for call in mock_subscribe.call_args_list]
+            event_types = [event_type for event_type, _ in subscribed]
+            assert any(
+                getattr(event_type, "value", event_type) == "data_stale"
+                for event_type in event_types
+            )
 
     def test_subscribe_handles_import_error_gracefully(self, mock_mixin):
         """Test graceful handling when event_router is unavailable."""
         with patch(
-            "app.coordination.event_router.get_router",
+            "app.coordination.event_router.subscribe",
             side_effect=ImportError("Module not found"),
         ):
             # Should not raise

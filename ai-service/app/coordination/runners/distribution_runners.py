@@ -55,8 +55,12 @@ async def create_model_distribution() -> None:
 
 
 async def create_npz_distribution() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): NPZ_DISTRIBUTION")
+    return
 
 
 async def create_data_server() -> None:
@@ -79,10 +83,18 @@ async def create_data_server() -> None:
 
 
 async def create_replication_monitor() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): REPLICATION_MONITOR")
+    return
 
 
 async def create_replication_repair() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): REPLICATION_REPAIR")
+    return

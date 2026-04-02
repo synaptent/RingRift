@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -607,6 +607,120 @@ class TestStatistics:
 
         stats = coordinator.get_stats()
         assert stats.total_rollbacks == 1
+
+
+# =============================================================================
+# Recovery Event Emission Tests
+# =============================================================================
+
+
+class TestRecoveryEventEmission:
+    """Test helper-based model recovery and rollback emission."""
+
+    @pytest.mark.asyncio
+    async def test_model_corrupted_requests_sync_via_publish_helper(self, coordinator, mock_event):
+        """Corrupted models should request sync through the unified helper."""
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+            await coordinator._on_model_corrupted(
+                mock_event(
+                    payload={
+                        "model_id": "ringrift_best_hex8_2p",
+                        "config_key": "hex8_2p",
+                        "model_path": "/models/ringrift_best_hex8_2p.pth",
+                        "corruption_type": "checksum_mismatch",
+                        "node_id": "gpu-1",
+                    }
+                )
+            )
+
+        mock_publish.assert_awaited_once_with(
+            "model_sync_requested",
+            {
+                "model_id": "ringrift_best_hex8_2p",
+                "config_key": "hex8_2p",
+                "model_path": "/models/ringrift_best_hex8_2p.pth",
+                "target_node": "gpu-1",
+                "reason": "corruption_recovery:checksum_mismatch",
+                "priority": "high",
+            },
+            source="ModelLifecycleCoordinator",
+        )
+
+    @pytest.mark.asyncio
+    async def test_model_not_found_requests_sync_via_publish_helper(self, coordinator, mock_event):
+        """Missing models should request sync through the unified helper."""
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
+            await coordinator._on_model_not_found(
+                mock_event(
+                    payload={
+                        "config_key": "hex8_2p",
+                        "board_type": "hex8",
+                        "num_players": 2,
+                        "model_version": "v2",
+                        "expected_path": "/models/ringrift_best_hex8_2p.pth",
+                        "node_id": "gpu-2",
+                    }
+                )
+            )
+
+        mock_publish.assert_awaited_once()
+        args, kwargs = mock_publish.await_args
+        assert args[0] == "model_sync_requested"
+        assert args[1]["config_key"] == "hex8_2p"
+        assert args[1]["board_type"] == "hex8"
+        assert args[1]["num_players"] == 2
+        assert args[1]["model_path"] == "/models/ringrift_best_hex8_2p.pth"
+        assert args[1]["target_node"] == "gpu-2"
+        assert args[1]["reason"] == "model_not_found"
+        assert kwargs["source"] == "ModelLifecycleCoordinator"
+
+    @pytest.mark.asyncio
+    async def test_severe_regression_emits_rollback_via_publish_helper(self, coordinator, mock_event):
+        """Successful severe-regression rollback should emit through the helper."""
+        coordinator._production_model_id = "model-v1"
+
+        with patch(
+            "app.training.model_registry.get_model_registry",
+            return_value=object(),
+        ), patch(
+            "app.training.rollback_manager.RollbackManager"
+        ) as mock_rollback_manager, patch(
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+        ) as mock_publish:
+            mock_rollback_manager.return_value.rollback_model.return_value = {
+                "success": True,
+                "to_model_id": "model-v0",
+                "from_version": "v1",
+                "to_version": "v0",
+            }
+
+            await coordinator._on_regression_detected(
+                mock_event(
+                    payload={
+                        "model_id": "model-v1",
+                        "config_key": "hex8_2p",
+                        "regression_type": "elo_drop",
+                        "severity": "severe",
+                        "current_elo": 1450.0,
+                        "baseline_elo": 1550.0,
+                        "elo_drop": 100.0,
+                        "win_rate": 0.41,
+                        "games_analyzed": 40,
+                    }
+                )
+            )
+
+        mock_publish.assert_awaited_once_with(
+            "promotion_rolled_back",
+            {
+                "from_model_id": "model-v1",
+                "to_model_id": "model-v0",
+                "reason": "auto_rollback:regression:elo_drop",
+                "triggered_by": "ModelLifecycleCoordinator",
+            },
+            source="ModelLifecycleCoordinator",
+        )
 
 
 # =============================================================================
