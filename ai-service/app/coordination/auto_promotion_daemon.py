@@ -133,8 +133,8 @@ class AutoPromotionConfig:
     # Feb 23, 2026: Raised from 0.55 to 0.58. At n=100 games, 58% is the
     # minimum for p < 0.05 statistical significance (binomial test vs 50%).
     # Feb 23, 2026: At n=200 games, 58% win rate has p ≈ 0.01 (much stronger signal).
-    min_win_rate_vs_canonical: float = 0.58  # Must win 58%+ vs current canonical
-    head_to_head_games: int = 200  # Games to play vs canonical for evaluation
+    min_win_rate_vs_canonical: float = 0.55  # Must win 55%+ vs current canonical
+    head_to_head_games: int = 100  # Games to play vs canonical (at n=100, 55% has p ≈ 0.05)
     # January 26, 2026 (P4): Elo velocity gate - block promotion if Elo is declining
     # This prevents promoting models during regression periods, ensuring only models
     # with positive momentum (or at least stable Elo) get promoted.

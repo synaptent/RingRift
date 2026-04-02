@@ -237,12 +237,10 @@ GumbelMCTSAI: Any = None  # Jan 2026: Added for search-enabled gauntlet evaluati
 create_initial_state: Any = None
 DefaultRulesEngine: Any = None
 
-# Jan 2026: Search budget for gauntlet evaluation
-# This aligns evaluation with training (both use MCTS) while keeping evaluation fast
-# March 11, 2026: Increased from 32 to 200.
-# March 30, 2026: Changed to 128 to match selfplay budget. Evaluation and selfplay
-# must use consistent search depth for Elo comparisons to be meaningful.
-GAUNTLET_SEARCH_BUDGET = 128
+# Search budget for gauntlet evaluation.
+# Selfplay uses budget=800. Evaluation should use ~1/4 of that (AlphaZero convention).
+# 200 sims gives meaningful search depth without being too slow for evaluation.
+GAUNTLET_SEARCH_BUDGET = 200
 
 
 def _ensure_game_modules():
