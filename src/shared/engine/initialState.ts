@@ -84,7 +84,7 @@ export function createInitialGameState(
     // Callers may omit this to use host-level defaults.
     ...(rulesOptions ? { rulesOptions } : {}),
     maxPlayers: players.length,
-    totalRingsInPlay: 0, // Starts at 0, increments as rings are placed
+    totalRingsInPlay: effectiveRingsPerPlayer * players.length, // Total ring pool; decremented when rings collapse out of play
     totalRingsEliminated: 0,
     // Per RR-CANON-R061: victoryThreshold = round((2/3) × ownStartingRings + (1/3) × opponentsCombinedStartingRings)
     // Simplified: round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1)))

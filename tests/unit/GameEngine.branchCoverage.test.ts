@@ -322,6 +322,13 @@ describe('GameEngine branch coverage', () => {
       const state = engine.getGameState();
       // 64 spaces / 2 + 1 = 33
       expect(state.territoryVictoryThreshold).toBe(33);
+      expect(state.territoryVictoryMinimum).toBe(33);
+    });
+
+    it('uses canonical default LPS threshold', () => {
+      const engine = new GameEngine('test-s8-lps', 'square8', createPlayers(), timeControl);
+      const state = engine.getGameState();
+      expect(state.lpsRoundsRequired).toBe(3);
     });
 
     it('3-player game has correct total rings', () => {

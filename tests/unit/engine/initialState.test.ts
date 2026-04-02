@@ -420,7 +420,7 @@ describe('initialState', () => {
     });
 
     describe('game counters', () => {
-      it('should initialize totalRingsInPlay to 0', () => {
+      it('should initialize totalRingsInPlay to full ring pool', () => {
         const state = createInitialGameState(
           'game-123',
           'square8',
@@ -428,7 +428,8 @@ describe('initialState', () => {
           testTimeControl
         );
 
-        expect(state.totalRingsInPlay).toBe(0);
+        // totalRingsInPlay = ringsPerPlayer (18) * numPlayers (2) = 36
+        expect(state.totalRingsInPlay).toBe(36);
       });
 
       it('should initialize totalRingsEliminated to 0', () => {

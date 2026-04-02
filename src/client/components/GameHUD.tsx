@@ -468,11 +468,12 @@ function SubPhaseDetails({ detail }: { detail?: string | undefined }) {
 /**
  * LPS (Last-Player-Standing) tracking indicator.
  * Shows round counter and progress toward LPS victory when a player has consecutive exclusive rounds.
- * Per RR-CANON-R172, LPS requires 3 consecutive rounds where only 1 player has real actions.
+ * Per RR-CANON-R172, LPS requires lpsRoundsRequired consecutive rounds where only 1 player has real actions.
  */
 function LpsTrackingIndicator({
   lpsTracking,
   players,
+  lpsRoundsRequired = 3,
 }: {
   lpsTracking?: {
     roundIndex: number;
@@ -480,6 +481,7 @@ function LpsTrackingIndicator({
     consecutiveExclusivePlayer: number | null;
   };
   players: PlayerViewModel[];
+  lpsRoundsRequired?: number;
 }) {
   // Only show when there's progress toward LPS (at least 1 consecutive exclusive round)
   if (!lpsTracking || lpsTracking.consecutiveExclusiveRounds < 1) {
@@ -490,13 +492,13 @@ function LpsTrackingIndicator({
   const exclusivePlayer = players.find((p) => p.playerNumber === consecutiveExclusivePlayer);
   const playerName = exclusivePlayer?.username ?? `Player ${consecutiveExclusivePlayer}`;
 
-  // Color progression: amber (1-2), red (3 = victory imminent)
-  const isVictoryImminent = consecutiveExclusiveRounds >= 3;
+  // Color progression: amber (below threshold), red (threshold reached = victory imminent)
+  const isVictoryImminent = consecutiveExclusiveRounds >= lpsRoundsRequired;
   const colorClass = isVictoryImminent
     ? 'border-red-400/60 bg-gradient-to-r from-red-950/80 to-red-900/60 text-red-50 shadow-lg shadow-red-900/30'
     : 'border-amber-400/60 bg-gradient-to-r from-amber-950/80 to-amber-900/60 text-amber-50 shadow-md shadow-amber-900/20';
 
-  const roundsLeft = Math.max(0, 3 - consecutiveExclusiveRounds);
+  const roundsLeft = Math.max(0, lpsRoundsRequired - consecutiveExclusiveRounds);
   const statusText = isVictoryImminent
     ? 'LPS Victory!'
     : `${roundsLeft} round${roundsLeft !== 1 ? 's' : ''} until LPS`;
@@ -521,12 +523,17 @@ function LpsTrackingIndicator({
         <div className="text-[11px] opacity-90 mt-0.5 flex items-center gap-2">
           <span>{statusText}</span>
           <span className="text-[10px] opacity-70">•</span>
-          <span className="font-mono">Round {consecutiveExclusiveRounds}/3</span>
+          <span className="font-mono">
+            Round {consecutiveExclusiveRounds}/{lpsRoundsRequired}
+          </span>
         </div>
       </div>
       {/* Progress dots */}
-      <div className="flex gap-1.5" aria-label={`${consecutiveExclusiveRounds} of 3 rounds`}>
-        {[1, 2, 3].map((n) => (
+      <div
+        className="flex gap-1.5"
+        aria-label={`${consecutiveExclusiveRounds} of ${lpsRoundsRequired} rounds`}
+      >
+        {Array.from({ length: lpsRoundsRequired }, (_, i) => i + 1).map((n) => (
           <span
             key={n}
             className={`w-3 h-3 rounded-full transition-all duration-300 ${
@@ -1546,6 +1553,7 @@ function GameHUDFromViewModel({
     decisionPhase,
     weirdState,
     lpsTracking,
+    lpsRoundsRequired,
     victoryProgress,
   } = viewModel;
 
@@ -2065,7 +2073,11 @@ function GameHUDFromViewModel({
       {/* Dynamic indicators zone - reserve space to prevent layout shifts when indicators appear/disappear */}
       <div className="min-h-[32px]">
         {/* LPS tracking indicator - shows when a player has consecutive exclusive rounds */}
-        <LpsTrackingIndicator lpsTracking={lpsTracking} players={players} />
+        <LpsTrackingIndicator
+          lpsTracking={lpsTracking}
+          players={players}
+          lpsRoundsRequired={lpsRoundsRequired}
+        />
         {/* Victory progress indicator - shows ring elimination and territory progress */}
         <VictoryProgressIndicator victoryProgress={victoryProgress} players={players} />
       </div>

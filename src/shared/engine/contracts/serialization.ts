@@ -338,7 +338,8 @@ export function deserializeGameState(data: SerializedGameState): GameState {
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: data.players.length,
-    totalRingsInPlay: 0,
+    totalRingsInPlay:
+      (dataAny.totalRingsInPlay as number) ?? players.reduce((sum, p) => sum + p.ringsInHand, 0),
     totalRingsEliminated: data.totalRingsEliminated || 0,
     victoryThreshold: data.victoryThreshold,
     territoryVictoryThreshold: data.territoryVictoryThreshold,

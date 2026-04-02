@@ -132,14 +132,16 @@ function MobileWeirdStateBanner({
 /**
  * Mobile LPS (Last-Player-Standing) tracking indicator.
  * Compact version showing progress toward LPS victory.
- * Per RR-CANON-R172, LPS requires 3 consecutive rounds where only 1 player has real actions.
+ * Per RR-CANON-R172, LPS requires lpsRoundsRequired consecutive rounds where only 1 player has real actions.
  */
 function MobileLpsIndicator({
   lpsTracking,
   players,
+  lpsRoundsRequired = 3,
 }: {
   lpsTracking?: HUDViewModel['lpsTracking'];
   players: PlayerViewModel[];
+  lpsRoundsRequired?: number;
 }) {
   // Only show when there's progress toward LPS (at least 1 consecutive exclusive round)
   if (!lpsTracking || lpsTracking.consecutiveExclusiveRounds < 1) {
@@ -150,8 +152,8 @@ function MobileLpsIndicator({
   const exclusivePlayer = players.find((p) => p.playerNumber === consecutiveExclusivePlayer);
   const playerName = exclusivePlayer?.username ?? `P${consecutiveExclusivePlayer}`;
 
-  // Color progression: amber (1-2), red (3 = victory imminent)
-  const isVictoryImminent = consecutiveExclusiveRounds >= 3;
+  // Color progression: amber (below threshold), red (threshold reached = victory imminent)
+  const isVictoryImminent = consecutiveExclusiveRounds >= lpsRoundsRequired;
   const colorClass = isVictoryImminent
     ? 'border-red-400/60 bg-gradient-to-r from-red-950/90 to-red-900/70 text-red-50 shadow-md shadow-red-900/30'
     : 'border-amber-400/60 bg-gradient-to-r from-amber-950/90 to-amber-900/70 text-amber-50 shadow-md shadow-amber-900/20';
@@ -173,8 +175,11 @@ function MobileLpsIndicator({
       </span>
       <span className="font-semibold truncate flex-1">{playerName} exclusive</span>
       {/* Progress dots */}
-      <div className="flex gap-1" aria-label={`${consecutiveExclusiveRounds} of 3 rounds`}>
-        {[1, 2, 3].map((n) => (
+      <div
+        className="flex gap-1"
+        aria-label={`${consecutiveExclusiveRounds} of ${lpsRoundsRequired} rounds`}
+      >
+        {Array.from({ length: lpsRoundsRequired }, (_, i) => i + 1).map((n) => (
           <span
             key={n}
             className={`w-2 h-2 rounded-full transition-all duration-300 ${
@@ -478,6 +483,7 @@ export function MobileGameHUD({
     decisionPhase,
     weirdState,
     lpsTracking,
+    lpsRoundsRequired,
     victoryProgress,
   } = viewModel;
 
@@ -747,7 +753,11 @@ export function MobileGameHUD({
       )}
 
       {/* LPS tracking indicator (compact) */}
-      <MobileLpsIndicator lpsTracking={lpsTracking} players={players} />
+      <MobileLpsIndicator
+        lpsTracking={lpsTracking}
+        players={players}
+        lpsRoundsRequired={lpsRoundsRequired}
+      />
 
       {/* Victory progress indicator (compact) */}
       <MobileVictoryProgress victoryProgress={victoryProgress} players={players} />

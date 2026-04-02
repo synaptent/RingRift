@@ -156,9 +156,8 @@ def create_initial_state(
         lastMoveAt=datetime.now(),
         isRated=False,
         maxPlayers=num_players,
-        # Training use-cases historically treated this as total rings available
-        # in the game rather than "placed on board". Preserve that behaviour
-        # but generalise to N players.
+        # Total ring pool (in hand + on board); decremented when rings collapse
+        # out of play. Matches TS canonical semantics from initialState.ts.
         totalRingsInPlay=total_rings,
         totalRingsEliminated=0,
         victoryThreshold=victory_threshold,

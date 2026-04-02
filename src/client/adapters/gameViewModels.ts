@@ -247,6 +247,12 @@ export interface HUDViewModel {
    */
   lpsTracking?: GameState['lpsTracking'] | undefined;
   /**
+   * Number of consecutive exclusive rounds required for LPS victory.
+   * Defaults to 3 (LPS_DEFAULT_REQUIRED_ROUNDS). Read from game state
+   * so HUD components don't hardcode the threshold.
+   */
+  lpsRoundsRequired?: number | undefined;
+  /**
    * Victory progress tracking for ring elimination and territory control.
    * Per RR-CANON-R061: Ring elimination victory threshold calculation.
    * Per RR-CANON-R062-v2: Territory victory requires minimum + majority.
@@ -1090,6 +1096,8 @@ export function toHUDViewModel(gameState: GameState, options: ToHUDViewModelOpti
     decisionPhase,
     weirdState,
     lpsTracking: lpsTracking ?? gameState.lpsTracking,
+    lpsRoundsRequired:
+      gameState.lpsRoundsRequired ?? gameState.rulesOptions?.lpsRoundsRequired ?? 3,
   };
 }
 

@@ -235,6 +235,8 @@ describe('ClientSandboxEngine branch coverage', () => {
       expect(state.players[0].ringsInHand).toBe(config.ringsPerPlayer);
       expect(state.players[1].ringsInHand).toBe(config.ringsPerPlayer);
       expect(state.totalRingsInPlay).toBe(config.ringsPerPlayer * 2);
+      expect(state.territoryVictoryMinimum).toBe(33);
+      expect(state.lpsRoundsRequired).toBe(3);
     });
 
     it('starts with empty board', () => {

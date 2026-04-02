@@ -843,7 +843,7 @@ export interface GameState {
   maxPlayers: number;
 
   // RingRift specific state
-  totalRingsInPlay: number; // Total rings placed on board
+  totalRingsInPlay: number; // Total ring pool (in hand + on board); decremented when rings collapse out of play
   totalRingsEliminated: number; // Total rings eliminated from game
   victoryThreshold: number; // Rings needed to win (per RR-CANON-R061: round(ringsPerPlayer × (2/3 + 1/3 × (numPlayers - 1))))
   /** @deprecated Kept for backward compatibility. Use territoryVictoryMinimum for new logic. */

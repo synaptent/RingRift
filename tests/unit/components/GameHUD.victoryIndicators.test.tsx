@@ -138,6 +138,23 @@ describe('LpsTrackingIndicator', () => {
     expect(indicator).toHaveTextContent('Round 3/3');
   });
 
+  it('uses the configured LPS threshold instead of hardcoding 3', () => {
+    const viewModel = baseHudViewModel({
+      lpsTracking: {
+        roundIndex: 8,
+        consecutiveExclusiveRounds: 3,
+        consecutiveExclusivePlayer: 2,
+      },
+      lpsRoundsRequired: 4,
+    });
+    render(<GameHUD viewModel={viewModel} timeControl={baseTimeControl} />);
+
+    const indicator = screen.getByTestId('hud-lps-indicator');
+    expect(indicator).toHaveTextContent('Bob has exclusive actions');
+    expect(indicator).toHaveTextContent('1 round until LPS');
+    expect(indicator).toHaveTextContent('Round 3/4');
+  });
+
   it('falls back to Player N when player not found', () => {
     const viewModel = baseHudViewModel({
       lpsTracking: {

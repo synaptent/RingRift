@@ -64,6 +64,7 @@ import {
   applyCaptureSegment as applyCaptureSegmentAggregate,
   enumerateAllCaptureMoves as enumerateAllCaptureMovesAggregate,
   computeRingEliminationVictoryThreshold,
+  computeTerritoryVictoryMinimum,
   // Canonical placement aggregate API (TS SSOT)
   enumeratePlacementPositions,
   validatePlacementAggregate,
@@ -77,6 +78,7 @@ import {
   evaluateLpsVictory,
   buildLpsVictoryResult,
   isLpsActivePhase,
+  LPS_DEFAULT_REQUIRED_ROUNDS,
   // Swap sides (pie rule) helpers
   shouldOfferSwapSides,
   // Player state helpers
@@ -504,6 +506,11 @@ export class ClientSandboxEngine {
         config.numPlayers
       ),
       territoryVictoryThreshold: Math.floor(boardConfig.totalSpaces / 2) + 1,
+      territoryVictoryMinimum: computeTerritoryVictoryMinimum(
+        boardConfig.totalSpaces,
+        config.numPlayers
+      ),
+      lpsRoundsRequired: LPS_DEFAULT_REQUIRED_ROUNDS,
     };
 
     // Initialize orchestrator adapter lazily when first needed

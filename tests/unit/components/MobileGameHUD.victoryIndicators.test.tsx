@@ -130,6 +130,22 @@ describe('MobileLpsIndicator', () => {
     expect(indicator).toHaveTextContent('Bob exclusive');
     expect(screen.getByLabelText('3 of 3 rounds')).toBeInTheDocument();
   });
+
+  it('uses the configured LPS threshold instead of hardcoding 3', () => {
+    const viewModel = baseHudViewModel({
+      lpsTracking: {
+        roundIndex: 8,
+        consecutiveExclusiveRounds: 3,
+        consecutiveExclusivePlayer: 2,
+      },
+      lpsRoundsRequired: 4,
+    });
+    render(<MobileGameHUD viewModel={viewModel} />);
+
+    const indicator = screen.getByTestId('mobile-lps-indicator');
+    expect(indicator).toHaveTextContent('Bob exclusive');
+    expect(screen.getByLabelText('3 of 4 rounds')).toBeInTheDocument();
+  });
 });
 
 describe('MobileVictoryProgress', () => {

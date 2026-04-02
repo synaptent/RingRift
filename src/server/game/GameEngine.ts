@@ -13,6 +13,7 @@ import {
   positionToString,
   calculateCapHeight,
   computeRingEliminationVictoryThreshold,
+  computeTerritoryVictoryMinimum,
   computeProgressSnapshot,
   summarizeBoard,
   hashGameState,
@@ -33,6 +34,7 @@ import {
   hasAnyRealAction,
   createLpsTrackingState,
   type LpsTrackingState,
+  LPS_DEFAULT_REQUIRED_ROUNDS,
   // Type guards for move narrowing
   isCaptureMove,
   // Swap sides (pie rule) helpers
@@ -229,7 +231,8 @@ export class GameEngine {
 
     const boardConfig = BOARD_CONFIGS[boardType];
     const effectiveRingsPerPlayer = rulesOptions?.ringsPerPlayer ?? boardConfig.ringsPerPlayer;
-    const effectiveLpsRoundsRequired = rulesOptions?.lpsRoundsRequired ?? 2;
+    const effectiveLpsRoundsRequired =
+      rulesOptions?.lpsRoundsRequired ?? LPS_DEFAULT_REQUIRED_ROUNDS;
 
     this.gameState = {
       id: gameId,
@@ -266,6 +269,10 @@ export class GameEngine {
         players.length
       ),
       territoryVictoryThreshold: Math.floor(boardConfig.totalSpaces / 2) + 1,
+      territoryVictoryMinimum: computeTerritoryVictoryMinimum(
+        boardConfig.totalSpaces,
+        players.length
+      ),
       lpsRoundsRequired: effectiveLpsRoundsRequired,
     };
 
