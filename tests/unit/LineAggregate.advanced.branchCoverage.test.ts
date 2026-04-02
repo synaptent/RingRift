@@ -600,9 +600,10 @@ describe('LineAggregate - Advanced Branch Coverage', () => {
         lineIndex: 0,
       });
 
-      // Stack rings should be returned to hand
+      // Rings occupying collapsed spaces are eliminated and credited to the acting player.
       const player = result.players.find((p) => p.playerNumber === 1);
-      expect(player!.ringsInHand).toBeGreaterThanOrEqual(initialRingsInHand);
+      expect(player!.ringsInHand).toBe(initialRingsInHand);
+      expect(player!.eliminatedRings).toBeGreaterThanOrEqual(2);
     });
 
     it('removes broken lines after collapse', () => {

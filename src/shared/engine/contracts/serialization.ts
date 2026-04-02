@@ -84,7 +84,10 @@ export interface SerializedGameState {
   gameStatus: string;
   victoryThreshold: number;
   territoryVictoryThreshold: number;
+  territoryVictoryMinimum?: number;
+  totalRingsInPlay?: number;
   totalRingsEliminated?: number;
+  lpsRoundsRequired?: number;
   /** Optional rules options (e.g., swapRuleEnabled for 2p pie rule). */
   rulesOptions?: GameState['rulesOptions'];
 }
@@ -258,8 +261,17 @@ export function serializeGameState(state: GameState): SerializedGameState {
     gameStatus: state.gameStatus,
     victoryThreshold: state.victoryThreshold,
     territoryVictoryThreshold: state.territoryVictoryThreshold,
+    totalRingsInPlay: state.totalRingsInPlay,
     totalRingsEliminated: state.totalRingsEliminated,
   };
+
+  if (state.territoryVictoryMinimum !== undefined) {
+    serialized.territoryVictoryMinimum = state.territoryVictoryMinimum;
+  }
+
+  if (state.lpsRoundsRequired !== undefined) {
+    serialized.lpsRoundsRequired = state.lpsRoundsRequired;
+  }
 
   if (state.rulesOptions) {
     serialized.rulesOptions = state.rulesOptions;
@@ -301,6 +313,12 @@ export function deserializeGameState(data: SerializedGameState): GameState {
     rulesOptionsRaw && typeof rulesOptionsRaw === 'object'
       ? (rulesOptionsRaw as GameState['rulesOptions'])
       : undefined;
+  const territoryVictoryMinimumRaw = dataAny.territoryVictoryMinimum;
+  const territoryVictoryMinimum =
+    typeof territoryVictoryMinimumRaw === 'number' ? territoryVictoryMinimumRaw : undefined;
+  const lpsRoundsRequiredRaw = dataAny.lpsRoundsRequired;
+  const lpsRoundsRequired =
+    typeof lpsRoundsRequiredRaw === 'number' ? lpsRoundsRequiredRaw : undefined;
 
   // Handle players - self-play format may have full Player objects
   const players = data.players.map((p) => {
@@ -319,10 +337,18 @@ export function deserializeGameState(data: SerializedGameState): GameState {
     };
   });
 
+  const board = deserializeBoardState(data.board);
+  const inferredTotalRingsInPlay =
+    players.reduce((sum, p) => sum + p.ringsInHand, 0) +
+    Array.from(board.stacks.values()).reduce((sum, stack) => sum + stack.rings.length, 0);
+  const totalRingsInPlayRaw = dataAny.totalRingsInPlay;
+  const totalRingsInPlay =
+    typeof totalRingsInPlayRaw === 'number' ? totalRingsInPlayRaw : inferredTotalRingsInPlay;
+
   return {
     id: gameId,
     boardType,
-    board: deserializeBoardState(data.board),
+    board,
     players,
     currentPlayer: data.currentPlayer,
     currentPhase: data.currentPhase as GameState['currentPhase'],
@@ -338,11 +364,12 @@ export function deserializeGameState(data: SerializedGameState): GameState {
     lastMoveAt: new Date(),
     isRated: false,
     maxPlayers: data.players.length,
-    totalRingsInPlay:
-      (dataAny.totalRingsInPlay as number) ?? players.reduce((sum, p) => sum + p.ringsInHand, 0),
+    totalRingsInPlay,
     totalRingsEliminated: data.totalRingsEliminated || 0,
     victoryThreshold: data.victoryThreshold,
     territoryVictoryThreshold: data.territoryVictoryThreshold,
+    ...(territoryVictoryMinimum !== undefined ? { territoryVictoryMinimum } : {}),
+    ...(lpsRoundsRequired !== undefined ? { lpsRoundsRequired } : {}),
     // Only include rulesOptions when defined (exactOptionalPropertyTypes compliance)
     ...(rulesOptions ? { rulesOptions } : {}),
   };

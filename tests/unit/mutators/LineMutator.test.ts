@@ -159,7 +159,7 @@ describe('LineMutator', () => {
       );
     });
 
-    it('should remove stacks at collapsed positions and return rings to hand', () => {
+    it('should remove stacks at collapsed positions and credit eliminated rings to the acting player', () => {
       // square8 has lineLength: 3
       const positions: Position[] = [
         { x: 0, y: 0 },
@@ -200,9 +200,13 @@ describe('LineMutator', () => {
 
       // Stack should be removed
       expect(result.board.stacks.has('1,0')).toBe(false);
-      // Rings returned to owners' hands
-      expect(result.players.find((p) => p.playerNumber === 1)?.ringsInHand).toBe(6);
-      expect(result.players.find((p) => p.playerNumber === 2)?.ringsInHand).toBe(6);
+      // Rings on collapsed spaces are eliminated and credited to the acting player.
+      expect(result.players.find((p) => p.playerNumber === 1)?.ringsInHand).toBe(5);
+      expect(result.players.find((p) => p.playerNumber === 2)?.ringsInHand).toBe(5);
+      expect(result.players.find((p) => p.playerNumber === 1)?.eliminatedRings).toBe(2);
+      expect(result.players.find((p) => p.playerNumber === 2)?.eliminatedRings).toBe(0);
+      expect(result.totalRingsEliminated).toBe(2);
+      expect(result.board.eliminatedRings[1]).toBe(2);
     });
 
     it('should remove markers at collapsed positions', () => {

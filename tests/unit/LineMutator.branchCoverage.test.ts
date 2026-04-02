@@ -225,7 +225,7 @@ describe('LineMutator branch coverage', () => {
 
   describe('executeCollapse (via mutateProcessLine)', () => {
     describe('stack handling', () => {
-      it('removes stacks at collapsed positions and returns rings to owner', () => {
+      it('removes stacks at collapsed positions and credits eliminations to the acting player', () => {
         const state = makeGameState();
         // Add a stack at position that will be collapsed
         addStack(state, pos(0, 0), 1, [1, 1]);
@@ -243,11 +243,14 @@ describe('LineMutator branch coverage', () => {
 
         // Stack should be removed
         expect(result.board.stacks.has('0,0')).toBe(false);
-        // Rings returned to player 1 (owner of both rings)
-        expect(result.players[0].ringsInHand).toBe(10); // 8 + 2 rings
+        // Rings on collapsed spaces are eliminated and credited to player 1.
+        expect(result.players[0].ringsInHand).toBe(8);
+        expect(result.players[0].eliminatedRings).toBe(2);
+        expect(result.totalRingsEliminated).toBe(2);
+        expect(result.board.eliminatedRings[1]).toBe(2);
       });
 
-      it('returns rings to different owners when stack has mixed ownership', () => {
+      it('credits mixed-ownership stack eliminations to the acting player', () => {
         const state = makeGameState();
         // Stack with rings from both players
         addStack(state, pos(1, 0), 1, [1, 2, 1]); // P1 controls, rings owned by P1, P2, P1
@@ -264,10 +267,12 @@ describe('LineMutator branch coverage', () => {
 
         const result = mutateProcessLine(state, action);
 
-        // Player 1 gets 2 rings back
-        expect(result.players[0].ringsInHand).toBe(10);
-        // Player 2 gets 1 ring back
-        expect(result.players[1].ringsInHand).toBe(9);
+        expect(result.players[0].ringsInHand).toBe(8);
+        expect(result.players[1].ringsInHand).toBe(8);
+        expect(result.players[0].eliminatedRings).toBe(3);
+        expect(result.players[1].eliminatedRings).toBe(0);
+        expect(result.totalRingsEliminated).toBe(3);
+        expect(result.board.eliminatedRings[1]).toBe(3);
       });
 
       it('handles position without stack (no-op for stack removal)', () => {
@@ -432,7 +437,7 @@ describe('LineMutator branch coverage', () => {
 
         const result = mutateProcessLine(state, action) as GameState & { totalRingsInPlay: number };
 
-        // 3 rings returned, so totalRingsInPlay decreased by 3
+        // 3 rings were eliminated from play, so totalRingsInPlay decreased by 3
         expect(result.totalRingsInPlay).toBe(33);
       });
     });

@@ -77,25 +77,14 @@ function executeCollapse(
     // Remove stack if any
     const stack = newState.board.stacks.get(key);
     if (stack) {
-      // All rings in stack are eliminated
-      // "Any rings on these spaces are returned to their owners' supplies (eliminated)"
-      // Wait, "returned to supply" usually means back to hand?
-      // Rule 12.1: "Any rings occupying these spaces are removed from the board and returned to their owners."
-      // "Returned to owners" usually implies back to hand (available to be placed again).
-      // BUT, "Eliminated" means removed from game.
-      // Let's check definitions.
-      // Rule 5.3: "Rings removed from the board are returned to the owning player's supply unless specified as 'eliminated'."
-      // Rule 12.1 (Line Completion): "Option 1: Collapse the entire line... All spaces... become collapsed territory... Any rings... are returned to their owners."
-      // It does NOT say "eliminated".
-      // So they go back to hand.
-
-      for (const ringOwner of stack.rings) {
-        const p = newState.players.find((pl) => pl.playerNumber === ringOwner);
-        if (p) {
-          p.ringsInHand++;
-          newState.totalRingsInPlay--;
-        }
-      }
+      // RR-CANON-R122 / Complete Rules Q7: any rings occupying newly collapsed
+      // line spaces are permanently eliminated and credited to the acting player.
+      const eliminatedCount = stack.rings.length;
+      player.eliminatedRings += eliminatedCount;
+      newState.board.eliminatedRings[newState.currentPlayer] =
+        (newState.board.eliminatedRings[newState.currentPlayer] || 0) + eliminatedCount;
+      newState.totalRingsEliminated = (newState.totalRingsEliminated || 0) + eliminatedCount;
+      newState.totalRingsInPlay -= eliminatedCount;
       newState.board.stacks.delete(key);
     }
 
@@ -115,39 +104,8 @@ function executeCollapse(
     player.territorySpaces += positionsToCollapse.length;
   }
 
-  // 2. Handle Elimination Reward (Option 1 only)
-  // If we collapsed MORE than the minimum (i.e. the whole line, and it was > min), we get to eliminate a ring?
-  // Rule 12.1 Option 1: "Collapse the entire line... In addition, you may choose one of your opponent's rings... and eliminate it."
-  // Wait, is this ALWAYS for Option 1?
-  // "Option 1: Collapse the entire line... (Reward: Territory + Potential Ring Elimination)"
-  // "If the line is longer than the minimum... you may eliminate one opponent ring."
-  // If it is EXACTLY the minimum, no elimination reward?
-  // Rule 12.1: "If the line is exactly [L] spaces long... collapse the line... (No ring elimination reward)."
-
-  // So:
-  // - If positionsToCollapse.length > minLength -> Trigger Elimination Choice?
-  // - Or is it automatic?
-  // The rule says "you may choose". This implies a follow-up action/phase.
-
-  // However, for this subtask, we are implementing the MUTATOR.
-  // If an elimination is required, we might need to transition to a state where that happens.
-  // OR, the action payload should include the elimination target?
-  // The `ChooseLineRewardAction` doesn't have an elimination target field.
-  // `ProcessLineAction` doesn't either.
-
-  // Let's check `GameAction` types again.
-  // `EliminateStackAction` exists!
-  // So, if an elimination is earned, we should probably transition to a state that allows `ELIMINATE_STACK`.
-
-  // But wait, `ELIMINATE_STACK` is noted as "// For Forced Elimination Choice" in types.ts.
-  // Is it also used for Line Reward Elimination?
-  // The context says: "Gap Closure: Implement the ELIMINATE_STACK action in the TerritoryMutator... to handle the 'Forced Elimination Choice'".
-
-  // What about Line Reward?
-  // Maybe we just handle the collapse here, and if a reward is earned, the GameEngine (orchestrator)
-  // will detect that and set the next phase/state to allow elimination?
-
-  // For now, let's just handle the collapse.
+  // 2. Line self-elimination cost / reward is handled as a separate
+  // eliminate_rings_from_stack move by higher-level orchestrators.
 
   // 3. Remove the processed line from formedLines
   // We need to be careful about indices shifting if we remove.

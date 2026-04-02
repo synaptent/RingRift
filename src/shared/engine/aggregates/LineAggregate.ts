@@ -150,8 +150,8 @@ export interface LineDecisionApplicationOutcome {
    * - collapse of markers to territory where appropriate;
    * - updates to `board.collapsedSpaces`, `board.markers`, and
    *   `players[n].territorySpaces`;
-   * - any rings returned to hand when stacks are removed from collapsed
-   *   spaces; and
+   * - any rings occupying collapsed spaces eliminated and credited to the
+   *   acting player; and
    * - updates to `board.formedLines` when processed or broken lines are
    *   removed.
    */
@@ -1123,7 +1123,8 @@ export function mutateChooseLineReward(
  * Internal helper that:
  * - Removes stacks/markers at collapsed positions
  * - Marks those spaces as collapsed territory
- * - Returns rings to owners' hands
+ * - Eliminates any rings occupying collapsed spaces and credits them to
+ *   the acting player
  * - Removes the processed line and any broken lines
  */
 function executeLineCollapse(
@@ -1156,16 +1157,15 @@ function executeLineCollapse(
   for (const pos of positionsToCollapse) {
     const key = positionToString(pos);
 
-    // Remove stack if any - rings returned to hand
+    // Remove stack if any - rings on collapsed spaces are eliminated.
     const stack = newState.board.stacks.get(key);
     if (stack) {
-      for (const ringOwner of stack.rings) {
-        const p = newState.players.find((pl) => pl.playerNumber === ringOwner);
-        if (p) {
-          p.ringsInHand++;
-          newState.totalRingsInPlay--;
-        }
-      }
+      const eliminatedCount = stack.rings.length;
+      player.eliminatedRings += eliminatedCount;
+      newState.board.eliminatedRings[newState.currentPlayer] =
+        (newState.board.eliminatedRings[newState.currentPlayer] || 0) + eliminatedCount;
+      newState.totalRingsEliminated = (newState.totalRingsEliminated || 0) + eliminatedCount;
+      newState.totalRingsInPlay -= eliminatedCount;
       newState.board.stacks.delete(key);
     }
 

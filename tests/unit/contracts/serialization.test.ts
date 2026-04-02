@@ -140,10 +140,12 @@ describe('serialization', () => {
       lastMoveAt: new Date('2024-01-01'),
       isRated: true,
       maxPlayers: 2,
-      totalRingsInPlay: 0,
+      totalRingsInPlay: 36,
       totalRingsEliminated: 0,
       victoryThreshold: 18, // RR-CANON-R061: ringsPerPlayer
       territoryVictoryThreshold: 33,
+      territoryVictoryMinimum: 33,
+      lpsRoundsRequired: 3,
     }) as GameState;
 
   // Helper to create a game state with moves
@@ -419,6 +421,15 @@ describe('serialization', () => {
       expect(serialized.totalRingsEliminated).toBe(5);
     });
 
+    it('should preserve canonical counters and metadata', () => {
+      const state = createMinimalGameState();
+      const serialized = serializeGameState(state);
+
+      expect(serialized.totalRingsInPlay).toBe(36);
+      expect(serialized.territoryVictoryMinimum).toBe(33);
+      expect(serialized.lpsRoundsRequired).toBe(3);
+    });
+
     it('should include chainCapturePosition when present', () => {
       const state = createMinimalGameState();
       state.chainCapturePosition = { x: 5, y: 5 };
@@ -613,6 +624,73 @@ describe('serialization', () => {
       const state = deserializeGameState(serialized);
 
       expect(state.totalRingsEliminated).toBe(0);
+    });
+
+    it('should infer totalRingsInPlay from rings in hand plus rings on board when omitted', () => {
+      const serialized = {
+        board: {
+          type: 'square8',
+          size: 8,
+          stacks: {
+            '3,3': {
+              position: { x: 3, y: 3 },
+              rings: [1, 2, 1],
+              stackHeight: 3,
+              capHeight: 1,
+              controllingPlayer: 1,
+            },
+          },
+          markers: {},
+          collapsedSpaces: {},
+          eliminatedRings: {},
+        },
+        players: [
+          { playerNumber: 1, ringsInHand: 10, eliminatedRings: 0, territorySpaces: 0 },
+          { playerNumber: 2, ringsInHand: 9, eliminatedRings: 0, territorySpaces: 0 },
+        ],
+        currentPlayer: 1,
+        currentPhase: 'movement',
+        turnNumber: 1,
+        moveHistory: [],
+        gameStatus: 'active',
+        victoryThreshold: 18,
+        territoryVictoryThreshold: 33,
+      };
+
+      const state = deserializeGameState(serialized);
+
+      expect(state.totalRingsInPlay).toBe(22);
+    });
+
+    it('should deserialize territoryVictoryMinimum and lpsRoundsRequired when present', () => {
+      const serialized = {
+        board: {
+          type: 'square8',
+          size: 8,
+          stacks: {},
+          markers: {},
+          collapsedSpaces: {},
+          eliminatedRings: {},
+        },
+        players: [
+          { playerNumber: 1, ringsInHand: 18, eliminatedRings: 0, territorySpaces: 0 },
+          { playerNumber: 2, ringsInHand: 18, eliminatedRings: 0, territorySpaces: 0 },
+        ],
+        currentPlayer: 1,
+        currentPhase: 'ring_placement',
+        turnNumber: 1,
+        moveHistory: [],
+        gameStatus: 'active',
+        victoryThreshold: 18,
+        territoryVictoryThreshold: 33,
+        territoryVictoryMinimum: 33,
+        lpsRoundsRequired: 4,
+      };
+
+      const state = deserializeGameState(serialized);
+
+      expect(state.territoryVictoryMinimum).toBe(33);
+      expect(state.lpsRoundsRequired).toBe(4);
     });
 
     it('should include chainCapturePosition when present', () => {
