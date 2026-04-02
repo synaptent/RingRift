@@ -163,6 +163,18 @@ except ImportError:  # pragma: no cover
     has_event_router = None  # type: ignore
 
 
+_TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in _TRUTHY_ENV_VALUES
+
+
+def _should_run_coordination_daemons() -> bool:
+    """Return whether the AI service should boot the coordination runtime."""
+    return _env_flag("RINGRIFT_ORCHESTRATION") and not _env_flag("RINGRIFT_INFERENCE_ONLY")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """FastAPI lifespan context manager for startup/shutdown.
@@ -217,15 +229,17 @@ async def lifespan(app: FastAPI):
     # EVENT_ROUTER is required for all event-driven daemons
     # FeedbackLoopController orchestrates the entire SELFPLAY→TRAINING→EVALUATION→PROMOTION chain
     #
-    # RINGRIFT_INFERENCE_ONLY=true: Skip all coordination daemons (January 2026)
-    # Use this on production web servers that only need AI inference endpoints.
-    # This prevents starting the full training cluster coordination stack which
-    # causes failures when the server can't reach the training cluster.
-    inference_only = os.environ.get("RINGRIFT_INFERENCE_ONLY", "").lower() in ("1", "true", "yes")
-    if inference_only:
-        logger.info("[Startup] INFERENCE_ONLY mode - skipping coordination daemons")
+    # Orchestration mode requires explicit opt-in (April 2026):
+    #   RINGRIFT_ORCHESTRATION=true  — start event routing and feedback daemons
+    # Plain `uvicorn app.main:app` now starts in inference-only mode by default.
+    # The full training-cluster stack is started via master_loop.py, not here.
+    # Legacy: RINGRIFT_INFERENCE_ONLY=true still forces inference-only even when
+    # orchestration is enabled (for backward compatibility).
+    run_daemons = _should_run_coordination_daemons()
+    if not run_daemons:
+        logger.info("[Startup] Inference-only mode - skipping coordination daemons (set RINGRIFT_ORCHESTRATION=true to enable)")
 
-    if HAS_DAEMON_MANAGER and not inference_only:
+    if HAS_DAEMON_MANAGER and run_daemons:
         try:
             daemon_manager = get_daemon_manager()
 
