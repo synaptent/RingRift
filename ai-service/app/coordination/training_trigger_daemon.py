@@ -2299,11 +2299,14 @@ class TrainingTriggerDaemon(HandlerBase):
                         )
                         quality = decayed_quality
                     else:
-                        logger.error(
+                        # No quality data at all — allow training with default quality.
+                        # Blocking here creates a chicken-and-egg deadlock: training needs
+                        # quality scores, but quality scores require evaluated models.
+                        logger.info(
                             f"[TrainingTriggerDaemon] {config_key}: no quality data available, "
-                            f"blocking training"
+                            f"proceeding with default quality (bootstrap mode)"
                         )
-                        return False, "no quality data available"
+                        quality = quality_threshold  # Use threshold as default to pass gate
 
                 # Update cache with fresh quality score
                 if quality is not None:

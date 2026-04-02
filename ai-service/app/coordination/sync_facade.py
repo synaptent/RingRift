@@ -452,10 +452,10 @@ class SyncFacade:
 
             # Map request to coordinator methods
             if request.data_type == "games":
-                result = await coordinator.sync_games(
-                    board_type=request.board_type,
-                    num_players=request.num_players,
-                )
+                kwargs = {}
+                if request.board_type:
+                    kwargs["board_types"] = [request.board_type]
+                result = await coordinator.sync_games(**kwargs)
             elif request.data_type == "models":
                 result = await coordinator.sync_models()
             elif request.data_type == "npz":
