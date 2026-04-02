@@ -113,12 +113,10 @@ class TestRunnerRegistryCompleteness:
         registry = _build_runner_registry()
 
         sync_types = [
-            "SYNC_COORDINATOR",
             "HIGH_QUALITY_SYNC",
             "ELO_SYNC",
             "AUTO_SYNC",
             "TRAINING_NODE_WATCHER",
-            "EPHEMERAL_SYNC",
             "GOSSIP_SYNC",
         ]
 
@@ -143,15 +141,13 @@ class TestRunnerRegistryCompleteness:
         registry = _build_runner_registry()
 
         health_types = [
-            "HEALTH_CHECK",
             "QUEUE_MONITOR",
             "DAEMON_WATCHDOG",
-            "NODE_HEALTH_MONITOR",
-            "SYSTEM_HEALTH_MONITOR",
             "QUALITY_MONITOR",
             "MODEL_PERFORMANCE_WATCHDOG",
             "CLUSTER_MONITOR",
             "CLUSTER_WATCHDOG",
+            "HEALTH_SERVER",
         ]
 
         for daemon_name in health_types:
@@ -163,7 +159,6 @@ class TestRunnerRegistryCompleteness:
 
         pipeline_types = [
             "DATA_PIPELINE",
-            "CONTINUOUS_TRAINING_LOOP",
             "SELFPLAY_COORDINATOR",
             "TRAINING_TRIGGER",
             "AUTO_EXPORT",
@@ -179,7 +174,6 @@ class TestRunnerRegistryCompleteness:
         distribution_types = [
             "MODEL_SYNC",
             "MODEL_DISTRIBUTION",
-            "NPZ_DISTRIBUTION",
             "DATA_SERVER",
         ]
 
@@ -288,10 +282,10 @@ class TestHealthRunners:
     def test_health_runners_in_registry(self):
         """Test that all health runners are registered."""
         registry = _build_runner_registry()
-        assert "HEALTH_CHECK" in registry
-        assert registry["HEALTH_CHECK"] is create_health_check
         assert "CLUSTER_MONITOR" in registry
         assert registry["CLUSTER_MONITOR"] is create_cluster_monitor
+        assert "QUALITY_MONITOR" in registry
+        assert registry["QUALITY_MONITOR"] is create_quality_monitor
 
 
 class TestPipelineRunners:
@@ -332,8 +326,6 @@ class TestDistributionRunners:
         registry = _build_runner_registry()
         assert "MODEL_DISTRIBUTION" in registry
         assert registry["MODEL_DISTRIBUTION"] is create_model_distribution
-        assert "NPZ_DISTRIBUTION" in registry
-        assert registry["NPZ_DISTRIBUTION"] is create_npz_distribution
 
 
 class TestResourceRunners:
@@ -404,17 +396,21 @@ class TestRunnerIntegration:
 
 
 class TestDeprecatedRunners:
-    """Tests for deprecated daemon runners."""
+    """Tests for deprecated daemon runners.
 
-    def test_deprecated_sync_coordinator_registered(self):
-        """Test that deprecated SYNC_COORDINATOR is still registered for backward compat."""
-        registry = _build_runner_registry()
-        assert "SYNC_COORDINATOR" in registry
+    These runners still exist in app.coordination.runners as deprecated no-ops,
+    but have been removed from the daemon_runners.py registry.
+    """
 
-    def test_deprecated_health_check_registered(self):
-        """Test that deprecated HEALTH_CHECK is still registered for backward compat."""
-        registry = _build_runner_registry()
-        assert "HEALTH_CHECK" in registry
+    def test_deprecated_sync_coordinator_exists_as_function(self):
+        """Test that deprecated create_sync_coordinator still exists as a no-op function."""
+        import inspect
+        assert inspect.iscoroutinefunction(create_sync_coordinator)
+
+    def test_deprecated_health_check_exists_as_function(self):
+        """Test that deprecated create_health_check still exists as a no-op function."""
+        import inspect
+        assert inspect.iscoroutinefunction(create_health_check)
 
     def test_deprecated_runners_are_coroutines(self):
         """Test that deprecated runners are still coroutine functions."""
@@ -653,17 +649,11 @@ class TestRunnerImportErrorHandling:
         import inspect
         registry = _build_runner_registry()
 
-        # Known deprecated/special runners
-        special_runners = {
-            "LAMBDA_IDLE",  # Lambda account terminated
-            "SYNC_COORDINATOR",  # Deprecated, may have different handling
-            "HEALTH_CHECK",  # Deprecated
-        }
-
         for daemon_name, runner in registry.items():
-            if daemon_name in special_runners:
-                continue
             source = inspect.getsource(runner)
+            # Skip deprecated no-op runners (they intentionally lack ImportError handling)
+            if "Deprecated" in source and "no-op" in source:
+                continue
             # Check for import error handling or early return
             has_handling = "ImportError" in source or "return" in source
             assert has_handling, (
@@ -798,19 +788,11 @@ class TestS3Runners:
 
 
 class TestProviderIdleRunners:
-    """Tests for cloud provider idle detection runners."""
+    """Tests for cloud provider idle detection runners.
 
-    def test_provider_idle_runners_registered(self):
-        """Test that provider idle runners are registered."""
-        registry = _build_runner_registry()
-
-        idle_types = [
-            "LAMBDA_IDLE",
-            "VAST_IDLE",
-        ]
-
-        for daemon_name in idle_types:
-            assert daemon_name in registry, f"Missing runner for {daemon_name}"
+    These runners were removed from the daemon_runners.py registry but still
+    exist as deprecated no-ops in the runners subpackage.
+    """
 
     def test_provider_idle_runner_functions_are_coroutines(self):
         """Test that provider idle runner functions are coroutine functions."""
@@ -825,19 +807,11 @@ class TestProviderIdleRunners:
 
 
 class TestReplicationRunners:
-    """Tests for replication daemon runners."""
+    """Tests for replication daemon runners.
 
-    def test_replication_runners_registered(self):
-        """Test that replication daemon runners are registered."""
-        registry = _build_runner_registry()
-
-        replication_types = [
-            "REPLICATION_MONITOR",
-            "REPLICATION_REPAIR",
-        ]
-
-        for daemon_name in replication_types:
-            assert daemon_name in registry, f"Missing runner for {daemon_name}"
+    These runners were removed from the daemon_runners.py registry but still
+    exist as deprecated no-ops in the runners subpackage.
+    """
 
     def test_replication_runner_functions_are_coroutines(self):
         """Test that replication runner functions are coroutine functions."""
@@ -922,9 +896,7 @@ class TestTrainingDataRunners:
             "TRAINING_NODE_WATCHER",
             "TRAINING_DATA_SYNC",
             "OWC_IMPORT",
-            "EXTERNAL_DRIVE_SYNC",
             "VAST_CPU_PIPELINE",
-            "CLUSTER_DATA_SYNC",
         ]
 
         for daemon_name in training_data_types:
@@ -937,8 +909,10 @@ class TestTrainingDataRunners:
             create_training_node_watcher,
             create_training_data_sync,
             create_owc_import,
-            create_external_drive_sync,
             create_vast_cpu_pipeline,
+        )
+        from app.coordination.daemon_runners import (
+            create_external_drive_sync,
             create_cluster_data_sync,
         )
 

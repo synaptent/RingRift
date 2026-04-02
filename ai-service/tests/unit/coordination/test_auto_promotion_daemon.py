@@ -482,17 +482,14 @@ class TestEventEmission:
         )
         candidate.evaluation_results = {"RANDOM": 0.95, "HEURISTIC": 0.70}
 
-        mock_router = MagicMock()
-        mock_router.publish = AsyncMock()
-
         # Dec 29, 2025: Must also patch DataEventType to be non-None
         mock_event_type = MagicMock()
         mock_event_type.MODEL_PROMOTED = "model_promoted"
 
         with patch(
-            "app.coordination.event_router.get_router",
-            return_value=mock_router,
-        ), patch(
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+        ) as mock_publish, patch(
             "app.coordination.event_router.DataEventType",
             mock_event_type,
         ), patch(
@@ -500,9 +497,11 @@ class TestEventEmission:
             new_callable=AsyncMock,
         ):
             await daemon._emit_promotion_event(candidate)
-            mock_router.publish.assert_called_once()
-            call_kwargs = mock_router.publish.call_args.kwargs
+            mock_publish.assert_awaited_once()
+            call_kwargs = mock_publish.await_args.kwargs
+            assert call_kwargs["event_type"] == "model_promoted"
             assert call_kwargs["payload"]["config_key"] == "hex8_2p"
+            assert call_kwargs["source"] == "auto_promotion_daemon"
 
     @pytest.mark.asyncio
     async def test_emits_promotion_failed_event(self):
@@ -513,17 +512,42 @@ class TestEventEmission:
             model_path="/model.pth",
         )
 
-        mock_router = MagicMock()
-        mock_router.publish = AsyncMock()
+        with patch(
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+        ) as mock_publish:
+            await daemon._emit_promotion_failed(candidate, error="Test error")
+            mock_publish.assert_awaited_once()
+            call_kwargs = mock_publish.await_args.kwargs
+            assert call_kwargs["payload"]["error"] == "Test error"
+            assert call_kwargs["source"] == "auto_promotion_daemon"
+
+    @pytest.mark.asyncio
+    async def test_emits_promotion_completed_event(self):
+        """Emits PROMOTION_COMPLETED event after promotion decision."""
+        daemon = AutoPromotionDaemon()
+        candidate = PromotionCandidate(
+            config_key="hex8_2p",
+            model_path="/model.pth",
+        )
+        candidate.previous_elo = 1200.0
+        candidate.estimated_elo = 1235.0
+        candidate.consecutive_failures = 1
+        candidate.consecutive_passes = 2
+        candidate.evaluation_results = {"RANDOM": 0.9, "HEURISTIC": 0.68}
 
         with patch(
-            "app.coordination.event_router.get_router",
-            return_value=mock_router,
-        ):
-            await daemon._emit_promotion_failed(candidate, error="Test error")
-            mock_router.publish.assert_called_once()
-            call_kwargs = mock_router.publish.call_args.kwargs
-            assert call_kwargs["payload"]["error"] == "Test error"
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+        ) as mock_publish:
+            await daemon._emit_promotion_completed(candidate, success=True)
+            mock_publish.assert_awaited_once()
+            call_kwargs = mock_publish.await_args.kwargs
+            assert call_kwargs["event_type"] == "PROMOTION_COMPLETED"
+            assert call_kwargs["payload"]["config_key"] == "hex8_2p"
+            assert call_kwargs["payload"]["success"] is True
+            assert call_kwargs["payload"]["elo_change"] == 35.0
+            assert call_kwargs["source"] == "auto_promotion_daemon"
 
 
 # =============================================================================

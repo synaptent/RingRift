@@ -768,12 +768,10 @@ class TestSyncRouterEventHandlers:
 
             router = SyncRouter(manifest=mock_manifest)
 
-        mock_router = MagicMock()
-        mock_router.publish = AsyncMock()
-        with patch("app.coordination.event_router.get_router", return_value=mock_router):
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
             await router._emit_capacity_refresh("node_joined", "node-1", 4, 3)
 
-        mock_router.publish.assert_awaited_once_with(
+        mock_publish.assert_awaited_once_with(
             "SYNC_CAPACITY_REFRESHED",
             {
                 "change_type": "node_joined",
@@ -782,6 +780,7 @@ class TestSyncRouterEventHandlers:
                 "gpu_nodes": 3,
                 "router": "SyncRouter",
             },
+            source="SyncRouter",
         )
 
     @pytest.mark.asyncio
@@ -795,9 +794,7 @@ class TestSyncRouterEventHandlers:
 
             router = SyncRouter(manifest=mock_manifest)
 
-        mock_router = MagicMock()
-        mock_router.publish = AsyncMock()
-        with patch("app.coordination.event_router.get_router", return_value=mock_router):
+        with patch("app.coordination.event_router.publish", new_callable=AsyncMock) as mock_publish:
             await router._emit_sync_routing_decision(
                 source="source-node",
                 targets=["target-a", "target-b"],
@@ -805,7 +802,7 @@ class TestSyncRouterEventHandlers:
                 reason="fresh_model",
             )
 
-        mock_router.publish.assert_awaited_once_with(
+        mock_publish.assert_awaited_once_with(
             DataEventType.SYNC_REQUEST,
             {
                 "source": "source-node",
@@ -813,6 +810,51 @@ class TestSyncRouterEventHandlers:
                 "data_type": DataType.MODEL.value,
                 "reason": "fresh_model",
                 "router": "SyncRouter",
+            },
+            source="SyncRouter",
+        )
+
+    @pytest.mark.asyncio
+    async def test_on_model_sync_requested_emits_model_sync_started_via_publish_helper(
+        self,
+        mock_manifest,
+        mock_cluster_config,
+    ):
+        """Model sync start tracking should use the unified publish helper."""
+        with patch("app.coordination.sync_router.load_cluster_config", return_value=mock_cluster_config), \
+             patch("app.coordination.sync_router.get_host_provider", return_value="local"):
+            from app.coordination.sync_router import SyncRouter
+
+            router = SyncRouter(manifest=mock_manifest)
+
+        event = MagicMock()
+        event.payload = {
+            "model_id": "ringrift_best_hex8_2p",
+            "node_id": "target-node",
+            "reason": "recover_missing_model",
+        }
+
+        with patch.object(
+            router,
+            "get_sync_targets",
+            return_value=[MagicMock(node_id="source-node")],
+        ), patch.object(
+            router,
+            "_emit_sync_routing_decision",
+            new_callable=AsyncMock,
+        ), patch(
+            "app.coordination.event_router.publish",
+            new_callable=AsyncMock,
+        ) as mock_publish:
+            await router._on_model_sync_requested(event)
+
+        mock_publish.assert_awaited_once_with(
+            "MODEL_SYNC_STARTED",
+            {
+                "model_id": "ringrift_best_hex8_2p",
+                "source_node": "source-node",
+                "target_node": "target-node",
+                "reason": "recover_missing_model",
             },
             source="SyncRouter",
         )
@@ -839,38 +881,42 @@ class TestSyncRouterWiring:
             router.wire_to_event_router()  # No exception = success
 
     def test_wire_to_event_router_success(self, mock_manifest, mock_cluster_config):
-        """Test wire_to_event_router with working event router."""
-        # Create mock event type enum
-        from enum import Enum
-
-        class MockDataEventType(Enum):
-            NEW_GAMES_AVAILABLE = "new_games_available"
-            TRAINING_STARTED = "training_started"
-            HOST_ONLINE = "host_online"
-            HOST_OFFLINE = "host_offline"
-            NODE_RECOVERED = "node_recovered"
-            CLUSTER_CAPACITY_CHANGED = "cluster_capacity_changed"
-            BACKPRESSURE_ACTIVATED = "backpressure_activated"
-            BACKPRESSURE_RELEASED = "backpressure_released"
-            SYNC_FAILURE_CRITICAL = "sync_failure_critical"
-
-        mock_router_instance = MagicMock()
-
+        """Test wire_to_event_router uses the unified subscribe helper."""
         with patch("app.coordination.sync_router.load_cluster_config", return_value=mock_cluster_config), \
              patch("app.coordination.sync_router.get_host_provider", return_value="local"):
+            from app.coordination.event_router import DataEventType
             from app.coordination.sync_router import SyncRouter
 
             router = SyncRouter(manifest=mock_manifest)
 
-            # Mock the import inside wire_to_event_router
-            mock_module = MagicMock()
-            mock_module.DataEventType = MockDataEventType
-            mock_module.get_router = MagicMock(return_value=mock_router_instance)
-
-            with patch.dict("sys.modules", {"app.coordination.event_router": mock_module}):
+            with patch("app.coordination.event_router.subscribe") as mock_subscribe:
                 router.wire_to_event_router()
 
-            # Just verify no exceptions - the actual subscription happens internally
+        subscribed = [(call.args[0], call.args[1]) for call in mock_subscribe.call_args_list]
+        assert (DataEventType.NEW_GAMES_AVAILABLE.value, router._on_new_games_available) in subscribed
+        assert (DataEventType.TRAINING_STARTED.value, router._on_training_started) in subscribed
+        assert (DataEventType.HOST_ONLINE.value, router._on_host_online) in subscribed
+        assert (DataEventType.HOST_OFFLINE.value, router._on_host_offline) in subscribed
+        assert (DataEventType.NODE_RECOVERED.value, router._on_node_recovered) in subscribed
+        assert (
+            DataEventType.CLUSTER_CAPACITY_CHANGED.value,
+            router._on_cluster_capacity_changed,
+        ) in subscribed
+        assert (DataEventType.MODEL_SYNC_REQUESTED.value, router._on_model_sync_requested) in subscribed
+        assert (DataEventType.SYNC_STALLED.value, router._on_sync_stalled) in subscribed
+        assert (
+            DataEventType.SYNC_FAILURE_CRITICAL.value,
+            router._on_sync_failure_critical,
+        ) in subscribed
+        assert (
+            DataEventType.BACKPRESSURE_ACTIVATED.value,
+            router._on_backpressure_activated,
+        ) in subscribed
+        assert (
+            DataEventType.BACKPRESSURE_RELEASED.value,
+            router._on_backpressure_released,
+        ) in subscribed
+        assert (DataEventType.CONFIG_UPDATED.value, router._on_config_updated) in subscribed
 
 
 # =============================================================================

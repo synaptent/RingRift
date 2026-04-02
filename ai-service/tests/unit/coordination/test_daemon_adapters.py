@@ -14,13 +14,9 @@ from app.coordination.daemon_adapters import (
     DaemonAdapter,
     DaemonAdapterConfig,
     ConfigurableDaemonAdapter,
-    DistillationDaemonAdapter,
     PromotionDaemonAdapter,
-    ExternalDriveSyncAdapter,
     VastCpuPipelineAdapter,
-    ClusterDataSyncAdapter,
     AutoSyncDaemonAdapter,
-    NPZDistributionDaemonAdapter,
     OrphanDetectionDaemonAdapter,
     DataCleanupDaemonAdapter,
     get_daemon_adapter,
@@ -75,7 +71,7 @@ class TestDaemonAdapterBase:
 
     def test_initial_state(self):
         """Test adapter initializes with correct state."""
-        adapter = DistillationDaemonAdapter()
+        adapter = PromotionDaemonAdapter()
 
         assert adapter._running is False
         assert adapter._healthy is True
@@ -85,7 +81,7 @@ class TestDaemonAdapterBase:
 
     def test_config_defaults(self):
         """Test adapter uses default config when none provided."""
-        adapter = DistillationDaemonAdapter()
+        adapter = PromotionDaemonAdapter()
 
         assert adapter.config.acquire_role is True
         assert adapter.config.health_check_interval == 60.0
@@ -93,16 +89,16 @@ class TestDaemonAdapterBase:
     def test_config_custom(self):
         """Test adapter uses custom config when provided."""
         config = DaemonAdapterConfig(health_check_interval=30.0)
-        adapter = DistillationDaemonAdapter(config)
+        adapter = PromotionDaemonAdapter(config)
 
         assert adapter.config.health_check_interval == 30.0
 
     def test_get_status_not_running(self):
         """Test get_status when adapter is not running."""
-        adapter = DistillationDaemonAdapter()
+        adapter = PromotionDaemonAdapter()
         status = adapter.get_status()
 
-        assert status["daemon_type"] == "distillation"
+        assert status["daemon_type"] == "unified_promotion"
         assert status["running"] is False
         assert status["healthy"] is True
         assert status["uptime_seconds"] == 0
@@ -110,7 +106,7 @@ class TestDaemonAdapterBase:
 
     def test_health_check_not_running(self):
         """Test health_check when adapter is not running."""
-        adapter = DistillationDaemonAdapter()
+        adapter = PromotionDaemonAdapter()
         result = adapter.health_check()
 
         # Stopped adapters are considered healthy (valid stopped state, not error)
@@ -119,37 +115,26 @@ class TestDaemonAdapterBase:
         assert "stopped" in result.status.value.lower() or "not running" in result.message.lower()
 
 
-class TestDistillationDaemonAdapter:
-    """Test DistillationDaemonAdapter specifically."""
+class TestConfigurableDaemonAdapterViaDaemonType:
+    """Test ConfigurableDaemonAdapter created via get_daemon_adapter.
 
-    def test_daemon_type(self):
-        """Test daemon_type property."""
-        adapter = DistillationDaemonAdapter()
-        assert adapter.daemon_type == DaemonType.DISTILLATION
+    December 2025: Legacy named adapter classes (e.g., PromotionDaemonAdapter)
+    were consolidated into ConfigurableDaemonAdapter via ADAPTER_SPECS.
+    """
 
-    def test_role(self):
-        """Test role property."""
-        adapter = DistillationDaemonAdapter()
-        assert adapter.role == OrchestratorRole.DISTILLATION_LEADER
+    def test_promotion_adapter_via_get(self):
+        """Test get_daemon_adapter returns ConfigurableDaemonAdapter for UNIFIED_PROMOTION."""
+        adapter = get_daemon_adapter(DaemonType.UNIFIED_PROMOTION)
+        assert adapter is not None
+        assert isinstance(adapter, ConfigurableDaemonAdapter)
+        assert adapter.daemon_type == DaemonType.UNIFIED_PROMOTION
 
-    def test_depends_on(self):
-        """Test depends_on property."""
-        adapter = DistillationDaemonAdapter()
-        assert adapter.depends_on == []
-
-    @pytest.mark.asyncio
-    async def test_create_daemon_import_error(self):
-        """Test _create_daemon handles ImportError gracefully."""
-        adapter = DistillationDaemonAdapter()
-
-        with patch.dict("sys.modules", {"app.training.distillation_daemon": None}):
-            with patch(
-                "app.coordination.daemon_adapters.DistillationDaemonAdapter._create_daemon",
-                new_callable=AsyncMock,
-                return_value=None
-            ):
-                daemon = await adapter._create_daemon()
-                assert daemon is None
+    def test_auto_sync_adapter_via_get(self):
+        """Test get_daemon_adapter returns ConfigurableDaemonAdapter for AUTO_SYNC."""
+        adapter = get_daemon_adapter(DaemonType.AUTO_SYNC)
+        assert adapter is not None
+        assert isinstance(adapter, ConfigurableDaemonAdapter)
+        assert adapter.daemon_type == DaemonType.AUTO_SYNC
 
 
 class TestPromotionDaemonAdapter:
@@ -167,16 +152,22 @@ class TestPromotionDaemonAdapter:
 
 
 class TestExternalDriveSyncAdapter:
-    """Test ExternalDriveSyncAdapter specifically."""
+    """Test EXTERNAL_DRIVE_SYNC adapter via ConfigurableDaemonAdapter.
 
-    def test_daemon_type(self):
-        """Test daemon_type property."""
-        adapter = ExternalDriveSyncAdapter()
+    The legacy ExternalDriveSyncAdapter named class was removed. The daemon type
+    is still available via ADAPTER_SPECS and get_daemon_adapter().
+    """
+
+    def test_adapter_available_via_get(self):
+        """Test get_daemon_adapter returns ConfigurableDaemonAdapter for EXTERNAL_DRIVE_SYNC."""
+        adapter = get_daemon_adapter(DaemonType.EXTERNAL_DRIVE_SYNC)
+        assert adapter is not None
+        assert isinstance(adapter, ConfigurableDaemonAdapter)
         assert adapter.daemon_type == DaemonType.EXTERNAL_DRIVE_SYNC
 
     def test_role(self):
         """Test role property."""
-        adapter = ExternalDriveSyncAdapter()
+        adapter = get_daemon_adapter(DaemonType.EXTERNAL_DRIVE_SYNC)
         assert adapter.role == OrchestratorRole.EXTERNAL_SYNC_LEADER
 
 
@@ -195,22 +186,28 @@ class TestVastCpuPipelineAdapter:
 
 
 class TestClusterDataSyncAdapter:
-    """Test ClusterDataSyncAdapter specifically."""
+    """Test CLUSTER_DATA_SYNC adapter via ConfigurableDaemonAdapter.
 
-    def test_daemon_type(self):
-        """Test daemon_type property."""
-        adapter = ClusterDataSyncAdapter()
+    The legacy ClusterDataSyncAdapter named class was removed. The daemon type
+    is still available via ADAPTER_SPECS and get_daemon_adapter().
+    """
+
+    def test_adapter_available_via_get(self):
+        """Test get_daemon_adapter returns ConfigurableDaemonAdapter for CLUSTER_DATA_SYNC."""
+        adapter = get_daemon_adapter(DaemonType.CLUSTER_DATA_SYNC)
+        assert adapter is not None
+        assert isinstance(adapter, ConfigurableDaemonAdapter)
         assert adapter.daemon_type == DaemonType.CLUSTER_DATA_SYNC
 
     def test_role(self):
         """Test role property."""
-        adapter = ClusterDataSyncAdapter()
+        adapter = get_daemon_adapter(DaemonType.CLUSTER_DATA_SYNC)
         assert adapter.role == OrchestratorRole.CLUSTER_DATA_SYNC_LEADER
 
     @pytest.mark.asyncio
     async def test_health_check_no_instance(self):
         """Test _health_check when no daemon instance exists."""
-        adapter = ClusterDataSyncAdapter()
+        adapter = get_daemon_adapter(DaemonType.CLUSTER_DATA_SYNC)
         result = await adapter._health_check()
         assert result is False
 
@@ -249,23 +246,28 @@ class TestAutoSyncDaemonAdapter:
         assert result is True
 
 
-class TestNPZDistributionDaemonAdapter:
-    """Test NPZDistributionDaemonAdapter specifically."""
+class TestNPZDistributionAdapter:
+    """Test NPZ_DISTRIBUTION adapter via ConfigurableDaemonAdapter.
 
-    def test_daemon_type(self):
-        """Test daemon_type property."""
-        adapter = NPZDistributionDaemonAdapter()
+    The legacy NPZDistributionDaemonAdapter named class was removed. The daemon type
+    is still available via ADAPTER_SPECS and get_daemon_adapter().
+    """
+
+    def test_adapter_available_via_get(self):
+        """Test get_daemon_adapter returns ConfigurableDaemonAdapter for NPZ_DISTRIBUTION."""
+        adapter = get_daemon_adapter(DaemonType.NPZ_DISTRIBUTION)
+        assert adapter is not None
+        assert isinstance(adapter, ConfigurableDaemonAdapter)
         assert adapter.daemon_type == DaemonType.NPZ_DISTRIBUTION
 
     def test_role_is_none(self):
         """Test role property returns None (deprecated adapter)."""
-        adapter = NPZDistributionDaemonAdapter()
-        # No exclusive role since this is deprecated and delegates to unified daemon
+        adapter = get_daemon_adapter(DaemonType.NPZ_DISTRIBUTION)
         assert adapter.role is None
 
     def test_depends_on(self):
         """Test depends_on property."""
-        adapter = NPZDistributionDaemonAdapter()
+        adapter = get_daemon_adapter(DaemonType.NPZ_DISTRIBUTION)
         assert adapter.depends_on == []
 
 
@@ -316,26 +318,24 @@ class TestAdapterRegistry:
 
         assert DaemonType.DISTILLATION in adapters
         assert DaemonType.UNIFIED_PROMOTION in adapters
-        assert DaemonType.EXTERNAL_DRIVE_SYNC in adapters
         assert DaemonType.VAST_CPU_PIPELINE in adapters
-        assert DaemonType.CLUSTER_DATA_SYNC in adapters
         assert DaemonType.AUTO_SYNC in adapters
-        assert DaemonType.NPZ_DISTRIBUTION in adapters
         assert DaemonType.ORPHAN_DETECTION in adapters
         assert DaemonType.DATA_CLEANUP in adapters
+        assert DaemonType.EXTERNAL_DRIVE_SYNC in adapters
+        assert DaemonType.CLUSTER_DATA_SYNC in adapters
+        assert DaemonType.NPZ_DISTRIBUTION in adapters
         assert len(adapters) == 9
 
     def test_get_daemon_adapter_distillation(self):
-        """Test get_daemon_adapter returns correct adapter for DISTILLATION.
+        """Test get_daemon_adapter returns ConfigurableDaemonAdapter for DISTILLATION.
 
-        December 2025: DISTILLATION now uses ConfigurableDaemonAdapter
-        via ADAPTER_SPECS instead of legacy DistillationDaemonAdapter.
+        December 2025: DISTILLATION uses ConfigurableDaemonAdapter via ADAPTER_SPECS
+        (deprecated, but still available).
         """
         adapter = get_daemon_adapter(DaemonType.DISTILLATION)
-
         assert adapter is not None
-        # Note: Now uses ConfigurableDaemonAdapter for ADAPTER_SPECS entries
-        assert isinstance(adapter, (ConfigurableDaemonAdapter, DistillationDaemonAdapter))
+        assert isinstance(adapter, ConfigurableDaemonAdapter)
         assert adapter.daemon_type == DaemonType.DISTILLATION
 
     def test_get_daemon_adapter_with_config(self):
@@ -385,7 +385,7 @@ class TestAdapterHealthCheck:
 
     def test_health_check_result_structure(self):
         """Test health_check returns proper HealthCheckResult structure."""
-        adapter = DistillationDaemonAdapter()
+        adapter = PromotionDaemonAdapter()
         result = adapter.health_check()
 
         # Check result has required fields
@@ -395,7 +395,7 @@ class TestAdapterHealthCheck:
 
     def test_health_check_running_healthy(self):
         """Test health_check when adapter is running and healthy."""
-        adapter = DistillationDaemonAdapter()
+        adapter = PromotionDaemonAdapter()
         adapter._running = True
         adapter._healthy = True
         # Use spec=[] to ensure mock doesn't have health_check, so adapter uses its own logic
@@ -408,7 +408,7 @@ class TestAdapterHealthCheck:
 
     def test_health_check_running_unhealthy(self):
         """Test health_check when adapter is running but unhealthy."""
-        adapter = DistillationDaemonAdapter()
+        adapter = PromotionDaemonAdapter()
         adapter._running = True
         adapter._healthy = False
         adapter._unhealthy_count = 5

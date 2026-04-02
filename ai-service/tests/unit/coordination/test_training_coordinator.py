@@ -1068,6 +1068,68 @@ class TestEventHandlers:
         # Sync time should be updated for selfplay syncs
         assert coordinator._last_sync_time > 0
 
+    def test_emit_via_router_uses_safe_create_task_when_loop_running(self, coordinator):
+        """Async emit should use the tracked task helper instead of raw create_task."""
+        with patch(
+            "app.coordination.event_router.publish",
+        ) as mock_publish, patch(
+            "app.core.async_context.safe_create_task",
+        ) as mock_safe_create_task, patch(
+            "asyncio.get_running_loop",
+            return_value=object(),
+        ):
+            coordinator._emit_via_router("TRAINING_COMPLETED", {"config_key": "square8_2p"})
+
+        mock_publish.assert_called_once_with(
+            event_type="TRAINING_COMPLETED",
+            payload={"config_key": "square8_2p"},
+            source="TrainingCoordinator",
+        )
+        mock_safe_create_task.assert_called_once()
+        call_args, call_kwargs = mock_safe_create_task.call_args
+        assert call_kwargs["name"] == "training_coordinator_emit_training_completed"
+        call_args[0].close()
+
+    def test_emit_via_router_uses_publish_sync_without_event_loop(self, coordinator):
+        """Sync emit should go through publish_sync when no event loop is active."""
+        with patch(
+            "asyncio.get_running_loop",
+            side_effect=RuntimeError,
+        ), patch(
+            "app.coordination.event_router.publish_sync",
+        ) as mock_publish_sync:
+            coordinator._emit_via_router("TRAINING_COMPLETED", {"config_key": "square8_2p"})
+
+        mock_publish_sync.assert_called_once_with(
+            event_type="TRAINING_COMPLETED",
+            payload={"config_key": "square8_2p"},
+            source="TrainingCoordinator",
+        )
+
+    def test_emit_selfplay_acceleration_uses_safe_create_task(self, coordinator):
+        """Quality recovery selfplay boost should use the tracked task helper."""
+        with patch(
+            "app.coordination.event_router.emit_selfplay_target_updated",
+        ) as mock_emit, patch(
+            "app.core.async_context.safe_create_task",
+        ) as mock_safe_create_task:
+            coordinator._selfplay_targets = {"square8_2p": 1200}
+            coordinator._emit_selfplay_acceleration_for_quality("square8_2p", 0.45)
+
+        mock_emit.assert_called_once_with(
+            config_key="square8_2p",
+            target_games=2100,
+            reason="quality_gate_blocked",
+            priority=1,
+            source="training_coordinator.py",
+            exploration_boost=1.75,
+            recovery_mode=True,
+        )
+        mock_safe_create_task.assert_called_once()
+        call_args, call_kwargs = mock_safe_create_task.call_args
+        assert call_kwargs["name"] == "training_coordinator_quality_boost_square8_2p"
+        call_args[0].close()
+
 
 # =============================================================================
 # Health Check Tests

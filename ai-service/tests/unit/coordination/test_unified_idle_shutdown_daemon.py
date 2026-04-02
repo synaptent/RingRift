@@ -293,6 +293,7 @@ class TestUnifiedIdleShutdownDaemonInit:
         )
 
         mock_provider = MagicMock()
+        mock_provider.name = "test"
         mock_provider.provider_type = "test"
 
         daemon = UnifiedIdleShutdownDaemon(
@@ -334,3 +335,76 @@ class TestIntegration:
         original_vast = PROVIDER_DEFAULTS["vast"]["idle_threshold_seconds"]
         _ = IdleShutdownConfig.for_provider("vast")
         assert PROVIDER_DEFAULTS["vast"]["idle_threshold_seconds"] == original_vast
+
+
+# =============================================================================
+# Event Emission Tests
+# =============================================================================
+
+
+class TestEventEmission:
+    """Tests for unified router helper usage during termination."""
+
+    @pytest.mark.asyncio
+    async def test_emits_node_terminated_event_via_publish_helper(self):
+        """Successful idle termination should emit NODE_TERMINATED via publish()."""
+        from app.coordination.event_router import DataEventType
+        from app.coordination.providers.base import InstanceStatus
+        from app.coordination.unified_idle_shutdown_daemon import UnifiedIdleShutdownDaemon
+
+        mock_provider = MagicMock()
+        mock_provider.name = "test"
+        mock_provider.provider_type = "test"
+        mock_provider.list_instances = AsyncMock(
+            return_value=[
+                MagicMock(
+                    status=InstanceStatus.RUNNING,
+                    tags={},
+                    name="test-node",
+                )
+            ]
+        )
+
+        daemon = UnifiedIdleShutdownDaemon(
+            provider=mock_provider,
+            config=IdleShutdownConfig(
+                provider_name="test",
+                min_nodes_to_retain=0,
+                idle_threshold_seconds=600,
+                min_cost_savings_per_hour=0.1,
+            ),
+        )
+        daemon._node_status["inst-123"] = NodeIdleStatus(
+            instance_id="inst-123",
+            instance_name="test-node",
+            provider="test",
+            ip_address="10.0.0.1",
+            gpu_name="RTX 4090",
+            cost_per_hour=1.25,
+            idle_since=time.time() - 1200,
+            status="running",
+        )
+
+        with patch.object(daemon, "_update_node_status", new_callable=AsyncMock), patch.object(
+            daemon,
+            "_should_allow_termination",
+            new_callable=AsyncMock,
+            return_value=True,
+        ), patch.object(
+            daemon,
+            "_terminate_node",
+            new_callable=AsyncMock,
+            return_value=True,
+        ), patch(
+            "app.coordination.unified_idle_shutdown_daemon.publish",
+            new_callable=AsyncMock,
+        ) as mock_publish:
+            await daemon._check_and_terminate_idle_nodes()
+
+        mock_publish.assert_awaited_once()
+        args, kwargs = mock_publish.await_args
+        assert args[0] == DataEventType.NODE_TERMINATED
+        assert args[1]["instance_id"] == "inst-123"
+        assert args[1]["instance_name"] == "test-node"
+        assert args[1]["provider"] == "test"
+        assert kwargs["source"] == daemon._daemon_name
