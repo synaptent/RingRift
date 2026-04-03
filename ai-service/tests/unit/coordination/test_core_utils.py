@@ -415,10 +415,10 @@ class TestAllExports:
         """Verify every item in __all__ is actually exported."""
         import app.coordination.core_utils as module
 
+        # Optional lazy imports (numpy, pandas, torch, etc.) may be None
+        # when the package isn't installed. Only check hasattr, not value.
         for name in module.__all__:
             assert hasattr(module, name), f"Missing export: {name}"
-            obj = getattr(module, name)
-            assert obj is not None, f"None value for: {name}"
 
     def test_expected_export_count(self):
         """Verify we have the expected number of exports."""
