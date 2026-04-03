@@ -55,8 +55,7 @@ def _make_ai(player: int, model_path: str, budget: int,
              randomness: float = 0.0) -> GumbelMCTSAI:
     cfg = AIConfig(difficulty=9, randomness=randomness, use_neural_net=True,
                    gumbel_simulation_budget=budget, nn_model_id=model_path,
-                   nn_model_version=MODEL_VERSION, allow_fresh_weights=False,
-                   use_gpu_tree=True)
+                   allow_fresh_weights=False, use_gpu_tree=True)
     return GumbelMCTSAI(player, cfg, BOARD_ENUM)
 
 
@@ -201,7 +200,7 @@ def train_model(npz: Path, out: Path, init: Path,
         cmd = [sys.executable, "-m", "app.training.train",
                "--data-path", str(npz), "--save-path", str(out),
                "--board-type", BOARD_TYPE, "--num-players", str(NUM_PLAYERS),
-               "--model-version", MODEL_VERSION, "--epochs", str(epochs),
+               "--epochs", str(epochs),
                "--batch-size", str(b), "--learning-rate", str(lr),
                "--init-weights", str(init), "--no-auto-tune-batch-size",
                "--lr-scheduler", "cosine", "--skip-freshness-check",
