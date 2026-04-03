@@ -293,7 +293,7 @@ class TestEventSubscriptions:
     """Test event subscription setup."""
 
     def test_subscribes_to_all_pipeline_events(self, monitor: PipelineCompletenessMonitor):
-        """Should subscribe to all 6 pipeline stage events."""
+        """Should subscribe to all tracked pipeline stage events."""
         subs = monitor._get_event_subscriptions()
         expected_events = {
             "selfplay_complete",
@@ -302,5 +302,6 @@ class TestEventSubscriptions:
             "training_completed",
             "evaluation_completed",
             "model_promoted",
+            "promotion_rejected",
         }
         assert set(subs.keys()) == expected_events

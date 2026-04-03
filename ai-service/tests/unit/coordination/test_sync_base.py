@@ -178,9 +178,9 @@ class TestCircuitBreakerConfig:
         """Test default configuration values."""
         config = CircuitBreakerConfig()
 
-        assert config.failure_threshold == 3
+        assert config.failure_threshold == 5
         assert config.recovery_timeout == 60.0
-        assert config.half_open_max_calls == 1
+        assert config.half_open_max_calls == 2
 
     def test_custom_values(self):
         """Test custom configuration."""
@@ -205,8 +205,10 @@ class TestSyncManagerBaseInitialization:
 
     def test_default_initialization(self, sync_manager):
         """Test default initialization."""
+        from app.config.coordination_defaults import SyncDefaults
+
         assert sync_manager.state_path is None
-        assert sync_manager.sync_interval == 300.0
+        assert sync_manager.sync_interval == SyncDefaults.DATA_SYNC_INTERVAL
         assert not sync_manager._running
 
     def test_custom_sync_interval(self):
@@ -484,8 +486,8 @@ class TestSyncManagerIntegration:
     @pytest.mark.asyncio
     async def test_recovery_after_failures(self, sync_manager):
         """Test that nodes can recover after circuit breaker opens."""
-        # Cause circuit breaker to open (3 failures is default threshold)
-        for _ in range(3):
+        # Cause circuit breaker to open at the configured failure threshold.
+        for _ in range(sync_manager.circuit_breaker_config.failure_threshold):
             sync_manager._record_sync_failure("node1")
 
         # Should be blocked initially

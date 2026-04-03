@@ -283,17 +283,24 @@ class TestRsyncPull:
                 mock_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
                 mock_exec.return_value = mock_proc
 
-                result = await mock_mixin._rsync_pull(
-                    ssh_host="10.0.0.1",
-                    ssh_user="root",
-                    ssh_key="/path/to/key",
-                    remote_path="/data/games",
-                    db_name="test.db",
-                    local_dir=local_dir,
-                    verify_checksum=False
-                )
+                with patch.object(
+                    mock_mixin,
+                    "_robust_pull_fallback",
+                    new_callable=AsyncMock,
+                    return_value=None,
+                ) as mock_fallback:
+                    result = await mock_mixin._rsync_pull(
+                        ssh_host="10.0.0.1",
+                        ssh_user="root",
+                        ssh_key="/path/to/key",
+                        remote_path="/data/games",
+                        db_name="test.db",
+                        local_dir=local_dir,
+                        verify_checksum=False
+                    )
 
                 assert result is None
+                mock_fallback.assert_awaited_once()
 
 
 # ============================================

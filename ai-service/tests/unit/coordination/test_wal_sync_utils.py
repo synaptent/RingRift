@@ -50,13 +50,32 @@ def temp_dir():
 
 @pytest.fixture
 def wal_mode_db(temp_dir):
-    """Create a SQLite database in WAL mode with some data."""
+    """Create a SQLite database in WAL mode with training-valid move data."""
     db_path = temp_dir / "test.db"
     conn = sqlite3.connect(str(db_path))
     conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("CREATE TABLE games (id INTEGER PRIMARY KEY, name TEXT)")
-    conn.execute("INSERT INTO games (name) VALUES ('game1')")
-    conn.execute("INSERT INTO games (name) VALUES ('game2')")
+    conn.execute("CREATE TABLE games (game_id TEXT PRIMARY KEY, name TEXT)")
+    conn.execute(
+        """
+        CREATE TABLE game_moves (
+            id INTEGER PRIMARY KEY,
+            game_id TEXT NOT NULL,
+            move_number INTEGER NOT NULL,
+            move_data TEXT
+        )
+        """
+    )
+    conn.execute("INSERT INTO games (game_id, name) VALUES ('game1', 'game1')")
+    conn.execute("INSERT INTO games (game_id, name) VALUES ('game2', 'game2')")
+    for game_id in ("game1", "game2"):
+        for move_number in range(1, 6):
+            conn.execute(
+                """
+                INSERT INTO game_moves (game_id, move_number, move_data)
+                VALUES (?, ?, ?)
+                """,
+                (game_id, move_number, f"move-{move_number}"),
+            )
     conn.commit()
     conn.close()
     return db_path

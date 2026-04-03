@@ -214,14 +214,15 @@ class TestCircuitBreakerConfig:
         Dec 2025: Updated for P2P cluster stability:
         - failure_threshold: 3 → 5 (tolerate network blips)
         - recovery_timeout: 300s → 60s (faster recovery)
+        - half_open_max_calls: 1 → 2 (allow a second probe during recovery)
         - Added backoff parameters (backoff_multiplier, max_backoff, jitter_factor)
         """
         config = CircuitBreakerConfig()
         assert config.failure_threshold == 5
         assert config.recovery_timeout == 60.0
-        assert config.half_open_max_calls == 1
+        assert config.half_open_max_calls == 2
         assert config.backoff_multiplier == 2.0
-        assert config.max_backoff == 300.0
+        assert config.max_backoff == 180.0
         assert config.jitter_factor == 0.1
 
     def test_aggressive_factory(self):

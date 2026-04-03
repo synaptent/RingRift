@@ -275,9 +275,9 @@ class TestCapacityPlanner:
 
         result = planner.health_check()
 
-        assert "healthy" in result
-        assert "message" in result
-        assert "details" in result
+        assert isinstance(result.healthy, bool)
+        assert isinstance(result.message, str)
+        assert isinstance(result.details, dict)
 
 
 class TestCapacityPlannerBudgetChecks:

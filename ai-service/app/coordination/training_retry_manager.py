@@ -347,10 +347,10 @@ def get_adaptive_max_data_age(
 
     # Also consider time since last successful training
     # If config hasn't been trained in a long time, be more lenient
-    if time_since_training > 86400:  # >24h since last training
-        multiplier *= 1.5
-    elif time_since_training > 172800:  # >48h since last training
+    if time_since_training > 172800:  # >48h since last training
         multiplier *= 2.0
+    elif time_since_training > 86400:  # >24h since last training
+        multiplier *= 1.5
 
     adaptive_age = base_max_age_hours * multiplier
     logger.debug(

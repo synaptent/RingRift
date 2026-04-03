@@ -39,17 +39,17 @@ class TestComputeConfigPriorityOverride:
         """300 games (< 500) should be CRITICAL (0)."""
         assert compute_config_priority_override("hex8_4p", game_count=300, elo=1400.0) == 0
 
-    def test_1000_games_elo_1600_returns_high(self) -> None:
-        """1000 games with Elo 1600 (< 1800, < 2000 games) should be HIGH (1)."""
-        assert compute_config_priority_override("hex8_2p", game_count=1000, elo=1600.0) == 1
+    def test_1000_games_elo_1600_returns_critical(self) -> None:
+        """1000 games with Elo 1600 (< 1700) should be CRITICAL (0)."""
+        assert compute_config_priority_override("hex8_2p", game_count=1000, elo=1600.0) == 0
 
-    def test_1999_games_elo_1799_returns_high(self) -> None:
-        """1999 games, Elo 1799 — boundary of HIGH (1)."""
-        assert compute_config_priority_override("square19_2p", game_count=1999, elo=1799.0) == 1
+    def test_1999_games_elo_1799_large_board_returns_low(self) -> None:
+        """Large boards are capped to LOW (3) during the final-week sprint."""
+        assert compute_config_priority_override("square19_2p", game_count=1999, elo=1799.0) == 3
 
-    def test_2000_games_elo_1600_returns_medium(self) -> None:
-        """2000 games with Elo 1600 — past game threshold, falls to MEDIUM (2)."""
-        assert compute_config_priority_override("hex8_2p", game_count=2000, elo=1600.0) == 2
+    def test_2000_games_elo_1600_returns_critical(self) -> None:
+        """2000 games with Elo 1600 (< 1700) should still be CRITICAL (0)."""
+        assert compute_config_priority_override("hex8_2p", game_count=2000, elo=1600.0) == 0
 
     def test_1000_games_elo_1800_returns_medium(self) -> None:
         """1000 games with Elo 1800 — Elo not < 1800, falls to MEDIUM (2)."""
@@ -69,9 +69,9 @@ class TestComputeConfigPriorityOverride:
 
     def test_none_game_count_falls_back_to_table(self) -> None:
         """game_count=None should fall back to CONFIG_PRIORITY_FALLBACK."""
-        # hexagonal_3p is 0 (CRITICAL) in the fallback table
-        assert compute_config_priority_override("hexagonal_3p", game_count=None, elo=None) == 0
-        assert CONFIG_PRIORITY_FALLBACK.get("hexagonal_3p") == 0
+        # hexagonal_3p is 3 (LOW) in the fallback table during the final-week sprint
+        assert compute_config_priority_override("hexagonal_3p", game_count=None, elo=None) == 3
+        assert CONFIG_PRIORITY_FALLBACK.get("hexagonal_3p") == 3
 
     def test_none_game_count_unknown_config_defaults_to_medium(self) -> None:
         """Unknown config with None game_count should default to MEDIUM (2)."""

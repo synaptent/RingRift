@@ -139,16 +139,16 @@ class TestQueueMonitor:
         assert level == BackpressureLevel.NONE
 
     def test_report_depth_soft_threshold(self, monitor):
-        """Should return SOFT at soft limit."""
+        """Should return MEDIUM at soft limit."""
         # Training data soft limit is 100000
         level = monitor.report_depth(QueueType.TRAINING_DATA, 100000)
-        assert level == BackpressureLevel.SOFT
+        assert level == BackpressureLevel.MEDIUM
 
     def test_report_depth_hard_threshold(self, monitor):
-        """Should return HARD near hard limit."""
+        """Should return CRITICAL near hard limit."""
         # Training data hard limit is 500000, 90% = 450000
         level = monitor.report_depth(QueueType.TRAINING_DATA, 450000)
-        assert level == BackpressureLevel.HARD
+        assert level == BackpressureLevel.CRITICAL
 
     def test_report_depth_stop_threshold(self, monitor):
         """Should return STOP at hard limit."""
@@ -167,7 +167,7 @@ class TestQueueMonitor:
         status = monitor.get_status(QueueType.TRAINING_DATA)
         assert status is not None
         assert status.current_depth == 50000
-        assert status.backpressure == BackpressureLevel.NONE
+        assert status.backpressure == BackpressureLevel.LOW
 
     def test_get_all_status_empty_initially(self, monitor):
         """Should return empty dict initially."""
@@ -192,7 +192,7 @@ class TestQueueMonitor:
         """Should return current backpressure level."""
         monitor.report_depth(QueueType.TRAINING_DATA, 100000)
         level = monitor.check_backpressure(QueueType.TRAINING_DATA)
-        assert level == BackpressureLevel.SOFT
+        assert level == BackpressureLevel.MEDIUM
 
     def test_should_throttle_false_below_soft(self, monitor):
         """should_throttle should be False below soft limit."""
@@ -219,14 +219,14 @@ class TestQueueMonitor:
         monitor.report_depth(QueueType.TRAINING_DATA, 10000)
         assert monitor.get_throttle_factor(QueueType.TRAINING_DATA) == 1.0
 
-    def test_get_throttle_factor_soft(self, monitor):
-        """Throttle factor should be 0.5 for SOFT."""
+    def test_get_throttle_factor_medium(self, monitor):
+        """Throttle factor should be 0.25 for MEDIUM."""
         monitor.report_depth(QueueType.TRAINING_DATA, 100000)
-        assert monitor.get_throttle_factor(QueueType.TRAINING_DATA) == 0.5
+        assert monitor.get_throttle_factor(QueueType.TRAINING_DATA) == 0.25
 
     def test_get_throttle_factor_hard(self, monitor):
         """Throttle factor should be 0.1 for HARD."""
-        monitor.report_depth(QueueType.TRAINING_DATA, 450000)
+        monitor.report_depth(QueueType.TRAINING_DATA, 250000)
         assert monitor.get_throttle_factor(QueueType.TRAINING_DATA) == 0.1
 
     def test_get_throttle_factor_stop(self, monitor):
@@ -245,7 +245,7 @@ class TestQueueMonitor:
 
         # Second report crossing soft threshold - should call callback
         monitor.report_depth(QueueType.TRAINING_DATA, 100000)
-        callback.assert_called_once_with(BackpressureLevel.SOFT)
+        callback.assert_called_once_with(BackpressureLevel.MEDIUM)
 
     def test_callback_on_level_change(self, monitor):
         """Callback should be called when level changes."""
@@ -254,19 +254,19 @@ class TestQueueMonitor:
             return levels_seen.append(level)
         monitor.register_callback(QueueType.TRAINING_DATA, callback)
 
-        # NONE -> SOFT
+        # NONE -> MEDIUM
         monitor.report_depth(QueueType.TRAINING_DATA, 10000)  # NONE
-        monitor.report_depth(QueueType.TRAINING_DATA, 100000)  # SOFT
+        monitor.report_depth(QueueType.TRAINING_DATA, 100000)  # MEDIUM
 
-        # SOFT -> HARD
-        monitor.report_depth(QueueType.TRAINING_DATA, 450000)  # HARD
+        # MEDIUM -> CRITICAL
+        monitor.report_depth(QueueType.TRAINING_DATA, 450000)  # CRITICAL
 
-        # HARD -> STOP
+        # CRITICAL -> STOP
         monitor.report_depth(QueueType.TRAINING_DATA, 500000)  # STOP
 
         assert levels_seen == [
-            BackpressureLevel.SOFT,
-            BackpressureLevel.HARD,
+            BackpressureLevel.MEDIUM,
+            BackpressureLevel.CRITICAL,
             BackpressureLevel.STOP,
         ]
 
@@ -375,13 +375,13 @@ class TestCustomConfig:
         }
         monitor = QueueMonitor(db_path=temp_db, config=custom_config)
 
-        # Below soft = NONE
+        # 50% of soft = LOW
         level = monitor.report_depth(QueueType.TRAINING_DATA, 50)
-        assert level == BackpressureLevel.NONE
+        assert level == BackpressureLevel.LOW
 
-        # At soft = SOFT
+        # At soft = HARD when soft overlaps the 50%-of-hard boundary
         level = monitor.report_depth(QueueType.TRAINING_DATA, 100)
-        assert level == BackpressureLevel.SOFT
+        assert level == BackpressureLevel.HARD
 
         # At hard = STOP
         level = monitor.report_depth(QueueType.TRAINING_DATA, 200)

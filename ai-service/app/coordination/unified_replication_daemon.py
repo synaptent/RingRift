@@ -286,13 +286,14 @@ class UnifiedReplicationDaemon(HandlerBase):
         Args:
             config: Daemon configuration
         """
-        self.config = config or UnifiedReplicationConfig()
+        resolved_config = config or UnifiedReplicationConfig()
         self.node_id = socket.gethostname()
 
         # Initialize HandlerBase - repair loop is more frequent (1 min)
         super().__init__(
             name=f"unified_replication_{self.node_id}",
-            cycle_interval=self.config.repair_interval_seconds,
+            config=resolved_config,
+            cycle_interval=resolved_config.repair_interval_seconds,
         )
 
         # Background task for monitor loop (different interval)

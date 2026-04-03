@@ -11,6 +11,7 @@ Critical fixes preserved:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import re
@@ -22,6 +23,52 @@ if TYPE_CHECKING:
     from scripts.p2p.managers.job_orchestration_manager import JobOrchestrationManager
 
 logger = logging.getLogger("p2p_orchestrator")
+
+
+def _update_work_result(work_item: dict[str, Any], **fields: Any) -> dict[str, Any]:
+    """Merge structured result fields into a work item."""
+    result = work_item.setdefault("result", {})
+    result.update({key: value for key, value in fields.items() if value is not None})
+    return result
+
+
+def _append_work_warning(
+    work_item: dict[str, Any],
+    *,
+    stage: str,
+    message: str,
+) -> None:
+    """Attach a non-fatal warning so the coordinator can surface it."""
+    warnings = _update_work_result(work_item).setdefault("warnings", [])
+    warnings.append({"stage": stage, "message": message})
+
+
+def _record_work_failure(
+    work_item: dict[str, Any],
+    *,
+    error: str,
+    stage: str,
+    work_id: str,
+    config_key: str,
+    model_version: str,
+    board_type: str,
+    num_players: int,
+    **extra: Any,
+) -> bool:
+    """Record a structured failure payload and return False for early exits."""
+    work_item["error"] = error
+    _update_work_result(
+        work_item,
+        success=False,
+        failure_stage=stage,
+        work_id=work_id,
+        config_key=config_key,
+        model_version=model_version,
+        board_type=board_type,
+        num_players=num_players,
+        **extra,
+    )
+    return False
 
 
 def _prepare_atomic_output_path(output_path: str | Path) -> tuple[Path, Path]:
@@ -663,16 +710,27 @@ async def execute_training_work(
         True on success, False on failure.
     """
     work_id = work_item.get("work_id", "")
+    board_type = config.get("board_type", "square8")
+    num_players = config.get("num_players", 2)
+    requested_model_version = str(config.get("model_version") or "")
+    config_key = f"{board_type}_{num_players}p"
 
     # Prevent coordinator from running training locally
     from scripts.p2p.managers.work_discovery_manager import _is_training_enabled_for_node
     if not _is_training_enabled_for_node():
         logger.info(f"Skipping training work {work_id}: training_enabled=false for this node")
-        work_item["error"] = f"training_disabled:{node_id}"
-        return False  # Return False so work item gets reassigned to a GPU node
+        return _record_work_failure(
+            work_item,
+            error=f"training_disabled:{node_id}",
+            stage="dispatch_guard",
+            work_id=work_id,
+            config_key=config_key,
+            model_version=requested_model_version or "unspecified",
+            board_type=board_type,
+            num_players=num_players,
+            node_id=node_id,
+        )
 
-    board_type = config.get("board_type", "square8")
-    num_players = config.get("num_players", 2)
     # March 11, 2026: Reduced defaults — 50 epochs on batch 256 caused
     # catastrophic forgetting on stale data. 20 epochs on batch 512 gives
     # better gradient estimates and less overfitting to noise.
@@ -689,9 +747,7 @@ async def execute_training_work(
         _default_arch = get_preferred_architecture(board_type)
     except ImportError:
         _default_arch = "v2"
-    model_version = config.get("model_version") or _default_arch
-
-    config_key = f"{board_type}_{num_players}p"
+    model_version = requested_model_version or _default_arch
 
     # Save to candidate_ instead of canonical_ to prevent overwriting the
     # production model before evaluation confirms improvement.
@@ -742,8 +798,18 @@ async def execute_training_work(
                 f"Training data too small: {npz_path} ({npz_size} bytes). "
                 f"Cannot train {config_key}."
             )
-            work_item["error"] = f"npz_too_small:{npz_size}bytes:{config_key}"
-            return False
+            return _record_work_failure(
+                work_item,
+                error=f"npz_too_small:{npz_size}bytes:{config_key}",
+                stage="npz_preflight",
+                work_id=work_id,
+                config_key=config_key,
+                model_version=model_version,
+                board_type=board_type,
+                num_players=num_players,
+                npz_path=str(npz_path),
+                npz_size_bytes=npz_size,
+            )
         # If local NPZ exists but is suspiciously small, try fetching a fresh copy
         if npz_size < MIN_NPZ_SIZE_BYTES:
             logger.warning(
@@ -786,11 +852,29 @@ async def execute_training_work(
                 _ok2, _err2 = quick_npz_check(npz_path)
                 if not _ok2:
                     logger.error(f"Training data still corrupt after re-fetch: {_err2}")
-                    work_item["error"] = f"npz_corrupt:{config_key}:{_err2}"
-                    return False
+                    return _record_work_failure(
+                        work_item,
+                        error=f"npz_corrupt:{config_key}:{_err2}",
+                        stage="npz_validation",
+                        work_id=work_id,
+                        config_key=config_key,
+                        model_version=model_version,
+                        board_type=board_type,
+                        num_players=num_players,
+                        npz_path=str(npz_path),
+                        npz_validation_error=_err2,
+                    )
                 logger.info(f"Successfully replaced corrupt NPZ for {config_key}")
         except ImportError:
-            logger.warning(f"NPZ validation module not available — skipping validation for {config_key}")
+            message = (
+                f"NPZ validation module not available — skipping validation for {config_key}"
+            )
+            logger.warning(message)
+            _append_work_warning(
+                work_item,
+                stage="npz_validation_import",
+                message=message,
+            )
         cmd.extend(["--data-path", str(npz_path)])
     else:
         # Feb 2026: NPZ not available locally. Try to fetch from another node.
@@ -816,8 +900,17 @@ async def execute_training_work(
                     f"Training data not found: {npz_path}. "
                     f"No local JSONL data available either. Cannot train {config_key}."
                 )
-                work_item["error"] = f"no_training_data:{config_key}"
-                return False
+                return _record_work_failure(
+                    work_item,
+                    error=f"no_training_data:{config_key}",
+                    stage="npz_resolution",
+                    work_id=work_id,
+                    config_key=config_key,
+                    model_version=model_version,
+                    board_type=board_type,
+                    num_players=num_players,
+                    npz_path=str(npz_path),
+                )
 
     # Validate init weights exist before launching subprocess.
     # Without --init-weights, training starts from random (loss 5-9 = useless).
@@ -872,8 +965,16 @@ async def execute_training_work(
                         f"Falling through to from-scratch logic."
                     )
                 _skip_init = True
-        except Exception:
-            pass  # Can't detect, assume compatible
+        except Exception as e:
+            message = (
+                f"Could not inspect canonical checkpoint metadata for {config_key}: {e}"
+            )
+            logger.warning(message)
+            _append_work_warning(
+                work_item,
+                stage="init_weights_inspection",
+                message=message,
+            )
     if _transfer_path:
         cmd.extend(["--init-weights", str(_transfer_path)])
     elif canonical_path.exists() and not _skip_init:
@@ -896,8 +997,18 @@ async def execute_training_work(
                     f"Refusing from-random training for {config_key} with "
                     f"{game_count} games. A canonical model should exist by now."
                 )
-                work_item["error"] = f"refusing_from_random:{config_key}:games={game_count}"
-                return False
+                return _record_work_failure(
+                    work_item,
+                    error=f"refusing_from_random:{config_key}:games={game_count}",
+                    stage="init_weights_guard",
+                    work_id=work_id,
+                    config_key=config_key,
+                    model_version=model_version,
+                    board_type=board_type,
+                    num_players=num_players,
+                    game_count=game_count,
+                    canonical_path=str(canonical_path),
+                )
 
     logger.info(
         f"Executing training work {work_id}: {config_key} with {model_version} "
@@ -939,8 +1050,23 @@ async def execute_training_work(
                 f"Training subprocess timed out after {TRAINING_TIMEOUT_SECONDS}s "
                 f"for {config_key}/{model_version} (work_id={work_id}). Killing."
             )
-            proc.kill()
-            await proc.wait()
+            timeout_output = ""
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+            try:
+                stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+                timeout_output = stdout.decode(errors="replace") if stdout else ""
+            except Exception as e:
+                logger.warning(
+                    f"Could not capture post-timeout output for {config_key}/{model_version}: {e}"
+                )
+                _append_work_warning(
+                    work_item,
+                    stage="timeout_output_capture",
+                    message=str(e),
+                )
+                with contextlib.suppress(Exception):
+                    await proc.wait()
             # Even though it timed out, the model file may already be saved.
             # Check if the model file exists and report partial success.
             model_file = Path(ringrift_path) / "models" / model_filename
@@ -977,19 +1103,37 @@ async def execute_training_work(
                     f"({model_file.stat().st_size / 1e6:.1f}MB). "
                     f"Reporting success with estimated samples={_timeout_samples}."
                 )
-                work_item["result"] = {
-                    "model_path": f"models/{model_filename}",
-                    "final_loss": _timeout_loss,
-                    "training_samples": _timeout_samples,
-                    "training_games": _timeout_games,
-                    "config_key": config_key,
-                    "model_version": model_version,
-                    "timed_out": True,
-                }
+                _update_work_result(
+                    work_item,
+                    success=True,
+                    work_id=work_id,
+                    model_path=f"models/{model_filename}",
+                    final_loss=_timeout_loss,
+                    training_samples=_timeout_samples,
+                    training_games=_timeout_games,
+                    config_key=config_key,
+                    model_version=model_version,
+                    board_type=board_type,
+                    num_players=num_players,
+                    timed_out=True,
+                    timeout_seconds=TRAINING_TIMEOUT_SECONDS,
+                    subprocess_output_tail=timeout_output[-10000:] or None,
+                )
                 return True
-            work_item["error"] = f"training_timeout:{TRAINING_TIMEOUT_SECONDS}s:{config_key}"
-            return False
-        output = stdout.decode() if stdout else ""
+            return _record_work_failure(
+                work_item,
+                error=f"training_timeout:{TRAINING_TIMEOUT_SECONDS}s:{config_key}",
+                stage="training_timeout",
+                work_id=work_id,
+                config_key=config_key,
+                model_version=model_version,
+                board_type=board_type,
+                num_players=num_players,
+                timed_out=True,
+                timeout_seconds=TRAINING_TIMEOUT_SECONDS,
+                subprocess_output_tail=timeout_output[-10000:] or None,
+            )
+        output = stdout.decode(errors="replace") if stdout else ""
 
         if proc.returncode == 0:
             # Parse training output for loss, sample count, and game count.
@@ -1036,14 +1180,19 @@ async def execute_training_work(
             # Populate work_item result so report_work_result sends real data.
             # Include candidate model path and size so the coordinator can sync
             # the model from this node after work completion.
-            work_item["result"] = {
-                "model_path": model_path,
-                "final_loss": final_loss,
-                "training_samples": training_samples,
-                "training_games": training_games,
-                "config_key": config_key,
-                "model_version": model_version,
-            }
+            _update_work_result(
+                work_item,
+                success=True,
+                work_id=work_id,
+                model_path=model_path,
+                final_loss=final_loss,
+                training_samples=training_samples,
+                training_games=training_games,
+                config_key=config_key,
+                model_version=model_version,
+                board_type=board_type,
+                num_players=num_players,
+            )
             if candidate_path.exists():
                 work_item["result"]["candidate_model_path"] = str(candidate_path)
                 work_item["result"]["candidate_model_size"] = candidate_path.stat().st_size
@@ -1084,19 +1233,34 @@ async def execute_training_work(
                         )
                         work_item["result"]["smoke_test_failed"] = True
                         work_item["result"]["smoke_test_win_rate"] = _wr
+                        work_item["result"]["candidate_s3_pushed"] = False
+                        _append_work_warning(
+                            work_item,
+                            stage="smoke_test",
+                            message=(
+                                f"candidate rejected at {_wr:.0%} win rate vs random "
+                                f"(threshold {_threshold:.0%})"
+                            ),
+                        )
                         return True  # Training succeeded but model is too weak
                     logger.info(
                         f"[SmokeTest] PASSED {config_key}: {_wins}/10 vs random ({_wr:.0%})"
                     )
                     work_item["result"]["smoke_test_win_rate"] = _wr
                 except Exception as _e:
-                    logger.debug(f"[SmokeTest] Could not run for {config_key}: {_e}")
+                    logger.warning(f"[SmokeTest] Could not run for {config_key}: {_e}")
+                    _append_work_warning(
+                        work_item,
+                        stage="smoke_test",
+                        message=str(_e),
+                    )
 
             # Emit training completed event
+            event_emitted = False
             try:
                 from app.distributed.data_events import DataEventType
                 from app.coordination.event_router import emit_event
-                emit_event(DataEventType.TRAINING_COMPLETED, {
+                event_emitted = emit_event(DataEventType.TRAINING_COMPLETED, {
                     "config_key": config_key,
                     "board_type": board_type,
                     "num_players": num_players,
@@ -1107,16 +1271,52 @@ async def execute_training_work(
                     "training_games": training_games,
                     "work_id": work_id,
                 })
-            except ImportError:
-                pass
+                if not event_emitted:
+                    message = f"training completion event returned False for {config_key}"
+                    logger.warning(message)
+                    _append_work_warning(
+                        work_item,
+                        stage="training_event_emit",
+                        message=message,
+                    )
+            except ImportError as e:
+                message = f"training event modules unavailable for {config_key}: {e}"
+                logger.warning(message)
+                _append_work_warning(
+                    work_item,
+                    stage="training_event_import",
+                    message=message,
+                )
+            except Exception as e:
+                message = f"training completion event failed for {config_key}: {e}"
+                logger.warning(message)
+                _append_work_warning(
+                    work_item,
+                    stage="training_event_emit",
+                    message=message,
+                )
+            work_item["result"]["training_event_emitted"] = event_emitted
 
             # Mar 2026: Push candidate model to S3 so coordinator can discover it.
             # Workers produce candidates locally but the coordinator needs them for
             # evaluation/promotion. S3 bridges the gap without direct SSH.
             if candidate_path.exists():
-                await _try_push_candidate_to_s3(
+                s3_pushed = await _try_push_candidate_to_s3(
                     str(candidate_path), model_filename, config_key
                 )
+                work_item["result"]["candidate_s3_pushed"] = s3_pushed
+                if not s3_pushed:
+                    message = (
+                        f"candidate model upload to S3 failed for {config_key}: {candidate_path}"
+                    )
+                    logger.warning(message)
+                    _append_work_warning(
+                        work_item,
+                        stage="candidate_s3_push",
+                        message=message,
+                    )
+            else:
+                work_item["result"]["candidate_s3_pushed"] = False
 
             return True
         else:
@@ -1127,27 +1327,35 @@ async def execute_training_work(
             )
             # Classify error for coordinator retry logic
             if "out of memory" in output.lower() or "outofmemoryerror" in output.lower():
-                work_item["error"] = f"cuda_oom:rc={proc.returncode}:{config_key}"
+                error_code = f"cuda_oom:rc={proc.returncode}:{config_key}"
             elif "cuda" in output.lower() and proc.returncode == 1:
-                work_item["error"] = f"cuda_error:rc={proc.returncode}:{config_key}"
+                error_code = f"cuda_error:rc={proc.returncode}:{config_key}"
             else:
-                work_item["error"] = f"subprocess_failed:rc={proc.returncode}:{config_key}"
-            # Store full error context so coordinator can debug without SSH
-            work_item["result"] = {
-                "subprocess_output_tail": truncated[-10000:],
-                "returncode": proc.returncode,
-                "config_key": config_key,
-                "model_version": model_version,
-            }
-            return False
+                error_code = f"subprocess_failed:rc={proc.returncode}:{config_key}"
+            return _record_work_failure(
+                work_item,
+                error=error_code,
+                stage="subprocess_exit",
+                work_id=work_id,
+                config_key=config_key,
+                model_version=model_version,
+                board_type=board_type,
+                num_players=num_players,
+                returncode=proc.returncode,
+                subprocess_output_tail=truncated[-10000:],
+            )
     except Exception as e:
         logger.exception(f"Training subprocess error for {config_key}: {e}")
-        work_item["error"] = f"training_exception:{config_key}:{e}"
         import traceback
-        work_item["result"] = {
-            "exception": str(e),
-            "traceback": traceback.format_exc()[-5000:],
-            "config_key": config_key,
-            "model_version": model_version,
-        }
-        return False
+        return _record_work_failure(
+            work_item,
+            error=f"training_exception:{config_key}:{e}",
+            stage="training_exception",
+            work_id=work_id,
+            config_key=config_key,
+            model_version=model_version,
+            board_type=board_type,
+            num_players=num_players,
+            exception=str(e),
+            traceback=traceback.format_exc()[-5000:],
+        )

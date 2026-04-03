@@ -251,7 +251,7 @@ class TestSyncDaemonConfig:
         """Test default sync config values."""
         config = SyncDaemonConfig()
         assert config.sync_timeout_seconds == 300.0
-        assert config.max_concurrent_syncs == 3
+        assert config.max_concurrent_syncs == 1
         assert config.retry_count == 3
         assert config.retry_delay_seconds == 5.0
 

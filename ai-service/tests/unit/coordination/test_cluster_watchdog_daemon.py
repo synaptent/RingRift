@@ -895,7 +895,7 @@ class TestNodeStatusCheck:
         mock_result.stdout = "50 %"
 
         with patch('subprocess.run', return_value=mock_result), \
-             patch('app.coordination.cluster_watchdog_daemon.emit_health_check_passed', new_callable=AsyncMock):
+             patch('app.coordination.cluster_watchdog_daemon.safe_emit_event_async', new_callable=AsyncMock):
             await daemon._check_node_status(sample_node)
 
         assert sample_node.is_reachable is True
@@ -920,7 +920,7 @@ class TestNodeStatusCheck:
         """_check_node_status handles SSH timeout."""
         import subprocess
         with patch('subprocess.run', side_effect=subprocess.TimeoutExpired(cmd="ssh", timeout=30)), \
-             patch('app.coordination.cluster_watchdog_daemon.emit_health_check_failed', new_callable=AsyncMock):
+             patch('app.coordination.cluster_watchdog_daemon.safe_emit_event_async', new_callable=AsyncMock):
             await daemon._check_node_status(sample_node)
 
         assert sample_node.is_reachable is False
@@ -936,7 +936,7 @@ class TestNodeStatusCheck:
         ]
 
         with patch('subprocess.run', side_effect=mock_results), \
-             patch('app.coordination.cluster_watchdog_daemon.emit_health_check_passed', new_callable=AsyncMock):
+             patch('app.coordination.cluster_watchdog_daemon.safe_emit_event_async', new_callable=AsyncMock):
             await daemon._check_node_status(sample_node)
 
         assert sample_node.python_processes == 5
@@ -952,7 +952,7 @@ class TestNodeStatusCheck:
         mock_result.stdout = "10 %"
 
         with patch('subprocess.run', return_value=mock_result), \
-             patch('app.coordination.cluster_watchdog_daemon.emit_health_check_passed', new_callable=AsyncMock):
+             patch('app.coordination.cluster_watchdog_daemon.safe_emit_event_async', new_callable=AsyncMock):
             await daemon._check_node_status(sample_node)
 
         assert sample_node.last_check >= before
@@ -1014,45 +1014,34 @@ class TestOnStopHandler:
 
         mock_emit = AsyncMock()
         with patch(
-            'app.coordination.event_emitters.emit_coordinator_shutdown',
+            'app.coordination.event_emission_helpers.safe_emit_event_async',
             mock_emit
         ):
             await daemon._on_stop()
 
-        mock_emit.assert_called_once()
-        call_kwargs = mock_emit.call_args.kwargs
-        # HandlerBase uses self.name instead of _get_daemon_name()
-        assert call_kwargs["coordinator_name"] == daemon.name
-        assert call_kwargs["reason"] == "graceful"
+        mock_emit.assert_awaited_once()
+        call_args = mock_emit.await_args
+        assert call_args.args[0] == "COORDINATOR_SHUTDOWN"
+        assert call_args.args[1]["coordinator_name"] == daemon.name
+        assert call_args.args[1]["reason"] == "graceful"
 
     @pytest.mark.asyncio
     async def test_on_stop_handles_import_error(self, daemon):
-        """_on_stop handles ImportError gracefully when event_emitters not available."""
-        # Simulate ImportError by patching the import inside _on_stop
-        original_on_stop = daemon._on_stop
-
-        async def patched_on_stop():
-            # This tests the try-except block in _on_stop that catches ImportError
-            # We simulate this by just calling the original and expecting it not to crash
-            # even if the emit function raises an error
-            try:
-                await original_on_stop()
-            except ImportError:
-                pass  # This is expected behavior
-
-        # The actual _on_stop method has try/except that handles ImportError
-        # Just verify it doesn't crash
-        await daemon._on_stop()
+        """_on_stop handles ImportError gracefully when emit helper is unavailable."""
+        with patch(
+            'app.coordination.event_emission_helpers.safe_emit_event_async',
+            AsyncMock(side_effect=ImportError("helper unavailable")),
+        ):
+            await daemon._on_stop()
 
     @pytest.mark.asyncio
     async def test_on_stop_handles_exception(self, daemon):
         """_on_stop handles other exceptions gracefully."""
         mock_emit = AsyncMock(side_effect=RuntimeError("Unexpected error"))
         with patch(
-            'app.coordination.event_emitters.emit_coordinator_shutdown',
+            'app.coordination.event_emission_helpers.safe_emit_event_async',
             mock_emit
         ):
-            # Should not raise - _on_stop has exception handling
             await daemon._on_stop()
 
 
@@ -1207,16 +1196,17 @@ class TestNodeUnhealthyEvent:
             daemon, '_activate_node',
             return_value=False  # Activation fails
         ), patch(
-            'app.coordination.cluster_watchdog_daemon.emit_node_unhealthy',
+            'app.coordination.cluster_watchdog_daemon.safe_emit_event_async',
             new_callable=AsyncMock
         ) as mock_emit:
             await daemon._run_cycle()
 
         # Should emit NODE_UNHEALTHY
-        mock_emit.assert_called_once()
-        call_kwargs = mock_emit.call_args.kwargs
-        assert call_kwargs["node_id"] == sample_node.node_id
-        assert "failures" in call_kwargs["reason"].lower() or "persistent" in call_kwargs["reason"].lower()
+        mock_emit.assert_awaited_once()
+        call_args = mock_emit.await_args
+        assert call_args.args[0] == "NODE_UNHEALTHY"
+        assert call_args.args[1]["node_id"] == sample_node.node_id
+        assert "failures" in call_args.args[1]["reason"].lower() or "persistent" in call_args.args[1]["reason"].lower()
 
 
 # =============================================================================

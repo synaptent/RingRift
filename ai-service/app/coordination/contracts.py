@@ -79,6 +79,10 @@ class CoordinatorStatus(str, Enum):
     ERROR = "error"
     DEGRADED = "degraded"
 
+    def __str__(self) -> str:
+        """Return the raw status value for logging and interpolation."""
+        return self.value
+
 
 # =============================================================================
 # Data Classes

@@ -742,12 +742,13 @@ class TournamentDaemon(HandlerBase):
         Args:
             config: Daemon configuration
         """
-        self.config = config or TournamentDaemonConfig()
+        resolved_config = config or TournamentDaemonConfig()
         self.node_id = socket.gethostname()
 
         # Initialize HandlerBase - use evaluation queue check interval as cycle
         super().__init__(
             name=f"tournament_daemon_{self.node_id}",
+            config=resolved_config,
             cycle_interval=10.0,  # Check evaluation queue every 10s
         )
 

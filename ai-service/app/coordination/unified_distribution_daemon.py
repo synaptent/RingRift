@@ -236,12 +236,13 @@ class UnifiedDistributionDaemon(HandlerBase):
     """
 
     def __init__(self, config: DistributionConfig | None = None):
-        self.config = config or DistributionConfig()
+        resolved_config = config or DistributionConfig()
         self._last_sync_time: float = 0.0
 
         # Initialize HandlerBase with 5s cycle (matches original loop sleep)
         super().__init__(
             name="unified_distribution_daemon",
+            config=resolved_config,
             cycle_interval=5.0,
         )
 
@@ -251,7 +252,7 @@ class UnifiedDistributionDaemon(HandlerBase):
         self._pending_event: asyncio.Event | None = None
         self._sync_lock = asyncio.Lock()
 
-        # CoordinatorProtocol state (HandlerBase provides _running, _start_time, _recent_errors)
+        # CoordinatorProtocol state (HandlerBase provides _running and _stats.started_at)
         self._coordinator_status = CoordinatorStatus.INITIALIZING
         self._events_processed: int = 0
         self._errors_count: int = 0
@@ -364,9 +365,10 @@ class UnifiedDistributionDaemon(HandlerBase):
 
     @property
     def uptime_seconds(self) -> float:
-        if self._start_time <= 0:
+        started_at = self._stats.started_at
+        if started_at <= 0:
             return 0.0
-        return time.time() - self._start_time
+        return time.time() - started_at
 
     def is_running(self) -> bool:
         return self._running
@@ -386,7 +388,7 @@ class UnifiedDistributionDaemon(HandlerBase):
             "name": self.name,
             "status": self._coordinator_status.value,
             "uptime_seconds": self.uptime_seconds,
-            "start_time": self._start_time,
+            "start_time": self._stats.started_at,
             "events_processed": self._events_processed,
             "errors_count": self._errors_count,
             "last_error": self._last_error,
@@ -406,7 +408,7 @@ class UnifiedDistributionDaemon(HandlerBase):
     def health_check(self) -> HealthCheckResult:
         """Check daemon health status for DaemonManager integration.
 
-        January 2026: Updated to use HandlerBase _recent_errors tracking.
+        January 2026: Updated to use HandlerBase error-log tracking.
 
         Returns:
             HealthCheckResult indicating:
@@ -414,6 +416,8 @@ class UnifiedDistributionDaemon(HandlerBase):
             - DEGRADED if high failure rate, pending buildup, or checksum failures
             - HEALTHY with distribution metrics otherwise
         """
+        recent_errors = self.get_recent_errors(limit=1000)
+
         if self._coordinator_status == CoordinatorStatus.ERROR:
             return HealthCheckResult.unhealthy(f"Daemon in error state: {self._last_error}")
 
@@ -424,10 +428,10 @@ class UnifiedDistributionDaemon(HandlerBase):
                 message="Daemon is stopped",
             )
 
-        # January 2026: Check HandlerBase recent errors
-        if len(self._recent_errors) > 10:
+        # January 2026: Check HandlerBase recent error log
+        if len(recent_errors) > 10:
             return HealthCheckResult.degraded(
-                f"{len(self._recent_errors)} recent errors",
+                f"{len(recent_errors)} recent errors",
             )
 
         # Check for high failure rate
@@ -458,7 +462,7 @@ class UnifiedDistributionDaemon(HandlerBase):
                 "successful_distributions": self._successful_distributions,
                 "model_distributions": self._model_distributions,
                 "npz_distributions": self._npz_distributions,
-                "recent_errors_count": len(self._recent_errors),
+                "recent_errors_count": len(recent_errors),
             },
         )
 

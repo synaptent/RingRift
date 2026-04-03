@@ -1971,7 +1971,18 @@ class TrainingTriggerDaemon(HandlerBase):
             trend_info = f", velocity_trend={state.elo_velocity_trend}" if state.elo_velocity_trend != "stable" else ""
             return False, f"cooldown active ({remaining:.1f}h remaining{trend_info})"
 
-        # 3. Check data freshness (December 2025: use training_freshness for sync)
+        # 3. Check minimum samples before expensive freshness/quality/aggregation work.
+        # Configs that are obviously under the sample floor cannot train anyway, so
+        # fail fast here instead of scanning manifests or remote sources.
+        if state.npz_sample_count < self.config.confidence_min_samples:
+            min_samples = compute_dynamic_sample_threshold(
+                config_key, state.num_players or 2,
+                base_threshold=self.config.min_samples_threshold,
+            )
+            if state.npz_sample_count < min_samples:
+                return False, f"insufficient samples ({state.npz_sample_count} < {min_samples})"
+
+        # 4. Check data freshness (December 2025: use training_freshness for sync)
         # January 2026 (Phase 4.1): Auto-sync on stale data instead of blocking
         # January 3, 2026: Adaptive data freshness based on velocity trend
         # - Plateauing configs get 3x threshold (more lenient) to break stalls
@@ -2029,9 +2040,13 @@ class TrainingTriggerDaemon(HandlerBase):
                 )
                 return False, f"data stale ({data_age_hours:.1f}h), sync triggered"
 
-        # January 2026: Log cluster-wide game counts for visibility
-        # This helps understand data distribution across all sources
-        await self._log_aggregated_game_counts(config_key, state.board_type, state.num_players)
+        # January 2026: Log cluster-wide game counts for visibility.
+        # This is informational only, so keep it off the RPC critical path.
+        if self._running:
+            self._safe_create_task(
+                self._log_aggregated_game_counts(config_key, state.board_type, state.num_players),
+                context=f"log_aggregated_game_counts:{config_key}",
+            )
 
         # 3.5 January 2026 Sprint 10: Check data quality before training
         # This ensures training only proceeds with high-quality data.
@@ -2061,7 +2076,7 @@ class TrainingTriggerDaemon(HandlerBase):
                 f"[TrainingTriggerDaemon] {config_key}: could not check game count: {e}"
             )
 
-        # 4. Check minimum samples (with confidence-based early trigger)
+        # 5. Check minimum samples (with confidence-based early trigger)
         # Dec 29, 2025: Try confidence-based early trigger first
         # This allows training to start earlier when statistical confidence is high
         if state.npz_sample_count >= self.config.confidence_min_samples:
@@ -2094,12 +2109,12 @@ class TrainingTriggerDaemon(HandlerBase):
             if state.npz_sample_count < min_samples:
                 return False, f"insufficient samples ({state.npz_sample_count} < {min_samples})"
 
-        # 5. Check if idle GPU available (optional - allow training anyway)
+        # 6. Check if idle GPU available (optional - allow training anyway)
         gpu_available = await self._check_gpu_availability()
         if not gpu_available:
             logger.warning(f"[TrainingTriggerDaemon] {config_key}: No idle GPU, proceeding anyway")
 
-        # 6. Check concurrent training limit
+        # 7. Check concurrent training limit
         active_count = sum(
             1 for s in self._training_states.values() if s.training_in_progress
         )

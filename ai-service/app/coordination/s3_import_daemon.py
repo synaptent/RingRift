@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import subprocess
@@ -123,8 +124,12 @@ class S3ImportDaemon(HandlerBase, ImportDaemonMixin):
         Args:
             config: Optional configuration. Uses defaults if not provided.
         """
-        self.config = config or S3ImportConfig()
-        super().__init__(name="s3_import", cycle_interval=self.config.check_interval)
+        resolved_config = config or S3ImportConfig()
+        super().__init__(
+            name="s3_import",
+            config=resolved_config,
+            cycle_interval=resolved_config.check_interval,
+        )
 
         self._import_stats = S3ImportStats()
         self._imported_files: dict[str, str] = {}  # s3_key -> local_path
@@ -182,7 +187,6 @@ class S3ImportDaemon(HandlerBase, ImportDaemonMixin):
                 logger.warning(f"[S3Import] Failed to list S3: {result.stderr}")
                 return []
 
-            import json
             data = json.loads(result.stdout)
             files = []
 

@@ -1211,6 +1211,10 @@ class TestClusterScaling:
 class TestEventHandling:
     """Tests for event handling via wire_queue_populator_events."""
 
+    def setup_method(self):
+        """Reset singleton before each test."""
+        reset_queue_populator()
+
     def teardown_method(self):
         """Reset singleton after each test."""
         reset_queue_populator()

@@ -546,7 +546,7 @@ class TestThreadSafety:
 class TestEventBusBridge:
     """Tests for event bus bridging (P0.1 Dec 2025)."""
 
-    @patch("app.coordination.feedback_signals.emit_event")
+    @patch("app.coordination.feedback_signals.safe_emit_event", return_value=True)
     @patch("app.coordination.feedback_signals.HAS_EVENT_BUS", True)
     def test_intensity_signal_bridges_to_event_bus(self, mock_emit):
         """Test intensity signals bridge to event bus."""
@@ -561,12 +561,12 @@ class TestEventBusBridge:
             value="hot_path",
         ))
 
-        # Should have called emit_event with SELFPLAY_RATE_CHANGED
-        if mock_emit.called:
-            call_args = mock_emit.call_args
-            assert call_args is not None
+        mock_emit.assert_called_once()
+        call_args = mock_emit.call_args
+        assert call_args is not None
+        assert call_args.args[0] == DataEventType.SELFPLAY_RATE_CHANGED
 
-    @patch("app.coordination.feedback_signals.emit_event")
+    @patch("app.coordination.feedback_signals.safe_emit_event", return_value=True)
     @patch("app.coordination.feedback_signals.HAS_EVENT_BUS", True)
     def test_regression_signal_bridges_to_event_bus(self, mock_emit):
         """Test regression signals bridge to event bus."""
@@ -581,7 +581,7 @@ class TestEventBusBridge:
             value="detected",
         ))
 
-        # Should have called emit_event
-        if mock_emit.called:
-            call_args = mock_emit.call_args
-            assert call_args is not None
+        mock_emit.assert_called_once()
+        call_args = mock_emit.call_args
+        assert call_args is not None
+        assert call_args.args[0] == DataEventType.REGRESSION_DETECTED

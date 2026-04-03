@@ -132,11 +132,12 @@ class NPZCombinationDaemon(SingletonMixin, HandlerBase):
         Args:
             config: Daemon configuration. If None, uses defaults.
         """
+        resolved_config = config or NPZCombinationConfig()
         super().__init__(
             name="NPZCombinationDaemon",
+            config=resolved_config,
             cycle_interval=300.0,  # 5 minute cycle for periodic checks
         )
-        self.config = config or NPZCombinationConfig()
         self.combination_stats = CombinationStats()
         self._last_combination_results: dict[str, CombineResult] = {}
 
@@ -203,6 +204,10 @@ class NPZCombinationDaemon(SingletonMixin, HandlerBase):
         except (OSError, IOError, ValueError, MemoryError) as e:
             # OSError/IOError: file access, ValueError: data format, MemoryError: large arrays
             logger.exception(f"Error combining NPZ for {config_key}: {e}")
+            self.combination_stats.combinations_failed += 1
+            self._emit_combination_failed(config_key, str(e))
+        except Exception as e:
+            logger.exception(f"Unexpected error combining NPZ for {config_key}: {e}")
             self.combination_stats.combinations_failed += 1
             self._emit_combination_failed(config_key, str(e))
 

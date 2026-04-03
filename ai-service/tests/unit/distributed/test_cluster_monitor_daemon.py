@@ -316,7 +316,7 @@ class TestConnectivityCheck:
              patch("builtins.open", MagicMock()), \
              patch("subprocess.run") as mock_run:
             mock_run.return_value = CompletedProcess(
-                args=["ssh", "test"], returncode=0, stdout="", stderr=""
+                args=["ssh", "test"], returncode=0, stdout="ok\n", stderr=""
             )
             monitor = ClusterMonitor()
             result = monitor._check_connectivity("node1")

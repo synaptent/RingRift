@@ -138,8 +138,12 @@ class OWCPushDaemon(HandlerBase):
         Args:
             config: Optional configuration. Uses defaults if not provided.
         """
-        self.config = config or OWCPushConfig()
-        super().__init__(name="owc_push", cycle_interval=self.config.push_interval)
+        resolved_config = config or OWCPushConfig()
+        super().__init__(
+            name="owc_push",
+            cycle_interval=resolved_config.push_interval,
+            config=resolved_config,
+        )
 
         self._push_stats = OWCPushStats()
         self._last_push_times: dict[str, float] = {}  # path -> mtime at last push

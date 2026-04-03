@@ -44,6 +44,13 @@ def mock_work_queue():
     return queue
 
 
+@pytest.fixture(autouse=True)
+def isolated_blacklist_db(tmp_path):
+    """Isolate persisted blacklist state between tests."""
+    with patch.object(JobReaperDaemon, "_BLACKLIST_DB_PATH", tmp_path / ".blacklist.db"):
+        yield
+
+
 @pytest.fixture
 def reaper(mock_work_queue) -> JobReaperDaemon:
     """Create a JobReaperDaemon with mock work queue."""

@@ -82,19 +82,19 @@ class TestMemoryThresholds:
     def test_default_gpu_thresholds(self):
         """Should have sensible GPU defaults."""
         thresholds = MemoryThresholds()
-        assert thresholds.gpu_warning == 0.75  # 75%
-        assert thresholds.gpu_critical == 0.85  # 85%
+        assert thresholds.gpu_warning == 0.70  # 70%
+        assert thresholds.gpu_critical == 0.80  # 80%
 
     def test_default_ram_thresholds(self):
         """Should have sensible RAM defaults."""
         thresholds = MemoryThresholds()
-        assert thresholds.ram_warning == 0.80  # 80%
-        assert thresholds.ram_critical == 0.90  # 90%
+        assert thresholds.ram_warning == 0.75  # 75%
+        assert thresholds.ram_critical == 0.85  # 85%
 
     def test_default_process_rss_threshold(self):
-        """Should have 32GB RSS threshold."""
+        """Should have 28GB RSS critical threshold."""
         thresholds = MemoryThresholds()
-        expected = 32 * 1024 * 1024 * 1024  # 32GB
+        expected = 28 * 1024 * 1024 * 1024  # 28GB
         assert thresholds.process_rss_critical_bytes == expected
 
     def test_default_sigkill_grace_period(self):
@@ -251,8 +251,8 @@ class TestMemoryMonitorDaemonProcessRss:
     def test_rss_threshold_is_bytes(self):
         """RSS threshold should be in bytes."""
         thresholds = MemoryThresholds()
-        # 32GB in bytes = 32 * 1024^3
-        assert thresholds.process_rss_critical_bytes == 32 * 1024 * 1024 * 1024
+        # 28GB in bytes = 28 * 1024^3
+        assert thresholds.process_rss_critical_bytes == 28 * 1024 * 1024 * 1024
 
     def test_rss_threshold_is_positive(self):
         """RSS threshold should be positive."""

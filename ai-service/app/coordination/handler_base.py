@@ -199,6 +199,7 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
         # Event subscription (from EventSubscribingDaemonMixin pattern)
         self._event_subscriptions: dict[str, Any] = {}
         self._event_subscribed = False
+        self._subscribed = False  # Legacy alias used by older coordinators/tests
         self._event_router: Any | None = None
 
         # MultiEventHandler compatibility (backward-compat for base_handler.py)
@@ -229,12 +230,32 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
     @property
     def is_subscribed(self) -> bool:
         """Backward-compat alias for _event_subscribed (base_handler.py naming)."""
-        return self._event_subscribed
+        return self._event_subscribed or self._subscribed
 
     @property
     def emit_metrics(self) -> bool:
         """Backward-compat property (base_handler.py naming). Always True."""
         return True
+
+    @property
+    def config(self) -> Any | None:
+        """Expose the handler configuration for backward compatibility."""
+        return self._config
+
+    @config.setter
+    def config(self, value: Any | None) -> None:
+        """Allow legacy code to update the handler configuration directly."""
+        self._config = value
+
+    @property
+    def status(self) -> Any:
+        """Expose the handler status for backward compatibility."""
+        return self._status
+
+    @status.setter
+    def status(self, value: Any) -> None:
+        """Allow legacy callers/tests to update handler status directly."""
+        self._status = value
 
     @property
     def uptime_seconds(self) -> float:
@@ -290,10 +311,12 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
             result = self._do_subscribe()
             if result:
                 self._event_subscribed = True
+                self._subscribed = True
                 self._stats.subscribed = True
             return result
         # Default: just mark as subscribed
         self._event_subscribed = True
+        self._subscribed = True
         self._stats.subscribed = True
         return True
 
@@ -1024,6 +1047,7 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
                     logger.warning(f"[{self._name}] Failed to subscribe to {event_type}: {e}")
 
             self._event_subscribed = bool(self._event_subscriptions)
+            self._subscribed = self._event_subscribed
             if self._event_subscribed:
                 logger.info(f"[{self._name}] Subscribed to {len(self._event_subscriptions)} events")
             return self._event_subscribed
@@ -1049,6 +1073,7 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
 
         self._event_subscriptions.clear()
         self._event_subscribed = False
+        self._subscribed = False
         self._event_router = None
 
     # =========================================================================

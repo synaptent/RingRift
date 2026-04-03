@@ -893,7 +893,7 @@ class TestHealthStats:
 
         status = manager.get_status()
 
-        assert status["name"] == "UnifiedHealthManager"
+        assert status["name"] == "unified_health_manager"
         assert status["enabled"] is True
         assert status["total_errors"] == 1
 
@@ -1734,7 +1734,8 @@ class TestHealthCheck:
 
     def test_health_check_ready_and_subscribed(self, manager):
         """Should return healthy when ready and subscribed."""
-        manager._subscribed = True
+        manager._running = True
+        manager._stats.subscribed = True
 
         result = manager.health_check()
 
@@ -1743,7 +1744,8 @@ class TestHealthCheck:
 
     def test_health_check_not_subscribed(self, manager):
         """Should return unhealthy when not subscribed."""
-        manager._subscribed = False
+        manager._running = True
+        manager._stats.subscribed = False
 
         result = manager.health_check()
 
@@ -1752,7 +1754,8 @@ class TestHealthCheck:
 
     def test_health_check_degraded_with_many_errors(self, manager):
         """Should return degraded with many unrecovered errors."""
-        manager._subscribed = True
+        manager._running = True
+        manager._stats.subscribed = True
         manager._total_errors = 150
         manager._successful_recoveries = 10
 
@@ -1764,7 +1767,8 @@ class TestHealthCheck:
 
     def test_health_check_degraded_with_open_circuits(self, manager):
         """Should return degraded with many open circuits."""
-        manager._subscribed = True
+        manager._running = True
+        manager._stats.subscribed = True
 
         # Create many open circuit breakers
         for i in range(6):
@@ -1815,20 +1819,20 @@ class TestEventSubscription:
     """Tests for event subscription functionality."""
 
     def test_subscribe_to_events_already_subscribed(self, manager):
-        """Should return True if already subscribed."""
-        manager._subscribed = True
+        """HandlerBase should still expose subscriptions when already subscribed."""
+        manager._stats.subscribed = True
 
-        result = manager.subscribe_to_events()
+        subscriptions = manager._get_event_subscriptions()
 
-        assert result is True
+        assert isinstance(subscriptions, dict)
+        assert subscriptions
 
     def test_subscribe_to_events_imports_event_router(self, manager):
-        """Should try to import event router."""
-        # This test verifies the import attempt - may fail gracefully if router not available
-        result = manager.subscribe_to_events()
+        """Should build the HandlerBase event subscription registry."""
+        subscriptions = manager._get_event_subscriptions()
 
-        # Either succeeds or fails gracefully
-        assert isinstance(result, bool)
+        assert isinstance(subscriptions, dict)
+        assert subscriptions
 
 
 # =============================================================================

@@ -29,13 +29,13 @@ class TestBackpressureSignal:
     def test_overall_pressure_calculation(self):
         """Overall pressure should be weighted average."""
         signal = BackpressureSignal(
-            queue_pressure=1.0,  # 30%
-            training_pressure=0.0,  # 25%
-            disk_pressure=0.0,  # 20%
+            queue_pressure=1.0,  # 25%
+            training_pressure=0.0,  # 20%
+            disk_pressure=0.0,  # 15%
             sync_pressure=0.0,  # 15%
-            memory_pressure=0.0,  # 10%
+            memory_pressure=0.0,  # 25%
         )
-        assert abs(signal.overall_pressure - 0.30) < 0.01
+        assert abs(signal.overall_pressure - 0.25) < 0.01
 
     def test_full_pressure_causes_pause(self):
         """Full pressure should cause spawn pause."""
@@ -68,7 +68,7 @@ class TestBackpressureSignal:
         low = BackpressureSignal(queue_pressure=0.2)
         assert low.spawn_rate_multiplier == 1.0
 
-        # High pressure - stopped (need all pressures at 1.0 to get overall > 0.9)
+        # High pressure - stopped (all pressures at 1.0 gives overall 1.0 > 0.7)
         high = BackpressureSignal(
             queue_pressure=1.0,
             training_pressure=1.0,
@@ -307,29 +307,27 @@ class TestBackpressureSignalEdgeCases:
     """Additional edge case tests for BackpressureSignal."""
 
     def test_spawn_rate_at_exact_threshold_low(self):
-        """Spawn rate at exactly 0.3 pressure should be 1.0."""
+        """Spawn rate at exactly 0.2 pressure should be 1.0."""
         signal = BackpressureSignal(
-            queue_pressure=0.3,  # 0.3 * 0.30 = 0.09
-            training_pressure=0.3,  # 0.3 * 0.25 = 0.075
-            disk_pressure=0.3,  # 0.3 * 0.20 = 0.06
-            sync_pressure=0.3,  # 0.3 * 0.15 = 0.045
-            memory_pressure=0.3,  # 0.3 * 0.10 = 0.03
+            queue_pressure=0.2,
+            training_pressure=0.2,
+            disk_pressure=0.2,
+            sync_pressure=0.2,
+            memory_pressure=0.2,
         )
-        # Overall = 0.09 + 0.075 + 0.06 + 0.045 + 0.03 = 0.3
-        assert abs(signal.overall_pressure - 0.3) < 0.01
-        assert signal.spawn_rate_multiplier == 1.0  # Below threshold
+        assert abs(signal.overall_pressure - 0.2) < 0.01
+        assert signal.spawn_rate_multiplier == 1.0
 
     def test_spawn_rate_just_above_threshold(self):
-        """Spawn rate just above 0.3 should start decreasing."""
+        """Spawn rate just above 0.2 should start decreasing."""
         signal = BackpressureSignal(
-            queue_pressure=0.35,
-            training_pressure=0.35,
-            disk_pressure=0.35,
-            sync_pressure=0.35,
-            memory_pressure=0.35,
+            queue_pressure=0.25,
+            training_pressure=0.25,
+            disk_pressure=0.25,
+            sync_pressure=0.25,
+            memory_pressure=0.25,
         )
-        # Overall = 0.35 (all pressures weighted sum)
-        assert signal.overall_pressure > 0.3
+        assert signal.overall_pressure > 0.2
         assert signal.spawn_rate_multiplier < 1.0
 
     def test_source_details_field(self):

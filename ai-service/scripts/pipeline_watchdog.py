@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse, json, os, sqlite3, subprocess, sys, time, urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from glob import glob
 from pathlib import Path
 from typing import Any
 
@@ -185,6 +186,23 @@ def check_minimal(work_dir: Path, max_stale_h: float, min_success: float,
     return results
 
 
+def expand_work_dirs(work_dir_args: list[str]) -> list[Path]:
+    """Expand explicit paths and shell-style globs into a stable dir list."""
+    resolved: list[Path] = []
+    seen: set[Path] = set()
+
+    for raw in work_dir_args:
+        matches = [Path(match) for match in glob(raw)]
+        candidates = matches or [Path(raw)]
+        for candidate in candidates:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            resolved.append(candidate)
+
+    return resolved
+
+
 def check_p2p(data_dir: Path, max_stale_h: float) -> list[Check]:
     results = []
 
@@ -255,7 +273,7 @@ def print_report(results: list[Check]) -> bool:
 def main():
     ap = argparse.ArgumentParser(description="Pipeline Watchdog")
     ap.add_argument("--mode", choices=["minimal", "p2p"], required=True)
-    ap.add_argument("--work-dir", default="data/minimal_loop")
+    ap.add_argument("--work-dir", nargs="+", default=["data/minimal_loop"])
     ap.add_argument("--data-dir", default="data")
     ap.add_argument("--max-stale-hours", type=float, default=8.0)
     ap.add_argument("--min-training-success", type=float, default=0.5)
@@ -263,9 +281,26 @@ def main():
     args = ap.parse_args()
 
     if args.mode == "minimal":
-        results = check_minimal(
-            Path(args.work_dir), args.max_stale_hours,
-            args.min_training_success, args.max_consecutive_failures)
+        results = []
+        for work_dir in expand_work_dirs(args.work_dir):
+            scoped = check_minimal(
+                work_dir,
+                args.max_stale_hours,
+                args.min_training_success,
+                args.max_consecutive_failures,
+            )
+            prefix = work_dir.name
+            results.extend(
+                [
+                    Check(
+                        name=f"{prefix}:{check.name}",
+                        passed=check.passed,
+                        message=check.message,
+                        severity=check.severity,
+                    )
+                    for check in scoped
+                ]
+            )
     else:
         results = check_p2p(Path(args.data_dir), args.max_stale_hours)
 

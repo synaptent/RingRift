@@ -37,7 +37,7 @@ class TestNPZCombinationConfig:
         assert config.output_suffix == "_combined"
         assert config.min_input_files == 1
         assert config.combine_on_single_file is False
-        assert config.min_interval_seconds == 60.0
+        assert config.min_interval_seconds == 0.5
 
     def test_custom_values(self):
         """Test custom configuration values."""
@@ -145,19 +145,19 @@ class TestNPZCombinationDaemonInit:
     @pytest.mark.asyncio
     async def test_singleton_pattern(self):
         """Test that get_instance returns same instance."""
-        daemon1 = await NPZCombinationDaemon.get_instance()
-        daemon2 = await NPZCombinationDaemon.get_instance()
+        daemon1 = NPZCombinationDaemon.get_instance()
+        daemon2 = NPZCombinationDaemon.get_instance()
 
         assert daemon1 is daemon2
 
     def test_reset_instance(self):
         """Test that reset_instance clears singleton."""
-        daemon1 = NPZCombinationDaemon()
-        NPZCombinationDaemon._instance = daemon1
+        daemon1 = NPZCombinationDaemon.get_instance()
+        assert daemon1 is not None
 
         NPZCombinationDaemon.reset_instance()
 
-        assert NPZCombinationDaemon._instance is None
+        assert not NPZCombinationDaemon.has_instance()
 
     def test_event_subscriptions(self):
         """Test event subscription mapping."""
@@ -360,7 +360,7 @@ class TestGetNPZCombinationDaemon:
     @pytest.mark.asyncio
     async def test_returns_daemon_instance(self):
         """Test that factory returns daemon instance."""
-        daemon = await get_npz_combination_daemon()
+        daemon = get_npz_combination_daemon()
 
         assert daemon is not None
         assert isinstance(daemon, NPZCombinationDaemon)
@@ -368,8 +368,8 @@ class TestGetNPZCombinationDaemon:
     @pytest.mark.asyncio
     async def test_returns_same_instance(self):
         """Test that factory returns singleton."""
-        daemon1 = await get_npz_combination_daemon()
-        daemon2 = await get_npz_combination_daemon()
+        daemon1 = get_npz_combination_daemon()
+        daemon2 = get_npz_combination_daemon()
 
         assert daemon1 is daemon2
 

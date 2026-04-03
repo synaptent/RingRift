@@ -121,8 +121,8 @@ class TestAutoSyncConfig:
         assert config.enabled is True
         assert config.interval_seconds == 60
         assert config.gossip_interval_seconds == 30
-        # Dec 2025: increased for faster parallel sync (was 4)
-        assert config.max_concurrent_syncs == 6
+        # Feb 2026: reduced to 1 to prevent OOM from parallel rsyncs
+        assert config.max_concurrent_syncs == 1
         assert config.min_games_to_sync == 10
 
     def test_config_strategy_default(self):
@@ -149,10 +149,10 @@ class TestAutoSyncConfig:
 
     def test_config_disk_thresholds(self):
         """Disk usage thresholds should have defaults."""
-        from app.coordination.sync_strategies import AutoSyncConfig
+        from app.coordination.sync_strategies import AutoSyncConfig, DISK_PRODUCTION_HALT_PERCENT
 
         config = AutoSyncConfig()
-        assert config.max_disk_usage_percent == 70.0
+        assert config.max_disk_usage_percent == float(DISK_PRODUCTION_HALT_PERCENT)
         assert config.target_disk_usage_percent == 60.0
 
     def test_config_quality_filter_settings(self):

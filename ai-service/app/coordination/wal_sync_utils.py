@@ -228,8 +228,14 @@ def prepare_db_for_sync(db_path: str | Path) -> tuple[bool, str]:
     # Verify database can be opened
     try:
         with sqlite3.connect(str(db_path), timeout=10.0) as conn:
-            # Quick validation
-            conn.execute("SELECT 1").fetchone()
+            # Touch the database file and run a lightweight integrity probe.
+            # A bare "SELECT 1" can succeed even for corrupt files because it
+            # does not require SQLite to read schema/pages from disk.
+            conn.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
+            result = conn.execute("PRAGMA quick_check").fetchall()
+            if len(result) != 1 or result[0][0] != "ok":
+                issues = ", ".join(str(row[0]) for row in result) or "unknown integrity error"
+                return False, f"Database integrity check failed: {issues}"
 
             # Check for WAL files that should be synced
             wal_files = get_wal_files(db_path)

@@ -460,13 +460,14 @@ class UnifiedHealthManager(HandlerBase):
             config: Recovery configuration
             notifier: Optional notification service for escalations
         """
+        resolved_config = config or RecoveryConfig()
         super().__init__(
             name="unified_health_manager",
-            config=config,
+            config=resolved_config,
             cycle_interval=self.HEALTH_CYCLE_INTERVAL,
         )
         # Use _health_config to avoid conflict with HandlerBase's config
-        self._health_config = config or RecoveryConfig()
+        self._health_config = resolved_config
 
         # Error tracking
         self._errors: list[ErrorRecord] = []
@@ -503,6 +504,8 @@ class UnifiedHealthManager(HandlerBase):
         # Dependencies - store for recovery escalation
         self._notifier = notifier
         self._dependencies: dict[str, Any] = {}
+        if notifier is not None:
+            self.set_dependency("notifier", notifier)
 
     def set_dependency(self, name: str, value: Any) -> None:
         """Set a named dependency for recovery operations.
@@ -2609,7 +2612,7 @@ class UnifiedHealthManager(HandlerBase):
 
         Implements CoordinatorBase.get_stats() interface.
         """
-        base_stats = await super().get_stats()
+        base_stats = super().get_stats()
         health_stats = self.get_health_stats()
 
         recent_events = [

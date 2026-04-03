@@ -1,11 +1,12 @@
-"""Integration tests for REGRESSION_DETECTED → exploration boost.
+"""Integration tests for REGRESSION_DETECTED -> exploration boost.
 
 Tests the FeedbackLoopController's response to regression detection,
-including setting exploration boost to 1.5x and increasing selfplay targets.
+including applying amplitude-scaled exploration boosts and increasing
+selfplay targets.
 
 Event flow:
 1. RegressionDetector emits REGRESSION_DETECTED
-2. FeedbackLoopController increases exploration boost to 1.5x
+2. FeedbackLoopController increases exploration boost based on severity
 3. Emits SELFPLAY_TARGET_UPDATED with higher target games
 4. Emits EXPLORATION_BOOST for temperature schedulers
 
@@ -28,7 +29,9 @@ from app.coordination.feedback_loop_controller import FeedbackLoopController, Fe
 @pytest.fixture
 def controller():
     """Create a FeedbackLoopController instance."""
-    return FeedbackLoopController()
+    controller = FeedbackLoopController()
+    controller._regression_cooldowns.clear()
+    return controller
 
 
 @pytest.fixture
@@ -46,9 +49,21 @@ def mock_event():
 @pytest.fixture
 def mock_selfplay_events():
     """Mock selfplay event emission."""
-    with patch("app.coordination.feedback_loop_controller.HAS_SELFPLAY_EVENTS", True):
-        with patch("app.coordination.feedback_loop_controller.emit_selfplay_target_updated") as mock_emit:
-            yield mock_emit
+    def _consume_task(coro, context: str = ""):
+        if hasattr(coro, "close"):
+            coro.close()
+        return MagicMock(name=f"task:{context}")
+
+    with patch("app.coordination.feedback.regression_handling_mixin.HAS_SELFPLAY_EVENTS", True):
+        with patch(
+            "app.coordination.feedback.regression_handling_mixin.emit_selfplay_target_updated",
+            new_callable=AsyncMock,
+        ) as mock_emit:
+            with patch(
+                "app.coordination.feedback.regression_handling_mixin._safe_create_task",
+                side_effect=_consume_task,
+            ):
+                yield mock_emit
 
 
 @pytest.fixture
@@ -73,8 +88,8 @@ class TestRegressionEventHandling:
 
         state = controller._get_or_create_state("hex8_2p")
 
-        # Check exploration boost set to 1.5x
-        assert state.current_exploration_boost == 1.5
+        # Minor 50-Elo regression now gets amplitude-scaled 1.65x boost.
+        assert state.current_exploration_boost == 1.65
 
         # Check failure count incremented
         assert state.consecutive_failures == 1
@@ -107,6 +122,7 @@ class TestRegressionEventHandling:
         }
 
         controller._on_regression_detected(event1)
+        controller._regression_cooldowns.clear()
         controller._on_regression_detected(event2)
 
         state = controller._get_or_create_state("hex8_2p")
@@ -168,6 +184,7 @@ class TestSelfplayTargetUpdate:
             target1 = mock_selfplay_events.call_args.kwargs["target_games"]
 
             # Third regression: should be higher
+            controller._regression_cooldowns.clear()
             event2 = MagicMock()
             event2.payload = {
                 "config_key": "hex8_2p",
@@ -253,7 +270,7 @@ class TestStateManagement:
         controller._on_regression_detected(mock_event)
 
         # Check updates
-        assert state.current_exploration_boost == 1.5  # max(1.2, 1.5)
+        assert state.current_exploration_boost == 1.65  # max(1.2, 1.65)
         assert state.consecutive_failures == 1
 
     def test_multiple_configs_independent(self, controller):
@@ -307,7 +324,7 @@ class TestIntegration:
             # Verify state changes
             state = controller._states["hex8_2p"]
             assert state.current_exploration_boost >= 1.5
-            assert state.consecutive_failures == 1
+            assert state.consecutive_failures == 2
 
             # Verify events emitted
             mock_selfplay_events.assert_called_once()
@@ -325,6 +342,7 @@ class TestIntegration:
 
         for event in events:
             controller._on_regression_detected(event)
+            controller._regression_cooldowns.clear()
 
         state = controller._states["hex8_2p"]
 

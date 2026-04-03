@@ -78,48 +78,27 @@ import sqlite3 as _sqlite3_module
 _original_sqlite3_connect = _sqlite3_module.connect
 
 
-class _AutoClosingConnection:
-    """sqlite3.Connection wrapper that closes on context manager exit."""
-    __slots__ = ("_conn",)
+class _AutoClosingConnection(_sqlite3_module.Connection):
+    """sqlite3.Connection that closes on context manager exit.
 
-    def __init__(self, conn):
-        object.__setattr__(self, "_conn", conn)
-
-    def __getattr__(self, name):
-        return getattr(self._conn, name)
-
-    def __setattr__(self, name, value):
-        if name == "_conn":
-            object.__setattr__(self, name, value)
-        else:
-            setattr(self._conn, name, value)
-
-    def __enter__(self):
-        return self._conn
+    Preserve the sqlite3.Connection contract so downstream code and tests that
+    perform isinstance checks or rely on connection attributes continue to work.
+    """
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
             if exc_type is None:
-                self._conn.commit()
+                self.commit()
             else:
-                self._conn.rollback()
+                self.rollback()
         finally:
-            self._conn.close()
+            self.close()
         return False
-
-    def close(self):
-        self._conn.close()
-
-    def __del__(self):
-        try:
-            self._conn.close()
-        except Exception:
-            pass
 
 
 def _patched_connect(*args, **kwargs):
-    conn = _original_sqlite3_connect(*args, **kwargs)
-    return _AutoClosingConnection(conn)
+    kwargs.setdefault("factory", _AutoClosingConnection)
+    return _original_sqlite3_connect(*args, **kwargs)
 
 
 _sqlite3_module.connect = _patched_connect

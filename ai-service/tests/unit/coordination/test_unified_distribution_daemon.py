@@ -154,7 +154,7 @@ class TestDistributionConfig:
         assert config.use_http_distribution is True
         assert config.http_port == 8767
         assert config.http_timeout_seconds == 120.0
-        assert config.http_concurrent_uploads == 5
+        assert config.http_concurrent_uploads == 1
         assert config.fallback_to_rsync is True
 
     def test_default_checksum_settings(self):
@@ -431,9 +431,9 @@ class TestCoordinatorProtocol:
         """Test uptime is 0 before start."""
         assert daemon.uptime_seconds == 0.0
 
-    def test_uptime_after_setting_start_time(self, daemon):
-        """Test uptime increases after setting start time."""
-        daemon._start_time = time.time() - 10.0
+    def test_uptime_after_setting_started_at(self, daemon):
+        """Test uptime increases after setting stats.started_at."""
+        daemon._stats.started_at = time.time() - 10.0
         assert daemon.uptime_seconds >= 10.0
 
     def test_is_running_initially_false(self, daemon):
@@ -1277,12 +1277,12 @@ class TestEdgeCases:
         await daemon.stop()
         assert daemon._coordinator_status == CoordinatorStatus.STOPPED
 
-    def test_uptime_with_zero_start_time(self, daemon):
-        """Test uptime returns 0 when start_time is 0."""
-        daemon._start_time = 0
+    def test_uptime_with_zero_started_at(self, daemon):
+        """Test uptime returns 0 when stats.started_at is 0."""
+        daemon._stats.started_at = 0
         assert daemon.uptime_seconds == 0.0
 
-    def test_uptime_with_negative_start_time(self, daemon):
-        """Test uptime returns 0 when start_time is negative."""
-        daemon._start_time = -1
+    def test_uptime_with_negative_started_at(self, daemon):
+        """Test uptime returns 0 when stats.started_at is negative."""
+        daemon._stats.started_at = -1
         assert daemon.uptime_seconds == 0.0

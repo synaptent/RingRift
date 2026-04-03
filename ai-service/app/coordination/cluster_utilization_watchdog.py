@@ -147,11 +147,12 @@ class ClusterUtilizationWatchdog(HandlerBase):
         Args:
             config: Optional configuration, uses defaults if not provided
         """
-        self.config = config or UtilizationWatchdogConfig()
+        resolved_config = config or UtilizationWatchdogConfig()
 
         super().__init__(
             name="cluster_utilization_watchdog",
-            cycle_interval=float(self.config.check_interval_seconds),
+            config=resolved_config,
+            cycle_interval=float(resolved_config.check_interval_seconds),
         )
 
         # Tracking state

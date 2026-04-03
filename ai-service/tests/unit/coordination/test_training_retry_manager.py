@@ -436,9 +436,6 @@ class TestGetAdaptiveMaxDataAge:
 
     def test_very_long_time_since_training(self):
         """Very long time since training should increase leniency.
-
-        Note: The code uses if-elif, so >48h still matches >24h first and gets 1.5x.
-        This is a known code behavior (could be a bug, but we test what the code does).
         """
         # >48h since last training
         max_age = get_adaptive_max_data_age(
@@ -448,8 +445,8 @@ class TestGetAdaptiveMaxDataAge:
             time_since_training=180000.0,  # ~50 hours
         )
 
-        # Base * 1.0 (stable) * 1.5 (>24h - the elif >48h never matches)
-        assert max_age == 24.0 * 1.0 * 1.5
+        # Base * 1.0 (stable) * 2.0 (>48h)
+        assert max_age == 24.0 * 1.0 * 2.0
 
     def test_starved_config_uses_week_threshold(self):
         """Starved config (<500 games) should use 168h threshold."""
@@ -513,17 +510,13 @@ class TestGetAdaptiveMaxDataAgeFromState:
         mock_state.elo_velocity_trend = "stable"
         mock_state.last_training_time = time.time() - 7200  # 2 hours ago
 
-        # The function imports parse_config_key and count_games_for_config internally
-        # within a try-except block, so it handles failures gracefully.
-        max_age = get_adaptive_max_data_age_from_state(
-            state=mock_state,
-            base_max_age_hours=24.0,
-        )
+        with patch("app.utils.game_discovery.count_games_for_config", return_value=1000):
+            max_age = get_adaptive_max_data_age_from_state(
+                state=mock_state,
+                base_max_age_hours=24.0,
+            )
 
-        # Stable, <24h since training, game_count may or may not be available
-        assert isinstance(max_age, float)
-        # Could be 24.0 (no game_count) or 168.0 (starved) depending on actual data
-        assert max_age > 0
+        assert max_age == 24.0
 
     def test_handles_import_error_gracefully(self):
         """Should handle missing imports gracefully."""
@@ -532,14 +525,12 @@ class TestGetAdaptiveMaxDataAgeFromState:
         mock_state.elo_velocity_trend = "stable"
         mock_state.last_training_time = time.time()
 
-        # Even if imports fail, function should return a valid result
-        # The internal try-except handles ImportError, ValueError, OSError
-        max_age = get_adaptive_max_data_age_from_state(
-            state=mock_state,
-            base_max_age_hours=24.0,
-        )
+        with patch("app.utils.game_discovery.count_games_for_config", side_effect=OSError("boom")):
+            max_age = get_adaptive_max_data_age_from_state(
+                state=mock_state,
+                base_max_age_hours=24.0,
+            )
 
-        # Should still work, just without game_count
         assert max_age == 24.0
 
     def test_computes_time_since_training(self):
@@ -549,10 +540,11 @@ class TestGetAdaptiveMaxDataAgeFromState:
         mock_state.elo_velocity_trend = "stable"
         mock_state.last_training_time = time.time() - 100000  # ~28 hours ago
 
-        max_age = get_adaptive_max_data_age_from_state(
-            state=mock_state,
-            base_max_age_hours=24.0,
-        )
+        with patch("app.utils.game_discovery.count_games_for_config", return_value=1000):
+            max_age = get_adaptive_max_data_age_from_state(
+                state=mock_state,
+                base_max_age_hours=24.0,
+            )
 
         # >24h since training applies 1.5x multiplier
         assert max_age == 24.0 * 1.5

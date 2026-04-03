@@ -699,9 +699,9 @@ class TestHealthCheck:
             return_value=None,
         ):
             result = health_check()
-            assert result["healthy"] is True
-            assert result["status"] == "healthy"
-            assert "native networking" in result["message"]
+            assert result.healthy is True
+            assert result.status.value == "running"
+            assert "native networking" in result.message
 
     def test_container_no_cache(self):
         """Test health check in container without cache."""
@@ -714,9 +714,9 @@ class TestHealthCheck:
             return_value="docker",
         ):
             result = health_check()
-            assert result["healthy"] is None
-            assert result["status"] == "unknown"
-            assert "async status check required" in result["message"]
+            assert result.healthy is True
+            assert result.status.value == "initializing"
+            assert "async status check required" in result.message
 
     def test_cached_healthy_kernel_mode(self):
         """Test health check with cached healthy status (kernel mode)."""
@@ -731,9 +731,9 @@ class TestHealthCheck:
         )
 
         result = health_check()
-        assert result["healthy"] is True
-        assert result["details"]["mode"] == "kernel"
-        assert result["details"]["tailscale_ip"] == "100.64.0.5"
+        assert result.healthy is True
+        assert result.details["mode"] == "kernel"
+        assert result.details["tailscale_ip"] == "100.64.0.5"
 
         # Cleanup
         module._status_cache = None
@@ -752,9 +752,9 @@ class TestHealthCheck:
         )
 
         result = health_check()
-        assert result["healthy"] is True
-        assert result["details"]["mode"] == "userspace"
-        assert result["details"]["socks5_port"] == 1055
+        assert result.healthy is True
+        assert result.details["mode"] == "userspace"
+        assert result.details["socks5_port"] == 1055
 
         # Cleanup
         module._status_cache = None
@@ -768,8 +768,8 @@ class TestHealthCheck:
         )
 
         result = health_check()
-        assert result["healthy"] is True
-        assert "native networking" in result["message"]
+        assert result.healthy is True
+        assert "native networking" in result.message
 
         # Cleanup
         module._status_cache = None

@@ -90,6 +90,17 @@ from app.coordination.types import BackpressureLevel  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
+_BACKPRESSURE_PRIORITY = {
+    BackpressureLevel.NONE: 0,
+    BackpressureLevel.LOW: 1,
+    BackpressureLevel.SOFT: 2,
+    BackpressureLevel.MEDIUM: 3,
+    BackpressureLevel.HARD: 4,
+    BackpressureLevel.HIGH: 5,
+    BackpressureLevel.CRITICAL: 6,
+    BackpressureLevel.STOP: 7,
+}
+
 # Import centralized timeout thresholds
 try:
     from app.config.thresholds import SQLITE_BUSY_TIMEOUT_MS, SQLITE_TIMEOUT
@@ -433,7 +444,7 @@ class QueueMonitor:
     def should_throttle(self, queue_type: QueueType) -> bool:
         """Check if production should be throttled for this queue."""
         level = self.check_backpressure(queue_type)
-        return level in (BackpressureLevel.SOFT, BackpressureLevel.HARD, BackpressureLevel.STOP)
+        return level.is_throttling()
 
     def should_stop(self, queue_type: QueueType) -> bool:
         """Check if production should stop for this queue."""
@@ -443,12 +454,7 @@ class QueueMonitor:
     def get_throttle_factor(self, queue_type: QueueType) -> float:
         """Get production throttle factor (1.0 = full speed, 0 = stopped)."""
         level = self.check_backpressure(queue_type)
-        return {
-            BackpressureLevel.NONE: 1.0,
-            BackpressureLevel.SOFT: 0.5,
-            BackpressureLevel.HARD: 0.1,
-            BackpressureLevel.STOP: 0.0,
-        }[level]
+        return level.reduction_factor()
 
     def register_callback(
         self,
@@ -550,17 +556,11 @@ class QueueMonitor:
         """
         all_status = self.get_all_status()
 
-        # Find highest backpressure level across all queues
-        # BackpressureLevel ordering: NONE < SOFT < HARD < STOP
-        bp_priority = {
-            BackpressureLevel.NONE: 0,
-            BackpressureLevel.SOFT: 1,
-            BackpressureLevel.HARD: 2,
-            BackpressureLevel.STOP: 3,
-        }
+        # Find highest backpressure level across all queues.
+        # Queue monitor now emits the full canonical BackpressureLevel range.
         max_bp = BackpressureLevel.NONE
         for status in all_status.values():
-            if bp_priority.get(status.backpressure, 0) > bp_priority.get(max_bp, 0):
+            if _BACKPRESSURE_PRIORITY.get(status.backpressure, 0) > _BACKPRESSURE_PRIORITY.get(max_bp, 0):
                 max_bp = status.backpressure
 
         throttled = [k for k, v in all_status.items() if v.backpressure != BackpressureLevel.NONE]
@@ -594,31 +594,31 @@ class QueueMonitor:
             # Check for CRITICAL/STOP backpressure (unhealthy)
             critical_queues = [
                 name for name, status in all_statuses.items()
-                if status and status.backpressure == BackpressureLevel.STOP
+                if status and status.backpressure in (BackpressureLevel.CRITICAL, BackpressureLevel.STOP)
             ]
 
             if critical_queues:
                 return HealthCheckResult(
                     healthy=False,
                     status=CoordinatorStatus.DEGRADED,
-                    message=f"STOP backpressure on: {', '.join(critical_queues)}",
+                    message=f"Critical queue backpressure on: {', '.join(critical_queues)}",
                     details={
                         "critical_queues": critical_queues,
                         "queue_count": len(all_statuses),
                     },
                 )
 
-            # Check for HARD backpressure (degraded but healthy)
+            # Check for HARD/HIGH backpressure (degraded but healthy)
             hard_queues = [
                 name for name, status in all_statuses.items()
-                if status and status.backpressure == BackpressureLevel.HARD
+                if status and status.backpressure in (BackpressureLevel.HARD, BackpressureLevel.HIGH)
             ]
 
             if hard_queues:
                 return HealthCheckResult(
                     healthy=True,
                     status=CoordinatorStatus.DEGRADED,
-                    message=f"HARD backpressure on: {', '.join(hard_queues)}",
+                    message=f"Elevated queue backpressure on: {', '.join(hard_queues)}",
                     details={
                         "hard_queues": hard_queues,
                         "queue_count": len(all_statuses),

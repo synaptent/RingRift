@@ -181,13 +181,14 @@ class S3NodeSyncDaemon(HandlerBase):
     """
 
     def __init__(self, config: S3NodeSyncConfig | None = None):
-        self.config = config or S3NodeSyncConfig()
+        resolved_config = config or S3NodeSyncConfig()
         self.node_id = get_node_id()
 
         # Initialize HandlerBase with cycle interval from config
         super().__init__(
             name=f"s3_node_sync_{self.node_id}",
-            cycle_interval=self.config.sync_interval_seconds,
+            config=resolved_config,
+            cycle_interval=resolved_config.sync_interval_seconds,
         )
 
         # Stats (in addition to HandlerBase stats)
