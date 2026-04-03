@@ -1091,6 +1091,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
+      - name: Check Python import integrity
+        working-directory: ai-service
+        run: |
+          PYTHONPATH=. python scripts/check_import_integrity.py
+
       - name: Run quick pipeline regression smoke
         working-directory: ai-service
         run: |
