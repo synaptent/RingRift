@@ -156,12 +156,13 @@ class S3SyncDaemon(HandlerBase):
         Args:
             config: Optional configuration. Uses environment defaults if not provided.
         """
-        self.config = config or S3SyncConfig()
+        resolved_config = config or S3SyncConfig()
         self.node_id = _get_node_id()
 
         super().__init__(
             name=f"s3_sync_{self.node_id}",
-            cycle_interval=self.config.sync_interval,
+            config=resolved_config,
+            cycle_interval=resolved_config.sync_interval,
         )
 
         self._stats = S3SyncStats()

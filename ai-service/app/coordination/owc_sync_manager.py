@@ -240,17 +240,18 @@ class OWCSyncManager(HandlerBase):
         Args:
             config: Optional configuration. Uses defaults if not provided.
         """
-        self.config = config or OWCSyncConfig()
+        resolved_config = config or OWCSyncConfig()
 
         # Use the shorter interval as the cycle interval
         min_interval = min(
-            self.config.push_interval,
-            self.config.pull_games_interval,
-            self.config.pull_npz_interval,
-            self.config.pull_models_interval,
+            resolved_config.push_interval,
+            resolved_config.pull_games_interval,
+            resolved_config.pull_npz_interval,
+            resolved_config.pull_models_interval,
         )
         super().__init__(
             name="owc_sync_manager",
+            config=resolved_config,
             cycle_interval=min(60.0, min_interval / 10),  # Check frequently
         )
 

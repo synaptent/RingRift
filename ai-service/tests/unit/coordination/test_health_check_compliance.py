@@ -9,6 +9,9 @@ monitor daemon status and trigger auto-restarts.
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 import pytest
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -16,6 +19,31 @@ from unittest.mock import MagicMock, patch
 
 class TestHealthCheckCompliance:
     """Verify all registered daemons implement health_check()."""
+
+    def test_no_non_deprecated_coordination_health_check_is_dict_annotated(self):
+        """Prevent reintroducing ad hoc dict-typed health_check contracts."""
+        root = Path(__file__).resolve().parents[3] / "app" / "coordination"
+        offenders: list[str] = []
+
+        for path in sorted(root.rglob("*.py")):
+            if "deprecated" in path.parts:
+                continue
+
+            tree = ast.parse(path.read_text(), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if node.name != "health_check" or node.returns is None:
+                    continue
+
+                annotation = ast.unparse(node.returns)
+                if annotation == "dict" or annotation.startswith("dict["):
+                    offenders.append(f"{path.relative_to(root)}:{node.lineno}")
+
+        assert not offenders, (
+            "health_check() must return HealthCheckResult-like objects, not dicts: "
+            + ", ".join(offenders)
+        )
 
     def test_daemon_registry_has_all_daemon_types(self):
         """Verify DAEMON_REGISTRY covers all DaemonType values."""
@@ -358,6 +386,64 @@ class TestHealthCheckReturnTypes:
         """Verify CoordinatorStatus can be imported."""
         from app.coordination.protocols import CoordinatorStatus
         assert CoordinatorStatus is not None
+
+    @pytest.mark.parametrize(
+        ("factory", "module_name"),
+        [
+            (
+                lambda: __import__(
+                    "app.coordination.fast_failure_detector",
+                    fromlist=["FastFailureDetector"],
+                ).FastFailureDetector(),
+                "fast_failure_detector",
+            ),
+            (
+                lambda: __import__(
+                    "app.coordination.underutilization_recovery_handler",
+                    fromlist=["UnderutilizationRecoveryHandler"],
+                ).UnderutilizationRecoveryHandler(),
+                "underutilization_recovery_handler",
+            ),
+            (
+                lambda: __import__(
+                    "app.coordination.data_availability_daemon",
+                    fromlist=["DataAvailabilityDaemon"],
+                ).DataAvailabilityDaemon(),
+                "data_availability_daemon",
+            ),
+            (
+                lambda: __import__(
+                    "app.coordination.unified_health",
+                    fromlist=["UnifiedHealthMonitor"],
+                ).UnifiedHealthMonitor(),
+                "unified_health",
+            ),
+            (
+                lambda: __import__(
+                    "app.coordination.voter_config_orchestrator",
+                    fromlist=["VoterConfigOrchestrator"],
+                ).VoterConfigOrchestrator(),
+                "voter_config_orchestrator",
+            ),
+        ],
+    )
+    def test_selected_health_checks_return_healthcheckresult(
+        self,
+        factory: Any,
+        module_name: str,
+    ):
+        """Guard the modules that were converted off ad hoc dict health checks."""
+        from app.coordination.contracts import HealthCheckResult
+
+        component = factory()
+        result = component.health_check()
+
+        assert not isinstance(result, dict), (
+            f"{module_name}.health_check() regressed to dict output"
+        )
+        assert isinstance(result, HealthCheckResult), (
+            f"{module_name}.health_check() must return HealthCheckResult"
+        )
 
     def test_health_check_result_supports_details(self):
         """Verify HealthCheckResult supports optional details field."""

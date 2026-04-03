@@ -129,9 +129,12 @@ class ReanalysisDaemon(HandlerBase):
         Args:
             config: Daemon configuration. Uses defaults if not provided.
         """
-        super().__init__(name="reanalysis_daemon", cycle_interval=300.0)  # 5 min cycle
-
-        self.config = config or ReanalysisConfig()
+        resolved_config = config or ReanalysisConfig()
+        super().__init__(
+            name="reanalysis_daemon",
+            config=resolved_config,
+            cycle_interval=300.0,
+        )  # 5 min cycle
         self._config_states: dict[str, ConfigReanalysisState] = {}
         self._reanalysis_in_progress: set[str] = set()
         self._total_reanalyses: int = 0

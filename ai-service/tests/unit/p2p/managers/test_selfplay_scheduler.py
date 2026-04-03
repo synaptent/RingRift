@@ -268,11 +268,11 @@ class TestPickWeightedConfig:
         assert "engine_mode" in config
         assert "priority" in config
 
-    def test_low_memory_node_gets_square8_only(self) -> None:
-        """Test that low GPU VRAM nodes only get square8 configs.
+    def test_low_memory_node_filters_out_large_boards(self) -> None:
+        """Test that low GPU VRAM nodes avoid only the truly large boards.
 
-        Dec 2025: SelfplayScheduler filters by gpu_vram_gb (not system RAM).
-        Nodes with <48GB GPU VRAM only get square8 configs.
+        Jan 12, 2026: SelfplayScheduler allows both hex8 and square8 on
+        smaller GPUs; only square19 and hexagonal are filtered out.
         """
         scheduler = SelfplayScheduler()
         node = MockNodeInfo(gpu_vram_gb=16)  # Low GPU VRAM
@@ -281,7 +281,7 @@ class TestPickWeightedConfig:
         for _ in range(10):
             config = scheduler.pick_weighted_config(node)
             if config:
-                assert config["board_type"] == "square8"
+                assert config["board_type"] in {"square8", "hex8"}
 
     def test_high_memory_node_gets_variety(self) -> None:
         """Test that high GPU VRAM nodes can get various board types."""

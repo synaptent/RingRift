@@ -147,10 +147,11 @@ class UnifiedBackupDaemon(HandlerBase):
         Args:
             config: Optional configuration. Uses defaults from environment if not provided.
         """
-        self.config = config or BackupConfig()
+        resolved_config = config or BackupConfig()
         super().__init__(
             name="unified_backup",
-            cycle_interval=self.config.backup_interval,
+            config=resolved_config,
+            cycle_interval=resolved_config.backup_interval,
         )
         self._backup_stats = BackupStats()
         self._discovery: Any = None  # Lazy loaded

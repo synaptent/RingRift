@@ -277,7 +277,9 @@ class TestHealthStatus:
     def test_is_alive(self):
         """is_alive should check heartbeat recency."""
         recent = HealthStatus(last_heartbeat=time.time())
-        old = HealthStatus(last_heartbeat=time.time() - 120)  # 2 min ago
+        old = HealthStatus(
+            last_heartbeat=time.time() - HealthStatus.PEER_TIMEOUT - 1
+        )
 
         assert recent.is_alive is True
         assert old.is_alive is False

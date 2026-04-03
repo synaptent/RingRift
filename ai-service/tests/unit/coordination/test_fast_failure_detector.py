@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.coordination.contracts import CoordinatorStatus
 from app.coordination.fast_failure_detector import (
     DEFAULT_CHECK_INTERVAL,
     DEFAULT_RECOVERY_THRESHOLD,
@@ -927,9 +928,9 @@ class TestHealthCheck:
         detector = FastFailureDetector()
         result = detector.health_check()
 
-        assert result["healthy"] is True
-        assert result["status"] == "healthy"
-        assert "details" in result
+        assert result.healthy is True
+        assert result.status == CoordinatorStatus.RUNNING
+        assert "checks_performed" in result.details
 
     def test_health_check_degraded(self):
         """Test health check when degraded."""
@@ -938,8 +939,8 @@ class TestHealthCheck:
 
         result = detector.health_check()
 
-        assert result["healthy"] is False
-        assert result["status"] == "degraded"
+        assert result.healthy is False
+        assert result.status == CoordinatorStatus.DEGRADED
 
     def test_health_check_alert(self):
         """Test health check when in alert."""
@@ -948,8 +949,8 @@ class TestHealthCheck:
 
         result = detector.health_check()
 
-        assert result["healthy"] is False
-        assert result["status"] == "degraded"
+        assert result.healthy is False
+        assert result.status == CoordinatorStatus.DEGRADED
 
     def test_health_check_recovery(self):
         """Test health check when in recovery mode."""
@@ -958,8 +959,8 @@ class TestHealthCheck:
 
         result = detector.health_check()
 
-        assert result["healthy"] is False
-        assert result["status"] == "degraded"
+        assert result.healthy is False
+        assert result.status == CoordinatorStatus.DEGRADED
 
 
 # =============================================================================

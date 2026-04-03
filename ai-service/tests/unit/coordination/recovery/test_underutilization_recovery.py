@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.coordination.contracts import CoordinatorStatus
 from app.coordination.underutilization_recovery_handler import (
     DEFAULT_CHECK_INTERVAL_SECONDS,
     DEFAULT_HIGH_PRIORITY,
@@ -236,8 +237,9 @@ class TestUnderutilizationHealthCheck:
 
         result = handler.health_check()
 
-        assert result["healthy"] is True
-        assert "details" in result
+        assert result.healthy is True
+        assert result.status == CoordinatorStatus.RUNNING
+        assert "enabled" in result.details
 
     def test_health_check_recovery_in_progress(self) -> None:
         """Test health check during recovery."""
@@ -246,8 +248,9 @@ class TestUnderutilizationHealthCheck:
 
         result = handler.health_check()
 
-        assert result["healthy"] is False
-        assert result["details"]["recovery_in_progress"] is True
+        assert result.healthy is False
+        assert result.status == CoordinatorStatus.DEGRADED
+        assert result.details["recovery_in_progress"] is True
 
     def test_health_check_disabled(self) -> None:
         """Test health check when disabled."""
@@ -256,7 +259,9 @@ class TestUnderutilizationHealthCheck:
 
         result = handler.health_check()
 
-        assert result["details"]["enabled"] is False
+        assert result.healthy is False
+        assert result.status == CoordinatorStatus.STOPPED
+        assert result.details["enabled"] is False
 
 
 class TestUnderutilizationGetStats:

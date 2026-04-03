@@ -144,12 +144,12 @@ class SocketLeakRecoveryDaemon(HandlerBase):
         Args:
             config: Configuration. Uses environment defaults if not provided.
         """
-        config = config or SocketLeakConfig.from_env()
+        resolved_config = config or SocketLeakConfig.from_env()
         super().__init__(
             name="socket_leak_recovery",
-            cycle_interval=config.check_interval_seconds,
+            config=resolved_config,
+            cycle_interval=resolved_config.check_interval_seconds,
         )
-        self.config = config
 
         # State tracking
         self._consecutive_criticals: int = 0

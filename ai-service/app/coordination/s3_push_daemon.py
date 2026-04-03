@@ -118,8 +118,12 @@ class S3PushDaemon(HandlerBase):
         Args:
             config: Optional configuration. Uses defaults if not provided.
         """
-        self.config = config or S3PushConfig()
-        super().__init__(name="s3_push", cycle_interval=self.config.push_interval)
+        resolved_config = config or S3PushConfig()
+        super().__init__(
+            name="s3_push",
+            config=resolved_config,
+            cycle_interval=resolved_config.push_interval,
+        )
 
         self._push_stats = S3PushStats()
         self._last_push_times: dict[str, float] = {}  # path -> mtime at last push

@@ -163,10 +163,11 @@ class UnifiedDataCatalog(HandlerBase):
         Args:
             config: Optional configuration. Uses defaults if not provided.
         """
-        self.config = config or CatalogConfig()
+        resolved_config = config or CatalogConfig()
         super().__init__(
             name="unified_catalog",
-            cycle_interval=self.config.refresh_interval,
+            config=resolved_config,
+            cycle_interval=resolved_config.refresh_interval,
         )
 
         self._catalog_stats = CatalogStats()

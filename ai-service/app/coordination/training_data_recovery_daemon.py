@@ -126,11 +126,12 @@ class TrainingDataRecoveryDaemon(SingletonMixin, HandlerBase):
         Args:
             config: Optional configuration. If None, loads from environment.
         """
+        resolved_config = config or TrainingDataRecoveryConfig.from_env()
         super().__init__(
             name="training_data_recovery",
+            config=resolved_config,
             cycle_interval=30.0,  # Check every 30s
         )
-        self.config = config or TrainingDataRecoveryConfig.from_env()
 
         # Track recovery attempts per config
         self._recovery_attempts: dict[str, int] = {}  # config_key -> attempt count

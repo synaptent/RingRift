@@ -37,6 +37,31 @@ class GossipMetricsMixin:
     - _gossip_health_tracker: GossipHealthTracker
     """
 
+    def _init_gossip_metrics(self) -> None:
+        """Initialize gossip metric state for legacy callers.
+
+        The original standalone GossipMetricsMixin exposed an explicit
+        `_init_gossip_metrics()` helper. After the Feb 2026 extraction,
+        the protocol path started initializing these fields from
+        `_init_gossip_protocol()` and the explicit helper disappeared.
+        Keep this idempotent initializer for deprecated-module and test
+        compatibility.
+        """
+        self._ensure_state_attr("_gossip_metrics", {
+            "message_sent": 0,
+            "message_received": 0,
+            "state_updates": 0,
+            "propagation_delay_ms": deque(maxlen=100),
+            "anti_entropy_repairs": 0,
+            "stale_states_detected": 0,
+            "last_reset": time.time(),
+        })
+        self._ensure_state_attr("_gossip_compression_stats", {
+            "total_original_bytes": 0,
+            "total_compressed_bytes": 0,
+            "messages_compressed": 0,
+        })
+
     def _record_gossip_metrics(
         self,
         event: str,
@@ -59,15 +84,7 @@ class GossipMetricsMixin:
         """
         # Ensure metrics state exists
         # Jan 2026: Use deque(maxlen=100) for propagation_delay_ms to prevent memory leak
-        self._ensure_state_attr("_gossip_metrics", {
-            "message_sent": 0,
-            "message_received": 0,
-            "state_updates": 0,
-            "propagation_delay_ms": deque(maxlen=100),
-            "anti_entropy_repairs": 0,
-            "stale_states_detected": 0,
-            "last_reset": time.time(),
-        })
+        self._init_gossip_metrics()
         metrics = self._gossip_metrics
 
         # Use .get() with defaults to prevent KeyError in case of race conditions
@@ -100,7 +117,7 @@ class GossipMetricsMixin:
 
         Called automatically after 1 hour. Returns old metrics for logging.
         """
-        self._ensure_state_attr("_gossip_metrics", {})
+        self._init_gossip_metrics()
         old_metrics = self._gossip_metrics.copy()
 
         # Jan 2026: Use deque(maxlen=100) for propagation_delay_ms to prevent memory leak
@@ -143,11 +160,7 @@ class GossipMetricsMixin:
             original_size: Original message size in bytes
             compressed_size: Compressed message size in bytes
         """
-        self._ensure_state_attr("_gossip_compression_stats", {
-            "total_original_bytes": 0,
-            "total_compressed_bytes": 0,
-            "messages_compressed": 0,
-        })
+        self._init_gossip_metrics()
         stats = self._gossip_compression_stats
         stats["total_original_bytes"] += original_size
         stats["total_compressed_bytes"] += compressed_size
@@ -159,12 +172,7 @@ class GossipMetricsMixin:
         Returns:
             Dict with message counts, latency, and compression stats
         """
-        self._ensure_state_attr("_gossip_metrics", {})
-        self._ensure_state_attr("_gossip_compression_stats", {
-            "total_original_bytes": 0,
-            "total_compressed_bytes": 0,
-            "messages_compressed": 0,
-        })
+        self._init_gossip_metrics()
         metrics = self._gossip_metrics
         delays = metrics.get("propagation_delay_ms", [])
 

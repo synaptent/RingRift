@@ -100,7 +100,7 @@ class TestRecordGossipMetrics:
         orch._record_gossip_metrics("latency", latency_ms=100.0)
 
         delays = orch._gossip_metrics["propagation_delay_ms"]
-        assert delays == [50.0, 100.0]
+        assert list(delays) == [50.0, 100.0]
 
     def test_latency_capped_at_100(self):
         """Latency measurements capped at 100 most recent."""
@@ -111,8 +111,8 @@ class TestRecordGossipMetrics:
         delays = orch._gossip_metrics["propagation_delay_ms"]
         assert len(delays) == 100
         # Should have most recent 100 (50-149)
-        assert delays[0] == 50.0
-        assert delays[-1] == 149.0
+        assert list(delays)[0] == 50.0
+        assert list(delays)[-1] == 149.0
 
     def test_hourly_reset_triggers(self):
         """Metrics reset after 1 hour."""
@@ -156,7 +156,7 @@ class TestResetGossipMetricsHourly:
         orch._reset_gossip_metrics_hourly()
 
         assert orch._gossip_metrics["message_sent"] == 0
-        assert orch._gossip_metrics["propagation_delay_ms"] == []
+        assert list(orch._gossip_metrics["propagation_delay_ms"]) == []
 
 
 class TestRecordGossipCompression:

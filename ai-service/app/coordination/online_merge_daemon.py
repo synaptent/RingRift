@@ -63,10 +63,11 @@ class OnlineMergeDaemon(HandlerBase):
         Args:
             config: Daemon configuration
         """
-        self.config = config or OnlineMergeConfig()
+        resolved_config = config or OnlineMergeConfig()
         super().__init__(
             name="online_merge_daemon",
-            cycle_interval=self.config.check_interval_seconds,
+            config=resolved_config,
+            cycle_interval=resolved_config.check_interval_seconds,
         )
 
         # Track last merge times per config

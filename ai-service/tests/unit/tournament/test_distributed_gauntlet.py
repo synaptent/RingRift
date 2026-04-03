@@ -187,18 +187,20 @@ class TestModuleConstants:
     """Tests for module-level constants."""
 
     def test_config_keys(self):
-        """CONFIG_KEYS should have all 9 configs."""
-        assert len(CONFIG_KEYS) == 9
+        """CONFIG_KEYS should cover all 12 board/player combinations."""
+        assert len(CONFIG_KEYS) == 12
         assert "square8_2p" in CONFIG_KEYS
         assert "hexagonal_4p" in CONFIG_KEYS
         assert "square19_3p" in CONFIG_KEYS
+        assert "square19_4p" in CONFIG_KEYS
 
     def test_max_moves(self):
-        """MAX_MOVES should have all 9 configs."""
-        assert len(MAX_MOVES) == 9
+        """MAX_MOVES should define limits for all 12 supported configs."""
+        assert len(MAX_MOVES) == 12
         assert MAX_MOVES["square8_2p"] == 500
         assert MAX_MOVES["hexagonal_4p"] == 4000
         assert MAX_MOVES["square19_2p"] == 1500
+        assert MAX_MOVES["square19_4p"] == 2500
 
 
 # =============================================================================

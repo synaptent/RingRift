@@ -106,11 +106,12 @@ class UnifiedDataSyncOrchestrator(HandlerBase):
     """
 
     def __init__(self, config: OrchestratorConfig | None = None):
+        resolved_config = config or OrchestratorConfig()
         super().__init__(
             name="unified_data_sync_orchestrator",
-            cycle_interval=config.cycle_interval if config else 300.0,
+            config=resolved_config,
+            cycle_interval=resolved_config.cycle_interval,
         )
-        self.config = config or OrchestratorConfig()
         self._manifest = get_cluster_manifest()
         self._backup_status: dict[str, BackupStatus] = {}
         self._pending_backups: asyncio.Queue[dict[str, Any]] = asyncio.Queue()

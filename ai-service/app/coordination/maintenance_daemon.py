@@ -178,9 +178,13 @@ class MaintenanceDaemon(HandlerBase):
     _event_source = "MaintenanceDaemon"
 
     def __init__(self, config: MaintenanceConfig | None = None):
+        resolved_config = config or MaintenanceConfig()
         # Initialize HandlerBase with 10-minute cycle interval
-        super().__init__(name="maintenance_daemon", config=config, cycle_interval=600.0)
-        self.config = config or MaintenanceConfig()
+        super().__init__(
+            name="maintenance_daemon",
+            config=resolved_config,
+            cycle_interval=600.0,
+        )
         self._maintenance_stats = MaintenanceStats()
         self._ai_service_dir = Path(__file__).parent.parent.parent
 

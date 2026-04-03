@@ -51,6 +51,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+
 logger = logging.getLogger(__name__)
 
 
@@ -604,28 +606,39 @@ class UnifiedHealthMonitor:
             ],
         }
 
-    def health_check(self) -> dict[str, Any]:
+    def health_check(self) -> HealthCheckResult:
         """Return health check result for this monitor."""
         recent_failures = len(self.get_recent_failures(300))
         cascade_count = len(self._cascade_alerts)
-
-        return {
-            "healthy": recent_failures < 10 and cascade_count == 0,
-            "status": "healthy" if recent_failures < 10 else "degraded",
-            "details": {
-                "recent_failures": recent_failures,
-                "cascade_alerts": cascade_count,
-                "nodes_with_failures": len(self._node_failure_counts),
-                "last_assessment": (
-                    {
-                        "severity": self._last_assessment.severity,
-                        "age_seconds": time.time() - self._last_assessment_time,
-                    }
-                    if self._last_assessment
-                    else None
-                ),
-            },
+        healthy = recent_failures < 10 and cascade_count == 0
+        details = {
+            "recent_failures": recent_failures,
+            "cascade_alerts": cascade_count,
+            "nodes_with_failures": len(self._node_failure_counts),
+            "last_assessment": (
+                {
+                    "severity": self._last_assessment.severity,
+                    "age_seconds": time.time() - self._last_assessment_time,
+                }
+                if self._last_assessment
+                else None
+            ),
         }
+
+        if healthy:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message="No recent correlated failures",
+                details=details,
+            )
+
+        return HealthCheckResult(
+            healthy=False,
+            status=CoordinatorStatus.DEGRADED,
+            message="Recent correlated failures detected",
+            details=details,
+        )
 
 
 # Singleton instance

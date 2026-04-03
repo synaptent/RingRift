@@ -184,9 +184,13 @@ class AutoPromotionDaemon(HandlerBase):
     _event_source = "AutoPromotionDaemon"
 
     def __init__(self, config: AutoPromotionConfig | None = None):
+        resolved_config = config or AutoPromotionConfig()
         # Long cycle interval since this daemon is purely event-driven
-        super().__init__(name="auto_promotion", cycle_interval=300.0)
-        self.config = config or AutoPromotionConfig()
+        super().__init__(
+            name="auto_promotion",
+            config=resolved_config,
+            cycle_interval=300.0,
+        )
         self._candidates: dict[str, PromotionCandidate] = {}
         self._promotion_history: list[dict[str, Any]] = []
         # Background subscription retry task (for resilience when router starts late)

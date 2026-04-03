@@ -2992,28 +2992,26 @@ class GossipProtocolMixin(GossipPersistenceMixin, GossipPartitionMixin, _GossipM
         # Send anti-entropy request
         await self._send_anti_entropy_request(peer, full_state, now)
 
-    async def _build_anti_entropy_state_async(self, now: float) -> dict[str, Any]:
-        """Build full state for anti-entropy repair (async version).
+    def _build_anti_entropy_state(self, now: float) -> dict[str, Any]:
+        """Build full state for anti-entropy repair (sync compatibility wrapper).
 
-        Dec 30, 2025: Converted to async to avoid blocking event loop.
+        The protocol moved to `_build_anti_entropy_state_async()` in Dec 2025 to
+        avoid blocking the event loop during anti-entropy repair. Keep this
+        synchronous form for compatibility with legacy tests and callers that
+        still exercise the older helper directly.
         """
         full_state: dict[str, Any] = {
-            "anti_entropy": True,  # Flag for full state exchange
+            "anti_entropy": True,
             "sender": self.node_id,
             "timestamp": now,
             "all_known_states": {},
         }
 
-        # Include all known peer states (not just recent)
         gossip_states = getattr(self, "_gossip_peer_states", {})
         for node_id, state in gossip_states.items():
             full_state["all_known_states"][node_id] = state
 
-        # Include our own state (use async version if available)
-        if hasattr(self, '_update_self_info_async'):
-            await self._update_self_info_async()
-        else:
-            self._update_self_info()
+        self._update_self_info()
         full_state["all_known_states"][self.node_id] = {
             "node_id": self.node_id,
             "timestamp": now,
@@ -3024,6 +3022,29 @@ class GossipProtocolMixin(GossipPersistenceMixin, GossipPartitionMixin, _GossipM
             "selfplay_jobs": getattr(self.self_info, "selfplay_jobs", 0),
             "training_jobs": getattr(self.self_info, "training_jobs", 0),
         }
+
+        return full_state
+
+    async def _build_anti_entropy_state_async(self, now: float) -> dict[str, Any]:
+        """Build full state for anti-entropy repair (async version).
+
+        Dec 30, 2025: Converted to async to avoid blocking event loop.
+        """
+        full_state = self._build_anti_entropy_state(now)
+
+        # Include our own state (use async version if available)
+        if hasattr(self, '_update_self_info_async'):
+            await self._update_self_info_async()
+            full_state["all_known_states"][self.node_id] = {
+                "node_id": self.node_id,
+                "timestamp": now,
+                "version": int(now * 1000),
+                "role": self.role.value if hasattr(self.role, "value") else str(self.role),
+                "leader_id": self.leader_id,
+                "leader_term": getattr(self, "_leader_term", 0) or 0,
+                "selfplay_jobs": getattr(self.self_info, "selfplay_jobs", 0),
+                "training_jobs": getattr(self.self_info, "training_jobs", 0),
+            }
 
         return full_state
 

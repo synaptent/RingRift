@@ -32,16 +32,25 @@ class MockNodeRole(str, Enum):
     FOLLOWER = "follower"
 
 
-# Import the module with mocking
-with patch.dict("sys.modules", {
+_P2P_TEST_MODULES = {
     "scripts.p2p.types": MagicMock(NodeRole=MockNodeRole),
     "scripts.p2p.models": MagicMock(NodeInfo=MockNodeInfo),
-}):
+}
+
+# Import the module under test with lightweight P2P type shims installed.
+with patch.dict("sys.modules", _P2P_TEST_MODULES):
     from scripts.p2p.leader_election import (
         VOTER_MIN_QUORUM,
         LeaderElectionMixin,
         check_quorum,
     )
+
+
+@pytest.fixture(autouse=True)
+def patch_runtime_p2p_modules():
+    """Keep lightweight P2P shims available for lazy imports during each test."""
+    with patch.dict("sys.modules", _P2P_TEST_MODULES):
+        yield
 
 
 class TestableLeaderElection(LeaderElectionMixin):
@@ -121,8 +130,8 @@ class TestVoterMinQuorum:
     """Test the VOTER_MIN_QUORUM constant."""
 
     def test_voter_min_quorum_value(self):
-        """Test that VOTER_MIN_QUORUM is 3."""
-        assert VOTER_MIN_QUORUM == 3
+        """Test that VOTER_MIN_QUORUM matches the current 2-voter minimum."""
+        assert VOTER_MIN_QUORUM == 2
 
 
 class TestHasVoterQuorum:
@@ -140,7 +149,7 @@ class TestHasVoterQuorum:
         election = TestableLeaderElection()
         election.voter_node_ids = ["voter-1", "voter-2", "voter-3", "voter-4", "voter-5"]
 
-        # Add 3 alive voters (meets quorum of 3)
+        # Add 3 alive voters - comfortably above the current minimum quorum.
         for i in range(1, 4):
             election.peers[f"voter-{i}"] = MockNodeInfo(
                 node_id=f"voter-{i}",
@@ -149,26 +158,34 @@ class TestHasVoterQuorum:
 
         assert election._has_voter_quorum() is True
 
-    def test_returns_false_when_quorum_not_met(self):
-        """Test that quorum is not met with too few alive voters."""
+    def test_returns_true_with_dynamic_quorum_when_two_voters_alive(self):
+        """Dynamic quorum allows progress with two currently alive voters."""
         election = TestableLeaderElection()
         election.voter_node_ids = ["voter-1", "voter-2", "voter-3", "voter-4", "voter-5"]
 
-        # Add only 2 alive voters (doesn't meet quorum of 3)
+        # Jan 2026: dynamic quorum uses majority-of-alive voters, so two alive
+        # voters can still form quorum even if five voters are configured.
         for i in range(1, 3):
             election.peers[f"voter-{i}"] = MockNodeInfo(
                 node_id=f"voter-{i}",
                 last_heartbeat=time.time(),
             )
 
+        assert election._has_voter_quorum() is True
+
+    def test_returns_false_when_no_voters_are_alive(self):
+        """Quorum is lost when no configured voters are currently alive."""
+        election = TestableLeaderElection()
+        election.voter_node_ids = ["voter-1", "voter-2", "voter-3", "voter-4", "voter-5"]
+
         assert election._has_voter_quorum() is False
 
     def test_uses_min_of_quorum_and_total_voters(self):
-        """Test that quorum is min(3, total_voters)."""
+        """Test that quorum is min(VOTER_MIN_QUORUM, total_voters)."""
         election = TestableLeaderElection()
         election.voter_node_ids = ["voter-1", "voter-2"]  # Only 2 voters
 
-        # Add both voters alive - should meet quorum since min(3, 2) = 2
+        # Add both voters alive - should meet quorum since min(2, 2) = 2
         for i in range(1, 3):
             election.peers[f"voter-{i}"] = MockNodeInfo(
                 node_id=f"voter-{i}",
@@ -241,7 +258,7 @@ class TestGetVoterQuorumStatus:
         assert status["quorum_met"] is True
 
     def test_returns_detailed_status(self):
-        """Test that detailed status is returned."""
+        """Test that detailed status reflects the current quorum threshold."""
         election = TestableLeaderElection()
         election.voter_node_ids = ["voter-1", "voter-2", "voter-3"]
 
@@ -259,8 +276,8 @@ class TestGetVoterQuorumStatus:
 
         assert status["total"] == 3
         assert status["alive"] == 2
-        assert status["quorum_required"] == 3
-        assert status["quorum_met"] is False
+        assert status["quorum_required"] == min(VOTER_MIN_QUORUM, 3)
+        assert status["quorum_met"] is True
         assert "voter-1" in status["alive_list"]
         assert "voter-2" in status["alive_list"]
 
@@ -730,5 +747,5 @@ class TestCheckQuorumFunction:
             self_node_id="self",
         )
 
-        # min(3, 2) = 2, and we have 2 alive = quorum met
+        # min(VOTER_MIN_QUORUM, 2) = 2, and we have 2 alive = quorum met
         assert result is True

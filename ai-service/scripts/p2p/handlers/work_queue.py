@@ -570,6 +570,57 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
         # causing 100% work failures.
         return True
 
+    def _check_code_version(self, node_id: str) -> web.Response | None:
+        """Check if a claiming node's code version matches the leader's version.
+
+        Apr 2026: Version-gated work dispatch. Stale nodes running old code
+        silently produce garbage results (wrong game rules, missing features,
+        incompatible model formats). Reject claims from nodes whose reported
+        code_version doesn't match the leader's build_version.
+
+        Args:
+            node_id: The node attempting to claim work.
+
+        Returns:
+            None if versions match (or check is inconclusive), or a rejection
+            web.Response if there's a definitive version mismatch.
+        """
+        my_version = getattr(self, "build_version", "") or ""
+        if not my_version:
+            # Leader doesn't know its own version — can't enforce, allow claim
+            return None
+
+        peer_info = self._get_node_info(node_id)
+        if peer_info is None:
+            # Node not in peers dict (may be self or just joined) — allow claim
+            return None
+
+        peer_version = peer_info.get("code_version", "") or ""
+        if not peer_version:
+            # Peer hasn't reported a version yet — allow claim
+            # (nodes report version after first heartbeat cycle)
+            return None
+
+        if peer_version != my_version:
+            logger.warning(
+                f"[version_gate] Rejected work claim from {node_id}: "
+                f"code_version={peer_version} != leader_version={my_version}. "
+                f"Node needs code update."
+            )
+            return self.json_response({
+                "status": "rejected",
+                "reason": "version_mismatch",
+                "node_version": peer_version,
+                "leader_version": my_version,
+                "message": (
+                    f"Node {node_id} is running code version {peer_version} "
+                    f"but leader requires {my_version}. "
+                    f"Update the node and restart P2P."
+                ),
+            }, status=409)
+
+        return None
+
     def _insufficient_capacity_response(self, reason: str) -> web.Response:
         """Return response when node has insufficient capacity.
 
@@ -993,6 +1044,12 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     status=403,
                 )
 
+            # Apr 2026: Reject claims from nodes running stale code
+            if self.is_leader:
+                version_reject = self._check_code_version(node_id)
+                if version_reject is not None:
+                    return version_reject
+
             # Strategy 1: Leader path - claim from centralized work queue
             if self.is_leader:
                 wq = get_work_queue()
@@ -1101,6 +1158,11 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     status=403,
                 )
 
+            # Apr 2026: Reject claims from nodes running stale code
+            version_reject = self._check_code_version(node_id)
+            if version_reject is not None:
+                return version_reject
+
             # Session 17.32: Check node capacity before claiming work
             check_work_type = "selfplay"  # Default
             if capabilities:
@@ -1155,6 +1217,12 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 return self.bad_request("node_id required")
 
             capabilities = [c.strip() for c in capabilities_str.split(",") if c.strip()] or None
+
+            # Apr 2026: Reject claims from nodes running stale code
+            if self.is_leader:
+                version_reject = self._check_code_version(node_id)
+                if version_reject is not None:
+                    return version_reject
 
             # Session 17.32: Check node capacity for training work
             has_capacity, reason = self._check_node_capacity(node_id, "training")
@@ -1230,6 +1298,11 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 return self.bad_request("node_id required")
 
             capabilities = [c.strip() for c in capabilities_str.split(",") if c.strip()] or None
+
+            # Apr 2026: Reject claims from nodes running stale code
+            version_reject = self._check_code_version(node_id)
+            if version_reject is not None:
+                return version_reject
 
             # Check node capacity for evaluation work
             has_capacity, reason = self._check_node_capacity(node_id, "evaluation")
@@ -1313,6 +1386,11 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
 
             if not node_id:
                 return self.bad_request("node_id required")
+
+            # Apr 2026: Reject claims from nodes running stale code
+            version_reject = self._check_code_version(node_id)
+            if version_reject is not None:
+                return version_reject
 
             # Log peer claim for debugging split-brain scenarios
             logger.debug(

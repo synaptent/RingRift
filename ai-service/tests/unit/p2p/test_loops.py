@@ -110,7 +110,7 @@ class TestBackoffConfig:
 
         assert config.initial_delay == 1.0
         assert config.max_delay == 300.0
-        assert config.multiplier == 2.0
+        assert config.multiplier == 1.5
         assert config.jitter == 0.1
 
     def test_zero_errors(self):

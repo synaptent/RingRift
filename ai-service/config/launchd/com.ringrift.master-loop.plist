@@ -29,9 +29,20 @@
     <key>Label</key>
     <string>com.ringrift.master-loop</string>
 
-    <!-- Command to execute -->
+    <!-- Command to execute: wrapper rotates logs before starting the process -->
     <key>ProgramArguments</key>
     <array>
+        <string>/bin/bash</string>
+        <string>/Users/armand/Development/RingRift/ai-service/scripts/rotate_and_start.sh</string>
+        <string>--log-dir</string>
+        <string>/Users/armand/Development/RingRift/ai-service/logs</string>
+        <string>--log-names</string>
+        <string>master_loop.log,master_loop.err</string>
+        <string>--max-size-mb</string>
+        <string>50</string>
+        <string>--max-backups</string>
+        <string>3</string>
+        <string>--</string>
         <string>/usr/bin/python3</string>
         <string>/Users/armand/Development/RingRift/ai-service/scripts/master_loop.py</string>
     </array>

@@ -65,8 +65,8 @@ class TestLeaderProbeLoopInit:
 
         assert loop.name == "leader_probe"
         assert loop.interval == 10.0
-        assert loop._failure_threshold == 6
-        assert loop._probe_timeout == 5.0
+        assert loop._failure_threshold == 10
+        assert loop._probe_timeout == 10.0
         assert loop._consecutive_failures == 0
         assert loop._election_triggered_recently is False
         assert loop._probe_backup_candidates is True
@@ -102,7 +102,7 @@ class TestLeaderProbeLoopInit:
         loop = LeaderProbeLoop(orchestrator)
 
         assert loop._split_brain_detected is False
-        assert loop._split_brain_check_interval == 3
+        assert loop._split_brain_check_interval == 1
 
 
 # =============================================================================
@@ -277,8 +277,8 @@ class TestProbeResults:
         """Test that election is triggered when threshold reached."""
         orchestrator = create_mock_orchestrator()
         # Disable startup grace period so election can be triggered
-        loop = LeaderProbeLoop(orchestrator, failure_threshold=3, startup_grace_period=0)
-        loop._consecutive_failures = 2  # Will become 3
+        loop = LeaderProbeLoop(orchestrator, failure_threshold=6, startup_grace_period=0)
+        loop._consecutive_failures = 5  # Will become 6
 
         with patch.object(loop, "_emit_event"):
             with patch.object(loop, "_trigger_election", new_callable=AsyncMock) as mock_election:
@@ -356,7 +356,7 @@ class TestElectionTriggering:
             with patch.object(loop, "_verify_elected_leader_after_delay", new_callable=AsyncMock):
                 await loop._trigger_election("leader-1")
 
-        orchestrator._start_election.assert_called_once_with(reason="leader_unreachable_probe")
+        orchestrator._start_election.assert_called_once_with()
 
 
 # =============================================================================
@@ -1071,15 +1071,20 @@ class TestDynamicThreshold:
         orchestrator._check_quorum_health = MagicMock(return_value=QuorumHealthLevel.HEALTHY)
         loop._latency_history.extend([0.05, 0.04, 0.06])  # Low latency
 
-        # Dynamic threshold should be ~4 (healthy quorum -2, low latency -1)
-        # Set failures just below dynamic threshold
-        loop._consecutive_failures = 3  # Will become 4
+        dynamic_threshold = loop._compute_dynamic_failure_threshold()
+
+        # Healthy quorum and low latency reduce the threshold, but it is clamped
+        # to the current minimum failure threshold.
+        assert dynamic_threshold == loop._min_failure_threshold
+
+        # Set failures just below the live dynamic threshold.
+        loop._consecutive_failures = dynamic_threshold - 1
 
         with patch.object(loop, "_emit_event"):
             with patch.object(loop, "_trigger_election", new_callable=AsyncMock) as mock_election:
                 await loop._on_probe_failure("leader-1")
 
-        # Should trigger election at dynamic threshold (4), not base (6)
+        # Should trigger election at the clamped dynamic threshold, not the stale pre-clamp value.
         mock_election.assert_called_once()
 
     @pytest.mark.asyncio

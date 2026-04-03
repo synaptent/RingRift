@@ -20,10 +20,11 @@ class TestSyncPlannerConfig:
 
     def test_default_values(self):
         config = SyncPlannerConfig()
-        assert config.manifest_cache_age_seconds == 300
+        assert config.manifest_cache_age_seconds == 60
         assert config.manifest_collection_interval == 60
         assert config.max_files_per_sync_job == 50
         assert config.sync_mtime_tolerance_seconds == 60
+        assert config.max_concurrent_syncs == 1
 
     def test_custom_values(self):
         config = SyncPlannerConfig(

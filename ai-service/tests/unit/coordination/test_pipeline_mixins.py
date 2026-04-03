@@ -20,6 +20,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+
 
 # ==============================================================================
 # Mock Classes for Testing
@@ -482,11 +484,15 @@ class TestPipelineMetricsMixin:
     def test_check_stage_timeout_not_timed_out(self):
         """Test check_stage_timeout when stage is within timeout."""
         orchestrator = self._create_mock_orchestrator()
-        orchestrator.get_health_status = MagicMock(
-            return_value={
-                "stage_health": {"pct_timeout_used": 50},
-                "issues": [],
-            }
+        orchestrator.get_health_result = MagicMock(
+            return_value=HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                details={
+                    "stage_health": {"pct_timeout_used": 50},
+                    "issues": [],
+                },
+            )
         )
 
         timed_out, msg = orchestrator.check_stage_timeout()
@@ -496,11 +502,15 @@ class TestPipelineMetricsMixin:
     def test_check_stage_timeout_timed_out(self):
         """Test check_stage_timeout when stage has timed out."""
         orchestrator = self._create_mock_orchestrator()
-        orchestrator.get_health_status = MagicMock(
-            return_value={
-                "stage_health": {"pct_timeout_used": 150},
-                "issues": ["Stage training stuck for 5.0 min"],
-            }
+        orchestrator.get_health_result = MagicMock(
+            return_value=HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.DEGRADED,
+                details={
+                    "stage_health": {"pct_timeout_used": 150},
+                    "issues": ["Stage training stuck for 5.0 min"],
+                },
+            )
         )
 
         timed_out, msg = orchestrator.check_stage_timeout()

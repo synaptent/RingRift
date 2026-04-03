@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Callable
 
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.coordination.handler_base import HandlerBase
 
 if TYPE_CHECKING:
@@ -510,14 +511,21 @@ class FastFailureDetector(HandlerBase):
             } if self._stats.last_signals else None,
         }
 
-    def health_check(self) -> dict[str, Any]:
+    def health_check(self) -> HealthCheckResult:
         """Return health check result."""
         is_healthy = self._stats.current_tier == FailureTier.HEALTHY
-        return {
-            "healthy": is_healthy,
-            "status": "degraded" if not is_healthy else "healthy",
-            "details": self.get_stats(),
-        }
+        status = CoordinatorStatus.RUNNING if is_healthy else CoordinatorStatus.DEGRADED
+        message = (
+            "No cluster-wide failure signals detected"
+            if is_healthy
+            else f"Cluster failure tier active: {self._stats.current_tier.name.lower()}"
+        )
+        return HealthCheckResult(
+            healthy=is_healthy,
+            status=status,
+            message=message,
+            details=self.get_stats(),
+        )
 
 
 # Singleton accessor

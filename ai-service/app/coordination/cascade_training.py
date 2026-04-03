@@ -152,11 +152,12 @@ class CascadeTrainingOrchestrator(HandlerBase):
     _instance: CascadeTrainingOrchestrator | None = None
 
     def __init__(self, config: CascadeConfig | None = None):
+        resolved_config = config or CascadeConfig()
         super().__init__(
             name="CascadeTrainingOrchestrator",
-            cycle_interval=config.check_interval if config else 300.0,
+            config=resolved_config,
+            cycle_interval=resolved_config.check_interval,
         )
-        self.config = config or CascadeConfig()
         self._states: dict[str, CascadeState] = {}
         self._event_router: UnifiedEventRouter | None = None
 

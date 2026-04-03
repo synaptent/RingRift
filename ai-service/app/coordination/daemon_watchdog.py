@@ -364,8 +364,8 @@ class DaemonWatchdog:
                 pass
             self._task = None
 
-    def get_health_status(self) -> dict:
-        """Get health status for all monitored daemons."""
+    def get_health_details(self) -> dict[str, Any]:
+        """Get detailed watchdog state used by health reporting and diagnostics."""
         return {
             "running": self._running,
             "check_interval": self.config.check_interval_seconds,
@@ -379,6 +379,10 @@ class DaemonWatchdog:
                 for name, record in self._health_records.items()
             },
         }
+
+    def get_health_status(self) -> dict[str, Any]:
+        """Get health status for all monitored daemons."""
+        return self.get_health_details()
 
     def health_check(self) -> "HealthCheckResult":
         """Check watchdog health (December 2025: CoordinatorProtocol compliance).
@@ -406,14 +410,14 @@ class DaemonWatchdog:
                 healthy=False,
                 status=CoordinatorStatus.DEGRADED,
                 message=f"DaemonWatchdog: {len(exhausted_daemons)} daemons exhausted restarts",
-                details={"exhausted_daemons": exhausted_daemons, **self.get_health_status()},
+                details={"exhausted_daemons": exhausted_daemons, **self.get_health_details()},
             )
 
         return HealthCheckResult(
             healthy=True,
             status=CoordinatorStatus.RUNNING,
             message=f"DaemonWatchdog running ({len(self._health_records)} daemons monitored)",
-            details=self.get_health_status(),
+            details=self.get_health_details(),
         )
 
 

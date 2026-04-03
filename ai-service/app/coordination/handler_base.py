@@ -790,6 +790,9 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
             except Exception as e:
                 consecutive_failures += 1
                 self._record_error(f"Error in _run_cycle: {e}")
+                # Structured error metrics (fail-open)
+                from app.coordination.error_metrics import record_error
+                record_error(self._name, e)
                 logger.exception(f"[{self._name}] Error in cycle ({consecutive_failures}/{max_consecutive}): {e}")
 
                 if consecutive_failures >= max_consecutive:

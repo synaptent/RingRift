@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from app.config.coordination_defaults import GossipDefaults
 
 
 # Create mock for aiohttp before importing the module
@@ -80,9 +81,16 @@ class MockNodeInfo:
     has_gpu: bool = False
     gpu_name: str = ""
     retired: bool = False
+    last_endpoint_validation: float = 0.0
 
     def is_alive(self) -> bool:
         return time.time() - self.last_heartbeat < 90
+
+    def is_endpoint_stale(self) -> bool:
+        return False
+
+    def mark_endpoint_validated(self) -> None:
+        self.last_endpoint_validation = time.time()
 
 
 class MockNodeRole:
@@ -177,14 +185,15 @@ class TestGossipProtocolInitialization:
         assert GossipProtocolMixin.GOSSIP_MAX_PEER_STATES == 200
         assert GossipProtocolMixin.GOSSIP_MAX_MANIFESTS == 100
         assert GossipProtocolMixin.GOSSIP_MAX_ENDPOINTS == 100
-        assert GossipProtocolMixin.GOSSIP_STATE_TTL == 3600
+        assert GossipProtocolMixin.GOSSIP_STATE_TTL == GossipDefaults.STATE_TTL
         assert GossipProtocolMixin.GOSSIP_ENDPOINT_TTL == 1800
 
 
 class TestGossipStateCleanup:
     """Test gossip state cleanup logic."""
 
-    def test_cleanup_rate_limited(self):
+    @pytest.mark.asyncio
+    async def test_cleanup_rate_limited(self):
         """Test that cleanup is rate limited to every 5 minutes."""
         protocol = TestableGossipProtocol()
         protocol._last_gossip_cleanup = time.time()
@@ -192,12 +201,13 @@ class TestGossipStateCleanup:
         # Add some test data
         protocol._gossip_peer_states["test"] = {"timestamp": time.time()}
 
-        protocol._cleanup_gossip_state()
+        await protocol._cleanup_gossip_state()
 
         # Should not have cleaned since last cleanup was just now
         assert "test" in protocol._gossip_peer_states
 
-    def test_cleanup_removes_stale_states(self):
+    @pytest.mark.asyncio
+    async def test_cleanup_removes_stale_states(self):
         """Test that cleanup removes states older than TTL."""
         protocol = TestableGossipProtocol()
         protocol._last_gossip_cleanup = 0  # Allow cleanup
@@ -206,12 +216,13 @@ class TestGossipStateCleanup:
         protocol._gossip_peer_states["stale-node"] = {"timestamp": stale_time}
         protocol._gossip_peer_states["fresh-node"] = {"timestamp": time.time()}
 
-        protocol._cleanup_gossip_state()
+        await protocol._cleanup_gossip_state()
 
         assert "stale-node" not in protocol._gossip_peer_states
         assert "fresh-node" in protocol._gossip_peer_states
 
-    def test_cleanup_enforces_max_peer_states(self):
+    @pytest.mark.asyncio
+    async def test_cleanup_enforces_max_peer_states(self):
         """Test that cleanup enforces max peer states limit."""
         protocol = TestableGossipProtocol()
         protocol._last_gossip_cleanup = 0
@@ -221,11 +232,12 @@ class TestGossipStateCleanup:
         for i in range(protocol.GOSSIP_MAX_PEER_STATES + 50):
             protocol._gossip_peer_states[f"node-{i}"] = {"timestamp": now - i}
 
-        protocol._cleanup_gossip_state()
+        await protocol._cleanup_gossip_state()
 
         assert len(protocol._gossip_peer_states) <= protocol.GOSSIP_MAX_PEER_STATES
 
-    def test_cleanup_removes_stale_endpoints(self):
+    @pytest.mark.asyncio
+    async def test_cleanup_removes_stale_endpoints(self):
         """Test that cleanup removes endpoints older than TTL."""
         protocol = TestableGossipProtocol()
         protocol._last_gossip_cleanup = 0
@@ -234,12 +246,13 @@ class TestGossipStateCleanup:
         protocol._gossip_learned_endpoints["stale-ep"] = {"learned_at": stale_time}
         protocol._gossip_learned_endpoints["fresh-ep"] = {"learned_at": time.time()}
 
-        protocol._cleanup_gossip_state()
+        await protocol._cleanup_gossip_state()
 
         assert "stale-ep" not in protocol._gossip_learned_endpoints
         assert "fresh-ep" in protocol._gossip_learned_endpoints
 
-    def test_cleanup_enforces_max_endpoints(self):
+    @pytest.mark.asyncio
+    async def test_cleanup_enforces_max_endpoints(self):
         """Test that cleanup enforces max endpoints limit."""
         protocol = TestableGossipProtocol()
         protocol._last_gossip_cleanup = 0
@@ -248,11 +261,12 @@ class TestGossipStateCleanup:
         for i in range(protocol.GOSSIP_MAX_ENDPOINTS + 20):
             protocol._gossip_learned_endpoints[f"ep-{i}"] = {"learned_at": now - i}
 
-        protocol._cleanup_gossip_state()
+        await protocol._cleanup_gossip_state()
 
         assert len(protocol._gossip_learned_endpoints) <= protocol.GOSSIP_MAX_ENDPOINTS
 
-    def test_cleanup_enforces_max_manifests(self):
+    @pytest.mark.asyncio
+    async def test_cleanup_enforces_max_manifests(self):
         """Test that cleanup enforces max manifests limit."""
         protocol = TestableGossipProtocol()
         protocol._last_gossip_cleanup = 0
@@ -260,7 +274,7 @@ class TestGossipStateCleanup:
         for i in range(protocol.GOSSIP_MAX_MANIFESTS + 10):
             protocol._gossip_peer_manifests[f"manifest-{i}"] = {"data": i}
 
-        protocol._cleanup_gossip_state()
+        await protocol._cleanup_gossip_state()
 
         assert len(protocol._gossip_peer_manifests) <= protocol.GOSSIP_MAX_MANIFESTS
 
@@ -597,7 +611,7 @@ class TestProcessGossipPeerEndpoints:
         endpoints = [
             {
                 "node_id": "node-1",
-                "host": "192.168.1.1",
+                "host": "100.64.0.10",
                 "port": 8770,
                 "tailscale_ip": "",  # No tailscale IP
                 "last_heartbeat": time.time(),
@@ -607,7 +621,7 @@ class TestProcessGossipPeerEndpoints:
         protocol._process_gossip_peer_endpoints(endpoints)
 
         assert "node-1" in protocol._gossip_learned_endpoints
-        assert protocol._gossip_learned_endpoints["node-1"]["host"] == "192.168.1.1"
+        assert protocol._gossip_learned_endpoints["node-1"]["host"] == "100.64.0.10"
 
     def test_ignores_self_endpoint(self):
         """Test that own endpoint is ignored."""
@@ -661,7 +675,7 @@ class TestProcessGossipPeerEndpoints:
         endpoints = [
             {
                 "node_id": "unknown-node",
-                "host": "192.168.1.1",
+                "host": "100.64.0.11",
                 "port": 8770,
             }
         ]

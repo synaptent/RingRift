@@ -140,6 +140,7 @@ class TestAutoPromotionDaemonLifecycle:
             mock_subscribe.side_effect = lambda: setattr(daemon, "_event_subscribed", True) or True
             await daemon.start()
             assert daemon._running is True
+            await daemon.stop()
 
     @pytest.mark.asyncio
     async def test_start_is_idempotent(self, daemon):
@@ -156,6 +157,7 @@ class TestAutoPromotionDaemonLifecycle:
             await daemon.start()
             await daemon.start()
             assert call_count == 1  # Only called once
+            await daemon.stop()
 
     @pytest.mark.asyncio
     async def test_stop_clears_running(self, daemon):

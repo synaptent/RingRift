@@ -673,6 +673,10 @@ class LeaderElectionMixin(P2PMixinBase):
         # Count alive voters
         alive = self._count_alive_peers(voters)
 
+        # Zero alive configured voters is always a quorum loss.
+        if alive == 0:
+            return False
+
         # Use dynamic quorum based on alive voters
         # This allows progress when some voters are offline
         # Fallback: also check against fixed minimum for safety
@@ -746,24 +750,28 @@ class LeaderElectionMixin(P2PMixinBase):
         total = len(voters)
         alive = self._count_alive_peers(voters)
 
-        # January 13, 2026: Use dynamic quorum for more adaptive resilience
-        # Dynamic quorum adjusts based on alive voters (majority of alive, not total)
-        dynamic_quorum = self._calculate_dynamic_quorum(alive)
-        fixed_quorum = min(VOTER_MIN_QUORUM, total)
-        quorum = min(dynamic_quorum, fixed_quorum)  # Use more permissive
-
         # Get list of alive voters for tracking
         alive_voter_list = self._get_alive_peer_list(voters)
 
-        # Determine health level based on margin above quorum
-        if alive < quorum:
+        if alive == 0:
+            quorum = min(VOTER_MIN_QUORUM, total)
             level = QuorumHealthLevel.LOST
-        elif alive == quorum:
-            level = QuorumHealthLevel.MINIMUM
-        elif alive == quorum + 1:
-            level = QuorumHealthLevel.DEGRADED
-        else:  # alive >= quorum + 2
-            level = QuorumHealthLevel.HEALTHY
+        else:
+            # January 13, 2026: Use dynamic quorum for more adaptive resilience
+            # Dynamic quorum adjusts based on alive voters (majority of alive, not total)
+            dynamic_quorum = self._calculate_dynamic_quorum(alive)
+            fixed_quorum = min(VOTER_MIN_QUORUM, total)
+            quorum = min(dynamic_quorum, fixed_quorum)  # Use more permissive
+
+            # Determine health level based on margin above quorum
+            if alive < quorum:
+                level = QuorumHealthLevel.LOST
+            elif alive == quorum:
+                level = QuorumHealthLevel.MINIMUM
+            elif alive == quorum + 1:
+                level = QuorumHealthLevel.DEGRADED
+            else:  # alive >= quorum + 2
+                level = QuorumHealthLevel.HEALTHY
 
         # January 13, 2026: Track last-healthy state for partition tolerance
         # Jan 20, 2026: Only track when NOT LOST - prevents grace period updates during failure

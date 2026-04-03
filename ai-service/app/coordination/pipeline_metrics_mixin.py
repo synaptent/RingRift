@@ -30,6 +30,7 @@ import logging
 import time
 from typing import TYPE_CHECKING, Any
 
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.coordination.pipeline_mixin_base import PipelineMixinBase
 
 if TYPE_CHECKING:
@@ -246,23 +247,8 @@ class PipelineMetricsMixin(PipelineMixinBase):
     # Health Status
     # =========================================================================
 
-    def get_health_status(self) -> dict[str, Any]:
-        """Get pipeline health status for monitoring and alerting.
-
-        Returns a dict with:
-        - healthy: bool - overall health status
-        - issues: list[str] - any detected issues
-        - stage_health: dict - per-stage health info
-        - recommendations: list[str] - suggested actions
-
-        Stage timeout thresholds (seconds):
-        - IDLE: no timeout
-        - DATA_SYNC: 1800 (30 min)
-        - NPZ_EXPORT: 3600 (1 hour)
-        - TRAINING: 14400 (4 hours)
-        - EVALUATION: 7200 (2 hours)
-        - PROMOTION: 600 (10 min)
-        """
+    def get_health_result(self) -> HealthCheckResult:
+        """Build a canonical health result for pipeline monitoring."""
         from app.coordination.data_pipeline_orchestrator import PipelineStage
 
         stage_timeouts = {
@@ -327,33 +313,85 @@ class PipelineMetricsMixin(PipelineMixinBase):
         if self._backpressure_active:
             issues.append("Backpressure active - pipeline is throttled")
 
-        # Determine overall health
-        healthy = len(issues) == 0
-
-        return {
-            "healthy": healthy,
-            "status": "healthy" if healthy else "degraded" if len(issues) < 3 else "unhealthy",
+        stage_health = {
+            "current_stage": self._current_stage.value,
+            "stage_duration_seconds": round(stage_duration, 1),
+            "stage_timeout_seconds": stage_timeouts.get(self._current_stage, 3600),
+            "pct_timeout_used": round(
+                stage_duration / stage_timeouts.get(self._current_stage, 3600) * 100, 1
+            ) if self._current_stage != PipelineStage.IDLE else 0,
+        }
+        stats_details = {
+            "iterations_completed": stats.iterations_completed,
+            "iterations_failed": stats.iterations_failed,
+            "error_rate": (
+                stats.iterations_failed / total_iterations if total_iterations > 0 else 0
+            ),
+        }
+        details = {
             "issues": issues,
             "recommendations": recommendations,
-            "stage_health": {
-                "current_stage": self._current_stage.value,
-                "stage_duration_seconds": round(stage_duration, 1),
-                "stage_timeout_seconds": stage_timeouts.get(self._current_stage, 3600),
-                "pct_timeout_used": round(
-                    stage_duration / stage_timeouts.get(self._current_stage, 3600) * 100, 1
-                ) if self._current_stage != PipelineStage.IDLE else 0,
-            },
+            "stage_health": stage_health,
             "circuit_breaker": cb_status,
-            "stats": {
-                "iterations_completed": stats.iterations_completed,
-                "iterations_failed": stats.iterations_failed,
-                "error_rate": (
-                    stats.iterations_failed / total_iterations if total_iterations > 0 else 0
-                ),
-            },
+            "stats": stats_details,
             "paused": self._paused,
             "backpressure": self._backpressure_active,
-            "timestamp": now,
+        }
+
+        if not issues:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message="Pipeline operating normally",
+                timestamp=now,
+                details=details,
+            )
+
+        if len(issues) < 3:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.DEGRADED,
+                message=issues[0],
+                timestamp=now,
+                details=details,
+            )
+
+        return HealthCheckResult(
+            healthy=False,
+            status=CoordinatorStatus.ERROR,
+            message=issues[0],
+            timestamp=now,
+            details=details,
+        )
+
+    def get_health_status(self) -> dict[str, Any]:
+        """Get pipeline health status for monitoring and alerting.
+
+        This is a compatibility adapter around get_health_result() that preserves
+        the older dict-based reporting shape used by pipeline helpers.
+        """
+        health = self.get_health_result()
+        issues = list(health.details.get("issues", []))
+        legacy_healthy = len(issues) == 0
+        if legacy_healthy:
+            legacy_status = "healthy"
+        elif health.status == CoordinatorStatus.ERROR:
+            legacy_status = "unhealthy"
+        else:
+            legacy_status = "degraded"
+
+        return {
+            "healthy": legacy_healthy,
+            "status": legacy_status,
+            "message": health.message,
+            "issues": issues,
+            "recommendations": list(health.details.get("recommendations", [])),
+            "stage_health": dict(health.details.get("stage_health", {})),
+            "circuit_breaker": health.details.get("circuit_breaker"),
+            "stats": dict(health.details.get("stats", {})),
+            "paused": bool(health.details.get("paused", False)),
+            "backpressure": bool(health.details.get("backpressure", False)),
+            "timestamp": health.timestamp,
         }
 
     def check_stage_timeout(self) -> tuple[bool, str | None]:
@@ -362,12 +400,12 @@ class PipelineMetricsMixin(PipelineMixinBase):
         Returns:
             Tuple of (timed_out: bool, message: str | None)
         """
-        health = self.get_health_status()
-        stage_health = health.get("stage_health", {})
+        health = self.get_health_result()
+        stage_health = health.details.get("stage_health", {})
 
         pct_used = stage_health.get("pct_timeout_used", 0)
         if pct_used >= 100:
-            return True, health.get("issues", ["Stage timed out"])[0]
+            return True, health.details.get("issues", ["Stage timed out"])[0]
 
         return False, None
 

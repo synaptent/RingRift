@@ -44,6 +44,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+
 logger = logging.getLogger(__name__)
 
 
@@ -149,8 +151,6 @@ class DataRequirement:
 
 try:
     from app.coordination.handler_base import HandlerBase
-    from app.coordination.contracts import HealthCheckResult
-
     HAS_HANDLER_BASE = True
 except ImportError:
     HAS_HANDLER_BASE = False
@@ -692,29 +692,39 @@ class DataAvailabilityDaemon:
         except ImportError:
             pass
 
-    def health_check(self) -> dict[str, Any]:
+    def health_check(self) -> HealthCheckResult:
         """Return health check result."""
         now = time.time()
         age = now - self._last_check_time if self._last_check_time > 0 else float("inf")
         healthy = age < self.config.check_interval_seconds * 2
-
-        return {
-            "healthy": healthy,
-            "status": "healthy" if healthy else "stale",
-            "details": {
-                "node_id": self._node_id,
-                "last_check_age_seconds": round(age, 1),
-                "requirements_found": self._requirements_found,
-                "data_pulled": self._data_pulled,
-                "pull_errors": self._pull_errors,
-                "sources_queried": self._sources_queried,
-                "config": {
-                    "s3_enabled": self.config.s3_pull_enabled,
-                    "owc_enabled": self.config.owc_pull_enabled,
-                    "p2p_enabled": self.config.p2p_pull_enabled,
-                },
+        details = {
+            "node_id": self._node_id,
+            "last_check_age_seconds": round(age, 1),
+            "requirements_found": self._requirements_found,
+            "data_pulled": self._data_pulled,
+            "pull_errors": self._pull_errors,
+            "sources_queried": self._sources_queried,
+            "config": {
+                "s3_enabled": self.config.s3_pull_enabled,
+                "owc_enabled": self.config.owc_pull_enabled,
+                "p2p_enabled": self.config.p2p_pull_enabled,
             },
         }
+
+        if healthy:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message="Data availability checks are current",
+                details=details,
+            )
+
+        return HealthCheckResult(
+            healthy=False,
+            status=CoordinatorStatus.DEGRADED,
+            message="Data availability checks are stale",
+            details=details,
+        )
 
 
 # Factory function for daemon manager
@@ -753,9 +763,4 @@ if HAS_HANDLER_BASE:
 
         def health_check(self) -> HealthCheckResult:
             """Return health check result."""
-            result = self._daemon.health_check()
-            return HealthCheckResult(
-                healthy=result["healthy"],
-                status=result["status"],
-                details=result["details"],
-            )
+            return self._daemon.health_check()

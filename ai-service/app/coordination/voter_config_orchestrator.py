@@ -22,6 +22,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.coordination.handler_base import HandlerBase
 
 if TYPE_CHECKING:
@@ -86,11 +87,13 @@ class VoterConfigOrchestrator(HandlerBase):
         Args:
             config: Configuration options
         """
+        resolved_config = config or VoterConfigOrchestratorConfig()
         super().__init__(
             name="voter_config_orchestrator",
-            cycle_interval=config.health_check_interval_seconds if config else 60.0,
+            config=resolved_config,
+            cycle_interval=resolved_config.health_check_interval_seconds,
         )
-        self._config = config or VoterConfigOrchestratorConfig()
+        self._config = resolved_config
         self._last_drift_time: float = 0.0
         self._last_sync_time: float = 0.0
         self._consecutive_drift_events: int = 0
@@ -370,19 +373,37 @@ class VoterConfigOrchestrator(HandlerBase):
         asyncio.create_task(self._run_cycle())
 
     def get_health_status(self) -> dict[str, Any]:
-        """Get current health status.
+        """Get current health status as a compatibility dict snapshot."""
+        health = self.get_config_health_result()
 
-        Returns:
-            Dict with health status
-        """
-        if self._health_status is None:
-            return {
-                "status": "unknown",
-                "last_check": 0,
-            }
+        if health.status == CoordinatorStatus.INITIALIZING:
+            legacy_status = "unknown"
+        elif health.status == CoordinatorStatus.DEGRADED:
+            legacy_status = "unhealthy"
+        else:
+            legacy_status = "healthy"
 
         return {
-            "status": "healthy" if self._health_status.is_healthy else "unhealthy",
+            "status": legacy_status,
+            **health.details,
+        }
+
+    def get_config_health_result(self) -> HealthCheckResult:
+        """Build a canonical health result for config convergence state."""
+        if self._health_status is None:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.INITIALIZING,
+                message="No voter config health assessment yet",
+                details={
+                    "last_check": 0,
+                    "consecutive_drift_events": self._consecutive_drift_events,
+                    "last_drift_time": self._last_drift_time,
+                    "last_sync_time": self._last_sync_time,
+                },
+            )
+
+        details = {
             "local_version": self._health_status.local_version,
             "local_hash": self._health_status.local_hash,
             "highest_version": self._health_status.highest_version,
@@ -396,22 +417,50 @@ class VoterConfigOrchestrator(HandlerBase):
             "last_sync_time": self._last_sync_time,
         }
 
-    def health_check(self) -> dict[str, Any]:
-        """Return health check data for DaemonManager integration.
+        if self._health_status.is_healthy:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.RUNNING,
+                message=self._health_status.health_reason,
+                details=details,
+            )
 
-        Returns:
-            Dict with health status and metrics
-        """
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.DEGRADED,
+            message=self._health_status.health_reason,
+            details=details,
+        )
+
+    def health_check(self) -> HealthCheckResult:
+        """Return health check data for DaemonManager integration."""
         base_health = super().health_check()
-        status = self.get_health_status()
-
-        return {
-            **base_health,
-            "config_health": status.get("status", "unknown"),
-            "local_version": status.get("local_version", 0),
-            "version_spread": status.get("version_spread", 0),
-            "consecutive_drift_events": status.get("consecutive_drift_events", 0),
+        config_health = self.get_config_health_result()
+        details = {
+            **base_health.details,
+            "config_health": config_health.status.value,
+            "local_version": config_health.details.get("local_version", 0),
+            "version_spread": config_health.details.get("version_spread", 0),
+            "consecutive_drift_events": config_health.details.get("consecutive_drift_events", 0),
         }
+
+        if not base_health.healthy:
+            return base_health.with_details(**details)
+
+        if config_health.status == CoordinatorStatus.DEGRADED:
+            return HealthCheckResult(
+                healthy=True,
+                status=CoordinatorStatus.DEGRADED,
+                message=config_health.message or "Voter config cluster drift detected",
+                details=details,
+            )
+
+        return HealthCheckResult(
+            healthy=base_health.healthy,
+            status=base_health.status,
+            message=base_health.message,
+            details=details,
+        )
 
 
 # Module-level accessor

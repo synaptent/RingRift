@@ -413,7 +413,9 @@ async def get_cluster_config():
     try:
         from app.config.cluster_config import load_cluster_config
 
-        cluster_cfg = load_cluster_config()
+        # This debug endpoint should reflect the current on-disk config instead
+        # of any cached bootstrap snapshot.
+        cluster_cfg = load_cluster_config(force_reload=True)
 
         if not cluster_cfg.hosts_raw:
             return {"configured": False, "hosts": [], "sync_routing": {}}

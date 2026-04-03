@@ -95,11 +95,12 @@ class EloProgressDaemon(HandlerBase):
     _instance: EloProgressDaemon | None = None
 
     def __init__(self, config: EloProgressDaemonConfig | None = None):
+        resolved_config = config or EloProgressDaemonConfig()
         super().__init__(
             name="elo_progress_daemon",
-            cycle_interval=config.snapshot_interval if config else DEFAULT_SNAPSHOT_INTERVAL,
+            config=resolved_config,
+            cycle_interval=resolved_config.snapshot_interval,
         )
-        self.config = config or EloProgressDaemonConfig()
         self._last_snapshot_time: float = 0.0
         self._snapshot_count: int = 0
         self._last_error: str | None = None

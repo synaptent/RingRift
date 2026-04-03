@@ -34,7 +34,7 @@ class TestJobReaperConfig:
     def test_defaults(self) -> None:
         """Test default configuration values."""
         config = JobReaperConfig()
-        assert config.stale_job_threshold_seconds == 3600.0  # 1 hour
+        assert config.stale_job_threshold_seconds == 1800.0  # 30 minutes
         assert config.stuck_job_threshold_seconds == 7200.0  # 2 hours
         assert config.max_jobs_to_reap_per_cycle == 10
         assert config.check_interval_seconds == 300.0  # 5 minutes
@@ -285,8 +285,8 @@ class TestIdleDetectionConfig:
         """Test default configuration values."""
         config = IdleDetectionConfig()
         assert config.gpu_idle_threshold_percent == 10.0
-        assert config.idle_duration_threshold_seconds == 60.0
-        assert config.check_interval_seconds == 30.0
+        assert config.idle_duration_threshold_seconds == 15.0
+        assert config.check_interval_seconds == 10.0
         assert config.min_nodes_to_keep == 2
 
     def test_custom_values(self) -> None:
@@ -658,8 +658,8 @@ class TestWorkerPullConfig:
     def test_defaults(self) -> None:
         """Test default configuration values."""
         config = WorkerPullConfig()
-        assert config.pull_interval_seconds == 30.0
-        assert config.gpu_idle_threshold_percent == 15.0
+        assert config.pull_interval_seconds == 10.0
+        assert config.gpu_idle_threshold_percent == 90.0
         assert config.cpu_idle_threshold_percent == 30.0
         assert config.initial_delay_seconds == 30.0
 
@@ -679,7 +679,7 @@ class TestWorkerPullLoop:
         )
 
         assert loop.name == "worker_pull"
-        assert loop.interval == 30.0
+        assert loop.interval == 10.0
 
     @pytest.mark.asyncio
     async def test_run_once_skips_when_leader(self) -> None:
@@ -709,7 +709,7 @@ class TestWorkerPullLoop:
             get_leader_id=MagicMock(return_value="leader-1"),
             get_self_metrics=MagicMock(return_value={
                 "has_gpu": True,
-                "gpu_percent": 80.0,  # Too busy
+                "gpu_percent": 95.0,  # Above current overload guard
             }),
             claim_work_from_leader=claim_work,
             execute_work=AsyncMock(return_value=True),

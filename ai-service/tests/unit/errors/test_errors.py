@@ -348,7 +348,7 @@ class TestTrainingErrors:
     def test_training_error_defaults(self):
         """Test TrainingError default values."""
         err = TrainingError("Training failed")
-        assert err.code == ErrorCode.TRAINING_INTERRUPTED
+        assert err.code == ErrorCode.TRAINING_ERROR
         assert err.retryable is False
 
     def test_data_quality_error(self):
@@ -392,7 +392,7 @@ class TestTrainingErrors:
     def test_model_versioning_error(self):
         """Test ModelVersioningError."""
         err = ModelVersioningError("Version mismatch")
-        assert err.code == ErrorCode.MODEL_LOAD_FAILED
+        assert err.code == ErrorCode.MODEL_VERSIONING_ERROR
 
 
 class TestDaemonErrors:

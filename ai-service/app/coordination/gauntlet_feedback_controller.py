@@ -52,7 +52,7 @@ from app.training.regression_detector import (
 )
 from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.coordination.event_router import DataEventType, publish
-from app.coordination.handler_base import BaseEventHandler, EventHandlerConfig
+from app.coordination.handler_base import BaseEventHandler
 
 logger = logging.getLogger(__name__)
 
@@ -152,12 +152,11 @@ class GauntletFeedbackController(BaseEventHandler):
         Args:
             config: Configuration for feedback thresholds and actions
         """
-        # Initialize BaseEventHandler
-        handler_config = EventHandlerConfig()
-        handler_config.register_with_registry = True  # Register with coordinator registry
-        super().__init__("GauntletFeedbackController", handler_config)
-
-        self.config = config or GauntletFeedbackConfig()
+        resolved_config = config or GauntletFeedbackConfig()
+        super().__init__(
+            name="GauntletFeedbackController",
+            config=resolved_config,
+        )
         self._config_trackers: dict[str, ConfigTracker] = {}
         self._actions_taken: list[dict[str, Any]] = []
 

@@ -107,6 +107,10 @@ class RelayHandlersTestClass(RelayHandlersMixin):
     def _update_self_info(self) -> None:
         pass
 
+    def get_peers_ro(self) -> dict[str, MockNodeInfo]:
+        """Return a lock-free read-only peer snapshot."""
+        return dict(self.peers)
+
     def _get_leader_peer(self) -> MockNodeInfo | None:
         return self.peers.get(self.leader_id)
 

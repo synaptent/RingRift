@@ -14,6 +14,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
+
 
 # =============================================================================
 # Mock PipelineStage Enum
@@ -533,6 +535,44 @@ class TestGetHealthStatus:
             result = orchestrator.get_health_status()
 
         assert any("backpressure" in issue.lower() for issue in result["issues"])
+
+
+class TestGetHealthResult:
+    """Tests for canonical health result builder."""
+
+    def test_returns_healthcheckresult_when_healthy(self, orchestrator):
+        """Canonical builder returns RUNNING when no issues exist."""
+        with patch(
+            "app.coordination.data_pipeline_orchestrator.PipelineStage",
+            MockPipelineStage,
+        ), patch(
+            "app.coordination.data_pipeline_orchestrator.PipelineStats",
+            MockPipelineStats,
+        ):
+            result = orchestrator.get_health_result()
+
+        assert isinstance(result, HealthCheckResult)
+        assert result.healthy is True
+        assert result.status == CoordinatorStatus.RUNNING
+        assert result.details["issues"] == []
+
+    def test_returns_degraded_result_when_pipeline_has_issues(self, orchestrator):
+        """Canonical builder returns DEGRADED for non-fatal pipeline issues."""
+        orchestrator._paused = True
+        orchestrator._pause_reason = "Manual pause"
+
+        with patch(
+            "app.coordination.data_pipeline_orchestrator.PipelineStage",
+            MockPipelineStage,
+        ), patch(
+            "app.coordination.data_pipeline_orchestrator.PipelineStats",
+            MockPipelineStats,
+        ):
+            result = orchestrator.get_health_result()
+
+        assert result.healthy is True
+        assert result.status == CoordinatorStatus.DEGRADED
+        assert any("paused" in issue.lower() for issue in result.details["issues"])
 
 
 # =============================================================================

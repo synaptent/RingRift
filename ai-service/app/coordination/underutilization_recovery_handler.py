@@ -36,6 +36,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from app.coordination.contracts import CoordinatorStatus, HealthCheckResult
 from app.coordination.event_router import get_event_payload
 from app.coordination.handler_base import HandlerBase
 
@@ -513,12 +514,29 @@ class UnderutilizationRecoveryHandler(HandlerBase):
             ),
         }
 
-    def health_check(self) -> dict[str, Any]:
+    def health_check(self) -> HealthCheckResult:
         """Return health check result."""
-        return {
-            "healthy": self._config.enabled and not self._recovery_in_progress,
-            "details": self.get_stats(),
-        }
+        details = self.get_stats()
+        if not self._config.enabled:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.STOPPED,
+                message="Underutilization recovery disabled",
+                details=details,
+            )
+        if self._recovery_in_progress:
+            return HealthCheckResult(
+                healthy=False,
+                status=CoordinatorStatus.DEGRADED,
+                message="Underutilization recovery injection in progress",
+                details=details,
+            )
+        return HealthCheckResult(
+            healthy=True,
+            status=CoordinatorStatus.RUNNING,
+            message="Underutilization recovery ready",
+            details=details,
+        )
 
 
 # Singleton accessor

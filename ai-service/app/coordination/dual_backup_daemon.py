@@ -146,10 +146,11 @@ class DualBackupDaemon(HandlerBase):
         Args:
             config: Optional configuration. Uses defaults if not provided.
         """
-        self.config = config or DualBackupConfig()
+        resolved_config = config or DualBackupConfig()
         super().__init__(
             name="dual_backup",
-            cycle_interval=self.config.backup_interval,
+            config=resolved_config,
+            cycle_interval=resolved_config.backup_interval,
         )
 
         self._backup_stats = DualBackupStats()

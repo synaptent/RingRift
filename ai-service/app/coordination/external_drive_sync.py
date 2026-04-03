@@ -119,8 +119,12 @@ class ExternalDriveSyncDaemon(HandlerBase):
             config: Daemon configuration
             storage_config: External storage configuration (from distributed_hosts.yaml)
         """
-        super().__init__(name="external_drive_sync", cycle_interval=60.0)
-        self.config = config or ExternalDriveSyncConfig()
+        resolved_config = config or ExternalDriveSyncConfig()
+        super().__init__(
+            name="external_drive_sync",
+            config=resolved_config,
+            cycle_interval=60.0,
+        )
         self._storage_config = storage_config
 
         # State tracking (sub-interval timers for games/npz/models)

@@ -363,23 +363,22 @@ class TestEmitExplorationAdjustment:
 
     def test_uses_publish_sync_for_nonbaseline_adjustments(self, handler, monkeypatch):
         """Exploration adjustments should publish synchronously from sync code."""
-        published = {}
-
-        def fake_publish_sync(event_type, payload=None, source=""):
-            published["event_type"] = event_type
-            published["payload"] = payload
-            published["source"] = source
-
+        mock_router = MagicMock()
         monkeypatch.setattr(
-            "app.coordination.event_router.publish_sync",
-            fake_publish_sync,
+            "app.coordination.event_router.get_router",
+            lambda: mock_router,
         )
 
         handler._emit_exploration_adjustment("hex8_2p", 0.3, "declining")
 
-        assert published["source"] == "QualityFeedbackHandler"
-        assert published["payload"]["config_key"] == "hex8_2p"
-        assert published["payload"]["trend"] == "declining"
+        mock_router.publish_sync.assert_called_once()
+        call_args, call_kwargs = mock_router.publish_sync.call_args
+        payload = call_args[1]
+        source = call_kwargs.get("source", call_args[2] if len(call_args) > 2 else "")
+
+        assert source == "QualityFeedbackHandler"
+        assert payload["config_key"] == "hex8_2p"
+        assert payload["trend"] == "declining"
 
 
 class TestHealthCheck:

@@ -13,6 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from app.config.thresholds import DISK_CRITICAL_PERCENT, DISK_PRODUCTION_HALT_PERCENT
 from scripts.p2p.managers.job_orchestration_manager import (
     DISK_CLEANUP_THRESHOLD,
     DISK_CRITICAL_THRESHOLD,
@@ -78,10 +79,10 @@ class TestConstants:
     """Tests for module-level constants."""
 
     def test_disk_thresholds(self):
-        """Test disk threshold constants."""
-        assert DISK_WARNING_THRESHOLD == 80
-        assert DISK_CLEANUP_THRESHOLD == 85
-        assert DISK_CRITICAL_THRESHOLD == 90
+        """Test disk thresholds mirror the canonical production halt ladder."""
+        assert DISK_WARNING_THRESHOLD == DISK_PRODUCTION_HALT_PERCENT - 5
+        assert DISK_CLEANUP_THRESHOLD == DISK_PRODUCTION_HALT_PERCENT
+        assert DISK_CRITICAL_THRESHOLD == DISK_CRITICAL_PERCENT
         # Thresholds should be in order
         assert DISK_WARNING_THRESHOLD < DISK_CLEANUP_THRESHOLD < DISK_CRITICAL_THRESHOLD
 
