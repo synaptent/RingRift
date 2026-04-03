@@ -348,6 +348,8 @@ class S3SyncDaemon(HandlerBase):
 
     async def _run_cycle(self) -> None:
         """Main sync cycle - periodic push + debounced promotion backup."""
+        if self.config is None:
+            self.config = S3SyncConfig()
         if not self.config.enabled:
             logger.debug("[S3SyncDaemon] Disabled via config, skipping cycle")
             return
