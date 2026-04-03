@@ -56,6 +56,24 @@ class DaemonSpec:
     deprecated_message: str = ""
 
 
+def _deprecated_spec(
+    *,
+    runner_name: str,
+    category: str,
+    message: str,
+    depends_on: tuple[DaemonType, ...] = (DaemonType.EVENT_ROUTER,),
+) -> DaemonSpec:
+    """Build a deprecated registry entry without restart churn."""
+    return DaemonSpec(
+        runner_name=runner_name,
+        depends_on=depends_on,
+        category=category,
+        deprecated=True,
+        deprecated_message=message,
+        auto_restart=False,
+    )
+
+
 # =============================================================================
 # DAEMON REGISTRY - Declarative specification of all daemons
 # =============================================================================
@@ -850,6 +868,125 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         health_check_interval=1800.0,
     ),
 }
+
+DAEMON_REGISTRY.update(
+    {
+        # Deprecated compatibility shims
+        DaemonType.SYNC_COORDINATOR: _deprecated_spec(
+            runner_name="create_sync_coordinator",
+            category="sync",
+            message="Use AUTO_SYNC instead.",
+        ),
+        DaemonType.EPHEMERAL_SYNC: _deprecated_spec(
+            runner_name="create_ephemeral_sync",
+            category="sync",
+            message='Use AUTO_SYNC with strategy="ephemeral" instead.',
+        ),
+        DaemonType.CLUSTER_DATA_SYNC: _deprecated_spec(
+            runner_name="create_cluster_data_sync",
+            category="sync",
+            message='Use AUTO_SYNC with strategy="broadcast" instead.',
+        ),
+        DaemonType.HEALTH_CHECK: _deprecated_spec(
+            runner_name="create_health_check",
+            category="health",
+            message="Use unified health orchestration instead of HEALTH_CHECK.",
+        ),
+        DaemonType.NODE_HEALTH_MONITOR: _deprecated_spec(
+            runner_name="create_node_health_monitor",
+            category="health",
+            message="Use unified health orchestration instead of NODE_HEALTH_MONITOR.",
+        ),
+        DaemonType.SYSTEM_HEALTH_MONITOR: _deprecated_spec(
+            runner_name="create_system_health_monitor",
+            category="health",
+            message="Use unified health orchestration instead of SYSTEM_HEALTH_MONITOR.",
+        ),
+        DaemonType.NPZ_DISTRIBUTION: _deprecated_spec(
+            runner_name="create_npz_distribution",
+            category="distribution",
+            message="Use the unified distribution daemon for NPZ routing.",
+        ),
+        DaemonType.REPLICATION_MONITOR: _deprecated_spec(
+            runner_name="create_replication_monitor",
+            category="distribution",
+            message="Use the unified replication daemon instead.",
+        ),
+        DaemonType.REPLICATION_REPAIR: _deprecated_spec(
+            runner_name="create_replication_repair",
+            category="distribution",
+            message="Use the unified replication daemon instead.",
+        ),
+        DaemonType.LAMBDA_IDLE: _deprecated_spec(
+            runner_name="create_lambda_idle",
+            category="resource",
+            message="Dedicated training nodes no longer use Lambda idle shutdown.",
+        ),
+        DaemonType.VAST_IDLE: _deprecated_spec(
+            runner_name="create_vast_idle",
+            category="resource",
+            message="Use unified idle shutdown handling instead of VAST_IDLE.",
+        ),
+        DaemonType.CONTINUOUS_TRAINING_LOOP: _deprecated_spec(
+            runner_name="create_continuous_training_loop",
+            category="pipeline",
+            message="Use TRAINING_TRIGGER and TRAINING_COORDINATOR instead.",
+        ),
+        DaemonType.DISTILLATION: _deprecated_spec(
+            runner_name="create_distillation",
+            category="pipeline",
+            message="Knowledge distillation is no longer a standalone daemon.",
+        ),
+        DaemonType.EXTERNAL_DRIVE_SYNC: _deprecated_spec(
+            runner_name="create_external_drive_sync",
+            category="sync",
+            message="Use OWC_SYNC_MANAGER instead of EXTERNAL_DRIVE_SYNC.",
+        ),
+        DaemonType.UNIFIED_DATA_CATALOG: _deprecated_spec(
+            runner_name="create_unified_data_catalog",
+            category="misc",
+            message="Use UNIFIED_DATA_PLANE instead of UNIFIED_DATA_CATALOG.",
+        ),
+        DaemonType.NODE_DATA_AGENT: _deprecated_spec(
+            runner_name="create_node_data_agent",
+            category="misc",
+            message="Use UNIFIED_DATA_PLANE instead of NODE_DATA_AGENT.",
+        ),
+        # Active compatibility aliases
+        DaemonType.SELFPLAY_SCHEDULER: DaemonSpec(
+            runner_name="create_selfplay_scheduler",
+            depends_on=(DaemonType.EVENT_ROUTER,),
+            category="pipeline",
+        ),
+        DaemonType.DATA_AVAILABILITY: DaemonSpec(
+            runner_name="create_data_availability",
+            depends_on=(DaemonType.EVENT_ROUTER,),
+            category="sync",
+            health_check_interval=300.0,
+        ),
+        DaemonType.TRAINING_COORDINATOR: DaemonSpec(
+            runner_name="create_training_coordinator",
+            depends_on=(DaemonType.EVENT_ROUTER,),
+            category="pipeline",
+            health_check_interval=300.0,
+        ),
+        # Enum placeholders awaiting concrete implementations
+        DaemonType.CANONICAL_MODEL_WATCHDOG: DaemonSpec(
+            runner_name="create_canonical_model_watchdog",
+            depends_on=(DaemonType.EVENT_ROUTER,),
+            category="health",
+            auto_restart=False,
+            health_check_interval=3600.0,
+        ),
+        DaemonType.PIPELINE_HEALTH_WATCHDOG: DaemonSpec(
+            runner_name="create_pipeline_health_watchdog",
+            depends_on=(DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE),
+            category="health",
+            auto_restart=False,
+            health_check_interval=1800.0,
+        ),
+    }
+)
 
 
 def get_daemons_by_category(category: str) -> list[DaemonType]:

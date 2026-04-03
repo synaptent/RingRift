@@ -654,18 +654,22 @@ async def emit_training_failed(config_key: str, reason: str) -> bool:
     Returns:
         True if event was emitted successfully
     """
-    from app.coordination.event_emission_helpers import safe_emit_event
+    try:
+        from app.coordination.event_emission_helpers import safe_emit_event
 
-    success = safe_emit_event(
-        "TRAINING_FAILED",
-        {
-            "config_key": config_key,
-            "reason": reason,
-            "timestamp": time.time(),
-            "source": "training_execution",
-        },
-        context="emit_training_failed",
-    )
-    if success:
-        logger.info(f"[emit_training_failed] Emitted TRAINING_FAILED for {config_key}: {reason}")
-    return success
+        success = safe_emit_event(
+            "TRAINING_FAILED",
+            {
+                "config_key": config_key,
+                "reason": reason,
+                "timestamp": time.time(),
+                "source": "training_execution",
+            },
+            context="emit_training_failed",
+        )
+        if success:
+            logger.info(f"[emit_training_failed] Emitted TRAINING_FAILED for {config_key}: {reason}")
+        return bool(success)
+    except Exception as e:
+        logger.warning(f"[emit_training_failed] Failed to emit training failure event: {e}")
+        return False

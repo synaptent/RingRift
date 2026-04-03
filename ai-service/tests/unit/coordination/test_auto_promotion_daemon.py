@@ -38,7 +38,7 @@ class TestAutoPromotionConfig:
         assert config.require_both_baselines is True
         assert config.consecutive_passes_required == 1
         assert config.dry_run is False
-        assert config.min_elo_improvement == 10.0
+        assert config.min_elo_improvement == 25.0
         # Quality gate settings (Dec 2025)
         assert config.quality_gate_enabled is True
         assert config.min_training_games == 100
@@ -109,7 +109,7 @@ class TestAutoPromotionDaemonInit:
         daemon = AutoPromotionDaemon()
         assert daemon.config.enabled is True
         assert daemon._running is False
-        assert daemon._subscribed is False
+        assert daemon._event_subscribed is False
         assert daemon._candidates == {}
         assert daemon._promotion_history == []
 
@@ -136,7 +136,8 @@ class TestAutoPromotionDaemonLifecycle:
     @pytest.mark.asyncio
     async def test_start_sets_running(self, daemon):
         """Start sets running flag."""
-        with patch.object(daemon, "_subscribe_to_events", new_callable=AsyncMock):
+        with patch.object(daemon, "_subscribe_all_events") as mock_subscribe:
+            mock_subscribe.side_effect = lambda: setattr(daemon, "_event_subscribed", True) or True
             await daemon.start()
             assert daemon._running is True
 
@@ -145,11 +146,13 @@ class TestAutoPromotionDaemonLifecycle:
         """Multiple starts don't cause issues."""
         call_count = 0
 
-        async def mock_subscribe():
+        def mock_subscribe():
             nonlocal call_count
             call_count += 1
+            daemon._event_subscribed = True
+            return True
 
-        with patch.object(daemon, "_subscribe_to_events", side_effect=mock_subscribe):
+        with patch.object(daemon, "_subscribe_all_events", side_effect=mock_subscribe):
             await daemon.start()
             await daemon.start()
             assert call_count == 1  # Only called once
@@ -187,8 +190,8 @@ class TestEventSubscription:
         ), patch(
             "app.coordination.event_router.DataEventType", mock_event_type
         ):
-            await daemon._subscribe_to_events()
-            assert daemon._subscribed is True
+            assert daemon._subscribe_all_events() is True
+            assert daemon._event_subscribed is True
             mock_router.subscribe.assert_called_once()
 
     @pytest.mark.asyncio
@@ -198,9 +201,9 @@ class TestEventSubscription:
 
         # Simulate the entire import failing
         with patch.dict("sys.modules", {"app.coordination.event_router": None}):
-            await daemon._subscribe_to_events()
+            assert daemon._subscribe_all_events() is False
             # Won't subscribe because import fails
-            assert daemon._subscribed is False
+            assert daemon._event_subscribed is False
 
 
 # =============================================================================
@@ -280,12 +283,13 @@ class TestPromotionLogic:
 
     @pytest.fixture
     def daemon(self):
-        """Create daemon with minimal thresholds."""
+        """Create daemon with non-threshold gates relaxed for promotion tests."""
         config = AutoPromotionConfig(
             min_games_vs_random=5,
             min_games_vs_heuristic=5,
             consecutive_passes_required=1,
             min_elo_improvement=0.0,  # Dec 28: Disable Elo check for threshold tests
+            velocity_gate_enabled=False,
         )
         return AutoPromotionDaemon(config=config)
 
@@ -297,7 +301,7 @@ class TestPromotionLogic:
             model_path="/model.pth",
         )
         candidate.evaluation_results["RANDOM"] = 0.95
-        candidate.evaluation_games["RANDOM"] = 10
+        candidate.evaluation_games["RANDOM"] = 60
 
         daemon._promote_model = AsyncMock()
 
@@ -316,7 +320,8 @@ class TestPromotionLogic:
             model_path="/model.pth",
         )
         candidate.evaluation_results = {"RANDOM": 0.95, "HEURISTIC": 0.70}
-        candidate.evaluation_games = {"RANDOM": 10, "HEURISTIC": 10}
+        candidate.evaluation_games = {"RANDOM": 60, "HEURISTIC": 60}
+        candidate.beats_current_best = True
 
         daemon._promote_model = AsyncMock()
 
@@ -336,7 +341,7 @@ class TestPromotionLogic:
             model_path="/model.pth",
         )
         candidate.evaluation_results = {"RANDOM": 0.80, "HEURISTIC": 0.70}  # 0.80 < 0.85
-        candidate.evaluation_games = {"RANDOM": 10, "HEURISTIC": 10}
+        candidate.evaluation_games = {"RANDOM": 60, "HEURISTIC": 60}
 
         daemon._promote_model = AsyncMock()
 
@@ -357,7 +362,7 @@ class TestPromotionLogic:
             model_path="/model.pth",
         )
         candidate.evaluation_results = {"RANDOM": 0.95, "HEURISTIC": 0.70}
-        candidate.evaluation_games = {"RANDOM": 3, "HEURISTIC": 3}  # Below min of 5
+        candidate.evaluation_games = {"RANDOM": 3, "HEURISTIC": 3}  # Below current 2p minimum of 50
 
         daemon._promote_model = AsyncMock()
 
@@ -393,7 +398,7 @@ class TestCooldown:
             model_path="/model.pth",
         )
         candidate.evaluation_results = {"RANDOM": 0.95, "HEURISTIC": 0.70}
-        candidate.evaluation_games = {"RANDOM": 10, "HEURISTIC": 10}
+        candidate.evaluation_games = {"RANDOM": 60, "HEURISTIC": 60}
         candidate.last_promotion_time = time.time() - 60  # 60s ago (still in 300s cooldown)
 
         daemon._promote_model = AsyncMock()
@@ -415,6 +420,7 @@ class TestCooldown:
             min_games_vs_heuristic=1,
             consecutive_passes_required=1,
             min_elo_improvement=0.0,  # Dec 28: Disable Elo check for cooldown tests
+            velocity_gate_enabled=False,
         )
         daemon = AutoPromotionDaemon(config=config)
 
@@ -423,7 +429,9 @@ class TestCooldown:
             model_path="/model.pth",
         )
         candidate.evaluation_results = {"RANDOM": 0.95, "HEURISTIC": 0.70}
-        candidate.evaluation_games = {"RANDOM": 10, "HEURISTIC": 10}
+        candidate.evaluation_games = {"RANDOM": 60, "HEURISTIC": 60}
+        candidate.beats_current_best = True
+        candidate.elo_improvement = 10.0
         candidate.last_promotion_time = time.time() - 120  # 120s ago (past 60s cooldown)
 
         daemon._promote_model = AsyncMock()
@@ -566,18 +574,18 @@ class TestHealthCheck:
         assert result.status.value == "stopped"
 
     def test_health_check_when_not_subscribed(self):
-        """Health check reports degraded when not subscribed."""
+        """Health check reports degraded-but-healthy when not subscribed yet."""
         daemon = AutoPromotionDaemon()
         daemon._running = True
         result = daemon.health_check()
-        assert result.healthy is False
+        assert result.healthy is True
         assert result.status.value == "degraded"
 
     def test_health_check_when_healthy(self):
         """Health check reports healthy when running and subscribed."""
         daemon = AutoPromotionDaemon()
         daemon._running = True
-        daemon._subscribed = True
+        daemon._event_subscribed = True
         result = daemon.health_check()
         assert result.healthy is True
         assert result.status.value == "running"
@@ -656,7 +664,7 @@ class TestVelocityGate:
 
     @pytest.mark.asyncio
     async def test_velocity_gate_handles_errors_gracefully(self):
-        """Velocity gate passes on errors (don't block on check failures)."""
+        """Velocity gate fails closed on errors instead of disabling the gate."""
         config = AutoPromotionConfig(velocity_gate_enabled=True)
         daemon = AutoPromotionDaemon(config=config)
         candidate = PromotionCandidate(config_key="hex8_2p", model_path="/model.pth")
@@ -667,8 +675,8 @@ class TestVelocityGate:
         ), patch("app.coordination.auto_promotion_daemon.HAS_ELO_TREND", True):
             passed, reason = await daemon._check_velocity_gate(candidate)
 
-        assert passed is True
-        assert "error" in reason
+        assert passed is False
+        assert "velocity_check_error" in reason
 
 
 # =============================================================================
@@ -683,7 +691,7 @@ class TestStatus:
         """Status returns expected dictionary structure."""
         daemon = AutoPromotionDaemon()
         daemon._running = True
-        daemon._subscribed = True
+        daemon._event_subscribed = True
 
         status = daemon.get_status()
 

@@ -508,6 +508,8 @@ class TestHardwareAwareLimits:
 
     def test_datacenter_gpu_limits(self):
         """Datacenter GPUs should have high limits."""
+        from app.config.coordination_defaults import ResourceLimitsDefaults
+
         # H100 with 80GB VRAM and many cores
         limit = get_max_selfplay_for_node(
             node_id="gpu-server",
@@ -517,9 +519,7 @@ class TestHardwareAwareLimits:
             memory_gb=512,
             has_gpu=True,
         )
-        # Should be high but bounded
-        assert limit >= 32
-        assert limit <= 64
+        assert limit == ResourceLimitsDefaults.DATACENTER_MAX
 
     def test_consumer_gpu_limits(self):
         """Consumer GPUs should have moderate limits."""
@@ -600,6 +600,8 @@ class TestHardwareAwareLimits:
 
     def test_gh200_high_limits(self):
         """GH200 with unified memory should have very high limits."""
+        from app.config.coordination_defaults import ResourceLimitsDefaults
+
         limit = get_max_selfplay_for_node(
             node_id="gh200-node",
             gpu_count=1,
@@ -608,8 +610,7 @@ class TestHardwareAwareLimits:
             memory_gb=480,
             has_gpu=True,
         )
-        # GH200 has 480GB unified memory
-        assert limit >= 40
+        assert limit == ResourceLimitsDefaults.DATACENTER_MAX
 
     def test_high_cpu_multiplier(self):
         """High CPU count should boost limits."""

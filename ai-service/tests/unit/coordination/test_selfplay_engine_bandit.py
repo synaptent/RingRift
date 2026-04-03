@@ -499,6 +499,6 @@ class TestConstants:
 
     def test_expected_engines_present(self):
         """Test expected engine modes are present."""
-        expected = ["heuristic-only", "gumbel-mcts", "mcts"]
+        expected = ["heuristic-only", "gumbel-mcts", "policy-only"]
         for engine in expected:
             assert engine in AVAILABLE_ENGINES

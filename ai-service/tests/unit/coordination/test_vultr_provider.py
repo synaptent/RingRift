@@ -285,7 +285,10 @@ class TestVultrProviderRunCli:
         mock_result.stderr = ""
         mock_result.returncode = 0
 
-        with patch("subprocess.run", return_value=mock_result):
+        with patch(
+            "app.coordination.providers.vultr_provider.async_subprocess_run",
+            new=AsyncMock(return_value=mock_result),
+        ):
             stdout, stderr, rc = await provider_with_explicit_cli._run_cli("instance", "list")
 
         assert stdout == '{"instances": []}'
@@ -300,10 +303,14 @@ class TestVultrProviderRunCli:
         mock_result.stderr = ""
         mock_result.returncode = 0
 
-        with patch("subprocess.run", return_value=mock_result) as mock_run:
+        mock_run = AsyncMock(return_value=mock_result)
+        with patch(
+            "app.coordination.providers.vultr_provider.async_subprocess_run",
+            new=mock_run,
+        ):
             await provider_with_explicit_cli._run_cli("instance", "list")
 
-        call_args = mock_run.call_args[0][0]
+        call_args = mock_run.await_args.args[0]
         assert "--output" in call_args
         assert "json" in call_args
 
@@ -325,7 +332,10 @@ class TestVultrProviderRunCli:
         mock_result.stderr = "Error: unauthorized"
         mock_result.returncode = 1
 
-        with patch("subprocess.run", return_value=mock_result):
+        with patch(
+            "app.coordination.providers.vultr_provider.async_subprocess_run",
+            new=AsyncMock(return_value=mock_result),
+        ):
             stdout, stderr, rc = await provider_with_explicit_cli._run_cli("instance", "list")
 
         assert rc == 1

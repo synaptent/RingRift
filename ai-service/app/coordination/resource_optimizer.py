@@ -2050,9 +2050,10 @@ _optimizer: ResourceOptimizer | None = None
 def get_resource_optimizer() -> ResourceOptimizer:
     """Get the singleton resource optimizer."""
     global _optimizer
-    if _optimizer is None:
-        _optimizer = ResourceOptimizer()
-    return _optimizer
+    instance = ResourceOptimizer()
+    if _optimizer is not instance:
+        _optimizer = instance
+    return instance
 
 
 def should_scale_up(resource_type: str = "cpu") -> bool:

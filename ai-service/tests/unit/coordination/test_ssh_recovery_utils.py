@@ -307,7 +307,9 @@ class TestSSHRecoveryHelper:
 
         assert "pkill -f 'python.*p2p_orchestrator'" in cmd
         assert "cd /opt/ringrift/ai-service" in cmd
-        assert "screen -dmS p2p" in cmd
+        assert "screen -X -S p2p quit" in cmd
+        assert "screen -wipe" in cmd
+        assert "nohup python scripts/p2p_orchestrator.py" in cmd
         assert "PYTHONPATH=." in cmd
         assert "pgrep -f p2p_orchestrator" in cmd
 

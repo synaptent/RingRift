@@ -214,11 +214,10 @@ class TestNodeAvailabilityDaemonMethods:
     def test_get_daemon_name(self):
         """Should return correct daemon name."""
         daemon = NodeAvailabilityDaemon()
-        assert daemon._get_daemon_name() == "NodeAvailabilityDaemon"
+        assert daemon.name == "NodeAvailabilityDaemon"
 
     def test_get_default_config(self):
-        """Should return NodeAvailabilityConfig."""
+        """Default daemon config should be a NodeAvailabilityConfig."""
         daemon = NodeAvailabilityDaemon()
-        config = daemon._get_default_config()
+        config = daemon.config
         assert isinstance(config, NodeAvailabilityConfig)
-

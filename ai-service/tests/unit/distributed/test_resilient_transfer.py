@@ -250,10 +250,10 @@ class TestTransportSelection:
                 with patch.object(transfer, "_transfer_with_retry", return_value=mock_result) as mock_transfer:
                     await transfer.transfer(sample_request)
 
-        # Should try bittorrent first, then rsync_verified
+        # Huge files require BitTorrent, then verified rsync, then chunked fallback
         mock_transfer.assert_called_once()
         transports = mock_transfer.call_args[0][1]
-        assert transports == ["bittorrent", "rsync_verified"]
+        assert transports == ["bittorrent", "rsync_verified", "chunked"]
 
     @pytest.mark.asyncio
     async def test_large_file_prefers_bittorrent(self, sample_request):
@@ -286,7 +286,7 @@ class TestTransportSelection:
 
         transports = mock_transfer.call_args[0][1]
         assert "bittorrent" not in transports
-        assert transports == ["aria2", "rsync_verified"]
+        assert transports == ["aria2", "rsync_verified", "base64"]
 
     @pytest.mark.asyncio
     async def test_small_file_uses_aria2(self, transfer, sample_request):
@@ -300,7 +300,7 @@ class TestTransportSelection:
                     await transfer.transfer(sample_request)
 
         transports = mock_transfer.call_args[0][1]
-        assert transports == ["aria2", "rsync_verified"]
+        assert transports == ["aria2", "rsync_verified", "base64"]
 
 
 # =============================================================================

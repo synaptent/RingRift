@@ -93,8 +93,8 @@ class TestExternalDriveSyncConfig:
         assert config.s3_consolidated_prefix == "consolidated"
         assert config.bandwidth_limit_kbps == 50000
         assert config.rsync_timeout == 600
-        # Dec 2025: increased for faster parallel sync (was 3)
-        assert config.max_concurrent_syncs == 5
+        # Feb 2026: reduced from 5 to 1 to avoid OOM from parallel rsync processes.
+        assert config.max_concurrent_syncs == 1
         assert config.max_retries == 3
         assert config.retry_delay == 30.0
         assert config.sync_games is True
@@ -137,9 +137,9 @@ class TestDaemonInitialization:
         assert daemon.config is not None
         assert daemon._storage_config == mock_storage_config
         assert daemon._running is False
-        assert daemon._start_time == 0.0
-        assert daemon._cycles_completed == 0
-        assert daemon._errors_count == 0
+        assert daemon._stats.started_at == 0.0
+        assert daemon._stats.cycles_completed == 0
+        assert daemon._stats.errors_count == 0
 
     def test_init_with_custom_config(self, mock_storage_config):
         """Test initialization with custom config."""
@@ -159,12 +159,12 @@ class TestDaemonInitialization:
         """Test initial stats dictionary."""
         daemon = ExternalDriveSyncDaemon(storage_config=mock_storage_config)
 
-        assert daemon._stats["games_synced"] == 0
-        assert daemon._stats["npz_synced"] == 0
-        assert daemon._stats["models_synced"] == 0
-        assert daemon._stats["bytes_transferred"] == 0
-        assert daemon._stats["nodes_synced"] == 0
-        assert daemon._stats["sync_errors"] == 0
+        assert daemon._sync_stats["games_synced"] == 0
+        assert daemon._sync_stats["npz_synced"] == 0
+        assert daemon._sync_stats["models_synced"] == 0
+        assert daemon._sync_stats["bytes_transferred"] == 0
+        assert daemon._sync_stats["nodes_synced"] == 0
+        assert daemon._sync_stats["sync_errors"] == 0
 
     @patch("app.coordination.external_drive_sync.get_sync_routing")
     @patch("socket.gethostname")
@@ -202,7 +202,7 @@ class TestDaemonProperties:
     def test_uptime_started(self, mock_storage_config):
         """Test uptime when daemon has started."""
         daemon = ExternalDriveSyncDaemon(storage_config=mock_storage_config)
-        daemon._start_time = 1000.0
+        daemon._stats.started_at = 1000.0
 
         with patch("time.time", return_value=1060.0):
             assert daemon.uptime_seconds == 60.0
@@ -261,8 +261,8 @@ class TestHealthCheck:
         mock_storage_config.path = temp_storage_path
         daemon = ExternalDriveSyncDaemon(storage_config=mock_storage_config)
         daemon._running = True
-        daemon._stats["games_synced"] = 10
-        daemon._stats["nodes_synced"] = 5
+        daemon._sync_stats["games_synced"] = 10
+        daemon._sync_stats["nodes_synced"] = 5
 
         result = daemon.health_check()
 
@@ -274,8 +274,8 @@ class TestHealthCheck:
         mock_storage_config.path = temp_storage_path
         daemon = ExternalDriveSyncDaemon(storage_config=mock_storage_config)
         daemon._running = True
-        daemon._stats["games_synced"] = 5
-        daemon._stats["sync_errors"] = 10
+        daemon._sync_stats["games_synced"] = 5
+        daemon._sync_stats["sync_errors"] = 10
 
         result = daemon.health_check()
 
@@ -287,8 +287,8 @@ class TestHealthCheck:
         mock_storage_config.path = temp_storage_path
         daemon = ExternalDriveSyncDaemon(storage_config=mock_storage_config)
         daemon._running = True
-        daemon._cycles_completed = 5
-        daemon._errors_count = 2
+        daemon._stats.cycles_completed = 5
+        daemon._stats.errors_count = 2
 
         result = daemon.health_check()
 
@@ -579,8 +579,8 @@ class TestSyncGamesFromNode:
             result = await daemon._sync_games_from_node(mock_cluster_node, dest_base)
 
             assert result is True
-            assert daemon._stats["nodes_synced"] == 1
-            assert daemon._stats["games_synced"] == 1
+            assert daemon._sync_stats["nodes_synced"] == 1
+            assert daemon._sync_stats["games_synced"] == 1
 
     @pytest.mark.asyncio
     async def test_sync_failure(
@@ -602,7 +602,7 @@ class TestSyncGamesFromNode:
             result = await daemon._sync_games_from_node(mock_cluster_node, dest_base)
 
             assert result is False
-            assert daemon._stats["sync_errors"] == 1
+            assert daemon._sync_stats["sync_errors"] == 1
 
     @pytest.mark.asyncio
     async def test_sync_exception(
@@ -621,4 +621,4 @@ class TestSyncGamesFromNode:
             result = await daemon._sync_games_from_node(mock_cluster_node, dest_base)
 
             assert result is False
-            assert daemon._stats["sync_errors"] == 1
+            assert daemon._sync_stats["sync_errors"] == 1

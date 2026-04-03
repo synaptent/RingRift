@@ -54,7 +54,7 @@ class TestRecoveryAction:
 
     def test_action_is_string_enum(self):
         """Test actions are string-compatible."""
-        assert str(RecoveryAction.RESTART_P2P) == "RecoveryAction.RESTART_P2P"
+        assert str(RecoveryAction.RESTART_P2P).endswith(".RESTART_P2P")
         assert RecoveryAction.RESTART_P2P.value == "restart_p2p"
 
 

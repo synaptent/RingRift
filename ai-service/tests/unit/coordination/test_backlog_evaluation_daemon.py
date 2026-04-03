@@ -740,7 +740,7 @@ class TestEventEmission:
         """Reset singleton after each test."""
         _force_reset_singleton()
 
-    @patch("app.coordination.event_router.emit_event")
+    @patch("app.coordination.event_emission_helpers.safe_emit_event")
     def test_emit_discovery_completed(self, mock_emit):
         """Test discovery completed event emission."""
         daemon = BacklogEvaluationDaemon()
@@ -759,7 +759,7 @@ class TestEventEmission:
         assert payload["evaluations_completed"] == 10
         assert payload["evaluations_failed"] == 2
 
-    @patch("app.coordination.event_router.emit_event")
+    @patch("app.coordination.event_emission_helpers.safe_emit_event")
     def test_emit_model_queued(self, mock_emit):
         """Test model queued event emission."""
         daemon = BacklogEvaluationDaemon()
@@ -780,7 +780,7 @@ class TestEventEmission:
         assert payload["config_key"] == "hex8_2p"
         assert payload["source"] == "owc"
 
-    @patch("app.coordination.event_router.emit_event")
+    @patch("app.coordination.event_emission_helpers.safe_emit_event")
     def test_emit_synthetic_training_completed(self, mock_emit):
         """Test synthetic TRAINING_COMPLETED event emission."""
         daemon = BacklogEvaluationDaemon()

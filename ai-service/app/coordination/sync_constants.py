@@ -17,7 +17,7 @@ Migration:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, IntEnum
 from typing import Any
 
 __all__ = [
@@ -52,7 +52,7 @@ class SyncState(Enum):
         return self in self.terminal_states()
 
 
-class SyncPriority(Enum):
+class SyncPriority(IntEnum):
     """Priority levels for sync operations.
 
     Higher values = higher priority. Used for queue ordering.
@@ -63,18 +63,6 @@ class SyncPriority(Enum):
     NORMAL = 50  # Regular replication
     LOW = 25  # Background replication
     BACKGROUND = 10  # Opportunistic sync, lowest priority
-
-    def __lt__(self, other: "SyncPriority") -> bool:
-        """Compare priorities (higher value = higher priority)."""
-        if isinstance(other, SyncPriority):
-            return self.value < other.value
-        return NotImplemented
-
-    def __gt__(self, other: "SyncPriority") -> bool:
-        """Compare priorities."""
-        if isinstance(other, SyncPriority):
-            return self.value > other.value
-        return NotImplemented
 
 
 class SyncDirection(Enum):

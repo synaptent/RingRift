@@ -21,6 +21,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.config.thresholds import DISK_CRITICAL_PERCENT
 from app.monitoring.predictive_alerts import (
     Alert,
     AlertSeverity,
@@ -70,7 +71,7 @@ class TestPredictiveAlertConfig:
         config = PredictiveAlertConfig()
         assert config.enabled is True
         assert config.disk_prediction_hours == 4
-        assert config.disk_critical_threshold == 90.0
+        assert config.disk_critical_threshold == float(DISK_CRITICAL_PERCENT)
         assert config.memory_prediction_hours == 2
         assert config.memory_critical_threshold == 95.0
         assert config.elo_trend_window_hours == 6
@@ -314,7 +315,7 @@ class TestDiskFullPrediction:
 
         # Record critical usage
         manager._disk_history["node-1"] = [
-            MetricSample(timestamp=time.time(), value=95.0)
+            MetricSample(timestamp=time.time(), value=float(DISK_CRITICAL_PERCENT))
         ]
 
         alert = manager.predict_disk_full("node-1")

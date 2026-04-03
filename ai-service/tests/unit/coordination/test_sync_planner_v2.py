@@ -134,8 +134,8 @@ class TestSyncPriority:
 
     def test_all_priority_values_exist(self):
         """Test all expected priority levels exist."""
-        assert SyncPriority.BACKGROUND == 0
-        assert SyncPriority.LOW == 10
+        assert SyncPriority.BACKGROUND == 10
+        assert SyncPriority.LOW == 25
         assert SyncPriority.NORMAL == 50
         assert SyncPriority.HIGH == 75
         assert SyncPriority.CRITICAL == 100

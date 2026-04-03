@@ -10,6 +10,7 @@ Tests the P2P gossip-based data synchronization components:
 from __future__ import annotations
 
 import asyncio
+import json
 import tempfile
 import sqlite3
 from pathlib import Path
@@ -333,8 +334,8 @@ class TestGossipSyncDaemon:
 
     def test_load_known_games_with_db(self, temp_data_dir, sample_peers_config):
         """Test loading games from database."""
-        # Create a test database with some games
-        db_path = temp_data_dir / "test.db"
+        # Create a canonical database with some games
+        db_path = temp_data_dir / "canonical_square8.db"
         conn = sqlite3.connect(db_path)
         conn.execute("CREATE TABLE games (game_id TEXT PRIMARY KEY)")
         conn.execute("INSERT INTO games VALUES ('game1')")
@@ -374,8 +375,8 @@ class TestGossipSyncDaemon:
 
     def test_build_bloom_filter(self, temp_data_dir, sample_peers_config):
         """Test building bloom filter from known games."""
-        # Create database with games
-        db_path = temp_data_dir / "test.db"
+        # Create canonical database with games
+        db_path = temp_data_dir / "canonical_square8.db"
         conn = sqlite3.connect(db_path)
         conn.execute("CREATE TABLE games (game_id TEXT PRIMARY KEY)")
         for i in range(100):
@@ -435,8 +436,8 @@ class TestGossipSyncDaemon:
         )
 
         games = [
-            {"game_id": "new_game_1", "data": "test1"},
-            {"game_id": "new_game_2", "data": "test2"},
+            {"game_id": "new_game_1", "moves_json": json.dumps([{}, {}, {}, {}, {}])},
+            {"game_id": "new_game_2", "moves_json": json.dumps([{}, {}, {}, {}, {}])},
         ]
 
         stored = daemon._store_games(games)

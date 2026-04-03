@@ -9,6 +9,7 @@ import pytest
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.config.ports import get_local_p2p_status_url
 from app.coordination.cluster_utilization_watchdog import (
     ClusterUtilizationWatchdog,
     UtilizationLevel,
@@ -102,7 +103,7 @@ class TestUtilizationWatchdogConfig:
         assert config.idle_duration_trigger_seconds == 180
         assert config.recovery_threshold == 0.5
         assert config.emit_events is True
-        assert config.p2p_status_endpoint == "http://localhost:8770/status"
+        assert config.p2p_status_endpoint == get_local_p2p_status_url()
 
     def test_custom_values(self):
         """Test custom configuration values."""
@@ -467,14 +468,15 @@ class TestEventEmission:
         watchdog._idle_gpu_nodes = 8
         watchdog._active_gpu_nodes = 2
 
-        with patch("app.distributed.data_events.emit_data_event") as mock_emit:
+        with patch("app.coordination.cluster_utilization_watchdog.safe_emit_event") as mock_emit:
             await watchdog._emit_underutilization_event(UtilizationLevel.WARNING, 200.0)
 
             mock_emit.assert_called_once()
-            call_kwargs = mock_emit.call_args[1]
-            assert call_kwargs["level"] == "warning"
-            assert call_kwargs["total_gpu_nodes"] == 10
-            assert call_kwargs["idle_gpu_nodes"] == 8
+            event_type, payload = mock_emit.call_args.args[:2]
+            assert event_type == "cluster_underutilized"
+            assert payload["level"] == "warning"
+            assert payload["total_gpu_nodes"] == 10
+            assert payload["idle_gpu_nodes"] == 8
 
     @pytest.mark.asyncio
     async def test_emit_underutilization_events_disabled(self, config):
@@ -482,7 +484,7 @@ class TestEventEmission:
         config.emit_events = False
         watchdog = ClusterUtilizationWatchdog(config=config)
 
-        with patch("app.distributed.data_events.emit_data_event") as mock_emit:
+        with patch("app.coordination.cluster_utilization_watchdog.safe_emit_event") as mock_emit:
             await watchdog._emit_underutilization_event(UtilizationLevel.WARNING, 200.0)
             mock_emit.assert_not_called()
 
@@ -493,21 +495,22 @@ class TestEventEmission:
         watchdog._total_gpu_nodes = 10
         watchdog._active_gpu_nodes = 8
 
-        with patch("app.distributed.data_events.emit_data_event") as mock_emit:
+        with patch("app.coordination.cluster_utilization_watchdog.safe_emit_event") as mock_emit:
             await watchdog._emit_recovery_event()
 
             mock_emit.assert_called_once()
-            call_kwargs = mock_emit.call_args[1]
-            assert call_kwargs["total_gpu_nodes"] == 10
-            assert call_kwargs["active_gpu_nodes"] == 8
-            assert call_kwargs["recovery_duration_seconds"] >= 300
+            event_type, payload = mock_emit.call_args.args[:2]
+            assert event_type == "cluster_utilization_recovered"
+            assert payload["total_gpu_nodes"] == 10
+            assert payload["active_gpu_nodes"] == 8
+            assert payload["recovery_duration_seconds"] >= 300
 
     @pytest.mark.asyncio
     async def test_emit_event_handles_import_error(self, watchdog):
         """Test event emission handles import errors gracefully."""
         with patch(
-            "app.distributed.data_events.emit_data_event",
-            side_effect=ImportError("Module not found"),
+            "app.coordination.cluster_utilization_watchdog.safe_emit_event",
+            return_value=False,
         ):
             # Should not raise
             await watchdog._emit_underutilization_event(UtilizationLevel.WARNING, 200.0)

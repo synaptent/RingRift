@@ -98,10 +98,10 @@ class TestDiskSpaceConfig:
         """Test default configuration values."""
         config = DiskSpaceConfig()
         assert config.check_interval_seconds == 300  # 5 minutes
-        assert config.proactive_cleanup_threshold == 60
-        assert config.warning_threshold == 65
-        assert config.critical_threshold == 70
-        assert config.emergency_threshold == 85
+        assert config.proactive_cleanup_threshold == 70
+        assert config.warning_threshold == 88
+        assert config.critical_threshold == 96
+        assert config.emergency_threshold == 95
         assert config.target_disk_usage == 50
         assert config.log_retention_days == 7
         assert config.enable_cleanup is True
@@ -1031,8 +1031,8 @@ class TestDiskSpaceConfigAdvanced:
         }):
             config = DiskSpaceConfig.from_env()
             # Should use defaults when parsing fails
-            assert config.proactive_cleanup_threshold == 60
-            assert config.min_free_gb == 50
+            assert config.proactive_cleanup_threshold == 70
+            assert config.min_free_gb == 100
 
     def test_synced_games_in_cleanup_priorities(self) -> None:
         """Test that synced_games is in default cleanup priorities."""

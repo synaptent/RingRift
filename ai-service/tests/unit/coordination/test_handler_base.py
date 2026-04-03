@@ -299,7 +299,7 @@ class TestHandlerBaseHealthCheck:
         try:
             # Simulate some operations and errors
             handler._stats.cycles_completed = 10
-            handler._stats.errors_count = 3  # 30% error rate
+            handler._stats.errors_count = 5  # 50% error rate
             result = handler.health_check()
             assert result.status == CoordinatorStatus.DEGRADED
         finally:
@@ -312,7 +312,7 @@ class TestHandlerBaseHealthCheck:
         await handler.start()
         try:
             handler._stats.cycles_completed = 10
-            handler._stats.errors_count = 6  # 60% error rate
+            handler._stats.errors_count = 9  # 90% error rate
             result = handler.health_check()
             assert result.healthy is False
             assert result.status == CoordinatorStatus.ERROR

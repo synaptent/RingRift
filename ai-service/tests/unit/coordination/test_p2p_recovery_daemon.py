@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.config.ports import get_local_p2p_status_url
 from app.coordination.p2p_recovery_daemon import (
     P2PRecoveryConfig,
     P2PRecoveryDaemon,
@@ -27,7 +28,7 @@ class TestP2PRecoveryConfig:
         config = P2PRecoveryConfig()
         assert config.enabled is True
         assert config.check_interval_seconds == 60
-        assert config.health_endpoint == "http://localhost:8770/status"
+        assert config.health_endpoint == get_local_p2p_status_url()
         assert config.max_consecutive_failures == 3
         assert config.restart_cooldown_seconds == 300  # 5 minutes
         assert config.health_timeout_seconds == 10.0

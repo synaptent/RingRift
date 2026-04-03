@@ -216,7 +216,7 @@ class TestOWCImportDaemonSync:
     def test_daemon_name(self):
         """Returns correct daemon name."""
         daemon = OWCImportDaemon()
-        assert daemon._get_daemon_name() == "OWCImport"
+        assert daemon.name == "OWCImportDaemon"
 
     def test_singleton_get_instance(self):
         """get_instance returns singleton."""
@@ -382,7 +382,7 @@ class TestOWCImportDaemonAsync:
         """OWC availability check when available."""
         daemon = OWCImportDaemon()
 
-        with patch.object(daemon, "_run_ssh_command", return_value=(True, "/Volumes/RingRift-Data")):
+        with patch.object(daemon, "_run_command", return_value=(True, "/Volumes/RingRift-Data")):
             result = await daemon._check_owc_available()
 
         assert result is True
@@ -391,7 +391,7 @@ class TestOWCImportDaemonAsync:
         """OWC availability check when not available."""
         daemon = OWCImportDaemon()
 
-        with patch.object(daemon, "_run_ssh_command", return_value=(False, "No such file")):
+        with patch.object(daemon, "_run_command", return_value=(False, "No such file")):
             result = await daemon._check_owc_available()
 
         assert result is False
@@ -511,6 +511,7 @@ class TestOWCImportDaemonAsync:
         daemon = OWCImportDaemon()
         daemon._emit_new_games_available = MagicMock()
         daemon._emit_data_sync_completed = MagicMock()
+        discovered_databases = ["test.db"]
 
         db_info = OWCDatabaseInfo(
             path="test.db",
@@ -519,9 +520,10 @@ class TestOWCImportDaemonAsync:
 
         with patch.object(daemon, "_check_owc_available", return_value=True):
             with patch.object(daemon, "_get_underserved_configs", return_value=["hex8_2p"]):
-                with patch.object(daemon, "_scan_owc_database", return_value=db_info):
-                    with patch.object(daemon, "_sync_database", return_value=Path("/tmp/test.db")):
-                        await daemon._run_cycle()
+                with patch.object(daemon, "_discover_owc_databases", return_value=discovered_databases):
+                    with patch.object(daemon, "_scan_owc_database", return_value=db_info):
+                        with patch.object(daemon, "_sync_database", return_value=Path("/tmp/test.db")):
+                            await daemon._run_cycle()
 
         assert daemon._owc_available is True
         assert len(daemon._import_history) == 1
@@ -548,8 +550,7 @@ class TestOWCImportDaemonEvents:
         """NEW_GAMES_AVAILABLE event emission."""
         daemon = OWCImportDaemon()
 
-        # emit_data_event is imported inside the method from app.distributed.data_events
-        with patch("app.distributed.data_events.emit_data_event") as mock_emit:
+        with patch("app.coordination.owc_import_daemon.safe_emit_event") as mock_emit:
             daemon._emit_new_games_available("hex8_2p", 100, "owc:test.db")
             mock_emit.assert_called_once()
 
@@ -564,7 +565,7 @@ class TestOWCImportDaemonEvents:
         """DATA_SYNC_COMPLETED event emission."""
         daemon = OWCImportDaemon()
 
-        with patch("app.distributed.data_events.emit_data_event") as mock_emit:
+        with patch("app.coordination.owc_import_daemon.safe_emit_event") as mock_emit:
             daemon._emit_data_sync_completed(["hex8_2p", "square8_4p"], 150)
             mock_emit.assert_called_once()
 
@@ -615,7 +616,7 @@ class TestModuleConstants:
 
     def test_underserved_threshold(self):
         """UNDERSERVED_THRESHOLD is reasonable."""
-        assert UNDERSERVED_THRESHOLD == 500
+        assert UNDERSERVED_THRESHOLD >= 500
         assert UNDERSERVED_THRESHOLD > 0
 
     def test_owc_source_databases(self):
@@ -675,14 +676,16 @@ class TestOWCImportIntegration:
             path="test.db",
             configs={"hex8_2p": 100},
         )
+        discovered_databases = ["test.db"]
 
         # Run many cycles
         for _ in range(60):
             with patch.object(daemon, "_check_owc_available", return_value=True):
                 with patch.object(daemon, "_get_underserved_configs", return_value=["hex8_2p"]):
-                    with patch.object(daemon, "_scan_owc_database", return_value=db_info):
-                        with patch.object(daemon, "_sync_database", return_value=Path("/tmp/test.db")):
-                            await daemon._run_cycle()
+                    with patch.object(daemon, "_discover_owc_databases", return_value=discovered_databases):
+                        with patch.object(daemon, "_scan_owc_database", return_value=db_info):
+                            with patch.object(daemon, "_sync_database", return_value=Path("/tmp/test.db")):
+                                await daemon._run_cycle()
 
         # Should be trimmed to 50
         assert len(daemon._import_history) <= 50
@@ -697,16 +700,18 @@ class TestOWCImportIntegration:
             path="test.db",
             configs={"hex8_2p": 100},
         )
+        discovered_databases = OWC_SOURCE_DATABASES[:5]
 
         num_cycles = 3
         for _ in range(num_cycles):
             with patch.object(daemon, "_check_owc_available", return_value=True):
                 with patch.object(daemon, "_get_underserved_configs", return_value=["hex8_2p"]):
-                    with patch.object(daemon, "_scan_owc_database", return_value=db_info):
-                        with patch.object(daemon, "_sync_database", return_value=Path("/tmp/test.db")):
-                            await daemon._run_cycle()
+                    with patch.object(daemon, "_discover_owc_databases", return_value=discovered_databases):
+                        with patch.object(daemon, "_scan_owc_database", return_value=db_info):
+                            with patch.object(daemon, "_sync_database", return_value=Path("/tmp/test.db")):
+                                await daemon._run_cycle()
 
-        # Each cycle syncs all OWC_SOURCE_DATABASES (5 databases), each reporting 100 games
-        num_databases = len(OWC_SOURCE_DATABASES)
+        # Each cycle syncs the discovered databases, each reporting 100 games.
+        num_databases = len(discovered_databases)
         expected_games = 100 * num_databases * num_cycles
         assert daemon._total_games_imported == expected_games

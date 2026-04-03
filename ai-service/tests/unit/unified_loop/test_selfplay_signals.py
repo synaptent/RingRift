@@ -86,7 +86,12 @@ class TestPriorityWithSignals:
         state = MockLoopState(configs={k: MockConfigState(**v) for k, v in configs.items()})
         event_bus = MagicMock()
 
-        generator = LocalSelfplayGenerator(state, event_bus, training_scheduler=scheduler)
+        generator = LocalSelfplayGenerator(
+            state,
+            event_bus,
+            training_scheduler=scheduler,
+            improvement_priority_boost_fn=lambda _config_key: 0.0,
+        )
         generator._signal_computer = signal_computer
 
         return generator

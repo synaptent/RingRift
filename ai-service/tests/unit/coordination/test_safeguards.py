@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.config.thresholds import DISK_PRODUCTION_HALT_PERCENT
 from app.coordination.safeguards import (
     ResourceMonitor,
     SafeguardConfig,
@@ -30,7 +31,7 @@ class TestSafeguardConfig:
         assert config.half_open_max_calls == 3
 
         # Resource thresholds
-        assert config.disk_critical_percent == 70.0
+        assert config.disk_critical_percent == float(DISK_PRODUCTION_HALT_PERCENT)
         assert config.memory_critical_percent == 80.0
         assert config.cpu_critical_percent == 80.0
 

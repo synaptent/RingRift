@@ -359,14 +359,14 @@ class TestGauntletSimulations:
     """Tests for get_gauntlet_simulations() board-type-aware budgets."""
 
     def test_small_board_2p(self):
-        """Small boards (hex8, square8) use 400 sims for 2-player."""
-        assert get_gauntlet_simulations(num_players=2, board_type="hex8") == 400
-        assert get_gauntlet_simulations(num_players=2, board_type="square8") == 400
+        """Small boards (hex8, square8) use the current 800-sim 2-player budget."""
+        assert get_gauntlet_simulations(num_players=2, board_type="hex8") == 800
+        assert get_gauntlet_simulations(num_players=2, board_type="square8") == 800
 
     def test_small_board_3p(self):
-        """Small boards use 600 sims for 3-player."""
-        assert get_gauntlet_simulations(num_players=3, board_type="hex8") == 600
-        assert get_gauntlet_simulations(num_players=3, board_type="square8") == 600
+        """Small boards use the current 800-sim 3-player budget."""
+        assert get_gauntlet_simulations(num_players=3, board_type="hex8") == 800
+        assert get_gauntlet_simulations(num_players=3, board_type="square8") == 800
 
     def test_small_board_4p(self):
         """Small boards use 800 sims for 4-player."""
@@ -374,29 +374,29 @@ class TestGauntletSimulations:
         assert get_gauntlet_simulations(num_players=4, board_type="square8") == 800
 
     def test_large_board_2p(self):
-        """Large boards (square19, hexagonal) use 1600 sims for all player counts."""
-        assert get_gauntlet_simulations(num_players=2, board_type="square19") == 1600
-        assert get_gauntlet_simulations(num_players=2, board_type="hexagonal") == 1600
+        """Large boards use the current 800-sim selfplay-aligned 2-player budget."""
+        assert get_gauntlet_simulations(num_players=2, board_type="square19") == 800
+        assert get_gauntlet_simulations(num_players=2, board_type="hexagonal") == 800
 
     def test_large_board_3p(self):
-        """Large boards use 1600 sims for 3-player."""
-        assert get_gauntlet_simulations(num_players=3, board_type="square19") == 1600
-        assert get_gauntlet_simulations(num_players=3, board_type="hexagonal") == 1600
+        """Large boards use the current 800-sim selfplay-aligned 3-player budget."""
+        assert get_gauntlet_simulations(num_players=3, board_type="square19") == 800
+        assert get_gauntlet_simulations(num_players=3, board_type="hexagonal") == 800
 
     def test_large_board_4p(self):
-        """Large boards use 1600 sims for 4-player."""
-        assert get_gauntlet_simulations(num_players=4, board_type="square19") == 1600
-        assert get_gauntlet_simulations(num_players=4, board_type="hexagonal") == 1600
+        """Large boards use the current 800-sim selfplay-aligned 4-player budget."""
+        assert get_gauntlet_simulations(num_players=4, board_type="square19") == 800
+        assert get_gauntlet_simulations(num_players=4, board_type="hexagonal") == 800
 
     def test_default_no_board_type_uses_small_values(self):
-        """When board_type is empty, fall back to small-board values."""
-        assert get_gauntlet_simulations(num_players=2) == 400
-        assert get_gauntlet_simulations(num_players=3) == 600
+        """When board_type is empty, fall back to the current small-board defaults."""
+        assert get_gauntlet_simulations(num_players=2) == 800
+        assert get_gauntlet_simulations(num_players=3) == 800
         assert get_gauntlet_simulations(num_players=4) == 800
 
     def test_unknown_board_type_uses_small_values(self):
-        """Unknown board types fall back to small-board values."""
-        assert get_gauntlet_simulations(num_players=2, board_type="triangle5") == 400
+        """Unknown board types fall back to the current small-board defaults."""
+        assert get_gauntlet_simulations(num_players=2, board_type="triangle5") == 800
 
 
 # =============================================================================
@@ -412,16 +412,16 @@ class TestPreferredArchitecture:
         assert get_preferred_architecture("hex8") == "v2"
 
     def test_square8_uses_v5_heavy(self):
-        """square8 benefits from v5-heavy with heuristic features."""
-        assert get_preferred_architecture("square8") == "v5-heavy"
+        """square8 currently stays on v2 until v5-heavy bootstraps exist."""
+        assert get_preferred_architecture("square8") == "v2"
 
     def test_square19_uses_v5_heavy(self):
-        """square19 (361 cells) needs v5-heavy for positional understanding."""
-        assert get_preferred_architecture("square19") == "v5-heavy"
+        """square19 currently stays on v2 until v5-heavy bootstraps exist."""
+        assert get_preferred_architecture("square19") == "v2"
 
     def test_hexagonal_uses_v5_heavy(self):
-        """hexagonal (469 cells) needs v5-heavy for large board comprehension."""
-        assert get_preferred_architecture("hexagonal") == "v5-heavy"
+        """hexagonal currently stays on v2 after the reverted v5-heavy attempt."""
+        assert get_preferred_architecture("hexagonal") == "v2"
 
     def test_unknown_board_defaults_to_v2(self):
         """Unknown board types default to v2 as the safe baseline."""
@@ -442,12 +442,12 @@ class TestDiskThresholdConstants:
         assert DISK_SYNC_TARGET_PERCENT == 70
 
     def test_disk_production_halt_percent(self):
-        """DISK_PRODUCTION_HALT_PERCENT is 85 -- pause selfplay/training/exports."""
-        assert DISK_PRODUCTION_HALT_PERCENT == 85
+        """DISK_PRODUCTION_HALT_PERCENT is 93 -- pause selfplay/training/exports."""
+        assert DISK_PRODUCTION_HALT_PERCENT == 93
 
     def test_disk_critical_percent(self):
-        """DISK_CRITICAL_PERCENT is 90 -- emergency halt, block all writes."""
-        assert DISK_CRITICAL_PERCENT == 90
+        """DISK_CRITICAL_PERCENT is 96 -- emergency halt, block all writes."""
+        assert DISK_CRITICAL_PERCENT == 96
 
     def test_threshold_ordering(self):
         """Thresholds must be in ascending order: sync < production < critical."""

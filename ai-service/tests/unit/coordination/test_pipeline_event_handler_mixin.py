@@ -369,7 +369,7 @@ class TestOrphanGamesEvents:
             "num_players": 2,
         })
 
-        with patch("app.distributed.data_events.emit_data_event", new_callable=AsyncMock):
+        with patch("app.coordination.pipeline_event_handler_mixin.safe_emit_event"):
             await handler._on_orphan_games_registered(event)
 
         assert handler._orphan_games_pending == 50
@@ -416,7 +416,7 @@ class TestConsolidationEvents:
             "canonical_db": "/data/games/canonical_hex8_2p.db",
         })
 
-        with patch("app.distributed.data_events.emit_data_event", new_callable=AsyncMock):
+        with patch("app.coordination.pipeline_event_handler_mixin.safe_emit_event"):
             await handler._on_consolidation_complete(event)
 
         assert "hex8_2p" not in handler._consolidations_in_progress
@@ -439,7 +439,7 @@ class TestRepairEvents:
             "source_node": "vast-12345",
         })
 
-        with patch("app.distributed.data_events.emit_data_event", new_callable=AsyncMock):
+        with patch("app.coordination.pipeline_event_handler_mixin.safe_emit_event"):
             await handler._on_repair_completed(event)
 
         # Should not raise and should log

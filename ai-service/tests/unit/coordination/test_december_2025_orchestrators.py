@@ -13,6 +13,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.config.coordination_defaults import ResourceMonitoringDefaults
+
 # =============================================================================
 # Mock event classes for testing
 # =============================================================================
@@ -60,9 +62,9 @@ class TestResourceMonitoringCoordinator:
         from app.coordination.resource_monitoring_coordinator import ResourceMonitoringCoordinator
 
         coord = ResourceMonitoringCoordinator()
-        assert coord.backpressure_gpu_threshold == 90.0
-        assert coord.backpressure_memory_threshold == 85.0
-        assert coord.backpressure_disk_threshold == 90.0
+        assert coord.backpressure_gpu_threshold == ResourceMonitoringDefaults.BACKPRESSURE_GPU_THRESHOLD
+        assert coord.backpressure_memory_threshold == ResourceMonitoringDefaults.BACKPRESSURE_MEMORY_THRESHOLD
+        assert coord.backpressure_disk_threshold == ResourceMonitoringDefaults.BACKPRESSURE_DISK_THRESHOLD
         assert not coord.is_backpressure_active()
 
     def test_custom_thresholds(self):
@@ -85,13 +87,13 @@ class TestResourceMonitoringCoordinator:
         # Update a node
         state = coord.update_node_resources(
             node_id="gh200-a",
-            gpu_utilization=75.0,
+            gpu_utilization=coord.backpressure_gpu_threshold - 5.0,
             cpu_utilization=50.0,
             memory_used_percent=60.0,
         )
 
         assert state.node_id == "gh200-a"
-        assert state.gpu_utilization == 75.0
+        assert state.gpu_utilization == coord.backpressure_gpu_threshold - 5.0
         assert state.cpu_utilization == 50.0
         assert state.memory_used_percent == 60.0
         assert not state.backpressure_active

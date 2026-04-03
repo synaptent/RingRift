@@ -366,7 +366,10 @@ async def create_s3_push() -> None:
 
 
 async def create_distillation() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): DISTILLATION")
 
 
@@ -1061,12 +1064,18 @@ async def create_s3_import() -> None:
 
 
 async def create_unified_data_catalog() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): UNIFIED_DATA_CATALOG")
 
 
 async def create_node_data_agent() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): NODE_DATA_AGENT")
 
 
@@ -1143,6 +1152,21 @@ async def create_production_game_import() -> None:
         await daemon.wait_until_stopped()
     except ImportError as e:
         logger.warning(f"Production Game Import daemon not available: {e}")
+        await asyncio.sleep(float("inf"))
+
+
+async def create_data_availability() -> None:
+    """Create and run the data availability daemon."""
+    try:
+        from app.coordination.data_availability_daemon import (
+            create_data_availability_daemon,
+        )
+
+        daemon = create_data_availability_daemon()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.warning(f"Data availability daemon not available: {e}")
         await asyncio.sleep(float("inf"))
 
 

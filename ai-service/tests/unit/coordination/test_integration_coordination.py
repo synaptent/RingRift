@@ -97,27 +97,30 @@ class TestActionConfig:
 class TestCircuitBreaker:
     """Test CircuitBreaker for pipeline fault tolerance."""
 
-    def test_initial_state_closed(self):
+    def test_initial_state_closed(self, tmp_path):
         """Test circuit starts in closed state."""
         from app.coordination.data_pipeline_orchestrator import (
             CircuitBreaker,
             CircuitBreakerState,
         )
 
-        cb = CircuitBreaker()
+        cb = CircuitBreaker(db_path=tmp_path / "circuit_breaker.db")
         assert cb.state == CircuitBreakerState.CLOSED
         assert cb.is_closed is True
         assert cb.is_open is False
         assert cb.can_execute() is True
 
-    def test_opens_after_threshold_failures(self):
+    def test_opens_after_threshold_failures(self, tmp_path):
         """Test circuit opens after reaching failure threshold."""
         from app.coordination.data_pipeline_orchestrator import (
             CircuitBreaker,
             CircuitBreakerState,
         )
 
-        cb = CircuitBreaker(failure_threshold=3)
+        cb = CircuitBreaker(
+            failure_threshold=3,
+            db_path=tmp_path / "circuit_breaker.db",
+        )
 
         cb.record_failure("stage1", "Error 1")
         assert cb.state == CircuitBreakerState.CLOSED
@@ -129,7 +132,7 @@ class TestCircuitBreaker:
         assert cb.state == CircuitBreakerState.OPEN
         assert cb.can_execute() is False
 
-    def test_success_resets_in_half_open(self):
+    def test_success_resets_in_half_open(self, tmp_path):
         """Test successful execution in half-open resets to closed."""
         from app.coordination.data_pipeline_orchestrator import (
             CircuitBreaker,
@@ -138,7 +141,8 @@ class TestCircuitBreaker:
 
         cb = CircuitBreaker(
             failure_threshold=2,
-            reset_timeout_seconds=0.1,  # Fast reset for test
+            recovery_timeout=0.1,  # Fast reset for test
+            db_path=tmp_path / "circuit_breaker.db",
         )
 
         # Trip the circuit
@@ -147,17 +151,23 @@ class TestCircuitBreaker:
         assert cb.state == CircuitBreakerState.OPEN
 
         # Wait for reset timeout
-        time.sleep(0.15)
+        deadline = time.time() + 0.5
+        became_half_open = False
+        while time.time() < deadline:
+            if cb.can_execute():
+                became_half_open = True
+                break
+            time.sleep(0.02)
 
-        # Should transition to half-open
+        # Recovery is checked on can_execute(), not on raw state reads.
+        assert became_half_open is True
         assert cb.state == CircuitBreakerState.HALF_OPEN
-        assert cb.can_execute() is True
 
         # Record success
         cb.record_success("stage1")
         assert cb.state == CircuitBreakerState.CLOSED
 
-    def test_failure_in_half_open_reopens(self):
+    def test_failure_in_half_open_reopens(self, tmp_path):
         """Test failure in half-open immediately reopens circuit."""
         from app.coordination.data_pipeline_orchestrator import (
             CircuitBreaker,
@@ -166,7 +176,8 @@ class TestCircuitBreaker:
 
         cb = CircuitBreaker(
             failure_threshold=1,
-            reset_timeout_seconds=0.1,
+            recovery_timeout=0.1,
+            db_path=tmp_path / "circuit_breaker.db",
         )
 
         # Trip the circuit
@@ -174,18 +185,29 @@ class TestCircuitBreaker:
         assert cb.state == CircuitBreakerState.OPEN
 
         # Wait for half-open
-        time.sleep(0.15)
-        _ = cb.state  # Trigger transition check
+        deadline = time.time() + 0.5
+        became_half_open = False
+        while time.time() < deadline:
+            if cb.can_execute():
+                became_half_open = True
+                break
+            time.sleep(0.02)
+
+        assert became_half_open is True
+        assert cb.state == CircuitBreakerState.HALF_OPEN
 
         # Fail in half-open
         cb.record_failure("stage1", "Error 2")
         assert cb.state == CircuitBreakerState.OPEN
 
-    def test_get_status(self):
+    def test_get_status(self, tmp_path):
         """Test getting circuit breaker status."""
         from app.coordination.data_pipeline_orchestrator import CircuitBreaker
 
-        cb = CircuitBreaker(failure_threshold=3)
+        cb = CircuitBreaker(
+            failure_threshold=3,
+            db_path=tmp_path / "circuit_breaker.db",
+        )
         cb.record_failure("sync", "Error 1")
         cb.record_success("sync")
 
@@ -196,14 +218,17 @@ class TestCircuitBreaker:
         assert "failures_by_stage" in status
         assert status["failures_by_stage"]["sync"] == 1
 
-    def test_manual_reset(self):
+    def test_manual_reset(self, tmp_path):
         """Test manual circuit reset."""
         from app.coordination.data_pipeline_orchestrator import (
             CircuitBreaker,
             CircuitBreakerState,
         )
 
-        cb = CircuitBreaker(failure_threshold=2)
+        cb = CircuitBreaker(
+            failure_threshold=2,
+            db_path=tmp_path / "circuit_breaker.db",
+        )
         cb.record_failure("stage1", "Error 1")
         cb.record_failure("stage1", "Error 2")
         assert cb.state == CircuitBreakerState.OPEN
@@ -284,14 +309,14 @@ class TestDaemonAdapters:
     def test_get_daemon_adapter(self):
         """Test getting adapter instance by daemon type."""
         from app.coordination.daemon_adapters import (
-            DistillationDaemonAdapter,
+            ConfigurableDaemonAdapter,
             get_daemon_adapter,
         )
         from app.coordination.daemon_manager import DaemonType
 
         adapter = get_daemon_adapter(DaemonType.DISTILLATION)
         assert adapter is not None
-        assert isinstance(adapter, DistillationDaemonAdapter)
+        assert isinstance(adapter, ConfigurableDaemonAdapter)
         assert adapter.daemon_type == DaemonType.DISTILLATION
 
     def test_adapter_returns_none_for_unknown(self):
@@ -327,9 +352,9 @@ class TestBandwidthManager:
         from app.coordination.sync_bandwidth import BandwidthConfig
 
         config = BandwidthConfig()
-        assert config.default_bwlimit_kbps == 10000  # 10 MB/s
-        assert config.max_concurrent_per_host == 2
-        assert config.max_concurrent_total == 8
+        assert config.default_bwlimit_kbps == 25000  # 25 MB/s
+        assert config.max_concurrent_per_host == 5
+        assert config.max_concurrent_total == 12
 
     def test_bandwidth_allocation_creation(self):
         """Test BandwidthAllocation creation."""

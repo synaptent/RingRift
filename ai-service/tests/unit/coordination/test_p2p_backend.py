@@ -14,6 +14,7 @@ import pytest
 
 from app.coordination.p2p_backend import (
     P2P_DEFAULT_PORT,
+    P2P_HTTP_TIMEOUT,
     P2PBackend,
     P2PNodeInfo,
     _is_loopback,
@@ -190,7 +191,7 @@ class TestP2PBackend:
         backend = P2PBackend("http://localhost:8770")
 
         assert backend.leader_url == "http://localhost:8770"
-        assert backend.timeout == 30
+        assert backend.timeout == P2P_HTTP_TIMEOUT
 
     def test_init_strips_trailing_slash(self):
         """Test that trailing slash is stripped from URL."""

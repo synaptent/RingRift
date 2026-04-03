@@ -628,7 +628,7 @@ class TestGetStabilitySummary:
         result = get_stability_summary("square8_xp")
 
         assert "error" in result
-        assert "Invalid player count" in result["error"]
+        assert "Invalid config_key format" in result["error"]
 
     def test_custom_participant_id(self):
         """Test custom participant_id."""

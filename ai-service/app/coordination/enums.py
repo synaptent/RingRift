@@ -194,7 +194,4 @@ __all__ = [
     "RecoveryStatus",
     "LeadershipRole",
     "ClusterNodeRole",
-    # Deprecated aliases (for backward compatibility)
-    "DataType",
-    "RecoveryAction",
 ]

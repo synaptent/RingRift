@@ -451,19 +451,22 @@ class TestDataConsolidationDaemon:
     @pytest.mark.asyncio
     async def test_health_check_healthy(self, daemon):
         """Test health check when fully healthy."""
+        from app.coordination.contracts import CoordinatorStatus
+
         daemon._running = True
         daemon._subscribed = True
 
         health = daemon.health_check()
 
         assert health.healthy is True
-        assert health.status == "running"
+        assert health.status == CoordinatorStatus.RUNNING
 
     @pytest.mark.asyncio
     async def test_event_emission_on_consolidation(self, daemon, source_db):
         """Test that CONSOLIDATION events are emitted."""
-        with patch('app.distributed.data_events.emit_data_event',
-                   new_callable=AsyncMock) as mock_emit:
+        with patch(
+            "app.coordination.data_consolidation_daemon.safe_emit_event"
+        ) as mock_emit:
             await daemon._consolidate_config("hex8", 2)
 
             # Should emit CONSOLIDATION_STARTED and CONSOLIDATION_COMPLETE

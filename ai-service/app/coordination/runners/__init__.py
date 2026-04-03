@@ -67,6 +67,7 @@ from app.coordination.runners.sync_runners import (  # noqa: E402, F401
     create_comprehensive_model_scan,
 )
 from app.coordination.runners.health_runners import (  # noqa: E402, F401
+    create_canonical_model_watchdog,
     create_cluster_monitor,
     create_cluster_watchdog,
     create_coordinator_health_monitor,
@@ -75,6 +76,7 @@ from app.coordination.runners.health_runners import (  # noqa: E402, F401
     create_health_server,
     create_model_performance_watchdog,
     create_node_health_monitor,
+    create_pipeline_health_watchdog,
     create_quality_monitor,
     create_queue_monitor,
     create_system_health_monitor,
@@ -92,8 +94,10 @@ from app.coordination.runners.training_runners import (  # noqa: E402, F401
     create_gauntlet_feedback,
     create_nnue_training,
     create_parity_validation,
+    create_selfplay_scheduler,
     create_selfplay_coordinator,
     create_tournament_daemon,
+    create_training_coordinator,
     create_training_trigger,
     create_unified_promotion,
 )
@@ -131,6 +135,7 @@ from app.coordination.runners.operations_runners import (  # noqa: E402, F401
     create_connectivity_recovery,
     create_coordinator_disk_manager,
     create_curriculum_integration,
+    create_data_availability,
     create_data_cleanup,
     create_data_consolidation,
     create_disk_space_manager,

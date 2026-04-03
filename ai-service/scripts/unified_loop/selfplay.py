@@ -15,6 +15,7 @@ import asyncio
 import logging
 import os
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -157,6 +158,7 @@ class LocalSelfplayGenerator:
         output_dir: Path | None = None,
         num_workers: int | None = None,
         training_scheduler: Any | None = None,
+        improvement_priority_boost_fn: Callable[[str], float] | None = None,
     ):
         self.state = state
         self.event_bus = event_bus
@@ -168,6 +170,12 @@ class LocalSelfplayGenerator:
         self._training_scheduler = training_scheduler
         # Reference to signal computer for evaluation feedback loop
         self._signal_computer = None
+        # Improvement optimizer priority hook. Injectable for deterministic tests.
+        self._improvement_priority_boost_fn = (
+            improvement_priority_boost_fn
+            if improvement_priority_boost_fn is not None
+            else (get_selfplay_priority_boost if HAS_IMPROVEMENT_OPTIMIZER else None)
+        )
         # Curriculum weights from training loop (Phase 3.1)
         self._curriculum_weights: dict[str, float] = {}
 
@@ -301,9 +309,9 @@ class LocalSelfplayGenerator:
 
             # Factor 5: Improvement optimizer - amplify successful patterns
             # Weight: up to 15% boost for configs on promotion streaks
-            if HAS_IMPROVEMENT_OPTIMIZER and get_selfplay_priority_boost:
+            if self._improvement_priority_boost_fn:
                 try:
-                    improvement_boost = get_selfplay_priority_boost(config_key)
+                    improvement_boost = self._improvement_priority_boost_fn(config_key)
                     if improvement_boost != 0:
                         priority += improvement_boost
                         if improvement_boost > 0:
@@ -370,9 +378,9 @@ class LocalSelfplayGenerator:
                     pass  # Silent fallback if signal computation fails
 
             # Factor 5: Improvement optimizer - amplify successful patterns
-            if HAS_IMPROVEMENT_OPTIMIZER and get_selfplay_priority_boost:
+            if self._improvement_priority_boost_fn:
                 try:
-                    improvement_boost = get_selfplay_priority_boost(config_key)
+                    improvement_boost = self._improvement_priority_boost_fn(config_key)
                     priority += improvement_boost
                 except (AttributeError, TypeError, ValueError, KeyError, RuntimeError):
                     pass  # Silent fallback

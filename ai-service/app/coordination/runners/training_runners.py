@@ -38,8 +38,19 @@ async def create_data_pipeline() -> None:
 
 
 async def create_continuous_training_loop() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): CONTINUOUS_TRAINING_LOOP")
+
+
+async def create_selfplay_scheduler() -> None:
+    """Backward-compatible alias for the scheduler daemon surface.
+
+    ImportError handling delegates to create_selfplay_coordinator().
+    """
+    return await create_selfplay_coordinator()
 
 
 async def create_selfplay_coordinator() -> None:
@@ -64,6 +75,21 @@ async def create_selfplay_coordinator() -> None:
             await asyncio.sleep(3600)  # Sleep 1 hour, wake up to check for shutdown
     except ImportError as e:
         logger.error(f"SelfplayScheduler not available: {e}")
+        raise
+
+
+async def create_training_coordinator() -> None:
+    """Create and run the TrainingCoordinator daemon wrapper."""
+    try:
+        from app.coordination.training_coordinator import (
+            get_training_coordinator_daemon,
+        )
+
+        daemon = get_training_coordinator_daemon()
+        await daemon.start()
+        await _wait_for_daemon(daemon)
+    except ImportError as e:
+        logger.error(f"TrainingCoordinatorDaemon not available: {e}")
         raise
 
 

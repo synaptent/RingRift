@@ -468,11 +468,16 @@ class TestNodeAvailabilityIntegration:
         daemon = NodeAvailabilityDaemon(config)
         daemon._config_updater = ConfigUpdater(config_path=config_path, dry_run=True)
 
-        # Run one cycle (will fail gracefully if no API keys)
-        await daemon._run_cycle()
+        try:
+            # Run one cycle (will fail gracefully if no API keys)
+            await daemon._run_cycle()
 
-        # Verify stats were updated
-        assert daemon._stats.cycles_completed == 1
+            # _run_cycle() updates daemon-local stats directly; HandlerBase
+            # increments its generic cycle counter only inside the outer run loop.
+            assert daemon._daemon_stats.cycles_completed == 1
+            assert daemon.get_status()["stats"]["cycles_completed"] == 1
+        finally:
+            await daemon.stop()
 
 
 if __name__ == "__main__":

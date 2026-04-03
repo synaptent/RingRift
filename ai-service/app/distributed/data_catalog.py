@@ -950,9 +950,15 @@ class DataCatalog:
                     if source is None:
                         continue
 
-                    # Apply remaining filters
+                    # Apply remaining filters. If the compressed-size estimate
+                    # falls below min_samples, re-check accurately before
+                    # discarding because highly compressible NPZs can be badly
+                    # underestimated.
                     if source.sample_count < min_samples:
-                        continue
+                        accurate_source = self._analyze_npz_file(npz_path)
+                        if accurate_source is None or accurate_source.sample_count < min_samples:
+                            continue
+                        source = accurate_source
                     if max_age_hours and source.age_hours > max_age_hours:
                         continue
 
@@ -1134,8 +1140,16 @@ class DataCatalog:
             # Already sorted by recency in discover_npz_files
             return sources[0]
 
-        # Otherwise prefer largest (most samples)
-        return max(sources, key=lambda s: s.sample_count)
+        # Otherwise prefer the dataset with the most actual samples.
+        # Fast discovery estimates sample count from compressed file size, which
+        # can badly under-rank highly compressible NPZs. Re-analyze the matching
+        # candidates accurately before choosing.
+        accurate_sources: list[NPZDataSource] = []
+        for source in sources:
+            accurate_source = self._analyze_npz_file(source.path)
+            accurate_sources.append(accurate_source or source)
+
+        return max(accurate_sources, key=lambda s: s.sample_count)
 
     def get_npz_stats(self) -> dict[str, Any]:
         """Get statistics about available NPZ files.
@@ -1143,7 +1157,10 @@ class DataCatalog:
         Returns:
             Dictionary with NPZ statistics
         """
-        all_npz = self.discover_npz_files()
+        all_npz = [
+            self._analyze_npz_file(source.path) or source
+            for source in self.discover_npz_files()
+        ]
 
         stats: dict[str, Any] = {
             "total_files": len(all_npz),

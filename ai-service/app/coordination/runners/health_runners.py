@@ -68,8 +68,33 @@ async def create_node_health_monitor() -> None:
 
 
 async def create_system_health_monitor() -> None:
-    """Deprecated. This daemon type has been removed."""
+    """Deprecated. This daemon type has been removed.
+
+    No ImportError path is needed because this runner is now a no-op.
+    """
     logger.debug("Deprecated daemon runner called (no-op): SYSTEM_HEALTH_MONITOR")
+
+
+async def create_canonical_model_watchdog() -> None:
+    """Placeholder for the canonical model watchdog daemon.
+
+    No ImportError path is needed because the implementation does not exist yet.
+    """
+    logger.warning(
+        "CANONICAL_MODEL_WATCHDOG runner is registered but not implemented yet"
+    )
+    return
+
+
+async def create_pipeline_health_watchdog() -> None:
+    """Placeholder for the pipeline health watchdog daemon.
+
+    No ImportError path is needed because the implementation does not exist yet.
+    """
+    logger.warning(
+        "PIPELINE_HEALTH_WATCHDOG runner is registered but not implemented yet"
+    )
+    return
 
 
 async def create_health_server() -> None:

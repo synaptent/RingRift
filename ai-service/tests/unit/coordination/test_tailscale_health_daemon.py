@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.config.ports import get_p2p_endpoints
 from app.coordination.tailscale_health_daemon import (
     TailscaleHealthConfig,
     TailscaleHealthDaemon,
@@ -96,7 +97,7 @@ class TestTailscaleHealthConfig:
         assert config.tailscale_state_dir == "/var/lib/tailscale"
         assert config.tailscale_socket_dir == "/var/run/tailscale"
         assert config.report_to_p2p is True
-        assert config.p2p_status_endpoint == "http://localhost:8770/tailscale_health"
+        assert config.p2p_status_endpoint == get_p2p_endpoints()["tailscale_health"]
 
     def test_custom_values(self):
         """Should accept custom values."""

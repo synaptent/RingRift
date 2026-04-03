@@ -339,17 +339,17 @@ class TestCascadeBreakerManagerCategory:
         breaker = CascadeBreakerManager(low_threshold_config)
 
         # SYNC category has threshold of 2
-        breaker.record_restart(DaemonType.AUTO_SYNC)
+        breaker.record_restart(DaemonType.ELO_SYNC)
 
         # First restart - still allowed
-        allowed, _ = breaker.can_restart(DaemonType.AUTO_SYNC)
+        allowed, _ = breaker.can_restart(DaemonType.ELO_SYNC)
         assert allowed is True
 
         # Second restart - trips the breaker
-        breaker.record_restart(DaemonType.AUTO_SYNC)
+        breaker.record_restart(DaemonType.ELO_SYNC)
 
         # Third attempt - blocked
-        allowed, reason = breaker.can_restart(DaemonType.AUTO_SYNC)
+        allowed, reason = breaker.can_restart(DaemonType.ELO_SYNC)
         assert allowed is False
         assert "category_sync_breaker_open" in reason
 
@@ -359,10 +359,10 @@ class TestCascadeBreakerManagerCategory:
 
         # Trip the breaker
         for _ in range(2):
-            breaker.record_restart(DaemonType.AUTO_SYNC)
+            breaker.record_restart(DaemonType.ELO_SYNC)
 
         # Verify blocked
-        allowed, _ = breaker.can_restart(DaemonType.AUTO_SYNC)
+        allowed, _ = breaker.can_restart(DaemonType.ELO_SYNC)
         assert allowed is False
 
         # Simulate cooldown expiry (modify opened_at)
@@ -370,7 +370,7 @@ class TestCascadeBreakerManagerCategory:
         breaker._category_states[category].opened_at = time.time() - 10
 
         # Should be allowed again
-        allowed, reason = breaker.can_restart(DaemonType.AUTO_SYNC)
+        allowed, reason = breaker.can_restart(DaemonType.ELO_SYNC)
         assert allowed is True
         assert reason == "allowed"
 
@@ -380,10 +380,10 @@ class TestCascadeBreakerManagerCategory:
 
         # Trip SYNC category
         for _ in range(2):
-            breaker.record_restart(DaemonType.AUTO_SYNC)
+            breaker.record_restart(DaemonType.ELO_SYNC)
 
         # SYNC should be blocked
-        allowed, _ = breaker.can_restart(DaemonType.AUTO_SYNC)
+        allowed, _ = breaker.can_restart(DaemonType.ELO_SYNC)
         assert allowed is False
 
         # EVENT category should still work
@@ -406,7 +406,7 @@ class TestCascadeBreakerManagerGlobal:
         # Global threshold is 3
         # Use SYNC daemon which is not exempt from global
         for _ in range(3):
-            breaker.record_restart(DaemonType.AUTO_SYNC)
+            breaker.record_restart(DaemonType.ELO_SYNC)
 
         # Global breaker should be open
         assert breaker._global_breaker_open is True
@@ -422,7 +422,7 @@ class TestCascadeBreakerManagerGlobal:
 
         # Trip global breaker
         for _ in range(3):
-            breaker.record_restart(DaemonType.AUTO_SYNC)
+            breaker.record_restart(DaemonType.ELO_SYNC)
 
         assert breaker._global_breaker_open is True
 
@@ -436,7 +436,7 @@ class TestCascadeBreakerManagerGlobal:
 
         # Trip global breaker
         for _ in range(3):
-            breaker.record_restart(DaemonType.AUTO_SYNC)
+            breaker.record_restart(DaemonType.ELO_SYNC)
 
         assert breaker._global_breaker_open is True
 
@@ -473,11 +473,11 @@ class TestCascadeBreakerManagerStats:
 
         # Trip the breaker
         for _ in range(2):
-            breaker.record_restart(DaemonType.AUTO_SYNC)
+            breaker.record_restart(DaemonType.ELO_SYNC)
 
         # Try blocked restarts
         for _ in range(3):
-            allowed, _ = breaker.can_restart(DaemonType.AUTO_SYNC)
+            allowed, _ = breaker.can_restart(DaemonType.ELO_SYNC)
             assert allowed is False
 
         assert breaker._total_blocked == 3
@@ -488,10 +488,10 @@ class TestCascadeBreakerManagerStats:
 
         # Trip the breaker
         for _ in range(2):
-            breaker.record_restart(DaemonType.AUTO_SYNC)
+            breaker.record_restart(DaemonType.ELO_SYNC)
 
         # Try blocked restart
-        allowed, _ = breaker.can_restart(DaemonType.AUTO_SYNC)
+        allowed, _ = breaker.can_restart(DaemonType.ELO_SYNC)
         assert allowed is False
 
         assert breaker._blocked_by_category[DaemonCategory.SYNC] == 1
@@ -659,7 +659,7 @@ class TestEventEmission:
         breaker = CascadeBreakerManager(low_threshold_config)
 
         with patch(
-            "app.coordination.cascade_breaker.safe_emit_event"
+            "app.coordination.safe_event_emitter.safe_emit_event"
         ) as mock_emit:
             # Trip the breaker
             for _ in range(2):
@@ -676,7 +676,7 @@ class TestEventEmission:
         breaker = CascadeBreakerManager(low_threshold_config)
 
         with patch(
-            "app.coordination.cascade_breaker.safe_emit_event"
+            "app.coordination.safe_event_emitter.safe_emit_event"
         ) as mock_emit:
             # Trip global breaker
             for _ in range(3):

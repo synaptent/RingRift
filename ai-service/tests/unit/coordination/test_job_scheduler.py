@@ -313,8 +313,10 @@ class TestPriorityJobScheduler:
 
     def test_next_job_skips_high_disk_usage(self, scheduler):
         """Test next_job skips hosts with high disk usage."""
+        from app.config.thresholds import DISK_PRODUCTION_HALT_PERCENT
+
         hosts = [MockHost(name="host-1")]
-        statuses = [MockStatus(disk_percent=80.0)]  # Over 70% limit
+        statuses = [MockStatus(disk_percent=DISK_PRODUCTION_HALT_PERCENT + 1.0)]
 
         job = ScheduledJob(job_type="test", priority=JobPriority.NORMAL)
         scheduler.schedule(job)

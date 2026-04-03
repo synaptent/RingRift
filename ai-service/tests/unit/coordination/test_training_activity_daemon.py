@@ -10,7 +10,6 @@ Tests cover:
 - Priority sync triggering
 - TRAINING_STARTED event emission
 - Graceful shutdown with final sync
-- Signal handling via BaseDaemon
 """
 
 from __future__ import annotations
@@ -22,7 +21,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.coordination.base_daemon import DaemonConfig
 from app.coordination.training_activity_daemon import (
     TrainingActivityConfig,
     TrainingActivityDaemon,
@@ -43,31 +41,27 @@ class TestTrainingActivityConfig:
         """Test default configuration values."""
         config = TrainingActivityConfig()
 
-        assert config.enabled is True
         assert config.check_interval_seconds == 30
-        assert config.handle_signals is True
         assert config.trigger_priority_sync is True
         assert "app.training.train" in config.training_process_patterns
         assert "train.py" in config.training_process_patterns
 
-    def test_config_inheritance(self):
-        """Test that config inherits from DaemonConfig."""
+    def test_config_is_simplified_dataclass(self):
+        """Test the simplified HandlerBase-era config shape."""
         config = TrainingActivityConfig()
-        assert isinstance(config, DaemonConfig)
+
+        assert not hasattr(config, "enabled")
+        assert not hasattr(config, "handle_signals")
 
     def test_custom_config(self):
         """Test custom configuration values."""
         config = TrainingActivityConfig(
-            enabled=False,
             check_interval_seconds=60,
-            handle_signals=False,
             trigger_priority_sync=False,
             training_process_patterns=["custom_train.py"],
         )
 
-        assert config.enabled is False
         assert config.check_interval_seconds == 60
-        assert config.handle_signals is False
         assert config.trigger_priority_sync is False
         assert config.training_process_patterns == ["custom_train.py"]
 
@@ -75,18 +69,18 @@ class TestTrainingActivityConfig:
         """Test loading config from environment with defaults."""
         config = TrainingActivityConfig.from_env()
 
-        assert config.enabled is True
         assert config.check_interval_seconds == 30
+        assert config.trigger_priority_sync is True
 
     @patch.dict("os.environ", {
-        "RINGRIFT_TRAINING_ACTIVITY_ENABLED": "0",
+        "RINGRIFT_TRAINING_ACTIVITY_INTERVAL": "45",
         "RINGRIFT_TRAINING_ACTIVITY_TRIGGER_SYNC": "0",
     })
     def test_from_env_custom(self):
         """Test loading config from environment variables."""
         config = TrainingActivityConfig.from_env()
 
-        assert config.enabled is False
+        assert config.check_interval_seconds == 45
         assert config.trigger_priority_sync is False
 
 
@@ -117,7 +111,7 @@ class TestTrainingActivityDaemonInit:
     def test_daemon_name(self):
         """Test daemon name is correct."""
         daemon = TrainingActivityDaemon()
-        assert daemon._get_daemon_name() == "TrainingActivityDaemon"
+        assert daemon.name == "TrainingActivityDaemon"
 
     def test_node_id_set(self):
         """Test node_id is set from hostname."""
@@ -495,13 +489,15 @@ class TestLifecycle:
             assert daemon.is_running is False
 
     @pytest.mark.asyncio
-    async def test_start_disabled(self):
-        """Test start when disabled."""
-        config = TrainingActivityConfig(enabled=False)
+    async def test_start_with_sync_disabled(self):
+        """Test start when priority sync is disabled."""
+        config = TrainingActivityConfig(trigger_priority_sync=False)
         daemon = TrainingActivityDaemon(config=config)
 
-        await daemon.start()
-        assert daemon.is_running is False
+        with patch.object(daemon, "_run_cycle", return_value=None):
+            await daemon.start()
+            assert daemon.is_running is True
+            await daemon.stop()
 
     @pytest.mark.asyncio
     async def test_double_start(self):
@@ -532,7 +528,7 @@ class TestGracefulShutdown:
 
         with patch.object(daemon, "_trigger_priority_sync") as mock_sync:
             mock_sync.return_value = None
-            await daemon._on_graceful_shutdown()
+            await daemon._on_stop()
 
         mock_sync.assert_called_once_with("termination")
 
@@ -543,7 +539,7 @@ class TestGracefulShutdown:
         daemon = TrainingActivityDaemon(config=config)
 
         with patch.object(daemon, "_trigger_priority_sync") as mock_sync:
-            await daemon._on_graceful_shutdown()
+            await daemon._on_stop()
 
         mock_sync.assert_not_called()
 

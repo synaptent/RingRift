@@ -17,7 +17,7 @@ import asyncio
 import sqlite3
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch, PropertyMock
 
@@ -679,7 +679,7 @@ class TestHealthCheckerResources:
         mock_mem.available = 8 * (1024**3)
 
         mock_disk = MagicMock()
-        mock_disk.percent = 85.0  # Above critical threshold
+        mock_disk.percent = 97.0  # Above critical threshold
         mock_disk.free = 10 * (1024**3)
 
         with patch("app.distributed.health_checks.psutil.virtual_memory", return_value=mock_mem):
@@ -725,7 +725,7 @@ class TestHealthCheckerResources:
         mock_mem.available = 1 * (1024**3)
 
         mock_disk = MagicMock()
-        mock_disk.percent = 75.0  # Critical
+        mock_disk.percent = 97.0  # Critical
         mock_disk.free = 20 * (1024**3)
 
         with patch("app.distributed.health_checks.psutil.virtual_memory", return_value=mock_mem):
@@ -1137,9 +1137,7 @@ class TestHealthCheckerEvaluation:
             )
         """)
         # Insert a match from 4 hours ago (beyond 2-hour threshold)
-        old_ts = datetime.now(timezone.utc).replace(
-            hour=(datetime.now(timezone.utc).hour - 4) % 24
-        ).isoformat()
+        old_ts = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
         conn.execute("INSERT INTO match_history (timestamp) VALUES (?)", (old_ts,))
         conn.commit()
         conn.close()
@@ -1664,7 +1662,7 @@ class TestIssueDetection:
         mock_mem.available = 8 * (1024**3)
 
         mock_disk = MagicMock()
-        mock_disk.percent = 75.0  # Between 70 (warning) and 90 (critical)
+        mock_disk.percent = 75.0  # Between 70 (warning) and 96 (critical)
         mock_disk.free = 30 * (1024**3)
 
         with patch("app.distributed.health_checks.psutil.virtual_memory", return_value=mock_mem):
@@ -1718,7 +1716,7 @@ class TestIssueDetection:
         mock_mem.available = 4 * (1024**3)
 
         mock_disk = MagicMock()
-        mock_disk.percent = 75.0  # Critical level
+        mock_disk.percent = 97.0  # Critical level
         mock_disk.free = 25 * (1024**3)
 
         with patch("app.distributed.health_checks.psutil.virtual_memory", return_value=mock_mem):

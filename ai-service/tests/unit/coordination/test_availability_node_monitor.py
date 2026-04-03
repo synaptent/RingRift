@@ -167,9 +167,10 @@ class TestNodeMonitor:
 
         result = monitor.health_check()
 
-        assert "healthy" in result
-        assert "message" in result
-        assert "details" in result
+        assert hasattr(result, "healthy")
+        assert hasattr(result, "message")
+        assert hasattr(result, "details")
+        assert result.details["nodes_monitored"] == 0
 
     def test_set_nodes(self):
         """Test setting nodes to monitor."""

@@ -284,8 +284,8 @@ class TestHealthCheck:
 
             # Setup health orchestrator mock
             health_instance = health_mock.return_value
-            health_instance.check_all_nodes = AsyncMock()
-            health_instance.get_summary = MagicMock()
+            health_instance.run_full_health_check = AsyncMock()
+            health_instance.get_cluster_health = AsyncMock()
 
             return daemon, health_instance
 
@@ -293,10 +293,13 @@ class TestHealthCheck:
     async def test_health_check_updates_timestamp(self, daemon_with_health_mock):
         """Test health check updates last check timestamp."""
         daemon, health = daemon_with_health_mock
-        health.get_summary.return_value = MagicMock(
-            healthy_count=10,
-            total_count=10,
-            healthy_percent=100.0,
+        health.get_cluster_health.return_value = MagicMock(
+            total_nodes=10,
+            retired=0,
+            healthy=10,
+            degraded=0,
+            offline=0,
+            unhealthy=0,
         )
 
         initial_time = daemon._last_health_check
@@ -308,10 +311,13 @@ class TestHealthCheck:
     async def test_health_check_increments_counter(self, daemon_with_health_mock):
         """Test health check increments run counter."""
         daemon, health = daemon_with_health_mock
-        health.get_summary.return_value = MagicMock(
-            healthy_count=10,
-            total_count=10,
-            healthy_percent=100.0,
+        health.get_cluster_health.return_value = MagicMock(
+            total_nodes=10,
+            retired=0,
+            healthy=10,
+            degraded=0,
+            offline=0,
+            unhealthy=0,
         )
 
         initial_count = daemon._health_checks_run
@@ -408,15 +414,23 @@ class TestStatsTracking:
             daemon = UnifiedNodeHealthDaemon()
 
             # Setup mocks to return success
-            health_mock.return_value.get_summary.return_value = MagicMock(
-                healthy_count=10,
-                total_count=10,
-                healthy_percent=100.0,
-            )
-            health_mock.return_value.check_all_nodes = AsyncMock()
-            recovery_mock.return_value.run_recovery_cycle = AsyncMock()
-            optimizer_mock.return_value.optimize = AsyncMock()
-            p2p_mock.return_value.ensure_coverage = AsyncMock()
+            health_mock.return_value.get_cluster_health = AsyncMock(return_value=MagicMock(
+                total_nodes=10,
+                retired=0,
+                healthy=10,
+                degraded=0,
+                offline=0,
+                unhealthy=0,
+            ))
+            health_mock.return_value.run_full_health_check = AsyncMock()
+            recovery_mock.return_value.recover_all_unhealthy = AsyncMock(return_value=[])
+            optimizer_mock.return_value.optimize_cluster = AsyncMock(return_value=[])
+            p2p_mock.return_value.check_and_deploy = AsyncMock(return_value=MagicMock(
+                coverage_percent=100.0,
+                nodes_with_p2p=10,
+                total_nodes=10,
+                nodes_needing_deployment=[],
+            ))
 
             return daemon
 
@@ -469,23 +483,32 @@ class TestEventEmission:
              patch("app.coordination.unified_node_health_daemon.RecoveryOrchestrator"), \
              patch("app.coordination.unified_node_health_daemon.UtilizationOptimizer"), \
              patch("app.coordination.unified_node_health_daemon.P2PAutoDeployer"), \
-             patch("app.coordination.unified_node_health_daemon.emit_p2p_cluster_healthy") as emit_mock:
+             patch("app.coordination.unified_node_health_daemon.safe_emit_event_async", new_callable=AsyncMock) as emit_mock:
             from app.coordination.unified_node_health_daemon import UnifiedNodeHealthDaemon
 
             daemon = UnifiedNodeHealthDaemon()
 
             # Mock 100% healthy
-            health_mock.return_value.get_summary.return_value = MagicMock(
-                healthy_count=10,
-                total_count=10,
-                healthy_percent=100.0,
-            )
-            health_mock.return_value.check_all_nodes = AsyncMock()
+            health_mock.return_value.get_cluster_health = AsyncMock(return_value=MagicMock(
+                total_nodes=10,
+                retired=0,
+                healthy=10,
+                degraded=0,
+                offline=0,
+                unhealthy=0,
+            ))
+            health_mock.return_value.run_full_health_check = AsyncMock()
 
             await daemon._run_health_check()
 
-            # Should emit healthy event
-            # Note: Actual implementation may differ
+            emit_mock.assert_awaited_once_with(
+                "P2P_CLUSTER_HEALTHY",
+                {
+                    "healthy_nodes": 10,
+                    "node_count": 10,
+                },
+                context="unified_node_health_daemon",
+            )
 
 
 class TestModuleExports:

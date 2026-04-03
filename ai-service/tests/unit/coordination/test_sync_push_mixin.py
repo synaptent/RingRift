@@ -59,6 +59,7 @@ class MockSyncPushDaemon(SyncPushMixin):
         self._is_broadcast = is_broadcast
         self.config = config or MockAutoSyncConfig()
         self._stats = stats or MockSyncStats()
+        self._sync_stats = self._stats
         self._emitted_failures: list[tuple] = []
         self._emitted_stalls: list[tuple] = []
 
@@ -485,9 +486,12 @@ class TestBroadcastSyncToTarget:
             mock_proc.communicate = AsyncMock(return_value=(b"", b""))
             mock_exec.return_value = mock_proc
 
-            with patch.object(daemon, "get_bandwidth_for_node", return_value=50_000):
-                with patch("app.config.cluster_config.get_cluster_nodes", return_value={}):
-                    result = await daemon.broadcast_sync_to_target(mock_source, mock_target)
+            with patch.object(daemon, "_try_aria2_chunked_pull", new_callable=AsyncMock, return_value=None):
+                with patch("app.coordination.rsync_command_builder.trigger_remote_pull", new_callable=AsyncMock, return_value=False):
+                    with patch.object(daemon, "_check_memory_for_sync", return_value=True):
+                        with patch.object(daemon, "get_bandwidth_for_node", return_value=50_000):
+                            with patch("app.config.cluster_config.get_cluster_nodes", return_value={}):
+                                result = await daemon.broadcast_sync_to_target(mock_source, mock_target)
 
             assert result["success"] is True
             assert result["bytes_transferred"] == 4096
@@ -504,9 +508,12 @@ class TestBroadcastSyncToTarget:
             mock_proc.communicate = AsyncMock(return_value=(b"", b"Permission denied"))
             mock_exec.return_value = mock_proc
 
-            with patch.object(daemon, "get_bandwidth_for_node", return_value=50_000):
-                with patch("app.config.cluster_config.get_cluster_nodes", return_value={}):
-                    result = await daemon.broadcast_sync_to_target(mock_source, mock_target)
+            with patch.object(daemon, "_try_aria2_chunked_pull", new_callable=AsyncMock, return_value=None):
+                with patch("app.coordination.rsync_command_builder.trigger_remote_pull", new_callable=AsyncMock, return_value=False):
+                    with patch.object(daemon, "_check_memory_for_sync", return_value=True):
+                        with patch.object(daemon, "get_bandwidth_for_node", return_value=50_000):
+                            with patch("app.config.cluster_config.get_cluster_nodes", return_value={}):
+                                result = await daemon.broadcast_sync_to_target(mock_source, mock_target)
 
             assert result["success"] is False
             assert "Permission denied" in result["error"]
@@ -521,12 +528,21 @@ class TestBroadcastSyncToTarget:
             mock_proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
             mock_exec.return_value = mock_proc
 
-            with patch.object(daemon, "get_bandwidth_for_node", return_value=50_000):
-                with patch("app.config.cluster_config.get_cluster_nodes", return_value={}):
-                    result = await daemon.broadcast_sync_to_target(mock_source, mock_target)
+            with patch.object(daemon, "_try_aria2_chunked_pull", new_callable=AsyncMock, return_value=None):
+                with patch("app.coordination.rsync_command_builder.trigger_remote_pull", new_callable=AsyncMock, return_value=False):
+                    with patch.object(daemon, "_check_memory_for_sync", return_value=True):
+                        with patch.object(
+                            daemon,
+                            "_robust_push_fallback",
+                            new_callable=AsyncMock,
+                            return_value={"success": False},
+                        ):
+                            with patch.object(daemon, "get_bandwidth_for_node", return_value=50_000):
+                                with patch("app.config.cluster_config.get_cluster_nodes", return_value={}):
+                                    result = await daemon.broadcast_sync_to_target(mock_source, mock_target)
 
             assert result["success"] is False
-            assert result["error"] == "Timeout"
+            assert result["error"] == "Timeout (all transports failed)"
 
 
 class TestCleanupStalePartials:
@@ -588,23 +604,25 @@ class TestBroadcastSyncCycle:
         """Returns 0 when no broadcast targets available."""
         daemon = MockSyncPushDaemon(is_broadcast=True)
 
-        with patch.object(daemon, "get_broadcast_targets", new_callable=AsyncMock, return_value=[]):
-            result = await daemon.broadcast_sync_cycle()
-            assert result == 0
+        with patch.object(daemon, "_check_memory_for_sync", return_value=True):
+            with patch.object(daemon, "get_broadcast_targets", new_callable=AsyncMock, return_value=[]):
+                result = await daemon.broadcast_sync_cycle()
+                assert result == 0
 
     @pytest.mark.asyncio
     async def test_returns_zero_when_no_databases(self):
         """Returns 0 when no databases to sync."""
         daemon = MockSyncPushDaemon(is_broadcast=True)
 
-        with patch.object(
-            daemon, "get_broadcast_targets",
-            new_callable=AsyncMock,
-            return_value=[{"node_id": "node-1", "host": "192.168.1.1"}]
-        ):
-            with patch.object(daemon, "discover_local_databases", return_value=[]):
-                result = await daemon.broadcast_sync_cycle()
-                assert result == 0
+        with patch.object(daemon, "_check_memory_for_sync", return_value=True):
+            with patch.object(
+                daemon, "get_broadcast_targets",
+                new_callable=AsyncMock,
+                return_value=[{"node_id": "node-1", "host": "192.168.1.1"}]
+            ):
+                with patch.object(daemon, "discover_local_databases", return_value=[]):
+                    result = await daemon.broadcast_sync_cycle()
+                    assert result == 0
 
     @pytest.mark.asyncio
     async def test_syncs_all_databases_to_all_targets(self):
@@ -617,18 +635,19 @@ class TestBroadcastSyncCycle:
         ]
         mock_databases = [Path("/tmp/db1.db"), Path("/tmp/db2.db")]
 
-        with patch.object(daemon, "get_broadcast_targets", new_callable=AsyncMock, return_value=mock_targets):
-            with patch.object(daemon, "discover_local_databases", return_value=mock_databases):
-                with patch.object(
-                    daemon, "sync_to_target_with_retry",
-                    new_callable=AsyncMock,
-                    return_value={"success": True}
-                ) as mock_sync:
-                    result = await daemon.broadcast_sync_cycle()
+        with patch.object(daemon, "_check_memory_for_sync", return_value=True):
+            with patch.object(daemon, "get_broadcast_targets", new_callable=AsyncMock, return_value=mock_targets):
+                with patch.object(daemon, "discover_local_databases", return_value=mock_databases):
+                    with patch.object(
+                        daemon, "sync_to_target_with_retry",
+                        new_callable=AsyncMock,
+                        return_value={"success": True}
+                    ) as mock_sync:
+                        result = await daemon.broadcast_sync_cycle()
 
-                    # 2 databases × 2 targets = 4 syncs
-                    assert mock_sync.call_count == 4
-                    assert result == 4
+                        # 2 databases × 2 targets = 4 syncs
+                        assert mock_sync.call_count == 4
+                        assert result == 4
 
     @pytest.mark.asyncio
     async def test_counts_successful_syncs(self):
@@ -648,13 +667,14 @@ class TestBroadcastSyncCycle:
             call_count += 1
             return {"success": call_count % 2 == 1}  # Alternate success/failure
 
-        with patch.object(daemon, "get_broadcast_targets", new_callable=AsyncMock, return_value=mock_targets):
-            with patch.object(daemon, "discover_local_databases", return_value=mock_databases):
-                with patch.object(daemon, "sync_to_target_with_retry", side_effect=alternating_success):
-                    result = await daemon.broadcast_sync_cycle()
+        with patch.object(daemon, "_check_memory_for_sync", return_value=True):
+            with patch.object(daemon, "get_broadcast_targets", new_callable=AsyncMock, return_value=mock_targets):
+                with patch.object(daemon, "discover_local_databases", return_value=mock_databases):
+                    with patch.object(daemon, "sync_to_target_with_retry", side_effect=alternating_success):
+                        result = await daemon.broadcast_sync_cycle()
 
-                    # 2 syncs, 1 success
-                    assert result == 1
+                        # 2 syncs, 1 success
+                        assert result == 1
 
     @pytest.mark.asyncio
     async def test_cleans_partials_periodically(self):
@@ -662,10 +682,11 @@ class TestBroadcastSyncCycle:
         daemon = MockSyncPushDaemon(is_broadcast=True)
         daemon._stats.total_syncs = 10  # Trigger cleanup
 
-        with patch.object(daemon, "get_broadcast_targets", new_callable=AsyncMock, return_value=[]):
-            with patch.object(daemon, "cleanup_stale_partials", new_callable=AsyncMock, return_value=5) as mock_cleanup:
-                await daemon.broadcast_sync_cycle()
-                mock_cleanup.assert_called_once()
+        with patch.object(daemon, "_check_memory_for_sync", return_value=True):
+            with patch.object(daemon, "get_broadcast_targets", new_callable=AsyncMock, return_value=[]):
+                with patch.object(daemon, "cleanup_stale_partials", new_callable=AsyncMock, return_value=5) as mock_cleanup:
+                    await daemon.broadcast_sync_cycle()
+                    mock_cleanup.assert_called_once()
 
 
 class TestProviderDetection:

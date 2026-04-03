@@ -128,8 +128,8 @@ class TestQualityGate:
     """Tests for training quality gate decisions."""
 
     @pytest.mark.asyncio
-    async def test_check_quality_gate_fails_closed_without_quality_data(self):
-        """Training should be blocked when no quality source can provide a score."""
+    async def test_check_quality_gate_bootstraps_without_quality_data(self):
+        """Training should proceed in bootstrap mode when no quality data exists."""
         with tempfile.TemporaryDirectory() as tmpdir:
             config = TrainingTriggerConfig(state_db_path=f"{tmpdir}/state.db")
             daemon = TrainingTriggerDaemon(config=config)
@@ -143,8 +143,8 @@ class TestQualityGate:
             ):
                 quality_ok, reason = await daemon._check_quality_gate("hex8_2p")
 
-        assert quality_ok is False
-        assert reason == "no quality data available"
+        assert quality_ok is True
+        assert reason.startswith("quality ok (")
 
     def test_state_db_initialization(self):
         """Test that state database is created on init."""

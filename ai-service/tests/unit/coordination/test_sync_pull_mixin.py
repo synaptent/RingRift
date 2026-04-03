@@ -60,7 +60,9 @@ class MockSyncPullDaemon(SyncPullMixin):
     def __init__(self):
         self.config = MockConfig()
         self.node_id = "coordinator"
-        self._stats = MockSyncStats()
+        stats = MockSyncStats()
+        self._stats = stats
+        self._sync_stats = stats
         self._circuit_breaker = None
         self._running = True
         self._events_processed = 0
@@ -436,7 +438,7 @@ class TestPullEventEmission:
     @pytest.mark.asyncio
     async def test_emits_pull_sync_completed(self, mock_mixin):
         """Test that pull completion emits event."""
-        with patch("app.distributed.data_events.emit_data_event", new_callable=AsyncMock) as mock_emit:
+        with patch("app.coordination.sync_pull_mixin.safe_emit_event") as mock_emit:
             await mock_mixin._emit_pull_sync_completed(games_pulled=10, sources_count=2)
             mock_emit.assert_called_once()
 

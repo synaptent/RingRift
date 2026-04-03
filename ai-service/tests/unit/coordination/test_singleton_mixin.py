@@ -386,17 +386,17 @@ class TestSingletonMixinIntegration:
         TestDaemon.reset_instance()
 
     def test_with_event_subscription_mixin(self):
-        """Test compatibility with EventSubscribingDaemonMixin."""
-        from app.coordination.event_subscription_mixin import EventSubscribingDaemonMixin
+        """Test compatibility with the consolidated EventSubscriptionMixin."""
+        from app.coordination.mixins import EventSubscriptionMixin
 
-        class TestDaemon(MockDaemon, SingletonMixin, EventSubscribingDaemonMixin):
+        class TestDaemon(MockDaemon, SingletonMixin, EventSubscriptionMixin):
             def __init__(self):
                 super().__init__("combined_test")
-                self._init_event_subscriptions()
+                EventSubscriptionMixin.__init__(self)
 
         daemon = TestDaemon.get_instance()
-        assert hasattr(daemon, "_event_subscriptions")
-        assert hasattr(daemon, "_event_subscribed")
+        assert hasattr(daemon, "_subscription_ids")
+        assert daemon._subscription_ids == []
 
         # Verify singleton behavior
         same_daemon = TestDaemon.get_instance()

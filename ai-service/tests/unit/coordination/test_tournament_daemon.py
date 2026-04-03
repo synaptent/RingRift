@@ -67,8 +67,8 @@ class TestTournamentDaemonConfig:
         assert config.trigger_on_model_promoted is True  # Jan 2026: Changed default to True
         assert config.enable_periodic_ladder is True
         assert config.ladder_interval_seconds == 3600.0
-        assert config.games_per_evaluation == 20
-        assert config.games_per_baseline == 10
+        assert config.games_per_evaluation == 50  # Feb 2026: raised for statistical confidence
+        assert config.games_per_baseline == 20
         assert "random" in config.baselines
         assert "heuristic" in config.baselines
 

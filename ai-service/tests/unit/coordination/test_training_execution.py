@@ -545,60 +545,29 @@ class TestEmitTrainingFailed:
     @pytest.mark.asyncio
     async def test_successful_emission(self):
         """Test successful failure event emission."""
-        # Create mock modules
-        mock_data_events = MagicMock()
-        mock_data_events.DataEventType = MagicMock()
-        mock_data_events.DataEventType.TRAINING_FAILED = MagicMock()
+        with patch(
+            "app.coordination.event_emission_helpers.safe_emit_event",
+            return_value=True,
+        ) as mock_emit:
+            result = await emit_training_failed("hex8_2p", "timeout")
 
-        mock_event_router = MagicMock()
-        mock_event_router.emit_event = MagicMock()
-
-        with patch.dict(
-            "sys.modules",
-            {
-                "app.distributed.data_events": mock_data_events,
-                "app.coordination.event_router": mock_event_router,
-            },
-        ):
-            # Reload to pick up mocks
-            import importlib
-            import app.coordination.training_execution as te
-            importlib.reload(te)
-
-            result = await te.emit_training_failed("hex8_2p", "timeout")
-
-        # Result depends on mock setup
-        assert result in (True, False)
+        assert result is True
+        mock_emit.assert_called_once()
+        event_type, payload = mock_emit.call_args.args[:2]
+        assert event_type == "TRAINING_FAILED"
+        assert payload["config_key"] == "hex8_2p"
+        assert payload["reason"] == "timeout"
 
     @pytest.mark.asyncio
     async def test_import_error_handling(self):
         """Test graceful handling when module not available."""
-        import sys
-
-        # Create modules that raise ImportError when accessed
-        class RaisingModule:
-            def __getattr__(self, name):
-                raise ImportError("Module not available for testing")
-
-        original_data_events = sys.modules.get("app.distributed.data_events")
-        original_event_router = sys.modules.get("app.coordination.event_router")
-
-        sys.modules["app.distributed.data_events"] = RaisingModule()
-        sys.modules["app.coordination.event_router"] = RaisingModule()
-
-        try:
+        with patch(
+            "app.coordination.event_emission_helpers.safe_emit_event",
+            side_effect=ImportError("Module not available for testing"),
+        ):
             result = await emit_training_failed("hex8_2p", "timeout")
-            # Should return False due to caught ImportError
-            assert result is False
-        finally:
-            if original_data_events is not None:
-                sys.modules["app.distributed.data_events"] = original_data_events
-            else:
-                sys.modules.pop("app.distributed.data_events", None)
-            if original_event_router is not None:
-                sys.modules["app.coordination.event_router"] = original_event_router
-            else:
-                sys.modules.pop("app.coordination.event_router", None)
+
+        assert result is False
 
 
 class TestDispatchTrainingToQueue:

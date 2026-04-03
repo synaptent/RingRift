@@ -36,11 +36,11 @@ from typing import Any
 from app.config.cluster_config import (
     ClusterNode,
     EloSyncConfig,
-    get_cluster_nodes,
-    get_active_nodes,
-    get_coordinator_node,
-    get_elo_sync_config,
-    load_cluster_config,
+    get_cluster_nodes as _get_cluster_nodes,
+    get_active_nodes as _get_active_nodes,
+    get_coordinator_node as _get_coordinator_node,
+    get_elo_sync_config as _get_elo_sync_config,
+    load_cluster_config as _load_cluster_config,
 )
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -72,18 +72,70 @@ def load_hosts_config() -> dict[str, Any]:
         DeprecationWarning,
         stacklevel=2,
     )
-    config = load_cluster_config()
-    # Reconstruct the raw format for backward compatibility
-    return {
-        "hosts": config.hosts_raw,
-        "elo_sync": {
-            "coordinator": config.elo_sync.coordinator,
-            "sync_port": config.elo_sync.sync_port,
-            "sync_interval": config.elo_sync.sync_interval,
-            "divergence_threshold": config.elo_sync.divergence_threshold,
-            "transports": config.elo_sync.transports,
-        },
-    }
+    config_path = _resolve_config_path()
+    if not config_path.exists():
+        return {}
+
+    try:
+        import yaml
+    except ImportError:
+        return {}
+
+    try:
+        with open(config_path) as f:
+            data = yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+
+    return data if isinstance(data, dict) else {}
+
+
+def _resolve_config_path(config_path: str | Path | None = None) -> Path:
+    """Resolve the effective config path for legacy cluster_hosts callers.
+
+    The historical contract for this shim was that patching HOSTS_CONFIG
+    changed all helper behavior. Keep honoring that even though the
+    underlying implementation now lives in app.config.cluster_config.
+    """
+    return Path(config_path) if config_path is not None else Path(HOSTS_CONFIG)
+
+
+def load_cluster_config(
+    config_path: str | Path | None = None,
+    *,
+    force_reload: bool = False,
+):
+    """Load cluster config honoring the legacy HOSTS_CONFIG override."""
+    return _load_cluster_config(_resolve_config_path(config_path), force_reload=force_reload)
+
+
+def get_elo_sync_config(config_path: str | Path | None = None) -> EloSyncConfig:
+    """Get Elo sync config honoring the legacy HOSTS_CONFIG override."""
+    return _get_elo_sync_config(_resolve_config_path(config_path))
+
+
+def get_cluster_nodes(config_path: str | Path | None = None) -> dict[str, ClusterNode]:
+    """Get cluster nodes honoring the legacy HOSTS_CONFIG override."""
+    resolved_path = _resolve_config_path(config_path)
+    nodes = _get_cluster_nodes(resolved_path)
+    raw_hosts = _load_cluster_config(resolved_path).hosts_raw
+    default_data_port = _get_default_data_server_port()
+
+    for name, node in nodes.items():
+        if "data_server_port" not in raw_hosts.get(name, {}):
+            node.data_server_port = default_data_port
+
+    return nodes
+
+
+def get_active_nodes(config_path: str | Path | None = None) -> list[ClusterNode]:
+    """Get active nodes honoring the legacy HOSTS_CONFIG override."""
+    return _get_active_nodes(_resolve_config_path(config_path))
+
+
+def get_coordinator_node(config_path: str | Path | None = None) -> ClusterNode | None:
+    """Get the coordinator node honoring the legacy HOSTS_CONFIG override."""
+    return _get_coordinator_node(_resolve_config_path(config_path))
 
 
 # NOTE: The following functions were removed Dec 27, 2025 (now imported from cluster_config):

@@ -263,8 +263,9 @@ class TestWorkerClient:
         client = WorkerClient("localhost:8080")
         result = client.health_check()
 
-        assert result["status"] == "healthy"
-        assert result["memory"]["total_gb"] == 32
+        assert result.healthy is True
+        assert result.details["remote_response"]["status"] == "healthy"
+        assert result.details["remote_response"]["memory"]["total_gb"] == 32
 
     @patch("app.distributed.client.urlopen")
     def test_health_check_http_error(self, mock_urlopen):
@@ -280,8 +281,9 @@ class TestWorkerClient:
         client = WorkerClient("localhost:8080")
         result = client.health_check()
 
-        assert result["status"] == "error"
-        assert "HTTP 500" in result["error"]
+        assert result.healthy is False
+        assert result.status.value == "error"
+        assert "HTTP error: 500" in result.message
 
     @patch("app.distributed.client.urlopen")
     def test_health_check_url_error(self, mock_urlopen):
@@ -291,8 +293,9 @@ class TestWorkerClient:
         client = WorkerClient("localhost:8080")
         result = client.health_check()
 
-        assert result["status"] == "error"
-        assert "URL error" in result["error"]
+        assert result.healthy is False
+        assert result.status.value == "error"
+        assert "URL error" in result.message
 
     @patch("app.distributed.client.urlopen")
     def test_health_check_timeout(self, mock_urlopen):
@@ -302,8 +305,9 @@ class TestWorkerClient:
         client = WorkerClient("localhost:8080")
         result = client.health_check()
 
-        assert result["status"] == "error"
-        assert "timeout" in result["error"].lower()
+        assert result.healthy is False
+        assert result.status.value == "error"
+        assert "timeout" in result.message.lower()
 
     @patch("app.distributed.client.urlopen")
     def test_is_healthy_true(self, mock_urlopen):
