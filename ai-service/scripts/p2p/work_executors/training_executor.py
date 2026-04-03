@@ -790,7 +790,7 @@ async def execute_training_work(
                     return False
                 logger.info(f"Successfully replaced corrupt NPZ for {config_key}")
         except ImportError:
-            pass  # Validation module not available on this node
+            logger.warning(f"NPZ validation module not available — skipping validation for {config_key}")
         cmd.extend(["--data-path", str(npz_path)])
     else:
         # Feb 2026: NPZ not available locally. Try to fetch from another node.

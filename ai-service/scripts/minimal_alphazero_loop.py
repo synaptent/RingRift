@@ -320,6 +320,8 @@ def main() -> None:
     logf = Path(args.log_file) if args.log_file else wdir / "metrics.jsonl"
     logf.parent.mkdir(parents=True, exist_ok=True)
     promos, elo = 0, 1500.0
+    consec_failures = 0  # Circuit breaker: stop after repeated failures
+    MAX_CONSEC_FAILURES = 3
 
     # Resume: find the last completed iteration to avoid overwriting data
     existing = sorted(wdir.glob("iter_*.npz"))
@@ -352,18 +354,26 @@ def main() -> None:
         npath = wdir / f"iter_{it:03d}.npz"
         cpath = mdir / f"candidate_{it:03d}.pth"
 
+        # Circuit breaker: stop wasting GPU on repeated failures
+        if consec_failures >= MAX_CONSEC_FAILURES:
+            logger.error(f"CIRCUIT BREAKER: {consec_failures} consecutive failures. "
+                         f"Stopping to avoid wasting GPU. Fix the issue and restart.")
+            break
+
         # 1. SELFPLAY
         logger.info(f"[1/5] Selfplay: {args.games_per_iter} games, budget={args.budget}, "
                      f"randomness={args.selfplay_randomness}")
         sp = run_selfplay(str(best), args.games_per_iter, jpath, args.budget,
                           randomness=args.selfplay_randomness)
         if sp["completed"] == 0:
-            logger.error("No games completed, skipping"); continue
+            logger.error("No games completed, skipping")
+            consec_failures += 1; continue
 
         # 2. EXPORT
         logger.info("[2/5] Export JSONL -> NPZ")
         if not export_npz(jpath, npath):
-            logger.error("Export failed, skipping"); continue
+            logger.error("Export failed, skipping")
+            consec_failures += 1; continue
 
         # 3. TRAIN (using sliding window of recent NPZ files for more data)
         # Accumulate data from recent iterations — much better than single-iteration training.
@@ -394,7 +404,11 @@ def main() -> None:
         logger.info(f"[3/5] Train (epochs={args.epochs}, bs={args.batch_size})")
         ti = train_model(train_npz, cpath, best, args.epochs, args.batch_size, args.lr)
         if not ti or not cpath.exists():
-            logger.error("Training failed, skipping"); continue
+            logger.error("Training failed, skipping")
+            consec_failures += 1; continue
+
+        # Training succeeded — reset circuit breaker
+        consec_failures = 0
 
         # 4. EVALUATE
         logger.info(f"[4/5] Evaluate ({args.eval_games} games)")
