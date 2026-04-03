@@ -61,7 +61,7 @@ from app.coordination.unified_distribution_daemon import (
     wait_for_model_availability,
 )
 
-from app.coordination.handler_base import EventHandlerConfig, HandlerBase
+from app.coordination.handler_base import HandlerBase
 
 # December 2025: Gauntlet evaluation
 # Jan 13, 2026: Added _create_gauntlet_recording_config for gauntlet game recording
@@ -313,12 +313,8 @@ class EvaluationDaemon(HandlerBase):
     """
 
     def __init__(self, config: EvaluationConfig | None = None):
-        # Initialize HandlerBase with custom config
-        handler_config = EventHandlerConfig()
-        handler_config.register_with_registry = False  # Singleton pattern managed externally
-        super().__init__("EvaluationDaemon", handler_config)
-
-        self.config = config or EvaluationConfig()
+        resolved_config = config or EvaluationConfig()
+        super().__init__(name="EvaluationDaemon", config=resolved_config)
         self._eval_stats = EvaluationStats()  # Use _eval_stats to avoid conflict with parent stats property
         self._evaluation_queue: asyncio.Queue = asyncio.Queue()
         self._active_evaluations: set[str] = set()
@@ -3184,9 +3180,22 @@ class EvaluationDaemon(HandlerBase):
             elo_service = get_elo_service()
             model_name = Path(model_path).stem
 
-            # Try to get rating - returns None if not found
-            rating = elo_service.get_rating(model_name)
-            return rating is not None
+            # Try to get rating — need board_type/num_players for the new API.
+            # These checks scan models without config context, so try all configs.
+            _CONFIGS = [
+                ("hex8", 2), ("hex8", 3), ("hex8", 4),
+                ("square8", 2), ("square8", 3), ("square8", 4),
+                ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
+                ("square19", 2), ("square19", 3), ("square19", 4),
+            ]
+            for bt, np_int in _CONFIGS:
+                try:
+                    rating = elo_service.get_rating(model_name, bt, np_int)
+                    if rating is not None:
+                        return True
+                except Exception:
+                    pass
+            return False
 
         except ImportError:
             logger.debug("[EvaluationDaemon] EloService not available for Elo check")
@@ -3222,8 +3231,20 @@ class EvaluationDaemon(HandlerBase):
             )
 
             elo_service = get_elo_service()
-            rating = elo_service.get_rating(composite_id)
-            return rating is None  # Needs eval if no rating
+            _CONFIGS = [
+                ("hex8", 2), ("hex8", 3), ("hex8", 4),
+                ("square8", 2), ("square8", 3), ("square8", 4),
+                ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
+                ("square19", 2), ("square19", 3), ("square19", 4),
+            ]
+            for bt, np_int in _CONFIGS:
+                try:
+                    rating = elo_service.get_rating(composite_id, bt, np_int)
+                    if rating is not None:
+                        return False  # Has rating = doesn't need eval
+                except Exception:
+                    pass
+            return True  # No rating found = needs eval
 
         except ImportError:
             logger.error(
