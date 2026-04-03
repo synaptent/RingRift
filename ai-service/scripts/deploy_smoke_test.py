@@ -29,7 +29,7 @@ CRITICAL_IMPORTS = [
     "app.ai.gumbel_mcts_ai",
     "app.training.train",
     "app.training.env",
-    "app.rules.game_engine",
+    "app.rules.board_manager",
     "app.coordination.handler_base",
     "app.coordination.event_router",
     "app.coordination.daemon_manager",
