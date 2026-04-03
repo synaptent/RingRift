@@ -240,6 +240,8 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
     @property
     def config(self) -> Any | None:
         """Expose the handler configuration for backward compatibility."""
+        if self._config is None:
+            logger.warning(f"[{self._name}] config is None — daemon may not be initialized correctly")
         return self._config
 
     @config.setter

@@ -944,6 +944,12 @@ class AutoExportDaemon(HandlerBase):
         if not state:
             return False
 
+        # Recreate semaphore if bound to a different event loop (singleton restart)
+        if self._export_semaphore is None:
+            self._export_semaphore = asyncio.Semaphore(
+                max(1, self._daemon_config.max_concurrent_exports)
+            )
+
         async with self._export_semaphore:
             # Feb 2026: Cross-process export coordination via SQLite.
             # The semaphore above is in-process only (doesn't limit master_loop/P2P).
