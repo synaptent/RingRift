@@ -169,7 +169,31 @@ def check_minimal(work_dir: Path, max_stale_h: float, min_success: float,
     else:
         results.append(Check("export_pipeline", True, "No data", severity="WARN"))
 
-    # 5. Resource waste
+    # 5. Stale process detection (script newer than running process)
+    script_path = Path(__file__).resolve()
+    try:
+        pids = subprocess.run(
+            ["pgrep", "-f", "minimal_alphazero_loop"],
+            capture_output=True, text=True, timeout=5
+        )
+        if pids.returncode == 0 and script_path.exists():
+            script_mtime = script_path.stat().st_mtime
+            for pid in pids.stdout.strip().split("\n"):
+                if not pid.strip():
+                    continue
+                proc_start = Path(f"/proc/{pid.strip()}").stat().st_mtime if Path(f"/proc/{pid.strip()}").exists() else 0
+                if proc_start > 0 and script_mtime > proc_start:
+                    results.append(Check("stale_process", False,
+                        f"Script updated after process PID {pid.strip()} started — restart needed"))
+                    break
+            else:
+                results.append(Check("stale_process", True, "Process matches deployed script"))
+        else:
+            results.append(Check("stale_process", True, "No process or script to check", severity="WARN"))
+    except Exception:
+        results.append(Check("stale_process", True, "Could not check", severity="WARN"))
+
+    # 6. Resource waste
     wasted_s = sum(
         m.get("selfplay", {}).get("elapsed_s", 0)
         for m in metrics
