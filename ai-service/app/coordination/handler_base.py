@@ -776,16 +776,34 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
 
     async def _main_loop(self) -> None:
         """Main work loop - runs _run_cycle periodically."""
+        consecutive_failures = 0
+        max_consecutive = getattr(self, "_max_consecutive_failures", 10)
+
         while self._running:
             try:
                 await self._run_cycle()
                 self._stats.cycles_completed += 1
                 self._stats.last_activity = time.time()
+                consecutive_failures = 0  # Reset on success
             except asyncio.CancelledError:
                 break
             except Exception as e:
+                consecutive_failures += 1
                 self._record_error(f"Error in _run_cycle: {e}")
-                logger.exception(f"[{self._name}] Error in cycle: {e}")
+                logger.exception(f"[{self._name}] Error in cycle ({consecutive_failures}/{max_consecutive}): {e}")
+
+                if consecutive_failures >= max_consecutive:
+                    logger.error(
+                        f"[{self._name}] CIRCUIT BREAKER: {consecutive_failures} consecutive "
+                        f"failures. Self-stopping to prevent resource waste."
+                    )
+                    self._running = False
+                    break
+                elif consecutive_failures >= max_consecutive // 2:
+                    logger.warning(
+                        f"[{self._name}] DEGRADED: {consecutive_failures} consecutive failures. "
+                        f"Will self-stop at {max_consecutive}."
+                    )
 
             if self._running:
                 await asyncio.sleep(self._cycle_interval)
