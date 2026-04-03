@@ -1114,6 +1114,15 @@ class AutoSyncDaemon(
 
     async def _sync_cycle_inner(self) -> int:
         """Inner sync cycle logic (called with locks held)."""
+        # April 2026: Skip game database broadcast on coordinator.
+        # Training uses S3 NPZs, not synced databases. The broadcast was
+        # rsyncing databases to Lambda nodes 188 times/session with 334
+        # checksum verification failures — wasting CPU/network for data
+        # that isn't consumed by the training pipeline.
+        from app.config.env import env as _env
+        if self._is_broadcast and _env.is_coordinator:
+            return 0
+
         # December 2025: Initialize progress tracking
         self._update_progress(phase="initializing")
 
