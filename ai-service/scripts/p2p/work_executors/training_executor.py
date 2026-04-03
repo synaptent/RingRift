@@ -1166,6 +1166,19 @@ async def execute_training_work(
                     if final_loss > 0:
                         break
 
+            if final_loss == 0.0 and training_samples > 0:
+                message = (
+                    f"Could not parse final_loss from training output for "
+                    f"{config_key}/{model_version} (recorded loss=0.0, "
+                    f"samples={training_samples}). Loss may be inaccurate."
+                )
+                logger.warning(message)
+                _append_work_warning(
+                    work_item,
+                    stage="loss_parsing",
+                    message=message,
+                )
+
             if training_games == 0 and training_samples > 0:
                 avg_moves = 100 if board_type in ("square19", "hexagonal") else 40
                 training_games = max(1, training_samples // avg_moves)

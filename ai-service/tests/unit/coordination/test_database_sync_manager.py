@@ -417,13 +417,12 @@ class TestStatePersistence:
 class TestTransportMethods:
     """Tests for transport methods."""
 
-    def test_sync_via_tailscale_no_ip(self, sync_manager):
+    @pytest.mark.asyncio
+    async def test_sync_via_tailscale_no_ip(self, sync_manager):
         """Test tailscale sync fails without IP."""
         node = SyncNodeInfo(name="test", tailscale_ip=None)
 
-        result = asyncio.get_event_loop().run_until_complete(
-            sync_manager._sync_via_tailscale(node)
-        )
+        result = await sync_manager._sync_via_tailscale(node)
 
         assert result is False
 
