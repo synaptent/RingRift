@@ -723,7 +723,7 @@ class S3SyncDaemon(HandlerBase):
         status = CoordinatorStatus.RUNNING
         if not healthy:
             status = CoordinatorStatus.DEGRADED
-        if not self.config.enabled:
+        if self.config is None or not self.config.enabled:
             status = CoordinatorStatus.STOPPED
 
         return HealthCheckResult(
