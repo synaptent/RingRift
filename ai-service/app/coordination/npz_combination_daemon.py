@@ -164,6 +164,14 @@ class NPZCombinationDaemon(SingletonMixin, HandlerBase):
 
         Triggers combination for the config that just completed export.
         """
+        # April 2026: Skip on coordinator to prevent 40GB+ RAM spikes.
+        # NPZ combination loads multiple multi-GB files into RAM simultaneously.
+        # Training happens on Lambda GPU nodes which fetch from S3 directly.
+        from app.config.env import env as _env
+        if _env.is_coordinator:
+            logger.debug("Skipping NPZ combination on coordinator (memory guard)")
+            return
+
         # Deduplication check
         if self._is_duplicate_event(event):
             logger.debug("Skipping duplicate NPZ_EXPORT_COMPLETE event")
