@@ -21,12 +21,23 @@ logger = logging.getLogger(__name__)
 
 @dataclasses.dataclass
 class DatasetInferenceResult:
-    """Result of dataset metadata inference and validation."""
+    """Result of dataset metadata inference and validation.
+
+    NOTE: hex_in_channels is a misnomer — it stores the input channel count
+    for ALL board types (hex=40, square=56, hex_v3=64). It's kept for backward
+    compatibility; new code should use encoding_channels or the
+    BoardEncodingContract system.
+    """
     board_size: int
     policy_size: int
-    hex_in_channels: int
+    hex_in_channels: int  # Misnamed: actually stores channels for ALL board types
     hex_num_players: int
     use_hex_model: bool
+
+    @property
+    def encoding_channels(self) -> int:
+        """Alias for hex_in_channels that makes intent clear for all board types."""
+        return self.hex_in_channels
     use_hex_v3: bool
     use_hex_v4: bool
     use_hex_v5: bool

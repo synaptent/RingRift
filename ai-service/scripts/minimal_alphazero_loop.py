@@ -185,8 +185,22 @@ def export_npz(jsonl: Path, npz: Path) -> bool:
         return False
     try:
         d = np.load(npz, allow_pickle=True)
+        n_samples = len(d["features"])
+        n_channels = d["features"].shape[1] if len(d["features"].shape) >= 2 else 0
         fsum = float(d["features"].sum())
-        logger.info(f"  exported {len(d['features'])} samples (checksum={fsum:.1f})")
+        logger.info(f"  exported {n_samples} samples, {n_channels}ch (checksum={fsum:.1f})")
+        # Contract validation: catch encoding mismatches immediately
+        try:
+            from app.training.board_encoding_contract import get_expected_channels
+            expected = get_expected_channels(BOARD_ENUM)
+            if n_channels != expected:
+                logger.error(
+                    f"  ENCODING MISMATCH: NPZ has {n_channels}ch but contract "
+                    f"expects {expected}ch for {BOARD_TYPE}. Training will fail!"
+                )
+                return False
+        except ImportError:
+            pass
     except Exception:
         pass
     return True

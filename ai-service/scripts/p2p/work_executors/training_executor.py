@@ -731,6 +731,17 @@ async def execute_training_work(
             node_id=node_id,
         )
 
+    # April 2026: Contract validation — catch encoding mismatches BEFORE GPU work
+    try:
+        from app.models import BoardType as BT
+        from app.training.board_encoding_contract import get_expected_channels
+        bt_enum = BT(board_type)
+        mv = requested_model_version or "v2"
+        expected_ch = get_expected_channels(bt_enum, mv)
+        logger.info(f"[Contract] {config_key}/{mv}: expecting {expected_ch} channels")
+    except Exception as _contract_err:
+        logger.debug(f"[Contract] Validation skipped: {_contract_err}")
+
     # March 11, 2026: Reduced defaults — 50 epochs on batch 256 caused
     # catastrophic forgetting on stale data. 20 epochs on batch 512 gives
     # better gradient estimates and less overfitting to noise.
