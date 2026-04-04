@@ -790,17 +790,19 @@ def infer_dataset_metadata(
         is_main=is_main,
     )
 
-    # Infer hex in_channels if hex model
+    # Infer in_channels from NPZ data for both hex and square boards.
+    # April 2026: Square boards also need correct channel count (56ch)
+    # for the post-model-creation encoding check at train.py:1772.
+    hex_in_channels = _infer_hex_in_channels(
+        data_path=data_path,
+        config=config,
+        model_version=model_version,
+        use_hex_v3=use_hex_v3,
+        use_hex_v4=use_hex_v4,
+        distributed=distributed,
+        is_main=is_main,
+    )
     if use_hex_model:
-        hex_in_channels = _infer_hex_in_channels(
-            data_path=data_path,
-            config=config,
-            model_version=model_version,
-            use_hex_v3=use_hex_v3,
-            use_hex_v4=use_hex_v4,
-            distributed=distributed,
-            is_main=is_main,
-        )
         hex_num_players = MAX_PLAYERS if multi_player else num_players
 
     return DatasetInferenceResult(
