@@ -3170,9 +3170,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--profile",
-        choices=["minimal", "standard", "full"],
+        choices=["minimal", "lean", "standard", "full"],
         default="standard",
-        help="Daemon profile (minimal=sync+health, standard=automation, full=all)",
+        help="Daemon profile (minimal=sync+health, lean=pipeline+health, standard=all automation, full=all)",
     )
     parser.add_argument(
         "--watch",
