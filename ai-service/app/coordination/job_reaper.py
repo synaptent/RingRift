@@ -432,7 +432,8 @@ class JobReaperDaemon:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            await asyncio.wait_for(proc.communicate(), timeout=SSH_TIMEOUT)
+            communicate_task = asyncio.create_task(proc.communicate())
+            await asyncio.wait_for(communicate_task, timeout=SSH_TIMEOUT)
 
             if proc.returncode == 0:
                 logger.info(f"Killed process {pid} on {node_id}")
@@ -443,6 +444,12 @@ class JobReaperDaemon:
                 return False
 
         except asyncio.TimeoutError:
+            if "communicate_task" in locals() and not communicate_task.done():
+                communicate_task.cancel()
+                try:
+                    await communicate_task
+                except asyncio.CancelledError:
+                    pass
             logger.error(f"Timeout killing process {pid} on {node_id}")
             return False
         except Exception as e:

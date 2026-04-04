@@ -253,7 +253,6 @@ async def test_execute_training_work_surfaces_event_and_s3_followup_failures(
 ):
     """Post-training signaling/upload failures should not be silent."""
     import app.coordination.npz_validation as npz_validation
-    import app.coordination.event_router as event_router
     from scripts.p2p.managers import work_discovery_manager
     from scripts.p2p.work_executors import training_executor
 
@@ -285,7 +284,11 @@ async def test_execute_training_work_surfaces_event_and_s3_followup_failures(
     monkeypatch.setattr(training_executor, "_try_fetch_npz_from_s3", fake_s3_fetch)
     monkeypatch.setattr(training_executor, "_try_push_candidate_to_s3", fake_push)
     monkeypatch.setattr(training_executor.asyncio, "create_subprocess_exec", fake_exec)
-    monkeypatch.setattr(event_router, "safe_emit_event", lambda *args, **kwargs: False)
+    monkeypatch.setitem(
+        sys.modules,
+        "app.coordination.event_router",
+        SimpleNamespace(emit_event=lambda *args, **kwargs: False),
+    )
 
     work_item = {"work_id": "work-success"}
     result = await training_executor.execute_training_work(

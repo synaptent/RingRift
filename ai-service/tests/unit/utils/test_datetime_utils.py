@@ -239,7 +239,7 @@ class TestFormatAge:
 
     def test_naive_datetime(self):
         # Naive datetime should be treated as UTC
-        dt = datetime.utcnow() - timedelta(hours=1)
+        dt = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
         result = format_age(dt)
         assert "1h" in result or "59m" in result
 

@@ -101,6 +101,15 @@ _WARNED_CHECKPOINT_METADATA: set[str] = set()
 # Reference to the shared model cache (for direct access in this module)
 _MODEL_CACHE = _get_model_cache()
 
+
+def _env_flag_enabled(name: str) -> bool:
+    """Return True only for explicit truthy env values.
+
+    This avoids treating strings like "0" or "false" as enabled, which can
+    silently force CPU fallback during test runs and local development.
+    """
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
 # Import all constants from canonical SSoT module to avoid duplication.
 # Use importlib to load constants.py directly, bypassing neural_net/__init__.py
 # which would create a circular import (it imports from this module).
@@ -3162,8 +3171,8 @@ class NeuralNetAI(BaseAI):
         # Device detection
         import os
 
-        disable_mps = bool(os.environ.get("RINGRIFT_DISABLE_MPS") or os.environ.get("PYTORCH_MPS_DISABLE"))
-        force_cpu = bool(os.environ.get("RINGRIFT_FORCE_CPU"))
+        disable_mps = _env_flag_enabled("RINGRIFT_DISABLE_MPS") or _env_flag_enabled("PYTORCH_MPS_DISABLE")
+        force_cpu = _env_flag_enabled("RINGRIFT_FORCE_CPU")
 
         # Architecture selection
         # RINGRIFT_NN_ARCHITECTURE can be:

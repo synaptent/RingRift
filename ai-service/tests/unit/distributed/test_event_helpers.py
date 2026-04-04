@@ -640,32 +640,46 @@ class TestSyncWrapper:
         """Test emit_sync when no event loop is running."""
         from app.distributed import event_helpers
 
-        with patch.object(event_helpers, "emit_event_safe", new_callable=AsyncMock) as mock:
-            mock.return_value = True
+        async def fake_emit(*args, **kwargs):
+            return True
 
-            result = event_helpers.emit_sync(
-                event_type="TEST_EVENT",
-                payload={"data": "value"},
-                source="test",
-            )
+        def fake_run(coro):
+            coro.close()
+            return True
 
-            assert isinstance(result, bool)
+        with patch.object(event_helpers, "emit_event_safe", new=fake_emit):
+            with patch("asyncio.run", side_effect=fake_run):
+                result = event_helpers.emit_sync(
+                    event_type="TEST_EVENT",
+                    payload={"data": "value"},
+                    source="test",
+                )
+
+                assert isinstance(result, bool)
 
     def test_emit_sync_existing_loop(self):
         """Test emit_sync when event loop exists."""
         from app.distributed import event_helpers
 
         async def run_test():
-            with patch.object(event_helpers, "emit_event_safe", new_callable=AsyncMock) as mock:
-                mock.return_value = True
+            async def fake_emit(*args, **kwargs):
+                return True
 
+            captured_coroutines = []
+
+            def fake_fire_and_forget(coro, *args, **kwargs):
+                captured_coroutines.append(coro)
+                coro.close()
+
+            with patch.object(event_helpers, "emit_event_safe", new=fake_emit):
                 # In an existing loop, should schedule as fire_and_forget
-                with patch("app.utils.async_utils.fire_and_forget") as ff_mock:
+                with patch("app.utils.async_utils.fire_and_forget", new=fake_fire_and_forget):
                     result = event_helpers.emit_sync(
                         event_type="TEST_EVENT",
                         payload={},
                         source="test",
                     )
+                    assert len(captured_coroutines) == 1
                     return result
 
         # Run in a loop

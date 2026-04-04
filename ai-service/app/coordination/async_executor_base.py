@@ -51,6 +51,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
 import logging
 import time
@@ -257,7 +258,19 @@ class AsyncExecutor:
         Returns:
             Task ID for tracking
         """
+        coro_started = False
+        coro_closed = False
+
+        def close_coro() -> None:
+            nonlocal coro_closed
+            if coro_closed or not hasattr(coro, "close"):
+                return
+            with contextlib.suppress(RuntimeError):
+                coro.close()
+            coro_closed = True
+
         if not self._running:
+            close_coro()
             raise RuntimeError(f"Executor {self.name} is not running")
 
         task_id = str(uuid.uuid4())[:8]
@@ -279,6 +292,7 @@ class AsyncExecutor:
 
                 try:
                     effective_timeout = timeout or self.default_timeout
+                    coro_started = True
                     if effective_timeout:
                         result = await asyncio.wait_for(coro, timeout=effective_timeout)
                     else:
@@ -339,11 +353,19 @@ class AsyncExecutor:
                     raise
 
                 finally:
+                    if not coro_started:
+                        close_coro()
                     # Cleanup
                     self._tasks.pop(task_id, None)
 
         task = asyncio.create_task(wrapped(), name=task_name)
         self._tasks[task_id] = task
+
+        def cleanup_unstarted(task: asyncio.Task[Any]) -> None:
+            if task.cancelled() and not coro_started:
+                close_coro()
+
+        task.add_done_callback(cleanup_unstarted)
 
         return task_id
 
@@ -590,8 +612,12 @@ class TaskGroup:
     ) -> asyncio.Task[T]:
         """Create a task in this group."""
         if not self._started:
+            if hasattr(coro, "close"):
+                coro.close()
             raise RuntimeError("TaskGroup not started - use 'async with TaskGroup():'")
         if self._finished:
+            if hasattr(coro, "close"):
+                coro.close()
             raise RuntimeError("TaskGroup already finished")
 
         task_name = name or f"{self.name}-{len(self._tasks)}"

@@ -83,6 +83,12 @@ class SyncStallHandler:
         Returns:
             True if sync has stalled (exceeded timeout)
         """
+        if timeout <= 0:
+            logger.warning(
+                f"[SyncStallHandler] Sync {sync_id} stalled: non-positive timeout={timeout}s"
+            )
+            return True
+
         elapsed = time.time() - started_at
         if elapsed > timeout:
             logger.warning(

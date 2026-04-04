@@ -14,6 +14,7 @@ Lane 3 Consolidation (2025-12):
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import os
 import random
@@ -44,7 +45,20 @@ def seed_all(seed: int, *, enable_cudnn_determinism: bool = True) -> None:
 
     random.seed(seed)
     np.random.seed(seed)
-    torch.manual_seed(seed)
+    # Use the default generator directly instead of torch.manual_seed().
+    # This avoids the compile/dynamo wrapper path that can import extra
+    # torch._inductor test modules during unrelated pytest slices.
+    torch.default_generator.manual_seed(seed)
+
+    if hasattr(torch, "mps") and hasattr(torch.mps, "_is_in_bad_fork"):
+        if not torch.mps._is_in_bad_fork():
+            with contextlib.suppress(AttributeError):
+                torch.mps.manual_seed(seed)
+
+    if hasattr(torch, "xpu") and hasattr(torch.xpu, "_is_in_bad_fork"):
+        if not torch.xpu._is_in_bad_fork():
+            with contextlib.suppress(AttributeError):
+                torch.xpu.manual_seed_all(seed)
 
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)

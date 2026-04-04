@@ -2372,6 +2372,8 @@ class TrainingCoordinator:
                 return leaderboard[0].elo
         except ImportError:
             logger.debug("[TrainingCoordinator] EloService not available")
+        except (sqlite3.DatabaseError, sqlite3.OperationalError) as e:
+            logger.debug(f"[TrainingCoordinator] Elo lookup unavailable: {e}")
         except (AttributeError, TypeError, IndexError) as e:
             logger.debug(f"[TrainingCoordinator] Could not get current Elo: {e}")
 

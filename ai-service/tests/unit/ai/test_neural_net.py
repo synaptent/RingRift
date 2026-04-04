@@ -574,6 +574,26 @@ class TestNeuralNetAIInit:
         assert ai.device.type == "mps"
         assert ai._use_mps_arch is True
 
+    @patch("app.ai._neural_net_legacy.torch.backends.mps.is_available", return_value=True)
+    @patch("app.ai._neural_net_legacy.torch.cuda.is_available", return_value=False)
+    @patch.dict(
+        "os.environ",
+        {
+            "RINGRIFT_NN_ARCHITECTURE": "auto",
+            "RINGRIFT_FORCE_CPU": "0",
+            "RINGRIFT_DISABLE_MPS": "false",
+        },
+        clear=False,
+    )
+    def test_init_mps_device_ignores_falsey_env_strings(self, mock_cuda, mock_mps, mock_config):
+        """Falsey env strings should not force CPU or disable MPS."""
+        from app.ai.neural_net import NeuralNetAI
+
+        ai = NeuralNetAI(player_number=1, config=mock_config)
+
+        assert ai.device.type == "mps"
+        assert ai._use_mps_arch is True
+
     @patch("app.ai._neural_net_legacy.torch.backends.mps.is_available", return_value=False)
     @patch("app.ai._neural_net_legacy.torch.cuda.is_available", return_value=True)
     def test_init_cuda_device(self, mock_cuda, mock_mps, mock_config):

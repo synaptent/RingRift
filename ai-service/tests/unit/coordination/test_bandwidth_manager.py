@@ -8,16 +8,19 @@ Tests core functionality:
 """
 
 import tempfile
+import warnings
 from pathlib import Path
 
 import pytest
 
-from app.coordination.bandwidth_manager import (
-    BandwidthAllocation,
-    BandwidthManager,
-    TransferPriority,
-    reset_bandwidth_manager,
-)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from app.coordination.bandwidth_manager import (
+        BandwidthAllocation,
+        BandwidthManager,
+        TransferPriority,
+        reset_bandwidth_manager,
+    )
 
 
 @pytest.fixture

@@ -314,20 +314,24 @@ class TestProbing:
     async def test_check_p2p_reachable_success(self, daemon: VoterHealthMonitorDaemon):
         """Test successful P2P health check."""
         with patch("aiohttp.ClientSession") as mock_session_class:
-            mock_response = AsyncMock()
+            mock_response = MagicMock()
             mock_response.status = 200
 
-            mock_session = AsyncMock()
-            mock_session.__aenter__.return_value = mock_session
-            mock_session.__aexit__.return_value = None
-            mock_session.get.return_value.__aenter__.return_value = mock_response
-            mock_session.get.return_value.__aexit__.return_value = None
+            mock_request_ctx = MagicMock()
+            mock_request_ctx.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_request_ctx.__aexit__ = AsyncMock(return_value=None)
 
-            mock_session_class.return_value = mock_session
+            mock_session = MagicMock()
+            mock_session.get.return_value = mock_request_ctx
+
+            mock_client_session = MagicMock()
+            mock_client_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_client_session.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session_class.return_value = mock_client_session
 
             result = await daemon._check_p2p_reachable("100.1.1.1")
-            # Note: Due to async context manager complexity, we test the interface
-            # In production, this would return True on successful HTTP 200
+            assert result is True
 
     @pytest.mark.asyncio
     async def test_check_p2p_reachable_timeout(self, daemon: VoterHealthMonitorDaemon):
@@ -353,7 +357,7 @@ class TestProbing:
         mock_proc = AsyncMock()
         mock_proc.returncode = 0
         mock_proc.wait = AsyncMock(return_value=0)
-        mock_proc.kill = AsyncMock()
+        mock_proc.kill = MagicMock()
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             result = await daemon._check_tailscale_reachable("100.1.1.1")
@@ -363,8 +367,8 @@ class TestProbing:
     async def test_check_tailscale_reachable_timeout(self, daemon: VoterHealthMonitorDaemon):
         """Test Tailscale ping timeout."""
         mock_proc = AsyncMock()
-        mock_proc.wait = AsyncMock(side_effect=asyncio.TimeoutError())
-        mock_proc.kill = AsyncMock()
+        mock_proc.wait = AsyncMock(side_effect=[asyncio.TimeoutError(), 0])
+        mock_proc.kill = MagicMock()
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
             result = await daemon._check_tailscale_reachable("100.1.1.1")

@@ -1,16 +1,20 @@
 from types import SimpleNamespace
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
 from app.models import BoardType
 from app.training import game_gauntlet
 
 
 def test_evaluation_progress_payload_includes_config_key_and_board_type(monkeypatch):
-    mock_router = MagicMock()
+    emitted_payloads = []
+    import app.training.elo_recording as elo_recording
 
-    import app.coordination.event_router as event_router
-
-    monkeypatch.setattr(event_router, "get_router", lambda: mock_router)
+    monkeypatch.setattr(elo_recording, "record_gauntlet_match", lambda **kwargs: None)
+    monkeypatch.setattr(
+        game_gauntlet,
+        "_publish_evaluation_progress",
+        lambda **kwargs: emitted_payloads.append(kwargs),
+    )
 
     monkeypatch.setattr(game_gauntlet, "create_neural_ai", lambda *args, **kwargs: object())
     monkeypatch.setattr(game_gauntlet, "create_baseline_ai", lambda *args, **kwargs: object())
@@ -40,13 +44,11 @@ def test_evaluation_progress_payload_includes_config_key_and_board_type(monkeypa
         parallel_games=1,
     )
 
-    mock_router.publish_sync.assert_called()
-    matching_calls = [
-        call
-        for call in mock_router.publish_sync.call_args_list
-        if len(call.args) >= 2 and call.args[1].get("config_key") == "square19_2p"
-    ]
-    assert matching_calls, "Expected evaluation progress events to be published"
-    payload = matching_calls[-1].args[1]
-    assert payload["config_key"] == "square19_2p"
-    assert payload["board_type"] == "square19"
+    assert emitted_payloads, "Expected evaluation progress events to be published"
+    payload = emitted_payloads[-1]
+    assert payload["board_type"] == BoardType.SQUARE19
+    assert payload["baseline_name"] == "random"
+    assert payload["games_per_opponent"] == 1
+    assert payload["num_players"] == 2
+    assert payload["result"]["wins"] == 1
+    assert payload["result"]["games"] == 1

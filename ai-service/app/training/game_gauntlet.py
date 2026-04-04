@@ -43,6 +43,43 @@ from app.utils.parallel_defaults import get_parallel_games_default
 logger = logging.getLogger(__name__)
 
 
+def _publish_evaluation_progress(
+    *,
+    board_type: Any,
+    baseline_name: str,
+    result: dict[str, int],
+    games_per_opponent: int,
+    num_players: int,
+) -> None:
+    """Best-effort publish of gauntlet progress for live monitoring."""
+    try:
+        from app.coordination.event_router import publish_sync
+
+        board_value = getattr(board_type, "value", board_type)
+        if board_value is None:
+            board_value = "unknown"
+        config_key = f"{board_value}_{num_players}p"
+        current_win_rate = result["wins"] / result["games"] if result["games"] > 0 else 0.0
+        publish_sync(
+            "EVALUATION_PROGRESS",
+            {
+                "config_key": config_key,
+                "board_type": board_value,
+                "baseline": baseline_name,
+                "games_completed": result["games"],
+                "games_total": games_per_opponent,
+                "wins": result["wins"],
+                "losses": result["losses"],
+                "draws": result["draws"],
+                "current_win_rate": current_win_rate,
+                "num_players": num_players,
+            },
+            source="game_gauntlet",
+        )
+    except (ImportError, AttributeError, RuntimeError):
+        pass
+
+
 # ============================================
 # Model Version Auto-Detection (Jan 2026)
 # ============================================
@@ -1952,33 +1989,13 @@ def _evaluate_single_opponent(
                     f"W:{result['wins']} L:{result['losses']} D:{result['draws']} ({current_win_rate:.1f}%)"
                 )
 
-            # Emit EVALUATION_PROGRESS event for real-time monitoring (December 2025)
-            try:
-                from app.coordination.event_router import DataEventType, publish_sync
-
-                board_value = getattr(board_type, "value", board_type)
-                if board_value is None:
-                    board_value = "unknown"
-                config_key = f"{board_value}_{num_players}p"
-                current_win_rate = result["wins"] / result["games"] if result["games"] > 0 else 0.0
-                publish_sync(
-                    DataEventType.EVALUATION_PROGRESS,
-                    {
-                        "config_key": config_key,
-                        "board_type": board_value,
-                        "baseline": baseline_name,
-                        "games_completed": result["games"],
-                        "games_total": games_per_opponent,
-                        "wins": result["wins"],
-                        "losses": result["losses"],
-                        "draws": result["draws"],
-                        "current_win_rate": current_win_rate,
-                        "num_players": num_players,
-                    },
-                    source="game_gauntlet",
-                )
-            except (ImportError, AttributeError, RuntimeError):
-                pass  # Silent fail - progress events are optional
+            _publish_evaluation_progress(
+                board_type=board_type,
+                baseline_name=baseline_name,
+                result=result,
+                games_per_opponent=games_per_opponent,
+                num_players=num_players,
+            )
 
             # Check for early stopping
             if early_stopping:

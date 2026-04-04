@@ -28,6 +28,8 @@ from app.coordination.monitor_base import (
 class TestMonitor(MonitorBase[MonitorConfig]):
     """Concrete test monitor implementation."""
 
+    __test__ = False
+
     def __init__(self, config: MonitorConfig | None = None):
         super().__init__(config)
         self.run_cycle_called = 0

@@ -584,30 +584,52 @@ class PriorityJobScheduler:
                 # Check duration-based availability (December 2025 consolidation)
                 # Uses historical task data to avoid overloading hosts with long-running tasks
                 if _DURATION_SCHEDULER_AVAILABLE:
-                    is_available, _ = get_resource_availability(host_name, job.job_type)
-                    if not is_available:
-                        continue
+                    try:
+                        is_available, _ = get_resource_availability(host_name, job.job_type)
+                    except Exception as e:
+                        logger.warning(
+                            f"[JobScheduler] Duration scheduler availability check failed for "
+                            f"{host_name}/{job.job_type}: {e}"
+                        )
+                    else:
+                        if not is_available:
+                            continue
 
                 # Phase 21.2: Check PID controller for resource saturation
                 # Skip LOW/NORMAL priority jobs if resources are saturated (should_scale_down)
                 if _RESOURCE_OPTIMIZER_AVAILABLE and should_scale_down:
                     resource_type = "gpu" if job.requires_gpu else "cpu"
-                    if job.priority >= JobPriority.NORMAL and should_scale_down(resource_type):
-                        logger.debug(
-                            f"[JobScheduler] Skipping {job.job_type} on {host_name}: "
-                            f"PID controller recommends scaling down {resource_type}"
-                        )
-                        continue
+                    if job.priority >= JobPriority.NORMAL:
+                        try:
+                            should_skip = should_scale_down(resource_type)
+                        except Exception as e:
+                            logger.warning(
+                                f"[JobScheduler] Resource optimizer check failed for "
+                                f"{host_name}/{job.job_type}/{resource_type}: {e}"
+                            )
+                        else:
+                            if should_skip:
+                                logger.debug(
+                                    f"[JobScheduler] Skipping {job.job_type} on {host_name}: "
+                                    f"PID controller recommends scaling down {resource_type}"
+                                )
+                                continue
 
                 # Found a match
                 self._queue.pop(job_idx)
                 job.started_at = time.time()
                 # Update duration estimate from historical data (December 2025 consolidation)
-                job.estimated_duration_seconds = int(estimate_task_duration(
-                    job.job_type,
-                    str(job.config) if job.config else "",
-                    host_name,
-                ))
+                try:
+                    job.estimated_duration_seconds = int(estimate_task_duration(
+                        job.job_type,
+                        str(job.config) if job.config else "",
+                        host_name,
+                    ))
+                except Exception as e:
+                    logger.warning(
+                        f"[JobScheduler] Duration estimate failed for "
+                        f"{host_name}/{job.job_type}: {e}"
+                    )
                 self._running[host_name] = job
                 return (job, host)
 

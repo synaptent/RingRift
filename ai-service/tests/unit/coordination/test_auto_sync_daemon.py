@@ -36,6 +36,17 @@ from app.coordination.auto_sync_daemon import (
 from app.coordination.protocols import CoordinatorStatus, HealthCheckResult
 
 
+class _FakeAsyncProcess:
+    """Minimal subprocess double with async communicate()."""
+
+    def __init__(self, *, returncode: int = 0, communicate_result=(b"", b"")):
+        self.returncode = returncode
+        self._communicate_result = communicate_result
+
+    async def communicate(self):
+        return self._communicate_result
+
+
 # ============================================
 # Test Fixtures
 # ============================================
@@ -707,12 +718,18 @@ class TestEventHandling:
         }
         daemon.config.min_games_to_sync = 10
 
+        fire_calls: list[object] = []
+
+        def mock_fire(coro, *args, **kwargs):
+            fire_calls.append(coro)
+            coro.close()
+
         # Dec 28, 2025: fire_and_forget is now imported in sync_event_mixin.py
-        with patch("app.coordination.sync_event_mixin.fire_and_forget") as mock_fire:
+        with patch("app.coordination.sync_event_mixin.fire_and_forget", new=mock_fire):
             await daemon._on_new_games_available(mock_event)
 
         assert daemon._events_processed == 1
-        mock_fire.assert_called_once()
+        assert len(fire_calls) == 1
 
     @pytest.mark.asyncio
     async def test_on_new_games_available_skips_small_batch(self, daemon):
@@ -725,12 +742,18 @@ class TestEventHandling:
         }
         daemon.config.min_games_to_sync = 10
 
+        fire_calls: list[object] = []
+
+        def mock_fire(coro, *args, **kwargs):
+            fire_calls.append(coro)
+            coro.close()
+
         # Dec 28, 2025: fire_and_forget is now imported in sync_event_mixin.py
-        with patch("app.coordination.sync_event_mixin.fire_and_forget") as mock_fire:
+        with patch("app.coordination.sync_event_mixin.fire_and_forget", new=mock_fire):
             await daemon._on_new_games_available(mock_event)
 
         assert daemon._events_processed == 0
-        mock_fire.assert_not_called()
+        assert fire_calls == []
 
 
 # ============================================
@@ -1328,22 +1351,22 @@ class TestReverseSyncPullStrategy:
     async def test_list_remote_databases_success(self, pull_daemon):
         """Test listing remote databases."""
         # Mock successful SSH command
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (
-            b"/data/games/selfplay_hex8_2p.db\n/data/games/selfplay_square8_2p.db\n",
-            b"",
+        mock_proc = _FakeAsyncProcess(
+            communicate_result=(
+                b"/data/games/selfplay_hex8_2p.db\n/data/games/selfplay_square8_2p.db\n",
+                b"",
+            ),
         )
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            with patch("asyncio.wait_for", return_value=mock_proc.communicate.return_value):
-                result = await pull_daemon._list_remote_databases(
-                    "192.168.1.1", "ubuntu", "~/.ssh/key", "/data/games"
-                )
+            result = await pull_daemon._list_remote_databases(
+                "192.168.1.1", "ubuntu", "~/.ssh/key", "/data/games"
+            )
 
-                # Should return filenames only
-                assert "selfplay_hex8_2p.db" in result
-                assert "selfplay_square8_2p.db" in result
-                assert len(result) == 2
+            # Should return filenames only
+            assert "selfplay_hex8_2p.db" in result
+            assert "selfplay_square8_2p.db" in result
+            assert len(result) == 2
 
     @pytest.mark.asyncio
     async def test_list_remote_databases_timeout(self, pull_daemon):
@@ -1363,43 +1386,40 @@ class TestReverseSyncPullStrategy:
         """Test successful rsync pull."""
         local_path = temp_dir / "test.db"
 
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"", b"")
-        mock_proc.returncode = 0
+        mock_proc = _FakeAsyncProcess(returncode=0, communicate_result=(b"", b""))
 
         with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            with patch("asyncio.wait_for", return_value=mock_proc.communicate.return_value):
-                # Dec 28, 2025: Mock checksum verification to return success
-                with patch(
-                    "app.coordination.sync_integrity.verify_sync_checksum",
-                    new_callable=AsyncMock,
-                    return_value=(True, None),
-                ):
-                    # Create the file to simulate rsync success
-                    local_path.touch()
+            # Dec 28, 2025: Mock checksum verification to return success
+            with patch(
+                "app.coordination.sync_integrity.verify_sync_checksum",
+                new_callable=AsyncMock,
+                return_value=(True, None),
+            ):
+                # Create the file to simulate rsync success
+                local_path.touch()
 
-                    result = await pull_daemon._rsync_pull(
-                        "192.168.1.1", "ubuntu", "~/.ssh/key",
-                        "/data/games", "test.db", temp_dir
-                    )
-
-                    assert result == local_path
-
-    @pytest.mark.asyncio
-    async def test_rsync_pull_failure(self, pull_daemon, temp_dir):
-        """Test rsync pull failure."""
-        mock_proc = AsyncMock()
-        mock_proc.communicate.return_value = (b"", b"rsync error")
-        mock_proc.returncode = 1
-
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            with patch("asyncio.wait_for", return_value=mock_proc.communicate.return_value):
                 result = await pull_daemon._rsync_pull(
                     "192.168.1.1", "ubuntu", "~/.ssh/key",
                     "/data/games", "test.db", temp_dir
                 )
 
-                assert result is None
+                assert result == local_path
+
+    @pytest.mark.asyncio
+    async def test_rsync_pull_failure(self, pull_daemon, temp_dir):
+        """Test rsync pull failure."""
+        mock_proc = _FakeAsyncProcess(
+            returncode=1,
+            communicate_result=(b"", b"rsync error"),
+        )
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            result = await pull_daemon._rsync_pull(
+                "192.168.1.1", "ubuntu", "~/.ssh/key",
+                "/data/games", "test.db", temp_dir
+            )
+
+            assert result is None
 
     @pytest.mark.asyncio
     async def test_emit_pull_sync_completed(self, pull_daemon):
@@ -1422,15 +1442,18 @@ class TestReverseSyncPullStrategy:
     @pytest.mark.asyncio
     async def test_sync_cycle_uses_pull_for_pull_strategy(self, pull_daemon):
         """Test that _sync_cycle calls _pull_from_cluster_nodes for PULL strategy."""
-        with patch.object(
-            pull_daemon, "_pull_from_cluster_nodes", new_callable=AsyncMock
-        ) as mock_pull:
-            mock_pull.return_value = 25
+        call_count = 0
 
+        async def mock_pull():
+            nonlocal call_count
+            call_count += 1
+            return 25
+
+        with patch.object(pull_daemon, "_pull_from_cluster_nodes", new=mock_pull):
             result = await pull_daemon._sync_cycle()
 
             assert result == 25
-            mock_pull.assert_called_once()
+            assert call_count == 1
 
 
 class TestMergeIntoCanonical:

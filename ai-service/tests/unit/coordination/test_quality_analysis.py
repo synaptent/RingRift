@@ -6,45 +6,48 @@ intensity mapping, and curriculum weight adjustment.
 
 import sqlite3
 import tempfile
+import warnings
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.coordination.quality_analysis import (
-    # Constants
-    HIGH_QUALITY_THRESHOLD,
-    MEDIUM_QUALITY_THRESHOLD,
-    LOW_QUALITY_THRESHOLD,
-    MINIMUM_QUALITY_THRESHOLD,
-    DEFAULT_SAMPLE_LIMIT,
-    FULL_QUALITY_GAME_COUNT,
-    # Enums
-    IntensityLevel,
-    UrgencyLevel,
-    INTENSITY_TO_URGENCY,
-    # Data classes
-    QualityResult,
-    CurriculumWeightChange,
-    QualityThresholds,
-    QualityTrend,
-    # Functions
-    assess_selfplay_quality,
-    _count_based_quality,
-    compute_intensity_from_quality,
-    compute_training_urgency,
-    compute_curriculum_weight_adjustment,
-    get_quality_threshold,
-    is_quality_acceptable,
-    should_accelerate_training,
-    should_pause_training,
-    analyze_quality_trend,
-    compute_exploration_adjustment,
-    # Aliases
-    assess_quality,
-    get_intensity,
-    get_urgency,
-)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from app.coordination.quality_analysis import (
+        # Constants
+        HIGH_QUALITY_THRESHOLD,
+        MEDIUM_QUALITY_THRESHOLD,
+        LOW_QUALITY_THRESHOLD,
+        MINIMUM_QUALITY_THRESHOLD,
+        DEFAULT_SAMPLE_LIMIT,
+        FULL_QUALITY_GAME_COUNT,
+        # Enums
+        IntensityLevel,
+        UrgencyLevel,
+        INTENSITY_TO_URGENCY,
+        # Data classes
+        QualityResult,
+        CurriculumWeightChange,
+        QualityThresholds,
+        QualityTrend,
+        # Functions
+        assess_selfplay_quality,
+        _count_based_quality,
+        compute_intensity_from_quality,
+        compute_training_urgency,
+        compute_curriculum_weight_adjustment,
+        get_quality_threshold,
+        is_quality_acceptable,
+        should_accelerate_training,
+        should_pause_training,
+        analyze_quality_trend,
+        compute_exploration_adjustment,
+        # Aliases
+        assess_quality,
+        get_intensity,
+        get_urgency,
+    )
 
 
 # ============================================================================

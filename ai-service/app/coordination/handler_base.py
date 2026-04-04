@@ -56,6 +56,7 @@ January 3, 2026 - Added fire-and-forget task helpers (_safe_create_task, _try_em
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging
@@ -1283,6 +1284,10 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
             return task
         except RuntimeError as e:
             # Event loop is closed or not running
+            with contextlib.suppress(Exception):
+                close = getattr(coro, "close", None)
+                if callable(close):
+                    close()
             ctx = f" for {context}" if context else ""
             logger.debug(f"[{self._name}] Could not create task{ctx}: {e}")
             return None

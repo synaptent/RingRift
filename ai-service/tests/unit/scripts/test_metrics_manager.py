@@ -13,6 +13,7 @@ from __future__ import annotations
 import tempfile
 import threading
 import time
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -169,6 +170,37 @@ class TestGetHistory:
 
         assert len(history) == 2
         assert history[0]["value"] == 60.0  # Most recent first
+        assert history[1]["value"] == 50.0
+
+    def test_get_history_breaks_timestamp_ties_by_id(self, manager):
+        """History should stay newest-first even when timestamps tie."""
+        timestamp = time.time()
+
+        conn = sqlite3.connect(str(manager.db_path))
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO metrics_history
+            (timestamp, metric_type, board_type, num_players, value, metadata)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (timestamp, "cpu_util", None, None, 50.0, None),
+        )
+        cursor.execute(
+            """
+            INSERT INTO metrics_history
+            (timestamp, metric_type, board_type, num_players, value, metadata)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (timestamp, "cpu_util", None, None, 60.0, None),
+        )
+        conn.commit()
+        conn.close()
+
+        history = manager.get_history("cpu_util")
+
+        assert len(history) == 2
+        assert history[0]["value"] == 60.0
         assert history[1]["value"] == 50.0
 
     def test_get_history_with_board_filter(self, manager):

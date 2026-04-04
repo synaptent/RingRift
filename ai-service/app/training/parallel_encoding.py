@@ -75,8 +75,6 @@ def _get_neural_net_encoder(board_type_str: str, feature_version: int = 2):
         from app.ai.neural_net import NeuralNetAI
         from app.models import AIConfig, BoardType
 
-        os.environ.setdefault("RINGRIFT_FORCE_CPU", "1")
-
         config = AIConfig(
             difficulty=5,
             think_time=0,
@@ -87,7 +85,15 @@ def _get_neural_net_encoder(board_type_str: str, feature_version: int = 2):
             heuristic_eval_mode=None,
             use_neural_net=True,
         )
-        encoder = NeuralNetAI(player_number=1, config=config)
+        prev_force_cpu = os.environ.get("RINGRIFT_FORCE_CPU")
+        os.environ["RINGRIFT_FORCE_CPU"] = "1"
+        try:
+            encoder = NeuralNetAI(player_number=1, config=config)
+        finally:
+            if prev_force_cpu is None:
+                os.environ.pop("RINGRIFT_FORCE_CPU", None)
+            else:
+                os.environ["RINGRIFT_FORCE_CPU"] = prev_force_cpu
         encoder.feature_version = int(feature_version)
 
         board_type = BoardType(board_type_str)

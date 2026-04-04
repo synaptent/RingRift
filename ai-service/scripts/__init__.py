@@ -14,68 +14,48 @@ Module Structure:
     - unified_loop/promotion.py: Model promotion with holdout validation
 """
 
+from importlib import import_module
 import os
 
 _skip = os.getenv("RINGRIFT_SKIP_SCRIPT_INIT_IMPORTS", "").strip().lower()
-if _skip in ("1", "true", "yes", "on"):
-    __all__ = []
-else:
-    # Re-export configuration classes from unified_loop subpackage
-    from .unified_loop.config import (
-        # Configuration dataclasses
-        DataIngestionConfig,
-        TrainingConfig,
-        EvaluationConfig,
-        PromotionConfig,
-        CurriculumConfig,
-        PBTConfig,
-        NASConfig,
-        PERConfig,
-        FeedbackConfig,
-        P2PClusterConfig,
-        ModelPruningConfig,
-        UnifiedLoopConfig,
-        # Event types
-        DataEventType,
-        DataEvent,
-        # State classes
-        HostState,
-        ConfigState,
-    )
+_SKIP_IMPORTS = _skip in ("1", "true", "yes", "on")
 
-    # Re-export service classes (Phase 2 refactoring)
-    from .unified_loop.evaluation import ModelPruningService
-    from .unified_loop.curriculum import AdaptiveCurriculum
-    from .unified_loop.promotion import ModelPromoter
-    from .unified_loop.tournament import ShadowTournamentService
-    from .unified_loop.data_collection import StreamingDataCollector
-    from .unified_loop.training import TrainingScheduler
+_EXPORTS = {
+    "AdaptiveCurriculum": (".unified_loop.curriculum", "AdaptiveCurriculum"),
+    "ConfigState": (".unified_loop.config", "ConfigState"),
+    "CurriculumConfig": (".unified_loop.config", "CurriculumConfig"),
+    "DataEvent": (".unified_loop.config", "DataEvent"),
+    "DataEventType": (".unified_loop.config", "DataEventType"),
+    "DataIngestionConfig": (".unified_loop.config", "DataIngestionConfig"),
+    "EvaluationConfig": (".unified_loop.config", "EvaluationConfig"),
+    "FeedbackConfig": (".unified_loop.config", "FeedbackConfig"),
+    "HostState": (".unified_loop.config", "HostState"),
+    "ModelPromoter": (".unified_loop.promotion", "ModelPromoter"),
+    "ModelPruningConfig": (".unified_loop.config", "ModelPruningConfig"),
+    "ModelPruningService": (".unified_loop.evaluation", "ModelPruningService"),
+    "NASConfig": (".unified_loop.config", "NASConfig"),
+    "P2PClusterConfig": (".unified_loop.config", "P2PClusterConfig"),
+    "PBTConfig": (".unified_loop.config", "PBTConfig"),
+    "PERConfig": (".unified_loop.config", "PERConfig"),
+    "PromotionConfig": (".unified_loop.config", "PromotionConfig"),
+    "ShadowTournamentService": (".unified_loop.tournament", "ShadowTournamentService"),
+    "StreamingDataCollector": (".unified_loop.data_collection", "StreamingDataCollector"),
+    "TrainingConfig": (".unified_loop.config", "TrainingConfig"),
+    "TrainingScheduler": (".unified_loop.training", "TrainingScheduler"),
+    "UnifiedLoopConfig": (".unified_loop.config", "UnifiedLoopConfig"),
+}
 
-    __all__ = [
-        'AdaptiveCurriculum',
-        'ConfigState',
-        'CurriculumConfig',
-        'DataEvent',
-        # Events
-        'DataEventType',
-        # Configuration
-        'DataIngestionConfig',
-        'EvaluationConfig',
-        'FeedbackConfig',
-        # State
-        'HostState',
-        'ModelPromoter',
-        'ModelPruningConfig',
-        # Services (Phase 2)
-        'ModelPruningService',
-        'NASConfig',
-        'P2PClusterConfig',
-        'PBTConfig',
-        'PERConfig',
-        'PromotionConfig',
-        'ShadowTournamentService',
-        'StreamingDataCollector',
-        'TrainingConfig',
-        'TrainingScheduler',
-        'UnifiedLoopConfig',
-    ]
+__all__ = [] if _SKIP_IMPORTS else list(_EXPORTS)
+
+
+def __getattr__(name: str):
+    if _SKIP_IMPORTS or name not in _EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attr_name = _EXPORTS[name]
+    value = getattr(import_module(module_name, __name__), attr_name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))

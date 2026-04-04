@@ -5,6 +5,7 @@ December 2025: Tests for handler extracted from FeedbackLoopController.
 
 import time
 from dataclasses import dataclass, field
+import importlib
 from unittest.mock import MagicMock
 
 import pytest
@@ -249,12 +250,17 @@ class TestRecordTrainingInCurriculum:
             published["payload"] = payload
             published["source"] = source
 
+        curriculum_feedback = importlib.import_module("app.training.curriculum_feedback")
+        event_router = importlib.import_module("app.coordination.event_router")
+
         monkeypatch.setattr(
-            "app.training.curriculum_feedback.get_curriculum_feedback",
+            curriculum_feedback,
+            "get_curriculum_feedback",
             lambda: StubFeedback(),
         )
         monkeypatch.setattr(
-            "app.coordination.event_router.publish_sync",
+            event_router,
+            "publish_sync",
             fake_publish_sync,
         )
 

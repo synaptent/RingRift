@@ -43,7 +43,7 @@ class TestBackgroundSelfplayTask:
 
     def test_init_custom_values(self):
         """Test task initialization with custom values."""
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         staging_path = Path("/tmp/test.db")
 
         task = BackgroundSelfplayTask(
@@ -69,7 +69,7 @@ class TestBackgroundSelfplayTask:
 
     def test_is_running_process_still_running(self):
         """Test is_running returns True when process is running."""
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         mock_process.poll.return_value = None  # None means still running
 
         task = BackgroundSelfplayTask(iteration=1, process=mock_process)
@@ -78,7 +78,7 @@ class TestBackgroundSelfplayTask:
 
     def test_is_running_process_completed(self):
         """Test is_running returns False when process completed."""
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         mock_process.poll.return_value = 0  # 0 means completed
 
         task = BackgroundSelfplayTask(iteration=1, process=mock_process)
@@ -94,7 +94,7 @@ class TestBackgroundSelfplayTask:
 
     def test_wait_process_success(self):
         """Test wait returns success for successful process."""
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         mock_process.returncode = 0
 
         task = BackgroundSelfplayTask(iteration=1, process=mock_process)
@@ -106,7 +106,7 @@ class TestBackgroundSelfplayTask:
 
     def test_wait_process_failure(self):
         """Test wait returns failure for failed process."""
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         mock_process.returncode = 1
 
         task = BackgroundSelfplayTask(iteration=1, process=mock_process)
@@ -117,7 +117,7 @@ class TestBackgroundSelfplayTask:
 
     def test_wait_timeout_expired(self):
         """Test wait handles timeout."""
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         mock_process.wait.side_effect = subprocess.TimeoutExpired(cmd="test", timeout=5)
 
         task = BackgroundSelfplayTask(iteration=1, process=mock_process)
@@ -133,7 +133,7 @@ class TestBackgroundSelfplayTask:
 
     def test_terminate_not_running(self):
         """Test terminate does nothing when process not running."""
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         mock_process.poll.return_value = 0  # Already completed
 
         task = BackgroundSelfplayTask(iteration=1, process=mock_process)
@@ -143,7 +143,7 @@ class TestBackgroundSelfplayTask:
 
     def test_terminate_running_graceful(self):
         """Test terminate gracefully stops running process."""
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         mock_process.poll.return_value = None  # Still running
 
         task = BackgroundSelfplayTask(iteration=1, process=mock_process)
@@ -154,7 +154,7 @@ class TestBackgroundSelfplayTask:
 
     def test_terminate_force_kill_on_timeout(self):
         """Test terminate force kills on timeout."""
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         mock_process.poll.return_value = None  # Still running
         mock_process.wait.side_effect = subprocess.TimeoutExpired(cmd="test", timeout=5)
 
@@ -217,7 +217,7 @@ class TestBackgroundSelfplayManager:
 
     def test_has_pending_task_false_completed(self, manager):
         """Test has_pending_task returns False when task completed."""
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         mock_process.poll.return_value = 0  # Completed
 
         task = BackgroundSelfplayTask(iteration=1, process=mock_process)
@@ -227,7 +227,7 @@ class TestBackgroundSelfplayManager:
 
     def test_has_pending_task_true_running(self, manager):
         """Test has_pending_task returns True when task running."""
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         mock_process.poll.return_value = None  # Still running
 
         task = BackgroundSelfplayTask(iteration=1, process=mock_process)
@@ -349,7 +349,7 @@ class TestBackgroundSelfplayManager:
 
     def test_wait_for_current_success(self, manager):
         """Test wait_for_current for successful task."""
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         mock_process.returncode = 0
         staging_path = Path("/tmp/test.db")
 
@@ -372,7 +372,7 @@ class TestBackgroundSelfplayManager:
 
     def test_wait_for_current_failure(self, manager):
         """Test wait_for_current for failed task."""
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         mock_process.returncode = 1
 
         task = BackgroundSelfplayTask(
@@ -392,7 +392,7 @@ class TestBackgroundSelfplayManager:
 
     def test_wait_for_current_with_timeout(self, manager):
         """Test wait_for_current with timeout."""
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         mock_process.wait.side_effect = subprocess.TimeoutExpired(cmd="test", timeout=5)
 
         task = BackgroundSelfplayTask(iteration=1, process=mock_process)
@@ -411,7 +411,7 @@ class TestBackgroundSelfplayManager:
 
     def test_cancel_current_terminates_task(self, manager):
         """Test cancel_current terminates running task."""
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         mock_process.poll.return_value = None  # Running
 
         task = BackgroundSelfplayTask(iteration=1, process=mock_process)
@@ -498,7 +498,7 @@ class TestSingleton:
         """Test reset cancels any current task."""
         manager = get_background_selfplay_manager()
 
-        mock_process = mock.MagicMock(spec=subprocess.Popen)
+        mock_process = mock.MagicMock()
         mock_process.poll.return_value = None  # Running
         task = BackgroundSelfplayTask(iteration=1, process=mock_process)
         manager._current_task = task
@@ -530,9 +530,19 @@ class TestEventEmission:
             num_players=2,
         )
 
-        with mock.patch("app.coordination.selfplay_orchestrator.emit_selfplay_completion") as mock_emit:
+        async def fake_emit(*args, **kwargs):
+            return None
+
+        def fake_run(coro):
+            coro.close()
+            return None
+
+        with mock.patch(
+            "app.coordination.selfplay_orchestrator.emit_selfplay_completion",
+            new=fake_emit,
+        ):
             with mock.patch("asyncio.get_running_loop", side_effect=RuntimeError):
-                with mock.patch("asyncio.run") as mock_run:
+                with mock.patch("asyncio.run", side_effect=fake_run) as mock_run:
                     manager._emit_selfplay_complete(task, success=True, games_generated=100)
                     mock_run.assert_called_once()
 
@@ -559,24 +569,32 @@ class TestCoordinationIntegration:
         with tempfile.TemporaryDirectory() as tmpdir:
             yield BackgroundSelfplayManager(ai_service_root=Path(tmpdir))
 
-    @mock.patch("subprocess.Popen")
-    @mock.patch("app.training.background_selfplay.can_spawn_safe")
-    def test_coordination_check_allowed(self, mock_can_spawn, mock_popen, manager):
+    def test_coordination_check_allowed(self, manager, monkeypatch):
         """Test coordination check when spawning is allowed."""
-        mock_can_spawn.return_value = (True, "allowed")
-        mock_popen.return_value = mock.MagicMock(pid=123)
+        monkeypatch.setattr(
+            "app.training.background_selfplay.can_spawn_safe",
+            lambda *args, **kwargs: (True, "allowed"),
+        )
+        monkeypatch.setattr(
+            "app.training.background_selfplay.subprocess.Popen",
+            lambda *args, **kwargs: mock.MagicMock(pid=123),
+        )
 
         config = {"board": "square8", "players": 2, "games_per_iter": 10}
         task = manager.start_background_selfplay(config, iteration=1)
 
         assert task is not None
 
-    @mock.patch("subprocess.Popen")
-    @mock.patch("app.training.background_selfplay.can_spawn_safe")
-    def test_coordination_check_warning_proceeds(self, mock_can_spawn, mock_popen, manager):
+    def test_coordination_check_warning_proceeds(self, manager, monkeypatch):
         """Test coordination warning doesn't block spawning."""
-        mock_can_spawn.return_value = (False, "max tasks reached")
-        mock_popen.return_value = mock.MagicMock(pid=123)
+        monkeypatch.setattr(
+            "app.training.background_selfplay.can_spawn_safe",
+            lambda *args, **kwargs: (False, "max tasks reached"),
+        )
+        monkeypatch.setattr(
+            "app.training.background_selfplay.subprocess.Popen",
+            lambda *args, **kwargs: mock.MagicMock(pid=123),
+        )
 
         config = {"board": "square8", "players": 2, "games_per_iter": 10}
         task = manager.start_background_selfplay(config, iteration=1)
@@ -584,12 +602,19 @@ class TestCoordinationIntegration:
         # Should still proceed (advisory only)
         assert task is not None
 
-    @mock.patch("subprocess.Popen")
-    @mock.patch("app.training.background_selfplay.can_spawn_safe")
-    def test_coordination_check_exception_handled(self, mock_can_spawn, mock_popen, manager):
+    def test_coordination_check_exception_handled(self, manager, monkeypatch):
         """Test coordination check exception is handled."""
-        mock_can_spawn.side_effect = Exception("coordination error")
-        mock_popen.return_value = mock.MagicMock(pid=123)
+        def raise_coordination_error(*args, **kwargs):
+            raise Exception("coordination error")
+
+        monkeypatch.setattr(
+            "app.training.background_selfplay.can_spawn_safe",
+            raise_coordination_error,
+        )
+        monkeypatch.setattr(
+            "app.training.background_selfplay.subprocess.Popen",
+            lambda *args, **kwargs: mock.MagicMock(pid=123),
+        )
 
         config = {"board": "square8", "players": 2, "games_per_iter": 10}
         task = manager.start_background_selfplay(config, iteration=1)

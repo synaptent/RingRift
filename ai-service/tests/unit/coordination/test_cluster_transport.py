@@ -34,6 +34,115 @@ from app.coordination.cluster_transport import (
 )
 
 
+class _FakeProcess:
+    """Minimal subprocess double with async wait/communicate methods."""
+
+    def __init__(
+        self,
+        *,
+        returncode: int = 0,
+        wait_result: int | None = None,
+        wait_side_effect: Exception | None = None,
+        communicate_result: tuple[bytes, bytes] = (b"", b""),
+        communicate_side_effect: Exception | None = None,
+    ):
+        self.returncode = returncode
+        self._wait_result = returncode if wait_result is None else wait_result
+        self._wait_side_effect = wait_side_effect
+        self._communicate_result = communicate_result
+        self._communicate_side_effect = communicate_side_effect
+
+    async def wait(self) -> int:
+        if self._wait_side_effect is not None:
+            raise self._wait_side_effect
+        return self._wait_result
+
+    async def communicate(self, *args, **kwargs) -> tuple[bytes, bytes]:
+        if self._communicate_side_effect is not None:
+            raise self._communicate_side_effect
+        return self._communicate_result
+
+
+class _FakeRequestContext:
+    """Async context manager for mocked aiohttp request responses."""
+
+    def __init__(self, response=None, *, enter_side_effect: Exception | None = None):
+        self._response = response
+        self._enter_side_effect = enter_side_effect
+
+    async def __aenter__(self):
+        if self._enter_side_effect is not None:
+            raise self._enter_side_effect
+        return self._response
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+
+class _FakeResponse:
+    """Minimal aiohttp response double with async json/text methods."""
+
+    def __init__(
+        self,
+        *,
+        status: int,
+        json_result=None,
+        json_side_effect: Exception | None = None,
+        text_result="",
+        text_side_effect: Exception | None = None,
+        content=None,
+    ):
+        self.status = status
+        self._json_result = json_result
+        self._json_side_effect = json_side_effect
+        self._text_result = text_result
+        self._text_side_effect = text_side_effect
+        self.content = content
+
+    async def json(self):
+        if self._json_side_effect is not None:
+            raise self._json_side_effect
+        return self._json_result
+
+    async def text(self):
+        if self._text_side_effect is not None:
+            raise self._text_side_effect
+        return self._text_result
+
+
+class _FakeClientSession:
+    """Minimal aiohttp ClientSession double for request/get tests."""
+
+    def __init__(
+        self,
+        *,
+        request_context: _FakeRequestContext | None = None,
+        get_context: _FakeRequestContext | None = None,
+        enter_side_effect: Exception | None = None,
+    ):
+        self._request_context = request_context
+        self._get_context = get_context
+        self._enter_side_effect = enter_side_effect
+        self.request_calls: list[tuple[tuple, dict]] = []
+        self.get_calls: list[tuple[tuple, dict]] = []
+
+    async def __aenter__(self):
+        if self._enter_side_effect is not None:
+            raise self._enter_side_effect
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return None
+
+    def request(self, *args, **kwargs):
+        self.request_calls.append((args, kwargs))
+        return self._request_context
+
+    def get(self, *args, **kwargs):
+        self.get_calls.append((args, kwargs))
+        return self._get_context
+
+
 # =============================================================================
 # Test NodeConfig Dataclass
 # =============================================================================
@@ -258,12 +367,16 @@ class TestFileTransfer:
             tailscale_ip="100.64.0.1",
         )
 
-        with patch.object(transport, "_transfer_via_tailscale") as mock_ts:
-            mock_ts.return_value = TransportResult(
+        calls: list[tuple] = []
+
+        async def mock_ts(*args, **kwargs):
+            calls.append(args)
+            return TransportResult(
                 success=True,
                 bytes_transferred=1024,
             )
 
+        with patch.object(transport, "_transfer_via_tailscale", mock_ts):
             result = await transport.transfer_file(
                 local_path=Path("/tmp/test.txt"),
                 remote_path="data/test.txt",
@@ -271,7 +384,7 @@ class TestFileTransfer:
             )
 
             assert result.success is True
-            mock_ts.assert_called_once()
+            assert len(calls) == 1
 
     @pytest.mark.asyncio
     async def test_transfer_falls_back_to_ssh(self):
@@ -283,17 +396,20 @@ class TestFileTransfer:
             tailscale_ip="100.64.0.1",
         )
 
-        with patch.object(transport, "_transfer_via_tailscale") as mock_ts, \
-             patch.object(transport, "_transfer_via_ssh") as mock_ssh:
-            mock_ts.return_value = TransportResult(
+        async def mock_ts(*args, **kwargs):
+            return TransportResult(
                 success=False,
                 error="Tailscale unreachable",
             )
-            mock_ssh.return_value = TransportResult(
+
+        async def mock_ssh(*args, **kwargs):
+            return TransportResult(
                 success=True,
                 bytes_transferred=1024,
             )
 
+        with patch.object(transport, "_transfer_via_tailscale", mock_ts), \
+             patch.object(transport, "_transfer_via_ssh", mock_ssh):
             result = await transport.transfer_file(
                 local_path=Path("/tmp/test.txt"),
                 remote_path="data/test.txt",
@@ -310,11 +426,14 @@ class TestFileTransfer:
 
         node = NodeConfig(hostname="test-host")
 
-        with patch.object(transport, "_transfer_via_tailscale") as mock_ts, \
-             patch.object(transport, "_transfer_via_ssh") as mock_ssh:
-            mock_ts.return_value = TransportResult(success=False, error="fail1")
-            mock_ssh.return_value = TransportResult(success=False, error="fail2")
+        async def mock_ts(*args, **kwargs):
+            return TransportResult(success=False, error="fail1")
 
+        async def mock_ssh(*args, **kwargs):
+            return TransportResult(success=False, error="fail2")
+
+        with patch.object(transport, "_transfer_via_tailscale", mock_ts), \
+             patch.object(transport, "_transfer_via_ssh", mock_ssh):
             result = await transport.transfer_file(
                 local_path=Path("/tmp/test.txt"),
                 remote_path="data/test.txt",
@@ -354,17 +473,13 @@ class TestHttpRequests:
         transport = ClusterTransport()
         node = NodeConfig(hostname="test-host", http_port=8080)
 
-        # Mock aiohttp
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={"status": "ok"})
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = MagicMock()
-        mock_session.request = MagicMock(return_value=mock_response)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_response = _FakeResponse(
+            status=200,
+            json_result={"status": "ok"},
+        )
+        mock_session = _FakeClientSession(
+            request_context=_FakeRequestContext(mock_response),
+        )
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
             result = await transport.http_request(node, "/api/status")
@@ -432,14 +547,19 @@ class TestReachabilityCheck:
         transport = ClusterTransport()
         node = NodeConfig(hostname="healthy-host")
 
-        with patch.object(transport, "http_request") as mock_http:
-            mock_http.return_value = TransportResult(
+        calls: list[tuple] = []
+
+        async def mock_http(*args, **kwargs):
+            calls.append(args)
+            return TransportResult(
                 success=True,
                 data={"healthy": True},
             )
 
+        with patch.object(transport, "http_request", mock_http):
             result = await transport.check_node_reachable(node)
             assert result is True
+            assert len(calls) == 1
 
     @pytest.mark.asyncio
     async def test_check_reachable_falls_back_to_ssh(self):
@@ -447,14 +567,13 @@ class TestReachabilityCheck:
         transport = ClusterTransport()
         node = NodeConfig(hostname="ssh-only-host")
 
-        with patch.object(transport, "http_request") as mock_http, \
-             patch("asyncio.create_subprocess_exec") as mock_proc:
-            mock_http.return_value = TransportResult(success=False, error="fail")
+        async def mock_http(*args, **kwargs):
+            return TransportResult(success=False, error="fail")
 
+        with patch.object(transport, "http_request", mock_http), \
+             patch("asyncio.create_subprocess_exec") as mock_proc:
             # Mock SSH success
-            process = AsyncMock()
-            process.returncode = 0
-            process.wait = AsyncMock(return_value=0)
+            process = _FakeProcess(returncode=0)
             mock_proc.return_value = process
 
             result = await transport.check_node_reachable(node)
@@ -466,14 +585,13 @@ class TestReachabilityCheck:
         transport = ClusterTransport()
         node = NodeConfig(hostname="unreachable-host")
 
-        with patch.object(transport, "http_request") as mock_http, \
-             patch("asyncio.create_subprocess_exec") as mock_proc:
-            mock_http.return_value = TransportResult(success=False, error="fail")
+        async def mock_http(*args, **kwargs):
+            return TransportResult(success=False, error="fail")
 
+        with patch.object(transport, "http_request", mock_http), \
+             patch("asyncio.create_subprocess_exec") as mock_proc:
             # Mock SSH failure
-            process = AsyncMock()
-            process.returncode = 255
-            process.wait = AsyncMock(return_value=255)
+            process = _FakeProcess(returncode=255)
             mock_proc.return_value = process
 
             result = await transport.check_node_reachable(node)
@@ -494,10 +612,7 @@ class TestRsyncTransfer:
         transport = ClusterTransport()
 
         with patch("asyncio.create_subprocess_exec") as mock_proc:
-            process = AsyncMock()
-            process.returncode = 0
-            process.communicate = AsyncMock(return_value=(b"", b""))
-            mock_proc.return_value = process
+            mock_proc.return_value = _FakeProcess(returncode=0)
 
             # Mock local file exists
             with patch.object(Path, "exists", return_value=True), \
@@ -522,10 +637,7 @@ class TestRsyncTransfer:
         transport = ClusterTransport()
 
         with patch("asyncio.create_subprocess_exec") as mock_proc:
-            process = AsyncMock()
-            process.returncode = 0
-            process.communicate = AsyncMock(return_value=(b"", b""))
-            mock_proc.return_value = process
+            mock_proc.return_value = _FakeProcess(returncode=0)
 
             with patch.object(Path, "exists", return_value=True), \
                  patch.object(Path, "stat") as mock_stat:
@@ -548,12 +660,10 @@ class TestRsyncTransfer:
         transport = ClusterTransport()
 
         with patch("asyncio.create_subprocess_exec") as mock_proc:
-            process = AsyncMock()
-            process.returncode = 12  # rsync error code
-            process.communicate = AsyncMock(
-                return_value=(b"", b"rsync: connection refused")
+            mock_proc.return_value = _FakeProcess(
+                returncode=12,
+                communicate_result=(b"", b"rsync: connection refused"),
             )
-            mock_proc.return_value = process
 
             result = await transport._rsync_transfer(
                 local_path=Path("/local/file.txt"),
@@ -569,10 +679,10 @@ class TestRsyncTransfer:
         """_rsync_transfer should handle timeout."""
         transport = ClusterTransport(operation_timeout=1)
 
-        with patch("asyncio.create_subprocess_exec") as mock_proc, \
-             patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()):
-            process = AsyncMock()
-            mock_proc.return_value = process
+        with patch("asyncio.create_subprocess_exec") as mock_proc:
+            mock_proc.return_value = _FakeProcess(
+                communicate_side_effect=asyncio.TimeoutError()
+            )
 
             result = await transport._rsync_transfer(
                 local_path=Path("/local/file.txt"),
@@ -830,10 +940,7 @@ class TestBase64Push:
 
         try:
             with patch("asyncio.create_subprocess_exec") as mock_proc:
-                process = AsyncMock()
-                process.returncode = 0
-                process.communicate = AsyncMock(return_value=(b"", b""))
-                mock_proc.return_value = process
+                mock_proc.return_value = _FakeProcess(returncode=0)
 
                 result = await transport._base64_push(
                     local_path=temp_path,
@@ -865,19 +972,18 @@ class TestBase64Push:
 
         try:
             with patch("asyncio.create_subprocess_exec") as mock_proc:
-                process = AsyncMock()
-                process.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
-                mock_proc.return_value = process
+                mock_proc.return_value = _FakeProcess(
+                    communicate_side_effect=asyncio.TimeoutError()
+                )
 
-                with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()):
-                    result = await transport._base64_push(
-                        local_path=temp_path,
-                        remote_path="/data/file.txt",
-                        node=node,
-                    )
+                result = await transport._base64_push(
+                    local_path=temp_path,
+                    remote_path="/data/file.txt",
+                    node=node,
+                )
 
-                    assert result.success is False
-                    assert "timeout" in result.error.lower()
+                assert result.success is False
+                assert "timeout" in result.error.lower()
         finally:
             temp_path.unlink()
 
@@ -893,12 +999,10 @@ class TestBase64Push:
 
         try:
             with patch("asyncio.create_subprocess_exec") as mock_proc:
-                process = AsyncMock()
-                process.returncode = 255
-                process.communicate = AsyncMock(
-                    return_value=(b"", b"Connection refused")
+                mock_proc.return_value = _FakeProcess(
+                    returncode=255,
+                    communicate_result=(b"", b"Connection refused"),
                 )
-                mock_proc.return_value = process
 
                 result = await transport._base64_push(
                     local_path=temp_path,
@@ -928,12 +1032,10 @@ class TestBase64Pull:
             local_path = Path(tmpdir) / "pulled_file.txt"
 
             with patch("asyncio.create_subprocess_exec") as mock_proc:
-                process = AsyncMock()
-                process.returncode = 0
-                process.communicate = AsyncMock(
-                    return_value=(encoded_content, b"")
+                mock_proc.return_value = _FakeProcess(
+                    returncode=0,
+                    communicate_result=(encoded_content, b""),
                 )
-                mock_proc.return_value = process
 
                 result = await transport._base64_pull(
                     local_path=local_path,
@@ -959,19 +1061,18 @@ class TestBase64Pull:
             local_path = Path(tmpdir) / "pulled_file.txt"
 
             with patch("asyncio.create_subprocess_exec") as mock_proc:
-                process = AsyncMock()
-                process.communicate = AsyncMock(side_effect=asyncio.TimeoutError())
-                mock_proc.return_value = process
+                mock_proc.return_value = _FakeProcess(
+                    communicate_side_effect=asyncio.TimeoutError()
+                )
 
-                with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()):
-                    result = await transport._base64_pull(
-                        local_path=local_path,
-                        remote_path="/data/file.txt",
-                        node=node,
-                    )
+                result = await transport._base64_pull(
+                    local_path=local_path,
+                    remote_path="/data/file.txt",
+                    node=node,
+                )
 
-                    assert result.success is False
-                    assert "timeout" in result.error.lower()
+                assert result.success is False
+                assert "timeout" in result.error.lower()
 
     @pytest.mark.asyncio
     async def test_base64_pull_decode_error(self):
@@ -983,13 +1084,10 @@ class TestBase64Pull:
             local_path = Path(tmpdir) / "pulled_file.txt"
 
             with patch("asyncio.create_subprocess_exec") as mock_proc:
-                process = AsyncMock()
-                process.returncode = 0
-                # Invalid base64 data
-                process.communicate = AsyncMock(
-                    return_value=(b"!!!invalid-base64!!!", b"")
+                mock_proc.return_value = _FakeProcess(
+                    returncode=0,
+                    communicate_result=(b"!!!invalid-base64!!!", b""),
                 )
-                mock_proc.return_value = process
 
                 result = await transport._base64_pull(
                     local_path=local_path,
@@ -1010,12 +1108,10 @@ class TestBase64Pull:
             local_path = Path(tmpdir) / "pulled_file.txt"
 
             with patch("asyncio.create_subprocess_exec") as mock_proc:
-                process = AsyncMock()
-                process.returncode = 1
-                process.communicate = AsyncMock(
-                    return_value=(b"", b"No such file or directory")
+                mock_proc.return_value = _FakeProcess(
+                    returncode=1,
+                    communicate_result=(b"", b"No such file or directory"),
                 )
-                mock_proc.return_value = process
 
                 result = await transport._base64_pull(
                     local_path=local_path,
@@ -1037,16 +1133,26 @@ class TestBase64TransferFallback:
 
         node = NodeConfig(hostname="test-host")
 
-        with patch.object(transport, "_transfer_via_tailscale") as mock_ts, \
-             patch.object(transport, "_transfer_via_ssh") as mock_ssh, \
-             patch.object(transport, "_transfer_via_base64") as mock_base64:
-            mock_ts.return_value = TransportResult(success=False, error="fail1")
-            mock_ssh.return_value = TransportResult(success=False, error="fail2")
-            mock_base64.return_value = TransportResult(
+        calls: list[str] = []
+
+        async def mock_ts(*args, **kwargs):
+            calls.append("tailscale")
+            return TransportResult(success=False, error="fail1")
+
+        async def mock_ssh(*args, **kwargs):
+            calls.append("ssh")
+            return TransportResult(success=False, error="fail2")
+
+        async def mock_base64(*args, **kwargs):
+            calls.append("base64")
+            return TransportResult(
                 success=True,
                 bytes_transferred=1024,
             )
 
+        with patch.object(transport, "_transfer_via_tailscale", mock_ts), \
+             patch.object(transport, "_transfer_via_ssh", mock_ssh), \
+             patch.object(transport, "_transfer_via_base64", mock_base64):
             result = await transport.transfer_file(
                 local_path=Path("/tmp/test.txt"),
                 remote_path="data/test.txt",
@@ -1055,7 +1161,7 @@ class TestBase64TransferFallback:
 
             assert result.success is True
             assert result.transport_used == "base64"
-            mock_base64.assert_called_once()
+            assert calls == ["tailscale", "ssh", "base64"]
 
 
 # =============================================================================
@@ -1153,9 +1259,13 @@ class TestEdgeCases:
         transport = ClusterTransport()
         node = NodeConfig(hostname="test-host")
 
-        with patch.object(transport, "_transfer_via_tailscale") as mock_ts:
-            mock_ts.return_value = TransportResult(success=True)
+        calls: list[tuple] = []
 
+        async def mock_ts(*args, **kwargs):
+            calls.append(args)
+            return TransportResult(success=True)
+
+        with patch.object(transport, "_transfer_via_tailscale", mock_ts):
             await transport.transfer_file(
                 local_path=Path("/tmp/test.txt"),
                 remote_path="data/test.txt",
@@ -1163,11 +1273,10 @@ class TestEdgeCases:
                 direction="pull",
             )
 
-            mock_ts.assert_called_once()
             # Direction is passed positionally as the 4th argument
-            call_args = mock_ts.call_args
+            call_args = calls[0]
             # Check positional args - direction is the 4th positional arg (index 3)
-            assert call_args[0][3] == "pull"
+            assert call_args[3] == "pull"
 
     @pytest.mark.asyncio
     async def test_http_request_returns_text_on_json_error(self):
@@ -1175,17 +1284,14 @@ class TestEdgeCases:
         transport = ClusterTransport()
         node = NodeConfig(hostname="test-host", http_port=8080)
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(side_effect=ValueError("Not JSON"))
-        mock_response.text = AsyncMock(return_value="Plain text response")
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = MagicMock()
-        mock_session.request = MagicMock(return_value=mock_response)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_response = _FakeResponse(
+            status=200,
+            json_side_effect=ValueError("Not JSON"),
+            text_result="Plain text response",
+        )
+        mock_session = _FakeClientSession(
+            request_context=_FakeRequestContext(mock_response),
+        )
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
             result = await transport.http_request(node, "/api/status")
@@ -1199,16 +1305,13 @@ class TestEdgeCases:
         transport = ClusterTransport()
         node = NodeConfig(hostname="test-host", http_port=8080)
 
-        mock_response = MagicMock()
-        mock_response.status = 500
-        mock_response.json = AsyncMock(return_value={"error": "Internal error"})
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = MagicMock()
-        mock_session.request = MagicMock(return_value=mock_response)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_response = _FakeResponse(
+            status=500,
+            json_result={"error": "Internal error"},
+        )
+        mock_session = _FakeClientSession(
+            request_context=_FakeRequestContext(mock_response),
+        )
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
             result = await transport.http_request(node, "/api/status")
@@ -1222,16 +1325,13 @@ class TestEdgeCases:
         transport = ClusterTransport()
         node = NodeConfig(hostname="test-host", http_port=8080)
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(return_value={"result": "ok"})
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = MagicMock()
-        mock_session.request = MagicMock(return_value=mock_response)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_response = _FakeResponse(
+            status=200,
+            json_result={"result": "ok"},
+        )
+        mock_session = _FakeClientSession(
+            request_context=_FakeRequestContext(mock_response),
+        )
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
             result = await transport.http_request(
@@ -1243,7 +1343,7 @@ class TestEdgeCases:
 
             assert result.success is True
             # Verify JSON data was passed
-            call_kwargs = mock_session.request.call_args[1]
+            call_kwargs = mock_session.request_calls[0][1]
             assert "json" in call_kwargs
 
     @pytest.mark.asyncio
@@ -1271,20 +1371,24 @@ class TestEdgeCases:
         transport = ClusterTransport()
         node = NodeConfig(hostname="test-host", http_port=8080)
 
-        with patch.object(transport, "http_request") as mock_http:
-            mock_http.return_value = TransportResult(
+        calls: list[tuple] = []
+
+        async def mock_http(*args, **kwargs):
+            calls.append(args)
+            return TransportResult(
                 success=True,
                 transport_used="http",
                 data={"status": "ok"},
             )
 
+        with patch.object(transport, "http_request", mock_http):
             result = await transport.http_request_with_failover(
                 node, "/api/status"
             )
 
             assert result.success is True
             # Without Tailscale IP, should go directly to hostname
-            assert mock_http.call_count == 1
+            assert len(calls) == 1
 
     @pytest.mark.asyncio
     async def test_http_request_with_failover_falls_back_to_hostname(self):
@@ -1296,24 +1400,28 @@ class TestEdgeCases:
             http_port=8080,
         )
 
-        with patch.object(transport, "http_request") as mock_http:
-            # First call (Tailscale) fails, second (hostname) succeeds
-            mock_http.side_effect = [
-                TransportResult(success=False, error="Tailscale failed"),
-                TransportResult(
-                    success=True,
-                    transport_used="http",
-                    data={"status": "ok"},
-                ),
-            ]
+        calls: list[tuple] = []
+        responses = [
+            TransportResult(success=False, error="Tailscale failed"),
+            TransportResult(
+                success=True,
+                transport_used="http",
+                data={"status": "ok"},
+            ),
+        ]
 
+        async def mock_http(*args, **kwargs):
+            calls.append(args)
+            return responses[len(calls) - 1]
+
+        with patch.object(transport, "http_request", mock_http):
             result = await transport.http_request_with_failover(
                 node, "/api/status"
             )
 
             assert result.success is True
             assert result.transport_used == "http_hostname"
-            assert mock_http.call_count == 2
+            assert len(calls) == 2
 
     @pytest.mark.asyncio
     async def test_check_reachable_handles_ssh_timeout(self):
@@ -1321,12 +1429,12 @@ class TestEdgeCases:
         transport = ClusterTransport()
         node = NodeConfig(hostname="slow-host")
 
-        with patch.object(transport, "http_request") as mock_http, \
-             patch("asyncio.create_subprocess_exec") as mock_proc, \
-             patch("asyncio.wait_for", side_effect=asyncio.TimeoutError()):
-            mock_http.return_value = TransportResult(success=False, error="fail")
-            process = AsyncMock()
-            mock_proc.return_value = process
+        async def mock_http(*args, **kwargs):
+            return TransportResult(success=False, error="fail")
+
+        with patch.object(transport, "http_request", mock_http), \
+             patch("asyncio.create_subprocess_exec") as mock_proc:
+            mock_proc.return_value = _FakeProcess(wait_side_effect=asyncio.TimeoutError())
 
             result = await transport.check_node_reachable(node)
             assert result is False
@@ -1471,20 +1579,15 @@ class TestHTTPTransfer:
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = Path(tmpdir) / "model.pth"
 
-            # Mock aiohttp response
-            mock_response = MagicMock()
-            mock_response.status = 200
-            mock_response.content = MagicMock()
-            mock_response.content.iter_chunked = MagicMock(
-                return_value=AsyncIterator([b"model data content"])
+            mock_response = _FakeResponse(
+                status=200,
+                content=MagicMock(
+                    iter_chunked=lambda _: AsyncIterator([b"model data content"])
+                ),
             )
-            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-            mock_response.__aexit__ = AsyncMock(return_value=None)
-
-            mock_session = MagicMock()
-            mock_session.get = MagicMock(return_value=mock_response)
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_session = _FakeClientSession(
+                get_context=_FakeRequestContext(mock_response),
+            )
 
             with patch("aiohttp.ClientSession", return_value=mock_session):
                 result = await transport._transfer_via_http(
@@ -1506,19 +1609,15 @@ class TestHTTPTransfer:
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = Path(tmpdir) / "training.npz"
 
-            mock_response = MagicMock()
-            mock_response.status = 200
-            mock_response.content = MagicMock()
-            mock_response.content.iter_chunked = MagicMock(
-                return_value=AsyncIterator([b"npz data content"])
+            mock_response = _FakeResponse(
+                status=200,
+                content=MagicMock(
+                    iter_chunked=lambda _: AsyncIterator([b"npz data content"])
+                ),
             )
-            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-            mock_response.__aexit__ = AsyncMock(return_value=None)
-
-            mock_session = MagicMock()
-            mock_session.get = MagicMock(return_value=mock_response)
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_session = _FakeClientSession(
+                get_context=_FakeRequestContext(mock_response),
+            )
 
             with patch("aiohttp.ClientSession", return_value=mock_session):
                 result = await transport._transfer_via_http(
@@ -1555,15 +1654,10 @@ class TestHTTPTransfer:
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = Path(tmpdir) / "model.pth"
 
-            mock_response = MagicMock()
-            mock_response.status = 404
-            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-            mock_response.__aexit__ = AsyncMock(return_value=None)
-
-            mock_session = MagicMock()
-            mock_session.get = MagicMock(return_value=mock_response)
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_response = _FakeResponse(status=404)
+            mock_session = _FakeClientSession(
+                get_context=_FakeRequestContext(mock_response),
+            )
 
             with patch("aiohttp.ClientSession", return_value=mock_session):
                 result = await transport._transfer_via_http(
@@ -1585,16 +1679,13 @@ class TestHTTPTransfer:
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = Path(tmpdir) / "model.pth"
 
-            mock_response = MagicMock()
-            mock_response.status = 500
-            mock_response.text = AsyncMock(return_value="Internal Server Error")
-            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-            mock_response.__aexit__ = AsyncMock(return_value=None)
-
-            mock_session = MagicMock()
-            mock_session.get = MagicMock(return_value=mock_response)
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_response = _FakeResponse(
+                status=500,
+                text_result="Internal Server Error",
+            )
+            mock_session = _FakeClientSession(
+                get_context=_FakeRequestContext(mock_response),
+            )
 
             with patch("aiohttp.ClientSession", return_value=mock_session):
                 result = await transport._transfer_via_http(
@@ -1616,9 +1707,9 @@ class TestHTTPTransfer:
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = Path(tmpdir) / "model.pth"
 
-            mock_session = MagicMock()
-            mock_session.__aenter__ = AsyncMock(side_effect=asyncio.TimeoutError())
-            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_session = _FakeClientSession(
+                enter_side_effect=asyncio.TimeoutError(),
+            )
 
             with patch("aiohttp.ClientSession", return_value=mock_session):
                 result = await transport._transfer_via_http(
@@ -1644,19 +1735,13 @@ class TestHTTPTransfer:
         with tempfile.TemporaryDirectory() as tmpdir:
             local_path = Path(tmpdir) / "model.pth"
 
-            mock_response = MagicMock()
-            mock_response.status = 200
-            mock_response.content = MagicMock()
-            mock_response.content.iter_chunked = MagicMock(
-                return_value=AsyncIterator([b"content"])
+            mock_response = _FakeResponse(
+                status=200,
+                content=MagicMock(iter_chunked=lambda _: AsyncIterator([b"content"])),
             )
-            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-            mock_response.__aexit__ = AsyncMock(return_value=None)
-
-            mock_session = MagicMock()
-            mock_session.get = MagicMock(return_value=mock_response)
-            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_session = _FakeClientSession(
+                get_context=_FakeRequestContext(mock_response),
+            )
 
             with patch("aiohttp.ClientSession", return_value=mock_session):
                 await transport._transfer_via_http(
@@ -1667,7 +1752,7 @@ class TestHTTPTransfer:
                 )
 
                 # Verify Tailscale IP was used in URL
-                call_args = mock_session.get.call_args
+                call_args = mock_session.get_calls[0]
                 url = call_args[0][0]
                 assert "100.64.0.1" in url
 
@@ -1855,14 +1940,10 @@ class TestNetworkErrorHandling:
         with patch("aiohttp.ClientSession") as mock_session_cls:
             import aiohttp
 
-            mock_session = MagicMock()
-            mock_session.__aenter__ = AsyncMock(
-                side_effect=aiohttp.ClientConnectorError(
-                    MagicMock(), OSError("Connection refused")
-                )
+            mock_session_cls.side_effect = aiohttp.ClientConnectorError(
+                MagicMock(host="unreachable-host", port=8770, ssl=None),
+                OSError("Connection refused"),
             )
-            mock_session.__aexit__ = AsyncMock(return_value=None)
-            mock_session_cls.return_value = mock_session
 
             result = await transport.http_request(node, "/api/status")
 
@@ -1893,9 +1974,11 @@ class TestNetworkErrorHandling:
         transport = ClusterTransport()
         node = NodeConfig(hostname="test-host")
 
-        with patch.object(transport, "http_request") as mock_http, \
+        async def mock_http(*args, **kwargs):
+            return TransportResult(success=False, error="fail")
+
+        with patch.object(transport, "http_request", mock_http), \
              patch("asyncio.create_subprocess_exec") as mock_proc:
-            mock_http.return_value = TransportResult(success=False, error="fail")
             mock_proc.side_effect = FileNotFoundError("ssh not found")
 
             result = await transport.check_node_reachable(node)
@@ -1989,9 +2072,10 @@ class TestTransferMethodSelection:
         transport = ClusterTransport()
         node = NodeConfig(hostname="test-host")
 
-        with patch.object(transport, "_transfer_via_tailscale") as mock_ts:
-            mock_ts.return_value = TransportResult(success=True)
+        async def mock_ts(*args, **kwargs):
+            return TransportResult(success=True)
 
+        with patch.object(transport, "_transfer_via_tailscale", mock_ts):
             result = await transport.transfer_file(
                 local_path=Path("/tmp/test.txt"),
                 remote_path="data/test.txt",
@@ -2049,10 +2133,7 @@ class TestLargeFileHandling:
         try:
             with patch("asyncio.create_subprocess_exec") as mock_proc, \
                  patch("app.coordination.cluster_transport.logger") as mock_logger:
-                process = AsyncMock()
-                process.returncode = 0
-                process.communicate = AsyncMock(return_value=(b"", b""))
-                mock_proc.return_value = process
+                mock_proc.return_value = _FakeProcess(returncode=0)
 
                 await transport._base64_push(
                     local_path=temp_path,
@@ -2087,10 +2168,7 @@ class TestBandwidthLimiting:
             mock_bw.return_value = 5000  # 5 MB/s
 
             with patch("asyncio.create_subprocess_exec") as mock_proc:
-                process = AsyncMock()
-                process.returncode = 0
-                process.communicate = AsyncMock(return_value=(b"", b""))
-                mock_proc.return_value = process
+                mock_proc.return_value = _FakeProcess(returncode=0)
 
                 with patch.object(Path, "exists", return_value=True), \
                      patch.object(Path, "stat") as mock_stat:
@@ -2237,10 +2315,7 @@ class TestBase64TransferEdgeCases:
 
         try:
             with patch("asyncio.create_subprocess_exec") as mock_proc:
-                process = AsyncMock()
-                process.returncode = 0
-                process.communicate = AsyncMock(return_value=(b"", b""))
-                mock_proc.return_value = process
+                mock_proc.return_value = _FakeProcess(returncode=0)
 
                 await transport._base64_push(
                     local_path=temp_path,
@@ -2269,10 +2344,10 @@ class TestBase64TransferEdgeCases:
             local_path = Path(tmpdir) / "new_dir" / "subdir" / "file.txt"
 
             with patch("asyncio.create_subprocess_exec") as mock_proc:
-                process = AsyncMock()
-                process.returncode = 0
-                process.communicate = AsyncMock(return_value=(encoded, b""))
-                mock_proc.return_value = process
+                mock_proc.return_value = _FakeProcess(
+                    returncode=0,
+                    communicate_result=(encoded, b""),
+                )
 
                 result = await transport._base64_pull(
                     local_path=local_path,
@@ -2362,21 +2437,16 @@ class TestHTTPContentTypeHandling:
 
         import aiohttp
 
-        mock_response = MagicMock()
-        mock_response.status = 200
-        mock_response.json = AsyncMock(
-            side_effect=aiohttp.ContentTypeError(
+        mock_response = _FakeResponse(
+            status=200,
+            json_side_effect=aiohttp.ContentTypeError(
                 MagicMock(), MagicMock()
-            )
+            ),
+            text_result="Non-JSON response",
         )
-        mock_response.text = AsyncMock(return_value="Non-JSON response")
-        mock_response.__aenter__ = AsyncMock(return_value=mock_response)
-        mock_response.__aexit__ = AsyncMock(return_value=None)
-
-        mock_session = MagicMock()
-        mock_session.request = MagicMock(return_value=mock_response)
-        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-        mock_session.__aexit__ = AsyncMock(return_value=None)
+        mock_session = _FakeClientSession(
+            request_context=_FakeRequestContext(mock_response),
+        )
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
             result = await transport.http_request(node, "/api/status")
@@ -2402,16 +2472,20 @@ class TestPathConstruction:
             base_path="ai-service",
         )
 
-        with patch.object(transport, "_transfer_via_tailscale") as mock_ts:
-            mock_ts.return_value = TransportResult(success=True)
+        calls: list[tuple] = []
 
+        async def mock_ts(*args, **kwargs):
+            calls.append(args)
+            return TransportResult(success=True)
+
+        with patch.object(transport, "_transfer_via_tailscale", mock_ts):
             await transport.transfer_file(
                 local_path=Path("/tmp/test.txt"),
                 remote_path="data/test.txt",
                 node=node,
             )
 
-            call_args = mock_ts.call_args[0]
+            call_args = calls[0]
             remote_path = call_args[1]
             assert remote_path == "ai-service/data/test.txt"
 
@@ -2424,15 +2498,19 @@ class TestPathConstruction:
             base_path="custom-service",
         )
 
-        with patch.object(transport, "_transfer_via_tailscale") as mock_ts:
-            mock_ts.return_value = TransportResult(success=True)
+        calls: list[tuple] = []
 
+        async def mock_ts(*args, **kwargs):
+            calls.append(args)
+            return TransportResult(success=True)
+
+        with patch.object(transport, "_transfer_via_tailscale", mock_ts):
             await transport.transfer_file(
                 local_path=Path("/tmp/test.txt"),
                 remote_path="models/model.pth",
                 node=node,
             )
 
-            call_args = mock_ts.call_args[0]
+            call_args = calls[0]
             remote_path = call_args[1]
             assert remote_path == "custom-service/models/model.pth"

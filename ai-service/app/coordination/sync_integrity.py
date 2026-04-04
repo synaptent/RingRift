@@ -94,7 +94,7 @@ HashAlgorithm = Literal["sha256", "sha1", "md5", "blake2b"]
 # depending on database size, and running VACUUM on a database that was
 # just VACUUMed is redundant and wastes CPU.
 _VACUUM_CACHE: dict[str, float] = {}  # db_path -> last_vacuum_time
-VACUUM_CACHE_TTL_SECONDS = 60  # Don't re-VACUUM within 60 seconds
+VACUUM_CACHE_TTL_SECONDS = 3600  # Don't re-VACUUM within 1 hour
 
 
 @dataclass
@@ -684,7 +684,7 @@ def prepare_database_for_transfer(db_path: Path) -> tuple[bool, str]:
     resulting in missing transactions and data corruption.
 
     December 31, 2025: Added VACUUM caching to prevent repeated VACUUM
-    operations on the same database within 60 seconds. This reduces CPU
+    operations on the same database within 1 hour. This reduces CPU
     usage when multiple sync attempts target the same database.
 
     Args:

@@ -33,7 +33,8 @@ def event_bus():
 def global_event_bus():
     """Get the global event bus singleton."""
     reset_event_bus()
-    return get_event_bus()
+    with pytest.deprecated_call(match="get_event_bus\\(\\) from data_events"):
+        return get_event_bus()
 
 
 class TestDataEvent:
@@ -280,14 +281,18 @@ class TestEventBusSingleton:
     def test_singleton_returns_same_instance(self):
         """Test that get_event_bus returns the same instance."""
         reset_event_bus()
-        bus1 = get_event_bus()
-        bus2 = get_event_bus()
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from data_events"):
+            bus1 = get_event_bus()
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from data_events"):
+            bus2 = get_event_bus()
         assert bus1 is bus2
 
     def test_reset_creates_new_instance(self):
         """Test that reset creates a new event bus."""
         reset_event_bus()
-        bus1 = get_event_bus()
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from data_events"):
+            bus1 = get_event_bus()
         reset_event_bus()
-        bus2 = get_event_bus()
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from data_events"):
+            bus2 = get_event_bus()
         assert bus1 is not bus2

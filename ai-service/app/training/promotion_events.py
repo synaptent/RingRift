@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -95,7 +95,7 @@ class PromotionEventData:
             "config_key": self.config_key,
             "approved": self.approved,
             "reason": self.reason,
-            "timestamp": (self.timestamp or datetime.utcnow()).isoformat(),
+            "timestamp": (self.timestamp or datetime.now(UTC)).isoformat(),
         }
 
         if self.criterion_met:
@@ -175,7 +175,7 @@ def emit_promotion_event(
         win_rate_vs_random=win_rate_vs_random,
         win_rate_vs_heuristic=win_rate_vs_heuristic,
         promoted_path=promoted_path,
-        timestamp=datetime.utcnow(),
+        timestamp=datetime.now(UTC),
     )
 
     # Try safe_emit_event first (preferred)

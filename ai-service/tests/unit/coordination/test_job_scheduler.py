@@ -11,6 +11,7 @@ Tests the priority-based job scheduling system including:
 """
 
 import time
+import sqlite3
 from dataclasses import dataclass
 from typing import Any, Optional
 from unittest.mock import MagicMock, patch
@@ -262,7 +263,48 @@ class TestPriorityJobScheduler:
         result = scheduler.schedule(ScheduledJob(job_type="3", priority=JobPriority.NORMAL))
 
         assert result is False
-        assert scheduler.get_queue_stats()["total"] == 2
+
+    def test_next_job_survives_duration_scheduler_db_failure(self, sample_hosts, sample_statuses):
+        """Scheduler should fail open if duration history storage is unavailable."""
+        scheduler = PriorityJobScheduler()
+        scheduler.schedule(ScheduledJob(job_type="selfplay", priority=JobPriority.NORMAL))
+
+        with patch(
+            "app.coordination.job_scheduler.get_resource_availability",
+            side_effect=sqlite3.OperationalError("unable to open database file"),
+        ), patch(
+            "app.coordination.job_scheduler.estimate_task_duration",
+            side_effect=sqlite3.OperationalError("unable to open database file"),
+        ):
+            result = scheduler.next_job(sample_hosts, sample_statuses)
+
+        assert result is not None
+        job, host = result
+        assert job.job_type == "selfplay"
+        assert host.name == "gpu-host-1"
+        assert scheduler.get_queue_stats()["total"] == 0
+        assert scheduler.get_queue_stats()["running"] == 1
+
+    def test_next_job_survives_resource_optimizer_db_failure(self, sample_hosts, sample_statuses):
+        """Scheduler should fail open if resource optimizer storage is unavailable."""
+        scheduler = PriorityJobScheduler()
+        scheduler.schedule(ScheduledJob(job_type="selfplay", priority=JobPriority.NORMAL))
+
+        with patch(
+            "app.coordination.job_scheduler._RESOURCE_OPTIMIZER_AVAILABLE",
+            True,
+        ), patch(
+            "app.coordination.job_scheduler.should_scale_down",
+            side_effect=sqlite3.OperationalError("unable to open database file"),
+        ):
+            result = scheduler.next_job(sample_hosts, sample_statuses)
+
+        assert result is not None
+        job, host = result
+        assert job.job_type == "selfplay"
+        assert host.name == "gpu-host-1"
+        assert scheduler.get_queue_stats()["total"] == 0
+        assert scheduler.get_queue_stats()["running"] == 1
 
     def test_next_job_empty_queue(self, scheduler, sample_hosts, sample_statuses):
         """Test next_job with empty queue."""

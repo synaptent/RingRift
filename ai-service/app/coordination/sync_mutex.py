@@ -107,6 +107,8 @@ except ImportError:
 # Non-configurable constants
 LOCK_POLL_INTERVAL = 0.5  # Polling interval when waiting for lock
 CRASH_DETECTION_THRESHOLD = 60  # Consider process crashed if no heartbeat for this long
+RELEASE_RETRY_ATTEMPTS = 5
+RELEASE_RETRY_INTERVAL = 0.05
 
 
 @dataclass
@@ -289,15 +291,45 @@ class SyncMutex:
         conn = self._get_connection()
         hostname = socket.gethostname()
         pid = os.getpid()
+        original_busy_timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+        release_busy_timeout_ms = int(RELEASE_RETRY_INTERVAL * 1000)
+        conn.execute(f"PRAGMA busy_timeout={release_busy_timeout_ms}")
 
-        # Only release our own locks
-        cursor = conn.execute(
-            '''DELETE FROM sync_locks
-               WHERE host = ? AND holder_pid = ? AND holder_hostname = ?''',
-            (host, pid, hostname)
-        )
-        conn.commit()
-        return cursor.rowcount > 0
+        try:
+            # Only release our own locks.
+            # Concurrent thread/process activity can transiently lock the SQLite WAL;
+            # retry a few times so callers don't surface thread exceptions on cleanup.
+            for attempt in range(RELEASE_RETRY_ATTEMPTS):
+                try:
+                    cursor = conn.execute(
+                        '''DELETE FROM sync_locks
+                           WHERE host = ? AND holder_pid = ? AND holder_hostname = ?''',
+                        (host, pid, hostname)
+                    )
+                    conn.commit()
+                    return cursor.rowcount > 0
+                except sqlite3.OperationalError as e:
+                    if "locked" not in str(e).lower():
+                        logger.error(f"Database error releasing lock for {host}: {e}")
+                        return False
+
+                    try:
+                        conn.rollback()
+                    except sqlite3.Error:
+                        pass
+
+                    if attempt == RELEASE_RETRY_ATTEMPTS - 1:
+                        logger.warning(
+                            f"Database remained locked releasing sync lock for {host} "
+                            f"after {RELEASE_RETRY_ATTEMPTS} attempts"
+                        )
+                        return False
+
+                    time.sleep(RELEASE_RETRY_INTERVAL)
+        finally:
+            conn.execute(f"PRAGMA busy_timeout={original_busy_timeout}")
+
+        return False
 
     def release_all_for_process(self) -> int:
         """Release all locks held by this process.
@@ -400,18 +432,24 @@ class SyncMutex:
 
     def _cleanup_expired(self, conn: sqlite3.Connection) -> int:
         """Remove expired locks and crashed process locks."""
-        # Remove timed-out locks
-        cursor = conn.execute(
-            'DELETE FROM sync_locks WHERE timeout_at < ?', (time.time(),)
-        )
-        expired_count = cursor.rowcount
+        try:
+            # Remove timed-out locks
+            cursor = conn.execute(
+                'DELETE FROM sync_locks WHERE timeout_at < ?', (time.time(),)
+            )
+            expired_count = cursor.rowcount
 
-        # Also clean up crashed locks (does its own commit)
-        crashed_count = self.cleanup_crashed_locks()
+            # Also clean up crashed locks (does its own commit)
+            crashed_count = self.cleanup_crashed_locks()
 
-        if expired_count > 0:
-            conn.commit()
-        return expired_count + crashed_count
+            if expired_count > 0:
+                conn.commit()
+            return expired_count + crashed_count
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e).lower():
+                logger.debug("Skipping expired lock cleanup due to transient SQLite lock")
+                return 0
+            raise
 
     def force_release(self, host: str) -> bool:
         """Force release a lock (admin use only).
@@ -489,43 +527,49 @@ class SyncMutex:
         now = time.time()
         cleaned = 0
 
-        # Get all active locks
-        cursor = conn.execute(
-            '''SELECT lock_id, host, holder_pid, holder_hostname,
-                      last_heartbeat, acquired_at
-               FROM sync_locks'''
-        )
-        locks = cursor.fetchall()
+        try:
+            # Get all active locks
+            cursor = conn.execute(
+                '''SELECT lock_id, host, holder_pid, holder_hostname,
+                          last_heartbeat, acquired_at
+                   FROM sync_locks'''
+            )
+            locks = cursor.fetchall()
 
-        for lock in locks:
-            should_release = False
-            reason = ""
+            for lock in locks:
+                should_release = False
+                reason = ""
 
-            lock_id = lock["lock_id"]
-            host = lock["host"]
-            pid = lock["holder_pid"]
-            hostname = lock["holder_hostname"]
-            last_heartbeat = lock["last_heartbeat"] or lock["acquired_at"]
+                lock_id = lock["lock_id"]
+                host = lock["host"]
+                pid = lock["holder_pid"]
+                hostname = lock["holder_hostname"]
+                last_heartbeat = lock["last_heartbeat"] or lock["acquired_at"]
 
-            # Check if process is dead (local only)
-            if not self._is_process_alive(pid, hostname):
-                should_release = True
-                reason = f"process {pid} on {hostname} is dead"
+                # Check if process is dead (local only)
+                if not self._is_process_alive(pid, hostname):
+                    should_release = True
+                    reason = f"process {pid} on {hostname} is dead"
 
-            # Check heartbeat timeout
-            elif now - last_heartbeat > CRASH_DETECTION_THRESHOLD:
-                should_release = True
-                reason = f"no heartbeat for {now - last_heartbeat:.0f}s"
+                # Check heartbeat timeout
+                elif now - last_heartbeat > CRASH_DETECTION_THRESHOLD:
+                    should_release = True
+                    reason = f"no heartbeat for {now - last_heartbeat:.0f}s"
 
-            if should_release:
-                conn.execute('DELETE FROM sync_locks WHERE lock_id = ?', (lock_id,))
-                cleaned += 1
-                logger.info(f"Released stale lock for {host}: {reason}")
+                if should_release:
+                    conn.execute('DELETE FROM sync_locks WHERE lock_id = ?', (lock_id,))
+                    cleaned += 1
+                    logger.info(f"Released stale lock for {host}: {reason}")
 
-        if cleaned > 0:
-            conn.commit()
+            if cleaned > 0:
+                conn.commit()
 
-        return cleaned
+            return cleaned
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e).lower():
+                logger.debug("Skipping crashed lock cleanup due to transient SQLite lock")
+                return cleaned
+            raise
 
     def get_stats(self) -> dict[str, Any]:
         """Get sync mutex statistics."""

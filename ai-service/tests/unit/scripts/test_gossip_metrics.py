@@ -6,15 +6,18 @@ Tests the GossipMetricsMixin extracted from p2p_orchestrator.py.
 from __future__ import annotations
 
 import time
+import warnings
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 
-from scripts.p2p.gossip_metrics import (
-    GossipMetricsMixin,
-    calculate_compression_ratio,
-)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from scripts.p2p.gossip_metrics import (
+        GossipMetricsMixin,
+        calculate_compression_ratio,
+    )
 
 
 class MockOrchestrator(GossipMetricsMixin):

@@ -50,7 +50,8 @@ class TestEmitLeaderHeartbeatMissing:
         async def handler(event):
             received_events.append(event)
 
-        bus = get_event_bus()
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from data_events"):
+            bus = get_event_bus()
         bus.subscribe(DataEventType.LEADER_HEARTBEAT_MISSING, handler)
 
         await emit_leader_heartbeat_missing(
@@ -81,7 +82,8 @@ class TestEmitLeaderHeartbeatMissing:
         async def handler(event):
             received_events.append(event)
 
-        bus = get_event_bus()
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from data_events"):
+            bus = get_event_bus()
         bus.subscribe(DataEventType.LEADER_HEARTBEAT_MISSING, handler)
 
         await emit_leader_heartbeat_missing(

@@ -38,6 +38,7 @@ import sqlite3
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -412,7 +413,7 @@ class DurationScheduler:
             Tuple of (can_schedule, reason)
         """
         now = time.time()
-        now_dt = datetime.utcnow()
+        now_dt = datetime.now(UTC)
 
         # Check host availability
         is_available, available_at = self.get_host_availability(host, task_type)

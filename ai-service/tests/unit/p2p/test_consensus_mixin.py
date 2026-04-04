@@ -104,6 +104,8 @@ with patch.dict("sys.modules", {
 class TestableConsensusMixin(ConsensusMixin):
     """Concrete implementation for testing the mixin."""
 
+    __test__ = False
+
     def __init__(self, node_id: str = "test-node-1"):
         self.node_id = node_id
         self.role = MockNodeRole.FOLLOWER

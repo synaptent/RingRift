@@ -363,16 +363,16 @@ class TestEmitExplorationAdjustment:
 
     def test_uses_publish_sync_for_nonbaseline_adjustments(self, handler, monkeypatch):
         """Exploration adjustments should publish synchronously from sync code."""
-        mock_router = MagicMock()
+        mock_publish_sync = MagicMock()
         monkeypatch.setattr(
-            "app.coordination.event_router.get_router",
-            lambda: mock_router,
+            "app.coordination.event_router.publish_sync",
+            mock_publish_sync,
         )
 
         handler._emit_exploration_adjustment("hex8_2p", 0.3, "declining")
 
-        mock_router.publish_sync.assert_called_once()
-        call_args, call_kwargs = mock_router.publish_sync.call_args
+        mock_publish_sync.assert_called_once()
+        call_args, call_kwargs = mock_publish_sync.call_args
         payload = call_args[1]
         source = call_kwargs.get("source", call_args[2] if len(call_args) > 2 else "")
 

@@ -20,6 +20,12 @@ from app.sync.cluster_hosts import (
 )
 
 
+def load_hosts_config_with_warning():
+    """Call deprecated load_hosts_config() while consuming its expected warning."""
+    with pytest.deprecated_call(match="load_hosts_config\\(\\) is deprecated"):
+        return load_hosts_config()
+
+
 class TestClusterNode:
     """Test ClusterNode dataclass."""
 
@@ -262,7 +268,7 @@ elo_sync:
 
         # Mock HOSTS_CONFIG path
         with patch("app.sync.cluster_hosts.HOSTS_CONFIG", config_file):
-            config = load_hosts_config()
+            config = load_hosts_config_with_warning()
 
         assert "hosts" in config
         assert "node1" in config["hosts"]
@@ -291,7 +297,7 @@ elo_sync:
 """)
 
         with patch("app.sync.cluster_hosts.HOSTS_CONFIG", config_file):
-            config = load_hosts_config()
+            config = load_hosts_config_with_warning()
 
         assert "hosts" in config
         assert "node1" in config["hosts"]
@@ -305,7 +311,7 @@ elo_sync:
         nonexistent = tmp_path / "nonexistent.yaml"
 
         with patch("app.sync.cluster_hosts.HOSTS_CONFIG", nonexistent):
-            config = load_hosts_config()
+            config = load_hosts_config_with_warning()
 
         assert config == {}
 
@@ -315,7 +321,7 @@ elo_sync:
         config_file.write_text("")
 
         with patch("app.sync.cluster_hosts.HOSTS_CONFIG", config_file):
-            config = load_hosts_config()
+            config = load_hosts_config_with_warning()
 
         assert config == {}
 
@@ -339,7 +345,7 @@ elo_sync:
 """)
 
         with patch("app.sync.cluster_hosts.HOSTS_CONFIG", config_file):
-            config = load_hosts_config()
+            config = load_hosts_config_with_warning()
 
         assert "hosts" in config
         assert len(config["hosts"]) == 2
@@ -360,7 +366,7 @@ elo_sync:
 """)
 
         with patch("app.sync.cluster_hosts.HOSTS_CONFIG", config_file):
-            config = load_hosts_config()
+            config = load_hosts_config_with_warning()
 
         assert config["hosts"]["node1"]["ssh_port"] == 22
         assert config["hosts"]["node1"]["memory_gb"] == 80
@@ -378,7 +384,7 @@ hosts:
 """)
 
         with patch("app.sync.cluster_hosts.HOSTS_CONFIG", config_file):
-            config = load_hosts_config()
+            config = load_hosts_config_with_warning()
 
         assert config["hosts"]["node1"]["tailscale_ip"] == "100.10.20.30"
         assert config["hosts"]["node1"]["ssh_host"] == "192.168.1.100"
@@ -390,7 +396,7 @@ hosts:
         config_file.write_text("invalid: yaml: syntax: {{{")
 
         with patch("app.sync.cluster_hosts.HOSTS_CONFIG", config_file):
-            config = load_hosts_config()
+            config = load_hosts_config_with_warning()
 
         # Should return empty dict on error
         assert config == {}

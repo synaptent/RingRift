@@ -273,7 +273,7 @@ class MetricsManager:
                     query += " AND num_players = ?"
                     params.append(num_players)
 
-                query += " ORDER BY timestamp DESC LIMIT ?"
+                query += " ORDER BY timestamp DESC, id DESC LIMIT ?"
                 params.append(limit)
 
                 cursor.execute(query, params)
@@ -318,14 +318,21 @@ class MetricsManager:
                         "max": row[4],
                     }
 
-                cursor.execute("""
-                    SELECT metric_type, value, timestamp
+                cursor.execute(
+                    """
+                    SELECT m1.metric_type, m1.value, m1.timestamp
                     FROM metrics_history m1
-                    WHERE timestamp = (
-                        SELECT MAX(timestamp) FROM metrics_history m2
+                    WHERE m1.id = (
+                        SELECT m2.id
+                        FROM metrics_history m2
                         WHERE m2.metric_type = m1.metric_type
+                          AND m2.timestamp > ?
+                        ORDER BY m2.timestamp DESC, m2.id DESC
+                        LIMIT 1
                     )
-                """)
+                    """,
+                    (since,),
+                )
                 for row in cursor.fetchall():
                     if row[0] in summary:
                         summary[row[0]]["latest"] = row[1]

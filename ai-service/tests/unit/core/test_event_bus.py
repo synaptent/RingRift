@@ -617,26 +617,34 @@ class TestModuleFunctions:
 
     def test_get_event_bus_singleton(self):
         """Test get_event_bus returns singleton."""
-        bus1 = get_event_bus()
-        bus2 = get_event_bus()
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from core\\.event_bus"):
+            bus1 = get_event_bus()
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from core\\.event_bus"):
+            bus2 = get_event_bus()
         assert bus1 is bus2
 
     def test_reset_event_bus(self):
         """Test reset_event_bus clears singleton."""
-        bus1 = get_event_bus()
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from core\\.event_bus"):
+            bus1 = get_event_bus()
         reset_event_bus()
-        bus2 = get_event_bus()
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from core\\.event_bus"):
+            bus2 = get_event_bus()
         assert bus1 is not bus2
 
     def test_subscribe_function(self):
         """Test module-level subscribe function."""
         received = []
 
-        @subscribe("module.test")
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from core\\.event_bus"):
+            decorator = subscribe("module.test")
+
+        @decorator
         def handler(event):
             received.append(event)
 
-        bus = get_event_bus()
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from core\\.event_bus"):
+            bus = get_event_bus()
         assert "module.test" in bus._subscriptions
 
     @pytest.mark.asyncio
@@ -644,22 +652,30 @@ class TestModuleFunctions:
         """Test module-level publish function."""
         received = []
 
-        @subscribe("pub.module")
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from core\\.event_bus"):
+            decorator = subscribe("pub.module")
+
+        @decorator
         def handler(event):
             received.append(event)
 
-        await publish(Event(topic="pub.module"))
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from core\\.event_bus"):
+            await publish(Event(topic="pub.module"))
         assert len(received) == 1
 
     def test_publish_sync_function(self):
         """Test module-level publish_sync function."""
         received = []
 
-        @subscribe("sync.module")
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from core\\.event_bus"):
+            decorator = subscribe("sync.module")
+
+        @decorator
         def handler(event):
             received.append(event)
 
-        publish_sync(Event(topic="sync.module"))
+        with pytest.deprecated_call(match="get_event_bus\\(\\) from core\\.event_bus"):
+            publish_sync(Event(topic="sync.module"))
         assert len(received) == 1
 
 

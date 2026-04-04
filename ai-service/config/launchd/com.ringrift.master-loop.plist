@@ -43,8 +43,10 @@
         <string>--max-backups</string>
         <string>3</string>
         <string>--</string>
-        <string>/usr/bin/python3</string>
+        <string>/Users/armand/Development/RingRift/ai-service/.venv/bin/python</string>
         <string>/Users/armand/Development/RingRift/ai-service/scripts/master_loop.py</string>
+        <string>--profile</string>
+        <string>lean</string>
     </array>
 
     <!-- Working directory for the process -->
@@ -58,6 +60,10 @@
         <string>/Users/armand/Development/RingRift/ai-service</string>
         <key>RINGRIFT_DAEMON_MODE</key>
         <string>1</string>
+        <key>RINGRIFT_MAX_CONCURRENT_EVALUATIONS</key>
+        <string>1</string>
+        <key>RINGRIFT_MAX_EXPORT_SAMPLES</key>
+        <string>500000</string>
     </dict>
 
     <!-- Keep the process alive - restart if it exits -->

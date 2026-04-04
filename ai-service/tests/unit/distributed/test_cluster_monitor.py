@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import warnings
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.distributed.cluster_monitor import (
-    ClusterMonitor,
-    ClusterStatus,
-    NodeStatus,
-)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from app.distributed.cluster_monitor import (
+        ClusterMonitor,
+        ClusterStatus,
+        NodeStatus,
+    )
 
 
 class TestNodeStatus:

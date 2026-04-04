@@ -20,6 +20,8 @@ from app.coordination.data_pipeline_orchestrator import PipelineStage
 class TestHelper:
     """Test helper class that includes the mixin for testing."""
 
+    __test__ = False
+
     def __init__(self):
         # Initialize all required attributes from the mixin docstring
         self._current_stage = PipelineStage.IDLE

@@ -61,6 +61,7 @@ Migration Guide:
 
 from __future__ import annotations
 
+import importlib
 import warnings
 
 # =============================================================================
@@ -226,6 +227,11 @@ _EVENT_EMITTER_EXPORTS = frozenset(
     }
 )
 
+
+def _get_event_emitters_module():
+    """Resolve the current event_emitters module after reloads/reimports."""
+    return importlib.import_module("app.coordination.event_emitters")
+
 # =============================================================================
 # Re-exports from event_normalization.py
 # =============================================================================
@@ -388,5 +394,5 @@ __all__ = [
 def __getattr__(name: str):
     """Forward legacy emitter exports dynamically so reloads stay in sync."""
     if name in _EVENT_EMITTER_EXPORTS:
-        return getattr(_event_emitters, name)
+        return getattr(_get_event_emitters_module(), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

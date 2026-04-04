@@ -745,9 +745,15 @@ class EventTypeValidator:
         Uses simple substring and prefix matching.
         """
         event_upper = event_type.upper()
-        suggestions: list[tuple[int, str]] = []
+        suggestions: dict[str, int] = {}
 
-        for canonical in CANONICAL_EVENT_TYPES:
+        for candidate in CANONICAL_EVENT_TYPES:
+            # Normalize aliases and collapse lowercase enum values to a stable
+            # uppercase display form so suggestions are deterministic.
+            canonical = normalize_event_type(candidate)
+            if canonical != canonical.upper():
+                canonical = canonical.upper()
+
             score = 0
             canonical_upper = canonical.upper()
 
@@ -768,11 +774,13 @@ class EventTypeValidator:
             score += overlap * 15
 
             if score > 0:
-                suggestions.append((score, canonical))
+                previous = suggestions.get(canonical, 0)
+                if score > previous:
+                    suggestions[canonical] = score
 
         # Sort by score descending, return top results
-        suggestions.sort(key=lambda x: -x[0])
-        return [s[1] for s in suggestions[:max_results]]
+        ranked = sorted(suggestions.items(), key=lambda item: (-item[1], item[0]))
+        return [candidate for candidate, _score in ranked[:max_results]]
 
     @classmethod
     def get_unknown_events(cls) -> dict[str, int]:

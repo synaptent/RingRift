@@ -399,6 +399,17 @@ class TestDiskSpaceManagerHealthCheck:
     async def test_health_check_running(self, daemon: DiskSpaceManagerDaemon) -> None:
         """Test health check when daemon is running."""
         await daemon.start()
+        daemon._current_status = DiskStatus(
+            path="/test",
+            total_gb=100,
+            used_gb=40,
+            free_gb=60,
+            usage_percent=40,
+            needs_cleanup=False,
+            is_warning=False,
+            is_critical=False,
+            is_emergency=False,
+        )
 
         result = daemon.health_check()
         assert result.healthy is True

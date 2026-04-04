@@ -634,7 +634,13 @@ class QualityFeedbackHandler(HandlerBase):
         - Declining trend → boost exploration temperature
         """
         try:
-            from app.coordination.event_router import DataEventType, publish_sync
+            import importlib
+            import sys
+
+            event_router = sys.modules.get("app.coordination.event_router")
+            if event_router is None:
+                event_router = importlib.import_module("app.coordination.event_router")
+            data_event_type = event_router.DataEventType
 
             # Determine exploration adjustments based on quality
             if quality_score < 0.5:
@@ -673,8 +679,8 @@ class QualityFeedbackHandler(HandlerBase):
                     "timestamp": time.time(),
                 }
 
-                publish_sync(
-                    DataEventType.EXPLORATION_ADJUSTED,
+                event_router.publish_sync(
+                    data_event_type.EXPLORATION_ADJUSTED,
                     payload,
                     source="QualityFeedbackHandler",
                 )

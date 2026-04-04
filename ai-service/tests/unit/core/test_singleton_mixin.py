@@ -2,16 +2,19 @@
 
 import threading
 import time
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from app.core.singleton_mixin import (
-    SingletonMeta,
-    SingletonMixin,
-    ThreadSafeSingletonMixin,
-    singleton,
-)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from app.core.singleton_mixin import (
+        SingletonMeta,
+        SingletonMixin,
+        ThreadSafeSingletonMixin,
+        singleton,
+    )
 
 
 class TestSingletonMeta:

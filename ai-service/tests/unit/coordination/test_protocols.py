@@ -297,7 +297,8 @@ class TestBaseDaemon:
     @pytest.fixture
     def daemon(self):
         """Create a concrete daemon for testing."""
-        return self.ConcreteDaemon()
+        with pytest.deprecated_call(match="protocols\\.BaseDaemon is deprecated"):
+            return self.ConcreteDaemon()
 
     def test_is_running_initially_false(self, daemon):
         """Test is_running is False initially."""
@@ -496,6 +497,8 @@ class TestRegistry:
 
     class TestCoord(BaseCoordinator):
         """Test coordinator for registry tests."""
+
+        __test__ = False
 
         def __init__(self, name: str):
             super().__init__()

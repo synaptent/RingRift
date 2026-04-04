@@ -110,6 +110,8 @@ MockNodeRole.FOLLOWER = MockNodeRole("follower")
 class TestableGossipProtocol(GossipProtocolMixin):
     """Concrete implementation for testing the mixin."""
 
+    __test__ = False
+
     def __init__(self, node_id: str = "test-node-1"):
         self.node_id = node_id
         self.peers: dict[str, MockNodeInfo] = {}

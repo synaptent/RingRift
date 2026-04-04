@@ -7,6 +7,8 @@ Tests cover:
 - Worker-safe encoder initialization
 """
 
+import os
+
 import pytest
 import numpy as np
 
@@ -80,6 +82,34 @@ class TestNeuralNetEncoderCache:
 
         encoder = _get_neural_net_encoder("square19", feature_version=2)
         assert encoder.board_size == 19
+
+    def test_get_neural_net_encoder_does_not_leak_force_cpu_env(self, monkeypatch):
+        """Internal CPU forcing must not mutate the caller's environment."""
+        from app.training.parallel_encoding import (
+            _get_neural_net_encoder,
+            _ENCODER_CACHE,
+        )
+
+        monkeypatch.delenv("RINGRIFT_FORCE_CPU", raising=False)
+        _ENCODER_CACHE.clear()
+
+        _get_neural_net_encoder("square8", feature_version=2)
+
+        assert os.environ.get("RINGRIFT_FORCE_CPU") is None
+
+    def test_get_neural_net_encoder_restores_existing_force_cpu_env(self, monkeypatch):
+        """Existing env state should be preserved after encoder creation."""
+        from app.training.parallel_encoding import (
+            _get_neural_net_encoder,
+            _ENCODER_CACHE,
+        )
+
+        monkeypatch.setenv("RINGRIFT_FORCE_CPU", "0")
+        _ENCODER_CACHE.clear()
+
+        _get_neural_net_encoder("square8", feature_version=2)
+
+        assert os.environ.get("RINGRIFT_FORCE_CPU") == "0"
 
 
 class TestHeuristicExtractor:

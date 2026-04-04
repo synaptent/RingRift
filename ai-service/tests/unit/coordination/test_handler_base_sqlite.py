@@ -28,6 +28,8 @@ from app.coordination.handler_base import HandlerBase
 class TestHandler(HandlerBase):
     """Concrete handler for testing."""
 
+    __test__ = False
+
     def __init__(self):
         super().__init__(name="test_sqlite_handler", cycle_interval=60.0)
 

@@ -3,18 +3,22 @@
 December 27, 2025: Added to improve test coverage for critical coordination modules.
 """
 
+import warnings
+
 import pytest
 
-from app.coordination.coordinator_dependencies import (
-    COORDINATOR_REGISTRY,
-    CoordinatorDependency,
-    CoordinatorDependencyGraph,
-    check_event_chain_cycles,
-    get_dependency_graph,
-    get_initialization_order,
-    reset_dependency_graph,
-    validate_dependencies,
-)
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from app.coordination.coordinator_dependencies import (
+        COORDINATOR_REGISTRY,
+        CoordinatorDependency,
+        CoordinatorDependencyGraph,
+        check_event_chain_cycles,
+        get_dependency_graph,
+        get_initialization_order,
+        reset_dependency_graph,
+        validate_dependencies,
+    )
 
 
 class TestCoordinatorDependency:

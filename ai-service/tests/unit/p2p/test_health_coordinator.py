@@ -308,7 +308,8 @@ class TestHealthCoordinator:
 
     def test_collect_circuit_health_no_breaker(self, coordinator):
         """Test circuit health collection without breaker."""
-        summary = coordinator._collect_circuit_health()
+        with patch("scripts.p2p.health_coordinator.HAS_CIRCUIT_REGISTRIES", False):
+            summary = coordinator._collect_circuit_health()
         assert summary.total_circuits == 0
 
     def test_collect_circuit_health_with_breaker(self, coordinator):

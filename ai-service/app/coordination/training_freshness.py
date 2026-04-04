@@ -97,6 +97,12 @@ _DATA_DIR = _AI_SERVICE_ROOT / "data"
 _GAMES_DIR = _DATA_DIR / "games"
 _TRAINING_DIR = _DATA_DIR / "training"
 
+# April 2026: Cache NPZ creation times to avoid repeated np.load on the same file.
+# Key: (str(path), mtime), Value: (creation_time_or_None, cache_timestamp).
+# Invalidated when file mtime changes or after 10 minutes.
+_NPZ_CREATION_TIME_CACHE: dict[tuple[str, float], tuple[float | None, float]] = {}
+_NPZ_CREATION_TIME_CACHE_TTL = 600  # 10 minutes
+
 
 @dataclass
 class FreshnessConfig:
@@ -477,17 +483,40 @@ class TrainingFreshnessChecker:
         P1.6 Dec 2025: NPZ files exported by export_replay_dataset.py may contain
         export metadata with the timestamp when the data was generated.
 
+        April 2026: Results are cached by (path, mtime) for 10 minutes to avoid
+        repeated np.load calls on the same unchanged file. The training trigger
+        daemon calls this every ~60s for each config, so without caching the same
+        large NPZ gets loaded 28+ times per session.
+
         Args:
             npz_path: Path to NPZ file
 
         Returns:
             Unix timestamp of export, or None if unavailable
         """
+        now = time.time()
+
+        # Check cache: keyed by (path_str, mtime) so file changes invalidate
+        try:
+            file_mtime = npz_path.stat().st_mtime
+        except OSError:
+            return None
+
+        cache_key = (str(npz_path), file_mtime)
+        cached = _NPZ_CREATION_TIME_CACHE.get(cache_key)
+        if cached is not None:
+            cached_result, cached_at = cached
+            if now - cached_at < _NPZ_CREATION_TIME_CACHE_TTL:
+                return cached_result
+
+        # Cache miss or expired - load the file
+        result = None
         try:
             import numpy as np
             from datetime import datetime
 
-            with np.load(npz_path, allow_pickle=True) as data:
+            # allow_pickle needed for NPZ metadata arrays (existing behavior)
+            with np.load(npz_path, allow_pickle=True) as data:  # noqa: S301
                 # Check for metadata array (may contain export timestamp)
                 if "metadata" in data:
                     metadata = data["metadata"]
@@ -497,13 +526,16 @@ class TrainingFreshnessChecker:
                         export_time = metadata.get("export_time") or metadata.get("created_at")
                         if export_time:
                             if isinstance(export_time, (int, float)):
-                                return float(export_time)
-                            if isinstance(export_time, str):
+                                result = float(export_time)
+                            elif isinstance(export_time, str):
                                 dt = datetime.fromisoformat(export_time.replace("Z", "+00:00"))
-                                return dt.timestamp()
+                                result = dt.timestamp()
         except Exception as e:
             logger.debug(f"Failed to get NPZ creation time from {npz_path}: {e}")
-        return None
+
+        # Store in cache regardless of result (None means no metadata)
+        _NPZ_CREATION_TIME_CACHE[cache_key] = (result, now)
+        return result
 
     def check_freshness(
         self,
