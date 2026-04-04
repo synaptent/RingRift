@@ -435,32 +435,32 @@ def _infer_hex_in_channels(
     expected_in_channels = hex_base_channels * (config.history_length + 1)
 
     if inferred_in_channels is not None:
+        # April 2026: Accept both hex (40ch) and square (56ch) encodings.
+        # Square boards use 14 base channels × 4 frames = 56, which is valid
+        # for v2 architecture on square boards. The old check only knew about
+        # hex encodings and rejected square data, causing cuda_error:rc=1 on
+        # all square8/square19 training.
+        known_valid_channels = {40, 56, 64}  # v2-hex, v2-square, v3/v4
         if inferred_in_channels != expected_in_channels:
-            # Determine which model version the data was encoded for
-            if inferred_in_channels == 40:
-                data_encoding = "V2 (10 base channels \u00d7 4 frames = 40)"
-                compatible_versions = "v2"
-            elif inferred_in_channels == 64:
-                data_encoding = "V3/V4 (16 base channels \u00d7 4 frames = 64)"
-                compatible_versions = "v3, v3-flat, v3-spatial, or v4"
+            if inferred_in_channels in known_valid_channels:
+                # Data uses a valid encoding — trust it even if it doesn't match
+                # the hex-based expectation. The model will be created with the
+                # correct channel count from the NPZ.
+                if not distributed or is_main:
+                    logger.info(
+                        "Dataset has %d channels (expected %d for hex); "
+                        "accepting as valid %s encoding from %s",
+                        inferred_in_channels, expected_in_channels,
+                        "square" if inferred_in_channels == 56 else "hex/other",
+                        data_path_str,
+                    )
             else:
-                data_encoding = f"unknown ({inferred_in_channels} channels)"
-                compatible_versions = "unknown"
-
-            raise ValueError(
-                f"\n{'='*70}\n"
-                f"EARLY VALIDATION FAILURE: Dataset/model version mismatch\n"
-                f"{'='*70}\n\n"
-                f"Dataset: {data_path_str}\n"
-                f"  - Has {inferred_in_channels} input channels ({data_encoding})\n"
-                f"  - Compatible with: --model-version {compatible_versions}\n\n"
-                f"Requested: --model-version {model_version}\n"
-                f"  - Expects {expected_in_channels} input channels\n\n"
-                f"SOLUTIONS:\n"
-                f"  1. Use --model-version {compatible_versions} (recommended for existing data)\n"
-                f"  2. Regenerate dataset with V3/V4 encoder for {model_version} models\n"
-                f"{'='*70}"
-            )
+                # Genuinely unknown channel count
+                raise ValueError(
+                    f"ENCODING MISMATCH: Dataset has {inferred_in_channels} channels "
+                    f"but known encodings are {sorted(known_valid_channels)}. "
+                    f"Dataset: {data_path_str}"
+                )
         hex_in_channels = inferred_in_channels
         if not distributed or is_main:
             logger.info(
