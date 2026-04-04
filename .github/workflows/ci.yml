@@ -1096,6 +1096,16 @@ jobs:
         run: |
           PYTHONPATH=. python scripts/check_import_integrity.py
 
+      - name: Run board encoding contract tests
+        working-directory: ai-service
+        run: |
+          PYTHONPATH=. pytest tests/contracts/test_board_encoding_contract.py -v --timeout=10
+
+      - name: Run critical interface contract tests
+        working-directory: ai-service
+        run: |
+          PYTHONPATH=. pytest tests/contracts/test_critical_interfaces.py -v --timeout=10
+
       - name: Run quick pipeline regression smoke
         working-directory: ai-service
         run: |
