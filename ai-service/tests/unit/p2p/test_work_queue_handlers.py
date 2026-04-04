@@ -82,8 +82,14 @@ class MockWorkQueue:
         self._add_called.append(item)
         return work_id
 
+    async def add_work_async(self, item, force=False):
+        return self.add_work(item)
+
     def claim_work(self, node_id, capabilities=None):
         return self._claim_result
+
+    async def claim_work_async(self, node_id, capabilities=None):
+        return self.claim_work(node_id, capabilities)
 
     def start_work(self, work_id):
         return self._start_result
@@ -240,7 +246,7 @@ class TestHandleWorkAdd:
         """Should add work and return work_id."""
         # Create a complete mock chain
         mock_wq = MagicMock()
-        mock_wq.add_work.return_value = "work-123"
+        mock_wq.add_work_async = AsyncMock(return_value="work-123")
 
         # Mock the entire work_queue module to handle internal imports
         mock_work_queue_module = MagicMock()
@@ -316,7 +322,7 @@ class TestHandleWorkClaim:
     async def test_claim_not_leader(self, follower_handler):
         """Non-leaders should get 403."""
         request = MagicMock()
-        request.query = {}
+        request.query = {"node_id": "worker-1", "capabilities": ""}
 
         response = await follower_handler.handle_work_claim(request)
 
@@ -341,6 +347,8 @@ class TestHandleWorkClaim:
         """Should return no_work_available when queue is empty."""
         mock_work_queue._claim_result = None
         with patch("scripts.p2p.handlers.work_queue.get_work_queue", return_value=mock_work_queue):
+            handler._is_unknown_node = lambda node_id: False
+            handler._check_code_version = lambda node_id: None
             request = MagicMock()
             request.query = {"node_id": "worker-1", "capabilities": ""}
 
@@ -356,6 +364,9 @@ class TestHandleWorkClaim:
         work_item = MockWorkItem()
         mock_work_queue._claim_result = work_item
         with patch("scripts.p2p.handlers.work_queue.get_work_queue", return_value=mock_work_queue):
+            handler._is_unknown_node = lambda node_id: False
+            handler._check_code_version = lambda node_id: None
+            handler._check_node_capacity = lambda node_id, cap: (True, "")
             request = MagicMock()
             request.query = {"node_id": "worker-1", "capabilities": "gpu,cuda"}
 
@@ -372,8 +383,11 @@ class TestHandleWorkStart:
 
     @pytest.mark.asyncio
     async def test_start_not_leader(self, follower_handler):
-        """Non-leaders should get 403."""
+        """Non-leaders fall back to 403 when start forwarding fails."""
         request = MagicMock()
+        request.json = AsyncMock(return_value={"work_id": "work-123"})
+
+        follower_handler._forward_to_leader = AsyncMock(return_value=None)
 
         response = await follower_handler.handle_work_start(request)
 
@@ -410,8 +424,11 @@ class TestHandleWorkComplete:
 
     @pytest.mark.asyncio
     async def test_complete_not_leader(self, follower_handler):
-        """Non-leaders should get 403."""
+        """Non-leaders fall back to 403 when completion forwarding fails."""
         request = MagicMock()
+        request.json = AsyncMock(return_value={"work_id": "work-123", "result": {}})
+
+        follower_handler._forward_to_leader = AsyncMock(return_value=None)
 
         response = await follower_handler.handle_work_complete(request)
 
@@ -488,8 +505,11 @@ class TestHandleWorkFail:
 
     @pytest.mark.asyncio
     async def test_fail_not_leader(self, follower_handler):
-        """Non-leaders should get 403."""
+        """Non-leaders fall back to 403 when forwarding fails."""
         request = MagicMock()
+        request.json = AsyncMock(return_value={"work_id": "work-123", "error": "OOM"})
+
+        follower_handler._forward_to_leader = AsyncMock(return_value=None)
 
         response = await follower_handler.handle_work_fail(request)
 
@@ -737,7 +757,7 @@ class TestErrorHandling:
     async def test_add_work_exception(self, handler):
         """Should return 500 on exception."""
         mock_wq = MagicMock()
-        mock_wq.add_work.side_effect = RuntimeError("Database error")
+        mock_wq.add_work_async = AsyncMock(side_effect=RuntimeError("Database error"))
         with patch("scripts.p2p.handlers.work_queue.get_work_queue", return_value=mock_wq):
             request = MagicMock()
             request.json = AsyncMock(return_value={"work_type": "selfplay"})
@@ -754,8 +774,10 @@ class TestErrorHandling:
     async def test_claim_exception(self, handler):
         """Should return 500 on exception."""
         mock_wq = MagicMock()
-        mock_wq.claim_work.side_effect = RuntimeError("Claim error")
+        mock_wq.claim_work_async = AsyncMock(side_effect=RuntimeError("Claim error"))
         with patch("scripts.p2p.handlers.work_queue.get_work_queue", return_value=mock_wq):
+            handler._is_unknown_node = lambda node_id: False
+            handler._check_code_version = lambda node_id: None
             request = MagicMock()
             request.query = {"node_id": "worker-1", "capabilities": ""}
 

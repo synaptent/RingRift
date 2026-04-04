@@ -171,7 +171,7 @@ class TestManagerFactory:
     @patch("scripts.p2p.managers.JobManager")
     @patch("scripts.p2p.managers.StateManager")
     def test_selfplay_scheduler_dependencies(self, mock_sm, mock_jm, mock_sp):
-        """selfplay_scheduler should depend on state_manager and job_manager."""
+        """selfplay_scheduler should inject its live callback dependencies."""
         mock_state = MagicMock()
         mock_sm.return_value = mock_state
         mock_job = MagicMock()
@@ -186,8 +186,9 @@ class TestManagerFactory:
 
         assert result is mock_selfplay
         call_kwargs = mock_sp.call_args[1]
-        assert call_kwargs["state_manager"] is mock_state
-        assert call_kwargs["job_manager"] is mock_job
+        assert call_kwargs["get_active_configs_for_node_fn"] is mock_job.get_active_configs_for_node
+        assert callable(call_kwargs["load_curriculum_weights_fn"])
+        assert call_kwargs["verbose"] is False
 
     @patch("scripts.p2p.managers.SyncPlanner")
     @patch("scripts.p2p.managers.StateManager")

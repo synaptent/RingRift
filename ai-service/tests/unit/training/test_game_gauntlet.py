@@ -358,23 +358,9 @@ class TestGauntletEvaluationFlow:
         from types import SimpleNamespace
         from app.training import game_gauntlet
 
-        captured_events = []
+        mock_router = MagicMock()
 
-        class InterceptBus:
-            def __init__(self, real_bus=None):
-                self._real = real_bus
-            def publish_sync(self, event):
-                captured_events.append(event)
-                return event
-            def __getattr__(self, name):
-                if self._real:
-                    return getattr(self._real, name)
-                return MagicMock()
-
-        intercept = InterceptBus()
-
-        with patch("app.coordination.event_router.get_event_bus", return_value=intercept), \
-             patch("app.coordination.event_router.get_data_event_bus", return_value=intercept), \
+        with patch("app.coordination.event_router.get_router", return_value=mock_router), \
              patch.object(game_gauntlet, "create_neural_ai", return_value=MagicMock()), \
              patch.object(game_gauntlet, "create_baseline_ai", return_value=MagicMock()), \
              patch.object(game_gauntlet, "play_single_game") as mock_play:
@@ -400,7 +386,7 @@ class TestGauntletEvaluationFlow:
                     parallel_games=1,
                 )
 
-        assert len(captured_events) > 0
+        assert mock_router.publish_sync.called
 
     def test_gauntlet_result_structure(self):
         """GauntletResult has expected structure after evaluation."""

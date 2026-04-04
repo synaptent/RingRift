@@ -1954,31 +1954,29 @@ def _evaluate_single_opponent(
 
             # Emit EVALUATION_PROGRESS event for real-time monitoring (December 2025)
             try:
-                from app.coordination.event_router import DataEventType, DataEvent, get_event_bus
+                from app.coordination.event_router import DataEventType, publish_sync
 
-                bus = get_event_bus()
-                if bus:
-                    board_value = getattr(board_type, "value", board_type)
-                    if board_value is None:
-                        board_value = "unknown"
-                    config_key = f"{board_value}_{num_players}p"
-                    current_win_rate = result["wins"] / result["games"] if result["games"] > 0 else 0.0
-                    bus.publish_sync(DataEvent(
-                        event_type=DataEventType.EVALUATION_PROGRESS,
-                        payload={
-                            "config_key": config_key,
-                            "board_type": board_value,
-                            "baseline": baseline_name,
-                            "games_completed": result["games"],
-                            "games_total": games_per_opponent,
-                            "wins": result["wins"],
-                            "losses": result["losses"],
-                            "draws": result["draws"],
-                            "current_win_rate": current_win_rate,
-                            "num_players": num_players,
-                        },
-                        source="game_gauntlet",
-                    ))
+                board_value = getattr(board_type, "value", board_type)
+                if board_value is None:
+                    board_value = "unknown"
+                config_key = f"{board_value}_{num_players}p"
+                current_win_rate = result["wins"] / result["games"] if result["games"] > 0 else 0.0
+                publish_sync(
+                    DataEventType.EVALUATION_PROGRESS,
+                    {
+                        "config_key": config_key,
+                        "board_type": board_value,
+                        "baseline": baseline_name,
+                        "games_completed": result["games"],
+                        "games_total": games_per_opponent,
+                        "wins": result["wins"],
+                        "losses": result["losses"],
+                        "draws": result["draws"],
+                        "current_win_rate": current_win_rate,
+                        "num_players": num_players,
+                    },
+                    source="game_gauntlet",
+                )
             except (ImportError, AttributeError, RuntimeError):
                 pass  # Silent fail - progress events are optional
 

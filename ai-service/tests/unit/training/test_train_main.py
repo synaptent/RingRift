@@ -45,12 +45,12 @@ class TestTrainConfigDefaults:
     def test_default_epochs(self):
         """Default epochs_per_iter is set."""
         config = TrainConfig()
-        assert config.epochs_per_iter == 50  # Updated Dec 2025
+        assert config.epochs_per_iter == 20  # Mar 30, 2026: reduced to match executor default
 
     def test_default_learning_rate(self):
-        """Default learning rate is 1e-3."""
+        """Default learning rate is 1e-4."""
         config = TrainConfig()
-        assert config.learning_rate == 1e-3
+        assert config.learning_rate == 1e-4
 
     def test_default_batch_size(self):
         """Default batch size before auto-scaling."""

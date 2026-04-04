@@ -2303,7 +2303,7 @@ class HighQualityDataSyncWatcher:
 
         # Schedule the sync (fire-and-forget, with error handling)
         try:
-            asyncio.create_task(self._execute_priority_sync(hosts))
+            loop = asyncio.get_running_loop()
         except RuntimeError:
             # No running event loop - try to run synchronously
             try:
@@ -2312,6 +2312,8 @@ class HighQualityDataSyncWatcher:
                 logger.warning(f"[HighQualityDataSyncWatcher] Failed to execute sync: {e}")
                 self._sync_in_progress = False
                 return False
+        else:
+            loop.create_task(self._execute_priority_sync(hosts))
 
         return True
 

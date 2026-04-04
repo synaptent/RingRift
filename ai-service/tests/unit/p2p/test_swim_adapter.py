@@ -17,6 +17,10 @@ import pytest
 
 from app.p2p.swim_adapter import (
     SWIM_AVAILABLE,
+    SWIM_FAILURE_TIMEOUT,
+    SWIM_INDIRECT_PING_COUNT,
+    SWIM_PING_INTERVAL,
+    SWIM_SUSPICION_TIMEOUT,
     SwimBootstrapConfig,
     SwimConfig,
     SwimMembershipManager,
@@ -88,10 +92,10 @@ class TestSwimConfig:
         assert config.bind_host == "0.0.0.0"
         # bind_port comes from SWIM_PORT constant
         assert isinstance(config.bind_port, int)
-        assert config.failure_timeout == 5.0
-        assert config.suspicion_timeout == 3.0
-        assert config.ping_interval == 1.0
-        assert config.ping_request_group_size == 3
+        assert config.failure_timeout == SWIM_FAILURE_TIMEOUT
+        assert config.suspicion_timeout == SWIM_SUSPICION_TIMEOUT
+        assert config.ping_interval == SWIM_PING_INTERVAL
+        assert config.ping_request_group_size == SWIM_INDIRECT_PING_COUNT
         assert config.max_transmissions == 10
         assert config.seeds == []
         assert isinstance(config.bootstrap, SwimBootstrapConfig)
@@ -300,7 +304,7 @@ class TestSwimMembershipManagerCallbacks:
         assert manager._members["other-node"] == "alive"
 
     def test_handle_member_failed_callback(self):
-        """Should call on_member_failed callback."""
+        """Failed members are tracked locally without firing liveness callbacks."""
         callback = MagicMock()
         manager = SwimMembershipManager(
             node_id="test-node",
@@ -312,7 +316,7 @@ class TestSwimMembershipManagerCallbacks:
 
         manager._handle_member_failed(mock_member)
 
-        callback.assert_called_once_with("failed-node")
+        callback.assert_not_called()
         assert manager._members["failed-node"] == "failed"
 
     def test_callback_exception_handling(self):

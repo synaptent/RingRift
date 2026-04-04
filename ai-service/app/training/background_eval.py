@@ -630,7 +630,7 @@ class BackgroundEvaluator:
 
         # Estimate Elo from win rate
         elo_estimate = self.current_elo + 400 * np.log10(win_rate / (1 - win_rate + 1e-8))
-        elo_std = 100.0 / np.sqrt(total_games)  # Approximate
+        elo_std = 100.0 / np.sqrt(max(total_games, 1))  # Approximate
 
         # Check baseline gating
         passes_gating = True

@@ -964,6 +964,26 @@ class TestEscalationTiers:
         assert circuit.escalation_entered_at is not None
         assert time.time() - circuit.escalation_entered_at < 1.0
 
+    def test_escalate_emits_sync_event(self):
+        """_escalate should emit through the router sync API."""
+        import app.distributed.circuit_breaker as circuit_breaker_module
+
+        breaker = CircuitBreaker(failure_threshold=2, max_consecutive_opens=5)
+        circuit = breaker._get_or_create_circuit("host1")
+        circuit.consecutive_opens = 10  # Should be tier 2
+
+        mock_router = MagicMock()
+        with patch.object(circuit_breaker_module, "_get_event_router", return_value=mock_router):
+            breaker._escalate(circuit, target="host1")
+
+        mock_router.emit_sync.assert_called_once()
+        event_type, payload = mock_router.emit_sync.call_args.args[:2]
+        assert event_type == "escalation_tier_changed"
+        assert payload["target"] == "host1"
+        assert payload["old_tier"] == 0
+        assert payload["new_tier"] == 2
+        assert payload["consecutive_opens"] == 10
+
     def test_escalate_only_updates_on_tier_change(self):
         """_escalate should not update entered_at if tier unchanged."""
         breaker = CircuitBreaker(failure_threshold=2, max_consecutive_opens=5)

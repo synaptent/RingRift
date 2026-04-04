@@ -331,6 +331,18 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                 populator = getattr(loop, "populator", None)
         return populator
 
+    def _resolve_work_queue_executor(self, wq: Any) -> Any:
+        """Return a dedicated work-queue executor when available.
+
+        Some legacy and test queue implementations do not expose
+        ``_get_wq_executor()`` yet. Returning ``None`` preserves compatibility
+        by using the event loop's default executor in ``run_in_executor``.
+        """
+        get_executor = getattr(wq, "_get_wq_executor", None)
+        if callable(get_executor):
+            return get_executor()
+        return None
+
     def _get_node_info(self, node_id: str) -> dict | None:
         """Get NodeInfo for a node from the peers dict.
 
@@ -998,7 +1010,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     )
                     _loop = asyncio.get_event_loop()
                     work_id = await _loop.run_in_executor(
-                        wq._get_wq_executor(), wq.add_work, item
+                        self._resolve_work_queue_executor(wq), wq.add_work, item
                     )
                     work_ids.append(work_id)
                 except Exception as e:
@@ -1238,7 +1250,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     import asyncio
                     _loop = asyncio.get_event_loop()
                     item = await _loop.run_in_executor(
-                        wq._get_wq_executor(), wq.claim_work, node_id, capabilities, ["training"]
+                        self._resolve_work_queue_executor(wq), wq.claim_work, node_id, capabilities, ["training"]
                     )
                     if item is not None:
                         return self.json_response({
@@ -1515,7 +1527,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             # Mar 4, 2026: Use dedicated executor to avoid shared pool saturation
             _loop = _asyncio.get_event_loop()
             work_type, config, assigned_to, success = await _loop.run_in_executor(
-                wq._get_wq_executor(), _read_and_complete
+                self._resolve_work_queue_executor(wq), _read_and_complete
             )
 
             # Emit event to coordination EventRouter (Dec 2025 consolidation)
@@ -1734,7 +1746,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             # Mar 4, 2026: Use dedicated executor to avoid shared pool saturation
             _loop = _asyncio.get_event_loop()
             work_type, config, node_id, success = await _loop.run_in_executor(
-                wq._get_wq_executor(), _read_and_fail
+                self._resolve_work_queue_executor(wq), _read_and_fail
             )
 
             # Emit failure event to coordination EventRouter (Dec 2025 consolidation)
@@ -1898,7 +1910,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
                     import asyncio
                     _loop = asyncio.get_event_loop()
                     history = await _loop.run_in_executor(
-                        wq._get_wq_executor(), wq.get_history, 500, None
+                        self._resolve_work_queue_executor(wq), wq.get_history, 500, None
                     )
                     completions_1h = 0
                     failures_1h = 0
@@ -2018,7 +2030,7 @@ class WorkQueueHandlersMixin(BaseP2PHandler):
             import asyncio
             _loop = asyncio.get_event_loop()
             history = await _loop.run_in_executor(
-                wq._get_wq_executor(), wq.get_history, limit, status_filter
+                self._resolve_work_queue_executor(wq), wq.get_history, limit, status_filter
             )
             return self.json_response({
                 "history": history,

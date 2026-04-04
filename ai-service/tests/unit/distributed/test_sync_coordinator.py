@@ -795,10 +795,13 @@ class TestHighQualityDataSyncWatcher:
         )
 
         watcher = HighQualityDataSyncWatcher()
-        result = watcher.force_sync()
+        with patch.object(watcher, "_execute_priority_sync", new_callable=AsyncMock) as mock_sync:
+            result = watcher.force_sync()
 
         # Returns True if sync was triggered
         assert isinstance(result, bool)
+        assert result is True
+        mock_sync.assert_awaited_once_with([])
 
 
 class TestWiringFunctions:

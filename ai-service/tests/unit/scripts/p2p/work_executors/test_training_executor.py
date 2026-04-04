@@ -285,7 +285,7 @@ async def test_execute_training_work_surfaces_event_and_s3_followup_failures(
     monkeypatch.setattr(training_executor, "_try_fetch_npz_from_s3", fake_s3_fetch)
     monkeypatch.setattr(training_executor, "_try_push_candidate_to_s3", fake_push)
     monkeypatch.setattr(training_executor.asyncio, "create_subprocess_exec", fake_exec)
-    monkeypatch.setattr(event_router, "emit_event", lambda *args, **kwargs: False)
+    monkeypatch.setattr(event_router, "safe_emit_event", lambda *args, **kwargs: False)
 
     work_item = {"work_id": "work-success"}
     result = await training_executor.execute_training_work(

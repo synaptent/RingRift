@@ -1303,6 +1303,8 @@ class TestEdgeCases:
         # Should not crash
         result = evaluator._run_placeholder_evaluation(100)
         assert result.baseline_results == {}
+        assert result.games_played == 0
+        assert result.elo_std == 100.0
 
     def test_zero_games_per_eval(self, mock_model_getter):
         """Should handle zero games per eval gracefully."""
@@ -1313,8 +1315,8 @@ class TestEdgeCases:
         )
 
         result = evaluator._run_placeholder_evaluation(100)
-        # Should have 0 or default games
-        assert result.games_played >= 0
+        assert result.games_played == 0
+        assert result.elo_std == 100.0
 
     def test_very_high_elo_threshold(self, evaluator):
         """Should never checkpoint with very high threshold."""

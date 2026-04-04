@@ -507,8 +507,7 @@ class TestMakeHandlersResilient:
         event.event_type = MagicMock(value="TEST")
 
         # Run the handler (should timeout)
-        import asyncio
-        asyncio.get_event_loop().run_until_complete(coord._on_slow(event))
+        asyncio.run(coord._on_slow(event))
 
         metrics = get_handler_metrics("_on_slow", "MyCoordinator")
         assert metrics.timeout_count == 1

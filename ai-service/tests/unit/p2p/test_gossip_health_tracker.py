@@ -23,9 +23,10 @@ class TestGossipHealthTrackerImport:
 
     def test_import_threshold_constant(self):
         """Test threshold constant is available."""
+        from app.config.coordination_defaults import GossipDefaults
         from scripts.p2p.gossip_protocol import GOSSIP_FAILURE_SUSPECT_THRESHOLD
 
-        assert GOSSIP_FAILURE_SUSPECT_THRESHOLD == 5
+        assert GOSSIP_FAILURE_SUSPECT_THRESHOLD == GossipDefaults.FAILURE_THRESHOLD
 
 
 class TestGossipHealthTrackerInit:
@@ -33,10 +34,13 @@ class TestGossipHealthTrackerInit:
 
     def test_default_threshold(self):
         """Test default failure threshold."""
-        from scripts.p2p.gossip_protocol import GossipHealthTracker
+        from scripts.p2p.gossip_protocol import (
+            GOSSIP_FAILURE_SUSPECT_THRESHOLD,
+            GossipHealthTracker,
+        )
 
         tracker = GossipHealthTracker()
-        assert tracker._failure_threshold == 5
+        assert tracker._failure_threshold == GOSSIP_FAILURE_SUSPECT_THRESHOLD
 
     def test_custom_threshold(self):
         """Test custom failure threshold."""

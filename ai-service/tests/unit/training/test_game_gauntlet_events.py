@@ -6,33 +6,11 @@ from app.training import game_gauntlet
 
 
 def test_evaluation_progress_payload_includes_config_key_and_board_type(monkeypatch):
-    captured_events = []
+    mock_router = MagicMock()
 
-    class _InterceptBus:
-        """Wraps real bus but captures publish_sync calls."""
-        def __init__(self, real_bus):
-            self._real = real_bus
-        def publish_sync(self, event):
-            captured_events.append(event)
-            return event
-        def __getattr__(self, name):
-            return getattr(self._real, name)
-
-    # Wrap whatever bus get_event_bus returns (real or mock) with our interceptor
     import app.coordination.event_router as event_router
-    original_get = event_router.get_event_bus
-    intercept_bus = None
 
-    def intercepting_get():
-        nonlocal intercept_bus
-        real = original_get()
-        if real is None:
-            real = MagicMock()
-        if intercept_bus is None:
-            intercept_bus = _InterceptBus(real)
-        return intercept_bus
-
-    monkeypatch.setattr(event_router, "get_event_bus", intercepting_get)
+    monkeypatch.setattr(event_router, "get_router", lambda: mock_router)
 
     monkeypatch.setattr(game_gauntlet, "create_neural_ai", lambda *args, **kwargs: object())
     monkeypatch.setattr(game_gauntlet, "create_baseline_ai", lambda *args, **kwargs: object())
@@ -62,12 +40,13 @@ def test_evaluation_progress_payload_includes_config_key_and_board_type(monkeypa
         parallel_games=1,
     )
 
-    assert captured_events, "Expected evaluation progress events to be published"
-    progress_event = next(
-        event
-        for event in captured_events
-        if getattr(event, "payload", {}).get("config_key") == "square19_2p"
-    )
-    payload = progress_event.payload
+    mock_router.publish_sync.assert_called()
+    matching_calls = [
+        call
+        for call in mock_router.publish_sync.call_args_list
+        if len(call.args) >= 2 and call.args[1].get("config_key") == "square19_2p"
+    ]
+    assert matching_calls, "Expected evaluation progress events to be published"
+    payload = matching_calls[-1].args[1]
     assert payload["config_key"] == "square19_2p"
     assert payload["board_type"] == "square19"

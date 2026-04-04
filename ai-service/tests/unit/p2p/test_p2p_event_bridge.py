@@ -163,7 +163,7 @@ class TestEmitP2PWorkCompleted:
 
     @pytest.mark.asyncio
     async def test_emit_tournament_complete(self):
-        """Test emitting EVALUATION_COMPLETED event for tournament."""
+        """Test emitting TOURNAMENT_COMPLETED event for tournament work."""
         from scripts.p2p.p2p_event_bridge import emit_p2p_work_completed
 
         mock_publish = AsyncMock()
@@ -180,7 +180,8 @@ class TestEmitP2PWorkCompleted:
 
         mock_publish.assert_called_once()
         call_kwargs = mock_publish.call_args.kwargs
-        assert call_kwargs["event_type"] == "EVALUATION_COMPLETED"
+        assert call_kwargs["event_type"] == "TOURNAMENT_COMPLETED"
+        assert call_kwargs["payload"]["config_key"] == "hex8_2p"
 
     @pytest.mark.asyncio
     async def test_emit_work_completed_no_router(self):

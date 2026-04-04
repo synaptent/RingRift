@@ -178,7 +178,7 @@ def _emit_escalation_event(target: str, old_tier: int, new_tier: int, consecutiv
     try:
         from app.distributed.data_events import DataEventType
         tier_config = ESCALATION_TIERS[new_tier] if new_tier < len(ESCALATION_TIERS) else ESCALATION_TIERS[-1]
-        router.emit(
+        router.emit_sync(
             DataEventType.ESCALATION_TIER_CHANGED.value,
             {
                 "target": target,

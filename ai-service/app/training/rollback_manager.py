@@ -778,19 +778,23 @@ class AutoRollbackHandler:
                 f"exploration_boost={boost_factor}"
             )
 
-            # Emit with exploration boost metadata
+            # Emit with exploration boost metadata.
             import asyncio
-            asyncio.create_task(
-                emit_selfplay_target_updated(
-                    config_key=config_key,
-                    target_games=new_target,
-                    reason=f"regression_recovery_{severity}",
-                    priority=1,  # High priority for regression recovery
-                    source="rollback_manager.py",
-                    exploration_boost=boost_factor,
-                    recovery_mode=True,
-                )
+            coro = emit_selfplay_target_updated(
+                config_key=config_key,
+                target_games=new_target,
+                reason=f"regression_recovery_{severity}",
+                priority=1,  # High priority for regression recovery
+                source="rollback_manager.py",
+                exploration_boost=boost_factor,
+                recovery_mode=True,
             )
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                asyncio.run(coro)
+            else:
+                loop.create_task(coro)
 
         except ImportError:
             logger.debug("[AutoRollbackHandler] data_events not available, skipping selfplay emission")

@@ -599,8 +599,7 @@ class TestAutoRollbackHandlerEmitEvents:
         payload = {"config_key": "hex8_2p", "current_target": 1000}
         handler._emit_regression_recovery_selfplay("hex8_2p_v5", "critical", payload)
 
-        # The method creates an async task, so we can't directly verify
-        # Just ensure no exceptions are raised
+        mock_emit.assert_awaited_once()
 
 
 class TestEdgeCases:

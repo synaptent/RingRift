@@ -15,6 +15,7 @@ import pytest
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.config.coordination_defaults import WorkQueueCleanupDefaults
 from scripts.p2p.loops.job_loops import (
     JobReaperConfig,
     JobReaperLoop,
@@ -301,8 +302,8 @@ class TestIdleDetectionConfig:
         config = IdleDetectionConfig()
 
         assert config.gpu_idle_threshold_percent == 10.0
-        assert config.idle_duration_threshold_seconds == 60.0
-        assert config.check_interval_seconds == 30.0
+        assert config.idle_duration_threshold_seconds == 15.0
+        assert config.check_interval_seconds == 10.0
         assert config.min_nodes_to_keep == 2
         assert config.zombie_gpu_threshold_percent == 5.0
         assert config.zombie_duration_threshold_seconds == 600.0
@@ -416,7 +417,12 @@ class TestIdleDetectionLoop:
     async def test_run_once_detects_zombie_node(self):
         """Test _run_once detects zombie node (jobs but no GPU)."""
         get_peers = MagicMock(return_value={
-            "node-1": {"has_gpu": True, "gpu_percent": 1.0, "selfplay_jobs": 3},
+            "node-1": {
+                "has_gpu": True,
+                "is_cuda_gpu_node": True,
+                "gpu_percent": 1.0,
+                "selfplay_jobs": 3,
+            },
         })
         on_zombie = AsyncMock()
         config = IdleDetectionConfig(
@@ -906,8 +912,8 @@ class TestWorkQueueMaintenanceConfig:
         assert config.maintenance_interval_seconds == 300.0  # 5 min
         assert config.cleanup_age_seconds == 86400.0  # 24 hours
         assert config.initial_delay_seconds == 60.0
-        assert config.max_pending_age_hours == 24.0
-        assert config.max_claimed_age_hours == 2.0
+        assert config.max_pending_age_hours == WorkQueueCleanupDefaults.MAX_PENDING_AGE_HOURS
+        assert config.max_claimed_age_hours == WorkQueueCleanupDefaults.MAX_CLAIMED_AGE_HOURS
 
     def test_validation_maintenance_interval_zero(self):
         """Test validation rejects maintenance_interval_seconds <= 0."""
