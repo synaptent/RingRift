@@ -1501,6 +1501,26 @@ def train_model(
         validate_hex_policy_indices=validate_hex_policy_indices,
         detect_tier_from_checkpoint=detect_tier_from_checkpoint,
     )
+    # April 2026: Early contract validation — catches encoding mismatches
+    # BEFORE model creation or data loading. This prevents the bug class
+    # that wasted 200+ GPU-hours across 5 manifestations.
+    try:
+        from app.training.board_encoding_contract import get_expected_channels, is_valid_channel_count
+        _contract_channels = get_expected_channels(config.board_type, model_version)
+        if _ds_result.hex_in_channels > 0 and not is_valid_channel_count(_ds_result.hex_in_channels):
+            logger.warning(
+                "[ContractWarning] NPZ channels %d not in known encodings for %s/%s (expected %d)",
+                _ds_result.hex_in_channels, config.board_type.name, model_version, _contract_channels,
+            )
+        elif _ds_result.hex_in_channels > 0 and _ds_result.hex_in_channels != _contract_channels:
+            logger.info(
+                "[ContractInfo] NPZ has %d channels, contract expects %d for %s/%s — "
+                "using NPZ value (may be cross-board encoding)",
+                _ds_result.hex_in_channels, _contract_channels, config.board_type.name, model_version,
+            )
+    except Exception as _contract_err:
+        logger.debug("[ContractCheck] Skipped: %s", _contract_err)
+
     board_size = _ds_result.board_size
     policy_size = _ds_result.policy_size
     hex_in_channels = _ds_result.hex_in_channels
