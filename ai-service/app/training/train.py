@@ -1508,16 +1508,20 @@ def train_model(
         from app.training.board_encoding_contract import get_expected_channels, is_valid_channel_count
         _contract_channels = get_expected_channels(config.board_type, model_version)
         if _ds_result.hex_in_channels > 0 and not is_valid_channel_count(_ds_result.hex_in_channels):
-            logger.warning(
-                "[ContractWarning] NPZ channels %d not in known encodings for %s/%s (expected %d)",
-                _ds_result.hex_in_channels, config.board_type.name, model_version, _contract_channels,
+            raise ValueError(
+                f"[ContractViolation] NPZ has {_ds_result.hex_in_channels} channels which is "
+                f"not a known encoding. Expected {_contract_channels} for "
+                f"{config.board_type.name}/{model_version}. Known: 40 (hex v2), 56 (square v2), 64 (hex v3/v4)."
             )
         elif _ds_result.hex_in_channels > 0 and _ds_result.hex_in_channels != _contract_channels:
+            # Valid channel count but doesn't match this board/version — log and continue
             logger.info(
                 "[ContractInfo] NPZ has %d channels, contract expects %d for %s/%s — "
-                "using NPZ value (may be cross-board encoding)",
+                "using NPZ value (cross-board encoding)",
                 _ds_result.hex_in_channels, _contract_channels, config.board_type.name, model_version,
             )
+    except ValueError:
+        raise  # Re-raise contract violations
     except Exception as _contract_err:
         logger.debug("[ContractCheck] Skipped: %s", _contract_err)
 
