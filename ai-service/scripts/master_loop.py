@@ -1609,8 +1609,33 @@ class MasterLoopController:
         }
         full = [daemon for daemon in DaemonType if daemon not in deprecated]
 
+        # April 2026: "lean" profile — 23 essential + useful daemons.
+        # Removes 24 redundant/dangerous daemons that cause:
+        # - Memory leaks (NPZ_COMBINATION loads multi-GB files)
+        # - Process contention (IDLE_RESOURCE, UTILIZATION_OPTIMIZER, UNDERUTILIZATION_RECOVERY all spawn selfplay)
+        # - Silent failures (STALE_FALLBACK, FAST_FAILURE_DETECTOR cascade)
+        # - Useless work (CONFIG_SYNC causes drift, NODE_AVAILABILITY rarely changes)
+        # The full training pipeline (selfplay→export→train→eval→promote) works with these 23.
+        lean = minimal + [
+            # Pipeline stages
+            DaemonType.MODEL_DISTRIBUTION,
+            DaemonType.SELFPLAY_COORDINATOR,
+            DaemonType.QUEUE_POPULATOR,
+            DaemonType.DATA_CONSOLIDATION,
+            DaemonType.TRAINING_TRIGGER,
+            DaemonType.EVALUATION,
+            DaemonType.AUTO_PROMOTION,
+            # Health & stability
+            DaemonType.DISK_SPACE_MANAGER,
+            DaemonType.MEMORY_MONITOR,
+            DaemonType.P2P_RECOVERY,
+            DaemonType.PROGRESS_WATCHDOG,
+            DaemonType.MAINTENANCE,
+        ]
+
         profiles = {
             "minimal": minimal,
+            "lean": lean,
             "standard": standard,
             "full": full,
         }
