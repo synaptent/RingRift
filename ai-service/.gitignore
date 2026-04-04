@@ -213,3 +213,4 @@ scripts/convert_single.py
 test_data/
 nohup*.out
 ai-service/nohup*.out
+<MagicMock*
