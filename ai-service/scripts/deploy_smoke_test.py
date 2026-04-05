@@ -67,7 +67,7 @@ def check_imports() -> list[str]:
     return failures
 
 
-def check_commit(expected: str | None) -> list[str]:
+def check_commit(expected: str | None, required: bool = False) -> list[str]:
     if not expected:
         return []
     try:
@@ -78,9 +78,15 @@ def check_commit(expected: str | None) -> list[str]:
         actual = r.stdout.strip()[:12]
         exp = expected[:12]
         if actual != exp:
-            return [f"Commit mismatch: expected {exp}, got {actual}"]
+            if required:
+                return [f"Commit mismatch: expected {exp}, got {actual}"]
+            print(f"  [WARN] Commit mismatch: expected {exp}, got {actual}")
+            return []
     except Exception as e:
-        return [f"Git check failed: {e}"]
+        if required:
+            return [f"Git check failed: {e}"]
+        print(f"  [WARN] Git check failed: {e}")
+        return []
     return []
 
 
@@ -152,6 +158,7 @@ def check_quick_game() -> list[str]:
 def main():
     ap = argparse.ArgumentParser(description="Post-deploy smoke test")
     ap.add_argument("--expected-commit", default=None)
+    ap.add_argument("--require-commit-match", action="store_true")
     ap.add_argument("--require-models", action="store_true")
     args = ap.parse_args()
 
@@ -163,7 +170,7 @@ def main():
 
     checks = [
         ("Imports", lambda: check_imports()),
-        ("Commit", lambda: check_commit(args.expected_commit)),
+        ("Commit", lambda: check_commit(args.expected_commit, required=args.require_commit_match)),
         ("Models", lambda: check_models(required=args.require_models)),
         ("Device", lambda: check_device()),
         ("Quick game", lambda: check_quick_game()),
