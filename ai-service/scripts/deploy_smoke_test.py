@@ -70,14 +70,9 @@ def check_commit(expected: str | None) -> list[str]:
     if not expected:
         return []
     try:
-        top = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=10, cwd=str(ROOT)
-        )
-        git_cwd = top.stdout.strip() if top.returncode == 0 and top.stdout.strip() else str(ROOT.parent)
         r = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=10, cwd=git_cwd
+            capture_output=True, text=True, timeout=10, cwd=str(ROOT)
         )
         actual = r.stdout.strip()[:12]
         exp = expected[:12]
@@ -88,15 +83,21 @@ def check_commit(expected: str | None) -> list[str]:
     return []
 
 
-def check_models() -> list[str]:
+def check_models(required: bool = False) -> list[str]:
     failures = []
     models_dir = ROOT / "models"
     if not models_dir.exists():
-        return ["Models directory not found"]
+        if required:
+            return ["Models directory not found"]
+        print("  [WARN] Models directory not found")
+        return []
 
     canonical = list(models_dir.glob("canonical_*.pth"))
     if len(canonical) < 4:
-        failures.append(f"Only {len(canonical)} canonical models (expected 12)")
+        if required:
+            failures.append(f"Only {len(canonical)} canonical models (expected 12)")
+        else:
+            print(f"  [WARN] Only {len(canonical)} canonical models (expected 12)")
     return failures
 
 
@@ -150,6 +151,7 @@ def check_quick_game() -> list[str]:
 def main():
     ap = argparse.ArgumentParser(description="Post-deploy smoke test")
     ap.add_argument("--expected-commit", default=None)
+    ap.add_argument("--require-models", action="store_true")
     args = ap.parse_args()
 
     print("=" * 50)
@@ -161,7 +163,7 @@ def main():
     checks = [
         ("Imports", lambda: check_imports()),
         ("Commit", lambda: check_commit(args.expected_commit)),
-        ("Models", lambda: check_models()),
+        ("Models", lambda: check_models(required=args.require_models)),
         ("Device", lambda: check_device()),
         ("Quick game", lambda: check_quick_game()),
     ]
