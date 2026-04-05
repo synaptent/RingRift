@@ -31,6 +31,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.ai.gumbel_mcts_ai import GumbelMCTSAI
 from app.models import AIConfig, BoardType, GameStatus, Move
 from app.training.env import TrainingEnvConfig, get_theoretical_max_moves, make_env
+from scripts.lib.minimal_loop_strategy import recommend_transfer_source, resolve_loop_profile
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
                     datefmt="%Y-%m-%d %H:%M:%S")
@@ -307,12 +308,19 @@ def main() -> None:
                     choices=list(BOARD_TYPE_MAP.keys()),
                     help="Board type (default: hex8)")
     ap.add_argument("--num-players", type=int, default=2, choices=[2, 3, 4])
+    ap.add_argument(
+        "--profile",
+        type=str,
+        default="auto",
+        choices=["auto", "standard", "large-board"],
+        help="Loop preset profile (default: auto)",
+    )
     ap.add_argument("--iterations", type=int, default=20)
-    ap.add_argument("--games-per-iter", type=int, default=300)
-    ap.add_argument("--eval-games", type=int, default=100)
-    ap.add_argument("--budget", type=int, default=128, help="MCTS sims (selfplay+eval)")
-    ap.add_argument("--epochs", type=int, default=15)
-    ap.add_argument("--batch-size", type=int, default=512)
+    ap.add_argument("--games-per-iter", type=int, default=None)
+    ap.add_argument("--eval-games", type=int, default=None)
+    ap.add_argument("--budget", type=int, default=None, help="MCTS sims (selfplay+eval)")
+    ap.add_argument("--epochs", type=int, default=None)
+    ap.add_argument("--batch-size", type=int, default=None)
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--promote-threshold", type=float, default=0.55)
     ap.add_argument("--selfplay-randomness", type=float, default=0.25,
@@ -325,6 +333,22 @@ def main() -> None:
     BOARD_TYPE = args.board_type
     BOARD_ENUM = BOARD_TYPE_MAP[args.board_type]
     NUM_PLAYERS = args.num_players
+    profile_info = resolve_loop_profile(
+        BOARD_TYPE,
+        NUM_PLAYERS,
+        args.profile,
+        games_per_iter=args.games_per_iter,
+        eval_games=args.eval_games,
+        budget=args.budget,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+    )
+    loop_settings = profile_info["settings"]
+    games_per_iter = int(loop_settings["games_per_iter"])
+    eval_games = int(loop_settings["eval_games"])
+    budget = int(loop_settings["budget"])
+    epochs = int(loop_settings["epochs"])
+    batch_size = int(loop_settings["batch_size"])
 
     wdir = Path(args.work_dir)
     wdir.mkdir(parents=True, exist_ok=True)
@@ -364,10 +388,17 @@ def main() -> None:
     logger.info("=" * 70)
     logger.info("MINIMAL ALPHAZERO LOOP")
     logger.info(f"  board={BOARD_TYPE} {NUM_PLAYERS}p | model={args.model}")
-    logger.info(f"  iters={args.iterations} games={args.games_per_iter} eval={args.eval_games}")
-    logger.info(f"  budget={args.budget} epochs={args.epochs} bs={args.batch_size} lr={args.lr}")
+    logger.info(f"  profile={profile_info['profile']} config={profile_info['config_key']}")
+    logger.info(f"  iters={args.iterations} games={games_per_iter} eval={eval_games}")
+    logger.info(f"  budget={budget} epochs={epochs} bs={batch_size} lr={args.lr}")
     logger.info(f"  promote_thr={args.promote_threshold:.0%} work_dir={wdir}")
     logger.info(f"  selfplay_randomness={args.selfplay_randomness}")
+    transfer_hint = recommend_transfer_source(BOARD_TYPE, NUM_PLAYERS)
+    if transfer_hint:
+        logger.info(
+            "  bootstrap_hint=%s (recommended same-board transfer init for weak/slow large-board configs)",
+            transfer_hint,
+        )
     logger.info("=" * 70)
 
     for it in range(start_iter, start_iter + args.iterations):
@@ -384,9 +415,9 @@ def main() -> None:
             break
 
         # 1. SELFPLAY
-        logger.info(f"[1/5] Selfplay: {args.games_per_iter} games, budget={args.budget}, "
+        logger.info(f"[1/5] Selfplay: {games_per_iter} games, budget={budget}, "
                      f"randomness={args.selfplay_randomness}")
-        sp = run_selfplay(str(best), args.games_per_iter, jpath, args.budget,
+        sp = run_selfplay(str(best), games_per_iter, jpath, budget,
                           randomness=args.selfplay_randomness)
         if sp["completed"] == 0:
             logger.error("No games completed, skipping")
@@ -424,8 +455,8 @@ def main() -> None:
                 train_npz = npath
         else:
             train_npz = npath
-        logger.info(f"[3/5] Train (epochs={args.epochs}, bs={args.batch_size})")
-        ti = train_model(train_npz, cpath, best, args.epochs, args.batch_size, args.lr)
+        logger.info(f"[3/5] Train (epochs={epochs}, bs={batch_size})")
+        ti = train_model(train_npz, cpath, best, epochs, batch_size, args.lr)
         if not ti or not cpath.exists():
             logger.error("Training failed, skipping")
             consec_failures += 1; continue
@@ -434,8 +465,8 @@ def main() -> None:
         consec_failures = 0
 
         # 4. EVALUATE
-        logger.info(f"[4/5] Evaluate ({args.eval_games} games)")
-        ev = evaluate(str(cpath), str(best), args.eval_games, args.budget)
+        logger.info(f"[4/5] Evaluate ({eval_games} games)")
+        ev = evaluate(str(cpath), str(best), eval_games, budget)
 
         # 5. PROMOTE / REJECT
         wr = ev["win_rate"]
