@@ -277,9 +277,14 @@ class QuorumSafeUpdateCoordinator:
             with open(self.config_path) as f:
                 self._config = yaml.safe_load(f)
 
-            # Extract voter list
-            p2p_config = self._config.get("p2p_settings", {})
-            voters = p2p_config.get("p2p_voters", self.DEFAULT_VOTERS)
+            # Prefer the canonical top-level p2p_voters list. Older configs
+            # nested it under p2p_settings, so retain that as a fallback.
+            voters = self._config.get("p2p_voters")
+            if not voters:
+                p2p_config = self._config.get("p2p_settings", {})
+                voters = p2p_config.get("p2p_voters")
+            if not voters:
+                voters = self.DEFAULT_VOTERS
             self._voter_node_ids = set(voters)
 
         return self._config
@@ -351,11 +356,18 @@ class QuorumSafeUpdateCoordinator:
                     # Extract quorum info
                     alive_peers = data.get("alive_peers", 0)
                     leader_id = data.get("leader_id")
+                    configured_voter_ids = set(self._voter_node_ids)
+                    live_voter_ids = data.get("voter_node_ids")
+                    if isinstance(live_voter_ids, list) and live_voter_ids:
+                        effective_voter_ids = set(live_voter_ids)
+                    else:
+                        effective_voter_ids = configured_voter_ids
 
                     # Get alive voters - P2P status uses 'peers' dict and 'voter_quorum_ok'
                     # First try the voters_alive count directly from P2P
                     voter_quorum_ok = data.get("voter_quorum_ok", False)
                     voters_alive_count = data.get("voters_alive", 0)
+                    quorum_required = data.get("voter_quorum_size", self.QUORUM_REQUIRED)
 
                     # Extract peer names from 'peers' dict (P2P uses this format)
                     peers_dict = data.get("peers", {})
@@ -366,16 +378,16 @@ class QuorumSafeUpdateCoordinator:
                     for peer_name in alive_peers_list:
                         # Check both raw name and name without port
                         clean_name = peer_name.split(":")[0] if ":" in peer_name else peer_name
-                        if peer_name in self._voter_node_ids or clean_name in self._voter_node_ids:
-                            alive_voters.append(peer_name)
+                        if peer_name in effective_voter_ids or clean_name in effective_voter_ids:
+                            alive_voters.append(clean_name)
 
                     # Use P2P's voter_quorum_ok if available, otherwise calculate
                     voter_count = max(len(alive_voters), voters_alive_count)
                     if voter_quorum_ok:
                         # P2P says quorum is OK - trust it
-                        if voter_count >= self.QUORUM_REQUIRED + 2:
+                        if voter_count >= quorum_required + 2:
                             level = QuorumHealthLevel.HEALTHY
-                        elif voter_count == self.QUORUM_REQUIRED + 1:
+                        elif voter_count == quorum_required + 1:
                             level = QuorumHealthLevel.DEGRADED
                         else:
                             level = QuorumHealthLevel.MINIMUM
@@ -389,8 +401,8 @@ class QuorumSafeUpdateCoordinator:
                         total_peers=len(self._get_node_configs()),
                         leader_id=leader_id,
                         alive_voters=alive_voters,
-                        total_voters=len(self._voter_node_ids),
-                        quorum_required=self.QUORUM_REQUIRED,
+                        total_voters=len(effective_voter_ids),
+                        quorum_required=quorum_required,
                     )
 
         except Exception as e:
@@ -465,6 +477,44 @@ class QuorumSafeUpdateCoordinator:
             work_dir=node.ringrift_path,
         )
         return SSHClient(config)
+
+    async def _probe_node_reachability(self, node: NodeConfig) -> tuple[bool, str]:
+        """Check whether a node can be reached over SSH before batching."""
+        try:
+            client = await self._create_ssh_client(node)
+            result = await client.run_async("echo connected", timeout=10)
+            if result.returncode == 0:
+                return (True, "connected")
+            detail = (result.stderr or result.stdout or "").strip()
+            return (False, detail or f"exit {result.returncode}")
+        except Exception as e:
+            return (False, str(e))
+
+    async def _filter_reachable_nodes(
+        self,
+        nodes: list[NodeConfig],
+    ) -> tuple[list[NodeConfig], list[NodeConfig]]:
+        """Split nodes into reachable and unreachable sets via SSH pre-flight."""
+        if not nodes:
+            return ([], [])
+
+        semaphore = asyncio.Semaphore(max(1, self.max_parallel_non_voters))
+
+        async def probe(node: NodeConfig) -> tuple[NodeConfig, bool, str]:
+            async with semaphore:
+                ok, detail = await self._probe_node_reachability(node)
+                return (node, ok, detail)
+
+        reachable: list[NodeConfig] = []
+        unreachable: list[NodeConfig] = []
+        for node, ok, detail in await asyncio.gather(*(probe(node) for node in nodes)):
+            if ok:
+                reachable.append(node)
+            else:
+                logger.warning(f"[{node.name}] Pre-flight reachability failed: {detail}")
+                unreachable.append(node)
+
+        return (reachable, unreachable)
 
     async def _check_p2p_running(self, client: SSHClient, node_name: str) -> bool:
         """Check if P2P orchestrator is running on node."""
@@ -995,27 +1045,65 @@ class QuorumSafeUpdateCoordinator:
         # Phase 2: Calculate safe batches
         logger.info("Phase 2: Calculating update batches...")
         all_nodes = self._get_node_configs()
+        result = UpdateResult(success=True, batches_updated=0)
+
+        effective_skip_voters = skip_voters
+        if restart_p2p and health.quorum_level == QuorumHealthLevel.MINIMUM and not skip_voters:
+            if skip_non_voters:
+                return UpdateResult(
+                    success=False,
+                    batches_updated=0,
+                    error_message=(
+                        "Cannot safely update voters while quorum is at minimum; "
+                        "restore quorum before using --skip-non-voters"
+                    ),
+                    duration_seconds=time.time() - start_time,
+                )
+
+            logger.warning(
+                "Quorum is at MINIMUM; deferring voter updates and continuing with "
+                "reachable non-voters only"
+            )
+            effective_skip_voters = True
+            result.nodes_skipped.extend(
+                [node.name for node in all_nodes if node.is_voter]
+            )
 
         if skip_non_voters:
             all_nodes = [n for n in all_nodes if n.is_voter]
 
-        batches = self._calculate_update_batches(all_nodes, skip_voters=skip_voters)
+        if effective_skip_voters:
+            all_nodes = [n for n in all_nodes if not n.is_voter]
+
+        reachable_nodes, unreachable_nodes = await self._filter_reachable_nodes(all_nodes)
+        unreachable_voters = [node.name for node in unreachable_nodes if node.is_voter]
+        unreachable_non_voters = [node.name for node in unreachable_nodes if not node.is_voter]
+
+        if unreachable_non_voters:
+            result.nodes_skipped.extend(unreachable_non_voters)
+
+        if unreachable_voters:
+            result.success = False
+            result.nodes_failed.extend(unreachable_voters)
+            result.error_message = (
+                "Unreachable voter nodes block safe rollout: "
+                + ", ".join(sorted(unreachable_voters))
+            )
+            result.duration_seconds = time.time() - start_time
+            return result
+
+        batches = self._calculate_update_batches(reachable_nodes, skip_voters=effective_skip_voters)
 
         if not batches:
-            return UpdateResult(
-                success=True,
-                batches_updated=0,
-                error_message="No nodes to update",
-                duration_seconds=time.time() - start_time,
-            )
+            result.error_message = "No reachable nodes to update"
+            result.duration_seconds = time.time() - start_time
+            return result
 
         logger.info(f"Calculated {len(batches)} batches:")
         for i, batch in enumerate(batches):
             logger.info(f"  Batch {i+1}: {batch.batch_type} - {batch.node_names}")
 
         # Phase 3: Update each batch
-        result = UpdateResult(success=True, batches_updated=0)
-
         for batch_num, batch in enumerate(batches):
             logger.info(f"\nPhase 3.{batch_num+1}: Updating batch {batch_num+1}/{len(batches)} "
                        f"({batch.batch_type}): {batch.node_names}")

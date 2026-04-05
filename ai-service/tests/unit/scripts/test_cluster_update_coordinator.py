@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import sys
+import yaml
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from scripts.cluster_update_coordinator import (
@@ -341,6 +342,22 @@ class TestCoordinatorInitialization:
             assert coordinator.convergence_timeout == 60.0
             assert coordinator.voter_update_delay == 15.0
 
+    def test_load_config_prefers_top_level_p2p_voters(self, tmp_path):
+        """Top-level p2p_voters should override legacy nested config."""
+        config_path = tmp_path / "distributed_hosts.yaml"
+        config_path.write_text(yaml.safe_dump({
+            "p2p_voters": ["mac-studio", "local-mac"],
+            "p2p_settings": {"p2p_voters": ["stale-voter"]},
+            "hosts": {},
+        }))
+
+        coordinator = QuorumSafeUpdateCoordinator(
+            config=UpdateCoordinatorConfig(config_path=config_path)
+        )
+
+        coordinator._load_config()
+        assert coordinator._voter_node_ids == {"mac-studio", "local-mac"}
+
 
 class TestSingleNodeUpdate:
     """Tests for per-node update flow."""
@@ -500,19 +517,24 @@ class TestBatchFailureHandling:
         with patch.object(coordinator, "_load_config"):
             with patch.object(coordinator, "_get_cluster_health", AsyncMock(return_value=healthy)):
                 with patch.object(coordinator, "_get_node_configs", return_value=mock_node_configs):
-                    with patch.object(coordinator, "_calculate_update_batches", return_value=[batch]):
-                        with patch.object(coordinator, "_save_batch_checkpoint", AsyncMock(return_value=checkpoint)):
-                            with patch.object(
-                                coordinator,
-                                "_update_batch",
-                                AsyncMock(return_value=[(batch.node_names[0], False, "deploy smoke failed")]),
-                            ):
-                                with patch.object(coordinator, "_rollback_batch", AsyncMock()) as mock_rollback:
-                                    result = await coordinator.update_cluster(
-                                        target_commit="main",
-                                        restart_p2p=True,
-                                        dry_run=False,
-                                    )
+                    with patch.object(
+                        coordinator,
+                        "_filter_reachable_nodes",
+                        AsyncMock(return_value=(mock_node_configs, [])),
+                    ):
+                        with patch.object(coordinator, "_calculate_update_batches", return_value=[batch]):
+                            with patch.object(coordinator, "_save_batch_checkpoint", AsyncMock(return_value=checkpoint)):
+                                with patch.object(
+                                    coordinator,
+                                    "_update_batch",
+                                    AsyncMock(return_value=[(batch.node_names[0], False, "deploy smoke failed")]),
+                                ):
+                                    with patch.object(coordinator, "_rollback_batch", AsyncMock()) as mock_rollback:
+                                        result = await coordinator.update_cluster(
+                                            target_commit="main",
+                                            restart_p2p=True,
+                                            dry_run=False,
+                                        )
 
         assert result.success is False
         assert result.rollback_performed is True
@@ -554,25 +576,250 @@ class TestBatchFailureHandling:
         with patch.object(coordinator, "_load_config"):
             with patch.object(coordinator, "_get_cluster_health", AsyncMock(return_value=healthy)):
                 with patch.object(coordinator, "_get_node_configs", return_value=mock_node_configs):
-                    with patch.object(coordinator, "_calculate_update_batches", return_value=[batch]):
-                        with patch.object(coordinator, "_save_batch_checkpoint", AsyncMock(return_value=checkpoint)):
-                            with patch.object(
-                                coordinator,
-                                "_update_batch",
-                                AsyncMock(return_value=[(batch.node_names[0], False, "connection failed")]),
-                            ):
-                                with patch.object(coordinator, "_rollback_batch", AsyncMock()) as mock_rollback:
-                                    result = await coordinator.update_cluster(
-                                        target_commit="main",
-                                        restart_p2p=True,
-                                        dry_run=True,
-                                    )
+                    with patch.object(
+                        coordinator,
+                        "_filter_reachable_nodes",
+                        AsyncMock(return_value=(mock_node_configs, [])),
+                    ):
+                        with patch.object(coordinator, "_calculate_update_batches", return_value=[batch]):
+                            with patch.object(coordinator, "_save_batch_checkpoint", AsyncMock(return_value=checkpoint)):
+                                with patch.object(
+                                    coordinator,
+                                    "_update_batch",
+                                    AsyncMock(return_value=[(batch.node_names[0], False, "connection failed")]),
+                                ):
+                                    with patch.object(coordinator, "_rollback_batch", AsyncMock()) as mock_rollback:
+                                        result = await coordinator.update_cluster(
+                                            target_commit="main",
+                                            restart_p2p=True,
+                                            dry_run=True,
+                                        )
 
         assert result.success is False
         assert result.rollback_performed is False
         assert result.failed_batch == 1
         assert batch.node_names[0] in result.nodes_failed
         mock_rollback.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_update_cluster_skips_voters_when_quorum_is_minimum(
+        self,
+        config,
+        mock_node_configs,
+    ):
+        """Minimum quorum should automatically defer voter restarts."""
+        with patch.object(
+            QuorumSafeUpdateCoordinator,
+            "_find_config_path",
+            return_value=Path("/tmp/test.yaml"),
+        ):
+            coordinator = QuorumSafeUpdateCoordinator(config=config)
+
+        minimum = ClusterHealth(
+            quorum_level=QuorumHealthLevel.MINIMUM,
+            alive_peers=4,
+            total_peers=6,
+            leader_id="mac-studio",
+            alive_voters=["mac-studio"],
+            total_voters=2,
+            quorum_required=2,
+        )
+        non_voters = [node for node in mock_node_configs if not node.is_voter]
+        batches = [UpdateBatch(nodes=non_voters, batch_type="non_voters")]
+
+        with patch.object(coordinator, "_load_config"):
+            with patch.object(coordinator, "_get_cluster_health", AsyncMock(side_effect=[minimum, minimum])):
+                with patch.object(coordinator, "_get_node_configs", return_value=mock_node_configs):
+                    with patch.object(
+                        coordinator,
+                        "_filter_reachable_nodes",
+                        AsyncMock(return_value=(non_voters, [])),
+                    ) as mock_reachability:
+                        with patch.object(
+                            coordinator,
+                            "_calculate_update_batches",
+                            return_value=batches,
+                        ) as mock_batches:
+                            with patch.object(
+                                coordinator,
+                                "_save_batch_checkpoint",
+                                AsyncMock(return_value=BatchCheckpoint(
+                                    batch_nodes=[n.name for n in non_voters],
+                                    previous_commits={n.name: "abc123" for n in non_voters},
+                                    p2p_was_running={n.name: True for n in non_voters},
+                                    timestamp=0.0,
+                                )),
+                            ):
+                                with patch.object(
+                                    coordinator,
+                                    "_update_batch",
+                                    AsyncMock(return_value=[(n.name, True, "Updated") for n in non_voters]),
+                                ):
+                                    with patch.object(coordinator, "_wait_for_convergence", AsyncMock(return_value=True)):
+                                        result = await coordinator.update_cluster(
+                                            target_commit="main",
+                                            restart_p2p=True,
+                                            dry_run=False,
+                                        )
+
+        assert result.success is True
+        assert sorted(name for name in result.nodes_skipped if name.startswith("lambda-gh200") or name.startswith("nebius-backbone")) == sorted(
+            [node.name for node in mock_node_configs if node.is_voter]
+        )
+        mock_reachability.assert_awaited_once_with(non_voters)
+        assert mock_batches.call_args.kwargs["skip_voters"] is True
+
+    @pytest.mark.asyncio
+    async def test_update_cluster_rejects_voter_only_rollout_at_minimum_quorum(
+        self,
+        config,
+        mock_node_configs,
+    ):
+        """A voter-only rollout is unsafe when quorum is already minimum."""
+        with patch.object(
+            QuorumSafeUpdateCoordinator,
+            "_find_config_path",
+            return_value=Path("/tmp/test.yaml"),
+        ):
+            coordinator = QuorumSafeUpdateCoordinator(config=config)
+
+        minimum = ClusterHealth(
+            quorum_level=QuorumHealthLevel.MINIMUM,
+            alive_peers=4,
+            total_peers=6,
+            leader_id="mac-studio",
+            alive_voters=["mac-studio"],
+            total_voters=2,
+            quorum_required=2,
+        )
+
+        with patch.object(coordinator, "_load_config"):
+            with patch.object(coordinator, "_get_cluster_health", AsyncMock(return_value=minimum)):
+                with patch.object(coordinator, "_get_node_configs", return_value=mock_node_configs):
+                    result = await coordinator.update_cluster(
+                        target_commit="main",
+                        restart_p2p=True,
+                        dry_run=False,
+                        skip_non_voters=True,
+                    )
+
+        assert result.success is False
+        assert "Cannot safely update voters while quorum is at minimum" in result.error_message
+
+    @pytest.mark.asyncio
+    async def test_update_cluster_skips_unreachable_non_voters_before_batching(
+        self,
+        config,
+        mock_node_configs,
+    ):
+        """Unreachable non-voters should be skipped before batch execution."""
+        with patch.object(
+            QuorumSafeUpdateCoordinator,
+            "_find_config_path",
+            return_value=Path("/tmp/test.yaml"),
+        ):
+            coordinator = QuorumSafeUpdateCoordinator(config=config)
+
+        healthy = ClusterHealth(
+            quorum_level=QuorumHealthLevel.HEALTHY,
+            alive_peers=6,
+            total_peers=6,
+            leader_id="lambda-gh200-1",
+            alive_voters=["lambda-gh200-1", "lambda-gh200-2", "nebius-backbone-1"],
+            total_voters=3,
+            quorum_required=2,
+        )
+        non_voters = [node for node in mock_node_configs if not node.is_voter]
+        reachable_non_voters = non_voters[:2]
+        unreachable_non_voter = non_voters[2]
+        batch = UpdateBatch(nodes=reachable_non_voters, batch_type="non_voters")
+
+        with patch.object(coordinator, "_load_config"):
+            with patch.object(coordinator, "_get_cluster_health", AsyncMock(return_value=healthy)):
+                with patch.object(coordinator, "_get_node_configs", return_value=mock_node_configs):
+                    with patch.object(
+                        coordinator,
+                        "_filter_reachable_nodes",
+                        AsyncMock(return_value=(reachable_non_voters, [unreachable_non_voter])),
+                    ) as mock_reachability:
+                        with patch.object(
+                            coordinator,
+                            "_calculate_update_batches",
+                            return_value=[batch],
+                        ) as mock_batches:
+                            with patch.object(
+                                coordinator,
+                                "_save_batch_checkpoint",
+                                AsyncMock(return_value=BatchCheckpoint(
+                                    batch_nodes=batch.node_names,
+                                    previous_commits={name: "abc123" for name in batch.node_names},
+                                    p2p_was_running={name: False for name in batch.node_names},
+                                    timestamp=0.0,
+                                )),
+                            ):
+                                with patch.object(
+                                    coordinator,
+                                    "_update_batch",
+                                    AsyncMock(return_value=[(n.name, True, "Updated") for n in reachable_non_voters]),
+                                ):
+                                    result = await coordinator.update_cluster(
+                                        target_commit="main",
+                                        restart_p2p=False,
+                                        dry_run=False,
+                                        skip_voters=True,
+                                    )
+
+        assert result.success is True
+        assert unreachable_non_voter.name in result.nodes_skipped
+        mock_reachability.assert_awaited_once_with(non_voters)
+        assert mock_batches.call_args.args[0] == reachable_non_voters
+        assert mock_batches.call_args.kwargs["skip_voters"] is True
+
+    @pytest.mark.asyncio
+    async def test_update_cluster_aborts_when_voter_is_unreachable(
+        self,
+        config,
+        mock_node_configs,
+    ):
+        """Unreachable voters should block a safe rollout before batching."""
+        with patch.object(
+            QuorumSafeUpdateCoordinator,
+            "_find_config_path",
+            return_value=Path("/tmp/test.yaml"),
+        ):
+            coordinator = QuorumSafeUpdateCoordinator(config=config)
+
+        healthy = ClusterHealth(
+            quorum_level=QuorumHealthLevel.HEALTHY,
+            alive_peers=6,
+            total_peers=6,
+            leader_id="lambda-gh200-1",
+            alive_voters=["lambda-gh200-1", "lambda-gh200-2", "nebius-backbone-1"],
+            total_voters=3,
+            quorum_required=2,
+        )
+        unreachable_voter = mock_node_configs[0]
+        reachable = [node for node in mock_node_configs if node is not unreachable_voter]
+
+        with patch.object(coordinator, "_load_config"):
+            with patch.object(coordinator, "_get_cluster_health", AsyncMock(return_value=healthy)):
+                with patch.object(coordinator, "_get_node_configs", return_value=mock_node_configs):
+                    with patch.object(
+                        coordinator,
+                        "_filter_reachable_nodes",
+                        AsyncMock(return_value=(reachable, [unreachable_voter])),
+                    ):
+                        with patch.object(coordinator, "_calculate_update_batches") as mock_batches:
+                            result = await coordinator.update_cluster(
+                                target_commit="main",
+                                restart_p2p=True,
+                                dry_run=False,
+                            )
+
+        assert result.success is False
+        assert unreachable_voter.name in result.nodes_failed
+        assert "Unreachable voter nodes block safe rollout" in result.error_message
+        mock_batches.assert_not_called()
 
 
 # =============================================================================
