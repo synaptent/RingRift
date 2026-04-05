@@ -90,39 +90,39 @@ COORDINATION_FEATURE_SPECS: dict[str, FeatureSpec] = {
     ),
     "event_emitters": FeatureSpec(
         name="event_emitters",
-        module_path="app.coordination.event_emitters",
+        module_path="app.coordination.event_router",
         exports=["emit_training_complete", "emit_evaluation_complete"],
-        description="Centralized event emitters",
+        description="Centralized event emitters (via event_router)",
     ),
     "selfplay_events": FeatureSpec(
         name="selfplay_events",
-        module_path="app.coordination.event_emitters",
+        module_path="app.coordination.event_router",
         exports=["emit_selfplay_complete", "emit_selfplay_started"],
-        description="Selfplay event emission",
+        description="Selfplay event emission (via event_router)",
     ),
     "exploration_events": FeatureSpec(
         name="exploration_events",
-        module_path="app.coordination.event_emitters",
+        module_path="app.coordination.event_router",
         exports=["emit_exploration_boost"],
-        description="Exploration boost events",
+        description="Exploration boost events (via event_router)",
     ),
     "node_events": FeatureSpec(
         name="node_events",
-        module_path="app.coordination.event_emitters",
+        module_path="app.coordination.event_router",
         exports=["emit_node_health_changed", "emit_node_offline"],
-        description="Node health events",
+        description="Node health events (via event_router)",
     ),
     "cluster_events": FeatureSpec(
         name="cluster_events",
-        module_path="app.coordination.event_emitters",
+        module_path="app.coordination.event_router",
         exports=["emit_cluster_health_changed"],
-        description="Cluster health events",
+        description="Cluster health events (via event_router)",
     ),
     "incompatibility_events": FeatureSpec(
         name="incompatibility_events",
-        module_path="app.coordination.event_emitters",
+        module_path="app.coordination.event_router",
         exports=["emit_incompatibility_detected"],
-        description="Model incompatibility events",
+        description="Model incompatibility events (via event_router)",
     ),
     # ==========================================================================
     # Circuit Breaker & Resilience Features
@@ -256,9 +256,9 @@ COORDINATION_FEATURE_SPECS: dict[str, FeatureSpec] = {
     ),
     "centralized_emitters": FeatureSpec(
         name="centralized_emitters",
-        module_path="app.coordination.event_emitters",
+        module_path="app.coordination.event_router",
         exports=["emit_task_completed", "emit_task_failed"],
-        description="Centralized task event emitters",
+        description="Centralized task event emitters (via event_router)",
     ),
 }
 

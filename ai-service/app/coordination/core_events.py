@@ -9,22 +9,15 @@ This module consolidates the event routing infrastructure:
 This is part of the 157→15 module consolidation (Phase 5).
 
 Migration Guide:
-    # Old imports (deprecated, still work):
-    from app.coordination.event_router import (
-        UnifiedEventRouter, get_router, publish, subscribe,
-        DataEventType, DataEvent, get_event_bus,
-    )
-    from app.coordination.event_mappings import (
-        STAGE_TO_DATA_EVENT_MAP, DATA_TO_CROSS_PROCESS_MAP,
-        get_data_event_type, get_cross_process_event_type,
-    )
-    from app.coordination.event_emitters import (
-        emit_training_complete, emit_selfplay_complete,
-        emit_sync_complete, emit_evaluation_complete,
-    )
-    from app.coordination.event_normalization import normalize_event_type
+    # Old imports (DEPRECATED - do not use event_emitters directly):
+    #   from app.coordination.event_emitters import (
+    #       emit_training_complete, emit_selfplay_complete, ...
+    #   )
+    # Use event_router for generic emit:
+    #   from app.coordination.event_router import safe_emit_event, emit_event
+    # Or use this module (core_events) for typed emitters:
 
-    # New imports (preferred):
+    # Preferred imports:
     from app.coordination.core_events import (
         # Router core
         UnifiedEventRouter, get_router, publish, publish_sync,
@@ -171,14 +164,12 @@ from app.coordination.event_mappings import (
 )
 
 # =============================================================================
-# Re-exports from event_emitters.py (typed emit functions)
+# Re-exports from event_router.py (typed emit functions)
+# April 2026: Migrated from deprecated event_emitters to event_router.
+# The event_router module provides safe_emit_event() and emit_event() as the
+# primary API. For backward compatibility, legacy emit_* names are resolved
+# via __getattr__ from event_router (which re-exports from data_events).
 # =============================================================================
-
-with warnings.catch_warnings():
-    warnings.simplefilter("ignore", DeprecationWarning)
-    import app.coordination.event_emitters as _event_emitters
-
-# Note: emit_training_started already imported from event_router
 
 _EVENT_EMITTER_EXPORTS = frozenset(
     {
@@ -228,9 +219,9 @@ _EVENT_EMITTER_EXPORTS = frozenset(
 )
 
 
-def _get_event_emitters_module():
-    """Resolve the current event_emitters module after reloads/reimports."""
-    return importlib.import_module("app.coordination.event_emitters")
+def _get_event_router_module():
+    """Resolve the event_router module for dynamic emit function lookup."""
+    return importlib.import_module("app.coordination.event_router")
 
 # =============================================================================
 # Re-exports from event_normalization.py
@@ -392,7 +383,22 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    """Forward legacy emitter exports dynamically so reloads stay in sync."""
+    """Forward legacy emitter exports via event_router.
+
+    April 2026: Migrated from event_emitters to event_router. Tries event_router
+    first (which re-exports many emit functions from data_events), then falls back
+    to event_emitters compatibility shim for typed stage-event emitters that haven't
+    been ported to event_router yet.
+    """
     if name in _EVENT_EMITTER_EXPORTS:
-        return getattr(_get_event_emitters_module(), name)
+        # Try event_router first (preferred source)
+        router_module = _get_event_router_module()
+        if hasattr(router_module, name):
+            return getattr(router_module, name)
+        # Fall back to event_emitters shim for stage-event typed emitters
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            _emitters = importlib.import_module("app.coordination.event_emitters")
+        return getattr(_emitters, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

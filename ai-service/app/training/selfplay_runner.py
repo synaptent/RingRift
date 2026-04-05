@@ -1491,31 +1491,25 @@ class SelfplayRunner(ABC):
         This enables automatic export triggering when selfplay completes.
         """
         try:
-            import asyncio
-            from ..coordination.event_emitters import emit_selfplay_complete
+            from ..coordination.event_router import safe_emit_event
 
             config_key = f"{self.config.board_type}_{self.config.num_players}p"
 
-            async def _emit():
-                await emit_selfplay_complete(
-                    task_id=config_key,
-                    board_type=self.config.board_type,
-                    num_players=self.config.num_players,
-                    games_generated=self.stats.games_completed,
-                    success=self.stats.games_failed == 0,
-                    duration_seconds=self.stats.elapsed_seconds,
-                    selfplay_type="standard",
-                    samples_generated=self.stats.total_samples,
-                    throughput=self.stats.games_per_second,
-                )
-
-            # Run async emission - use existing loop or create new one
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(_emit())
-            except RuntimeError:
-                # No running loop - run synchronously
-                asyncio.run(_emit())
+            safe_emit_event(
+                "SELFPLAY_COMPLETE",
+                {
+                    "task_id": config_key,
+                    "board_type": self.config.board_type,
+                    "num_players": self.config.num_players,
+                    "games_generated": self.stats.games_completed,
+                    "success": self.stats.games_failed == 0,
+                    "duration_seconds": self.stats.elapsed_seconds,
+                    "selfplay_type": "standard",
+                    "samples_generated": self.stats.total_samples,
+                    "throughput": self.stats.games_per_second,
+                },
+                source="selfplay_runner",
+            )
 
             logger.info(
                 f"[Event] Emitted SELFPLAY_COMPLETE: {config_key}, "
@@ -1523,7 +1517,7 @@ class SelfplayRunner(ABC):
             )
         except ImportError:
             pass  # Event system not available
-        except (AttributeError, RuntimeError, asyncio.TimeoutError, TypeError) as e:
+        except (AttributeError, RuntimeError, TypeError) as e:
             logger.warning(f"Failed to emit selfplay event: {e}")
 
     def get_temperature(self, move_number: int, game_state=None) -> float:
