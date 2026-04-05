@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
@@ -53,7 +53,7 @@ class MonitoringAlert:
     level: AlertLevel
     category: str
     message: str
-    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     node: str | None = None
     metric_name: str | None = None
     metric_value: float | None = None
@@ -92,7 +92,7 @@ Alert = MonitoringAlert
 class MonitoringResult:
     """Result of a health check."""
     status: HealthStatus
-    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     metrics: dict[str, Any] = field(default_factory=dict)
     alerts: list[Alert] = field(default_factory=list)
     details: dict[str, Any] = field(default_factory=dict)
@@ -248,7 +248,7 @@ class HealthMonitor(ABC):
 
         result.duration_ms = (time.time() - start) * 1000
         self._last_result = result
-        self._last_check = datetime.now(UTC)
+        self._last_check = datetime.now(timezone.utc)
 
         return result
 
@@ -284,7 +284,7 @@ class HealthMonitor(ABC):
 
         result.duration_ms = (time.time() - start) * 1000
         self._last_result = result
-        self._last_check = datetime.now(UTC)
+        self._last_check = datetime.now(timezone.utc)
 
         return result
 
@@ -628,7 +628,7 @@ class MonitorRegistry:
             payload = {
                 "old_status": old_status.value if old_status else None,
                 "new_status": new_status.value,
-                "timestamp": datetime.now(UTC).isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
 
             # Fire and forget
