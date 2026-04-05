@@ -16,6 +16,7 @@ from typing import Any, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 
 # =============================================================================
 # TEMPORARY DATABASE FIXTURES
@@ -1281,3 +1282,31 @@ def manager_with_import_error_daemon():
         return manager, daemon_type
 
     return _create
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def cleanup_pending_coordination_tasks():
+    """Cancel test-leaked asyncio tasks after each coordination unit test.
+
+    Some coordination tests intentionally or accidentally start long-running
+    HandlerBase loops and rely on process teardown instead of explicit cleanup.
+    Keep the cleanup scoped to the coordination unit tree so the wider suite is
+    unaffected while these tests remain partially manual about stop/shutdown.
+    """
+    yield
+
+    loop = asyncio.get_running_loop()
+    current = asyncio.current_task(loop=loop)
+    pending = [
+        task
+        for task in asyncio.all_tasks(loop)
+        if task is not current and not task.done()
+    ]
+    if not pending:
+        return
+
+    for task in pending:
+        task.cancel()
+
+    await asyncio.gather(*pending, return_exceptions=True)
+    await asyncio.sleep(0)
