@@ -43,6 +43,14 @@ from typing import Any
 import torch.nn as nn
 import torch.optim as optim
 
+try:
+    from app.quality.unified_quality import QualityWeights, UnifiedQualityScorer
+    HAS_UNIFIED_QUALITY = True
+except ImportError:
+    HAS_UNIFIED_QUALITY = False
+    QualityWeights = None
+    UnifiedQualityScorer = None
+
 # Import from modularized subpackage (December 2025)
 from app.training.enhancements import (
     AdaptiveGradientClipper,
@@ -298,6 +306,25 @@ def create_training_enhancements(
         Dictionary of enhancement objects
     """
     config = config or {}
+    if HAS_UNIFIED_QUALITY and QualityWeights is not None and UnifiedQualityScorer is not None:
+        quality_weights = QualityWeights.from_config()
+        # Keep the two legacy knobs wired for callers that still pass them via
+        # create_training_enhancements(), even though scoring now comes from the
+        # unified quality stack.
+        quality_weights.recency_half_life_hours = config.get(
+            'freshness_decay_hours',
+            quality_weights.recency_half_life_hours,
+        )
+        quality_weights.recency_weight = config.get(
+            'freshness_weight',
+            quality_weights.recency_weight,
+        )
+        quality_scorer: Any = UnifiedQualityScorer(weights=quality_weights)
+    else:
+        quality_scorer = DataQualityScorer(
+            freshness_decay_hours=config.get('freshness_decay_hours', 24.0),
+            freshness_weight=config.get('freshness_weight', 0.2),
+        )
 
     enhancements = {
         'checkpoint_averager': CheckpointAverager(
@@ -307,10 +334,7 @@ def create_training_enhancements(
             accumulation_steps=config.get('accumulation_steps', 1),
             max_grad_norm=config.get('max_grad_norm', 1.0),
         ),
-        'quality_scorer': DataQualityScorer(
-            freshness_decay_hours=config.get('freshness_decay_hours', 24.0),
-            freshness_weight=config.get('freshness_weight', 0.2),
-        ),
+        'quality_scorer': quality_scorer,
         'adaptive_lr': AdaptiveLRScheduler(
             optimizer=optimizer,
             base_lr=config.get('base_lr', 0.001),
