@@ -7,6 +7,7 @@ Mixins:
 - LeadershipHealthMixin: Voter health and quorum monitoring
 - LeadershipTransitionsMixin: Step-down and state machine transitions
 - AdvertiseValidationMixin: IP validation and advertise host management
+- ElectionLogicMixin: Election, provisional leadership, and lease logic
 - HeartbeatLoopMixin: Heartbeat loop and bootstrap methods (April 2026 - Target 4)
 - TrainingPipelineMixin: AlphaZero-style training loop coordination (April 2026 - Target 3)
 
@@ -14,6 +15,7 @@ Usage:
     from scripts.p2p.mixins import HealthTrackingMixin, HealthTrackingConfig
     from scripts.p2p.mixins import LeadershipHealthMixin
     from scripts.p2p.mixins import AdvertiseValidationMixin
+    from scripts.p2p.mixins import ElectionLogicMixin
     from scripts.p2p.mixins import HeartbeatLoopMixin
     from scripts.p2p.mixins import TrainingPipelineMixin
 
@@ -32,6 +34,7 @@ from .health_tracking import (
     EntityHealthSummary,
     EntityHealthState,
 )
+from .election_logic_mixin import ElectionLogicMixin
 from .heartbeat_loop_mixin import HeartbeatLoopMixin
 from .leadership_health_mixin import LeadershipHealthMixin
 from .leadership_transitions_mixin import LeadershipTransitionsMixin
@@ -43,6 +46,7 @@ __all__ = [
     "HealthTrackingConfig",
     "EntityHealthSummary",
     "EntityHealthState",
+    "ElectionLogicMixin",
     "HeartbeatLoopMixin",
     "LeadershipHealthMixin",
     "LeadershipTransitionsMixin",

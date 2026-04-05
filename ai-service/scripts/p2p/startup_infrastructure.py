@@ -677,6 +677,7 @@ from scripts.p2p.handlers.network_health import NetworkHealthMixin, setup_networ
 # Leadership mixins for voter/quorum monitoring and state transitions (Jan 2026)
 from scripts.p2p.mixins import (
     AdvertiseValidationMixin,
+    ElectionLogicMixin,
     HeartbeatLoopMixin,
     LeadershipHealthMixin,
     LeadershipTransitionsMixin,
@@ -1332,4 +1333,3 @@ from scripts.p2p.entrypoint import (  # noqa: F401, E402
     _write_supervisor_file,
     should_master_loop_manage_p2p,
 )
-
