@@ -707,6 +707,50 @@ class TestEventHandling:
         assert daemon._events_processed == 1
         mock_trigger.assert_called_once()
 
+
+class TestTransientStatePruning:
+    """Tests for memory-bounded transient state."""
+
+    def test_prune_urgent_sync_pending_removes_stale_and_caps_entries(self, daemon):
+        """Urgent sync requests should not accumulate forever."""
+        now = time.time()
+        daemon._urgent_sync_pending = {
+            **{f"cfg-{i}": now - 10 + (i * 0.01) for i in range(300)},
+            "stale-config": now - 4000,
+        }
+
+        pruned = daemon._prune_urgent_sync_pending(now=now)
+
+        assert pruned == 1
+        assert "stale-config" not in daemon._urgent_sync_pending
+        assert len(daemon._urgent_sync_pending) <= 256
+        assert "cfg-299" in daemon._urgent_sync_pending
+
+    def test_prune_quality_extraction_caches_removes_stale_and_caps_entries(self, daemon):
+        """Quality extraction caches should prune cold paths."""
+        now = time.time()
+        daemon._quality_cache = {
+            **{
+                f"/tmp/db-{i}.db": (0.5, now - 5 + (i * 0.001), float(i))
+                for i in range(300)
+            },
+            "/tmp/stale.db": (0.1, now - 1000, 1.0),
+        }
+        daemon._failed_db_cache = {
+            **{f"/tmp/failed-{i}.db": now - 5 + (i * 0.001) for i in range(300)},
+            "/tmp/stale-failed.db": now - 1000,
+        }
+
+        pruned = daemon._prune_quality_extraction_caches(now=now)
+
+        assert pruned >= 2
+        assert "/tmp/stale.db" not in daemon._quality_cache
+        assert "/tmp/stale-failed.db" not in daemon._failed_db_cache
+        assert len(daemon._quality_cache) <= 256
+        assert len(daemon._failed_db_cache) <= 256
+        assert "/tmp/db-299.db" in daemon._quality_cache
+        assert "/tmp/failed-299.db" in daemon._failed_db_cache
+
     @pytest.mark.asyncio
     async def test_on_new_games_available_triggers_push(self, daemon):
         """Test NEW_GAMES_AVAILABLE event triggers push to neighbors."""

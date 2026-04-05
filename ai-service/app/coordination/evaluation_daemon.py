@@ -413,6 +413,8 @@ class EvaluationDaemon(HandlerBase):
             subs[DataEventType.WORK_COMPLETED] = self._on_work_completed
         if hasattr(DataEventType, "WORK_FAILED"):
             subs[DataEventType.WORK_FAILED] = self._on_work_failed
+        if hasattr(DataEventType, "WORK_TIMEOUT"):
+            subs[DataEventType.WORK_TIMEOUT] = self._on_work_timeout
         return subs
 
     async def start(self) -> bool:
@@ -871,6 +873,36 @@ class EvaluationDaemon(HandlerBase):
         )
 
         # Fail primary AND all siblings
+        if self._persistent_queue and persistent_request_id:
+            self._persistent_queue.fail(persistent_request_id, error)
+            for sid in sibling_ids:
+                self._persistent_queue.fail(sid, error)
+
+        self._eval_stats.evaluations_failed += 1
+
+    async def _on_work_timeout(self, event: Any) -> None:
+        """Handle WORK_TIMEOUT event from cluster work queue.
+
+        Timed-out dispatched evaluations must be removed from in-memory tracking
+        or they accumulate until process restart.
+        """
+        from app.coordination.event_router import get_event_payload
+
+        payload = get_event_payload(event)
+        work_id = payload.get("work_id", "")
+        work_type = payload.get("work_type", "")
+
+        if work_type != "evaluation" or work_id not in self._dispatched_evaluations:
+            return
+
+        persistent_request_id, sibling_ids = self._dispatched_evaluations.pop(work_id)
+        error = payload.get("error", "cluster_work_timeout")
+
+        logger.warning(
+            f"[EvaluationDaemon] Cluster evaluation timed out: work_id={work_id}, "
+            f"error={error}"
+        )
+
         if self._persistent_queue and persistent_request_id:
             self._persistent_queue.fail(persistent_request_id, error)
             for sid in sibling_ids:

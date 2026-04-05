@@ -434,6 +434,7 @@ class UnifiedQueuePopulator:
 
         # Work tracking
         self._queued_work_ids: set[str] = set()
+        self._queued_work_tracked_at: dict[str, float] = {}
         self._last_populate_time: float = 0
 
         # P2P health tracking (December 2025)
@@ -480,6 +481,42 @@ class UnifiedQueuePopulator:
         self._circuit_failure_count: int = 0
         self._circuit_opened_at: float = 0.0
         self._circuit_half_open_successes: int = 0
+
+    def _track_queued_work_id(self, work_id: str) -> None:
+        """Track queued work IDs with timestamps for stale-entry cleanup."""
+        now = time.time()
+        self._queued_work_ids.add(work_id)
+        self._queued_work_tracked_at[work_id] = now
+
+    def _discard_queued_work_id(self, work_id: str) -> bool:
+        """Discard a tracked work ID, returning whether it was present."""
+        was_tracked = work_id in self._queued_work_ids
+        self._queued_work_ids.discard(work_id)
+        self._queued_work_tracked_at.pop(work_id, None)
+        return was_tracked
+
+    def _prune_stale_queued_work_ids(self, now: float | None = None) -> int:
+        """Remove stale queued work IDs when terminal events were missed."""
+        now = now if now is not None else time.time()
+        stale_after_seconds = max(
+            self.config.selfplay_timeout_seconds,
+            self.config.export_timeout_seconds,
+            self.config.validation_timeout_seconds,
+            3600.0,
+        ) * 2
+        stale_ids = [
+            work_id
+            for work_id, tracked_at in self._queued_work_tracked_at.items()
+            if now - tracked_at > stale_after_seconds
+        ]
+        for work_id in stale_ids:
+            self._discard_queued_work_id(work_id)
+        if stale_ids:
+            logger.warning(
+                f"[QueuePopulator] Pruned {len(stale_ids)} stale tracked work IDs "
+                f"(remaining={len(self._queued_work_ids)})"
+            )
+        return len(stale_ids)
 
     def _scale_queue_depth_to_cluster(self) -> None:
         """Scale min_queue_depth based on cluster size."""
@@ -1892,6 +1929,8 @@ class UnifiedQueuePopulator:
             logger.warning("No work queue set, cannot populate")
             return 0
 
+        self._prune_stale_queued_work_ids()
+
         # Mar 2026: Lazy-load game counts (deferred from __init__)
         self.ensure_game_counts_loaded()
 
@@ -2090,7 +2129,7 @@ class UnifiedQueuePopulator:
                     item = self._create_tournament_item(target.board_type, target.num_players)
                     item.priority = max(item.priority - 5, 1)  # Slight depriority only
                     self._work_queue.add_work(item)
-                    self._queued_work_ids.add(item.work_id)
+                    self._track_queued_work_id(item.work_id)
                     maintenance_added += 1
                 except Exception:
                     pass
@@ -2131,7 +2170,7 @@ class UnifiedQueuePopulator:
                 # January 2026: Force-add for starved configs to bypass backpressure
                 force_add = self._should_force_queue_add(target.config_key)
                 self._work_queue.add_work(item, force=force_add)
-                self._queued_work_ids.add(item.work_id)
+                self._track_queued_work_id(item.work_id)
                 target.pending_selfplay_count += 1
                 added += 1
             except RuntimeError as e:
@@ -2177,7 +2216,7 @@ class UnifiedQueuePopulator:
                         # January 2026: Force-add for starved configs to bypass backpressure
                         force_add = self._should_force_queue_add(target.config_key)
                         self._work_queue.add_work(selfplay_item, force=force_add)
-                        self._queued_work_ids.add(selfplay_item.work_id)
+                        self._track_queued_work_id(selfplay_item.work_id)
                         target.pending_selfplay_count += 1
                         added += 1
                     except RuntimeError as sp_err:
@@ -2198,7 +2237,7 @@ class UnifiedQueuePopulator:
                 # January 2026: Force-add for starved configs to bypass backpressure
                 force_add = self._should_force_queue_add(target.config_key)
                 self._work_queue.add_work(item, force=force_add)
-                self._queued_work_ids.add(item.work_id)
+                self._track_queued_work_id(item.work_id)
                 added += 1
                 training_added += 1
             except RuntimeError as e:
@@ -2243,7 +2282,7 @@ class UnifiedQueuePopulator:
                 # Force-add for starved configs to bypass backpressure
                 force_add = starved_configs is not None or self._should_force_queue_add(target.config_key)
                 self._work_queue.add_work(item, force=force_add)
-                self._queued_work_ids.add(item.work_id)
+                self._track_queued_work_id(item.work_id)
                 added += 1
             except RuntimeError as e:
                 if "hard limit" in str(e).lower() or "BACKPRESSURE" in str(e):
@@ -2267,7 +2306,7 @@ class UnifiedQueuePopulator:
                 item = self._create_tournament_item(target.board_type, target.num_players)
                 item.priority = max(item.priority - 5, 1)  # Slight depriority only
                 self._work_queue.add_work(item)
-                self._queued_work_ids.add(item.work_id)
+                self._track_queued_work_id(item.work_id)
                 added += 1
                 maintenance_added += 1
             except RuntimeError as e:
@@ -2299,7 +2338,7 @@ class UnifiedQueuePopulator:
                         # January 2026: Force-add for starved configs to bypass backpressure
                         force_add = self._should_force_queue_add(target.config_key)
                         self._work_queue.add_work(item, force=force_add)
-                        self._queued_work_ids.add(item.work_id)
+                        self._track_queued_work_id(item.work_id)
                         added += 1
                         sweep_added += 1
                         break
@@ -2381,7 +2420,7 @@ class UnifiedQueuePopulator:
                 # January 2026: Force-add for starved configs to bypass backpressure
                 force_add = self._should_force_queue_add(target.config_key)
                 self._work_queue.add_work(item, force=force_add)
-                self._queued_work_ids.add(item.work_id)
+                self._track_queued_work_id(item.work_id)
                 target.pending_selfplay_count += 1
                 added += 1
             except Exception as e:
@@ -2434,7 +2473,7 @@ class UnifiedQueuePopulator:
                 # January 2026: Force-add for starved configs to bypass backpressure
                 force_add = self._should_force_queue_add(target.config_key)
                 self._work_queue.add_work(item, force=force_add)
-                self._queued_work_ids.add(item.work_id)
+                self._track_queued_work_id(item.work_id)
                 target.pending_selfplay_count += 1
                 added += 1
             except Exception as e:
@@ -2633,7 +2672,7 @@ class UnifiedQueuePopulator:
                 # January 2026: Force-add for starved configs to bypass backpressure
                 force_add = self._should_force_queue_add(target.config_key)
                 self._work_queue.add_work(item, force=force_add)
-                self._queued_work_ids.add(item.work_id)
+                self._track_queued_work_id(item.work_id)
                 added += 1
             except Exception as e:
                 logger.error(f"[TrickleMode] Failed to add item: {e}")
@@ -2983,7 +3022,7 @@ class UnifiedQueuePopulatorDaemon:
                         # January 2026: Force-add for starved configs to bypass backpressure
                         force_add = self._populator._should_force_queue_add(config_key)
                         self._populator._work_queue.add_work(item, force=force_add)
-                        self._populator._queued_work_ids.add(item.work_id)
+                        self._populator._track_queued_work_id(item.work_id)
                         added += 1
                     except (ValueError, KeyError, AttributeError) as e:
                         logger.debug(f"[QueuePopulator] Failed to create work item: {e}")
@@ -2993,9 +3032,20 @@ class UnifiedQueuePopulatorDaemon:
                         f"[QueuePopulator] Queued {added} priority selfplay for {config_key}"
                     )
 
+            def _discard_tracked_work(payload: dict[str, Any], event_name: str) -> None:
+                work_id = payload.get("work_id") or payload.get("task_id")
+                if not work_id:
+                    return
+                if self._populator._discard_queued_work_id(work_id):
+                    logger.debug(
+                        f"[QueuePopulator] {event_name}: removed tracked work {work_id}, "
+                        f"remaining tracked: {len(self._populator._queued_work_ids)}"
+                    )
+
             def _on_work_failed(event: Any) -> None:
                 """Handle WORK_FAILED - decrement pending count for failed work."""
                 payload = _extract_payload(event)
+                _discard_tracked_work(payload, "WORK_FAILED")
                 work_type = payload.get("work_type")
                 if work_type != "selfplay":
                     return
@@ -3019,6 +3069,7 @@ class UnifiedQueuePopulatorDaemon:
             def _on_work_timeout(event: Any) -> None:
                 """Handle WORK_TIMEOUT - decrement pending count for timed out work."""
                 payload = _extract_payload(event)
+                _discard_tracked_work(payload, "WORK_TIMEOUT")
                 work_type = payload.get("work_type")
                 if work_type != "selfplay":
                     return
@@ -3047,16 +3098,8 @@ class UnifiedQueuePopulatorDaemon:
                 incorrectly believe work is still pending when it has completed.
                 """
                 payload = _extract_payload(event)
-                work_id = payload.get("work_id")
+                _discard_tracked_work(payload, "WORK_COMPLETED")
                 work_type = payload.get("work_type")
-
-                # Remove from tracking set regardless of work type
-                if work_id and work_id in self._populator._queued_work_ids:
-                    self._populator._queued_work_ids.discard(work_id)
-                    logger.debug(
-                        f"[QueuePopulator] Work completed: {work_id}, "
-                        f"remaining tracked: {len(self._populator._queued_work_ids)}"
-                    )
 
                 # For selfplay work, also update pending counts
                 if work_type == "selfplay":
@@ -3086,6 +3129,7 @@ class UnifiedQueuePopulatorDaemon:
                 abandonment is a controlled termination.
                 """
                 payload = _extract_payload(event)
+                _discard_tracked_work(payload, "TASK_ABANDONED")
                 task_type = payload.get("task_type", "")
                 if "selfplay" not in task_type.lower():
                     return

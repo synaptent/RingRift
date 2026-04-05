@@ -150,6 +150,16 @@ class TestEventSubscriptions:
         for event_type, handler in subscriptions.items():
             assert callable(handler), f"Handler for {event_type} is not callable"
 
+    def test_subscriptions_include_work_timeout_when_available(self):
+        """Timed-out dispatched evaluations should be cleaned up via subscriptions."""
+        daemon = EvaluationDaemon()
+        subscriptions = daemon._get_subscriptions()
+
+        from app.coordination.event_router import DataEventType
+
+        if hasattr(DataEventType, "WORK_TIMEOUT"):
+            assert DataEventType.WORK_TIMEOUT in subscriptions
+
 
 class TestDeduplication:
     """Tests for deduplication logic."""
@@ -231,6 +241,32 @@ class TestQueueManagement:
 
         await daemon._evaluation_queue.put({"model": "test"})
         assert daemon._evaluation_queue.qsize() == 1
+
+
+class TestClusterDispatchTracking:
+    """Tests for cluster-dispatched evaluation tracking cleanup."""
+
+    @pytest.mark.asyncio
+    async def test_work_timeout_cleans_dispatched_evaluation(self):
+        """WORK_TIMEOUT should remove stranded dispatched evaluations."""
+        daemon = EvaluationDaemon()
+        daemon._persistent_queue = MagicMock()
+        daemon._dispatched_evaluations["work-timeout-1"] = ("req-1", ["sib-1", "sib-2"])
+
+        payload = {
+            "work_id": "work-timeout-1",
+            "work_type": "evaluation",
+            "error": "deadline_exceeded",
+        }
+
+        with patch("app.coordination.event_router.get_event_payload", return_value=payload):
+            await daemon._on_work_timeout(MagicMock())
+
+        assert "work-timeout-1" not in daemon._dispatched_evaluations
+        daemon._persistent_queue.fail.assert_any_call("req-1", "deadline_exceeded")
+        daemon._persistent_queue.fail.assert_any_call("sib-1", "deadline_exceeded")
+        daemon._persistent_queue.fail.assert_any_call("sib-2", "deadline_exceeded")
+        assert daemon._eval_stats.evaluations_failed == 1
 
 
 class TestBackpressure:

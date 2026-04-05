@@ -994,6 +994,89 @@ class AutoSyncDaemon(
         self._sync_wake_event.set()
         logger.debug("[AutoSyncDaemon] Sync triggered via event")
 
+    def _prune_urgent_sync_pending(self, now: float | None = None) -> int:
+        """Prune stale or excess urgent-sync requests."""
+        now = now if now is not None else time.time()
+        ttl_seconds = 1800.0
+        max_entries = 256
+        stale_keys = [
+            config_key
+            for config_key, requested_at in self._urgent_sync_pending.items()
+            if now - requested_at > ttl_seconds
+        ]
+        for config_key in stale_keys:
+            self._urgent_sync_pending.pop(config_key, None)
+
+        if len(self._urgent_sync_pending) > max_entries:
+            to_trim = sorted(
+                self._urgent_sync_pending.items(),
+                key=lambda item: item[1],
+            )[: len(self._urgent_sync_pending) - max_entries]
+            for config_key, _ in to_trim:
+                self._urgent_sync_pending.pop(config_key, None)
+
+        return len(stale_keys)
+
+    def _prune_quality_extraction_caches(self, now: float | None = None) -> int:
+        """Prune stale or excess quality-extraction cache entries."""
+        now = now if now is not None else time.time()
+        ttl_seconds = 300.0
+        max_entries = 256
+        pruned = 0
+
+        quality_cache = getattr(self, "_quality_cache", None)
+        if quality_cache:
+            stale_quality_keys = [
+                cache_key
+                for cache_key, (_, cached_at, _) in quality_cache.items()
+                if now - cached_at > ttl_seconds
+            ]
+            for cache_key in stale_quality_keys:
+                quality_cache.pop(cache_key, None)
+            pruned += len(stale_quality_keys)
+
+            if len(quality_cache) > max_entries:
+                to_trim = sorted(
+                    quality_cache.items(),
+                    key=lambda item: item[1][1],
+                )[: len(quality_cache) - max_entries]
+                for cache_key, _ in to_trim:
+                    quality_cache.pop(cache_key, None)
+                    pruned += 1
+
+        failed_db_cache = getattr(self, "_failed_db_cache", None)
+        if failed_db_cache:
+            stale_failed_keys = [
+                cache_key
+                for cache_key, failed_at in failed_db_cache.items()
+                if now - failed_at > ttl_seconds
+            ]
+            for cache_key in stale_failed_keys:
+                failed_db_cache.pop(cache_key, None)
+            pruned += len(stale_failed_keys)
+
+            if len(failed_db_cache) > max_entries:
+                to_trim = sorted(
+                    failed_db_cache.items(),
+                    key=lambda item: item[1],
+                )[: len(failed_db_cache) - max_entries]
+                for cache_key, _ in to_trim:
+                    failed_db_cache.pop(cache_key, None)
+                    pruned += 1
+
+        return pruned
+
+    def _prune_transient_state(self) -> None:
+        """Prune long-lived transient state to avoid slow memory creep."""
+        now = time.time()
+        urgent_pruned = self._prune_urgent_sync_pending(now=now)
+        cache_pruned = self._prune_quality_extraction_caches(now=now)
+        if urgent_pruned or cache_pruned:
+            logger.debug(
+                f"[AutoSyncDaemon] Pruned transient state: urgent={urgent_pruned}, "
+                f"quality_cache={cache_pruned}"
+            )
+
     async def _sync_all(self) -> None:
         """Execute full sync cycle (Protocol method required by SyncEventMixin).
 
@@ -1114,6 +1197,8 @@ class AutoSyncDaemon(
 
     async def _sync_cycle_inner(self) -> int:
         """Inner sync cycle logic (called with locks held)."""
+        self._prune_transient_state()
+
         # April 2026: Skip game database broadcast on coordinator.
         # Training uses S3 NPZs, not synced databases. The broadcast was
         # rsyncing databases to Lambda nodes 188 times/session with 334
@@ -1294,6 +1379,8 @@ class AutoSyncDaemon(
         """
         if not self._config.enable_quality_extraction or not HAS_QUALITY_EXTRACTION:
             return 0.0
+
+        self._prune_quality_extraction_caches()
 
         cache_key = str(db_path)
         now = time.time()

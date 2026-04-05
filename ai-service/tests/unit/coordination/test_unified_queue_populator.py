@@ -1400,6 +1400,142 @@ class TestEventSubscriptions:
             error_str = str(e).lower()
             assert "nonetype" in error_str or "attribute" in error_str or "import" in error_str
 
+    @pytest.mark.asyncio
+    @patch("app.coordination.unified_queue_populator.UnifiedQueuePopulator._load_existing_elo")
+    @patch("app.coordination.unified_queue_populator.UnifiedQueuePopulator._scale_queue_depth_to_cluster")
+    async def test_terminal_work_events_remove_tracked_work_ids(
+        self,
+        mock_scale,
+        mock_load,
+        mock_populator_config,
+    ):
+        """WORK_* terminal events should clean tracked work IDs."""
+        daemon = UnifiedQueuePopulatorDaemon(config=mock_populator_config)
+        handlers: dict[str, object] = {}
+        mock_router = MagicMock()
+        mock_router.subscribe.side_effect = lambda event_name, handler: handlers.setdefault(event_name, handler)
+
+        with patch("app.coordination.unified_queue_populator._events_wired", False), \
+             patch("app.coordination.event_router.get_router", return_value=mock_router):
+            await daemon._subscribe_to_data_events()
+
+        from app.coordination.event_router import DataEventType
+
+        target = daemon._populator._targets["hex8_2p"]
+
+        daemon._populator._track_queued_work_id("work-failed")
+        target.pending_selfplay_count = 1
+        with patch.object(daemon._populator, "populate") as mock_populate:
+            handlers[DataEventType.WORK_FAILED.value](
+                MagicMock(payload={
+                    "work_id": "work-failed",
+                    "work_type": "selfplay",
+                    "board_type": "hex8",
+                    "num_players": 2,
+                    "reason": "boom",
+                })
+            )
+        assert "work-failed" not in daemon._populator._queued_work_ids
+        assert target.pending_selfplay_count == 0
+        mock_populate.assert_called_once()
+
+        daemon._populator._track_queued_work_id("work-timeout")
+        target.pending_selfplay_count = 1
+        with patch.object(daemon._populator, "populate") as mock_populate:
+            handlers[DataEventType.WORK_TIMEOUT.value](
+                MagicMock(payload={
+                    "work_id": "work-timeout",
+                    "work_type": "selfplay",
+                    "board_type": "hex8",
+                    "num_players": 2,
+                    "node_id": "node-1",
+                })
+            )
+        assert "work-timeout" not in daemon._populator._queued_work_ids
+        assert target.pending_selfplay_count == 0
+        mock_populate.assert_called_once()
+
+        daemon._populator._track_queued_work_id("work-completed")
+        target.pending_selfplay_count = 1
+        handlers[DataEventType.WORK_COMPLETED.value](
+            MagicMock(payload={
+                "work_id": "work-completed",
+                "work_type": "selfplay",
+                "board_type": "hex8",
+                "num_players": 2,
+            })
+        )
+        assert "work-completed" not in daemon._populator._queued_work_ids
+        assert target.pending_selfplay_count == 0
+
+    @pytest.mark.asyncio
+    @patch("app.coordination.unified_queue_populator.UnifiedQueuePopulator._load_existing_elo")
+    @patch("app.coordination.unified_queue_populator.UnifiedQueuePopulator._scale_queue_depth_to_cluster")
+    async def test_task_abandoned_removes_tracked_task_id(
+        self,
+        mock_scale,
+        mock_load,
+        mock_populator_config,
+    ):
+        """TASK_ABANDONED should remove tracked IDs even when emitted as task_id."""
+        daemon = UnifiedQueuePopulatorDaemon(config=mock_populator_config)
+        handlers: dict[str, object] = {}
+        mock_router = MagicMock()
+        mock_router.subscribe.side_effect = lambda event_name, handler: handlers.setdefault(event_name, handler)
+
+        with patch("app.coordination.unified_queue_populator._events_wired", False), \
+             patch("app.coordination.event_router.get_router", return_value=mock_router):
+            await daemon._subscribe_to_data_events()
+
+        from app.coordination.event_router import DataEventType
+
+        daemon._populator._track_queued_work_id("selfplay-task-1")
+        target = daemon._populator._targets["hex8_2p"]
+        target.pending_selfplay_count = 1
+
+        handlers[DataEventType.TASK_ABANDONED.value](
+            MagicMock(payload={
+                "task_id": "selfplay-task-1",
+                "task_type": "selfplay",
+                "board_type": "hex8",
+                "num_players": 2,
+                "reason": "backpressure",
+            })
+        )
+
+        assert "selfplay-task-1" not in daemon._populator._queued_work_ids
+        assert target.pending_selfplay_count == 0
+
+
+class TestWorkTrackingCleanup:
+    """Tests for stale queued-work cleanup."""
+
+    @patch("app.coordination.unified_queue_populator.UnifiedQueuePopulator._load_existing_elo")
+    @patch("app.coordination.unified_queue_populator.UnifiedQueuePopulator._scale_queue_depth_to_cluster")
+    def test_prune_stale_queued_work_ids_removes_orphans(
+        self,
+        mock_scale,
+        mock_load,
+        mock_populator_config,
+    ):
+        """Tracked work IDs should not live forever if terminal events are missed."""
+        populator = UnifiedQueuePopulator(config=mock_populator_config)
+        now = time.time()
+        stale_at = now - (populator.config.selfplay_timeout_seconds * 2) - 1
+
+        populator._queued_work_ids.update({"stale-work", "fresh-work"})
+        populator._queued_work_tracked_at.update({
+            "stale-work": stale_at,
+            "fresh-work": now,
+        })
+
+        pruned = populator._prune_stale_queued_work_ids(now=now)
+
+        assert pruned == 1
+        assert "stale-work" not in populator._queued_work_ids
+        assert "stale-work" not in populator._queued_work_tracked_at
+        assert "fresh-work" in populator._queued_work_ids
+
 
 # =============================================================================
 # Monitor Loop Tests
