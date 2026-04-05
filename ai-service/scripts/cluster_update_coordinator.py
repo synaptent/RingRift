@@ -173,6 +173,9 @@ class ClusterHealth:
     alive_voters: list[str]
     total_voters: int
     quorum_required: int
+    effective_voter_quorum_ok: bool = False
+    raw_voter_quorum_ok: bool = False
+    forced_leader_override: bool = False
 
 
 class QuorumSafeUpdateCoordinator:
@@ -384,9 +387,20 @@ class QuorumSafeUpdateCoordinator:
                             else:
                                 effective_voter_ids = configured_voter_ids
 
-                            # Get alive voters - P2P status uses 'peers' dict and 'voter_quorum_ok'
-                            # First try the voters_alive count directly from P2P
-                            voter_quorum_ok = data.get("voter_quorum_ok", False)
+                            # P2P status exposes an effective quorum signal that can remain
+                            # true during forced-leader override, while voter_health.quorum_ok
+                            # reflects the raw voter reachability state. Track both so rollout
+                            # logs stay intelligible without changing the existing behavior.
+                            effective_voter_quorum_ok = data.get("voter_quorum_ok", False)
+                            voter_health = data.get("voter_health", {})
+                            raw_voter_quorum_ok = (
+                                voter_health.get("quorum_ok", effective_voter_quorum_ok)
+                                if isinstance(voter_health, dict)
+                                else effective_voter_quorum_ok
+                            )
+                            forced_leader_override = bool(
+                                data.get("forced_leader_override", False)
+                            )
                             voters_alive_count = data.get("voters_alive", 0)
                             quorum_required = data.get("voter_quorum_size", self.QUORUM_REQUIRED)
 
@@ -402,7 +416,7 @@ class QuorumSafeUpdateCoordinator:
                                     alive_voters.append(clean_name)
 
                             voter_count = max(len(alive_voters), voters_alive_count)
-                            if voter_quorum_ok:
+                            if effective_voter_quorum_ok:
                                 if voter_count >= quorum_required + 2:
                                     level = QuorumHealthLevel.HEALTHY
                                 elif voter_count == quorum_required + 1:
@@ -425,6 +439,9 @@ class QuorumSafeUpdateCoordinator:
                                 alive_voters=alive_voters,
                                 total_voters=len(effective_voter_ids),
                                 quorum_required=quorum_required,
+                                effective_voter_quorum_ok=effective_voter_quorum_ok,
+                                raw_voter_quorum_ok=raw_voter_quorum_ok,
+                                forced_leader_override=forced_leader_override,
                             )
                     except Exception as e:
                         last_error = e
@@ -1069,6 +1086,14 @@ class QuorumSafeUpdateCoordinator:
         logger.info(f"Pre-flight: quorum={health.quorum_level.value}, "
                    f"alive_voters={len(health.alive_voters)}/{health.total_voters}, "
                    f"leader={health.leader_id}")
+        if health.effective_voter_quorum_ok != health.raw_voter_quorum_ok:
+            logger.warning(
+                "Pre-flight quorum differs between effective and raw voter health: "
+                "effective=%s raw=%s forced_override=%s",
+                health.effective_voter_quorum_ok,
+                health.raw_voter_quorum_ok,
+                health.forced_leader_override,
+            )
 
         # Phase 2: Calculate safe batches
         logger.info("Phase 2: Calculating update batches...")

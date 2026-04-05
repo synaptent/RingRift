@@ -439,6 +439,50 @@ class TestCoordinatorInitialization:
         assert health.total_voters == 2
         assert health.quorum_required == 2
 
+    @pytest.mark.asyncio
+    async def test_get_cluster_health_tracks_raw_vs_effective_quorum(self, config):
+        """Forced leader override should not hide the raw voter-health signal."""
+        with patch.object(
+            QuorumSafeUpdateCoordinator,
+            "_find_config_path",
+            return_value=Path("/tmp/test.yaml"),
+        ):
+            coordinator = QuorumSafeUpdateCoordinator(config=config)
+
+        coordinator._voter_node_ids = {"mac-studio", "local-mac"}
+        coordinator._self_node_id = "mac-studio"
+        payload = {
+            "leader_id": "mac-studio",
+            "forced_leader_override": True,
+            "voter_quorum_ok": True,
+            "voters_alive": 1,
+            "voter_quorum_size": 2,
+            "voter_node_ids": ["mac-studio", "local-mac"],
+            "alive_peers": 5,
+            "peers": {},
+            "voter_health": {
+                "quorum_ok": False,
+                "voters_alive": 1,
+                "voters_total": 2,
+                "voters_offline": ["local-mac"],
+            },
+        }
+        responses = {
+            "http://localhost:8770/status": (200, payload),
+        }
+
+        fake_timeout = object()
+
+        with patch.object(coordinator, "_get_node_configs", return_value=[]):
+            with patch("aiohttp.ClientTimeout", return_value=fake_timeout):
+                with patch("aiohttp.ClientSession", return_value=_FakeAiohttpSession(responses)):
+                    health = await coordinator._get_cluster_health()
+
+        assert health.quorum_level == QuorumHealthLevel.MINIMUM
+        assert health.effective_voter_quorum_ok is True
+        assert health.raw_voter_quorum_ok is False
+        assert health.forced_leader_override is True
+
 
 class TestSingleNodeUpdate:
     """Tests for per-node update flow."""
