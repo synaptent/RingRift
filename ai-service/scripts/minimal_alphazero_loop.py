@@ -31,7 +31,13 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.ai.gumbel_mcts_ai import GumbelMCTSAI
 from app.models import AIConfig, BoardType, GameStatus, Move
 from app.training.env import TrainingEnvConfig, get_theoretical_max_moves, make_env
+from scripts.lib.loop_self_healing import (
+    FailureContext,
+    attempt_recovery,
+    reset_recovery_counts,
+)
 from scripts.lib.minimal_loop_strategy import recommend_transfer_source, resolve_loop_profile
+from scripts.lib.model_quality_gate import QualityGateTracker, check_model_quality
 from scripts.lib.training_probes import run_training_probes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
@@ -239,13 +245,18 @@ def train_model(npz: Path, out: Path, init: Path,
             logger.warning(f"  OOM at bs={b}, retrying with {b//2}")
             continue
         logger.error(f"  training failed (exit {r.returncode}): {err[-300:]}")
-        return {}
+        return {"error": err[-500:]}
     logger.error("  training failed after 3 OOM retries")
-    return {}
+    return {"error": "CUDA out of memory after 3 retries"}
 
 
-def evaluate(cand: str, best: str, n_games: int, budget: int) -> dict:
-    """Head-to-head: candidate vs best, alternating colors."""
+def evaluate(cand: str, best: str, n_games: int, budget: int,
+             tracker: QualityGateTracker | None = None) -> dict:
+    """Head-to-head: candidate vs best, alternating colors.
+
+    If *tracker* is provided, records the candidate's moves and value head
+    outputs for the model quality gate (behavioral diversity + value health).
+    """
     env = _make_env()
     cw, bw, dr, t0 = 0, 0, 0, time.time()
     for i in range(n_games):
@@ -256,16 +267,21 @@ def evaluate(cand: str, best: str, n_games: int, budget: int) -> dict:
             p1m, p2m = best, cand
         num_p = env.num_players if hasattr(env, "num_players") else 2
         ais = {}
+        # Determine which player slot(s) the candidate occupies
+        cand_players: set[int] = set()
         for p in range(1, num_p + 1):
             if i % 2 == 0:
                 model = cand if p == 1 else best
             else:
                 model = best if p == 1 else cand
             ais[p] = _make_ai(p, model, budget)
+            if model == cand:
+                cand_players.add(p)
         for p, ai in ais.items():
             if hasattr(ai, "reset_for_new_game"):
                 ai.reset_for_new_game(rng_seed=(gseed + p * 97_911) & 0xFFFFFFFF)
         state, mc = env.reset(seed=gseed), 0
+        cand_move_num = 0  # per-game move counter for candidate only
         while state.game_status == GameStatus.ACTIVE and mc < MAX_MOVES:
             c = state.current_player
             if c not in ais:
@@ -279,10 +295,21 @@ def evaluate(cand: str, best: str, n_games: int, budget: int) -> dict:
                 break
             if mv not in legal:
                 mv = legal[random.randint(0, len(legal) - 1)]
+            # Track candidate moves for the quality gate
+            if tracker is not None and c in cand_players:
+                root_value = None
+                stats = getattr(ais[c], "_last_search_stats", None)
+                if isinstance(stats, dict):
+                    root_value = stats.get("root_value")
+                tracker.record_move(i, cand_move_num, mv, legal,
+                                    root_value=root_value)
+                cand_move_num += 1
             state, _, done, _ = env.step(mv)
             mc += 1
             if done:
                 break
+        if tracker is not None:
+            tracker.finish_game(i)
         w = state.winner if state.game_status == GameStatus.COMPLETED else None
         if w is None:
             dr += 1
@@ -378,6 +405,10 @@ def main() -> None:
                     help="Skip data quality sentinel check before training")
     ap.add_argument("--skip-probes", action="store_true",
                     help="Skip training effectiveness probes after training")
+    ap.add_argument("--skip-quality-gate", action="store_true",
+                    help="Skip model quality gate (behavioral diversity + value health) after evaluation")
+    ap.add_argument("--no-self-heal", action="store_true",
+                    help="Disable automatic recovery on circuit breaker trips")
     args = ap.parse_args()
 
     node_id = args.node_id or socket.gethostname()
@@ -423,6 +454,9 @@ def main() -> None:
     promos, elo = 0, 1500.0
     consec_failures = 0  # Circuit breaker: stop after repeated failures
     MAX_CONSEC_FAILURES = 3
+    last_error = ""  # Captured for self-healing diagnostics
+    last_error_stage = ""
+    reset_recovery_counts()  # Fresh recovery budget for this loop run
 
     # Resume: find the last completed iteration to avoid overwriting data
     existing = sorted(wdir.glob("iter_*.npz"))
@@ -464,8 +498,30 @@ def main() -> None:
 
         # Circuit breaker: stop wasting GPU on repeated failures
         if consec_failures >= MAX_CONSEC_FAILURES:
-            logger.error(f"CIRCUIT BREAKER: {consec_failures} consecutive failures. "
-                         f"Stopping to avoid wasting GPU. Fix the issue and restart.")
+            if not args.no_self_heal:
+                recovery = attempt_recovery(FailureContext(
+                    error_message=last_error,
+                    stage=last_error_stage,
+                    config_key=config_key,
+                    work_dir=str(wdir),
+                    model_path=str(best),
+                    batch_size=batch_size,
+                    selfplay_randomness=args.selfplay_randomness,
+                ))
+                if recovery.recovered:
+                    logger.info(f"AUTO-RECOVERY: {recovery.action} - {recovery.message}")
+                    # Apply adjustments from recovery
+                    if "batch_size" in recovery.adjustments:
+                        batch_size = recovery.adjustments["batch_size"]
+                    if "selfplay_randomness" in recovery.adjustments:
+                        args.selfplay_randomness = recovery.adjustments["selfplay_randomness"]
+                    consec_failures = 0
+                    continue
+                logger.error(f"CIRCUIT BREAKER: {consec_failures} consecutive failures, "
+                             f"recovery failed: {recovery.message}")
+            else:
+                logger.error(f"CIRCUIT BREAKER: {consec_failures} consecutive failures. "
+                             f"Stopping to avoid wasting GPU. Fix the issue and restart.")
             break
 
         # 1. SELFPLAY
@@ -475,12 +531,16 @@ def main() -> None:
                           randomness=args.selfplay_randomness)
         if sp["completed"] == 0:
             logger.error("No games completed, skipping")
+            last_error = "No games completed in selfplay"
+            last_error_stage = "selfplay"
             consec_failures += 1; continue
 
         # 2. EXPORT
         logger.info("[2/5] Export JSONL -> NPZ")
         if not export_npz(jpath, npath):
             logger.error("Export failed, skipping")
+            last_error = "Export JSONL to NPZ failed"
+            last_error_stage = "export"
             consec_failures += 1; continue
 
         # 2.5 DATA QUALITY CHECK
@@ -491,6 +551,8 @@ def main() -> None:
                 verdict = check_data_quality(str(npath), work_dir=str(wdir))
                 if verdict.critical:
                     logger.error(f"DATA QUALITY CRITICAL: {verdict.summary}")
+                    last_error = verdict.summary
+                    last_error_stage = "data_quality"
                     consec_failures += 1; continue
                 elif verdict.warnings:
                     logger.warning(f"Data quality: {verdict.summary}")
@@ -525,8 +587,10 @@ def main() -> None:
             train_npz = npath
         logger.info(f"[3/5] Train (epochs={epochs}, bs={batch_size})")
         ti = train_model(train_npz, cpath, best, epochs, batch_size, args.lr)
-        if not ti or not cpath.exists():
+        if "error" in ti or not cpath.exists():
             logger.error("Training failed, skipping")
+            last_error = ti.get("error", "") or "Training produced no output"
+            last_error_stage = "training"
             consec_failures += 1; continue
 
         # Training succeeded — reset circuit breaker
@@ -539,19 +603,35 @@ def main() -> None:
             )
             if probe.critical:
                 logger.error(f"TRAINING PROBE FAILED: {probe.summary}")
+                last_error = probe.summary
+                last_error_stage = "probe"
                 consec_failures += 1; continue
             elif probe.warnings:
                 logger.warning(f"Training probe warnings: {probe.summary}")
             else:
                 logger.info(f"  probes passed ({probe.elapsed_s:.1f}s)")
 
-        # 4. EVALUATE
+        # 4. EVALUATE (with optional quality gate tracking)
         logger.info(f"[4/5] Evaluate ({eval_games} games)")
-        ev = evaluate(str(cpath), str(best), eval_games, budget)
+        qg_tracker = None if args.skip_quality_gate else QualityGateTracker()
+        ev = evaluate(str(cpath), str(best), eval_games, budget,
+                      tracker=qg_tracker)
+
+        # 4.5 MODEL QUALITY GATE — reject degenerate candidates before promotion
+        quality_blocked = False
+        if qg_tracker is not None:
+            quality = check_model_quality(qg_tracker)
+            if quality.critical:
+                logger.error(f"MODEL QUALITY GATE: {quality.summary}")
+                quality_blocked = True
+            elif quality.warnings:
+                logger.warning(f"Quality gate warnings: {quality.summary}")
+            else:
+                logger.info(f"  quality gate passed")
 
         # 5. PROMOTE / REJECT
         wr = ev["win_rate"]
-        promoted = wr >= args.promote_threshold
+        promoted = wr >= args.promote_threshold and not quality_blocked
         if promoted:
             shutil.copy2(cpath, best)
             promos += 1
