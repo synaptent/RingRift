@@ -209,8 +209,9 @@ def export_npz(jsonl: Path, npz: Path) -> bool:
                 return False
         except ImportError:
             pass
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"  NPZ validation FAILED: {e}")
+        return False
     return True
 
 
@@ -313,7 +314,7 @@ def evaluate(cand: str, best: str, n_games: int, budget: int,
         w = state.winner if state.game_status == GameStatus.COMPLETED else None
         if w is None:
             dr += 1
-        elif (i % 2 == 0 and w == 1) or (i % 2 == 1 and w == 2):
+        elif w in cand_players:
             cw += 1
         else:
             bw += 1
