@@ -21,8 +21,9 @@ from pathlib import Path
 
 # Allow execution either from the tracked file on disk or via stdin from the
 # deploy smoke runner. The runner `cd`s into the ai-service dir first.
-if "__file__" in globals():
-    ROOT = Path(__file__).resolve().parent.parent
+_THIS_FILE = globals().get("__file__")
+if _THIS_FILE and _THIS_FILE != "<stdin>":
+    ROOT = Path(_THIS_FILE).resolve().parent.parent
 else:
     ROOT = Path.cwd()
 if str(ROOT) not in sys.path:
