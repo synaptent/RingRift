@@ -75,7 +75,7 @@ python scripts/master_loop.py --dry-run
 This orchestrates:
 
 - **SelfplayScheduler**: Priority-based selfplay allocation (staleness, Elo velocity, curriculum weights)
-- **DaemonManager**: 132 daemon types for sync, training, evaluation (116 active, 16 deprecated)
+- **DaemonManager**: 127 daemon types for sync, training, evaluation (107 active, 20 deprecated)
 - **FeedbackLoopController**: Training feedback signals and curriculum adjustments
 - **DataPipelineOrchestrator**: Export -> training -> evaluation -> promotion
 
@@ -142,14 +142,14 @@ python scripts/check_ts_python_replay_parity.py --db data/games/my_games.db
 
 ## Cluster Infrastructure
 
-RingRift uses a P2P mesh network for distributed training across ~15 active nodes.
+RingRift uses a P2P mesh network for distributed training across ~12 active nodes.
 
-| Provider     | Nodes | GPUs                        | Status |
-| ------------ | ----- | --------------------------- | ------ |
-| Lambda GH200 | 9     | GH200 96GB x 9              | Active |
-| Nebius       | 3     | H100 80GB x 2, L40S         | Active |
-| Hetzner      | 3     | CPU only (P2P voters)       | Active |
-| Local        | 2     | Mac Studio M3 (coordinator) | Active |
+| Provider     | Nodes | GPUs                        | Status  |
+| ------------ | ----- | --------------------------- | ------- |
+| Lambda GH200 | 7     | GH200 96GB x 7              | Active  |
+| Nebius       | 3     | H100 80GB x 2, L40S         | Stopped |
+| Hetzner      | 3     | CPU only (P2P voters)       | Active  |
+| Local        | 2     | Mac Studio M3 (coordinator) | Active  |
 
 ```bash
 # Check cluster status via P2P
