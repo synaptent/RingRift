@@ -402,7 +402,21 @@ def get_encoder_version_from_checkpoint(checkpoint_path: str) -> Optional[str]:
         # Load checkpoint (CPU only, for metadata inspection)
         checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
-        # Get state dict
+        # April 2026: Prefer explicit versioning metadata over channel-count inference.
+        # Channel counts are ambiguous: square v2 and hex v5-heavy both use 56 channels.
+        if isinstance(checkpoint, dict):
+            meta = checkpoint.get("_versioning_metadata", {})
+            arch_ver = meta.get("architecture_version", "")
+            if arch_ver.startswith("v2"):
+                return "v2"
+            elif arch_ver.startswith("v3"):
+                return "v3"
+            elif arch_ver.startswith("v4"):
+                return "v3"  # v4 uses v3 encoder
+            elif "v5" in arch_ver:
+                return "v5-heavy"
+
+        # Fallback: infer from conv1 weight shape
         if isinstance(checkpoint, dict):
             state_dict = checkpoint.get("state_dict", checkpoint.get("model_state_dict", checkpoint))
         else:
@@ -420,12 +434,14 @@ def get_encoder_version_from_checkpoint(checkpoint_path: str) -> Optional[str]:
                 logger.debug(f"Detected {in_channels} channels from {key}")
 
                 # Map channels to encoder version
+                # NOTE: 56 channels is ambiguous (square v2 OR hex v5-heavy).
+                # Without metadata, default to v2 since it's the common case.
                 if in_channels == 40:
                     return "v2"
                 elif in_channels == 64:
                     return "v3"
                 elif in_channels == 56:
-                    return "v5-heavy"
+                    return "v2"
                 else:
                     logger.warning(f"Unknown channel count {in_channels}, defaulting to v3")
                     return "v3"
@@ -465,6 +481,20 @@ def get_model_version_from_checkpoint(checkpoint_path: str) -> Optional[str]:
     try:
         checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
+        # April 2026: Prefer explicit versioning metadata over weight-shape inference.
+        if isinstance(checkpoint, dict):
+            meta = checkpoint.get("_versioning_metadata", {})
+            arch_ver = meta.get("architecture_version", "")
+            if arch_ver.startswith("v2"):
+                return "v2"
+            elif arch_ver.startswith("v3"):
+                return "v3"
+            elif arch_ver.startswith("v4"):
+                return "v4"
+            elif "v5" in arch_ver:
+                return "v5-heavy"
+
+        # Fallback: infer from model weight structure
         if isinstance(checkpoint, dict):
             state_dict = checkpoint.get("state_dict", checkpoint.get("model_state_dict", checkpoint))
         else:
@@ -478,24 +508,16 @@ def get_model_version_from_checkpoint(checkpoint_path: str) -> Optional[str]:
         # Count architecture indicators
         value_fc_layers = [k for k in keys if "value_fc" in k and "weight" in k]
         has_value_fc3 = any("value_fc3" in k for k in keys)
-        res_blocks = set(k.split(".")[1] for k in keys if "res_blocks." in k and "." in k)
-        has_se_blocks = any("se_" in k.lower() for k in keys)
-        has_attention = any("attn" in k.lower() or "attention" in k.lower() for k in keys)
         has_heuristic_encoder = any("heuristic_encoder" in k for k in keys)
-
-        # Determine architecture based on signature
-        # Key differentiator: value head depth
-        # - v2/v3: 2 value FC layers (value_fc1, value_fc2)
-        # - v4: 3 value FC layers (value_fc1, value_fc2, value_fc3)
-        # - v5-heavy: heuristic_encoder present
 
         if has_heuristic_encoder:
             return "v5-heavy"
         elif has_value_fc3:
-            # 3-layer value head = definitely v4
             return "v4"
         elif len(value_fc_layers) == 2:
             # Check input channels to distinguish v2 from v3
+            # NOTE: 56 channels is ambiguous (square v2 OR hex v5-heavy).
+            # Without metadata and without heuristic_encoder, default to v2.
             for key in keys:
                 if "conv1.weight" in key:
                     weight = state_dict[key]
@@ -505,9 +527,9 @@ def get_model_version_from_checkpoint(checkpoint_path: str) -> Optional[str]:
                     elif in_channels == 64:
                         return "v3"
                     elif in_channels == 56:
-                        return "v5-heavy"
+                        return "v2"
                     break
-            return "v2"  # Default to v2 for 2-layer value head
+            return "v2"
         else:
             return "v2"
 
