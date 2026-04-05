@@ -15,6 +15,7 @@ import contextlib
 import logging
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -130,7 +131,7 @@ async def _try_push_candidate_to_s3(
         err = stderr.decode()[:200] if stderr else ""
         logger.warning(f"S3 candidate push failed for {config_key}: {err}")
         return False
-    except Exception as e:
+    except (FileNotFoundError, OSError, RuntimeError, ValueError, subprocess.SubprocessError) as e:
         logger.debug(f"S3 candidate push error for {config_key}: {e}")
         return False
 
@@ -225,7 +226,7 @@ async def push_stranded_candidates_to_s3(
     except asyncio.TimeoutError:
         logger.warning("[StartupS3Push] aws s3 ls timed out, skipping startup push")
         return {}
-    except Exception as e:
+    except (FileNotFoundError, OSError, RuntimeError, ValueError, subprocess.SubprocessError) as e:
         logger.warning(f"[StartupS3Push] aws s3 ls error: {e}")
         return {}
 
@@ -344,7 +345,18 @@ async def _try_fetch_npz_from_cluster(
             logger.warning(f"Failed to fetch NPZ from coordinator: rc={proc.returncode} {err}")
             _cleanup_atomic_output_path(temp_npz_path)
             return None
-    except Exception as e:
+    except asyncio.TimeoutError:
+        if temp_npz_path is not None:
+            _cleanup_atomic_output_path(temp_npz_path)
+        logger.warning(f"NPZ fetch from cluster timed out for {config_key}")
+        return None
+    except (
+        FileNotFoundError,
+        OSError,
+        RuntimeError,
+        ValueError,
+        subprocess.SubprocessError,
+    ) as e:
         if temp_npz_path is not None:
             _cleanup_atomic_output_path(temp_npz_path)
         logger.debug(f"NPZ fetch from cluster failed for {config_key}: {e}")
@@ -394,7 +406,13 @@ async def _try_fetch_npz_from_s3(config_key: str, output_path: str) -> bool:
         logger.warning(f"S3 NPZ fetch timed out for {config_key}")
         _cleanup_atomic_output_path(temp_output_path)
         return False
-    except Exception as e:
+    except (
+        FileNotFoundError,
+        OSError,
+        RuntimeError,
+        ValueError,
+        subprocess.SubprocessError,
+    ) as e:
         logger.debug(f"S3 NPZ fetch error for {config_key}: {e}")
         _cleanup_atomic_output_path(temp_output_path)
         return False
@@ -443,7 +461,13 @@ async def _try_fetch_model_from_s3(model_filename: str, output_path: str) -> boo
         logger.warning(f"S3 model fetch timed out for {model_filename}")
         _cleanup_atomic_output_path(temp_output_path)
         return False
-    except Exception as e:
+    except (
+        FileNotFoundError,
+        OSError,
+        RuntimeError,
+        ValueError,
+        subprocess.SubprocessError,
+    ) as e:
         logger.debug(f"S3 model fetch error for {model_filename}: {e}")
         _cleanup_atomic_output_path(temp_output_path)
         return False
@@ -520,7 +544,13 @@ async def _try_local_jsonl_export(
     except asyncio.TimeoutError:
         logger.warning(f"JSONL→NPZ export timed out for {config_key}")
         _cleanup_atomic_output_path(temp_output_path)
-    except Exception as e:
+    except (
+        FileNotFoundError,
+        OSError,
+        RuntimeError,
+        ValueError,
+        subprocess.SubprocessError,
+    ) as e:
         logger.warning(f"JSONL→NPZ export error for {config_key}: {e}")
         _cleanup_atomic_output_path(temp_output_path)
     return None
@@ -682,7 +712,16 @@ def _partial_architecture_transfer(
 
         return transfer_path
 
-    except Exception as e:
+    except (
+        ImportError,
+        FileNotFoundError,
+        OSError,
+        RuntimeError,
+        ValueError,
+        KeyError,
+        TypeError,
+        AttributeError,
+    ) as e:
         logger.warning(
             f"Partial architecture transfer failed for {config_key} "
             f"({source_path} -> {target_version}): {e}"
@@ -739,7 +778,7 @@ async def execute_training_work(
         mv = requested_model_version or "v2"
         expected_ch = get_expected_channels(bt_enum, mv)
         logger.info(f"[Contract] {config_key}/{mv}: expecting {expected_ch} channels")
-    except Exception as _contract_err:
+    except (ImportError, AttributeError, TypeError, ValueError) as _contract_err:
         logger.debug(f"[Contract] Validation skipped: {_contract_err}")
 
     # March 11, 2026: Reduced defaults — 50 epochs on batch 256 caused
@@ -976,7 +1015,16 @@ async def execute_training_work(
                         f"Falling through to from-scratch logic."
                     )
                 _skip_init = True
-        except Exception as e:
+        except (
+            ImportError,
+            FileNotFoundError,
+            OSError,
+            RuntimeError,
+            ValueError,
+            KeyError,
+            TypeError,
+            AttributeError,
+        ) as e:
             message = (
                 f"Could not inspect canonical checkpoint metadata for {config_key}: {e}"
             )
@@ -1067,7 +1115,13 @@ async def execute_training_work(
             try:
                 stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
                 timeout_output = stdout.decode(errors="replace") if stdout else ""
-            except Exception as e:
+            except (
+                asyncio.TimeoutError,
+                OSError,
+                RuntimeError,
+                ValueError,
+                subprocess.SubprocessError,
+            ) as e:
                 logger.warning(
                     f"Could not capture post-timeout output for {config_key}/{model_version}: {e}"
                 )
@@ -1076,7 +1130,13 @@ async def execute_training_work(
                     stage="timeout_output_capture",
                     message=str(e),
                 )
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(
+                    asyncio.TimeoutError,
+                    OSError,
+                    RuntimeError,
+                    subprocess.SubprocessError,
+                    ProcessLookupError,
+                ):
                     await proc.wait()
             # Even though it timed out, the model file may already be saved.
             # Check if the model file exists and report partial success.
@@ -1103,7 +1163,7 @@ async def execute_training_work(
                             _timeout_samples = len(_npz_data[_key])
                             break
                     _npz_data.close()
-                except Exception as _e:
+                except (AttributeError, KeyError, OSError, TypeError, ValueError) as _e:
                     logger.debug(f"Could not read NPZ for sample count: {_e}")
                 _timeout_games = 0
                 if _timeout_samples > 0:
@@ -1271,13 +1331,27 @@ async def execute_training_work(
                         f"[SmokeTest] PASSED {config_key}: {_wins}/10 vs random ({_wr:.0%})"
                     )
                     work_item["result"]["smoke_test_win_rate"] = _wr
-                except Exception as _e:
-                    logger.warning(f"[SmokeTest] Could not run for {config_key}: {_e}")
+                except (
+                    ImportError,
+                    AttributeError,
+                    KeyError,
+                    OSError,
+                    RuntimeError,
+                    TypeError,
+                    ValueError,
+                ) as _e:
+                    import traceback as _tb
+                    logger.warning(
+                        f"[SmokeTest] Could not run for {config_key}: {_e}\n"
+                        f"{_tb.format_exc()}"
+                    )
                     _append_work_warning(
                         work_item,
                         stage="smoke_test",
                         message=str(_e),
                     )
+                    # Best-effort: smoke test failure should not block candidate push.
+                    # Training succeeded; the gauntlet is the real quality gate.
 
             # Emit training completed event
             event_emitted = False
@@ -1318,7 +1392,7 @@ async def execute_training_work(
                     stage="training_event_import",
                     message=message,
                 )
-            except Exception as e:
+            except (AttributeError, KeyError, OSError, RuntimeError, TypeError, ValueError) as e:
                 message = f"training completion event failed for {config_key}: {e}"
                 logger.warning(message)
                 _append_work_warning(

@@ -1583,30 +1583,12 @@ class MasterLoopController:
                 DaemonType.S3_SYNC,  # Unified S3 sync (replaces S3_BACKUP, S3_NODE_SYNC, S3_PUSH)
             ]
 
-        # All deprecated daemons - excluded from 'full' profile
-        # These have replacement modules and will be removed Q2 2026
-        deprecated = {
-            DaemonType.SYNC_COORDINATOR,      # Use AUTO_SYNC
-            DaemonType.HEALTH_CHECK,          # Use COORDINATOR_HEALTH_MONITOR
-            DaemonType.EPHEMERAL_SYNC,        # Use AUTO_SYNC with strategy='ephemeral'
-            DaemonType.NODE_HEALTH_MONITOR,   # Use COORDINATOR_HEALTH_MONITOR
-            DaemonType.SYSTEM_HEALTH_MONITOR, # Use unified_health_manager
-            DaemonType.NPZ_DISTRIBUTION,      # Use MODEL_DISTRIBUTION with DataType.NPZ
-            DaemonType.REPLICATION_MONITOR,   # Use unified_replication_daemon
-            DaemonType.REPLICATION_REPAIR,    # Use unified_replication_daemon
-            DaemonType.LAMBDA_IDLE,           # GH200 nodes are dedicated (Dec 28)
-            DaemonType.VAST_IDLE,             # Deprecated (Mar 2026)
-            DaemonType.CLUSTER_DATA_SYNC,     # Use AUTO_SYNC with strategy='broadcast'
-            DaemonType.S3_BACKUP,             # Use S3_SYNC (Feb 2026)
-            DaemonType.S3_NODE_SYNC,          # Use S3_SYNC (Feb 2026)
-            DaemonType.S3_PUSH,               # Use S3_SYNC (Feb 2026)
-            DaemonType.S3_CONSOLIDATION,      # Use S3_SYNC (Feb 2026)
-            DaemonType.EXTERNAL_DRIVE_SYNC,   # Use OWC_SYNC_MANAGER (Mar 2026)
-            DaemonType.CONTINUOUS_TRAINING_LOOP,  # Archived, use p2p_orchestrator
-            DaemonType.DISTILLATION,          # Standalone script
-            DaemonType.UNIFIED_DATA_CATALOG,  # Never implemented
-            DaemonType.NODE_DATA_AGENT,       # Never implemented
-        }
+        # Exclude daemon types that are already deprecated in the registry plus
+        # a small set of still-registered legacy aliases that the full profile
+        # should not start anymore.
+        from app.coordination.daemon_registry import get_deprecated_types
+
+        deprecated = set(get_deprecated_types())
         full = [daemon for daemon in DaemonType if daemon not in deprecated]
 
         # April 2026: "lean" profile — 23 essential + useful daemons.

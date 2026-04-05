@@ -3,12 +3,13 @@
 Tests the leader election mixin for P2P cluster consensus.
 """
 
+import sys
 import threading
 import time
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -37,20 +38,42 @@ _P2P_TEST_MODULES = {
     "scripts.p2p.models": MagicMock(NodeInfo=MockNodeInfo),
 }
 
-# Import the module under test with lightweight P2P type shims installed.
-with patch.dict("sys.modules", _P2P_TEST_MODULES):
+_MISSING = object()
+
+
+def _install_p2p_test_modules() -> dict[str, object]:
+    previous: dict[str, object] = {}
+    for module_name, module in _P2P_TEST_MODULES.items():
+        previous[module_name] = sys.modules.get(module_name, _MISSING)
+        sys.modules[module_name] = module
+    return previous
+
+
+def _restore_p2p_test_modules(previous: dict[str, object]) -> None:
+    for module_name, module in previous.items():
+        if module is _MISSING:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = module
+
+
+_previous_p2p_modules = _install_p2p_test_modules()
+try:
     from scripts.p2p.leader_election import (
         VOTER_MIN_QUORUM,
         LeaderElectionMixin,
         check_quorum,
     )
+finally:
+    _restore_p2p_test_modules(_previous_p2p_modules)
 
 
 @pytest.fixture(autouse=True)
-def patch_runtime_p2p_modules():
+def patch_runtime_p2p_modules(monkeypatch):
     """Keep lightweight P2P shims available for lazy imports during each test."""
-    with patch.dict("sys.modules", _P2P_TEST_MODULES):
-        yield
+    for module_name, module in _P2P_TEST_MODULES.items():
+        monkeypatch.setitem(sys.modules, module_name, module)
+    yield
 
 
 class TestableLeaderElection(LeaderElectionMixin):

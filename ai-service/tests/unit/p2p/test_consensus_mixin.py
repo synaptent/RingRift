@@ -3,6 +3,7 @@
 Tests the Raft consensus integration mixin for P2P cluster coordination.
 """
 
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -78,7 +79,8 @@ def mock_replicated(func):
 
 
 # Import the module with mocking
-with patch.dict("sys.modules", {
+_MISSING = object()
+_CONSENSUS_TEST_MODULES = {
     "scripts.p2p.types": MagicMock(NodeRole=MockNodeRole),
     "scripts.p2p.models": MagicMock(NodeInfo=MockNodeInfo),
     "pysyncobj": MagicMock(
@@ -90,7 +92,27 @@ with patch.dict("sys.modules", {
         ReplDict=MockReplDict,
         ReplLockManager=MockLockManager,
     ),
-}):
+}
+
+
+def _install_consensus_test_modules() -> dict[str, object]:
+    previous: dict[str, object] = {}
+    for module_name, module in _CONSENSUS_TEST_MODULES.items():
+        previous[module_name] = sys.modules.get(module_name, _MISSING)
+        sys.modules[module_name] = module
+    return previous
+
+
+def _restore_consensus_test_modules(previous: dict[str, object]) -> None:
+    for module_name, module in previous.items():
+        if module is _MISSING:
+            sys.modules.pop(module_name, None)
+        else:
+            sys.modules[module_name] = module
+
+
+_previous_consensus_modules = _install_consensus_test_modules()
+try:
     from scripts.p2p.consensus_mixin import (
         CONSENSUS_MODE,
         PYSYNCOBJ_AVAILABLE,
@@ -99,6 +121,8 @@ with patch.dict("sys.modules", {
         get_work_queue,
     )
     import scripts.p2p.consensus_mixin as consensus_mixin_module
+finally:
+    _restore_consensus_test_modules(_previous_consensus_modules)
 
 
 class TestableConsensusMixin(ConsensusMixin):

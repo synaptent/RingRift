@@ -1066,7 +1066,9 @@ class EvaluationDaemon(HandlerBase):
                 return True
 
         except Exception as e:  # noqa: BLE001
-            logger.debug(f"[EvaluationDaemon] Match running evaluation error: {e}")
+            # Critical path: failure here means completed P2P evaluations are not
+            # matched to persistent queue entries, causing lost evaluation results.
+            logger.warning(f"[EvaluationDaemon] Match running evaluation error: {e}", exc_info=True)
 
         return False
 
@@ -1731,7 +1733,7 @@ class EvaluationDaemon(HandlerBase):
                     from app.utils.coordinator_governor import get_governor
                     get_governor().release(_governor_slot)
                 except Exception:
-                    pass
+                    pass  # Best-effort cleanup: governor has TTL-based auto-expiry
 
     async def _run_gauntlet(
         self,
@@ -2096,7 +2098,9 @@ class EvaluationDaemon(HandlerBase):
         except ImportError:
             logger.debug("[EvaluationDaemon] Event emitters not available")
         except Exception as e:  # noqa: BLE001
-            logger.debug(f"[EvaluationDaemon] Failed to emit event: {e}")
+            # Critical: EVALUATION_COMPLETED events drive promotion/feedback loops.
+            # Losing these silently stalls the entire training pipeline.
+            logger.warning(f"[EvaluationDaemon] Failed to emit EVALUATION_COMPLETED event: {e}", exc_info=True)
 
     async def _emit_evaluation_started(
         self,
@@ -2397,7 +2401,9 @@ class EvaluationDaemon(HandlerBase):
             logger.debug("[EvaluationDaemon] EloService not available for Elo computation")
             return None
         except Exception as e:  # noqa: BLE001
-            logger.warning(f"[EvaluationDaemon] Elo computation from gauntlet failed: {e}")
+            # Critical: Elo computation failure means a model gets no rating after
+            # running a full gauntlet. The gauntlet work is wasted.
+            logger.warning(f"[EvaluationDaemon] Elo computation from gauntlet failed: {e}", exc_info=True)
             return None
 
     async def _dispatch_gauntlet_to_cluster(
@@ -3160,7 +3166,9 @@ class EvaluationDaemon(HandlerBase):
             )
 
         except Exception as e:
-            logger.error(f"[EvaluationDaemon] Startup scan failed: {e}")
+            # Critical: startup scan failure means no canonical models get queued
+            # for evaluation, silently stalling the entire eval pipeline on restart.
+            logger.error(f"[EvaluationDaemon] Startup scan failed: {e}", exc_info=True)
 
     def _has_elo_rating(self, model_path: str) -> bool:
         """Check if a model has an Elo rating in EloService.
@@ -3194,7 +3202,8 @@ class EvaluationDaemon(HandlerBase):
                     if rating is not None:
                         return True
                 except Exception:
-                    pass
+                    pass  # Best-effort: per-config rating lookup may fail for configs
+                          # that don't match this model. We try all 12 and move on.
             return False
 
         except ImportError:
@@ -3243,7 +3252,8 @@ class EvaluationDaemon(HandlerBase):
                     if rating is not None:
                         return False  # Has rating = doesn't need eval
                 except Exception:
-                    pass
+                    pass  # Best-effort: per-config rating lookup may fail for configs
+                          # that don't match this model. We try all 12 and move on.
             return True  # No rating found = needs eval
 
         except ImportError:

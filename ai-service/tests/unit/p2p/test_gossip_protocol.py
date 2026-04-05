@@ -6,6 +6,7 @@ Tests the core gossip protocol mixin for decentralized state sharing.
 import asyncio
 import gzip
 import json
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -60,8 +61,16 @@ mock_aiohttp.ClientTimeout = MockClientTimeout
 mock_aiohttp.ClientSession = MockSession
 mock_aiohttp.ClientError = Exception
 
-with patch.dict("sys.modules", {"aiohttp": mock_aiohttp}):
+_MISSING = object()
+_previous_aiohttp = sys.modules.get("aiohttp", _MISSING)
+sys.modules["aiohttp"] = mock_aiohttp
+try:
     from scripts.p2p.gossip_protocol import GossipProtocolMixin
+finally:
+    if _previous_aiohttp is _MISSING:
+        sys.modules.pop("aiohttp", None)
+    else:
+        sys.modules["aiohttp"] = _previous_aiohttp
 
 
 # Create a concrete class that uses the mixin

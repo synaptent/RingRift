@@ -149,7 +149,7 @@ def _detect_model_version_from_checkpoint(model_path: str | Path | None) -> str 
             logger.debug(f"Detected model version {version} from {model_path}")
             return None  # Unknown version, use default
 
-        except Exception as e:
+        except (AttributeError, KeyError, OSError, RuntimeError, TypeError, ValueError) as e:
             # Legacy checkpoint or extraction failed
             logger.debug(f"Could not extract version from {model_path}: {e}")
             return None
@@ -345,7 +345,7 @@ def verify_model_architecture(
 
     try:
         checkpoint = safe_load_checkpoint(path)
-    except Exception as e:
+    except (AttributeError, KeyError, OSError, RuntimeError, TypeError, ValueError) as e:
         return False, f"Failed to load checkpoint: {e}"
 
     # Get the model state dict
@@ -1849,7 +1849,15 @@ def _evaluate_single_opponent(
                             )
                         except ImportError as e:
                             logger.warning(f"[gauntlet] Failed to import elo_recording: {e}")
-                        except Exception as e:
+                        except (
+                            AttributeError,
+                            KeyError,
+                            OSError,
+                            RuntimeError,
+                            TypeError,
+                            ValueError,
+                            sqlite3.Error,
+                        ) as e:
                             logger.error(f"[gauntlet] Failed to record gauntlet Elo: {e}")
 
                         if verbose:
@@ -1978,7 +1986,15 @@ def _evaluate_single_opponent(
                 )
             except ImportError as e:
                 logger.warning(f"[gauntlet] Failed to import elo_recording: {e}")
-            except Exception as e:
+            except (
+                AttributeError,
+                KeyError,
+                OSError,
+                RuntimeError,
+                TypeError,
+                ValueError,
+                sqlite3.Error,
+            ) as e:
                 logger.error(f"[gauntlet] Failed to record gauntlet Elo: {e}")
 
             if verbose:
@@ -2553,7 +2569,15 @@ def run_baseline_gauntlet(
                         },
                     )
                 logger.debug(f"[gauntlet] Stored results for {effective_model_id} in gauntlet_results.db")
-        except Exception as e:
+        except (
+            AttributeError,
+            KeyError,
+            OSError,
+            RuntimeError,
+            TypeError,
+            ValueError,
+            sqlite3.Error,
+        ) as e:
             # Jan 12, 2026: Widened from (OSError, RuntimeError, ValueError) to catch sqlite3 errors,
             # TypeErrors, AttributeErrors, etc. that were silently dropped and caused empty gauntlet_results.
             logger.warning(f"[gauntlet] Failed to store results in DB: {type(e).__name__}: {e}")

@@ -423,23 +423,6 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     # =========================================================================
     # Miscellaneous
     # =========================================================================
-    DaemonType.S3_BACKUP: DaemonSpec(
-        runner_name="create_s3_backup",
-        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.MODEL_DISTRIBUTION),
-        category="misc",
-    ),
-    # S3 node sync (December 2025) - bi-directional S3 sync for all cluster nodes
-    DaemonType.S3_NODE_SYNC: DaemonSpec(
-        runner_name="create_s3_node_sync",
-        depends_on=(DaemonType.EVENT_ROUTER,),
-        category="sync",
-    ),
-    # S3 consolidation (December 2025) - consolidates data from all nodes (coordinator only)
-    DaemonType.S3_CONSOLIDATION: DaemonSpec(
-        runner_name="create_s3_consolidation",
-        depends_on=(DaemonType.EVENT_ROUTER, DaemonType.S3_NODE_SYNC),
-        category="sync",
-    ),
     DaemonType.VAST_CPU_PIPELINE: DaemonSpec(
         runner_name="create_vast_cpu_pipeline",
         depends_on=(DaemonType.EVENT_ROUTER,),
@@ -517,7 +500,7 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
     DaemonType.COMPREHENSIVE_CONSOLIDATION: DaemonSpec(
         runner_name="create_comprehensive_consolidation",
         depends_on=(DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE),
-        soft_depends_on=(DaemonType.OWC_IMPORT, DaemonType.S3_BACKUP),
+        soft_depends_on=(DaemonType.OWC_IMPORT, DaemonType.S3_SYNC),
         category="pipeline",
         health_check_interval=1800.0,  # 30 minutes (matches consolidation cycle)
     ),
@@ -725,12 +708,6 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
         category="distribution",
         health_check_interval=3600.0,  # 1 hour - backup operations are slow
     ),
-    DaemonType.S3_PUSH: DaemonSpec(
-        runner_name="create_s3_push",
-        depends_on=(DaemonType.EVENT_ROUTER,),
-        category="distribution",
-        health_check_interval=1800.0,  # 30 minutes
-    ),
     # =========================================================================
     # Jan 3, 2026: Added missing daemon specs for data availability infrastructure
     # These daemon types were declared in DaemonType enum but missing from registry
@@ -871,76 +848,11 @@ DAEMON_REGISTRY: dict[DaemonType, DaemonSpec] = {
 
 DAEMON_REGISTRY.update(
     {
-        # Deprecated compatibility shims
-        DaemonType.SYNC_COORDINATOR: _deprecated_spec(
-            runner_name="create_sync_coordinator",
-            category="sync",
-            message="Use AUTO_SYNC instead.",
-        ),
-        DaemonType.EPHEMERAL_SYNC: _deprecated_spec(
-            runner_name="create_ephemeral_sync",
-            category="sync",
-            message='Use AUTO_SYNC with strategy="ephemeral" instead.',
-        ),
-        DaemonType.CLUSTER_DATA_SYNC: _deprecated_spec(
-            runner_name="create_cluster_data_sync",
-            category="sync",
-            message='Use AUTO_SYNC with strategy="broadcast" instead.',
-        ),
-        DaemonType.HEALTH_CHECK: _deprecated_spec(
-            runner_name="create_health_check",
-            category="health",
-            message="Use unified health orchestration instead of HEALTH_CHECK.",
-        ),
-        DaemonType.NODE_HEALTH_MONITOR: _deprecated_spec(
-            runner_name="create_node_health_monitor",
-            category="health",
-            message="Use unified health orchestration instead of NODE_HEALTH_MONITOR.",
-        ),
-        DaemonType.SYSTEM_HEALTH_MONITOR: _deprecated_spec(
-            runner_name="create_system_health_monitor",
-            category="health",
-            message="Use unified health orchestration instead of SYSTEM_HEALTH_MONITOR.",
-        ),
-        DaemonType.NPZ_DISTRIBUTION: _deprecated_spec(
-            runner_name="create_npz_distribution",
-            category="distribution",
-            message="Use the unified distribution daemon for NPZ routing.",
-        ),
-        DaemonType.REPLICATION_MONITOR: _deprecated_spec(
-            runner_name="create_replication_monitor",
-            category="distribution",
-            message="Use the unified replication daemon instead.",
-        ),
-        DaemonType.REPLICATION_REPAIR: _deprecated_spec(
-            runner_name="create_replication_repair",
-            category="distribution",
-            message="Use the unified replication daemon instead.",
-        ),
-        DaemonType.LAMBDA_IDLE: _deprecated_spec(
-            runner_name="create_lambda_idle",
-            category="resource",
-            message="Dedicated training nodes no longer use Lambda idle shutdown.",
-        ),
-        DaemonType.VAST_IDLE: _deprecated_spec(
-            runner_name="create_vast_idle",
-            category="resource",
-            message="Use unified idle shutdown handling instead of VAST_IDLE.",
-        ),
-        DaemonType.CONTINUOUS_TRAINING_LOOP: _deprecated_spec(
-            runner_name="create_continuous_training_loop",
-            category="pipeline",
-            message="Use TRAINING_TRIGGER and TRAINING_COORDINATOR instead.",
-        ),
+        # Deprecated compatibility shims (placeholders kept for future implementations)
         DaemonType.DISTILLATION: _deprecated_spec(
             runner_name="create_distillation",
             category="pipeline",
             message="Knowledge distillation is no longer a standalone daemon.",
-        ),
-        DaemonType.EXTERNAL_DRIVE_SYNC: _deprecated_spec(
-            runner_name="create_external_drive_sync",
-            category="sync",
-            message="Use OWC_SYNC_MANAGER instead of EXTERNAL_DRIVE_SYNC.",
         ),
         DaemonType.UNIFIED_DATA_CATALOG: _deprecated_spec(
             runner_name="create_unified_data_catalog",

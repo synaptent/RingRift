@@ -50,11 +50,11 @@ __all__ = [
 # Daemon types scheduled for removal in Q2 2026
 _DEPRECATED_DAEMON_TYPES: dict[str, tuple[str, str]] = {
     # January 2026: Consolidated backup/sync daemons (Session 17.41)
-    # S3 sync consolidation: 3 daemons → S3_SYNC
     "s3_backup": ("S3_SYNC", "Q2 2026"),
     "s3_node_sync": ("S3_SYNC", "Q2 2026"),
     "s3_push": ("S3_SYNC", "Q2 2026"),
-    # OWC sync consolidation: 4 daemons → OWC_SYNC_MANAGER
+    "s3_consolidation": ("S3_SYNC", "Q2 2026"),
+    # OWC sync consolidation: remaining daemons → OWC_SYNC_MANAGER
     "owc_push": ("OWC_SYNC_MANAGER", "Q2 2026"),
     "dual_backup": ("OWC_SYNC_MANAGER", "Q2 2026"),
     "unified_backup": ("OWC_SYNC_MANAGER", "Q2 2026"),
@@ -79,8 +79,7 @@ class DaemonType(Enum):
     # =========================================================================
     # DEPRECATED STUBS — kept for backward compatibility with references in
     # daemon_manager.py, daemon_adapters.py, daemon_factory.py, runners/*.py.
-    # These daemons are no-ops; their runners log deprecation warnings.
-    # TODO: Remove once all 23 referencing files are cleaned up.
+    # These are removed from the DAEMON_REGISTRY so they cannot be started.
     # =========================================================================
     SYNC_COORDINATOR = "sync_coordinator"
     EPHEMERAL_SYNC = "ephemeral_sync"
@@ -228,15 +227,6 @@ class DaemonType(Enum):
     # Triggers when model Elo improves by min_elo_delta (default: 50)
     # Expected impact: +25-50 Elo from improved training targets
     REANALYSIS = "reanalysis"
-
-    # S3 backup (December 2025) - backup models to S3 after promotion
-    S3_BACKUP = "s3_backup"
-
-    # S3 node sync (December 2025) - bi-directional S3 sync for all cluster nodes
-    S3_NODE_SYNC = "s3_node_sync"
-
-    # S3 consolidation (December 2025) - consolidates data from all nodes (coordinator only)
-    S3_CONSOLIDATION = "s3_consolidation"
 
     # Quality monitor (December 2025) - continuous selfplay quality monitoring
     QUALITY_MONITOR = "quality_monitor"
@@ -437,21 +427,17 @@ class DaemonType(Enum):
     UNIFIED_BACKUP = "unified_backup"
 
     # =========================================================================
-    # S3 Push Daemon (January 2026)
-    # =========================================================================
-    # Pushes all game databases, training NPZ files, and models to S3.
-    # Periodically checks for modified files and uploads only changes.
-    # Event-driven: responds to DATA_SYNC_COMPLETED, TRAINING_COMPLETED.
-    # =========================================================================
-    S3_PUSH = "s3_push"
-
-    # =========================================================================
     # Consolidated S3 Sync Daemon (January 2026)
     # =========================================================================
     # Unified S3 sync daemon replacing S3_BACKUP, S3_PUSH, S3_NODE_SYNC.
     # Provides bidirectional S3 sync with intelligent scheduling.
     # =========================================================================
     S3_SYNC = "s3_sync"
+    # Deprecated S3 stubs — removed from registry, kept for references
+    S3_BACKUP = "s3_backup"
+    S3_NODE_SYNC = "s3_node_sync"
+    S3_PUSH = "s3_push"
+    S3_CONSOLIDATION = "s3_consolidation"
 
     # =========================================================================
     # Cluster Consolidation Daemon (January 2026)
@@ -757,7 +743,11 @@ DAEMON_CATEGORY_MAP: dict[DaemonType, DaemonCategory] = {
     DaemonType.OWC_PUSH: DaemonCategory.SYNC,  # Jan 2026: Push to OWC external drive
     DaemonType.S3_IMPORT: DaemonCategory.SYNC,  # Jan 2026: Import from S3
     DaemonType.DUAL_BACKUP: DaemonCategory.SYNC,  # Jan 2026: Dual S3+OWC backup
-    DaemonType.S3_SYNC: DaemonCategory.SYNC,  # Jan 2026: Consolidated S3 sync (replaces S3_BACKUP, S3_PUSH, S3_NODE_SYNC)
+    DaemonType.S3_SYNC: DaemonCategory.SYNC,
+    DaemonType.S3_BACKUP: DaemonCategory.SYNC,
+    DaemonType.S3_NODE_SYNC: DaemonCategory.SYNC,
+    DaemonType.S3_PUSH: DaemonCategory.SYNC,
+    DaemonType.S3_CONSOLIDATION: DaemonCategory.SYNC,
     DaemonType.OWC_SYNC_MANAGER: DaemonCategory.SYNC,  # Jan 2026: Consolidated OWC sync (replaces EXTERNAL_DRIVE_SYNC, OWC_PUSH, DUAL_BACKUP)
 
     # PIPELINE category - data pipeline (high threshold, exempt from global)
@@ -791,12 +781,8 @@ DAEMON_CATEGORY_MAP: dict[DaemonType, DaemonCategory] = {
 
     # DISTRIBUTION category - model/data distribution
     DaemonType.MODEL_DISTRIBUTION: DaemonCategory.DISTRIBUTION,
-    DaemonType.S3_BACKUP: DaemonCategory.DISTRIBUTION,
-    DaemonType.S3_NODE_SYNC: DaemonCategory.DISTRIBUTION,
-    DaemonType.S3_CONSOLIDATION: DaemonCategory.DISTRIBUTION,
     DaemonType.UNIFIED_DATA_PLANE: DaemonCategory.DISTRIBUTION,
     DaemonType.UNIFIED_BACKUP: DaemonCategory.DISTRIBUTION,  # Jan 2026: OWC + S3 backup
-    DaemonType.S3_PUSH: DaemonCategory.DISTRIBUTION,  # Jan 2026: S3 backup push
 
     # RESOURCE category - resource management
     DaemonType.IDLE_RESOURCE: DaemonCategory.RESOURCE,
@@ -1046,11 +1032,7 @@ DAEMON_DEPENDENCIES: dict[DaemonType, set[DaemonType]] = {
     DaemonType.NPZ_COMBINATION: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
     # Comprehensive consolidation (Jan 2026) - scheduled sweep across all storage patterns
     DaemonType.COMPREHENSIVE_CONSOLIDATION: {DaemonType.EVENT_ROUTER, DaemonType.DATA_PIPELINE},
-    DaemonType.S3_BACKUP: {DaemonType.EVENT_ROUTER, DaemonType.AUTO_PROMOTION},
-    # S3 node sync (December 2025) - bi-directional S3 sync for cluster nodes
-    DaemonType.S3_NODE_SYNC: {DaemonType.EVENT_ROUTER},
-    # S3 consolidation (December 2025) - consolidates data from all nodes (coordinator only)
-    DaemonType.S3_CONSOLIDATION: {DaemonType.EVENT_ROUTER, DaemonType.S3_NODE_SYNC},
+    DaemonType.S3_SYNC: {DaemonType.EVENT_ROUTER, DaemonType.AUTO_PROMOTION},
     # Integrity check (December 2025) - scans for games without move data
     DaemonType.INTEGRITY_CHECK: {DaemonType.EVENT_ROUTER},
 

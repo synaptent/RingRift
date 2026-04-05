@@ -3621,7 +3621,7 @@ DAEMON_PROFILES: dict[str, list[DaemonType]] = {
         DaemonType.P2P_BACKEND,
         DaemonType.TOURNAMENT_DAEMON,
         DaemonType.MODEL_DISTRIBUTION,
-        DaemonType.S3_BACKUP,  # Dec 2025: Backup models to S3 after promotion
+        DaemonType.S3_SYNC,  # Consolidated S3 sync (replaces S3_BACKUP)
         DaemonType.CLUSTER_MONITOR,
         DaemonType.QUEUE_MONITOR,  # Monitor queue depths and apply backpressure
         DaemonType.FEEDBACK_LOOP,

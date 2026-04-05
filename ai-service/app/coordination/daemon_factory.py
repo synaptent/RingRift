@@ -240,22 +240,6 @@ def _build_registry() -> dict[str, DaemonImportSpec]:
         ),
 
         # =================================================================
-        # Backup & External Storage
-        # =================================================================
-        DaemonType.S3_BACKUP.name: DaemonSpec(
-            import_path="app.coordination.s3_backup_daemon",
-            class_name="S3BackupDaemon",
-        ),
-        DaemonType.S3_NODE_SYNC.name: DaemonSpec(
-            import_path="app.coordination.s3_node_sync_daemon",
-            class_name="S3NodeSyncDaemon",
-        ),
-        DaemonType.S3_CONSOLIDATION.name: DaemonSpec(
-            import_path="app.coordination.s3_node_sync_daemon",
-            class_name="S3ConsolidationDaemon",
-        ),
-
-        # =================================================================
         # Resource & Utilization Daemons
         # =================================================================
         DaemonType.IDLE_RESOURCE.name: DaemonSpec(
@@ -383,17 +367,6 @@ def _build_registry() -> dict[str, DaemonImportSpec]:
             factory_fn="get_sync_push_daemon",  # Uses singleton pattern
         ),
 
-        # =================================================================
-        # S3/Cloud Storage Daemons (December 2025)
-        # =================================================================
-        DaemonType.S3_NODE_SYNC.name: DaemonSpec(
-            import_path="app.coordination.s3_node_sync_daemon",
-            class_name="S3NodeSyncDaemon",
-        ),
-        DaemonType.S3_CONSOLIDATION.name: DaemonSpec(
-            import_path="app.coordination.s3_node_sync_daemon",
-            class_name="S3ConsolidationDaemon",
-        ),
         DaemonType.DATA_CONSOLIDATION.name: DaemonSpec(
             import_path="app.coordination.data_consolidation_daemon",
             class_name="DataConsolidationDaemon",

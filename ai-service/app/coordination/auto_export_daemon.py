@@ -623,7 +623,10 @@ class AutoExportDaemon(HandlerBase):
             if snapshot is None or snapshot.best_elo < 1400:
                 return None
             return snapshot.best_elo - 300
-        except Exception:
+        except Exception as e:
+            # Best-effort: Elo threshold is an optimization (filters low-quality data).
+            # If unavailable, export proceeds without quality filtering.
+            logger.debug(f"[AutoExportDaemon] Could not get min Elo for {config_key}: {e}")
             return None
 
     # ========== Event-Driven Batch Export (December 2025) ==========
@@ -964,7 +967,10 @@ class AutoExportDaemon(HandlerBase):
                     )
                     return False
                 _release_export_slot = True
-            except Exception:
+            except Exception as e:
+                # Best-effort: ExportCoordinator is an optional cross-process lock.
+                # If unavailable (ImportError, SQLite error), proceed without it.
+                logger.debug(f"[AutoExportDaemon] ExportCoordinator unavailable: {e}")
                 _release_export_slot = False
 
             state.export_in_progress = True
@@ -1217,13 +1223,13 @@ class AutoExportDaemon(HandlerBase):
                         from app.utils.coordinator_governor import get_governor
                         get_governor().release(_governor_slot)
                     except Exception:
-                        pass
+                        pass  # Best-effort cleanup: governor has TTL-based auto-expiry
                 # Feb 2026: Release cross-process export slot
                 if _release_export_slot:
                     try:
                         _coord.release(config_key)
                     except Exception:
-                        pass
+                        pass  # Best-effort cleanup: coordinator slot has TTL-based expiry
                 # Persist updated state (Phase 8)
                 # Dec 30, 2025: Wrap blocking SQLite I/O with asyncio.to_thread()
                 await asyncio.to_thread(self._save_state, config_key)
@@ -1414,7 +1420,7 @@ class AutoExportDaemon(HandlerBase):
                         from app.utils.coordinator_governor import get_governor
                         get_governor().release(_governor_slot)
                     except Exception:
-                        pass
+                        pass  # Best-effort cleanup: governor has TTL-based auto-expiry
 
     async def _validate_export_readiness(
         self, config_key: str, state: ConfigExportState

@@ -409,34 +409,6 @@ ADAPTER_SPECS: dict[DaemonType, DaemonAdapterSpec] = {
         class_name="DataCleanupDaemon",
         role=None,
     ),
-    DaemonType.EXTERNAL_DRIVE_SYNC: DaemonAdapterSpec(
-        daemon_type=DaemonType.EXTERNAL_DRIVE_SYNC,
-        module_path="app.coordination.external_drive_sync",
-        class_name="ExternalDriveSyncDaemon",
-        role=OrchestratorRole.EXTERNAL_SYNC_LEADER,
-    ),
-    DaemonType.CLUSTER_DATA_SYNC: DaemonAdapterSpec(
-        daemon_type=DaemonType.CLUSTER_DATA_SYNC,
-        module_path="app.coordination.cluster.sync",
-        class_name="SyncCoordinator",
-        role=OrchestratorRole.CLUSTER_DATA_SYNC_LEADER,
-        deprecated=True,
-        deprecated_message=(
-            "ClusterDataSync adapter is deprecated; use the unified sync "
-            "coordination stack instead."
-        ),
-    ),
-    DaemonType.NPZ_DISTRIBUTION: DaemonAdapterSpec(
-        daemon_type=DaemonType.NPZ_DISTRIBUTION,
-        module_path="app.coordination.unified_distribution_daemon",
-        class_name="UnifiedDistributionDaemon",
-        role=None,
-        deprecated=True,
-        deprecated_message=(
-            "NPZ distribution adapter is deprecated; unified distribution "
-            "daemon replaces dedicated NPZ distribution."
-        ),
-    ),
 }
 
 
@@ -475,9 +447,6 @@ VastCpuPipelineAdapter = _create_legacy_adapter(DaemonType.VAST_CPU_PIPELINE)
 AutoSyncDaemonAdapter = _create_legacy_adapter(DaemonType.AUTO_SYNC)
 OrphanDetectionDaemonAdapter = _create_legacy_adapter(DaemonType.ORPHAN_DETECTION)
 DataCleanupDaemonAdapter = _create_legacy_adapter(DaemonType.DATA_CLEANUP)
-ExternalDriveSyncAdapter = _create_legacy_adapter(DaemonType.EXTERNAL_DRIVE_SYNC)
-ClusterDataSyncAdapter = _create_legacy_adapter(DaemonType.CLUSTER_DATA_SYNC)
-NPZDistributionDaemonAdapter = _create_legacy_adapter(DaemonType.NPZ_DISTRIBUTION)
 
 
 # =============================================================================
@@ -491,9 +460,6 @@ _ADAPTER_CLASSES: dict[DaemonType, type[DaemonAdapter]] = {
     DaemonType.AUTO_SYNC: AutoSyncDaemonAdapter,
     DaemonType.ORPHAN_DETECTION: OrphanDetectionDaemonAdapter,
     DaemonType.DATA_CLEANUP: DataCleanupDaemonAdapter,
-    DaemonType.EXTERNAL_DRIVE_SYNC: ExternalDriveSyncAdapter,
-    DaemonType.CLUSTER_DATA_SYNC: ClusterDataSyncAdapter,
-    DaemonType.NPZ_DISTRIBUTION: NPZDistributionDaemonAdapter,
 }
 
 
@@ -594,10 +560,7 @@ __all__ = [
     # Legacy adapter classes (backward compatibility)
     "DistillationDaemonAdapter",
     "AutoSyncDaemonAdapter",
-    "ClusterDataSyncAdapter",
     "DataCleanupDaemonAdapter",
-    "ExternalDriveSyncAdapter",
-    "NPZDistributionDaemonAdapter",
     "OrphanDetectionDaemonAdapter",
     "PromotionDaemonAdapter",
     "VastCpuPipelineAdapter",

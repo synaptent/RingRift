@@ -1,9 +1,22 @@
 # RingRift Task Tracker
 
-**Last Updated:** 2025-12-25 (12/12 Models Complete, Gauntlet Validation)
-**Project Health:** GREEN
+**Last Updated:** 2026-04-04
+**Project Health:** IMPROVING (infrastructure stabilized, training producing promotions)
 **Purpose:** Canonical task tracker for near- and mid-term work
-**Current Focus:** Production validation re-run (auth refresh + AI-heavy), parity maintenance, persistence + multiplayer UX polish
+**Current Focus:** Infrastructure reliability (lean daemon profile), AlphaZero training loop improvements, code quality
+
+### Active Training (Apr 2026)
+
+- hex8_2p: **1796 Elo** (4 promotions, deployed to ringrift.ai)
+- square8_2p: First iteration in progress (encoding fix deployed)
+- square8_3p: Active training (first successful training Apr 4)
+- hex8_4p: Just started on gh200-14
+
+### Infrastructure Status
+
+- Lean daemon profile: 23 daemons (down from 47)
+- BoardEncodingContract: Single source of truth for channel counts
+- 94 contract tests + 16,318 coordination tests passing
 
 ---
 

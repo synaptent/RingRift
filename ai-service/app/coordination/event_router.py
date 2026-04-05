@@ -2431,13 +2431,6 @@ def safe_emit_event(
             # Sync context: schedule on known running router loop when possible.
             # This avoids cross-loop lock errors when called from worker threads.
             main_loop = _get_router_runtime_loop()
-            if main_loop is None:
-                try:
-                    candidate_loop = asyncio.get_event_loop()
-                    if candidate_loop.is_running() and not candidate_loop.is_closed():
-                        main_loop = candidate_loop
-                except RuntimeError:
-                    main_loop = None
 
             if main_loop is not None:
                 # Schedule onto a running loop from this sync thread.

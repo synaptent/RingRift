@@ -1141,6 +1141,12 @@ def train_model(
         num_players=num_players,
     )
 
+    # Compute data_path_str early — used in error messages throughout
+    if isinstance(data_path, list):
+        data_path_str = data_path[0] if data_path else ""
+    else:
+        data_path_str = data_path
+
     # Extract resolved values for backward compatibility
     early_stopping_patience = resolved.early_stopping_patience
     elo_early_stopping_patience = resolved.elo_early_stopping_patience
@@ -1522,7 +1528,7 @@ def train_model(
             )
     except ValueError:
         raise  # Re-raise contract violations
-    except Exception as _contract_err:
+    except (ImportError, AttributeError, TypeError) as _contract_err:
         logger.debug("[ContractCheck] Skipped: %s", _contract_err)
 
     board_size = _ds_result.board_size
@@ -1804,7 +1810,7 @@ def train_model(
                         f"match model channels ({model_channels})")
     except ValueError:
         raise  # Re-raise our own mismatch error
-    except Exception as e:
+    except (AttributeError, IndexError, TypeError) as e:
         logger.debug(f"[EncodingContract] Could not verify channels: {e}")
 
     # Enable gradient checkpointing for memory-efficient training (January 2026)
@@ -1842,11 +1848,9 @@ def train_model(
             # Count model parameters for memory estimation
             model_params = sum(p.numel() for p in model.parameters())
 
-            # Get feature channels from model or use defaults
-            try:
-                feature_channels = model.in_channels if hasattr(model, 'in_channels') else 56
-            except Exception:
-                feature_channels = 56
+            # Get feature channels from model or use defaults without swallowing
+            # unrelated failures from a blanket exception handler.
+            feature_channels = getattr(model, "in_channels", 56)
 
             # Determine effective memory fraction
             gpu_config = get_gpu_scaling_config()
@@ -1911,7 +1915,7 @@ def train_model(
                             f"[AutoInitWeights] Canonical model {canonical_path} has encoder {canonical_encoder}, "
                             f"but data uses {data_encoder}. Training from scratch instead."
                         )
-            except Exception as e:
+            except (ImportError, FileNotFoundError, OSError, RuntimeError, ValueError, KeyError, TypeError) as e:
                 if not distributed or is_main_process():
                     logger.warning(f"[AutoInitWeights] Could not check canonical model compatibility: {e}. Training from scratch.")
         else:
@@ -5614,7 +5618,7 @@ def train_model(
                     # Force shutdown of any active worker processes
                     if hasattr(loader, '_shutdown_workers'):
                         loader._shutdown_workers()
-                except Exception:
+                except (AttributeError, OSError, RuntimeError):
                     pass
         # Delete references to trigger __del__ cleanup
         del train_loader, val_loader
