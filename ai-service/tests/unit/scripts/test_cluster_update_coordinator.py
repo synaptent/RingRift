@@ -520,6 +520,60 @@ class TestBatchFailureHandling:
         assert batch.node_names[0] in result.nodes_failed
         mock_rollback.assert_awaited_once_with(batch, checkpoint)
 
+    @pytest.mark.asyncio
+    async def test_update_cluster_dry_run_does_not_rollback_on_node_failure(
+        self,
+        config,
+        mock_node_configs,
+    ):
+        """Dry-run failures should report problems without mutating nodes."""
+        with patch.object(
+            QuorumSafeUpdateCoordinator,
+            '_find_config_path',
+            return_value=Path("/tmp/test.yaml"),
+        ):
+            coordinator = QuorumSafeUpdateCoordinator(config=config)
+
+        batch = UpdateBatch(nodes=[mock_node_configs[3]], batch_type="non_voters")
+        checkpoint = BatchCheckpoint(
+            batch_nodes=batch.node_names,
+            previous_commits={batch.node_names[0]: "abc123"},
+            p2p_was_running={batch.node_names[0]: True},
+            timestamp=0.0,
+        )
+        healthy = ClusterHealth(
+            quorum_level=QuorumHealthLevel.HEALTHY,
+            alive_peers=6,
+            total_peers=6,
+            leader_id="lambda-gh200-1",
+            alive_voters=["lambda-gh200-1", "lambda-gh200-2", "nebius-backbone-1"],
+            total_voters=3,
+            quorum_required=2,
+        )
+
+        with patch.object(coordinator, "_load_config"):
+            with patch.object(coordinator, "_get_cluster_health", AsyncMock(return_value=healthy)):
+                with patch.object(coordinator, "_get_node_configs", return_value=mock_node_configs):
+                    with patch.object(coordinator, "_calculate_update_batches", return_value=[batch]):
+                        with patch.object(coordinator, "_save_batch_checkpoint", AsyncMock(return_value=checkpoint)):
+                            with patch.object(
+                                coordinator,
+                                "_update_batch",
+                                AsyncMock(return_value=[(batch.node_names[0], False, "connection failed")]),
+                            ):
+                                with patch.object(coordinator, "_rollback_batch", AsyncMock()) as mock_rollback:
+                                    result = await coordinator.update_cluster(
+                                        target_commit="main",
+                                        restart_p2p=True,
+                                        dry_run=True,
+                                    )
+
+        assert result.success is False
+        assert result.rollback_performed is False
+        assert result.failed_batch == 1
+        assert batch.node_names[0] in result.nodes_failed
+        mock_rollback.assert_not_awaited()
+
 
 # =============================================================================
 # Batch Calculation Tests

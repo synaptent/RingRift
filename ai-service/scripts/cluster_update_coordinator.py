@@ -1040,9 +1040,15 @@ class QuorumSafeUpdateCoordinator:
                     result.nodes_failed.append(node_name)
 
             if any(not success for _, success, _ in batch_results):
-                logger.error(f"Batch {batch_num+1} had node update failures, rolling back...")
-                await self._rollback_batch(batch, checkpoint)
-                result.rollback_performed = True
+                if dry_run:
+                    logger.error(
+                        f"Batch {batch_num+1} had node update failures during dry-run; "
+                        "skipping rollback"
+                    )
+                else:
+                    logger.error(f"Batch {batch_num+1} had node update failures, rolling back...")
+                    await self._rollback_batch(batch, checkpoint)
+                    result.rollback_performed = True
                 result.success = False
                 result.error_message = f"Batch {batch_num+1} had node update failures"
                 result.failed_batch = batch_num + 1
