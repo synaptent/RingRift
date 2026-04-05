@@ -864,6 +864,91 @@ DAEMON_REGISTRY.update(
             category="misc",
             message="Use UNIFIED_DATA_PLANE instead of NODE_DATA_AGENT.",
         ),
+        DaemonType.SYNC_COORDINATOR: _deprecated_spec(
+            runner_name="create_sync_coordinator",
+            category="sync",
+            message="Use AUTO_SYNC instead of SYNC_COORDINATOR.",
+        ),
+        DaemonType.EPHEMERAL_SYNC: _deprecated_spec(
+            runner_name="create_ephemeral_sync",
+            category="sync",
+            message="Use AutoSyncDaemon(config=AutoSyncConfig(strategy='ephemeral')) instead.",
+        ),
+        DaemonType.CLUSTER_DATA_SYNC: _deprecated_spec(
+            runner_name="create_cluster_data_sync",
+            category="sync",
+            message="Use AutoSyncDaemon(config=AutoSyncConfig(strategy='broadcast')) instead.",
+        ),
+        DaemonType.HEALTH_CHECK: _deprecated_spec(
+            runner_name="create_health_check",
+            category="health",
+            message="Use COORDINATOR_HEALTH_MONITOR instead of HEALTH_CHECK.",
+        ),
+        DaemonType.NODE_HEALTH_MONITOR: _deprecated_spec(
+            runner_name="create_node_health_monitor",
+            category="health",
+            message="Use CLUSTER_MONITOR or COORDINATOR_HEALTH_MONITOR instead of NODE_HEALTH_MONITOR.",
+        ),
+        DaemonType.SYSTEM_HEALTH_MONITOR: _deprecated_spec(
+            runner_name="create_system_health_monitor",
+            category="health",
+            message="Use CLUSTER_MONITOR instead of SYSTEM_HEALTH_MONITOR.",
+        ),
+        DaemonType.NPZ_DISTRIBUTION: _deprecated_spec(
+            runner_name="create_npz_distribution",
+            category="distribution",
+            message="Use MODEL_DISTRIBUTION instead of NPZ_DISTRIBUTION.",
+        ),
+        DaemonType.REPLICATION_MONITOR: _deprecated_spec(
+            runner_name="create_replication_monitor",
+            category="distribution",
+            message="Replication monitoring is consolidated into MODEL_DISTRIBUTION and S3_SYNC.",
+        ),
+        DaemonType.REPLICATION_REPAIR: _deprecated_spec(
+            runner_name="create_replication_repair",
+            category="distribution",
+            message="Replication repair is consolidated into MODEL_DISTRIBUTION and S3_SYNC.",
+        ),
+        DaemonType.LAMBDA_IDLE: _deprecated_spec(
+            runner_name="create_lambda_idle",
+            category="resource",
+            message="Use IDLE_RESOURCE instead of provider-specific idle daemons.",
+        ),
+        DaemonType.VAST_IDLE: _deprecated_spec(
+            runner_name="create_vast_idle",
+            category="resource",
+            message="Use IDLE_RESOURCE instead of provider-specific idle daemons.",
+        ),
+        DaemonType.CONTINUOUS_TRAINING_LOOP: _deprecated_spec(
+            runner_name="create_continuous_training_loop",
+            category="pipeline",
+            message="Use TRAINING_TRIGGER and FEEDBACK_LOOP instead of CONTINUOUS_TRAINING_LOOP.",
+        ),
+        DaemonType.EXTERNAL_DRIVE_SYNC: _deprecated_spec(
+            runner_name="create_external_drive_sync",
+            category="sync",
+            message="Use OWC_SYNC_MANAGER instead of EXTERNAL_DRIVE_SYNC.",
+        ),
+        DaemonType.S3_BACKUP: _deprecated_spec(
+            runner_name="create_s3_backup",
+            category="sync",
+            message="Use S3_SYNC instead of S3_BACKUP.",
+        ),
+        DaemonType.S3_NODE_SYNC: _deprecated_spec(
+            runner_name="create_s3_node_sync",
+            category="sync",
+            message="Use S3_SYNC instead of S3_NODE_SYNC.",
+        ),
+        DaemonType.S3_PUSH: _deprecated_spec(
+            runner_name="create_s3_push",
+            category="sync",
+            message="Use S3_SYNC instead of S3_PUSH.",
+        ),
+        DaemonType.S3_CONSOLIDATION: _deprecated_spec(
+            runner_name="create_s3_consolidation",
+            category="sync",
+            message="Use S3_SYNC instead of S3_CONSOLIDATION.",
+        ),
         # Active compatibility aliases
         DaemonType.SELFPLAY_SCHEDULER: DaemonSpec(
             runner_name="create_selfplay_scheduler",

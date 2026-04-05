@@ -242,7 +242,7 @@ class TestRegistryCompleteness:
         """
         all_types = set(dt for dt in DaemonType)
         registered = set(DAEMON_REGISTRY.keys())
-        known_exclusions = {DaemonType.HEALTH_SERVER}
+        known_exclusions = {DaemonType.HEALTH_SERVER, *get_deprecated_types()}
 
         missing = all_types - registered - known_exclusions
 

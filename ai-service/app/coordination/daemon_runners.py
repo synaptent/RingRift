@@ -966,51 +966,51 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
     """Build the runner registry lazily."""
     from app.coordination.daemon_types import DaemonType
 
+    # April 2026: Removed 17 deprecated daemon runners from registry.
+    # The following daemon types no longer have runner registrations:
+    #   SYNC_COORDINATOR, EPHEMERAL_SYNC, CLUSTER_DATA_SYNC, HEALTH_CHECK,
+    #   NODE_HEALTH_MONITOR, SYSTEM_HEALTH_MONITOR, NPZ_DISTRIBUTION,
+    #   REPLICATION_MONITOR, REPLICATION_REPAIR, LAMBDA_IDLE, VAST_IDLE,
+    #   CONTINUOUS_TRAINING_LOOP, S3_BACKUP, S3_NODE_SYNC, S3_PUSH,
+    #   S3_CONSOLIDATION, EXTERNAL_DRIVE_SYNC
     return {
-        DaemonType.SYNC_COORDINATOR.name: create_sync_coordinator,
         DaemonType.HIGH_QUALITY_SYNC.name: create_high_quality_sync,
         DaemonType.ELO_SYNC.name: create_elo_sync,
         DaemonType.AUTO_SYNC.name: create_auto_sync,
-        DaemonType.CONFIG_SYNC.name: create_config_sync,  # Jan 12, 2026: Config sync
-        DaemonType.CONFIG_VALIDATOR.name: create_config_validator,  # Jan 12, 2026: Config validation
+        DaemonType.CONFIG_SYNC.name: create_config_sync,
+        DaemonType.CONFIG_VALIDATOR.name: create_config_validator,
         DaemonType.TRAINING_NODE_WATCHER.name: create_training_node_watcher,
         DaemonType.TRAINING_DATA_SYNC.name: create_training_data_sync,
         DaemonType.TRAINING_DATA_RECOVERY.name: create_training_data_recovery,
-        DaemonType.TRAINING_WATCHDOG.name: create_training_watchdog,  # Jan 4, 2026: Sprint 17
-        DaemonType.EXPORT_WATCHDOG.name: create_export_watchdog,  # Jan 6, 2026: Session 17.41
+        DaemonType.TRAINING_WATCHDOG.name: create_training_watchdog,
+        DaemonType.EXPORT_WATCHDOG.name: create_export_watchdog,
         DaemonType.OWC_IMPORT.name: create_owc_import,
-        # January 3, 2026 (Sprint 13 Session 4): Model evaluation automation
         DaemonType.OWC_MODEL_IMPORT.name: create_owc_model_import,
         DaemonType.UNEVALUATED_MODEL_SCANNER.name: create_unevaluated_model_scanner,
-        DaemonType.STALE_EVALUATION.name: create_stale_evaluation,  # Jan 4, 2026: Sprint 17
-        DaemonType.COMPREHENSIVE_MODEL_SCAN.name: create_comprehensive_model_scan,  # Jan 9, 2026: Sprint 17.9
-        DaemonType.EPHEMERAL_SYNC.name: create_ephemeral_sync,
+        DaemonType.STALE_EVALUATION.name: create_stale_evaluation,
+        DaemonType.COMPREHENSIVE_MODEL_SCAN.name: create_comprehensive_model_scan,
         DaemonType.GOSSIP_SYNC.name: create_gossip_sync,
         DaemonType.EVENT_ROUTER.name: create_event_router,
         DaemonType.CROSS_PROCESS_POLLER.name: create_cross_process_poller,
         DaemonType.DLQ_RETRY.name: create_dlq_retry,
-        DaemonType.HEALTH_CHECK.name: create_health_check,
         DaemonType.QUEUE_MONITOR.name: create_queue_monitor,
         DaemonType.DAEMON_WATCHDOG.name: create_daemon_watchdog,
         DaemonType.CANONICAL_MODEL_WATCHDOG.name: create_canonical_model_watchdog,
         DaemonType.HEALTH_SERVER.name: create_health_server,
-        DaemonType.NODE_HEALTH_MONITOR.name: create_node_health_monitor,
         DaemonType.QUALITY_MONITOR.name: create_quality_monitor,
         DaemonType.MODEL_PERFORMANCE_WATCHDOG.name: create_model_performance_watchdog,
         DaemonType.PIPELINE_HEALTH_WATCHDOG.name: create_pipeline_health_watchdog,
         DaemonType.CLUSTER_MONITOR.name: create_cluster_monitor,
         DaemonType.CLUSTER_WATCHDOG.name: create_cluster_watchdog,
         DaemonType.COORDINATOR_HEALTH_MONITOR.name: create_coordinator_health_monitor,
-        DaemonType.SYSTEM_HEALTH_MONITOR.name: create_system_health_monitor,
         DaemonType.WORK_QUEUE_MONITOR.name: create_work_queue_monitor,
         DaemonType.DATA_PIPELINE.name: create_data_pipeline,
-        DaemonType.CONTINUOUS_TRAINING_LOOP.name: create_continuous_training_loop,
         DaemonType.SELFPLAY_SCHEDULER.name: create_selfplay_scheduler,
         DaemonType.SELFPLAY_COORDINATOR.name: create_selfplay_coordinator,
         DaemonType.TRAINING_COORDINATOR.name: create_training_coordinator,
         DaemonType.TRAINING_TRIGGER.name: create_training_trigger,
         DaemonType.AUTO_EXPORT.name: create_auto_export,
-        DaemonType.NPZ_COMBINATION.name: create_npz_combination,  # Dec 2025: NPZ combination
+        DaemonType.NPZ_COMBINATION.name: create_npz_combination,
         DaemonType.TOURNAMENT_DAEMON.name: create_tournament_daemon,
         DaemonType.EVALUATION.name: create_evaluation_daemon,
         DaemonType.AUTO_PROMOTION.name: create_auto_promotion,
@@ -1019,13 +1019,9 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.BACKLOG_EVALUATION.name: create_backlog_evaluation,
         DaemonType.MODEL_SYNC.name: create_model_sync,
         DaemonType.MODEL_DISTRIBUTION.name: create_model_distribution,
-        DaemonType.NPZ_DISTRIBUTION.name: create_npz_distribution,
-        DaemonType.REPLICATION_MONITOR.name: create_replication_monitor,
-        DaemonType.REPLICATION_REPAIR.name: create_replication_repair,
         DaemonType.DATA_SERVER.name: create_data_server,
         DaemonType.IDLE_RESOURCE.name: create_idle_resource,
         DaemonType.CLUSTER_UTILIZATION_WATCHDOG.name: create_cluster_utilization_watchdog,
-        DaemonType.LAMBDA_IDLE.name: create_lambda_idle,
         DaemonType.NODE_RECOVERY.name: create_node_recovery,
         DaemonType.RESOURCE_OPTIMIZER.name: create_resource_optimizer,
         DaemonType.UTILIZATION_OPTIMIZER.name: create_utilization_optimizer,
@@ -1045,16 +1041,9 @@ def _build_runner_registry() -> dict[str, Callable[[], Coroutine[None, None, Non
         DaemonType.NODE_AVAILABILITY.name: create_node_availability,
         DaemonType.SYNC_PUSH.name: create_sync_push,
         DaemonType.UNIFIED_DATA_PLANE.name: create_unified_data_plane,
-        DaemonType.S3_BACKUP.name: create_s3_backup,
-        DaemonType.S3_NODE_SYNC.name: create_s3_node_sync,
-        DaemonType.S3_CONSOLIDATION.name: create_s3_consolidation,
-        DaemonType.UNIFIED_BACKUP.name: create_unified_backup,  # Jan 2026: OWC + S3 backup
-        DaemonType.S3_PUSH.name: create_s3_push,  # Jan 2026: S3 backup push
+        DaemonType.UNIFIED_BACKUP.name: create_unified_backup,
         DaemonType.DATA_AVAILABILITY.name: create_data_availability,
-        DaemonType.EXTERNAL_DRIVE_SYNC.name: create_external_drive_sync,
-        DaemonType.CLUSTER_DATA_SYNC.name: create_cluster_data_sync,
         DaemonType.VAST_CPU_PIPELINE.name: create_vast_cpu_pipeline,
-        DaemonType.VAST_IDLE.name: create_vast_idle,
         DaemonType.P2P_BACKEND.name: create_p2p_backend,
         DaemonType.P2P_AUTO_DEPLOY.name: create_p2p_auto_deploy,
         DaemonType.METRICS_ANALYSIS.name: create_metrics_analysis,

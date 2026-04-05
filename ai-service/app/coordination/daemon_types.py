@@ -744,10 +744,6 @@ DAEMON_CATEGORY_MAP: dict[DaemonType, DaemonCategory] = {
     DaemonType.S3_IMPORT: DaemonCategory.SYNC,  # Jan 2026: Import from S3
     DaemonType.DUAL_BACKUP: DaemonCategory.SYNC,  # Jan 2026: Dual S3+OWC backup
     DaemonType.S3_SYNC: DaemonCategory.SYNC,
-    DaemonType.S3_BACKUP: DaemonCategory.SYNC,
-    DaemonType.S3_NODE_SYNC: DaemonCategory.SYNC,
-    DaemonType.S3_PUSH: DaemonCategory.SYNC,
-    DaemonType.S3_CONSOLIDATION: DaemonCategory.SYNC,
     DaemonType.OWC_SYNC_MANAGER: DaemonCategory.SYNC,  # Jan 2026: Consolidated OWC sync (replaces EXTERNAL_DRIVE_SYNC, OWC_PUSH, DUAL_BACKUP)
 
     # PIPELINE category - data pipeline (high threshold, exempt from global)

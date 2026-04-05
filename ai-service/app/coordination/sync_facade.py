@@ -409,10 +409,13 @@ class SyncFacade:
         """
         try:
             from app.coordination.auto_sync_daemon import (
-                create_cluster_data_sync_daemon,
+                AutoSyncDaemon,
             )
+            from app.coordination.sync_strategies import AutoSyncConfig, SyncStrategy
 
-            daemon = create_cluster_data_sync_daemon()
+            daemon = AutoSyncDaemon(
+                config=AutoSyncConfig(strategy=SyncStrategy.BROADCAST),
+            )
 
             # Trigger immediate sync
             # Jan 2026: is_running is a property, not a method

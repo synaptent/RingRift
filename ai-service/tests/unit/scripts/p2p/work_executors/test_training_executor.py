@@ -253,6 +253,7 @@ async def test_execute_training_work_surfaces_event_and_s3_followup_failures(
 ):
     """Post-training signaling/upload failures should not be silent."""
     import app.coordination.npz_validation as npz_validation
+    import app.training.game_gauntlet as game_gauntlet
     from scripts.p2p.managers import work_discovery_manager
     from scripts.p2p.work_executors import training_executor
 
@@ -284,6 +285,13 @@ async def test_execute_training_work_surfaces_event_and_s3_followup_failures(
     monkeypatch.setattr(training_executor, "_try_fetch_npz_from_s3", fake_s3_fetch)
     monkeypatch.setattr(training_executor, "_try_push_candidate_to_s3", fake_push)
     monkeypatch.setattr(training_executor.asyncio, "create_subprocess_exec", fake_exec)
+    monkeypatch.setattr(game_gauntlet, "create_neural_ai", lambda *args, **kwargs: object())
+    monkeypatch.setattr(game_gauntlet, "create_baseline_ai", lambda *args, **kwargs: object())
+    monkeypatch.setattr(
+        game_gauntlet,
+        "play_single_game",
+        lambda *args, **kwargs: SimpleNamespace(candidate_won=True),
+    )
     monkeypatch.setitem(
         sys.modules,
         "app.coordination.event_router",

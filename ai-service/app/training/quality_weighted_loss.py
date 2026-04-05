@@ -304,7 +304,7 @@ class QualityWeightedTrainer:
 
         # Update statistics
         self.quality_stats["mean_weight"] = quality_weights.mean().item()
-        self.quality_stats["std_weight"] = quality_weights.std().item()
+        self.quality_stats["std_weight"] = quality_weights.std(unbiased=False).item()
 
         # Compute weighted policy loss
         policy_loss = quality_weighted_policy_loss(

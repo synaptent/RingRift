@@ -29,7 +29,7 @@ from ..rules.mutable_state import MutableGameState
 from .bounded_transposition_table import BoundedTranspositionTable
 from .game_state_utils import infer_num_players
 from .heuristic_ai import HeuristicAI
-from .zobrist import ZobristHash
+from app.core.zobrist import ZobristHash
 
 # Lazy imports for neural network components to avoid loading torch when not needed
 # These are only imported when use_neural_net=True (D4+ difficulty)
