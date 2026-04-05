@@ -1903,7 +1903,7 @@ def train_model(
                 elif encoding_channels == 64:
                     data_encoder = "v3"
                 elif encoding_channels == 56:
-                    data_encoder = "v3"  # V5-heavy compatible with v3
+                    data_encoder = "v2"  # Square v2 (14×4=56) — same count as hex v5-heavy
 
                 if canonical_encoder and data_encoder and canonical_encoder == data_encoder:
                     init_weights_path = canonical_path
