@@ -34,6 +34,38 @@ from scripts.cluster_update_coordinator import (
 # =============================================================================
 
 
+class _FakeAiohttpResponse:
+    def __init__(self, status, payload):
+        self.status = status
+        self._payload = payload
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def json(self):
+        return self._payload
+
+
+class _FakeAiohttpSession:
+    def __init__(self, responses):
+        self._responses = responses
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    def get(self, endpoint):
+        response = self._responses[endpoint]
+        if isinstance(response, Exception):
+            raise response
+        return _FakeAiohttpResponse(*response)
+
+
 @pytest.fixture
 def config():
     """Default configuration for tests."""
@@ -357,6 +389,55 @@ class TestCoordinatorInitialization:
 
         coordinator._load_config()
         assert coordinator._voter_node_ids == {"mac-studio", "local-mac"}
+
+    @pytest.mark.asyncio
+    async def test_get_cluster_health_falls_back_to_peer_endpoint(self, config, mock_node_configs):
+        """Peer status should be used if the local endpoint is unavailable."""
+        with patch.object(
+            QuorumSafeUpdateCoordinator,
+            "_find_config_path",
+            return_value=Path("/tmp/test.yaml"),
+        ):
+            coordinator = QuorumSafeUpdateCoordinator(config=config)
+
+        coordinator._voter_node_ids = {"mac-studio", "hetzner-cpu1"}
+        coordinator._self_node_id = "mac-studio"
+        peer = NodeConfig(
+            name="hetzner-cpu1",
+            ssh_host="100.94.174.19",
+            ssh_port=22,
+            ssh_user="root",
+            ssh_key=None,
+            tailscale_ip="100.94.174.19",
+            ringrift_path="/root/ringrift/ai-service",
+            is_voter=True,
+            status="ready",
+        )
+        payload = {
+            "leader_id": "mac-studio",
+            "voter_quorum_ok": True,
+            "voters_alive": 2,
+            "voter_quorum_size": 2,
+            "voter_node_ids": ["mac-studio", "hetzner-cpu1"],
+            "alive_peers": 6,
+            "peers": {"hetzner-cpu1": {}},
+        }
+        responses = {
+            "http://localhost:8770/status": RuntimeError("local endpoint down"),
+            "http://100.94.174.19:8770/status": (200, payload),
+        }
+
+        fake_timeout = object()
+
+        with patch.object(coordinator, "_get_node_configs", return_value=[peer]):
+            with patch("aiohttp.ClientTimeout", return_value=fake_timeout):
+                with patch("aiohttp.ClientSession", return_value=_FakeAiohttpSession(responses)):
+                    health = await coordinator._get_cluster_health()
+
+        assert health.quorum_level == QuorumHealthLevel.MINIMUM
+        assert health.leader_id == "mac-studio"
+        assert health.total_voters == 2
+        assert health.quorum_required == 2
 
 
 class TestSingleNodeUpdate:

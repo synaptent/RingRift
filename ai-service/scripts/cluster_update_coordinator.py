@@ -331,91 +331,119 @@ class QuorumSafeUpdateCoordinator:
 
         return nodes
 
+    def _health_endpoint_candidates(self) -> list[str]:
+        """Return local and peer status endpoints for health checks."""
+        endpoints = [self.health_endpoint]
+
+        try:
+            nodes = self._get_node_configs()
+        except Exception:
+            return endpoints
+
+        # Prefer ready voter peers first, then other ready peers.
+        peers = [
+            node for node in nodes
+            if node.status == "ready"
+            and node.tailscale_ip
+            and node.name != self._self_node_id
+        ]
+        peers.sort(key=lambda node: (not node.is_voter, node.name))
+
+        for node in peers:
+            endpoint = f"http://{node.tailscale_ip}:8770/status"
+            if endpoint not in endpoints:
+                endpoints.append(endpoint)
+
+        return endpoints
+
     async def _get_cluster_health(self) -> ClusterHealth:
         """Query cluster health from P2P status endpoint."""
         import aiohttp
 
+        timeout = aiohttp.ClientTimeout(total=30)
+        last_error: Exception | None = None
+
         try:
-            timeout = aiohttp.ClientTimeout(total=30)
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(self.health_endpoint) as resp:
-                    if resp.status != 200:
-                        logger.warning(f"Health endpoint returned {resp.status}")
-                        return ClusterHealth(
-                            quorum_level=QuorumHealthLevel.LOST,
-                            alive_peers=0,
-                            total_peers=0,
-                            leader_id=None,
-                            alive_voters=[],
-                            total_voters=len(self._voter_node_ids),
-                            quorum_required=self.QUORUM_REQUIRED,
-                        )
+                for endpoint in self._health_endpoint_candidates():
+                    try:
+                        async with session.get(endpoint) as resp:
+                            if resp.status != 200:
+                                logger.warning(f"Health endpoint returned {resp.status}: {endpoint}")
+                                continue
 
-                    data = await resp.json()
+                            data = await resp.json()
 
-                    # Extract quorum info
-                    alive_peers = data.get("alive_peers", 0)
-                    leader_id = data.get("leader_id")
-                    configured_voter_ids = set(self._voter_node_ids)
-                    live_voter_ids = data.get("voter_node_ids")
-                    if isinstance(live_voter_ids, list) and live_voter_ids:
-                        effective_voter_ids = set(live_voter_ids)
-                    else:
-                        effective_voter_ids = configured_voter_ids
+                            # Extract quorum info
+                            alive_peers = data.get("alive_peers", 0)
+                            leader_id = data.get("leader_id")
+                            configured_voter_ids = set(self._voter_node_ids)
+                            live_voter_ids = data.get("voter_node_ids")
+                            if isinstance(live_voter_ids, list) and live_voter_ids:
+                                effective_voter_ids = set(live_voter_ids)
+                            else:
+                                effective_voter_ids = configured_voter_ids
 
-                    # Get alive voters - P2P status uses 'peers' dict and 'voter_quorum_ok'
-                    # First try the voters_alive count directly from P2P
-                    voter_quorum_ok = data.get("voter_quorum_ok", False)
-                    voters_alive_count = data.get("voters_alive", 0)
-                    quorum_required = data.get("voter_quorum_size", self.QUORUM_REQUIRED)
+                            # Get alive voters - P2P status uses 'peers' dict and 'voter_quorum_ok'
+                            # First try the voters_alive count directly from P2P
+                            voter_quorum_ok = data.get("voter_quorum_ok", False)
+                            voters_alive_count = data.get("voters_alive", 0)
+                            quorum_required = data.get("voter_quorum_size", self.QUORUM_REQUIRED)
 
-                    # Extract peer names from 'peers' dict (P2P uses this format)
-                    peers_dict = data.get("peers", {})
-                    alive_peers_list = list(peers_dict.keys()) if peers_dict else []
+                            # Extract peer names from 'peers' dict (P2P uses this format)
+                            peers_dict = data.get("peers", {})
+                            alive_peers_list = list(peers_dict.keys()) if peers_dict else []
 
-                    # Match peer names to voter IDs (handle both formats)
-                    alive_voters = []
-                    for peer_name in alive_peers_list:
-                        # Check both raw name and name without port
-                        clean_name = peer_name.split(":")[0] if ":" in peer_name else peer_name
-                        if peer_name in effective_voter_ids or clean_name in effective_voter_ids:
-                            alive_voters.append(clean_name)
+                            # Match peer names to voter IDs (handle both formats)
+                            alive_voters = []
+                            for peer_name in alive_peers_list:
+                                clean_name = peer_name.split(":")[0] if ":" in peer_name else peer_name
+                                if peer_name in effective_voter_ids or clean_name in effective_voter_ids:
+                                    alive_voters.append(clean_name)
 
-                    # Use P2P's voter_quorum_ok if available, otherwise calculate
-                    voter_count = max(len(alive_voters), voters_alive_count)
-                    if voter_quorum_ok:
-                        # P2P says quorum is OK - trust it
-                        if voter_count >= quorum_required + 2:
-                            level = QuorumHealthLevel.HEALTHY
-                        elif voter_count == quorum_required + 1:
-                            level = QuorumHealthLevel.DEGRADED
-                        else:
-                            level = QuorumHealthLevel.MINIMUM
-                    else:
-                        # P2P says quorum is lost
-                        level = QuorumHealthLevel.LOST
+                            voter_count = max(len(alive_voters), voters_alive_count)
+                            if voter_quorum_ok:
+                                if voter_count >= quorum_required + 2:
+                                    level = QuorumHealthLevel.HEALTHY
+                                elif voter_count == quorum_required + 1:
+                                    level = QuorumHealthLevel.DEGRADED
+                                else:
+                                    level = QuorumHealthLevel.MINIMUM
+                            else:
+                                level = QuorumHealthLevel.LOST
 
-                    return ClusterHealth(
-                        quorum_level=level,
-                        alive_peers=alive_peers,
-                        total_peers=len(self._get_node_configs()),
-                        leader_id=leader_id,
-                        alive_voters=alive_voters,
-                        total_voters=len(effective_voter_ids),
-                        quorum_required=quorum_required,
-                    )
+                            if endpoint != self.health_endpoint:
+                                logger.warning(
+                                    f"Using peer health endpoint after local health probe failed: {endpoint}"
+                                )
+
+                            return ClusterHealth(
+                                quorum_level=level,
+                                alive_peers=alive_peers,
+                                total_peers=len(self._get_node_configs()),
+                                leader_id=leader_id,
+                                alive_voters=alive_voters,
+                                total_voters=len(effective_voter_ids),
+                                quorum_required=quorum_required,
+                            )
+                    except Exception as e:
+                        last_error = e
+                        logger.debug(f"Health endpoint probe failed for {endpoint}: {e}")
+                        continue
 
         except Exception as e:
-            logger.error(f"Failed to get cluster health: {e}")
-            return ClusterHealth(
-                quorum_level=QuorumHealthLevel.LOST,
-                alive_peers=0,
-                total_peers=0,
-                leader_id=None,
-                alive_voters=[],
-                total_voters=len(self._voter_node_ids),
-                quorum_required=self.QUORUM_REQUIRED,
-            )
+            last_error = e
+
+        logger.error(f"Failed to get cluster health: {last_error or 'no healthy endpoint'}")
+        return ClusterHealth(
+            quorum_level=QuorumHealthLevel.LOST,
+            alive_peers=0,
+            total_peers=0,
+            leader_id=None,
+            alive_voters=[],
+            total_voters=len(self._voter_node_ids),
+            quorum_required=self.QUORUM_REQUIRED,
+        )
 
     def _calculate_update_batches(
         self,
