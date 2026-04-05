@@ -49,6 +49,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.ssh import SSHClient, SSHConfig
+from scripts.deploy_smoke_runner import run_remote_deploy_smoke_test
 
 logger = logging.getLogger(__name__)
 
@@ -696,10 +697,11 @@ class QuorumSafeUpdateCoordinator:
 
             # Verify commit
             verify = await client.run_async(
-                f"cd {node.ringrift_path} && git rev-parse --short HEAD",
+                f"cd {node.ringrift_path} && git rev-parse HEAD",
                 timeout=10,
             )
             current_commit = verify.stdout.strip() if verify.returncode == 0 else "unknown"
+            short_commit = current_commit[:12] if current_commit != "unknown" else "unknown"
 
             # Sync config files if requested (for files in .gitignore)
             config_sync_msg = ""
@@ -710,6 +712,16 @@ class QuorumSafeUpdateCoordinator:
                 else:
                     config_sync_msg = f", {sync_msg}"
 
+            smoke_ok, smoke_msg = await run_remote_deploy_smoke_test(
+                client,
+                node_name=node.name,
+                node_path=node.ringrift_path,
+                expected_commit=current_commit if current_commit != "unknown" else None,
+                venv_activate=node.venv_activate,
+            )
+            if not smoke_ok:
+                return (node.name, False, f"Updated to {short_commit}{config_sync_msg}, {smoke_msg}")
+
             # Restart P2P if needed
             if p2p_was_running and restart_p2p:
                 # Mar 2026: Defer P2P restart on self-node to avoid killing
@@ -717,13 +729,13 @@ class QuorumSafeUpdateCoordinator:
                 if node.name == self._self_node_id:
                     self._deferred_p2p_restart_node = node
                     return (node.name, True,
-                            f"Updated to {current_commit}{config_sync_msg}, P2P restart deferred (self-node)")
+                            f"Updated to {short_commit}{config_sync_msg}, P2P restart deferred (self-node)")
 
                 running = await self._restart_p2p_process(client, node)
                 status = "P2P restarted" if running else "P2P restart failed"
-                return (node.name, True, f"Updated to {current_commit}{config_sync_msg}, {status}")
+                return (node.name, True, f"Updated to {short_commit}{config_sync_msg}, {status}")
 
-            return (node.name, True, f"Updated to {current_commit}{config_sync_msg}")
+            return (node.name, True, f"Updated to {short_commit}{config_sync_msg}")
 
         except Exception as e:
             logger.error(f"[{node.name}] Update error: {e}")
@@ -960,6 +972,16 @@ class QuorumSafeUpdateCoordinator:
                         result.nodes_updated.append(node_name)
                 else:
                     result.nodes_failed.append(node_name)
+
+            if any(not success for _, success, _ in batch_results):
+                logger.error(f"Batch {batch_num+1} had node update failures, rolling back...")
+                await self._rollback_batch(batch, checkpoint)
+                result.rollback_performed = True
+                result.success = False
+                result.error_message = f"Batch {batch_num+1} had node update failures"
+                result.failed_batch = batch_num + 1
+                result.duration_seconds = time.time() - start_time
+                return result
 
             # Skip convergence check for dry run or non-P2P updates
             if dry_run or not restart_p2p:

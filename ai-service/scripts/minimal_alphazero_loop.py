@@ -252,13 +252,22 @@ def evaluate(cand: str, best: str, n_games: int, budget: int) -> dict:
             p1m, p2m = cand, best
         else:
             p1m, p2m = best, cand
-        ais = {1: _make_ai(1, p1m, budget), 2: _make_ai(2, p2m, budget)}
+        num_p = env.num_players if hasattr(env, "num_players") else 2
+        ais = {}
+        for p in range(1, num_p + 1):
+            if i % 2 == 0:
+                model = cand if p == 1 else best
+            else:
+                model = best if p == 1 else cand
+            ais[p] = _make_ai(p, model, budget)
         for p, ai in ais.items():
             if hasattr(ai, "reset_for_new_game"):
                 ai.reset_for_new_game(rng_seed=(gseed + p * 97_911) & 0xFFFFFFFF)
         state, mc = env.reset(seed=gseed), 0
         while state.game_status == GameStatus.ACTIVE and mc < MAX_MOVES:
             c = state.current_player
+            if c not in ais:
+                break  # unexpected player index
             ais[c].player_number = c
             legal = env.legal_moves()
             if not legal:

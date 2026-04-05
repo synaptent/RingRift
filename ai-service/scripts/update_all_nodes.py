@@ -59,6 +59,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.core.ssh import SSHClient, SSHConfig
 from app.config.cluster_config import get_p2p_voters, get_cluster_nodes
+from scripts.deploy_smoke_runner import run_remote_deploy_smoke_test
 
 logging.basicConfig(
     level=logging.INFO,
@@ -170,6 +171,20 @@ async def check_p2p_running(client, node_name: str, node_path: str) -> bool:
         logger.info(f"[{node_name}] P2P orchestrator is running (PID: {result.stdout.strip()})")
         return True
     return False
+
+
+def _resolve_venv_activate(node_path: str, node_config: dict) -> str:
+    """Resolve the per-node virtualenv activation snippet."""
+    venv_activate = node_config.get('venv_activate')
+    if venv_activate is None:
+        return (
+            f"if [ -f {node_path}/venv/bin/activate ]; then "
+            f"source {node_path}/venv/bin/activate; "
+            f"fi"
+        )
+    if venv_activate == ':':
+        return ':'
+    return venv_activate
 
 
 async def detect_p2p_manager(client, node_name: str) -> str:
@@ -684,11 +699,12 @@ async def update_node(
             return (node_name, False, f"Git pull failed: {pull_result.stderr}")
 
         # Verify commit
-        verify_cmd = f"cd {git_root} && git rev-parse --short HEAD"
+        verify_cmd = f"cd {git_root} && git rev-parse HEAD"
         verify_result = await client.run_async(verify_cmd, timeout=10)
         current_commit = verify_result.stdout.strip() if verify_result.returncode == 0 else "unknown"
+        short_commit = current_commit[:12] if current_commit != "unknown" else "unknown"
 
-        logger.info(f"[{node_name}] Updated to commit {current_commit}")
+        logger.info(f"[{node_name}] Updated to commit {short_commit}")
 
         # Jan 12, 2026: Provision /etc/ringrift/node-id for reliable node identification
         # This runs on every update to ensure node-id is always correct, even after
@@ -713,6 +729,17 @@ async def update_node(
                 logger.warning(f"[{node_name}] {sync_msg}")
                 config_sync_msg = f", {sync_msg}"
 
+        venv_activate = _resolve_venv_activate(node_path, node_config)
+        smoke_ok, smoke_msg = await run_remote_deploy_smoke_test(
+            client,
+            node_name=node_name,
+            node_path=node_path,
+            expected_commit=current_commit if current_commit != "unknown" else None,
+            venv_activate=venv_activate,
+        )
+        if not smoke_ok:
+            return (node_name, False, f"Updated to {short_commit}{config_sync_msg}, {smoke_msg}")
+
         # Restart P2P if it was running and requested
         if p2p_was_running and restart_p2p:
             logger.info(f"[{node_name}] Restarting P2P orchestrator...")
@@ -733,9 +760,9 @@ async def update_node(
                 else:
                     await asyncio.sleep(5)
                     if await check_p2p_running(client, node_name, node_path):
-                        return (node_name, True, f"Updated to {current_commit}{config_sync_msg}, P2P restarted (systemd)")
+                        return (node_name, True, f"Updated to {short_commit}{config_sync_msg}, P2P restarted (systemd)")
                     else:
-                        return (node_name, True, f"Updated to {current_commit}{config_sync_msg}, P2P restart failed (systemd)")
+                        return (node_name, True, f"Updated to {short_commit}{config_sync_msg}, P2P restart failed (systemd)")
 
             elif p2p_manager == "supervisor":
                 # Kill supervisor (which kills its child orchestrator), then restart it
@@ -748,16 +775,6 @@ async def update_node(
                 await asyncio.sleep(2)
 
                 # Restart the supervisor (it will start the orchestrator)
-                venv_activate = node_config.get('venv_activate')
-                if venv_activate is None:
-                    venv_activate = (
-                        f"if [ -f {node_path}/venv/bin/activate ]; then "
-                        f"source {node_path}/venv/bin/activate; "
-                        f"fi"
-                    )
-                elif venv_activate == ':':
-                    venv_activate = ':'
-
                 start_cmd = (
                     f"cd {node_path} && {venv_activate} && "
                     f"PYTHONPATH=. nohup python scripts/p2p_supervisor.py "
@@ -770,9 +787,9 @@ async def update_node(
                 else:
                     await asyncio.sleep(5)
                     if await check_p2p_running(client, node_name, node_path):
-                        return (node_name, True, f"Updated to {current_commit}{config_sync_msg}, P2P restarted (supervisor)")
+                        return (node_name, True, f"Updated to {short_commit}{config_sync_msg}, P2P restarted (supervisor)")
                     else:
-                        return (node_name, True, f"Updated to {current_commit}{config_sync_msg}, P2P restart failed (supervisor)")
+                        return (node_name, True, f"Updated to {short_commit}{config_sync_msg}, P2P restart failed (supervisor)")
 
             else:
                 # Bare mode: kill and start orchestrator directly
@@ -783,16 +800,6 @@ async def update_node(
                 )
                 await client.run_async(kill_cmd, timeout=15)
                 await asyncio.sleep(2)
-
-                venv_activate = node_config.get('venv_activate')
-                if venv_activate is None:
-                    venv_activate = (
-                        f"if [ -f {node_path}/venv/bin/activate ]; then "
-                        f"source {node_path}/venv/bin/activate; "
-                        f"fi"
-                    )
-                elif venv_activate == ':':
-                    venv_activate = ':'
 
                 # Build P2P arguments
                 p2p_args = [
@@ -832,11 +839,11 @@ async def update_node(
                 else:
                     await asyncio.sleep(3)
                     if await check_p2p_running(client, node_name, node_path):
-                        return (node_name, True, f"Updated to {current_commit}{config_sync_msg}, P2P restarted")
+                        return (node_name, True, f"Updated to {short_commit}{config_sync_msg}, P2P restarted")
                     else:
-                        return (node_name, True, f"Updated to {current_commit}{config_sync_msg}, P2P restart failed")
+                        return (node_name, True, f"Updated to {short_commit}{config_sync_msg}, P2P restart failed")
 
-        return (node_name, True, f"Updated to {current_commit}{config_sync_msg}")
+        return (node_name, True, f"Updated to {short_commit}{config_sync_msg}")
 
     except Exception as e:
         logger.error(f"[{node_name}] Error: {e}")
