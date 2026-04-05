@@ -1486,8 +1486,11 @@ class UnifiedDataSyncService:
         """
         ssh_args = self._build_ssh_args(host)
         # Dec 2025: Include WAL files (.db-wal, .db-shm) to prevent data loss
+        # Apr 2026: --no-whole-file forces incremental delta mode. Without this,
+        # rsync buffers the entire file in memory for large DB files, causing
+        # 15GB+ RSS on the coordinator (even over a local network).
         rsync_cmd = (
-            f'rsync -avz --checksum '
+            f'rsync -avz --checksum --no-whole-file '
             f'--include="*.db" --include="*.db-wal" --include="*.db-shm" --exclude="*" '
             f'-e "ssh {ssh_args}" {host.ssh_user}@{host.ssh_host}:{host.remote_db_path}/ {local_dir}/'
         )

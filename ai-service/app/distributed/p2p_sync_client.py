@@ -460,8 +460,10 @@ class P2PFallbackSync:
                 ssh_args += f" -p {ssh_port}"
 
             # Dec 2025: Include WAL files (.db-wal, .db-shm) to prevent data loss
+            # Apr 2026: --no-whole-file prevents rsync from buffering entire
+            # multi-GB DB files in memory (was causing 15GB+ RSS on coordinator)
             rsync_cmd = (
-                f'rsync -avz --checksum '
+                f'rsync -avz --checksum --no-whole-file '
                 f'--include="*.db" --include="*.db-wal" --include="*.db-shm" --exclude="*" '
                 f'-e "ssh {ssh_args}" {ssh_user}@{ssh_host}:{remote_db_path}/ {local_dir}/'
             )
