@@ -586,8 +586,13 @@ def main() -> None:
                 train_npz = npath
         else:
             train_npz = npath
-        logger.info(f"[3/5] Train (epochs={epochs}, bs={batch_size})")
-        ti = train_model(train_npz, cpath, best, epochs, batch_size, args.lr)
+        # Iteration-aware LR decay: prevents catastrophic forgetting in later
+        # iterations when fine-tuning from increasingly strong checkpoints.
+        # Without this, small models (square8 ~3.8M params) overfit at lr=1e-4,
+        # producing candidates with lower val_loss but WORSE play strength.
+        effective_lr = max(1e-5, args.lr / math.sqrt(max(1, it)))
+        logger.info(f"[3/5] Train (epochs={epochs}, bs={batch_size}, lr={effective_lr:.1e})")
+        ti = train_model(train_npz, cpath, best, epochs, batch_size, effective_lr)
         if "error" in ti or not cpath.exists():
             logger.error("Training failed, skipping")
             last_error = ti.get("error", "") or "Training produced no output"
