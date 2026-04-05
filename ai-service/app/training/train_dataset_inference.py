@@ -23,21 +23,20 @@ logger = logging.getLogger(__name__)
 class DatasetInferenceResult:
     """Result of dataset metadata inference and validation.
 
-    NOTE: hex_in_channels is a misnomer — it stores the input channel count
-    for ALL board types (hex=40, square=56, hex_v3=64). It's kept for backward
-    compatibility; new code should use encoding_channels or the
+    encoding_channels stores the input channel count for ALL board types
+    (hex=40, square=56, hex_v3=64). Use this field or the
     BoardEncodingContract system.
     """
     board_size: int
     policy_size: int
-    hex_in_channels: int  # Misnamed: actually stores channels for ALL board types
+    encoding_channels: int  # Input channels for ALL board types (hex=40, square=56, v3/v4=64)
     hex_num_players: int
     use_hex_model: bool
 
     @property
-    def encoding_channels(self) -> int:
-        """Alias for hex_in_channels that makes intent clear for all board types."""
-        return self.hex_in_channels
+    def hex_in_channels(self) -> int:
+        """Deprecated alias for encoding_channels. Use encoding_channels instead."""
+        return self.encoding_channels
     use_hex_v3: bool
     use_hex_v4: bool
     use_hex_v5: bool
@@ -406,7 +405,7 @@ def _detect_heuristics_from_npz(
     return detected_num_heuristics
 
 
-def _infer_hex_in_channels(
+def _infer_encoding_channels(
     *,
     data_path: str | list[str],
     config: Any,
@@ -416,7 +415,7 @@ def _infer_hex_in_channels(
     distributed: bool,
     is_main: bool,
 ) -> int:
-    """Infer hex input channels from dataset and validate compatibility."""
+    """Infer input encoding channels from dataset and validate compatibility."""
     if isinstance(data_path, list):
         data_path_str = data_path[0] if data_path else ""
     else:
@@ -472,18 +471,18 @@ def _infer_hex_in_channels(
                     f"but known encodings are {sorted(known_valid_channels)}. "
                     f"Dataset: {data_path_str}"
                 )
-        hex_in_channels = inferred_in_channels
+        encoding_channels = inferred_in_channels
         if not distributed or is_main:
             logger.info(
-                "Using inferred hex in_channels=%d from dataset %s",
-                hex_in_channels,
+                "Using inferred encoding_channels=%d from dataset %s",
+                encoding_channels,
                 data_path_str,
             )
     else:
         # Fallback to computed value
-        hex_in_channels = expected_in_channels
+        encoding_channels = expected_in_channels
 
-    return hex_in_channels
+    return encoding_channels
 
 
 def infer_dataset_metadata(
@@ -785,7 +784,7 @@ def infer_dataset_metadata(
                 num_filters = ckpt_filters
                 num_res_blocks = ckpt_blocks
 
-    hex_in_channels = 0
+    encoding_channels = 0
     hex_num_players = num_players
     hex_radius = 4 if config.board_type == BoardType.HEX8 else 12
     use_hex_v5 = bool(use_hex_model and model_version in ('v5', 'v5-gnn', 'v5-heavy'))
@@ -804,7 +803,7 @@ def infer_dataset_metadata(
     # Infer in_channels from NPZ data for both hex and square boards.
     # April 2026: Square boards also need correct channel count (56ch)
     # for the post-model-creation encoding check at train.py:1772.
-    hex_in_channels = _infer_hex_in_channels(
+    encoding_channels = _infer_encoding_channels(
         data_path=data_path,
         config=config,
         model_version=model_version,
@@ -819,7 +818,7 @@ def infer_dataset_metadata(
     return DatasetInferenceResult(
         board_size=board_size,
         policy_size=policy_size,
-        hex_in_channels=hex_in_channels,
+        encoding_channels=encoding_channels,
         hex_num_players=hex_num_players,
         use_hex_model=use_hex_model,
         use_hex_v3=use_hex_v3,

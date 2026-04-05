@@ -23,7 +23,7 @@ def create_training_model(
     board_size: int,
     policy_size: int,
     num_players: int,
-    hex_in_channels: int,
+    encoding_channels: int,
     hex_radius: int,
     hex_num_players: int,
     use_hex_model: bool,
@@ -74,7 +74,7 @@ def create_training_model(
         board_size: Spatial board size for CNN.
         policy_size: Policy head output size.
         num_players: Number of players.
-        hex_in_channels: Input channels for hex models.
+        encoding_channels: Input channels for all board types.
         hex_radius: Hex board radius.
         hex_num_players: Number of players for hex models.
         use_hex_model: Whether to use hex neural net.
@@ -136,7 +136,7 @@ def create_training_model(
         model = HexNeuralNet_v5_Heavy(
             board_size=board_size,
             hex_radius=hex_radius,
-            in_channels=hex_in_channels,
+            in_channels=encoding_channels,
             global_features=20,
             num_filters=v5_filters,
             policy_size=policy_size,
@@ -152,7 +152,7 @@ def create_training_model(
         # This ensures correct policy_size for any hex board (hex8=4132, hexagonal=91876).
         # Passing explicit policy_size=4500 would cause -1e9 logits outside scatter range.
         model = HexNeuralNet_v4(
-            in_channels=hex_in_channels,
+            in_channels=encoding_channels,
             global_features=20,  # V4 encoder provides 20 global features
             num_res_blocks=effective_blocks,
             num_filters=effective_filters,
@@ -173,7 +173,7 @@ def create_training_model(
                 "Policy size computed dynamically from board_size=%d.", board_size
             )
             model = HexNeuralNet_v3(
-                in_channels=hex_in_channels,
+                in_channels=encoding_channels,
                 global_features=20,
                 num_res_blocks=effective_blocks,
                 num_filters=effective_filters,
@@ -186,7 +186,7 @@ def create_training_model(
         else:
             # V3 with flat policy heads (default, stable)
             model = HexNeuralNet_v3_Flat(
-                in_channels=hex_in_channels,
+                in_channels=encoding_channels,
                 global_features=20,  # V3 encoder provides 20 global features
                 num_res_blocks=effective_blocks,
                 num_filters=effective_filters,
@@ -207,7 +207,7 @@ def create_training_model(
             variant=hex_large_variant,
             num_heuristics=hex_large_num_heuristics,
             dropout=dropout,
-            in_channels=hex_in_channels,  # Match training data channels
+            in_channels=encoding_channels,  # Match training data channels
         )
         if not distributed or is_main:
             param_count = sum(p.numel() for p in model.parameters())
@@ -221,7 +221,7 @@ def create_training_model(
         # HexNeuralNet_v2 for hexagonal boards with multi-player support
         # V2 uses 10 base channels * (history_length + 1) frames = 40 channels
         model = HexNeuralNet_v2(
-            in_channels=hex_in_channels,
+            in_channels=encoding_channels,
             global_features=20,  # Must match _extract_features() which returns 20 globals
             num_res_blocks=effective_blocks,
             num_filters=effective_filters,

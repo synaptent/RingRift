@@ -1513,18 +1513,18 @@ def train_model(
     try:
         from app.training.board_encoding_contract import get_expected_channels, is_valid_channel_count
         _contract_channels = get_expected_channels(config.board_type, model_version)
-        if _ds_result.hex_in_channels > 0 and not is_valid_channel_count(_ds_result.hex_in_channels):
+        if _ds_result.encoding_channels > 0 and not is_valid_channel_count(_ds_result.encoding_channels):
             raise ValueError(
-                f"[ContractViolation] NPZ has {_ds_result.hex_in_channels} channels which is "
+                f"[ContractViolation] NPZ has {_ds_result.encoding_channels} channels which is "
                 f"not a known encoding. Expected {_contract_channels} for "
                 f"{config.board_type.name}/{model_version}. Known: 40 (hex v2), 56 (square v2), 64 (hex v3/v4)."
             )
-        elif _ds_result.hex_in_channels > 0 and _ds_result.hex_in_channels != _contract_channels:
+        elif _ds_result.encoding_channels > 0 and _ds_result.encoding_channels != _contract_channels:
             # Valid channel count but doesn't match this board/version — log and continue
             logger.info(
                 "[ContractInfo] NPZ has %d channels, contract expects %d for %s/%s — "
                 "using NPZ value (cross-board encoding)",
-                _ds_result.hex_in_channels, _contract_channels, config.board_type.name, model_version,
+                _ds_result.encoding_channels, _contract_channels, config.board_type.name, model_version,
             )
     except ValueError:
         raise  # Re-raise contract violations
@@ -1533,7 +1533,7 @@ def train_model(
 
     board_size = _ds_result.board_size
     policy_size = _ds_result.policy_size
-    hex_in_channels = _ds_result.hex_in_channels
+    encoding_channels = _ds_result.encoding_channels
     hex_num_players = _ds_result.hex_num_players
     use_hex_model = _ds_result.use_hex_model
     use_hex_v3 = _ds_result.use_hex_v3
@@ -1641,7 +1641,7 @@ def train_model(
                 hex_model_name = "HexNeuralNet_v2"
             logger.info(
                 f"Initializing {hex_model_name} with board_size={board_size}, "
-                f"policy_size={policy_size}, in_channels={hex_in_channels}, "
+                f"policy_size={policy_size}, in_channels={encoding_channels}, "
                 f"num_players={hex_num_players}"
             )
         else:
@@ -1760,7 +1760,7 @@ def train_model(
         board_size=board_size,
         policy_size=policy_size,
         num_players=num_players,
-        hex_in_channels=hex_in_channels,
+        encoding_channels=encoding_channels,
         hex_radius=hex_radius,
         hex_num_players=hex_num_players,
         use_hex_model=use_hex_model,
@@ -1798,15 +1798,15 @@ def train_model(
             model_channels = model.conv1.weight.shape[1]
         elif hasattr(model, 'in_channels'):
             model_channels = model.in_channels
-        if model_channels is not None and hex_in_channels is not None:
-            if model_channels != hex_in_channels:
+        if model_channels is not None and encoding_channels is not None:
+            if model_channels != encoding_channels:
                 raise ValueError(
-                    f"ENCODING MISMATCH: NPZ has {hex_in_channels} feature channels "
+                    f"ENCODING MISMATCH: NPZ has {encoding_channels} feature channels "
                     f"but model expects {model_channels} channels. "
                     f"This will produce a garbage model. "
                     f"Check encoder version (v2=40ch, v3/v4=64ch, v5=56ch)."
                 )
-            logger.info(f"[EncodingContract] Verified: NPZ channels ({hex_in_channels}) "
+            logger.info(f"[EncodingContract] Verified: NPZ channels ({encoding_channels}) "
                         f"match model channels ({model_channels})")
     except ValueError:
         raise  # Re-raise our own mismatch error
@@ -1898,11 +1898,11 @@ def train_model(
 
                 # Determine data encoder version
                 data_encoder = None
-                if hex_in_channels == 40:
+                if encoding_channels == 40:
                     data_encoder = "v2"
-                elif hex_in_channels == 64:
+                elif encoding_channels == 64:
                     data_encoder = "v3"
-                elif hex_in_channels == 56:
+                elif encoding_channels == 56:
                     data_encoder = "v3"  # V5-heavy compatible with v3
 
                 if canonical_encoder and data_encoder and canonical_encoder == data_encoder:
@@ -1935,11 +1935,11 @@ def train_model(
 
             # Determine what encoder version the training data expects
             data_encoder = None
-            if hex_in_channels == 40:
+            if encoding_channels == 40:
                 data_encoder = "v2"
-            elif hex_in_channels == 64:
+            elif encoding_channels == 64:
                 data_encoder = "v3"
-            elif hex_in_channels == 56:
+            elif encoding_channels == 56:
                 data_encoder = "v3"  # V5-heavy compatible with v3
 
             # Check encoder compatibility
@@ -1951,7 +1951,7 @@ def train_model(
                     f"Init weights: {init_weights_path}\n"
                     f"  - Encoder: {init_encoder_version} ({40 if init_encoder_version == 'v2' else 64} channels)\n\n"
                     f"Training data: {data_path_str}\n"
-                    f"  - Encoder: {data_encoder} ({hex_in_channels} channels)\n\n"
+                    f"  - Encoder: {data_encoder} ({encoding_channels} channels)\n\n"
                     f"PROBLEM: Cannot train {data_encoder} data with {init_encoder_version} model weights.\n\n"
                     f"SOLUTIONS:\n"
                     f"  1. Re-export training data with --encoder-version {init_encoder_version}\n"

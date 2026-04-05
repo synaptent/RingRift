@@ -570,7 +570,7 @@ class ModelInitializer:
         # Calculate input channels
         if is_hex_model:
             # Hex models use 16 channels per frame
-            hex_in_channels = 16 * (history_length + 1)
+            encoding_channels = 16 * (history_length + 1)
             hex_num_players = MAX_PLAYERS if self.config.multi_player else num_players
         else:
             # Square models use 14 channels per frame
@@ -586,7 +586,7 @@ class ModelInitializer:
                 version=version,
                 board_size=board_size,
                 hex_radius=hex_radius,
-                hex_in_channels=hex_in_channels,
+                encoding_channels=encoding_channels,
                 hex_num_players=hex_num_players,
                 policy_size=policy_size,
                 effective_blocks=effective_blocks,
@@ -642,7 +642,7 @@ class ModelInitializer:
         version: str,
         board_size: int,
         hex_radius: int,
-        hex_in_channels: int,
+        encoding_channels: int,
         hex_num_players: int,
         policy_size: int,
         effective_blocks: int,
@@ -664,7 +664,7 @@ class ModelInitializer:
             model = HexNeuralNet_v5_Heavy(
                 board_size=board_size,
                 hex_radius=hex_radius,
-                in_channels=hex_in_channels,
+                in_channels=encoding_channels,
                 global_features=20,
                 num_filters=v5_filters,
                 policy_size=policy_size,
@@ -688,7 +688,7 @@ class ModelInitializer:
 
             # V4 computes policy_size dynamically from board_size when None
             return HexNeuralNet_v4(
-                in_channels=hex_in_channels,
+                in_channels=encoding_channels,
                 global_features=20,
                 num_res_blocks=effective_blocks,
                 num_filters=effective_filters,
@@ -703,7 +703,7 @@ class ModelInitializer:
                 from app.ai.neural_net.hex_v3 import HexNeuralNet_v3_Flat
 
                 return HexNeuralNet_v3_Flat(
-                    in_channels=hex_in_channels,
+                    in_channels=encoding_channels,
                     global_features=20,
                     num_res_blocks=effective_blocks,
                     num_filters=effective_filters,
@@ -716,7 +716,7 @@ class ModelInitializer:
                 from app.ai.neural_net.hex_v3 import HexNeuralNet_v3
 
                 return HexNeuralNet_v3(
-                    in_channels=hex_in_channels,
+                    in_channels=encoding_channels,
                     global_features=20,
                     num_res_blocks=effective_blocks,
                     num_filters=effective_filters,
@@ -730,7 +730,7 @@ class ModelInitializer:
             from app.ai.neural_net.hex_v2 import HexNeuralNet_v2
 
             return HexNeuralNet_v2(
-                in_channels=hex_in_channels,
+                in_channels=encoding_channels,
                 global_features=20,
                 num_res_blocks=effective_blocks,
                 num_filters=effective_filters,

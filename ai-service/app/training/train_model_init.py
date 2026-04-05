@@ -43,7 +43,7 @@ class ModelInitConfig:
     board_type: str
     # Hex-specific
     use_hex_model: bool = False
-    hex_in_channels: int | None = None
+    encoding_channels: int | None = None
     hex_radius: int | None = None
     use_hex_v3: bool = False
     use_hex_v4: bool = False
@@ -136,7 +136,7 @@ def create_model(config: ModelInitConfig) -> ModelInitResult:
     elif config.use_hex_v4:
         hex_num_players = MAX_PLAYERS if config.multi_player else config.num_players
         model = HexNeuralNet_v4(
-            in_channels=config.hex_in_channels or 64,
+            in_channels=config.encoding_channels or 64,
             global_features=20,
             num_res_blocks=effective_blocks,
             num_filters=effective_filters,
@@ -150,7 +150,7 @@ def create_model(config: ModelInitConfig) -> ModelInitResult:
     elif config.use_hex_v3:
         hex_num_players = MAX_PLAYERS if config.multi_player else config.num_players
         model = HexNeuralNet_v3(
-            in_channels=config.hex_in_channels or 64,
+            in_channels=config.encoding_channels or 64,
             global_features=20,
             num_res_blocks=effective_blocks,
             num_filters=effective_filters,
@@ -164,7 +164,7 @@ def create_model(config: ModelInitConfig) -> ModelInitResult:
     elif config.use_hex_model:
         hex_num_players = MAX_PLAYERS if config.multi_player else config.num_players
         model = HexNeuralNet_v2(
-            in_channels=config.hex_in_channels or 40,
+            in_channels=config.encoding_channels or 40,
             global_features=20,
             num_res_blocks=effective_blocks,
             num_filters=effective_filters,
