@@ -19,7 +19,12 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+# Allow execution either from the tracked file on disk or via stdin from the
+# deploy smoke runner. The runner `cd`s into the ai-service dir first.
+if "__file__" in globals():
+    ROOT = Path(__file__).resolve().parent.parent
+else:
+    ROOT = Path.cwd()
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -65,9 +70,14 @@ def check_commit(expected: str | None) -> list[str]:
     if not expected:
         return []
     try:
+        top = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=10, cwd=str(ROOT)
+        )
+        git_cwd = top.stdout.strip() if top.returncode == 0 and top.stdout.strip() else str(ROOT.parent)
         r = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=10, cwd=str(ROOT.parent)
+            capture_output=True, text=True, timeout=10, cwd=git_cwd
         )
         actual = r.stdout.strip()[:12]
         exp = expected[:12]

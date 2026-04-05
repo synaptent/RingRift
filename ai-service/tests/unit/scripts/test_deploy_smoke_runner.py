@@ -26,9 +26,11 @@ def test_build_remote_deploy_smoke_cmd_includes_expected_commit():
     )
 
     assert "cd ~/ringrift/ai-service" in cmd
-    assert "source venv/bin/activate" in cmd
+    assert "{ source venv/bin/activate; } >/dev/null 2>&1 || true" in cmd
     assert "venv/bin/python" in cmd
-    assert 'PYTHONPATH=. "$_ringrift_python" scripts/deploy_smoke_test.py' in cmd
+    assert 'PYTHONPATH=. "$_ringrift_python" - --expected-commit abcdef1234567890' in cmd
+    assert "<<'RINGRIFT_SMOKE'" in cmd
+    assert "DEPLOY SMOKE TEST" in cmd
     assert "--expected-commit abcdef1234567890" in cmd
 
 
@@ -42,7 +44,7 @@ def test_build_remote_deploy_smoke_cmd_prefers_project_python_when_no_activate()
     assert "cd ~/Development/RingRift/ai-service" in cmd
     assert "if [ -x venv/bin/python ]; then _ringrift_python=venv/bin/python;" in cmd
     assert "elif command -v python3.11 >/dev/null 2>&1;" in cmd
-    assert 'PYTHONPATH=. "$_ringrift_python" scripts/deploy_smoke_test.py' in cmd
+    assert 'PYTHONPATH=. "$_ringrift_python" -' in cmd
 
 
 def test_summarize_remote_command_failure_uses_tail_lines():

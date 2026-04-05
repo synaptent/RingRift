@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import shlex
+from pathlib import Path
 from typing import Any
+
+
+_DEPLOY_SMOKE_SOURCE = Path(__file__).with_name("deploy_smoke_test.py").read_text()
 
 
 def _build_remote_python_selector() -> str:
@@ -30,14 +34,20 @@ def build_remote_deploy_smoke_cmd(
 ) -> str:
     """Build the remote shell command for deploy_smoke_test.py."""
     activate = (venv_activate or ":").strip() or ":"
+    activate_clause = ":"
+    if activate != ":":
+        # Best-effort activation only. Some nodes have a working venv python
+        # but no activate script, and smoke tests should still run there.
+        activate_clause = f"{{ {activate}; }} >/dev/null 2>&1 || true"
     # Keep node_path unquoted so remote shells can expand leading "~/".
     cmd = (
-        f"cd {node_path} && {activate} && "
+        f"cd {node_path} && {activate_clause} && "
         f"{_build_remote_python_selector()} && "
-        'PYTHONPATH=. "$_ringrift_python" scripts/deploy_smoke_test.py'
+        'PYTHONPATH=. "$_ringrift_python" -'
     )
     if expected_commit:
         cmd += f" --expected-commit {shlex.quote(expected_commit)}"
+    cmd += f" <<'RINGRIFT_SMOKE'\n{_DEPLOY_SMOKE_SOURCE}\nRINGRIFT_SMOKE"
     return cmd
 
 
