@@ -30,6 +30,7 @@ December 2025: Created as part of Phase 1 automation improvements.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime
 import logging
 import math
@@ -608,12 +609,16 @@ class TrainingTriggerDaemon(HandlerBase):
 
             # Update state
             state = self._get_or_create_state(config_key, board_type, num_players)
-            state.last_npz_update = time.time()
+            cache_mtime = time.time()
+            if npz_path:
+                with contextlib.suppress(OSError):
+                    cache_mtime = Path(npz_path).stat().st_mtime
+            state.last_npz_update = cache_mtime
             state.npz_sample_count = samples or 0
             state.npz_path = npz_path
 
             # January 3, 2026: Update NPZ cache to skip redundant disk scans
-            self._npz_cache[config_key] = (time.time(), samples or 0, npz_path)
+            self._npz_cache[config_key] = (cache_mtime, samples or 0, npz_path)
 
             logger.info(
                 f"[TrainingTriggerDaemon] NPZ export complete for {config_key}: "
@@ -653,12 +658,16 @@ class TrainingTriggerDaemon(HandlerBase):
 
             # Update state with combined NPZ
             state = self._get_or_create_state(config_key, board_type, num_players)
-            state.last_npz_update = time.time()
+            cache_mtime = time.time()
+            if output_path:
+                with contextlib.suppress(OSError):
+                    cache_mtime = Path(output_path).stat().st_mtime
+            state.last_npz_update = cache_mtime
             state.npz_sample_count = samples or 0
             state.npz_path = output_path
 
             # January 3, 2026: Update NPZ cache to skip redundant disk scans
-            self._npz_cache[config_key] = (time.time(), samples or 0, output_path)
+            self._npz_cache[config_key] = (cache_mtime, samples or 0, output_path)
 
             logger.info(
                 f"[TrainingTriggerDaemon] NPZ combination complete for {config_key}: "
@@ -2503,6 +2512,57 @@ class TrainingTriggerDaemon(HandlerBase):
 
         return results
 
+    @staticmethod
+    def _extract_npz_sample_count(data: Any) -> int:
+        """Extract sample count from a loaded NPZ archive."""
+        for key in ("values", "features", "states"):
+            array = data.get(key)
+            if array is not None:
+                return len(array)
+        return 0
+
+    def _get_npz_metadata(
+        self,
+        config_key: str,
+        npz_path: Path,
+        *,
+        validate: bool = False,
+    ) -> tuple[float, int, str] | None:
+        """Return cached NPZ metadata, loading the file only when it changed."""
+        path_str = str(npz_path)
+
+        try:
+            current_mtime = npz_path.stat().st_mtime
+        except OSError as e:
+            logger.debug(f"[TrainingTriggerDaemon] Could not stat NPZ {npz_path}: {e}")
+            return None
+
+        cached = self._npz_cache.get(config_key)
+        if cached and cached[2] == path_str and current_mtime <= cached[0]:
+            return cached
+
+        if validate:
+            try:
+                from app.training.data_validation import is_npz_valid
+                if not is_npz_valid(npz_path):
+                    logger.warning(f"Skipping invalid NPZ: {npz_path}")
+                    return None
+            except ImportError:
+                pass
+
+        try:
+            from app.utils.numpy_utils import safe_load_npz
+
+            with safe_load_npz(npz_path) as data:
+                sample_count = self._extract_npz_sample_count(data)
+        except (FileNotFoundError, OSError, ValueError, ImportError) as e:
+            logger.debug(f"[TrainingTriggerDaemon] Failed to load NPZ metadata for {npz_path}: {e}")
+            return None
+
+        metadata = (current_mtime, sample_count, path_str)
+        self._npz_cache[config_key] = metadata
+        return metadata
+
     async def _ensure_fresh_data(self, board_type: str, num_players: int) -> bool:
         """Ensure training data is fresh, triggering sync if needed (December 2025).
 
@@ -2594,13 +2654,13 @@ class TrainingTriggerDaemon(HandlerBase):
         try:
             local_npz = Path(f"data/training/{config_key}.npz")
             if local_npz.exists():
-                import numpy as np
-                data = np.load(local_npz)
-                local_count = len(data.get("features", data.get("states", [])))
-                total_samples += local_count
-                logger.debug(
-                    f"[TrainingTriggerDaemon] Local NPZ for {config_key}: {local_count} samples"
-                )
+                metadata = self._get_npz_metadata(config_key, local_npz)
+                if metadata is not None:
+                    _mtime, local_count, _path = metadata
+                    total_samples += local_count
+                    logger.debug(
+                        f"[TrainingTriggerDaemon] Local NPZ for {config_key}: {local_count} samples"
+                    )
         except Exception as e:
             logger.debug(f"[TrainingTriggerDaemon] Local NPZ check failed: {e}")
 
@@ -3715,39 +3775,24 @@ class TrainingTriggerDaemon(HandlerBase):
                     # January 3, 2026: Skip if already in cache with same or newer mtime
                     # This avoids redundant disk I/O when events already informed us
                     if config_key in self._npz_cache:
-                        cached_mtime, cached_samples, cached_path = self._npz_cache[config_key]
+                        cached_mtime, _cached_samples, cached_path = self._npz_cache[config_key]
                         current_mtime = npz_path.stat().st_mtime
-                        if current_mtime <= cached_mtime:
+                        if cached_path == str(npz_path) and current_mtime <= cached_mtime:
                             # File hasn't changed since last event, skip disk read
                             continue
 
                     if config_key not in self._training_states:
                         state = self._get_or_create_state(config_key, board_type, num_players)
                         state.npz_path = str(npz_path)
-                        state.last_npz_update = npz_path.stat().st_mtime
+                        metadata = self._get_npz_metadata(
+                            config_key,
+                            npz_path,
+                            validate=True,
+                        )
+                        if metadata is None:
+                            continue
 
-                        # Get sample count from file (approximate)
-                        # Use header validation first to avoid memory errors on corrupt files
-                        try:
-                            from app.training.data_validation import is_npz_valid
-                            if not is_npz_valid(npz_path):
-                                logger.warning(f"Skipping invalid NPZ: {npz_path}")
-                                continue
-                        except ImportError:
-                            pass
-
-                        try:
-                            from app.utils.numpy_utils import safe_load_npz
-                            with safe_load_npz(npz_path) as data:
-                                state.npz_sample_count = len(data.get("values", []))
-                                # Update cache with discovered file
-                                self._npz_cache[config_key] = (
-                                    state.last_npz_update,
-                                    state.npz_sample_count,
-                                    str(npz_path),
-                                )
-                        except (FileNotFoundError, OSError, ValueError, ImportError):
-                            pass
+                        state.last_npz_update, state.npz_sample_count, state.npz_path = metadata
 
                         await self._maybe_trigger_training(config_key)
 

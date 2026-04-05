@@ -231,6 +231,14 @@ class TestGetBroadcastTargets:
                     "retired": False,
                     "last_heartbeat": time.time() - 600,  # Stale heartbeat
                 },
+                "node-stopped": {
+                    "host": "192.168.1.6",
+                    "disk_free_gb": 100,
+                    "retired": False,
+                    "last_heartbeat": time.time() - 10,  # Fresh but explicitly stopped
+                    "is_alive": False,
+                    "status": "stopped",
+                },
             },
         }
 
@@ -290,6 +298,25 @@ class TestGetBroadcastTargets:
 
             node_ids = [t["node_id"] for t in targets]
             assert "node-stale" not in node_ids
+
+    @pytest.mark.asyncio
+    async def test_filters_explicitly_stopped_nodes(self, mock_p2p_status):
+        """Nodes explicitly marked not alive are excluded even with fresh heartbeat."""
+        daemon = MockSyncPushDaemon()
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            mock_response = MagicMock()
+            mock_response.read.return_value = json.dumps(mock_p2p_status).encode()
+            mock_response.__enter__ = MagicMock(return_value=mock_response)
+            mock_response.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = mock_response
+
+            with patch("app.config.ports.get_p2p_status_url", return_value="http://localhost:8770/status"):
+                with patch("app.coordination.coordinator_config.get_exclusion_policy", return_value=None):
+                    targets = await daemon.get_broadcast_targets()
+
+            node_ids = [t["node_id"] for t in targets]
+            assert "node-stopped" not in node_ids
 
     @pytest.mark.asyncio
     async def test_sorts_by_disk_space(self, mock_p2p_status):

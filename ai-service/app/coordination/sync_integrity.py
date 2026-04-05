@@ -53,6 +53,7 @@ Usage:
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import sqlite3
 import subprocess
@@ -93,8 +94,94 @@ HashAlgorithm = Literal["sha256", "sha1", "md5", "blake2b"]
 # on the same database within a short time window. Each VACUUM takes 1-20s
 # depending on database size, and running VACUUM on a database that was
 # just VACUUMed is redundant and wastes CPU.
-_VACUUM_CACHE: dict[str, float] = {}  # db_path -> last_vacuum_time
+@dataclass(frozen=True)
+class _VacuumCacheEntry:
+    """Tracks a prepared database snapshot across processes."""
+
+    timestamp: float
+    size_bytes: int
+    mtime_ns: int
+
+
+_VACUUM_CACHE: dict[str, _VacuumCacheEntry] = {}
 VACUUM_CACHE_TTL_SECONDS = 3600  # Don't re-VACUUM within 1 hour
+
+
+def _get_vacuum_marker_path(db_path: Path) -> Path:
+    """Return the hidden metadata file used to persist VACUUM state."""
+    return db_path.parent / f".{db_path.name}.vacuum.json"
+
+
+def _get_db_signature(db_path: Path) -> tuple[int, int]:
+    """Return a stable size/mtime signature for the current database state."""
+    stat = db_path.stat()
+    return int(stat.st_size), int(stat.st_mtime_ns)
+
+
+def _is_cached_vacuum_fresh(db_path: Path, entry: _VacuumCacheEntry) -> bool:
+    """Check whether a cached VACUUM entry still applies to the current file."""
+    if time.time() - entry.timestamp >= VACUUM_CACHE_TTL_SECONDS:
+        return False
+
+    size_bytes, mtime_ns = _get_db_signature(db_path)
+    return entry.size_bytes == size_bytes and entry.mtime_ns == mtime_ns
+
+
+def _load_vacuum_cache_entry(db_path: Path) -> _VacuumCacheEntry | None:
+    """Load a recent VACUUM record from memory or the hidden marker file."""
+    db_key = str(db_path.resolve())
+    entry = _VACUUM_CACHE.get(db_key)
+    if entry is not None and _is_cached_vacuum_fresh(db_path, entry):
+        return entry
+
+    marker_path = _get_vacuum_marker_path(db_path)
+    if not marker_path.exists():
+        _VACUUM_CACHE.pop(db_key, None)
+        return None
+
+    try:
+        payload = json.loads(marker_path.read_text())
+        entry = _VacuumCacheEntry(
+            timestamp=float(payload["timestamp"]),
+            size_bytes=int(payload["size_bytes"]),
+            mtime_ns=int(payload["mtime_ns"]),
+        )
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        _VACUUM_CACHE.pop(db_key, None)
+        return None
+
+    if not _is_cached_vacuum_fresh(db_path, entry):
+        _VACUUM_CACHE.pop(db_key, None)
+        return None
+
+    _VACUUM_CACHE[db_key] = entry
+    return entry
+
+
+def _store_vacuum_cache_entry(db_path: Path, timestamp: float) -> None:
+    """Persist a successful VACUUM so later processes can reuse it."""
+    size_bytes, mtime_ns = _get_db_signature(db_path)
+    entry = _VacuumCacheEntry(
+        timestamp=timestamp,
+        size_bytes=size_bytes,
+        mtime_ns=mtime_ns,
+    )
+    db_key = str(db_path.resolve())
+    _VACUUM_CACHE[db_key] = entry
+
+    marker_path = _get_vacuum_marker_path(db_path)
+    try:
+        marker_path.write_text(
+            json.dumps(
+                {
+                    "timestamp": entry.timestamp,
+                    "size_bytes": entry.size_bytes,
+                    "mtime_ns": entry.mtime_ns,
+                }
+            )
+        )
+    except OSError as e:
+        logger.debug(f"[TransferSafety] Could not persist VACUUM marker for {db_path}: {e}")
 
 
 @dataclass
@@ -702,14 +789,13 @@ def prepare_database_for_transfer(db_path: Path) -> tuple[bool, str]:
     if not db_path.exists():
         return False, f"Database not found: {db_path}"
 
-    # Check VACUUM cache - skip if recently VACUUMed
-    db_key = str(db_path.resolve())
-    now = time.time()
-    last_vacuum = _VACUUM_CACHE.get(db_key, 0)
-    if now - last_vacuum < VACUUM_CACHE_TTL_SECONDS:
+    # Check VACUUM cache - skip if recently VACUUMed and unchanged
+    cached_entry = _load_vacuum_cache_entry(db_path)
+    if cached_entry is not None:
         logger.debug(
             f"[TransferSafety] Skipping {db_path.name}: VACUUMed "
-            f"{int(now - last_vacuum)}s ago (TTL: {VACUUM_CACHE_TTL_SECONDS}s)"
+            f"{int(time.time() - cached_entry.timestamp)}s ago "
+            f"(TTL: {VACUUM_CACHE_TTL_SECONDS}s)"
         )
         return True, "Database already prepared (cached)"
 
@@ -744,8 +830,8 @@ def prepare_database_for_transfer(db_path: Path) -> tuple[bool, str]:
             shm_path.unlink()
             logger.info(f"[TransferSafety] Removed orphaned SHM file: {shm_path}")
 
-        # Update VACUUM cache
-        _VACUUM_CACHE[db_key] = time.time()
+        # Update VACUUM cache after the DB reaches its final post-VACUUM state.
+        _store_vacuum_cache_entry(db_path, time.time())
 
         logger.info(f"[TransferSafety] ✓ {db_path.name}: prepared for transfer")
         return True, "Database prepared for transfer"

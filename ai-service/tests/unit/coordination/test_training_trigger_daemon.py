@@ -12,6 +12,7 @@ Tests cover:
 from __future__ import annotations
 
 import asyncio
+import os
 import sqlite3
 import tempfile
 import time
@@ -19,6 +20,7 @@ from dataclasses import asdict
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import numpy as np
 import pytest
 
 from app.coordination.training_trigger_daemon import (
@@ -718,6 +720,100 @@ class TestEventHandlers:
 
             state = daemon._training_states["hex8_2p"]
             assert state.training_intensity == "hot_path"
+
+
+class TestNpzMetadataCaching:
+    """Tests for NPZ metadata reuse on repeated trigger checks."""
+
+    @pytest.mark.asyncio
+    async def test_check_all_data_sources_reuses_cached_local_npz_metadata(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            monkeypatch.chdir(tmpdir)
+            training_dir = Path("data/training")
+            training_dir.mkdir(parents=True, exist_ok=True)
+            np.savez(
+                training_dir / "hex8_2p.npz",
+                features=np.zeros((5, 61), dtype=np.float32),
+                values=np.zeros(5, dtype=np.float32),
+            )
+
+            config = TrainingTriggerConfig(
+                state_db_path=f"{tmpdir}/state.db",
+                local_only_mode=True,
+            )
+            daemon = TrainingTriggerDaemon(config=config)
+
+            import app.utils.numpy_utils as numpy_utils
+
+            load_calls = 0
+            real_safe_load_npz = numpy_utils.safe_load_npz
+
+            def tracked_safe_load_npz(*args, **kwargs):
+                nonlocal load_calls
+                load_calls += 1
+                return real_safe_load_npz(*args, **kwargs)
+
+            monkeypatch.setattr(numpy_utils, "safe_load_npz", tracked_safe_load_npz)
+
+            first_total, _ = await daemon._check_all_data_sources("hex8_2p", 1)
+            second_total, _ = await daemon._check_all_data_sources("hex8_2p", 1)
+
+            assert first_total == 5
+            assert second_total == 5
+            assert load_calls == 1
+
+    @pytest.mark.asyncio
+    async def test_check_all_data_sources_reloads_changed_npz(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            monkeypatch.chdir(tmpdir)
+            training_dir = Path("data/training")
+            training_dir.mkdir(parents=True, exist_ok=True)
+            npz_path = training_dir / "hex8_2p.npz"
+            np.savez(
+                npz_path,
+                features=np.zeros((5, 61), dtype=np.float32),
+                values=np.zeros(5, dtype=np.float32),
+            )
+
+            config = TrainingTriggerConfig(
+                state_db_path=f"{tmpdir}/state.db",
+                local_only_mode=True,
+            )
+            daemon = TrainingTriggerDaemon(config=config)
+
+            import app.utils.numpy_utils as numpy_utils
+
+            load_calls = 0
+            real_safe_load_npz = numpy_utils.safe_load_npz
+
+            def tracked_safe_load_npz(*args, **kwargs):
+                nonlocal load_calls
+                load_calls += 1
+                return real_safe_load_npz(*args, **kwargs)
+
+            monkeypatch.setattr(numpy_utils, "safe_load_npz", tracked_safe_load_npz)
+
+            first_total, _ = await daemon._check_all_data_sources("hex8_2p", 1)
+
+            np.savez(
+                npz_path,
+                features=np.zeros((7, 61), dtype=np.float32),
+                values=np.zeros(7, dtype=np.float32),
+            )
+            new_mtime = npz_path.stat().st_mtime + 5
+            os.utime(npz_path, (new_mtime, new_mtime))
+
+            second_total, _ = await daemon._check_all_data_sources("hex8_2p", 1)
+
+            assert first_total == 5
+            assert second_total == 7
+            assert load_calls == 2
 
 
 class TestDynamicThreshold:

@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+import app.coordination.sync_integrity as sync_integrity
 from app.coordination.sync_integrity import (
     DEFAULT_CHUNK_SIZE,
     LARGE_CHUNK_SIZE,
@@ -26,6 +27,7 @@ from app.coordination.sync_integrity import (
     check_sqlite_integrity,
     compute_db_checksum,
     compute_file_checksum,
+    prepare_database_for_transfer,
     verify_checksum,
     verify_sync_integrity,
 )
@@ -757,6 +759,93 @@ class TestAtomicFileWrite:
         assert "empty output file" in message.lower()
         assert not temp_path.exists()
         assert not target.exists()
+
+
+# =============================================================================
+# Database Preparation Tests
+# =============================================================================
+
+
+class _TrackingConnection:
+    """Wrapper that records VACUUM calls while delegating to sqlite3."""
+
+    def __init__(self, inner: sqlite3.Connection, vacuum_calls: list[str]):
+        self._inner = inner
+        self._vacuum_calls = vacuum_calls
+
+    def __enter__(self):
+        self._inner.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return self._inner.__exit__(exc_type, exc_val, exc_tb)
+
+    def execute(self, sql: str, *args, **kwargs):
+        if sql == "VACUUM":
+            self._vacuum_calls.append(sql)
+        return self._inner.execute(sql, *args, **kwargs)
+
+    def commit(self):
+        return self._inner.commit()
+
+
+class TestPrepareDatabaseForTransfer:
+    """Tests for database preparation caching."""
+
+    @pytest.fixture(autouse=True)
+    def clear_vacuum_cache(self):
+        sync_integrity._VACUUM_CACHE.clear()
+        yield
+        sync_integrity._VACUUM_CACHE.clear()
+
+    def test_skips_redundant_vacuum_in_same_process(
+        self,
+        valid_db: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        vacuum_calls: list[str] = []
+        real_connect = sync_integrity.sqlite3.connect
+
+        def tracked_connect(*args, **kwargs):
+            return _TrackingConnection(real_connect(*args, **kwargs), vacuum_calls)
+
+        monkeypatch.setattr(sync_integrity.sqlite3, "connect", tracked_connect)
+
+        assert prepare_database_for_transfer(valid_db) == (
+            True,
+            "Database prepared for transfer",
+        )
+        assert prepare_database_for_transfer(valid_db) == (
+            True,
+            "Database already prepared (cached)",
+        )
+        assert vacuum_calls == ["VACUUM"]
+
+    def test_skips_redundant_vacuum_after_process_cache_reset(
+        self,
+        valid_db: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        vacuum_calls: list[str] = []
+        real_connect = sync_integrity.sqlite3.connect
+
+        def tracked_connect(*args, **kwargs):
+            return _TrackingConnection(real_connect(*args, **kwargs), vacuum_calls)
+
+        monkeypatch.setattr(sync_integrity.sqlite3, "connect", tracked_connect)
+
+        assert prepare_database_for_transfer(valid_db) == (
+            True,
+            "Database prepared for transfer",
+        )
+        sync_integrity._VACUUM_CACHE.clear()
+
+        assert prepare_database_for_transfer(valid_db) == (
+            True,
+            "Database already prepared (cached)",
+        )
+        assert vacuum_calls == ["VACUUM"]
+        assert sync_integrity._get_vacuum_marker_path(valid_db).exists()
 
 
 # =============================================================================

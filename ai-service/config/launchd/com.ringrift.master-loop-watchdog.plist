@@ -20,6 +20,10 @@
         <string>/Users/armand/Development/RingRift/ai-service</string>
         <key>PATH</key>
         <string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+        <key>RINGRIFT_MASTER_LOOP_PYTHON</key>
+        <string>/Users/armand/Development/RingRift/ai-service/.venv/bin/python3</string>
+        <key>RINGRIFT_MASTER_LOOP_PROFILE</key>
+        <string>lean</string>
         <key>RINGRIFT_WATCHDOG_INTERVAL</key>
         <string>30</string>
         <key>RINGRIFT_HEARTBEAT_STALE_THRESHOLD</key>

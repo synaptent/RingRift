@@ -80,13 +80,56 @@ BACKOFF_BASE = 60  # 1 minute
 BACKOFF_MAX = 1800  # 30 minutes
 
 # Paths
-STATE_DB_PATH = Path(__file__).parent.parent / "data" / "coordination" / "master_loop_state.db"
-PID_FILE_PATH = Path(__file__).parent.parent / "data" / "coordination" / "master_loop.pid"
-LOCK_DIR = Path(__file__).parent.parent / "data" / "coordination"
+AI_SERVICE_ROOT = Path(__file__).parent.parent
+STATE_DB_PATH = AI_SERVICE_ROOT / "data" / "coordination" / "master_loop_state.db"
+PID_FILE_PATH = AI_SERVICE_ROOT / "data" / "coordination" / "master_loop.pid"
+LOCK_DIR = AI_SERVICE_ROOT / "data" / "coordination"
 WATCHDOG_STATE_PATH = LOCK_DIR / "watchdog_state.json"
 
 # Master loop script path
 MASTER_LOOP_SCRIPT = Path(__file__).parent / "master_loop.py"
+
+
+def resolve_master_loop_python(ai_service_root: Path | None = None) -> str:
+    """Resolve the interpreter used to restart master_loop.py.
+
+    Launchd often runs the watchdog itself under `/usr/bin/python3`, which is
+    not the interpreter we want for the actual master loop. Prefer an explicit
+    override, then the project virtualenv, and only then fall back to the
+    watchdog interpreter.
+    """
+    ai_service_root = ai_service_root or AI_SERVICE_ROOT
+    override = os.environ.get("RINGRIFT_MASTER_LOOP_PYTHON")
+    if override:
+        return override
+
+    candidates = [
+        ai_service_root / ".venv" / "bin" / "python3",
+        ai_service_root / ".venv" / "bin" / "python",
+        ai_service_root / "venv" / "bin" / "python3",
+        ai_service_root / "venv" / "bin" / "python",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    return sys.executable
+
+
+def build_master_loop_command(
+    master_loop_script: Path | None = None,
+    ai_service_root: Path | None = None,
+) -> list[str]:
+    """Build the canonical restart command for master_loop.py."""
+    master_loop_script = master_loop_script or MASTER_LOOP_SCRIPT
+    ai_service_root = ai_service_root or AI_SERVICE_ROOT
+    profile = os.environ.get("RINGRIFT_MASTER_LOOP_PROFILE", "lean").strip() or "lean"
+    return [
+        resolve_master_loop_python(ai_service_root),
+        str(master_loop_script),
+        "--profile",
+        profile,
+    ]
 
 
 @dataclass
@@ -331,10 +374,10 @@ class MasterLoopWatchdog:
         try:
             # Start as background process with log redirection
             env = os.environ.copy()
-            env["PYTHONPATH"] = str(Path(__file__).parent.parent)
+            env["PYTHONPATH"] = str(AI_SERVICE_ROOT)
 
             # Ensure logs directory exists
-            logs_dir = MASTER_LOOP_SCRIPT.parent.parent / "logs"
+            logs_dir = AI_SERVICE_ROOT / "logs"
             logs_dir.mkdir(parents=True, exist_ok=True)
 
             log_file = logs_dir / "master_loop.log"
@@ -344,9 +387,10 @@ class MasterLoopWatchdog:
             stdout_file = open(log_file, "a")
             stderr_file = open(error_log, "a")
 
+            command = build_master_loop_command()
             process = subprocess.Popen(
-                [sys.executable, str(MASTER_LOOP_SCRIPT)],
-                cwd=str(MASTER_LOOP_SCRIPT.parent.parent),
+                command,
+                cwd=str(AI_SERVICE_ROOT),
                 env=env,
                 stdout=stdout_file,
                 stderr=stderr_file,

@@ -21,7 +21,24 @@ AI_SERVICE_DIR="$(dirname "$SCRIPT_DIR")"
 PID_FILE="$AI_SERVICE_DIR/data/coordination/master_loop.pid"
 STATE_DB="$AI_SERVICE_DIR/data/coordination/master_loop_state.db"
 HEARTBEAT_THRESHOLD=${RINGRIFT_HEARTBEAT_STALE_THRESHOLD:-90}
+MASTER_LOOP_PROFILE="${RINGRIFT_MASTER_LOOP_PROFILE:-lean}"
 LOG_TAG="[MasterLoopKeepalive]"
+
+resolve_python_bin() {
+    local candidate
+    for candidate in \
+        "$AI_SERVICE_DIR/.venv/bin/python3" \
+        "$AI_SERVICE_DIR/.venv/bin/python" \
+        "$AI_SERVICE_DIR/venv/bin/python3" \
+        "$AI_SERVICE_DIR/venv/bin/python"; do
+        if [[ -x "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+
+    command -v python3
+}
 
 # Logging helper
 log() {
@@ -130,13 +147,12 @@ start_master_loop() {
 
     cd "$AI_SERVICE_DIR"
 
-    # Activate virtualenv if present
-    if [[ -f "venv/bin/activate" ]]; then
-        source venv/bin/activate
-    fi
+    local python_bin
+    python_bin="$(resolve_python_bin)"
 
     # Start in background
-    PYTHONPATH="$AI_SERVICE_DIR" nohup python scripts/master_loop.py \
+    PYTHONPATH="$AI_SERVICE_DIR" nohup "$python_bin" scripts/master_loop.py \
+        --profile "$MASTER_LOOP_PROFILE" \
         >> "$AI_SERVICE_DIR/logs/master_loop.log" 2>&1 &
 
     local new_pid=$!

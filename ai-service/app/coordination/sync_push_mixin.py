@@ -176,6 +176,18 @@ class SyncPushMixin(SyncMixinBase):
 
         peers = status.get("peers", {})
         for node_id, info in peers.items():
+            explicit_status = str(info.get("status", "") or info.get("state", "")).lower()
+            explicit_alive = info.get("is_alive")
+            if explicit_alive is None:
+                explicit_alive = info.get("alive")
+
+            # Respect explicit liveness/state from /status instead of relying
+            # only on heartbeat age; stopped peers can still have fresh heartbeats.
+            if explicit_alive is False:
+                continue
+            if explicit_status in {"offline", "dead", "stopped", "terminated", "disabled", "archived"}:
+                continue
+
             # Skip excluded nodes
             if exclusion_policy and exclusion_policy.should_exclude(node_id):
                 continue
