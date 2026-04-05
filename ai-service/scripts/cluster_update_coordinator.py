@@ -36,6 +36,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import subprocess
 import time
 from dataclasses import dataclass, field
 from enum import Enum
@@ -176,6 +177,18 @@ class ClusterHealth:
     effective_voter_quorum_ok: bool = False
     raw_voter_quorum_ok: bool = False
     forced_leader_override: bool = False
+
+
+@dataclass
+class RemoteGitState:
+    """Observed git state for a remote node checkout."""
+    head_commit: str
+    branch: str
+    dirty_entries: list[str]
+
+    @property
+    def is_dirty(self) -> bool:
+        return bool(self.dirty_entries)
 
 
 class QuorumSafeUpdateCoordinator:
@@ -523,6 +536,42 @@ class QuorumSafeUpdateCoordinator:
         )
         return SSHClient(config)
 
+    def _resolve_local_target_commit(self, target_commit: str) -> str:
+        """Resolve the requested target to a concrete local commit SHA."""
+        repo_dir = Path(__file__).resolve().parent.parent
+        result = subprocess.run(
+            ["git", "rev-parse", target_commit],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout).strip()
+            raise ValueError(f"Failed to resolve target commit '{target_commit}': {detail}")
+        return result.stdout.strip()
+
+    async def _inspect_remote_git_state(self, client: SSHClient) -> RemoteGitState:
+        """Inspect remote git state before mutating a node checkout."""
+        head_result = await client.run_async("git rev-parse HEAD", timeout=10)
+        branch_result = await client.run_async("git branch --show-current", timeout=10)
+        status_result = await client.run_async(
+            "git status --porcelain --untracked-files=no",
+            timeout=15,
+        )
+
+        head_commit = head_result.stdout.strip() if head_result.returncode == 0 else ""
+        branch = branch_result.stdout.strip() if branch_result.returncode == 0 else ""
+        dirty_entries = []
+        if status_result.returncode == 0:
+            dirty_entries = [line for line in status_result.stdout.splitlines() if line.strip()]
+
+        return RemoteGitState(
+            head_commit=head_commit,
+            branch=branch,
+            dirty_entries=dirty_entries,
+        )
+
     async def _probe_node_reachability(self, node: NodeConfig) -> tuple[bool, str]:
         """Check whether a node can be reached over SSH before batching."""
         try:
@@ -560,6 +609,44 @@ class QuorumSafeUpdateCoordinator:
                 unreachable.append(node)
 
         return (reachable, unreachable)
+
+    async def _probe_node_update_safety(self, node: NodeConfig) -> tuple[bool, str]:
+        """Check whether a reachable node is in a safe git state for rollout."""
+        try:
+            client = await self._create_ssh_client(node)
+            git_state = await self._inspect_remote_git_state(client)
+
+            if not git_state.branch:
+                return (False, f"detached HEAD at {git_state.head_commit[:12] or 'unknown'}")
+            if git_state.branch != "main":
+                return (False, f"unexpected branch '{git_state.branch}'")
+            if git_state.is_dirty:
+                preview = ", ".join(git_state.dirty_entries[:3])
+                if len(git_state.dirty_entries) > 3:
+                    preview += ", ..."
+                return (False, f"dirty tracked files: {preview}")
+            return (True, "git state safe")
+        except Exception as e:
+            return (False, str(e))
+
+    async def _filter_update_safe_nodes(
+        self,
+        nodes: list[NodeConfig],
+    ) -> tuple[list[NodeConfig], list[tuple[NodeConfig, str]]]:
+        """Split reachable nodes into rollout-safe and rollout-blocked sets."""
+        if not nodes:
+            return ([], [])
+
+        checks = await asyncio.gather(*(self._probe_node_update_safety(node) for node in nodes))
+        safe_nodes: list[NodeConfig] = []
+        blocked_nodes: list[tuple[NodeConfig, str]] = []
+        for node, (ok, detail) in zip(nodes, checks, strict=False):
+            if ok:
+                safe_nodes.append(node)
+            else:
+                logger.warning(f"[{node.name}] Pre-flight git safety failed: {detail}")
+                blocked_nodes.append((node, detail))
+        return (safe_nodes, blocked_nodes)
 
     async def _check_p2p_running(self, client: SSHClient, node_name: str) -> bool:
         """Check if P2P orchestrator is running on node."""
@@ -793,7 +880,7 @@ class QuorumSafeUpdateCoordinator:
 
                 # Get current commit
                 result = await client.run_async(
-                    "git rev-parse --short HEAD",
+                    "git rev-parse HEAD",
                     timeout=10,
                 )
                 commits[node.name] = result.stdout.strip() if result.returncode == 0 else "unknown"
@@ -837,6 +924,29 @@ class QuorumSafeUpdateCoordinator:
             # Check P2P status before update
             p2p_was_running = await self._check_p2p_running(client, node.name)
 
+            git_state = await self._inspect_remote_git_state(client)
+            if not git_state.branch:
+                return (
+                    node.name,
+                    False,
+                    f"Detached HEAD blocks safe rollout (HEAD={git_state.head_commit[:12] or 'unknown'})",
+                )
+            if git_state.branch != "main":
+                return (
+                    node.name,
+                    False,
+                    f"Unsafe branch '{git_state.branch}' blocks safe rollout",
+                )
+            if git_state.is_dirty:
+                preview = ", ".join(git_state.dirty_entries[:3])
+                if len(git_state.dirty_entries) > 3:
+                    preview += ", ..."
+                return (
+                    node.name,
+                    False,
+                    f"Dirty git worktree blocks safe rollout: {preview}",
+                )
+
             if dry_run:
                 msg = f"DRY-RUN: Would update {node.ringrift_path}"
                 if sync_config:
@@ -845,16 +955,20 @@ class QuorumSafeUpdateCoordinator:
                     msg += " and restart P2P"
                 return (node.name, True, msg)
 
-            # Stash local changes
-            await client.run_async("git stash", timeout=30)
-
-            # Pull latest code
-            pull_result = await client.run_async(
-                "git pull origin main",
+            fetch_result = await client.run_async(
+                "git fetch origin --prune",
                 timeout=60,
             )
-            if pull_result.returncode != 0:
-                return (node.name, False, f"Git pull failed: {pull_result.stderr}")
+            if fetch_result.returncode != 0:
+                return (node.name, False, f"Git fetch failed: {fetch_result.stderr}")
+
+            update_result = await client.run_async(
+                f"git checkout -B main {target_commit}",
+                timeout=60,
+            )
+            if update_result.returncode != 0:
+                detail = (update_result.stderr or update_result.stdout).strip()
+                return (node.name, False, f"Git checkout failed: {detail}")
 
             # Verify commit
             verify = await client.run_async(
@@ -862,6 +976,12 @@ class QuorumSafeUpdateCoordinator:
                 timeout=10,
             )
             current_commit = verify.stdout.strip() if verify.returncode == 0 else "unknown"
+            if current_commit != target_commit:
+                return (
+                    node.name,
+                    False,
+                    f"Commit verification failed: expected {target_commit[:12]}, got {current_commit[:12]}",
+                )
             short_commit = current_commit[:12] if current_commit != "unknown" else "unknown"
 
             # Sync config files if requested (for files in .gitignore)
@@ -1023,12 +1143,14 @@ class QuorumSafeUpdateCoordinator:
             try:
                 client = await self._create_ssh_client(node)
 
-                # Checkout previous commit
-                await client.run_async(
-                    f"git checkout {target_commit}",
+                rollback_result = await client.run_async(
+                    f"git checkout -B main {target_commit}",
                     timeout=30,
                 )
-                logger.info(f"[{node.name}] Rolled back to {target_commit}")
+                if rollback_result.returncode != 0:
+                    detail = (rollback_result.stderr or rollback_result.stdout).strip()
+                    raise RuntimeError(f"git checkout failed: {detail}")
+                logger.info(f"[{node.name}] Rolled back to {target_commit[:12]}")
 
                 # Restart P2P if it was running
                 if checkpoint.p2p_was_running.get(node.name):
@@ -1067,6 +1189,7 @@ class QuorumSafeUpdateCoordinator:
 
         # Load config
         self._load_config()
+        resolved_target_commit = self._resolve_local_target_commit(target_commit)
 
         # Phase 1: Pre-flight checks
         logger.info("Phase 1: Pre-flight health check...")
@@ -1145,7 +1268,19 @@ class QuorumSafeUpdateCoordinator:
             result.duration_seconds = time.time() - start_time
             return result
 
-        batches = self._calculate_update_batches(reachable_nodes, skip_voters=effective_skip_voters)
+        safe_nodes, blocked_nodes = await self._filter_update_safe_nodes(reachable_nodes)
+        if blocked_nodes:
+            blocked_names = [node.name for node, _ in blocked_nodes]
+            result.success = False
+            result.nodes_failed.extend(blocked_names)
+            result.error_message = (
+                "Unsafe git state blocks safe rollout: "
+                + "; ".join(f"{node.name} ({detail})" for node, detail in blocked_nodes)
+            )
+            result.duration_seconds = time.time() - start_time
+            return result
+
+        batches = self._calculate_update_batches(safe_nodes, skip_voters=effective_skip_voters)
 
         if not batches:
             result.error_message = "No reachable nodes to update"
@@ -1166,7 +1301,7 @@ class QuorumSafeUpdateCoordinator:
 
             # Update batch
             batch_results = await self._update_batch(
-                batch, target_commit, restart_p2p, dry_run, self._sync_config
+                batch, resolved_target_commit, restart_p2p, dry_run, self._sync_config
             )
 
             # Process results
