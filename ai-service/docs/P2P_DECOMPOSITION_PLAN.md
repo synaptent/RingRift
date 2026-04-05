@@ -1,21 +1,46 @@
 # P2P Orchestrator Decomposition Plan
 
 **Created:** April 5, 2026
-**Status:** Targets 1, 3, 4, 5 COMPLETE. Target 2 remaining.
+**Status:** Targets 1, 2, 3, 4, 5 COMPLETE.
 
 ## Current State
 
-p2p_orchestrator.py: 14,363 → 10,355 lines (28% reduction)
+p2p_orchestrator.py: 14,363 → 9,153 lines (36% reduction)
 
-| Target | File                                             | LOC        | Status   |
-| ------ | ------------------------------------------------ | ---------- | -------- |
-| 1      | `scripts/p2p/startup_infrastructure.py`          | 1,333      | DONE     |
-| 5      | `scripts/p2p/entrypoint.py`                      | 907        | DONE     |
-| 3      | `scripts/p2p/mixins/training_pipeline_mixin.py`  | 1,290      | DONE     |
-| 4      | `scripts/p2p/mixins/heartbeat_loop_mixin.py`     | 1,024      | DONE     |
-| **2**  | **`scripts/p2p/mixins/election_logic_mixin.py`** | **~1,100** | **TODO** |
+| Target | File                                            | LOC   | Status |
+| ------ | ----------------------------------------------- | ----- | ------ |
+| 1      | `scripts/p2p/startup_infrastructure.py`         | 1,335 | DONE   |
+| 5      | `scripts/p2p/entrypoint.py`                     | 907   | DONE   |
+| 3      | `scripts/p2p/mixins/training_pipeline_mixin.py` | 1,290 | DONE   |
+| 4      | `scripts/p2p/mixins/heartbeat_loop_mixin.py`    | 1,024 | DONE   |
+| 2      | `scripts/p2p/mixins/election_logic_mixin.py`    | 1,033 | DONE   |
 
 ## Target 2: Election + Leadership Methods (MEDIUM-HIGH risk)
+
+Status: COMPLETE on April 5, 2026.
+
+Extracted to `scripts/p2p/mixins/election_logic_mixin.py` and wired through:
+
+- `scripts/p2p/mixins/__init__.py`
+- `scripts/p2p/startup_infrastructure.py`
+- `scripts/p2p_orchestrator.py`
+
+The extracted surface includes:
+
+- `_endpoint_key`, `_endpoint_conflict_keys`, `_is_leader_eligible`
+- `_start_election`, `_become_leader`
+- `_check_probabilistic_leadership`, `_claim_provisional_leadership`
+- `_check_provisional_promotion`, `_promote_provisional_to_leader`
+- `_step_down_from_provisional`, `_request_election_from_voters`
+- `_check_emergency_coordinator_fallback`
+- `_acquire_voter_lease_quorum`, `_determine_leased_leader_from_voters`
+- `_query_arbiter_for_leader`, `_renew_leader_lease`
+
+Verification:
+
+- `PYTHONPATH=. python3 -c "from scripts.p2p_orchestrator import P2POrchestrator; print('OK')"`: passed
+- `PYTHONPATH=. python3 -m pytest tests/unit/p2p/ -x --tb=short -q`: `2615 passed, 2 skipped`
+- Broader seeded `tests/unit` gate reached an unrelated timeout in `tests/unit/coordination/test_health_check_compliance.py`; that file passes in isolation (`38 passed, 9 skipped`), so the first broader failure observed after Target 2 was not an election extraction regression.
 
 ### Methods to extract
 

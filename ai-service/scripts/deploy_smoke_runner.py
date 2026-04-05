@@ -6,6 +6,22 @@ import shlex
 from typing import Any
 
 
+def _build_remote_python_selector() -> str:
+    """Prefer project-local Python over the host's default python3.
+
+    On mac-studio, `/usr/bin/python3` is still Python 3.9, which cannot import
+    modules that rely on modern `X | None` type syntax. Prefer the repo's venv
+    if present, then a known Homebrew Python 3.11 install, and only then fall
+    back to plain `python3`.
+    """
+    return (
+        "if [ -x venv/bin/python ]; then _ringrift_python=venv/bin/python; "
+        "elif [ -x .venv/bin/python ]; then _ringrift_python=.venv/bin/python; "
+        "elif command -v python3.11 >/dev/null 2>&1; then _ringrift_python=$(command -v python3.11); "
+        "else _ringrift_python=python3; fi"
+    )
+
+
 def build_remote_deploy_smoke_cmd(
     node_path: str,
     *,
@@ -17,7 +33,8 @@ def build_remote_deploy_smoke_cmd(
     # Keep node_path unquoted so remote shells can expand leading "~/".
     cmd = (
         f"cd {node_path} && {activate} && "
-        "PYTHONPATH=. python3 scripts/deploy_smoke_test.py"
+        f"{_build_remote_python_selector()} && "
+        'PYTHONPATH=. "$_ringrift_python" scripts/deploy_smoke_test.py'
     )
     if expected_commit:
         cmd += f" --expected-commit {shlex.quote(expected_commit)}"

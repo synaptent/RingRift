@@ -53,6 +53,11 @@ from scripts.deploy_smoke_runner import run_remote_deploy_smoke_test
 
 logger = logging.getLogger(__name__)
 
+P2P_LAUNCHD_LABELS = (
+    "com.ringrift.p2p",
+    "com.ringrift.p2p-orchestrator",
+)
+
 __all__ = [
     "QuorumSafeUpdateCoordinator",
     "UpdateCoordinatorConfig",
@@ -480,7 +485,58 @@ class QuorumSafeUpdateCoordinator:
         if sup_result.returncode == 0 and sup_result.stdout.strip():
             return "supervisor"
 
+        labels_pattern = "|".join(label.replace(".", r"\.") for label in P2P_LAUNCHD_LABELS)
+        launchd_result = await client.run_async(
+            f'launchctl list 2>/dev/null | egrep "{labels_pattern}" || true',
+            timeout=10,
+        )
+        if launchd_result.stdout.strip():
+            return "launchd"
+
         return "bare"
+
+    def _build_launchd_p2p_restart_cmd(self) -> str:
+        """Build a launchctl kickstart command compatible with old and new labels."""
+        kickstarts = []
+        for label in P2P_LAUNCHD_LABELS:
+            kickstarts.append(
+                f"launchctl kickstart -k gui/$(id -u)/{label} >/dev/null 2>&1 || true"
+            )
+            kickstarts.append(
+                f"launchctl kickstart -k system/{label} >/dev/null 2>&1 || true"
+            )
+        return "if command -v launchctl >/dev/null 2>&1; then " + "; ".join(kickstarts) + "; fi"
+
+    async def _wait_for_p2p_http_ready(
+        self,
+        client: SSHClient,
+        node_name: str,
+        *,
+        timeout: float = 30.0,
+        poll_interval: float = 2.0,
+    ) -> bool:
+        """Wait for the node-local P2P HTTP endpoints to respond after restart."""
+        attempts = max(1, int(timeout / poll_interval))
+        sleep_seconds = max(1, int(poll_interval))
+        probe_cmd = (
+            "sh -lc '"
+            f"attempt=0; while [ \"$attempt\" -lt {attempts} ]; do "
+            "if curl -fsS --connect-timeout 3 --max-time 5 http://127.0.0.1:8770/health >/dev/null 2>&1 "
+            "|| curl -fsS --connect-timeout 3 --max-time 8 http://127.0.0.1:8770/status >/dev/null 2>&1; "
+            "then exit 0; fi; "
+            f"attempt=$((attempt+1)); sleep {sleep_seconds}; "
+            "done; exit 1'"
+        )
+
+        try:
+            result = await client.run_async(probe_cmd, timeout=max(10, int(timeout + 10)))
+            if result.returncode == 0:
+                return True
+        except Exception as exc:
+            logger.debug(f"[{node_name}] P2P HTTP readiness probe failed: {exc}")
+
+        logger.warning(f"[{node_name}] P2P process restarted but HTTP endpoints never became ready")
+        return False
 
     async def _restart_p2p_process(self, client: SSHClient, node: NodeConfig) -> bool:
         """Restart P2P process, respecting systemd/supervisor management.
@@ -520,6 +576,16 @@ class QuorumSafeUpdateCoordinator:
             await client.run_async(start_cmd, timeout=15)
             await asyncio.sleep(5)
             return await self._check_p2p_running(client, node.name)
+
+        elif manager == "launchd":
+            result = await client.run_async(self._build_launchd_p2p_restart_cmd(), timeout=30)
+            if result.returncode != 0:
+                logger.warning(f"[{node.name}] launchctl restart failed: {result.stderr}")
+            await asyncio.sleep(5)
+            running = await self._check_p2p_running(client, node.name)
+            if not running:
+                return False
+            return await self._wait_for_p2p_http_ready(client, node.name)
 
         else:
             # Bare mode: kill and start orchestrator directly
@@ -632,7 +698,7 @@ class QuorumSafeUpdateCoordinator:
 
                 # Get current commit
                 result = await client.run_async(
-                    f"cd {node.ringrift_path} && git rev-parse --short HEAD",
+                    "git rev-parse --short HEAD",
                     timeout=10,
                 )
                 commits[node.name] = result.stdout.strip() if result.returncode == 0 else "unknown"
@@ -685,11 +751,11 @@ class QuorumSafeUpdateCoordinator:
                 return (node.name, True, msg)
 
             # Stash local changes
-            await client.run_async(f"cd {node.ringrift_path} && git stash", timeout=30)
+            await client.run_async("git stash", timeout=30)
 
             # Pull latest code
             pull_result = await client.run_async(
-                f"cd {node.ringrift_path} && git pull origin main",
+                "git pull origin main",
                 timeout=60,
             )
             if pull_result.returncode != 0:
@@ -697,7 +763,7 @@ class QuorumSafeUpdateCoordinator:
 
             # Verify commit
             verify = await client.run_async(
-                f"cd {node.ringrift_path} && git rev-parse HEAD",
+                "git rev-parse HEAD",
                 timeout=10,
             )
             current_commit = verify.stdout.strip() if verify.returncode == 0 else "unknown"
@@ -864,7 +930,7 @@ class QuorumSafeUpdateCoordinator:
 
                 # Checkout previous commit
                 await client.run_async(
-                    f"cd {node.ringrift_path} && git checkout {target_commit}",
+                    f"git checkout {target_commit}",
                     timeout=30,
                 )
                 logger.info(f"[{node.name}] Rolled back to {target_commit}")

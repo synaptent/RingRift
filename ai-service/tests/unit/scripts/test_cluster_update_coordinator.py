@@ -386,6 +386,87 @@ class TestSingleNodeUpdate:
         mock_restart.assert_not_called()
 
 
+class TestP2PManagerDetection:
+    """Tests for platform-specific P2P manager detection and restart."""
+
+    @pytest.mark.asyncio
+    async def test_detect_p2p_manager_returns_launchd_when_label_present(self, config):
+        with patch.object(
+            QuorumSafeUpdateCoordinator,
+            '_find_config_path',
+            return_value=Path("/tmp/test.yaml"),
+        ):
+            coordinator = QuorumSafeUpdateCoordinator(config=config)
+
+        client = MagicMock()
+        client.run_async = AsyncMock(side_effect=[
+            MagicMock(returncode=0, stdout="disabled\n", stderr=""),
+            MagicMock(returncode=1, stdout="", stderr=""),
+            MagicMock(returncode=0, stdout="91804\t0\tcom.ringrift.p2p\n", stderr=""),
+        ])
+
+        manager = await coordinator._detect_p2p_manager(client, "mac-studio")
+        assert manager == "launchd"
+
+    @pytest.mark.asyncio
+    async def test_restart_p2p_process_uses_launchd_kickstart(self, config):
+        with patch.object(
+            QuorumSafeUpdateCoordinator,
+            '_find_config_path',
+            return_value=Path("/tmp/test.yaml"),
+        ):
+            coordinator = QuorumSafeUpdateCoordinator(config=config)
+
+        node = NodeConfig(
+            name="mac-studio",
+            ssh_host="100.71.253.66",
+            ssh_port=22,
+            ssh_user="armand",
+            ssh_key=None,
+            tailscale_ip="100.71.253.66",
+            ringrift_path="~/Development/RingRift/ai-service",
+            is_voter=True,
+            status="ready",
+        )
+        client = MagicMock()
+        client.run_async = AsyncMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+
+        with patch.object(coordinator, "_detect_p2p_manager", AsyncMock(return_value="launchd")):
+            with patch.object(coordinator, "_check_p2p_running", AsyncMock(return_value=True)):
+                with patch.object(coordinator, "_wait_for_p2p_http_ready", AsyncMock(return_value=True)) as mock_ready:
+                    with patch("scripts.cluster_update_coordinator.asyncio.sleep", new=AsyncMock()) as mock_sleep:
+                        ok = await coordinator._restart_p2p_process(client, node)
+
+        assert ok is True
+        restart_cmd = client.run_async.await_args_list[0].args[0]
+        assert "launchctl kickstart -k gui/$(id -u)/com.ringrift.p2p" in restart_cmd
+        assert "launchctl kickstart -k gui/$(id -u)/com.ringrift.p2p-orchestrator" in restart_cmd
+        mock_sleep.assert_awaited_once_with(5)
+        mock_ready.assert_awaited_once_with(client, node.name)
+
+    @pytest.mark.asyncio
+    async def test_wait_for_p2p_http_ready_retries_until_endpoint_responds(self, config):
+        with patch.object(
+            QuorumSafeUpdateCoordinator,
+            '_find_config_path',
+            return_value=Path("/tmp/test.yaml"),
+        ):
+            coordinator = QuorumSafeUpdateCoordinator(config=config)
+
+        client = MagicMock()
+        client.run_async = AsyncMock(return_value=MagicMock(returncode=0, stdout="", stderr=""))
+
+        ready = await coordinator._wait_for_p2p_http_ready(client, "mac-studio", timeout=30.0)
+
+        assert ready is True
+        assert client.run_async.await_count == 1
+        probe_cmd = client.run_async.await_args_list[0].args[0]
+        assert "while [ \"$attempt\" -lt 15 ]" in probe_cmd
+        assert "http://127.0.0.1:8770/health" in probe_cmd
+        assert "http://127.0.0.1:8770/status" in probe_cmd
+        assert "sleep 2" in probe_cmd
+
+
 class TestBatchFailureHandling:
     """Tests for batch failure and rollback behavior."""
 

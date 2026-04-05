@@ -1379,6 +1379,8 @@ def sync_to_cluster_ssh(
                                 "sudo systemctl restart ringrift-p2p-orchestrator.service >/dev/null 2>&1 || true; "
                                 "fi; "
                                 "if command -v launchctl >/dev/null 2>&1; then "
+                                "launchctl kickstart -k gui/$(id -u)/com.ringrift.p2p >/dev/null 2>&1 || true; "
+                                "launchctl kickstart -k system/com.ringrift.p2p >/dev/null 2>&1 || true; "
                                 "launchctl kickstart -k gui/$(id -u)/com.ringrift.p2p-orchestrator >/dev/null 2>&1 || true; "
                                 "launchctl kickstart -k system/com.ringrift.p2p-orchestrator >/dev/null 2>&1 || true; "
                                 "fi"
