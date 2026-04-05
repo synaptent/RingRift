@@ -32,10 +32,10 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from ..models import AIConfig, BoardType, GameState, Move
+from ..core.zobrist import ZobristHash
 from ..rules.mutable_state import MutableGameState
 from .bounded_transposition_table import BoundedTranspositionTable
 from .heuristic_ai import HeuristicAI
-from .zobrist import ZobristHash
 
 if TYPE_CHECKING:
     import torch

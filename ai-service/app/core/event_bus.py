@@ -700,6 +700,16 @@ def reset_event_bus() -> None:
         _event_bus = None
 
 
+def _get_or_create_event_bus() -> EventBus:
+    """Return the singleton event bus without emitting deprecation warnings."""
+    global _event_bus
+    if _event_bus is None:
+        with _bus_lock:
+            if _event_bus is None:
+                _event_bus = EventBus()
+    return _event_bus
+
+
 # Convenience functions using global bus
 def subscribe(
     topic_or_filter: str | EventFilter | None = None,

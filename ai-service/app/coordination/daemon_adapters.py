@@ -53,6 +53,29 @@ from .orchestrator_registry import OrchestratorRole, get_registry
 logger = logging.getLogger(__name__)
 
 
+class DeprecatedNoOpDaemon:
+    """Compatibility daemon for removed adapter surfaces.
+
+    Some legacy daemon types still need to resolve via get_daemon_adapter()
+    for older integration points and tests, but their concrete runtime
+    behavior was intentionally removed. This no-op shim preserves the adapter
+    contract without reviving the old background loops.
+    """
+
+    def __init__(self):
+        self._running = False
+
+    async def start(self) -> None:
+        self._running = False
+
+    async def stop(self) -> None:
+        self._running = False
+
+    @property
+    def is_running(self) -> bool:
+        return False
+
+
 @dataclass
 class DaemonAdapterConfig:
     """Configuration for daemon adapters."""
@@ -408,6 +431,39 @@ ADAPTER_SPECS: dict[DaemonType, DaemonAdapterSpec] = {
         module_path="app.coordination.data_cleanup_daemon",
         class_name="DataCleanupDaemon",
         role=None,
+    ),
+    DaemonType.EXTERNAL_DRIVE_SYNC: DaemonAdapterSpec(
+        daemon_type=DaemonType.EXTERNAL_DRIVE_SYNC,
+        module_path="app.coordination.daemon_adapters",
+        class_name="DeprecatedNoOpDaemon",
+        role=OrchestratorRole.EXTERNAL_SYNC_LEADER,
+        deprecated=True,
+        deprecated_message=(
+            "EXTERNAL_DRIVE_SYNC adapter is deprecated; runtime behavior now lives "
+            "in unified sync/deployment flows."
+        ),
+    ),
+    DaemonType.CLUSTER_DATA_SYNC: DaemonAdapterSpec(
+        daemon_type=DaemonType.CLUSTER_DATA_SYNC,
+        module_path="app.coordination.daemon_adapters",
+        class_name="DeprecatedNoOpDaemon",
+        role=OrchestratorRole.CLUSTER_DATA_SYNC_LEADER,
+        deprecated=True,
+        deprecated_message=(
+            "CLUSTER_DATA_SYNC adapter is deprecated; use AutoSyncDaemon broadcast "
+            "mode or unified sync orchestration instead."
+        ),
+    ),
+    DaemonType.NPZ_DISTRIBUTION: DaemonAdapterSpec(
+        daemon_type=DaemonType.NPZ_DISTRIBUTION,
+        module_path="app.coordination.daemon_adapters",
+        class_name="DeprecatedNoOpDaemon",
+        role=None,
+        deprecated=True,
+        deprecated_message=(
+            "NPZ_DISTRIBUTION adapter is deprecated; use MODEL_DISTRIBUTION "
+            "and unified data routing instead."
+        ),
     ),
 }
 

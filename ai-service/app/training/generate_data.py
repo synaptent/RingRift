@@ -25,13 +25,6 @@ from app.utils.numpy_utils import safe_load_npz
 
 from app.ai.descent_ai import DescentAI
 from app.ai.gumbel_mcts_ai import GumbelMCTSAI
-
-# GMO AI is optional - used for experimental training modes
-try:
-    from app.ai.gmo_ai import GMOAI, GMOConfig
-except ImportError:
-    GMOAI = None
-    GMOConfig = None
 from app.ai.mcts_ai import MCTSAI
 from app.ai.neural_net import INVALID_MOVE_INDEX, NeuralNetAI, encode_move_for_board
 from app.ai.neural_net.square_encoding import (
@@ -1019,7 +1012,13 @@ def generate_dataset(
                 board_type=board_type,
             )
         elif engine_type == "gmo":
-            # Load GMO model if available
+            # GMO is experimental and deprecated; keep the import lazy so
+            # default training paths do not emit deprecation warnings.
+            try:
+                from app.ai.gmo_ai import GMOAI, GMOConfig
+            except ImportError as exc:
+                raise RuntimeError("GMO engine requested but GMOAI is unavailable") from exc
+
             gmo_config = GMOConfig(device="cuda" if torch.cuda.is_available() else "cpu")
             ai = GMOAI(
                 player_number=player_num,

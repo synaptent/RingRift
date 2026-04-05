@@ -54,8 +54,8 @@ from app.core.event_bus import (
     Event,
     EventFilter,
     EventHandler,
+    _get_or_create_event_bus,
     get_event_bus,
-    publish,
     subscribe,
 )
 
@@ -70,6 +70,11 @@ except ImportError:
         return None
 
 logger = logging.getLogger(__name__)
+
+
+async def publish(event: Event) -> int:
+    """Publish training events without routing through the deprecated global helper."""
+    return await _get_or_create_event_bus().publish(event)
 
 __all__ = [
     "CheckpointEvent",
