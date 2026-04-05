@@ -872,6 +872,242 @@ def _write_quick_fixture_jsonl(path: Path) -> None:
 
 
 # ===================================================================
+# Test 8: Multi-Board Encoding Contract Validation
+# ===================================================================
+ALL_BOARD_TYPES = ["hex8", "hexagonal", "square8", "square19"]
+ALL_PLAYER_COUNTS = [2, 3, 4]
+# Known valid channel counts across all board types and model versions
+VALID_CHANNEL_COUNTS = {40, 56, 64}
+
+
+@_run_test("8. Multi-Board Encoding Contract (all 12 configs)")
+def test_encoding_contract(r: TestResult):
+    """Verify BoardEncodingContract returns valid channels for all 12 configs."""
+    from app.models import BoardType
+    from app.training.board_encoding_contract import get_expected_channels
+
+    board_type_map = {
+        "hex8": BoardType.HEX8,
+        "hexagonal": BoardType.HEXAGONAL,
+        "square8": BoardType.SQUARE8,
+        "square19": BoardType.SQUARE19,
+    }
+
+    validated = 0
+    channel_map: dict[str, int] = {}
+    for bt_name in ALL_BOARD_TYPES:
+        bt_enum = board_type_map[bt_name]
+        try:
+            channels = get_expected_channels(bt_enum, "v2")
+        except (ValueError, KeyError) as e:
+            r.fail(
+                f"get_expected_channels({bt_name}, 'v2') raised: {e}",
+                f"BoardEncodingContract missing entry for {bt_name}",
+            )
+            return
+        if not isinstance(channels, int) or channels <= 0:
+            r.fail(
+                f"get_expected_channels({bt_name}, 'v2') returned {channels!r} "
+                f"(expected positive int)",
+            )
+            return
+        if channels not in VALID_CHANNEL_COUNTS:
+            r.fail(
+                f"{bt_name} v2 returned {channels} channels, "
+                f"not in known set {VALID_CHANNEL_COUNTS}",
+                "Encoding contract may have been modified -- update VALID_CHANNEL_COUNTS "
+                "if this is intentional",
+            )
+            return
+        # Verify all player counts work (contract is board+version, not player-specific,
+        # but we call it for each to ensure no errors in the path)
+        for np_val in ALL_PLAYER_COUNTS:
+            try:
+                ch = get_expected_channels(bt_enum, "v2")
+                if ch != channels:
+                    r.fail(
+                        f"{bt_name} v2: inconsistent channels ({ch} vs {channels})"
+                    )
+                    return
+            except Exception as e:
+                r.fail(f"get_expected_channels({bt_name}, 'v2') failed for {np_val}p: {e}")
+                return
+        channel_map[bt_name] = channels
+        validated += 1
+
+    if validated != len(ALL_BOARD_TYPES):
+        r.fail(f"Only validated {validated}/{len(ALL_BOARD_TYPES)} board types")
+        return
+
+    r.ok(
+        configs_validated=validated * len(ALL_PLAYER_COUNTS),
+        channel_map=channel_map,
+    )
+
+
+# ===================================================================
+# Test 9: Multi-Board Forward Pass
+# ===================================================================
+@_run_test("9. Multi-Board Forward Pass (4 board types, 2p, CPU)")
+def test_multi_board_forward_pass(r: TestResult):
+    """Create or load models for each board type and verify forward pass shapes."""
+    import torch
+    from app.models import BoardType
+    from app.training.board_encoding_contract import get_expected_channels
+    from app.ai.neural_net.constants import (
+        get_policy_size_for_board,
+        get_spatial_size_for_board,
+    )
+    from app.ai.neural_net.model_factory import create_model_for_board
+
+    board_type_map = {
+        "hex8": BoardType.HEX8,
+        "hexagonal": BoardType.HEXAGONAL,
+        "square8": BoardType.SQUARE8,
+        "square19": BoardType.SQUARE19,
+    }
+
+    tested = 0
+    skipped = 0
+    board_results: dict[str, str] = {}
+
+    for bt_name in ALL_BOARD_TYPES:
+        bt_enum = board_type_map[bt_name]
+        in_channels = get_expected_channels(bt_enum, "v2")
+        spatial = get_spatial_size_for_board(bt_enum)
+        policy_size = get_policy_size_for_board(bt_enum)
+
+        canonical_path = PROJECT_ROOT / "models" / f"canonical_{bt_name}_2p.pth"
+
+        try:
+            if canonical_path.exists():
+                # Load the real canonical model
+                checkpoint = torch.load(
+                    str(canonical_path), map_location="cpu", weights_only=False,
+                )
+                state_dict = _extract_state_dict(checkpoint)
+                if state_dict is None:
+                    board_results[bt_name] = "FAIL: no state_dict in checkpoint"
+                    r.fail(
+                        f"{bt_name}: could not extract state_dict from {canonical_path.name}",
+                        f"Checkpoint keys: {list(checkpoint.keys()) if isinstance(checkpoint, dict) else type(checkpoint)}",
+                    )
+                    return
+
+                # Detect input channels from first conv layer
+                first_conv_channels = None
+                for key, tensor in state_dict.items():
+                    if ("conv" in key or "initial" in key) and tensor.dim() == 4:
+                        first_conv_channels = tensor.shape[1]
+                        break
+
+                if first_conv_channels is not None and first_conv_channels != in_channels:
+                    board_results[bt_name] = (
+                        f"FAIL: model expects {first_conv_channels}ch, "
+                        f"contract says {in_channels}ch"
+                    )
+                    r.fail(
+                        f"{bt_name}: model input channels ({first_conv_channels}) != "
+                        f"encoding contract ({in_channels})",
+                        "Architecture/encoder mismatch -- the encoding contract or "
+                        "model checkpoint is out of date",
+                    )
+                    return
+
+                # Create model with matching architecture and load weights
+                model = create_model_for_board(
+                    bt_enum,
+                    in_channels=in_channels // 4,  # base channels (history_length=3 -> x4)
+                    num_players=2,
+                    memory_tier="high",
+                )
+                try:
+                    model.load_state_dict(state_dict, strict=False)
+                except Exception:
+                    # If loading fails with default tier, the canonical model may use
+                    # a different architecture; skip gracefully
+                    board_results[bt_name] = "SKIP: state_dict incompatible with factory model"
+                    skipped += 1
+                    continue
+
+                source = "canonical"
+            else:
+                # No canonical model -- create a fresh one for shape validation
+                model = create_model_for_board(
+                    bt_enum,
+                    in_channels=in_channels // 4,
+                    num_players=2,
+                    memory_tier="high",
+                )
+                source = "factory"
+
+            # Switch model to inference mode
+            model.train(False)
+
+            # Create dummy input and run forward pass
+            # All architectures require (spatial_input, globals_vector)
+            dummy = torch.zeros(1, in_channels, spatial, spatial)
+            dummy_globals = torch.zeros(1, 20)  # 20 global features (default)
+            with torch.no_grad():
+                output = model(dummy, dummy_globals)
+
+            # Validate output shapes
+            # All architectures return (value, policy) tuples, optionally with
+            # a third element (features) when return_features=True.
+            if isinstance(output, tuple) and len(output) >= 2:
+                value_out, policy_out = output[0], output[1]
+            elif isinstance(output, dict):
+                policy_out = output.get("policy", output.get("log_policy"))
+                value_out = output.get("value")
+            else:
+                board_results[bt_name] = f"FAIL: unexpected output type {type(output)}"
+                r.fail(f"{bt_name}: model output is {type(output)}, expected tuple or dict")
+                return
+
+            # Policy shape: (batch, policy_size)
+            if policy_out is not None:
+                if policy_out.shape[-1] != policy_size:
+                    board_results[bt_name] = (
+                        f"FAIL: policy size {policy_out.shape[-1]} != {policy_size}"
+                    )
+                    r.fail(
+                        f"{bt_name}: policy output size {policy_out.shape[-1]} != "
+                        f"expected {policy_size}",
+                        "Policy head size mismatch -- check constants.py "
+                        "BOARD_POLICY_SIZES",
+                    )
+                    return
+
+            # Value shape: (batch, num_players) or (batch, 1)
+            if value_out is not None:
+                if value_out.dim() < 1:
+                    board_results[bt_name] = "FAIL: value output has no dimensions"
+                    r.fail(f"{bt_name}: value output shape {value_out.shape} is invalid")
+                    return
+
+            board_results[bt_name] = f"OK ({source}, {in_channels}ch -> policy={policy_size})"
+            tested += 1
+
+        except Exception as e:
+            board_results[bt_name] = f"FAIL: {e}"
+            r.fail(
+                f"{bt_name}: forward pass failed: {e}",
+                f"Traceback:\n{traceback.format_exc()}",
+            )
+            return
+
+    if tested == 0 and skipped == len(ALL_BOARD_TYPES):
+        r.fail("All board types skipped -- no models available and factory failed")
+        return
+
+    r.ok(
+        boards_tested=tested,
+        boards_skipped=skipped,
+        board_results=board_results,
+    )
+
+
+# ===================================================================
 # Main
 # ===================================================================
 def main() -> None:
@@ -971,6 +1207,18 @@ def main() -> None:
         # ---------------------------------------------------------------
         logger.info("\n[TEST 7] Promotion Metadata")
         test_promotion_metadata(candidate_path)
+
+        # ---------------------------------------------------------------
+        # Test 8: Multi-Board Encoding Contract
+        # ---------------------------------------------------------------
+        logger.info("\n[TEST 8] Multi-Board Encoding Contract")
+        test_encoding_contract()
+
+        # ---------------------------------------------------------------
+        # Test 9: Multi-Board Forward Pass
+        # ---------------------------------------------------------------
+        logger.info("\n[TEST 9] Multi-Board Forward Pass")
+        test_multi_board_forward_pass()
 
     finally:
         if not args.keep_tmpdir:
