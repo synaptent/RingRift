@@ -2,24 +2,24 @@
 
 AI assistant context for the Python AI training service. Complements `AGENTS.md` with operational knowledge.
 
-**Last Updated**: March 5, 2026
+**Last Updated**: April 5, 2026
 
-## Infrastructure Health Status (Verified Jan 9, 2026)
+## Infrastructure Health Snapshot
 
-| Component          | Status   | Evidence                                                  |
-| ------------------ | -------- | --------------------------------------------------------- |
-| **P2P Network**    | GREEN    | A- (94/100), quorum OK, 22+ P2P loops with health_check() |
-| **Training Loop**  | GREEN    | A (95/100), 5/5 feedback loops, 6/6 pipeline stages       |
-| **Code Quality**   | GREEN    | 341 modules, 31,989 tests, 99.5% coverage                 |
-| **Event Emission** | UNIFIED  | Migrated to safe_emit_event for consistent error handling |
-| **Async Safety**   | VERIFIED | All blocking SQLite calls wrapped in asyncio.to_thread()  |
+| Component          | Status   | Evidence                                                       |
+| ------------------ | -------- | -------------------------------------------------------------- |
+| **P2P Network**    | STANDBY  | Mac-studio coordinator offline; Lambda nodes run minimal loops |
+| **Training Loop**  | GREEN    | 7/7 Lambda GH200 nodes training via minimal_alphazero_loop.py  |
+| **Code Quality**   | GREEN    | BoardEncodingContract + 14 contract tests in CI                |
+| **Event Emission** | UNIFIED  | Migrated to safe_emit_event for consistent error handling      |
+| **Async Safety**   | VERIFIED | All blocking SQLite calls wrapped in asyncio.to_thread()       |
 
 **Key Metrics:**
 
-- 132 daemon types (116 active, 16 deprecated)
+- 127 daemon types (107 active, 20 deprecated)
 - 292 event types in DataEventType enum
-- 22 P2P loops with health_check() for DaemonManager integration
-- ~15 active cluster nodes (9 Lambda GH200, 3 Nebius, 3 Hetzner CPU)
+- Lean daemon profile: 23 daemons (down from 47 standard)
+- 7 active Lambda GH200 nodes, 3 Hetzner CPU voters, Nebius stopped
 
 ## Project Overview
 
@@ -35,8 +35,13 @@ RingRift is a multiplayer territory control game. The Python `ai-service` mirror
 ## Quick Start
 
 ```bash
-# Full cluster automation (RECOMMENDED)
-python scripts/master_loop.py
+# Full cluster automation with lean profile (RECOMMENDED)
+python scripts/master_loop.py --profile lean
+
+# Standalone AlphaZero loop on a single GPU node
+PYTHONPATH=. python scripts/minimal_alphazero_loop.py \
+  --model models/canonical_hex8_2p.pth --board-type hex8 --num-players 2 \
+  --iterations 50 --games-per-iter 100 --eval-games 50 --budget 128
 
 # Single config training pipeline
 python scripts/run_training_loop.py --board-type hex8 --num-players 2 --selfplay-games 1000
@@ -160,14 +165,14 @@ The dashboard shows:
 
 ## Cluster Infrastructure
 
-~15 active nodes across providers:
+~12 active nodes across providers:
 
-| Provider     | Nodes | GPUs                        |
-| ------------ | ----- | --------------------------- |
-| Lambda GH200 | 9     | GH200 96GB x 9              |
-| Nebius       | 3     | H100 80GB x 2, L40S         |
-| Hetzner      | 3     | CPU only (P2P voters)       |
-| Local        | 2     | Mac Studio M3 (coordinator) |
+| Provider     | Nodes | GPUs                        | Status  |
+| ------------ | ----- | --------------------------- | ------- |
+| Lambda GH200 | 7     | GH200 96GB x 7              | Active  |
+| Nebius       | 3     | H100 80GB x 2, L40S         | Stopped |
+| Hetzner      | 3     | CPU only (P2P voters)       | Active  |
+| Local        | 2     | Mac Studio M3 (coordinator) | Active  |
 
 ## Key Modules
 
@@ -269,7 +274,7 @@ is_valid, error = validate_encoder_model_match(encoder, model)
 
 ## Daemon System
 
-132 daemon types (116 active, 16 deprecated). Three-layer architecture:
+127 daemon types (107 active, 20 deprecated). Three-layer architecture:
 
 1. **`daemon_registry.py`** - Declarative `DAEMON_REGISTRY: Dict[DaemonType, DaemonSpec]`
 2. **`daemon_manager.py`** - Lifecycle coordinator (start/stop, health, auto-restart)
@@ -495,6 +500,19 @@ python -m app.training.train \
 3. **GPU memory**: v2 models with batch_size=512 need ~8GB VRAM.
 4. **PYTHONPATH**: Set `PYTHONPATH=.` when running scripts from ai-service directory.
 5. **Sandbox AI in production**: To enable sandbox AI play in production, set `RINGRIFT_AI_SERVICE_URL=<url>` (e.g., `http://ai-service:8000`). Without this, the client disables AI endpoints to prevent 404 errors.
+6. **Lambda nodes run Python 3.10**: Do not use `datetime.UTC` (3.11+), use `datetime.timezone.utc` instead.
+7. **56-channel ambiguity**: Square v2 and hex v5-heavy both produce 56 input channels. The architecture registry prefers model metadata over channel-count inference to resolve this.
+
+## Structural Quality Improvements (April 2026)
+
+| Improvement                  | Description                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **BoardEncodingContract**    | Single source of truth for (board_type, model_version) → expected channels. 14 contract tests in CI. |
+| **Lean daemon profile**      | `--profile lean` starts 23 essential daemons instead of 47. Cuts RSS from 38-49GB to 200-900MB.      |
+| **Encoding rename**          | `hex_in_channels` renamed to `encoding_channels` — applies to ALL board types, not just hex.         |
+| **Exception tightening**     | Bare `except Exception` replaced with specific types in training_executor, game_gauntlet.            |
+| **Silent failure detection** | evaluation_daemon upgraded from `logger.debug` to `logger.warning` with stack traces.                |
+| **20 deprecated daemons**    | Formally deprecated with no-op stubs and helpful migration messages.                                 |
 
 ## Training Fixes (Jan 2026)
 
