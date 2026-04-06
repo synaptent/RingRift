@@ -19,6 +19,7 @@ from app.coordination.npz_combination_daemon import (
     NPZCombinationDaemon,
     get_npz_combination_daemon,
 )
+from app.config.env import env
 
 
 class TestNPZCombinationConfig:
@@ -201,7 +202,8 @@ class TestNPZCombinationDaemonEvents:
         daemon.combination_stats.last_combination_by_config["hex8_2p"] = time.time()
 
         # Event should be throttled
-        await daemon._on_npz_export_complete({"config_key": "hex8_2p"})
+        with patch.object(env, "is_coordinator", False):
+            await daemon._on_npz_export_complete({"config_key": "hex8_2p"})
 
         assert daemon.combination_stats.combinations_skipped == 1
         assert daemon.combination_stats.combinations_triggered == 0
@@ -221,7 +223,7 @@ class TestNPZCombinationDaemonEvents:
             daemon, "_combine_for_config", new_callable=AsyncMock, return_value=mock_result
         ), patch.object(daemon, "_emit_combination_complete"), patch.object(
             daemon, "_is_duplicate_event", return_value=False
-        ):
+        ), patch.object(env, "is_coordinator", False):
             await daemon._on_npz_export_complete({"config_key": "hex8_2p"})
 
         assert daemon.combination_stats.combinations_triggered == 1
@@ -242,7 +244,7 @@ class TestNPZCombinationDaemonEvents:
             daemon, "_combine_for_config", new_callable=AsyncMock, return_value=mock_result
         ), patch.object(daemon, "_emit_combination_failed"), patch.object(
             daemon, "_is_duplicate_event", return_value=False
-        ):
+        ), patch.object(env, "is_coordinator", False):
             await daemon._on_npz_export_complete({"config_key": "hex8_2p"})
 
         assert daemon.combination_stats.combinations_triggered == 1
@@ -261,7 +263,7 @@ class TestNPZCombinationDaemonEvents:
             side_effect=Exception("Test exception"),
         ), patch.object(daemon, "_emit_combination_failed"), patch.object(
             daemon, "_is_duplicate_event", return_value=False
-        ):
+        ), patch.object(env, "is_coordinator", False):
             await daemon._on_npz_export_complete({"config_key": "hex8_2p"})
 
         assert daemon.combination_stats.combinations_triggered == 1

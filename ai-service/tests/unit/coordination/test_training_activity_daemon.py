@@ -482,11 +482,12 @@ class TestLifecycle:
 
         # Mock the run cycle to prevent actual loop
         with patch.object(daemon, "_run_cycle", return_value=None):
-            await daemon.start()
-            assert daemon.is_running is True
+            with patch.object(daemon, "_trigger_priority_sync", new_callable=AsyncMock):
+                await daemon.start()
+                assert daemon.is_running is True
 
-            await daemon.stop()
-            assert daemon.is_running is False
+                await daemon.stop()
+                assert daemon.is_running is False
 
     @pytest.mark.asyncio
     async def test_start_with_sync_disabled(self):
@@ -505,12 +506,13 @@ class TestLifecycle:
         daemon = TrainingActivityDaemon()
 
         with patch.object(daemon, "_run_cycle", return_value=None):
-            await daemon.start()
-            await daemon.start()  # Second start should be no-op
+            with patch.object(daemon, "_trigger_priority_sync", new_callable=AsyncMock):
+                await daemon.start()
+                await daemon.start()  # Second start should be no-op
 
-            assert daemon.is_running is True
+                assert daemon.is_running is True
 
-            await daemon.stop()
+                await daemon.stop()
 
 
 # =============================================================================
@@ -567,14 +569,15 @@ class TestHealthCheck:
         daemon = TrainingActivityDaemon()
 
         with patch.object(daemon, "_run_cycle", return_value=None):
-            await daemon.start()
+            with patch.object(daemon, "_trigger_priority_sync", new_callable=AsyncMock):
+                await daemon.start()
 
-            result = daemon.health_check()
+                result = daemon.health_check()
 
-            assert result.healthy is True
-            assert "healthy" in result.message.lower()
+                assert result.healthy is True
+                assert "healthy" in result.message.lower()
 
-            await daemon.stop()
+                await daemon.stop()
 
 
 # =============================================================================

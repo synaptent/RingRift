@@ -273,7 +273,8 @@ class TestCheckFreshness:
 
     def test_check_freshness_no_data(self, checker):
         """Test freshness check with no data."""
-        result = checker.check_freshness("hex8", 2)
+        with patch.object(checker, "_get_data_catalog", return_value=None):
+            result = checker.check_freshness("hex8", 2)
 
         assert result.success is False
         assert result.is_fresh is False
@@ -285,7 +286,8 @@ class TestCheckFreshness:
         db_path = data_dir / "games" / "canonical_hex8_2p.db"
         create_test_database(db_path, 200)  # > min_games_required (100)
 
-        result = checker.check_freshness("hex8", 2)
+        with patch.object(checker, "_get_data_catalog", return_value=None):
+            result = checker.check_freshness("hex8", 2)
 
         assert result.success is True
         assert result.is_fresh is True
@@ -302,7 +304,8 @@ class TestCheckFreshness:
         import os
         os.utime(db_path, (old_time, old_time))
 
-        result = checker.check_freshness("hex8", 2)
+        with patch.object(checker, "_get_data_catalog", return_value=None):
+            result = checker.check_freshness("hex8", 2)
 
         assert result.success is True
         assert result.is_fresh is False
@@ -313,7 +316,8 @@ class TestCheckFreshness:
         db_path = data_dir / "games" / "canonical_hex8_2p.db"
         create_test_database(db_path, 10)  # < min_games_required (100)
 
-        result = checker.check_freshness("hex8", 2)
+        with patch.object(checker, "_get_data_catalog", return_value=None):
+            result = checker.check_freshness("hex8", 2)
 
         assert result.success is True
         assert result.is_fresh is False  # Not enough games
@@ -326,7 +330,8 @@ class TestCheckFreshness:
         npz_path = data_dir / "training" / "hex8_2p.npz"
         npz_path.write_bytes(b"\x00" * 1000)
 
-        result = checker.check_freshness("hex8", 2)
+        with patch.object(checker, "_get_data_catalog", return_value=None):
+            result = checker.check_freshness("hex8", 2)
 
         assert "databases" in result.details
         assert "npz_files" in result.details
@@ -497,7 +502,8 @@ class TestConvenienceFunctions:
         # Use checker directly with custom data dir
         config = FreshnessConfig(max_age_hours=10.0, trigger_sync=False, wait_for_sync=False)
         checker = TrainingFreshnessChecker(config=config, data_dir=data_dir)
-        result = checker.check_freshness("hex8", 2)
+        with patch.object(checker, "_get_data_catalog", return_value=None):
+            result = checker.check_freshness("hex8", 2)
 
         assert result.success is True
         # May find via multiple patterns
@@ -516,6 +522,9 @@ class TestConvenienceFunctions:
         with patch(
             "app.coordination.training_freshness._DATA_DIR",
             data_dir
+        ), patch(
+            "app.coordination.training_freshness.TrainingFreshnessChecker._get_data_catalog",
+            return_value=None,
         ):
             result = await ensure_fresh_data(
                 "hex8", 2,
