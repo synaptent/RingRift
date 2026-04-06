@@ -13,13 +13,17 @@ from scripts.fleet_health_check import (
     STATUS_NO_PROGRESS,
     STATUS_STALE,
     build_fleet_report,
+    build_slack_report,
     classify_status,
     detect_no_progress,
     fetch_all_heartbeats,
     fetch_heartbeat,
     format_age,
     list_heartbeat_keys,
+    send_fleet_slack_report,
+    summarize_report,
 )
+from scripts.lib.alerts import AlertSeverity
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +303,77 @@ class TestBuildFleetReport:
             no_progress_h=1.0,
         )
         assert report[0]["status"] == STATUS_DEAD
+
+
+class TestSlackReporting:
+    def test_summarize_report_counts_statuses(self):
+        report = [
+            {"status": STATUS_HEALTHY},
+            {"status": STATUS_STALE},
+            {"status": STATUS_STALE},
+            {"status": STATUS_DEAD},
+            {"status": STATUS_NO_PROGRESS},
+        ]
+        counts = summarize_report(report)
+        assert counts == {
+            STATUS_HEALTHY: 1,
+            STATUS_STALE: 2,
+            STATUS_DEAD: 1,
+            STATUS_NO_PROGRESS: 1,
+        }
+
+    def test_build_slack_report_marks_dead_as_critical(self):
+        report = [
+            {
+                "node_id": "lambda-gh200-10",
+                "config_key": "hex8_2p",
+                "age_human": "8.0h ago",
+                "status": STATUS_DEAD,
+            },
+            {
+                "node_id": "lambda-gh200-11",
+                "config_key": "square8_2p",
+                "age_human": "26.0h ago",
+                "status": STATUS_NO_PROGRESS,
+            },
+        ]
+        severity, title, message = build_slack_report(report)
+        assert severity == AlertSeverity.CRITICAL
+        assert title == "Fleet Health Check"
+        assert "DEAD: lambda-gh200-10 (hex8_2p, 8.0h ago)" in message
+        assert "NO_PROGRESS: lambda-gh200-11 (square8_2p, 26.0h ago)" in message
+
+    @patch("scripts.fleet_health_check.send_slack_notification")
+    def test_send_fleet_slack_report_skips_healthy_by_default(self, mock_send):
+        report = [
+            {
+                "node_id": "lambda-gh200-8",
+                "config_key": "hex8_2p",
+                "age_human": "5min ago",
+                "status": STATUS_HEALTHY,
+            }
+        ]
+        assert send_fleet_slack_report(report) is False
+        mock_send.assert_not_called()
+
+    @patch("scripts.fleet_health_check.send_slack_notification")
+    def test_send_fleet_slack_report_sends_when_warning_present(self, mock_send):
+        report = [
+            {
+                "node_id": "lambda-gh200-8",
+                "config_key": "hex8_2p",
+                "age_human": "3.0h ago",
+                "status": STATUS_STALE,
+            }
+        ]
+        mock_send.return_value = True
+        assert send_fleet_slack_report(report, webhook_url="https://hooks.slack.test/abc") is True
+        mock_send.assert_called_once()
+        kwargs = mock_send.call_args.kwargs
+        assert kwargs["severity"] == AlertSeverity.WARNING
+        assert kwargs["title"] == "Fleet Health Check"
+        assert kwargs["webhook_url"] == "https://hooks.slack.test/abc"
+        assert "STALE: lambda-gh200-8 (hex8_2p, 3.0h ago)" in kwargs["message"]
 
 
 # ---------------------------------------------------------------------------

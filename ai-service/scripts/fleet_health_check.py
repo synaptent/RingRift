@@ -20,6 +20,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from scripts.lib.alerts import AlertSeverity, send_slack_notification
+
 S3_HEARTBEAT_PREFIX = "s3://ringrift-models-20251214/consolidated/heartbeats/"
 
 # Default thresholds (seconds)
@@ -31,6 +33,85 @@ STATUS_HEALTHY = "HEALTHY"
 STATUS_STALE = "STALE"
 STATUS_DEAD = "DEAD"
 STATUS_NO_PROGRESS = "NO_PROGRESS"
+
+
+def summarize_report(report: list[dict[str, Any]]) -> dict[str, int]:
+    """Summarize report counts by status."""
+    counts = {
+        STATUS_HEALTHY: 0,
+        STATUS_STALE: 0,
+        STATUS_DEAD: 0,
+        STATUS_NO_PROGRESS: 0,
+    }
+    for item in report:
+        status = item.get("status", STATUS_HEALTHY)
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+def build_slack_report(report: list[dict[str, Any]]) -> tuple[AlertSeverity, str, str]:
+    """Build a Slack-friendly summary for the fleet report."""
+    counts = summarize_report(report)
+    total = len(report)
+
+    if total == 0:
+        return (
+            AlertSeverity.WARNING,
+            "Fleet Health Check",
+            "No heartbeats found in S3. Fleet visibility is missing.",
+        )
+
+    lines = [
+        (
+            f"Total {total} nodes | {counts.get(STATUS_HEALTHY, 0)} healthy, "
+            f"{counts.get(STATUS_STALE, 0)} stale, "
+            f"{counts.get(STATUS_DEAD, 0)} dead, "
+            f"{counts.get(STATUS_NO_PROGRESS, 0)} no_progress"
+        )
+    ]
+
+    for status in (STATUS_DEAD, STATUS_STALE, STATUS_NO_PROGRESS):
+        flagged = [item for item in report if item.get("status") == status]
+        if not flagged:
+            continue
+        details = ", ".join(
+            f"{item['node_id']} ({item['config_key']}, {item['age_human']})"
+            for item in flagged[:8]
+        )
+        if len(flagged) > 8:
+            details += f", +{len(flagged) - 8} more"
+        lines.append(f"{status}: {details}")
+
+    severity = AlertSeverity.INFO
+    if counts.get(STATUS_DEAD, 0) > 0:
+        severity = AlertSeverity.CRITICAL
+    elif counts.get(STATUS_STALE, 0) > 0 or counts.get(STATUS_NO_PROGRESS, 0) > 0:
+        severity = AlertSeverity.WARNING
+
+    return (severity, "Fleet Health Check", "\n".join(lines))
+
+
+def send_fleet_slack_report(
+    report: list[dict[str, Any]],
+    webhook_url: str | None = None,
+    *,
+    send_on_healthy: bool = False,
+) -> bool:
+    """Send a Slack alert for non-healthy fleet states.
+
+    Returns True when a notification was attempted and sent successfully.
+    Returns False when no alert was needed or sending failed.
+    """
+    severity, title, message = build_slack_report(report)
+    if severity == AlertSeverity.INFO and not send_on_healthy:
+        return False
+    return send_slack_notification(
+        message=message,
+        severity=severity,
+        title=title,
+        webhook_url=webhook_url,
+        username="Fleet Health Check",
+    )
 
 
 def classify_status(
@@ -220,20 +301,16 @@ def print_table(report: list[dict[str, Any]]) -> None:
     print(f"{'Node':<16} {'Config':<14} {'Iter':>5} {'Elo':>6} {'Promos':>6} {'Last Seen':<14} Status")
     print("-" * 85)
 
-    healthy = stale = dead = no_prog = 0
+    counts = summarize_report(report)
     for r in report:
         status = r["status"]
         if status == STATUS_HEALTHY:
-            healthy += 1
             marker = ""
         elif status == STATUS_STALE:
-            stale += 1
             marker = " !!"
         elif status == STATUS_DEAD:
-            dead += 1
             marker = " !!!"
         elif status == STATUS_NO_PROGRESS:
-            no_prog += 1
             marker = " !!"
         else:
             marker = ""
@@ -250,7 +327,13 @@ def print_table(report: list[dict[str, Any]]) -> None:
 
     print("-" * 85)
     total = len(report)
-    print(f"Total: {total} nodes | {healthy} healthy, {stale} stale, {dead} dead, {no_prog} no_progress")
+    print(
+        f"Total: {total} nodes | "
+        f"{counts.get(STATUS_HEALTHY, 0)} healthy, "
+        f"{counts.get(STATUS_STALE, 0)} stale, "
+        f"{counts.get(STATUS_DEAD, 0)} dead, "
+        f"{counts.get(STATUS_NO_PROGRESS, 0)} no_progress"
+    )
     if not report:
         print("No heartbeats found. Are any nodes running minimal_alphazero_loop.py?")
 
@@ -266,6 +349,12 @@ def main() -> None:
                     help=f"Hours with no Elo change = NO_PROGRESS (default: {DEFAULT_NO_PROGRESS_H})")
     ap.add_argument("--s3-prefix", type=str, default=S3_HEARTBEAT_PREFIX,
                     help="S3 prefix for heartbeats")
+    ap.add_argument("--slack", action="store_true",
+                    help="Send a Slack alert when stale, dead, or no-progress nodes are found")
+    ap.add_argument("--slack-webhook", type=str, default=None,
+                    help="Override Slack webhook URL (otherwise uses environment/file config)")
+    ap.add_argument("--slack-on-healthy", action="store_true",
+                    help="Also send an informational Slack message when the fleet is fully healthy")
     args = ap.parse_args()
 
     heartbeats = fetch_all_heartbeats(args.s3_prefix)
@@ -280,6 +369,19 @@ def main() -> None:
         print(json.dumps(report, indent=2))
     else:
         print_table(report)
+
+    if args.slack:
+        sent = send_fleet_slack_report(
+            report,
+            webhook_url=args.slack_webhook,
+            send_on_healthy=args.slack_on_healthy,
+        )
+        if not sent:
+            counts = summarize_report(report)
+            if counts.get(STATUS_DEAD, 0) == 0 and counts.get(STATUS_STALE, 0) == 0 and counts.get(STATUS_NO_PROGRESS, 0) == 0:
+                print("Slack alert skipped: fleet is healthy.")
+            else:
+                print("Slack alert failed or webhook not configured.", file=sys.stderr)
 
 
 if __name__ == "__main__":
