@@ -64,48 +64,16 @@ BOARD_DIMENSIONS = {
     },
 }
 
-# Expected channels by model version
-MODEL_CHANNELS = {
-    "v2": {
-        "base_channels": 21,  # Fast heuristic features
-        "per_player_channels": 4,  # Per-player state
-    },
-    "v3": {
-        "base_channels": 25,
-        "per_player_channels": 4,
-    },
-    "v4": {
-        "base_channels": 25,
-        "per_player_channels": 4,
-    },
-    "v5": {
-        "base_channels": 21,  # Fast heuristics
-        "per_player_channels": 4,
-        "heuristic_mode": "fast",
-    },
-    "v5-heavy": {
-        "base_channels": 49,  # Full heuristics
-        "per_player_channels": 4,
-        "heuristic_mode": "full",
-    },
-    # Canonical names for scaled-up v5-heavy
-    "v5-heavy-large": {
-        "base_channels": 21,
-        "per_player_channels": 4,
-    },
-    "v5-heavy-xl": {
-        "base_channels": 21,
-        "per_player_channels": 4,
-    },
-    # Deprecated aliases (will be removed Q2 2026)
-    "v6": {
-        "base_channels": 21,
-        "per_player_channels": 4,
-    },
-    "v6-xl": {
-        "base_channels": 21,
-        "per_player_channels": 4,
-    },
+# April 2026: Channel counts are now derived from board_encoding_contract.py
+# (the single source of truth) instead of the old per-player formula which
+# was incorrect. The old MODEL_CHANNELS dict computed
+# base_channels + (num_players * per_player_channels) = 29 for v2/2p,
+# but the real answer is 40 (hex) or 56 (square).
+#
+# Heuristic mode metadata is retained for v5-heavy validation.
+_HEURISTIC_MODES: dict[str, str] = {
+    "v5": "fast",
+    "v5-heavy": "full",
 }
 
 
@@ -145,6 +113,9 @@ def get_expected_dimensions(
 ) -> ExpectedDimensions:
     """Get expected dimensions for a configuration.
 
+    April 2026: Channel counts are now derived from board_encoding_contract.py
+    (the single source of truth) instead of the old per-player formula.
+
     Args:
         board_type: Board type (hex8, square8, square19, hexagonal)
         num_players: Number of players (2, 3, 4)
@@ -153,6 +124,9 @@ def get_expected_dimensions(
     Returns:
         ExpectedDimensions dataclass
     """
+    from app.models import BoardType as BT
+    from app.training.board_encoding_contract import get_expected_channels
+
     if board_type not in BOARD_DIMENSIONS:
         raise ValueError(f"Unknown board type: {board_type}")
 
@@ -160,34 +134,22 @@ def get_expected_dimensions(
 
     # Normalize model version
     model_version = model_version.lower().replace("_", "-")
-    if model_version not in MODEL_CHANNELS:
-        # Try to find closest match
-        if model_version.startswith("v5") and "heavy" in model_version:
-            model_version = "v5-heavy"
-        elif model_version.startswith("v6") and "xl" in model_version:
-            model_version = "v5-heavy-xl"  # v6-xl is deprecated alias
-        elif model_version.startswith("v6"):
-            model_version = "v5-heavy-large"  # v6 is deprecated alias
-        elif model_version.startswith("v5-heavy") and "xl" in model_version:
-            model_version = "v5-heavy-xl"
-        elif model_version.startswith("v5-heavy") and "large" in model_version:
-            model_version = "v5-heavy-large"
-        elif model_version.startswith("v"):
-            # Default to base version
-            base = model_version.split("-")[0]
-            if base in MODEL_CHANNELS:
-                model_version = base
 
-    if model_version not in MODEL_CHANNELS:
-        raise ValueError(f"Unknown model version: {model_version}")
+    # Resolve deprecated aliases
+    if model_version.startswith("v6") and "xl" in model_version:
+        model_version = "v5-heavy-xl"
+    elif model_version.startswith("v6"):
+        model_version = "v5-heavy-large"
 
-    model_info = MODEL_CHANNELS[model_version]
-
-    # Calculate expected channels
-    # Formula: base_channels + (num_players * per_player_channels)
-    in_channels = model_info["base_channels"] + (
-        num_players * model_info["per_player_channels"]
-    )
+    # Get channel count from the encoding contract (single source of truth)
+    try:
+        bt_enum = BT(board_type)
+        in_channels = get_expected_channels(bt_enum, model_version)
+    except (ValueError, KeyError):
+        raise ValueError(
+            f"Unknown board_type/model_version combination: "
+            f"{board_type}/{model_version}"
+        )
 
     return ExpectedDimensions(
         board_type=board_type,
@@ -197,7 +159,7 @@ def get_expected_dimensions(
         num_cells=board_dims["num_cells"],
         policy_size=board_dims["policy_size"],
         in_channels=in_channels,
-        heuristic_mode=model_info.get("heuristic_mode"),
+        heuristic_mode=_HEURISTIC_MODES.get(model_version),
     )
 
 
@@ -295,8 +257,7 @@ def validate_npz_for_model(
             errors.append(
                 f"Channel mismatch: NPZ has {actual['in_channels']} channels, "
                 f"model {model_version} expects {expected.in_channels} "
-                f"(base={MODEL_CHANNELS[expected.model_version]['base_channels']} + "
-                f"{num_players}*{MODEL_CHANNELS[expected.model_version]['per_player_channels']})"
+                f"(from encoding contract for {board_type}/{model_version})"
             )
 
     # Validate spatial size

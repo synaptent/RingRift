@@ -934,13 +934,31 @@ def get_model_version_for_board(
             with np.load(data_path, mmap_mode="r") as data:
                 if "features" in data:
                     in_channels = data["features"].shape[1]
+                    # April 2026: Read heuristic/encoder metadata to resolve
+                    # 64-channel hex ambiguity (v3/v4 vs v5-heavy).
+                    has_heuristic_meta = (
+                        "num_heuristic_features" in data
+                        or "heuristics" in data
+                    )
+                    npz_encoder_type = None
+                    if "encoder_type" in data:
+                        try:
+                            npz_encoder_type = str(
+                                np.asarray(data["encoder_type"]).item()
+                            )
+                        except (ValueError, TypeError, AttributeError):
+                            pass
                     detected = detect_model_version_from_channels(
-                        in_channels, str(board_type)
+                        in_channels,
+                        str(board_type),
+                        has_heuristic_metadata=has_heuristic_meta,
+                        npz_encoder_type=npz_encoder_type,
                     )
                     if detected:
                         logger.info(
                             f"Auto-detected model version {detected} from "
                             f"{in_channels} channels in {data_path}"
+                            f"{' (heuristic metadata present)' if has_heuristic_meta else ''}"
                         )
                         return detected
         except Exception as e:

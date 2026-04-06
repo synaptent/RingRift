@@ -55,6 +55,9 @@ class _NpzMetadata:
     history_length: int | None = None
     feature_version: int | None = None
     inferred_policy_size: int | None = None
+    # April 2026: Metadata for resolving 64-channel hex ambiguity
+    has_heuristic_metadata: bool = False
+    npz_encoder_type: str | None = None
 
 
 def _read_npz_metadata(data_path_str: str, *, distributed: bool, is_main: bool) -> _NpzMetadata:
@@ -112,6 +115,16 @@ def _read_npz_metadata(data_path_str: str, *, distributed: bool, is_main: bool) 
                         max_idx = local_max
                 if max_idx >= 0:
                     meta.inferred_policy_size = max_idx + 1
+
+            # April 2026: Read heuristic/encoder metadata for 64ch disambiguation
+            meta.has_heuristic_metadata = (
+                "num_heuristic_features" in d or "heuristics" in d
+            )
+            if "encoder_type" in d:
+                try:
+                    meta.npz_encoder_type = str(np.asarray(d["encoder_type"]).item())
+                except (ValueError, TypeError, AttributeError):
+                    pass
     except (OSError, KeyError, ValueError, AttributeError) as exc:
         # OSError: file I/O errors reading NPZ
         # KeyError: missing keys in dataset

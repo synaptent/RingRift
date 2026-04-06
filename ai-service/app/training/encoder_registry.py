@@ -391,6 +391,9 @@ BASE_CHANNEL_COUNTS = {
 def detect_model_version_from_channels(
     in_channels: int,
     board_type: str | None = None,
+    *,
+    has_heuristic_metadata: bool = False,
+    npz_encoder_type: str | None = None,
 ) -> str | None:
     """Detect model version from input channel count.
 
@@ -399,24 +402,49 @@ def detect_model_version_from_channels(
 
     Channel to version mapping:
         - 40 channels: v2 (only hex v2 uses 40)
-        - 64 channels: v3/v4 (hex v3/v4 uses 64)
+        - 64 channels on hex: v3/v4 (common) OR v5-heavy (rare, needs metadata)
         - 56 channels: v2 for square boards
+
+    The 64-channel hex ambiguity is resolved via NPZ metadata:
+        - If ``npz_encoder_type`` is set, use it directly.
+        - If ``has_heuristic_metadata`` is True, return "v5-heavy".
+        - Otherwise default to "v4" (the common case).
 
     Args:
         in_channels: Number of input channels in the dataset
         board_type: Optional board type for disambiguation (e.g., "hex8", "square8")
+        has_heuristic_metadata: Whether the NPZ contains ``num_heuristic_features``
+            or a ``heuristics`` array, indicating v5-heavy encoding.
+        npz_encoder_type: Value of the ``encoder_type`` metadata key from the NPZ
+            file, if present. Takes precedence over channel-count heuristics.
 
     Returns:
-        Model version string ("v2", "v4") if determinable, None if ambiguous
+        Model version string ("v2", "v4", "v5-heavy") if determinable, None if ambiguous
 
     Example:
         >>> detect_model_version_from_channels(40)
         'v2'
         >>> detect_model_version_from_channels(64)
         'v4'
+        >>> detect_model_version_from_channels(64, has_heuristic_metadata=True)
+        'v5-heavy'
         >>> detect_model_version_from_channels(56, "square8")
         'v2'
     """
+    # If NPZ has explicit encoder_type metadata, trust it directly.
+    if npz_encoder_type is not None:
+        enc = npz_encoder_type.lower().strip()
+        if "v5" in enc or "heavy" in enc:
+            return "v5-heavy"
+        if enc.startswith("v4") or enc == "hex_v4":
+            return "v4"
+        if enc.startswith("v3") or enc == "hex_v3":
+            return "v4"  # v3/v4 share the same 16-base-channel encoder
+        if enc.startswith("v2") or enc == "hex_v2":
+            return "v2"
+        if enc == "square":
+            return "v2"
+
     normalized_board_type: str | None = None
     if board_type is not None:
         normalized_board_type = getattr(board_type, "value", board_type)
@@ -424,10 +452,14 @@ def detect_model_version_from_channels(
             normalized_board_type = normalized_board_type.lower()
 
     if in_channels == 40:
-        # Only hex v2 uses 40 channels (10 base × 4 frames)
+        # Only hex v2 uses 40 channels (10 base x 4 frames)
         return "v2"
     elif in_channels == 64:
-        # Only hex v3/v4 uses 64 channels (16 base × 4 frames)
+        # 64 channels on hex boards: v3/v4 (16 base x 4) OR v5-heavy (16 base x 4).
+        # Disambiguate via heuristic metadata presence.
+        if has_heuristic_metadata:
+            return "v5-heavy"
+        # Default: v3/v4 (the overwhelmingly common case)
         return "v4"
     elif in_channels == 56:
         # Canonical square checkpoints still use the v2 encoder family.
