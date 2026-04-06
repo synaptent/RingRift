@@ -95,7 +95,9 @@ def compute_fingerprint(npz_path: str, *, mmap: bool = True) -> DataFingerprint:
         ch_means = [float(features.mean())]
         ch_stds = [float(features.std())]
 
-    # Policy entropy
+    # Policy entropy — handle both dense and sparse policy formats.
+    # Dense: "policy" array of shape (N, action_space)
+    # Sparse: "policy_indices" + "policy_values" (object arrays of variable-length per sample)
     policy_key = "policy" if "policy" in data.files else "policies"
     if policy_key in data.files:
         policy = np.asarray(data[policy_key], dtype=np.float32)
@@ -103,6 +105,19 @@ def compute_fingerprint(npz_path: str, *, mmap: bool = True) -> DataFingerprint:
             entropy = _compute_policy_entropy(policy)
         else:
             entropy = np.array([0.0])
+    elif "policy_values" in data.files:
+        # Sparse policy format: compute entropy per sample from variable-length value arrays
+        pv = data["policy_values"]
+        ent_list = []
+        for i in range(min(len(pv), 2000)):  # sample up to 2000 for speed
+            vals = np.asarray(pv[i], dtype=np.float64)
+            vals = vals[vals > 0]
+            if len(vals) > 0:
+                vals = vals / vals.sum()  # renormalize
+                ent_list.append(float(-np.sum(vals * np.log2(vals + 1e-12))))
+            else:
+                ent_list.append(0.0)
+        entropy = np.array(ent_list) if ent_list else np.array([0.0])
     else:
         entropy = np.array([0.0])
 
