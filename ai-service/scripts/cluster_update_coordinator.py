@@ -720,6 +720,88 @@ class QuorumSafeUpdateCoordinator:
         logger.warning(f"[{node_name}] P2P process restarted but HTTP endpoints never became ready")
         return False
 
+    async def _get_systemd_service_info(self, client: SSHClient) -> dict[str, str]:
+        """Fetch `systemctl show` state for the P2P service."""
+        result = await client.run_async(
+            (
+                "systemctl show ringrift-p2p.service "
+                "-p ActiveState -p SubState -p Result "
+                "-p ExecMainPID -p ExecMainStartTimestampMonotonic"
+            ),
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return {}
+
+        info: dict[str, str] = {}
+        for line in result.stdout.splitlines():
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            info[key.strip()] = value.strip()
+        return info
+
+    async def _wait_for_systemd_restart(
+        self,
+        client: SSHClient,
+        node_name: str,
+        *,
+        previous_pid: int,
+        previous_started_monotonic: int,
+        timeout: float = 150.0,
+        poll_interval: float = 3.0,
+    ) -> bool:
+        """Wait for systemd to actually replace the P2P main process."""
+        deadline = time.time() + timeout
+
+        while time.time() < deadline:
+            info = await self._get_systemd_service_info(client)
+            active_state = info.get("ActiveState", "")
+            sub_state = info.get("SubState", "")
+            result = info.get("Result", "")
+            try:
+                current_pid = int(info.get("ExecMainPID", "0") or 0)
+            except ValueError:
+                current_pid = 0
+            try:
+                current_started = int(info.get("ExecMainStartTimestampMonotonic", "0") or 0)
+            except ValueError:
+                current_started = 0
+
+            if active_state == "failed" or sub_state == "failed" or result == "failed":
+                logger.warning(
+                    "[%s] systemd restart failed: active=%s sub=%s result=%s",
+                    node_name,
+                    active_state,
+                    sub_state,
+                    result,
+                )
+                return False
+
+            restart_observed = False
+            if current_pid > 0 and previous_pid > 0 and current_pid != previous_pid:
+                restart_observed = True
+            elif (
+                current_started > 0
+                and previous_started_monotonic > 0
+                and current_started > previous_started_monotonic
+            ):
+                restart_observed = True
+            elif previous_pid == 0 and current_pid > 0:
+                restart_observed = True
+
+            if active_state == "active" and sub_state == "running" and restart_observed:
+                return await self._wait_for_p2p_http_ready(client, node_name, timeout=45.0)
+
+            await asyncio.sleep(poll_interval)
+
+        logger.warning(
+            "[%s] systemd restart never produced a new main process within %.0fs",
+            node_name,
+            timeout,
+        )
+        return False
+
     async def _restart_p2p_process(self, client: SSHClient, node: NodeConfig) -> bool:
         """Restart P2P process, respecting systemd/supervisor management.
 
@@ -733,13 +815,30 @@ class QuorumSafeUpdateCoordinator:
         manager = await self._detect_p2p_manager(client, node.name)
 
         if manager == "systemd":
+            service_info = await self._get_systemd_service_info(client)
+            try:
+                previous_pid = int(service_info.get("ExecMainPID", "0") or 0)
+            except ValueError:
+                previous_pid = 0
+            try:
+                previous_started_monotonic = int(
+                    service_info.get("ExecMainStartTimestampMonotonic", "0") or 0
+                )
+            except ValueError:
+                previous_started_monotonic = 0
+
             result = await client.run_async(
-                "sudo systemctl restart ringrift-p2p.service", timeout=30
+                "sudo systemctl restart --no-block ringrift-p2p.service", timeout=15
             )
             if result.returncode != 0:
                 logger.warning(f"[{node.name}] systemctl restart failed: {result.stderr}")
-            await asyncio.sleep(5)
-            return await self._check_p2p_running(client, node.name)
+                return False
+            return await self._wait_for_systemd_restart(
+                client,
+                node.name,
+                previous_pid=previous_pid,
+                previous_started_monotonic=previous_started_monotonic,
+            )
 
         elif manager == "supervisor":
             await client.run_async(
@@ -1114,6 +1213,18 @@ class QuorumSafeUpdateCoordinator:
                 if batch.batch_type == "voter":
                     # Voter should be in alive peers list (via /status)
                     pass  # Can't easily check without alive_peers_list
+
+                if (
+                    batch.batch_type == "non_voters"
+                    and health.quorum_level == QuorumHealthLevel.MINIMUM
+                    and health.effective_voter_quorum_ok
+                ):
+                    logger.info(
+                        "Convergence achieved: quorum=%s (effective), leader=%s",
+                        health.quorum_level.value,
+                        health.leader_id,
+                    )
+                    return True
 
                 # Check quorum is at least DEGRADED
                 if health.quorum_level in (QuorumHealthLevel.HEALTHY, QuorumHealthLevel.DEGRADED):

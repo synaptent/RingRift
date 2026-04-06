@@ -732,6 +732,75 @@ class TestP2PManagerDetection:
         mock_ready.assert_awaited_once_with(client, node.name)
 
     @pytest.mark.asyncio
+    async def test_restart_p2p_process_systemd_waits_for_new_main_process(self, config):
+        with patch.object(
+            QuorumSafeUpdateCoordinator,
+            '_find_config_path',
+            return_value=Path("/tmp/test.yaml"),
+        ):
+            coordinator = QuorumSafeUpdateCoordinator(config=config)
+
+        node = NodeConfig(
+            name="lambda-gh200-10",
+            ssh_host="100.100.19.96",
+            ssh_port=22,
+            ssh_user="ubuntu",
+            ssh_key=None,
+            tailscale_ip="100.100.19.96",
+            ringrift_path="~/ringrift/ai-service",
+            is_voter=False,
+            status="ready",
+        )
+        client = MagicMock()
+        client.run_async = AsyncMock(side_effect=[
+            MagicMock(returncode=0, stdout="enabled\n", stderr=""),
+            MagicMock(
+                returncode=0,
+                stdout=(
+                    "ActiveState=active\n"
+                    "SubState=running\n"
+                    "Result=success\n"
+                    "ExecMainPID=100\n"
+                    "ExecMainStartTimestampMonotonic=1000\n"
+                ),
+                stderr="",
+            ),
+            MagicMock(returncode=0, stdout="", stderr=""),
+            MagicMock(
+                returncode=0,
+                stdout=(
+                    "ActiveState=activating\n"
+                    "SubState=auto-restart\n"
+                    "Result=success\n"
+                    "ExecMainPID=100\n"
+                    "ExecMainStartTimestampMonotonic=1000\n"
+                ),
+                stderr="",
+            ),
+            MagicMock(
+                returncode=0,
+                stdout=(
+                    "ActiveState=active\n"
+                    "SubState=running\n"
+                    "Result=success\n"
+                    "ExecMainPID=200\n"
+                    "ExecMainStartTimestampMonotonic=2000\n"
+                ),
+                stderr="",
+            ),
+        ])
+
+        with patch.object(coordinator, "_wait_for_p2p_http_ready", AsyncMock(return_value=True)) as mock_ready:
+            with patch("scripts.cluster_update_coordinator.asyncio.sleep", new=AsyncMock()) as mock_sleep:
+                ok = await coordinator._restart_p2p_process(client, node)
+
+        assert ok is True
+        commands = [call.args[0] for call in client.run_async.await_args_list]
+        assert "sudo systemctl restart --no-block ringrift-p2p.service" in commands
+        mock_ready.assert_awaited_once_with(client, node.name, timeout=45.0)
+        mock_sleep.assert_awaited()
+
+    @pytest.mark.asyncio
     async def test_wait_for_p2p_http_ready_retries_until_endpoint_responds(self, config):
         with patch.object(
             QuorumSafeUpdateCoordinator,
@@ -1030,6 +1099,35 @@ class TestBatchFailureHandling:
         )
         mock_reachability.assert_awaited_once_with(non_voters)
         assert mock_batches.call_args.kwargs["skip_voters"] is True
+
+    @pytest.mark.asyncio
+    async def test_wait_for_convergence_accepts_minimum_quorum_for_non_voter_batch(self, config, mock_node_configs):
+        """Deferred-voter batches should converge at minimum effective quorum."""
+        with patch.object(
+            QuorumSafeUpdateCoordinator,
+            "_find_config_path",
+            return_value=Path("/tmp/test.yaml"),
+        ):
+            coordinator = QuorumSafeUpdateCoordinator(config=config)
+
+        batch = UpdateBatch(nodes=[node for node in mock_node_configs if not node.is_voter], batch_type="non_voters")
+        minimum = ClusterHealth(
+            quorum_level=QuorumHealthLevel.MINIMUM,
+            alive_peers=5,
+            total_peers=6,
+            leader_id="mac-studio",
+            alive_voters=["mac-studio"],
+            total_voters=2,
+            quorum_required=2,
+            effective_voter_quorum_ok=True,
+            raw_voter_quorum_ok=False,
+            forced_leader_override=True,
+        )
+
+        with patch.object(coordinator, "_get_cluster_health", AsyncMock(return_value=minimum)):
+            converged = await coordinator._wait_for_convergence(batch, timeout=5.0)
+
+        assert converged is True
 
     @pytest.mark.asyncio
     async def test_update_cluster_rejects_voter_only_rollout_at_minimum_quorum(
