@@ -1258,7 +1258,8 @@ class AutoExportDaemon(HandlerBase):
     ) -> bool:
         """Run a secondary v5-heavy format NPZ export.
 
-        Mar 2026: Produces a v5-heavy (56ch) NPZ alongside the primary v2 (40ch) NPZ.
+        Mar 2026: Produces a v5-heavy-format NPZ alongside the primary NPZ.
+        The heavy export is channel-shape dependent: 64ch for hex, 56ch for square.
         Runs at lower priority — uses the export semaphore but doesn't block the primary
         pipeline (called via safe_create_task from the success path of _run_export).
         """

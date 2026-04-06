@@ -1517,7 +1517,8 @@ def train_model(
             raise ValueError(
                 f"[ContractViolation] NPZ has {_ds_result.encoding_channels} channels which is "
                 f"not a known encoding. Expected {_contract_channels} for "
-                f"{config.board_type.name}/{model_version}. Known: 40 (hex v2), 56 (square v2), 64 (hex v3/v4)."
+                f"{config.board_type.name}/{model_version}. Known: 40 (hex v2), "
+                f"56 (square families), 64 (hex v3/v4/v5-heavy families)."
             )
         elif _ds_result.encoding_channels > 0 and _ds_result.encoding_channels != _contract_channels:
             # Valid channel count but doesn't match this board/version — log and continue
@@ -1903,7 +1904,7 @@ def train_model(
                 elif encoding_channels == 64:
                     data_encoder = "v3"
                 elif encoding_channels == 56:
-                    data_encoder = "v2"  # Square v2 (14×4=56) — same count as hex v5-heavy
+                    data_encoder = "v2"  # Square encoder family (14×4=56)
 
                 if canonical_encoder and data_encoder and canonical_encoder == data_encoder:
                     init_weights_path = canonical_path
@@ -1940,7 +1941,7 @@ def train_model(
             elif encoding_channels == 64:
                 data_encoder = "v3"
             elif encoding_channels == 56:
-                data_encoder = "v2"  # Square v2 (14×4=56) — same count as hex v5-heavy
+                data_encoder = "v2"  # Square encoder family (14×4=56)
 
             # Check encoder compatibility
             if init_encoder_version and data_encoder and init_encoder_version != data_encoder:

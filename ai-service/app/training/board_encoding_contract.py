@@ -52,21 +52,37 @@ def _register(board_type: BoardType, model_version: str, base_channels: int) -> 
     )
 
 
-# Hex boards: 10 base channels (v2), 16 (v3/v4), 14 (v5)
+# Hex boards: 10 base channels (v2), 16 (v3/v4/v5-heavy family)
 for bt in (BoardType.HEX8, BoardType.HEXAGONAL):
     _register(bt, "v2", 10)
-    _register(bt, "v3", 16)
-    _register(bt, "v4", 16)
-    _register(bt, "v5", 14)
-    _register(bt, "v5-heavy", 14)
+    for version in (
+        "v3",
+        "v4",
+        "v5",
+        "v5-gnn",
+        "v5-heavy",
+        "v5-heavy-large",
+        "v5-heavy-xl",
+        "v6",
+        "v6-xl",
+    ):
+        _register(bt, version, 16)
 
-# Square boards: 14 base channels for ALL architectures
+# Square boards: 14 base channels for all current architectures
 for bt in (BoardType.SQUARE8, BoardType.SQUARE19):
-    _register(bt, "v2", 14)
-    _register(bt, "v3", 14)
-    _register(bt, "v4", 14)
-    _register(bt, "v5", 14)
-    _register(bt, "v5-heavy", 14)
+    for version in (
+        "v2",
+        "v3",
+        "v4",
+        "v5",
+        "v5-gnn",
+        "v5-heavy",
+        "v5-heavy-large",
+        "v5-heavy-xl",
+        "v6",
+        "v6-xl",
+    ):
+        _register(bt, version, 14)
 
 
 def get_encoding_contract(

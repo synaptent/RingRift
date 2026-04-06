@@ -142,12 +142,12 @@ _LARGE_BOARD_TYPES = {"square19", "hexagonal"}
 
 # Feb 24, 2026: Preferred NN architecture per board type.
 # Small boards (hex8: 61 cells) work fine with v2 (40ch, 10 base × 4 frames).
-# Large boards benefit from v5-heavy (56ch, 14 base × 4 frames) which includes
-# heuristic feature channels for better positional understanding.
-# square8 and square19 canonical models already use v5-heavy (56ch).
-# hex8 and hexagonal use v2 (40ch) — their canonical models and training
-# data are all v2-encoded. Switching to v5-heavy requires re-exporting
-# all training data with v3 encoder first (56ch).
+# Large boards may eventually benefit from v5-heavy, but the channel shape is
+# architecture-dependent: square v5-heavy stays 56ch (14 × 4), while hex
+# v5-heavy uses 64ch (16 × 4) plus heuristic features.
+# hex8 and hexagonal currently use v2 (40ch), and square configs currently use
+# v2 (56ch) in production. Switching any config to v5-heavy requires
+# re-exporting training data with the matching heavy encoder contract first.
 # Feb 26, 2026: Reverted hexagonal from v5-heavy to v2. The v5-heavy
 # switch broke all 3 hexagonal configs — NPZ data was still 40ch (v2),
 # training started from random instead of canonical, and no candidates
@@ -177,7 +177,8 @@ def get_preferred_architecture(board_type: str) -> str:
 # Configs that should also export v5-heavy format NPZ data.
 # Start empty — add configs as v5-heavy models are bootstrapped and promoted.
 # When a config is in this list, auto_export_daemon will produce both:
-#   {config}.npz (v2, 40ch) and {config}_v5heavy.npz (v5-heavy, 56ch)
+#   {config}.npz (primary contract) and {config}_v5heavy.npz (heavy contract:
+#   64ch for hex, 56ch for square)
 V5_HEAVY_EXPORT_CONFIGS: list[str] = []
 
 GAUNTLET_SIMULATIONS_LARGE_2P = 800  # Large board 2p — match selfplay cap (was 1600)
