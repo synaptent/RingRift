@@ -624,7 +624,7 @@ state = manager.load_latest_checkpoint(model, optimizer)
 ```python
 from app.training.config import get_model_version_for_board
 
-version = get_model_version_for_board(BoardType.HEX8)  # Returns "v3"
+version = get_model_version_for_board(BoardType.HEX8)  # Returns "v2"
 ```
 
 ## Configuration
@@ -843,11 +843,11 @@ learner.update_from_game(winner)
 
 The following modules are deprecated and will be removed in Q2 2026:
 
-| Deprecated Module | Replacement | Notes |
-|-------------------|-------------|-------|
-| `orchestrated_training.py` | `unified_orchestrator.py` | Unified training orchestration |
-| `integrated_enhancements.py` | `unified_orchestrator.py` | Consolidated enhancements |
-| `training_enhancements.DataQualityScorer` | `unified_quality.UnifiedQualityScorer` | See `unified_quality.py` |
+| Deprecated Module                         | Replacement                            | Notes                          |
+| ----------------------------------------- | -------------------------------------- | ------------------------------ |
+| `orchestrated_training.py`                | `unified_orchestrator.py`              | Unified training orchestration |
+| `integrated_enhancements.py`              | `unified_orchestrator.py`              | Consolidated enhancements      |
+| `training_enhancements.DataQualityScorer` | `unified_quality.UnifiedQualityScorer` | See `unified_quality.py`       |
 
 ## Related Documentation
 

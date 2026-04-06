@@ -808,27 +808,43 @@ class TestModelArchitectureSelection:
     """Tests for model architecture selection logic."""
 
     def test_square_board_uses_cnn_model(self):
-        """Square boards use RingRiftCNN models."""
-        from app.ai.neural_net import RingRiftCNN_v2
+        """Square boards default to the preferred v2 architecture."""
+        from app.config.thresholds import get_preferred_architecture
         from app.training.config import get_model_version_for_board
 
         version = get_model_version_for_board(BoardType.SQUARE8)
-        # All boards now use v4 (December 2025)
-        assert version == "v4"
+        assert version == get_preferred_architecture(BoardType.SQUARE8.value) == "v2"
 
     def test_hex_board_uses_hex_model(self):
-        """Hex boards use HexNeuralNet models."""
+        """Hex boards default to the preferred architecture."""
+        from app.config.thresholds import get_preferred_architecture
         from app.training.config import get_model_version_for_board
 
         version = get_model_version_for_board(BoardType.HEXAGONAL)
-        assert version == "v4"  # Updated Dec 2025
+        assert version == get_preferred_architecture(BoardType.HEXAGONAL.value) == "v2"
 
     def test_hex8_board_uses_hex_model(self):
-        """Hex8 boards use HexNeuralNet models."""
+        """Hex8 boards default to the preferred architecture."""
+        from app.config.thresholds import get_preferred_architecture
         from app.training.config import get_model_version_for_board
 
         version = get_model_version_for_board(BoardType.HEX8)
-        assert version == "v4"  # Updated Dec 2025
+        assert version == get_preferred_architecture(BoardType.HEX8.value) == "v2"
+
+    def test_square_npz_56_channels_detects_v2(self):
+        """Square 56-channel datasets must not auto-route to stale v4 defaults."""
+        from app.training.config import get_model_version_for_board
+        from app.training.encoder_registry import detect_model_version_from_channels
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            npz_path = Path(tmpdir) / "square8_features.npz"
+            np.savez(
+                npz_path,
+                features=np.zeros((2, 56, 8, 8), dtype=np.float32),
+            )
+
+            assert detect_model_version_from_channels(56, "square8") == "v2"
+            assert get_model_version_for_board(BoardType.SQUARE8, data_path=str(npz_path)) == "v2"
 
 
 # =============================================================================

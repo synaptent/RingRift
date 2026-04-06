@@ -907,28 +907,24 @@ def get_model_version_for_board(
     -------
     str
         Model version string. Auto-detected from data if available,
-        otherwise defaults to 'v4'.
+        otherwise defaults to the board's preferred architecture.
 
     Notes
     -----
-    **Auto-detection** (December 2025):
+    **Auto-detection**:
     When data_path is provided, detects version from channel count:
     - 40 channels → v2 (hex boards only)
     - 64 channels → v4 (hex v3/v4)
-    - 56 channels → v4 (all square versions)
+    - 56 channels → v2 for square boards (canonical square checkpoints)
 
-    **v4 (default)**: Best theoretical architecture
-    - Multi-head self-attention captures long-range dependencies
-    - Spatial policy heads (position-aware, better gradients)
-    - NAS-optimized hyperparameters
-    - 13 attention blocks with 4 heads each
-    - 3-layer value head with rank distribution output
-    - ~50% fewer params than v3 while being more capable
-
-    For square boards: 5.1M params (square8/square19)
-    For hex boards: 5.5-6.2M params (hex8/hexagonal)
+    Ambiguous or missing data falls back to the configured preferred
+    architecture from app.config.thresholds.
     """
     import os as _os
+    from app.config.thresholds import get_preferred_architecture
+
+    preferred_version = get_preferred_architecture(board_type.value)
+
     # Try auto-detection from data if path provided
     if data_path and _os.path.exists(data_path):
         try:
@@ -950,7 +946,7 @@ def get_model_version_for_board(
         except Exception as e:
             logger.debug(f"Model version auto-detection failed: {e}")
 
-    return "v4"  # NAS-optimized attention + spatial policy heads (universal default)
+    return preferred_version
 
 
 # =============================================================================

@@ -400,7 +400,7 @@ def detect_model_version_from_channels(
     Channel to version mapping:
         - 40 channels: v2 (only hex v2 uses 40)
         - 64 channels: v3/v4 (hex v3/v4 uses 64)
-        - 56 channels: v4 default (all square versions use 56)
+        - 56 channels: v2 for square boards
 
     Args:
         in_channels: Number of input channels in the dataset
@@ -414,9 +414,15 @@ def detect_model_version_from_channels(
         'v2'
         >>> detect_model_version_from_channels(64)
         'v4'
-        >>> detect_model_version_from_channels(56)
-        'v4'
+        >>> detect_model_version_from_channels(56, "square8")
+        'v2'
     """
+    normalized_board_type: str | None = None
+    if board_type is not None:
+        normalized_board_type = getattr(board_type, "value", board_type)
+        if isinstance(normalized_board_type, str):
+            normalized_board_type = normalized_board_type.lower()
+
     if in_channels == 40:
         # Only hex v2 uses 40 channels (10 base × 4 frames)
         return "v2"
@@ -424,9 +430,10 @@ def detect_model_version_from_channels(
         # Only hex v3/v4 uses 64 channels (16 base × 4 frames)
         return "v4"
     elif in_channels == 56:
-        # All square versions use 56 channels (14 base × 4 frames)
-        # Default to v4 as it's the latest
-        return "v4"
+        # Canonical square checkpoints still use the v2 encoder family.
+        if normalized_board_type in {"square8", "square19"}:
+            return "v2"
+        return None
     else:
         # Unknown channel count - could be custom history length
         return None
