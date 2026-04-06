@@ -129,8 +129,14 @@ class QualityGateTracker:
         if root_value is not None:
             self._values.append(float(root_value))
 
+        # Auto-track game count from game_idx (finish_game is optional)
+        self._game_count = max(self._game_count, game_idx + 1)
+
     def finish_game(self, game_idx: int) -> None:
-        """Mark a game as finished (for game counting)."""
+        """Mark a game as finished (for game counting).
+
+        Optional: game count is also auto-tracked by record_move.
+        """
         self._game_count = max(self._game_count, game_idx + 1)
 
 

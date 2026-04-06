@@ -63,10 +63,12 @@ class QualityVerdict:
 
 def _compute_policy_entropy(policy: np.ndarray) -> np.ndarray:
     """Compute per-sample Shannon entropy (bits) over the policy distribution."""
-    # Clamp to avoid log(0)
-    p = np.clip(policy, 1e-12, 1.0)
-    entropy = -np.sum(p * np.log2(p), axis=-1)
-    return entropy
+    # Clamp to avoid log(0); use eps in log only for zero entries
+    p = np.clip(policy, 0.0, 1.0)
+    log_p = np.where(p > 0, np.log2(np.maximum(p, 1e-30)), 0.0)
+    entropy = -np.sum(p * log_p, axis=-1)
+    # Clamp to >= 0 (floating-point noise can produce tiny negatives)
+    return np.maximum(entropy, 0.0)
 
 
 def compute_fingerprint(npz_path: str, *, mmap: bool = True) -> DataFingerprint:
@@ -106,16 +108,23 @@ def compute_fingerprint(npz_path: str, *, mmap: bool = True) -> DataFingerprint:
         else:
             entropy = np.array([0.0])
     elif "policy_values" in data.files:
-        # Sparse policy format: compute entropy per sample from variable-length value arrays
+        # Sparse policy format: compute entropy per sample from variable-length value arrays.
+        # policy_values may be shape (N,) or (N, 1) with dtype=object.
         pv = data["policy_values"]
         ent_list = []
         for i in range(min(len(pv), 2000)):  # sample up to 2000 for speed
-            vals = np.asarray(pv[i], dtype=np.float64)
+            raw = pv[i]
+            # Handle (N, 1) object arrays: pv[i] is shape (1,) containing the real array
+            if isinstance(raw, np.ndarray) and raw.dtype == object and raw.ndim == 1 and len(raw) == 1:
+                raw = raw[0]
+            vals = np.asarray(raw, dtype=np.float64).ravel()
             vals = vals[vals > 0]
-            if len(vals) > 0:
+            if len(vals) > 1:
                 vals = vals / vals.sum()  # renormalize
-                ent_list.append(float(-np.sum(vals * np.log2(vals + 1e-12))))
+                ent = float(-np.sum(vals * np.log2(vals)))
+                ent_list.append(max(0.0, ent))  # clamp floating-point noise
             else:
+                # Single-move or empty: entropy is 0 by definition
                 ent_list.append(0.0)
         entropy = np.array(ent_list) if ent_list else np.array([0.0])
     else:
@@ -165,6 +174,20 @@ class ComparisonResult:
     details: list[str] = field(default_factory=list)
 
 
+_FINGERPRINT_DEFAULTS: dict[str, object] = {
+    "n_samples": 0,
+    "n_channels": 0,
+    "feature_means": [],
+    "feature_stds": [],
+    "policy_entropy_median": 0.0,
+    "policy_entropy_p10": 0.0,
+    "policy_entropy_p90": 0.0,
+    "value_mean": 0.0,
+    "value_std": 0.0,
+    "checksum": 0.0,
+}
+
+
 def _load_history(work_dir: str, max_entries: int = 5) -> list[DataFingerprint]:
     """Load last N fingerprints from the JSONL history file."""
     history_path = Path(work_dir) / HISTORY_FILENAME
@@ -177,10 +200,12 @@ def _load_history(work_dir: str, max_entries: int = 5) -> list[DataFingerprint]:
                 continue
             d = json.loads(line)
             fp = d.get("fingerprint", d)
-            entries.append(DataFingerprint(**{
+            # Merge defaults for any missing fields (forward compatibility)
+            merged = {**_FINGERPRINT_DEFAULTS, **{
                 k: fp[k] for k in DataFingerprint.__dataclass_fields__
                 if k in fp
-            }))
+            }}
+            entries.append(DataFingerprint(**merged))
     except Exception as e:
         logger.warning("Failed to load DQS history: %s", e)
         return []

@@ -352,3 +352,134 @@ class TestRecoveryResult:
             adjustments={"batch_size": 128},
         )
         assert r.adjustments["batch_size"] == 128
+
+
+# ---------------------------------------------------------------------------
+# Edge case tests
+# ---------------------------------------------------------------------------
+
+class TestClassifyFailureEdgeCases:
+    """Edge cases for failure pattern classification."""
+
+    def test_channel_without_mismatch_is_not_arch(self):
+        """Message with 'channel' but NOT 'mismatch' should not be ARCH_MISMATCH."""
+        ctx = _make_ctx(error_message="channel count is 56, processing normally")
+        assert classify_failure(ctx) != FailurePattern.ARCH_MISMATCH
+
+    def test_case_insensitive_oom(self):
+        """OOM detection should be case-insensitive."""
+        ctx = _make_ctx(error_message="CUDA OUT OF MEMORY: tried to allocate 4GB")
+        assert classify_failure(ctx) == FailurePattern.OOM
+
+    def test_dead_value_in_message(self):
+        """Message containing 'dead value' should classify as DEAD_MODEL."""
+        ctx = _make_ctx(error_message="Probe found DEAD VALUE head: std=0.0001")
+        assert classify_failure(ctx) == FailurePattern.DEAD_MODEL
+
+    def test_outofmemoryerror(self):
+        """Python OutOfMemoryError string should classify as OOM."""
+        ctx = _make_ctx(error_message="torch.OutOfMemoryError: not enough memory")
+        assert classify_failure(ctx) == FailurePattern.OOM
+
+
+class TestRecoverOOMEdgeCases:
+    def test_batch_size_64_halves_to_32(self):
+        """batch_size=64 should successfully halve to 32 (the minimum)."""
+        ctx = _make_ctx(batch_size=64)
+        result = _recover_oom(ctx)
+        assert result.recovered
+        assert result.adjustments["batch_size"] == 32
+
+    def test_batch_size_33_clamps_to_32(self):
+        """Odd batch sizes should clamp to the minimum of 32."""
+        ctx = _make_ctx(batch_size=33)
+        result = _recover_oom(ctx)
+        assert result.recovered
+        assert result.adjustments["batch_size"] == 32
+
+
+class TestRecoverIdenticalDataEdgeCases:
+    def test_multiple_npz_deletes_latest_only(self):
+        """With multiple iter_*.npz files, only the latest is deleted."""
+        with tempfile.TemporaryDirectory() as td:
+            npz1 = Path(td) / "iter_001.npz"
+            npz2 = Path(td) / "iter_002.npz"
+            npz3 = Path(td) / "iter_003.npz"
+            npz1.write_bytes(b"data1")
+            npz2.write_bytes(b"data2")
+            npz3.write_bytes(b"data3")
+
+            ctx = _make_ctx(work_dir=td, selfplay_randomness=0.2)
+            result = _recover_identical_data(ctx)
+            assert result.recovered
+            assert npz1.exists()
+            assert npz2.exists()
+            assert not npz3.exists()  # latest deleted
+
+    def test_randomness_float_precision(self):
+        """Randomness increment should not produce floating-point artifacts."""
+        ctx = _make_ctx(selfplay_randomness=0.3)
+        result = _recover_identical_data(ctx)
+        assert result.recovered
+        assert abs(result.adjustments["selfplay_randomness"] - 0.4) < 1e-10
+
+
+class TestRecoverDeadModelEdgeCases:
+    def test_best_model_not_found(self):
+        """When best.pth doesn't exist, should fail gracefully."""
+        ctx = _make_ctx(model_path="/nonexistent/path/best.pth")
+        result = _recover_dead_model(ctx)
+        assert not result.recovered
+        assert "not found" in result.message.lower()
+
+    def test_canonical_in_project_models_dir(self):
+        """Canonical model in project-level models/ directory should be found."""
+        with tempfile.TemporaryDirectory() as td:
+            # work_dir/models/best.pth
+            work_dir = Path(td) / "work"
+            work_dir.mkdir()
+            models_dir = work_dir / "models"
+            models_dir.mkdir()
+            best = models_dir / "best.pth"
+            best.write_bytes(b"broken")
+
+            # project-level: work_dir/../models/canonical_hex8_2p.pth
+            project_models = Path(td) / "models"
+            project_models.mkdir()
+            canonical = project_models / "canonical_hex8_2p.pth"
+            canonical.write_bytes(b"good_weights")
+
+            ctx = _make_ctx(
+                config_key="hex8_2p",
+                work_dir=str(work_dir),
+                model_path=str(best),
+            )
+            result = _recover_dead_model(ctx)
+            assert result.recovered
+            assert best.read_bytes() == b"good_weights"
+
+
+class TestS3DownloadEdgeCases:
+    def test_s3_path_format(self):
+        """Verify S3 path is correctly formed."""
+        from scripts.lib.loop_self_healing import S3_MODELS_PREFIX
+        expected = "s3://ringrift-models-20251214/consolidated/models"
+        assert S3_MODELS_PREFIX == expected
+
+    @patch("scripts.lib.loop_self_healing.subprocess.run")
+    def test_s3_download_timeout_handled(self, mock_run):
+        """S3 download timeout should return False, not crash."""
+        import subprocess as sp
+        mock_run.side_effect = sp.TimeoutExpired(cmd="aws", timeout=120)
+
+        from scripts.lib.loop_self_healing import _download_canonical_from_s3
+        result = _download_canonical_from_s3("hex8_2p", "/tmp/test.pth")
+        assert result is False
+
+    @patch("scripts.lib.loop_self_healing.subprocess.run")
+    def test_s3_download_nonzero_exit(self, mock_run):
+        """S3 download with non-zero exit code should return False."""
+        mock_run.return_value = MagicMock(returncode=1, stderr="NoSuchKey")
+        from scripts.lib.loop_self_healing import _download_canonical_from_s3
+        result = _download_canonical_from_s3("hex8_2p", "/tmp/test.pth")
+        assert result is False

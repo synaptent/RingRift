@@ -91,7 +91,7 @@ def classify_failure(ctx: FailureContext) -> FailurePattern:
         return FailurePattern.DEAD_MODEL
 
     # Architecture mismatch: encoder/channel count mismatch
-    if "encoder mismatch" in msg or "channel" in msg and "mismatch" in msg:
+    if "encoder mismatch" in msg or ("channel" in msg and "mismatch" in msg):
         return FailurePattern.ARCH_MISMATCH
     if "encoding mismatch" in msg:
         return FailurePattern.ARCH_MISMATCH

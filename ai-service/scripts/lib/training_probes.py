@@ -240,17 +240,31 @@ def _loss_convergence_check(
 
     # Try to extract loss values from training output lines
     all_losses: list[float] = []
+    has_nan = False
 
     for key in ("last_epoch_line", "log_line"):
         line = train_info.get(key, "")
-        if not line:
+        if not line or not isinstance(line, str):
             continue
+
+        # Check for NaN losses explicitly (regex [\d.]+ won't match "nan")
+        if re.search(r"(?:Train|Val)\s+Loss:\s*nan", line, re.IGNORECASE):
+            has_nan = True
+
         # Look for patterns like "Train Loss: 0.3456" or "Val Loss: 0.4567"
-        for match in re.finditer(r"(?:Train|Val)\s+Loss:\s*([\d.]+)", line, re.IGNORECASE):
+        for match in re.finditer(r"(?:Train|Val)\s+Loss:\s*([\d.]+(?:e[+-]?\d+)?)", line, re.IGNORECASE):
             try:
-                all_losses.append(float(match.group(1)))
+                val = float(match.group(1))
+                all_losses.append(val)
             except ValueError:
                 pass
+
+    # NaN detection (from literal "nan" in output or parsed float NaN)
+    if has_nan or any(v != v for v in all_losses):
+        critical = True
+        warnings.append("Training produced NaN loss")
+        details["has_nan"] = True
+        return critical, warnings, details
 
     if all_losses:
         details["parsed_losses"] = all_losses
@@ -261,11 +275,6 @@ def _loss_convergence_check(
         details["note"] = "No loss values parseable from training output"
         # Not critical — training subprocess may not emit parseable lines
         return False, [], details
-
-    # If we see zero loss or NaN, that's critical
-    if final_loss != final_loss:  # NaN check
-        critical = True
-        warnings.append("Training produced NaN loss")
 
     return critical, warnings, details
 

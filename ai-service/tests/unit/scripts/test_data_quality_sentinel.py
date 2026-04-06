@@ -415,3 +415,166 @@ class TestHistoryPersistence:
         assert loaded[0].n_samples == 70
         assert loaded[1].n_samples == 80
         assert loaded[2].n_samples == 90
+
+
+# ---------------------------------------------------------------------------
+# Edge case tests
+# ---------------------------------------------------------------------------
+
+class TestEdgeCases:
+    """Edge cases for DQS hardening."""
+
+    def test_sparse_policy_single_move_entropy_is_zero(self, tmp_path: Path) -> None:
+        """Sparse policy with single move per sample should yield entropy=0.0, not negative."""
+        n_samples = 50
+        # Create sparse policy: each sample has exactly 1 move with probability 1.0
+        policy_indices = np.empty((n_samples, 1), dtype=object)
+        policy_values = np.empty((n_samples, 1), dtype=object)
+        for i in range(n_samples):
+            policy_indices[i, 0] = np.array([i % 61])
+            policy_values[i, 0] = np.array([1.0])
+
+        features = np.random.randn(n_samples, 14, 9, 9).astype(np.float32)
+        values = np.random.randn(n_samples).astype(np.float32) * 0.5
+
+        path = str(tmp_path / "sparse_single.npz")
+        np.savez_compressed(path, features=features, policy_indices=policy_indices,
+                            policy_values=policy_values, values=values)
+
+        fp = compute_fingerprint(path, mmap=False)
+        assert fp.policy_entropy_median >= 0.0, f"Entropy should be >= 0, got {fp.policy_entropy_median}"
+        assert fp.policy_entropy_median < 0.01, "Single-move should have near-zero entropy"
+
+    def test_sparse_policy_multi_move_has_positive_entropy(self, tmp_path: Path) -> None:
+        """Sparse policy with multiple moves per sample should have positive entropy."""
+        n_samples = 50
+        rng = np.random.RandomState(42)
+        policy_indices = np.empty((n_samples,), dtype=object)
+        policy_values = np.empty((n_samples,), dtype=object)
+        for i in range(n_samples):
+            n_moves = 5 + (i % 10)
+            vals = rng.dirichlet(np.ones(n_moves))
+            policy_indices[i] = np.arange(n_moves)
+            policy_values[i] = vals
+
+        features = rng.randn(n_samples, 14, 9, 9).astype(np.float32)
+        values = rng.randn(n_samples).astype(np.float32) * 0.5
+
+        path = str(tmp_path / "sparse_multi.npz")
+        np.savez_compressed(path, features=features, policy_indices=policy_indices,
+                            policy_values=policy_values, values=values)
+
+        fp = compute_fingerprint(path, mmap=False)
+        assert fp.policy_entropy_median > 0.5, f"Multi-move policy should have entropy > 0.5, got {fp.policy_entropy_median}"
+
+    def test_npz_with_only_features_no_policy_no_value(self, tmp_path: Path) -> None:
+        """NPZ with only features (no policy or value arrays) should still produce a fingerprint."""
+        features = np.random.randn(50, 14, 9, 9).astype(np.float32)
+        path = str(tmp_path / "features_only.npz")
+        np.savez_compressed(path, features=features)
+
+        fp = compute_fingerprint(path, mmap=False)
+        assert fp.n_samples == 50
+        assert fp.n_channels == 14
+        assert fp.policy_entropy_median == 0.0
+        assert fp.value_mean == 0.0
+        assert fp.value_std == 0.0
+
+    def test_history_missing_field_forward_compat(self, tmp_path: Path) -> None:
+        """History entries missing a field (e.g., old format) should load with defaults."""
+        from scripts.lib.data_quality_sentinel import _load_history
+
+        # Write a history entry that's missing the 'checksum' field
+        incomplete = {
+            "timestamp": "2026-01-01T00:00:00Z",
+            "fingerprint": {
+                "n_samples": 100,
+                "n_channels": 14,
+                "feature_means": [0.5] * 14,
+                "feature_stds": [1.0] * 14,
+                "policy_entropy_median": 3.0,
+                "policy_entropy_p10": 2.0,
+                "policy_entropy_p90": 4.0,
+                "value_mean": 0.1,
+                "value_std": 0.5,
+                # missing 'checksum'
+            },
+        }
+        history_path = tmp_path / HISTORY_FILENAME
+        history_path.write_text(json.dumps(incomplete) + "\n")
+
+        loaded = _load_history(str(tmp_path))
+        assert len(loaded) == 1
+        assert loaded[0].n_samples == 100
+        assert loaded[0].checksum == 0.0  # default
+
+    def test_history_corrupt_line_skips_gracefully(self, tmp_path: Path) -> None:
+        """A corrupt JSON line in history should not crash."""
+        from scripts.lib.data_quality_sentinel import _load_history
+
+        history_path = tmp_path / HISTORY_FILENAME
+        history_path.write_text("not valid json\n")
+
+        # Should return empty list, not crash
+        loaded = _load_history(str(tmp_path))
+        assert loaded == []
+
+    def test_dense_policy_entropy_never_negative(self, tmp_path: Path) -> None:
+        """Dense policy entropy should never be negative, even for deterministic policies."""
+        n_samples = 50
+        n_actions = 61
+        # Create a one-hot policy (deterministic)
+        policy = np.zeros((n_samples, n_actions), dtype=np.float32)
+        for i in range(n_samples):
+            policy[i, i % n_actions] = 1.0
+
+        features = np.random.randn(n_samples, 14, 9, 9).astype(np.float32)
+        values = np.random.randn(n_samples).astype(np.float32)
+
+        path = str(tmp_path / "onehot.npz")
+        np.savez_compressed(path, features=features, policy=policy, value=values)
+
+        fp = compute_fingerprint(path, mmap=False)
+        assert fp.policy_entropy_median >= 0.0, f"Entropy should be >= 0, got {fp.policy_entropy_median}"
+        assert fp.policy_entropy_p10 >= 0.0
+        assert fp.policy_entropy_p90 >= 0.0
+
+    def test_empty_npz_samples(self, tmp_path: Path) -> None:
+        """NPZ with 0 samples should not crash."""
+        features = np.zeros((0, 14, 9, 9), dtype=np.float32)
+        policy = np.zeros((0, 61), dtype=np.float32)
+        values = np.zeros((0,), dtype=np.float32)
+
+        path = str(tmp_path / "empty.npz")
+        np.savez_compressed(path, features=features, policy=policy, value=values)
+
+        # This may raise or return a degenerate fingerprint -- should not crash
+        try:
+            fp = compute_fingerprint(path, mmap=False)
+            assert fp.n_samples == 0
+        except (ValueError, IndexError):
+            pass  # Acceptable: empty data can't produce meaningful stats
+
+    def test_check_data_quality_end_to_end_sparse(self, tmp_path: Path) -> None:
+        """End-to-end check_data_quality with sparse policy format."""
+        n_samples = 100
+        rng = np.random.RandomState(123)
+        policy_indices = np.empty((n_samples,), dtype=object)
+        policy_values = np.empty((n_samples,), dtype=object)
+        for i in range(n_samples):
+            n_moves = 3 + (i % 8)
+            vals = rng.dirichlet(np.ones(n_moves))
+            policy_indices[i] = np.arange(n_moves)
+            policy_values[i] = vals
+
+        features = rng.randn(n_samples, 14, 9, 9).astype(np.float32)
+        values = rng.randn(n_samples).astype(np.float32) * 0.5
+
+        path = str(tmp_path / "sparse_e2e.npz")
+        np.savez_compressed(path, features=features, policy_indices=policy_indices,
+                            policy_values=policy_values, values=values)
+
+        verdict = check_data_quality(path, work_dir=str(tmp_path))
+        assert isinstance(verdict, QualityVerdict)
+        assert verdict.fingerprint.n_samples == 100
+        assert verdict.fingerprint.policy_entropy_median > 0

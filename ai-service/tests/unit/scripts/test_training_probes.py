@@ -51,12 +51,12 @@ class TestLossConvergenceCheck:
 
     def test_detects_nan_loss(self):
         """NaN in final loss should be critical."""
-        # Simulate a line with NaN rendered as a float
         crit, warns, details = _loss_convergence_check({
             "last_epoch_line": "Epoch [15/15], Train Loss: nan, Val Loss: nan, Policy Acc: 0.0%"
         })
-        # "nan" won't match the float regex, so it falls through as no data
-        assert not crit  # NaN literal "nan" doesn't match [\d.]+ pattern
+        assert crit
+        assert any("NaN" in w for w in warns)
+        assert details.get("has_nan") is True
 
     def test_parses_epoch_line_losses(self):
         """Should extract Train and Val loss from a standard epoch log line."""
@@ -206,3 +206,93 @@ class TestRunTrainingProbes:
             mock_inf.assert_not_called()
             assert result.critical
             assert "inference" not in result.details
+
+
+# ---------------------------------------------------------------------------
+# Edge case tests
+# ---------------------------------------------------------------------------
+
+class TestLossConvergenceEdgeCases:
+    """Edge cases for loss convergence parsing."""
+
+    def test_scientific_notation_loss(self):
+        """Should parse losses in scientific notation (e.g., 1.23e-04)."""
+        crit, warns, details = _loss_convergence_check({
+            "last_epoch_line": "Epoch [5/5], Train Loss: 1.23e-04, Val Loss: 2.45e-03"
+        })
+        assert not crit
+        assert len(details["parsed_losses"]) == 2
+        assert abs(details["parsed_losses"][0] - 1.23e-4) < 1e-8
+        assert abs(details["parsed_losses"][1] - 2.45e-3) < 1e-8
+
+    def test_nan_in_train_but_not_val(self):
+        """Should detect NaN even if only Train Loss is NaN."""
+        crit, warns, details = _loss_convergence_check({
+            "last_epoch_line": "Epoch [5/5], Train Loss: nan, Val Loss: 0.45"
+        })
+        assert crit
+        assert details.get("has_nan") is True
+
+    def test_empty_dict_input(self):
+        """Empty training info dict should not crash."""
+        crit, warns, details = _loss_convergence_check({})
+        assert not crit
+        assert "note" in details
+
+    def test_multiple_epoch_lines(self):
+        """Handles both last_epoch_line and log_line simultaneously."""
+        crit, warns, details = _loss_convergence_check({
+            "last_epoch_line": "Epoch [15/15], Train Loss: 0.34, Val Loss: 0.45",
+            "log_line": "Epoch [10/15], Train Loss: 0.50, Val Loss: 0.60",
+        })
+        assert not crit
+        assert len(details["parsed_losses"]) == 4
+
+    def test_non_string_values_in_info(self):
+        """Non-string values for epoch line keys should be handled."""
+        crit, warns, details = _loss_convergence_check({
+            "last_epoch_line": 12345,  # not a string
+            "log_line": None,
+        })
+        assert not crit
+        assert "note" in details
+
+
+class TestWeightDeltaEdgeCases:
+    """Edge cases for weight delta checks."""
+
+    def test_no_common_keys(self):
+        """Models with completely different key names should be critical."""
+        import torch
+        with tempfile.TemporaryDirectory() as td:
+            sd_cand = {"encoder.weight": torch.randn(10, 10)}
+            sd_best = {"decoder.weight": torch.randn(10, 10)}
+            cand_path = os.path.join(td, "candidate.pth")
+            best_path = os.path.join(td, "best.pth")
+            torch.save(sd_cand, cand_path)
+            torch.save(sd_best, best_path)
+
+            crit, warns, details = _weight_delta_check(cand_path, best_path)
+            assert crit
+            assert "No common parameters" in details.get("error", "")
+
+    def test_shape_mismatch_keys_skipped(self):
+        """Keys with different shapes should be skipped, not crash."""
+        import torch
+        with tempfile.TemporaryDirectory() as td:
+            sd_cand = {
+                "layer1.weight": torch.randn(10, 10),
+                "layer2.weight": torch.randn(20, 20),  # different shape
+            }
+            sd_best = {
+                "layer1.weight": torch.randn(10, 10),
+                "layer2.weight": torch.randn(15, 15),  # different shape from cand
+            }
+            cand_path = os.path.join(td, "candidate.pth")
+            best_path = os.path.join(td, "best.pth")
+            torch.save(sd_cand, cand_path)
+            torch.save(sd_best, best_path)
+
+            crit, warns, details = _weight_delta_check(cand_path, best_path)
+            # Should compare only layer1.weight (common shape)
+            assert details["params_compared"] == 1

@@ -331,3 +331,120 @@ class TestCheckModelQuality:
         verdict = check_model_quality(tracker)
         assert verdict.passed
         assert not verdict.critical
+
+
+# ---------------------------------------------------------------------------
+# Edge case tests
+# ---------------------------------------------------------------------------
+
+class TestEdgeCases:
+    """Edge cases for quality gate hardening."""
+
+    def test_game_count_auto_tracked_without_finish_game(self):
+        """Game count should be auto-tracked from record_move even if finish_game is never called."""
+        tracker = QualityGateTracker()
+        legal = _make_legal_moves(10)
+        # Record moves for 5 games but never call finish_game
+        for g in range(5):
+            for m in range(3):
+                idx = (g * 3 + m) % 10
+                tracker.record_move(g, m, legal[idx], legal, root_value=0.1 * g)
+
+        assert tracker._game_count == 5
+        # The behavioral diversity check should work
+        crit, warns, details = _check_behavioral_diversity(tracker)
+        assert details["games_tracked"] == 5
+
+    def test_mode_collapse_threshold_exactly_at_boundary(self):
+        """Test behavior at exactly the MODE_COLLAPSE_THRESHOLD boundary (80%).
+
+        With 10 games, 8 having the same opening (8/10=0.80) should NOT trigger
+        mode collapse since the threshold check is strict (>0.80, not >=).
+        The remaining 2 games must each have unique openings.
+        """
+        tracker = QualityGateTracker()
+        legal = _make_legal_moves(20)
+        n_games = 10
+        for g in range(n_games):
+            for m in range(OPENING_LENGTH):
+                if g < 8:
+                    # Same opening for first 8 games
+                    move = legal[m]
+                else:
+                    # Unique openings for games 8 and 9 (must differ from each
+                    # other AND from the common opening)
+                    move = legal[(m + 10 + g * 3) % 20]
+                tracker.record_move(g, m, move, legal, root_value=0.1 * g - 0.3)
+            tracker.finish_game(g)
+
+        crit, warns, details = _check_behavioral_diversity(tracker)
+        assert details["opening_repeat_rate"] == pytest.approx(0.8, abs=0.01)
+        # The check uses > (strict), not >=, so exactly 80% should NOT trigger
+        assert not crit
+
+    def test_fewer_moves_than_opening_length(self):
+        """Games with fewer moves than OPENING_LENGTH should still work."""
+        tracker = QualityGateTracker()
+        legal = _make_legal_moves(10)
+        # 5 games with only 2 moves each (< OPENING_LENGTH=5)
+        for g in range(5):
+            for m in range(2):
+                tracker.record_move(g, m, legal[(g + m) % 10], legal, root_value=0.1)
+            tracker.finish_game(g)
+
+        crit, warns, details = _check_behavioral_diversity(tracker)
+        # Should not crash, and opening comparison should use the shorter sequences
+        assert details["games_tracked"] == 5
+
+    def test_move_key_with_no_type_attribute(self):
+        """Move object without standard attributes should produce a usable key."""
+        # A move with just a string representation
+        move = SimpleNamespace(type="pass", from_pos=None, to=None)
+        key = _move_key(move)
+        assert isinstance(key, str)
+        assert len(key) > 0
+
+    def test_value_head_with_exactly_min_samples(self):
+        """Value head check with exactly MIN_VALUES_FOR_CHECK samples should not skip."""
+        from scripts.lib.model_quality_gate import MIN_VALUES_FOR_CHECK
+        tracker = QualityGateTracker()
+        legal = _make_legal_moves(5)
+        # Record exactly MIN_VALUES_FOR_CHECK values
+        for m in range(MIN_VALUES_FOR_CHECK):
+            tracker.record_move(0, m, legal[m % 5], legal, root_value=0.1 * m - 0.2)
+        tracker.finish_game(0)
+
+        crit, warns, details = _check_value_head_health(tracker)
+        assert details["value_samples"] == MIN_VALUES_FOR_CHECK
+        assert "skipped" not in details
+
+    def test_single_game_all_same_moves_no_crash(self):
+        """Single game with all same moves should not crash.
+
+        Note: this triggers DEAD_VALUE_HEAD (constant root_value=0.5 across
+        all moves) and LOW_DIVERSITY (only 1 unique move from 20 legal), both
+        of which are correct detections.
+        """
+        tracker = QualityGateTracker()
+        legal = _make_legal_moves(20)
+        for m in range(10):
+            tracker.record_move(0, m, legal[0], legal, root_value=0.5)
+        tracker.finish_game(0)
+
+        verdict = check_model_quality(tracker)
+        # Correctly flags dead value head and low diversity
+        assert verdict.critical
+        assert any("DEAD_VALUE_HEAD" in w for w in verdict.warnings)
+
+    def test_value_head_all_zero(self):
+        """All-zero values should trigger DEAD_VALUE_HEAD (std < threshold)."""
+        tracker = QualityGateTracker()
+        legal = _make_legal_moves(10)
+        for g in range(5):
+            for m in range(10):
+                tracker.record_move(g, m, legal[(g + m) % 10], legal, root_value=0.0)
+            tracker.finish_game(g)
+
+        crit, warns, details = _check_value_head_health(tracker)
+        assert crit
+        assert any("DEAD_VALUE_HEAD" in w for w in warns)
