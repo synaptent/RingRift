@@ -13,19 +13,25 @@ SSH_OPTS=(-i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o Conn
 SCRIPT="scripts/minimal_alphazero_loop.py"
 WATCHDOG="scripts/pipeline_watchdog.py"
 
-# Node assignments: ip config board players workdir
+# Node assignments:
+#   ip config board players workdir games_per_iter eval_games budget
+#
+# hex8_2p is close to the promotion threshold and has been rejecting
+# borderline candidates on a 50-game eval gate. Give that config more
+# evaluation games to reduce promotion noise without slowing the other
+# minimal-loop nodes.
 NODES=(
-  "100.121.230.110 hex8_2p hex8 2 data/minimal_loop_gh200-8"
-  "100.127.168.116 square8_2p square8 2 data/minimal_loop_square8_2p"
-  "100.86.51.4 square8_3p square8 3 data/minimal_loop_square8_3p"
-  "100.91.39.59 hex8_3p hex8 3 data/minimal_loop_hex8_3p"
+  "100.121.230.110 hex8_2p hex8 2 data/minimal_loop_gh200-8 100 100 128"
+  "100.127.168.116 square8_2p square8 2 data/minimal_loop_square8_2p 100 50 128"
+  "100.86.51.4 square8_3p square8 3 data/minimal_loop_square8_3p 100 50 128"
+  "100.91.39.59 hex8_3p hex8 3 data/minimal_loop_hex8_3p 100 50 128"
 )
 
 DRY_RUN=false
 [[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
 
 for entry in "${NODES[@]}"; do
-  read -r ip config board players workdir <<< "$entry"
+  read -r ip config board players workdir games_per_iter eval_games budget <<< "$entry"
   echo "=== $config ($ip) ==="
 
   if $DRY_RUN; then
@@ -53,7 +59,7 @@ for entry in "${NODES[@]}"; do
     PYTHONPATH=. nohup venv/bin/python scripts/minimal_alphazero_loop.py \
       --model models/canonical_${config}.pth \
       --board-type $board --num-players $players \
-      --iterations 50 --games-per-iter 100 --eval-games 50 --budget 128 \
+      --iterations 50 --games-per-iter $games_per_iter --eval-games $eval_games --budget $budget \
       --work-dir $workdir \
       </dev/null > /tmp/minimal_alphazero.log 2>&1 &
     echo PID=\$!
