@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+from pathlib import PurePosixPath
 from typing import Any
 
 from scripts.lib.alerts import AlertSeverity, send_slack_notification
@@ -149,6 +150,17 @@ def format_age(age_seconds: float) -> str:
     return f"{d:.1f}d ago"
 
 
+def parse_s3_prefix(s3_prefix: str) -> tuple[str, str]:
+    """Parse an s3://bucket/prefix URL into bucket and key prefix."""
+    if not s3_prefix.startswith("s3://"):
+        raise ValueError(f"Invalid S3 prefix: {s3_prefix}")
+    bucket_and_prefix = s3_prefix[5:]
+    bucket, _, prefix = bucket_and_prefix.partition("/")
+    if not bucket:
+        raise ValueError(f"Invalid S3 prefix: {s3_prefix}")
+    return bucket, prefix
+
+
 def list_heartbeat_keys(s3_prefix: str) -> list[str]:
     """List all .json keys under the S3 heartbeat prefix."""
     try:
@@ -159,8 +171,31 @@ def list_heartbeat_keys(s3_prefix: str) -> list[str]:
             timeout=30,
         )
         if result.returncode != 0:
-            print(f"ERROR: aws s3 ls failed: {result.stderr.strip()}", file=sys.stderr)
-            return []
+            bucket, prefix = parse_s3_prefix(s3_prefix)
+            fallback = subprocess.run(
+                [
+                    "aws",
+                    "s3api",
+                    "list-objects-v2",
+                    "--bucket",
+                    bucket,
+                    "--prefix",
+                    prefix,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if fallback.returncode != 0:
+                detail = fallback.stderr.strip() or result.stderr.strip()
+                print(f"ERROR: aws s3 ls failed: {detail}", file=sys.stderr)
+                return []
+            payload = json.loads(fallback.stdout or "{}")
+            return [
+                PurePosixPath(item["Key"]).name
+                for item in payload.get("Contents", [])
+                if item.get("Key", "").endswith(".json")
+            ]
         keys = []
         for line in result.stdout.strip().splitlines():
             # aws s3 ls output: "2026-04-05 10:30:00  512 gh200-8.json"
@@ -171,7 +206,7 @@ def list_heartbeat_keys(s3_prefix: str) -> list[str]:
     except FileNotFoundError:
         print("ERROR: aws CLI not found. Install it or add to PATH.", file=sys.stderr)
         return []
-    except subprocess.TimeoutExpired:
+    except (subprocess.TimeoutExpired, ValueError):
         print("ERROR: aws s3 ls timed out.", file=sys.stderr)
         return []
 

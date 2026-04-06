@@ -20,6 +20,7 @@ from scripts.fleet_health_check import (
     fetch_heartbeat,
     format_age,
     list_heartbeat_keys,
+    parse_s3_prefix,
     send_fleet_slack_report,
     summarize_report,
 )
@@ -81,6 +82,17 @@ class TestFormatAge:
 
     def test_zero(self):
         assert format_age(0) == "0s ago"
+
+
+class TestParseS3Prefix:
+    def test_parse_bucket_and_prefix(self):
+        bucket, prefix = parse_s3_prefix("s3://ringrift-models-20251214/consolidated/heartbeats/")
+        assert bucket == "ringrift-models-20251214"
+        assert prefix == "consolidated/heartbeats/"
+
+    def test_invalid_prefix_raises(self):
+        with pytest.raises(ValueError):
+            parse_s3_prefix("https://example.com/not-s3")
 
 
 # ---------------------------------------------------------------------------
@@ -403,9 +415,20 @@ class TestListHeartbeatKeys:
 
     @patch("scripts.fleet_health_check.subprocess.run")
     def test_s3_error(self, mock_run):
-        mock_run.return_value = MagicMock(returncode=1, stderr="Access Denied")
+        mock_run.side_effect = [
+            MagicMock(returncode=1, stderr="Access Denied", stdout=""),
+            MagicMock(
+                returncode=0,
+                stdout=json.dumps({
+                    "Contents": [
+                        {"Key": "consolidated/heartbeats/gh200-8.json"},
+                        {"Key": "consolidated/heartbeats/gh200-9.json"},
+                    ]
+                }),
+            ),
+        ]
         keys = list_heartbeat_keys("s3://bucket/prefix/")
-        assert keys == []
+        assert keys == ["gh200-8.json", "gh200-9.json"]
 
     @patch("scripts.fleet_health_check.subprocess.run")
     def test_aws_cli_not_found(self, mock_run):
@@ -417,6 +440,15 @@ class TestListHeartbeatKeys:
     def test_timeout(self, mock_run):
         import subprocess as sp
         mock_run.side_effect = sp.TimeoutExpired(cmd="aws", timeout=30)
+        keys = list_heartbeat_keys("s3://bucket/prefix/")
+        assert keys == []
+
+    @patch("scripts.fleet_health_check.subprocess.run")
+    def test_s3api_fallback_failure_returns_empty(self, mock_run):
+        mock_run.side_effect = [
+            MagicMock(returncode=1, stderr="", stdout=""),
+            MagicMock(returncode=254, stderr="AccessDenied", stdout=""),
+        ]
         keys = list_heartbeat_keys("s3://bucket/prefix/")
         assert keys == []
 
