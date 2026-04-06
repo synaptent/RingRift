@@ -118,6 +118,7 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     // Reset concurrency counters between tests
     (AIServiceClient as any).inFlightRequests = 0;
     (AIServiceClient as any).maxConcurrent = 16;
+    AIServiceClient.resetMoveTrafficSnapshotForTest();
   });
 
   it('derives request seed from gameState when seed is not provided', async () => {
@@ -186,6 +187,28 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     expect(mockRecordAIRequestTimeout).not.toHaveBeenCalled();
   });
 
+  it('tracks successful move traffic for operational diagnostics', async () => {
+    const client = new AIServiceClient('http://ai.test');
+
+    mockAxiosPost.mockResolvedValue({
+      data: {
+        move: null,
+        evaluation: 0.5,
+        thinking_time_ms: 100,
+        ai_type: 'heuristic',
+        difficulty: 5,
+      },
+    });
+
+    await client.getAIMove(baseGameState, 1, 5);
+
+    expect(AIServiceClient.getMoveTrafficSnapshotForTest()).toMatchObject({
+      totalRequests: 1,
+      successfulResponses: 1,
+      erroredResponses: 0,
+    });
+  });
+
   it('records timeout metrics and surfaces AI_SERVICE_TIMEOUT code on timeout errors', async () => {
     const client = new AIServiceClient('http://ai.test');
 
@@ -236,6 +259,12 @@ describe('AIServiceClient.getAIMove metrics integration', () => {
     expect(mockRecordAIRequestLatencyMs).toHaveBeenCalledWith(expect.any(Number), 'error');
     expect(mockRecordAIRequestDuration).not.toHaveBeenCalled();
     expect(mockRecordAIRequestTimeout).not.toHaveBeenCalled();
+    expect(AIServiceClient.getMoveTrafficSnapshotForTest()).toMatchObject({
+      totalRequests: 1,
+      successfulResponses: 0,
+      erroredResponses: 1,
+      lastErrorType: 'overloaded',
+    });
   });
 
   it('records error metrics (non-timeout) when service is unavailable', async () => {

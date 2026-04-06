@@ -292,6 +292,16 @@ export interface AIServiceRequestOptions {
   token?: CancellationToken;
 }
 
+interface AIMoveTrafficSnapshot {
+  totalRequests: number;
+  successfulResponses: number;
+  erroredResponses: number;
+  lastRequestAt?: string;
+  lastSuccessAt?: string;
+  lastErrorAt?: string;
+  lastErrorType?: string;
+}
+
 /**
  * Client for interacting with the Python AI microservice.
  * Includes circuit breaker for resilience and timeout handling.
@@ -309,6 +319,11 @@ export class AIServiceClient {
   // Config-driven so operators can tune without code changes.
   private static maxConcurrent: number =
     (config as { aiService?: { maxConcurrent?: number } }).aiService?.maxConcurrent ?? 16;
+  private static moveTraffic: AIMoveTrafficSnapshot = {
+    totalRequests: 0,
+    successfulResponses: 0,
+    erroredResponses: 0,
+  };
 
   private static incrementConcurrency(): boolean {
     if (AIServiceClient.inFlightRequests >= AIServiceClient.maxConcurrent) {
@@ -330,6 +345,65 @@ export class AIServiceClient {
    */
   static getInFlightRequestsForTest(): number {
     return AIServiceClient.inFlightRequests;
+  }
+
+  static getMoveTrafficSnapshotForTest(): AIMoveTrafficSnapshot {
+    return { ...AIServiceClient.moveTraffic };
+  }
+
+  static resetMoveTrafficSnapshotForTest(): void {
+    AIServiceClient.moveTraffic = {
+      totalRequests: 0,
+      successfulResponses: 0,
+      erroredResponses: 0,
+    };
+  }
+
+  private static maybeLogMoveTrafficSummary(trigger: string): void {
+    const { totalRequests, erroredResponses } = AIServiceClient.moveTraffic;
+    const shouldLog =
+      totalRequests === 1 ||
+      totalRequests % 25 === 0 ||
+      erroredResponses === 1 ||
+      (erroredResponses > 0 && erroredResponses % 10 === 0);
+
+    if (!shouldLog) {
+      return;
+    }
+
+    logger.info('AI move traffic summary', {
+      trigger,
+      ...AIServiceClient.moveTraffic,
+      inFlightRequests: AIServiceClient.inFlightRequests,
+      maxConcurrent: AIServiceClient.maxConcurrent,
+    });
+  }
+
+  private static recordMoveRequest(): void {
+    AIServiceClient.moveTraffic = {
+      ...AIServiceClient.moveTraffic,
+      totalRequests: AIServiceClient.moveTraffic.totalRequests + 1,
+      lastRequestAt: new Date().toISOString(),
+    };
+    AIServiceClient.maybeLogMoveTrafficSummary('request');
+  }
+
+  private static recordMoveSuccess(): void {
+    AIServiceClient.moveTraffic = {
+      ...AIServiceClient.moveTraffic,
+      successfulResponses: AIServiceClient.moveTraffic.successfulResponses + 1,
+      lastSuccessAt: new Date().toISOString(),
+    };
+  }
+
+  private static recordMoveError(errorType: string): void {
+    AIServiceClient.moveTraffic = {
+      ...AIServiceClient.moveTraffic,
+      erroredResponses: AIServiceClient.moveTraffic.erroredResponses + 1,
+      lastErrorAt: new Date().toISOString(),
+      lastErrorType: errorType,
+    };
+    AIServiceClient.maybeLogMoveTrafficSummary('error');
   }
 
   constructor(baseURL?: string) {
@@ -416,6 +490,7 @@ export class AIServiceClient {
     // Cooperative pre-flight cancellation: if a token is provided and is
     // already canceled, avoid touching the circuit breaker or HTTP layer.
     options?.token?.throwIfCanceled('before dispatching AIServiceClient.getAIMove');
+    AIServiceClient.recordMoveRequest();
 
     // Fast-fail when the node-local concurrency cap has been reached so that
     // AI-heavy workloads cannot starve the service or other games.
@@ -442,6 +517,7 @@ export class AIServiceClient {
       const durationMs = performance.now() - startTime;
       metrics.recordAIRequest('error');
       metrics.recordAIRequestLatencyMs(durationMs, 'error');
+      AIServiceClient.recordMoveError('overloaded');
 
       throw overloadedError;
     }
@@ -491,6 +567,7 @@ export class AIServiceClient {
             nnCheckpoint: response.data.nn_checkpoint,
             nnueCheckpoint: response.data.nnue_checkpoint,
           });
+          AIServiceClient.recordMoveSuccess();
 
           return response.data;
         } catch (error) {
@@ -519,6 +596,7 @@ export class AIServiceClient {
           if (aiErrorType === 'timeout') {
             metrics.recordAIRequestTimeout();
           }
+          AIServiceClient.recordMoveError(aiErrorType ?? 'unknown');
 
           const structuredError: Error & {
             statusCode?: number;
