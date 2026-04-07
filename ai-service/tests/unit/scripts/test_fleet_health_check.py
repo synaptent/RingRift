@@ -22,6 +22,7 @@ from scripts.fleet_health_check import (
     get_thresholds_for_config,
     list_heartbeat_keys,
     parse_s3_prefix,
+    resolve_aws_cli,
     send_fleet_slack_report,
     summarize_report,
 )
@@ -111,6 +112,19 @@ class TestParseS3Prefix:
     def test_invalid_prefix_raises(self):
         with pytest.raises(ValueError):
             parse_s3_prefix("https://example.com/not-s3")
+
+
+class TestResolveAwsCli:
+    @patch("scripts.fleet_health_check.os.path.exists", return_value=True)
+    @patch("scripts.fleet_health_check.shutil.which", return_value=None)
+    def test_falls_back_to_common_paths(self, _mock_which, _mock_exists):
+        assert resolve_aws_cli() == "/opt/homebrew/bin/aws"
+
+    @patch.dict("os.environ", {"AWS_CLI": "/custom/aws"}, clear=True)
+    @patch("scripts.fleet_health_check.os.path.exists", side_effect=lambda p: p == "/custom/aws")
+    @patch("scripts.fleet_health_check.shutil.which", return_value=None)
+    def test_honors_env_override(self, _mock_which, _mock_exists):
+        assert resolve_aws_cli() == "/custom/aws"
 
 
 # ---------------------------------------------------------------------------
@@ -423,8 +437,9 @@ class TestSlackReporting:
 
 
 class TestListHeartbeatKeys:
+    @patch("scripts.fleet_health_check.resolve_aws_cli", return_value="/usr/bin/aws")
     @patch("scripts.fleet_health_check.subprocess.run")
-    def test_parses_s3_ls_output(self, mock_run):
+    def test_parses_s3_ls_output(self, mock_run, _mock_aws):
         mock_run.return_value = MagicMock(
             returncode=0,
             stdout=(
@@ -436,14 +451,16 @@ class TestListHeartbeatKeys:
         keys = list_heartbeat_keys("s3://bucket/prefix/")
         assert keys == ["gh200-8.json", "gh200-9.json", "gh200-10.json"]
 
+    @patch("scripts.fleet_health_check.resolve_aws_cli", return_value="/usr/bin/aws")
     @patch("scripts.fleet_health_check.subprocess.run")
-    def test_empty_bucket(self, mock_run):
+    def test_empty_bucket(self, mock_run, _mock_aws):
         mock_run.return_value = MagicMock(returncode=0, stdout="")
         keys = list_heartbeat_keys("s3://bucket/prefix/")
         assert keys == []
 
+    @patch("scripts.fleet_health_check.resolve_aws_cli", return_value="/usr/bin/aws")
     @patch("scripts.fleet_health_check.subprocess.run")
-    def test_s3_error(self, mock_run):
+    def test_s3_error(self, mock_run, _mock_aws):
         mock_run.side_effect = [
             MagicMock(returncode=1, stderr="Access Denied", stdout=""),
             MagicMock(
@@ -459,21 +476,24 @@ class TestListHeartbeatKeys:
         keys = list_heartbeat_keys("s3://bucket/prefix/")
         assert keys == ["gh200-8.json", "gh200-9.json"]
 
+    @patch("scripts.fleet_health_check.resolve_aws_cli", return_value=None)
     @patch("scripts.fleet_health_check.subprocess.run")
-    def test_aws_cli_not_found(self, mock_run):
-        mock_run.side_effect = FileNotFoundError("aws not found")
+    def test_aws_cli_not_found(self, mock_run, _mock_aws):
         keys = list_heartbeat_keys("s3://bucket/prefix/")
         assert keys == []
+        mock_run.assert_not_called()
 
+    @patch("scripts.fleet_health_check.resolve_aws_cli", return_value="/usr/bin/aws")
     @patch("scripts.fleet_health_check.subprocess.run")
-    def test_timeout(self, mock_run):
+    def test_timeout(self, mock_run, _mock_aws):
         import subprocess as sp
         mock_run.side_effect = sp.TimeoutExpired(cmd="aws", timeout=30)
         keys = list_heartbeat_keys("s3://bucket/prefix/")
         assert keys == []
 
+    @patch("scripts.fleet_health_check.resolve_aws_cli", return_value="/usr/bin/aws")
     @patch("scripts.fleet_health_check.subprocess.run")
-    def test_s3api_fallback_failure_returns_empty(self, mock_run):
+    def test_s3api_fallback_failure_returns_empty(self, mock_run, _mock_aws):
         mock_run.side_effect = [
             MagicMock(returncode=1, stderr="", stdout=""),
             MagicMock(returncode=254, stderr="AccessDenied", stdout=""),
@@ -488,8 +508,9 @@ class TestListHeartbeatKeys:
 
 
 class TestFetchHeartbeat:
+    @patch("scripts.fleet_health_check.resolve_aws_cli", return_value="/usr/bin/aws")
     @patch("scripts.fleet_health_check.subprocess.run")
-    def test_valid_heartbeat(self, mock_run):
+    def test_valid_heartbeat(self, mock_run, _mock_aws):
         hb = {
             "node_id": "gh200-8",
             "config_key": "hex8_2p",
@@ -507,17 +528,26 @@ class TestFetchHeartbeat:
         assert result["node_id"] == "gh200-8"
         assert result["estimated_elo"] == 1650.0
 
+    @patch("scripts.fleet_health_check.resolve_aws_cli", return_value="/usr/bin/aws")
     @patch("scripts.fleet_health_check.subprocess.run")
-    def test_s3_download_failure(self, mock_run):
+    def test_s3_download_failure(self, mock_run, _mock_aws):
         mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
         result = fetch_heartbeat("s3://bucket/prefix/", "missing.json")
         assert result is None
 
+    @patch("scripts.fleet_health_check.resolve_aws_cli", return_value="/usr/bin/aws")
     @patch("scripts.fleet_health_check.subprocess.run")
-    def test_invalid_json(self, mock_run):
+    def test_invalid_json(self, mock_run, _mock_aws):
         mock_run.return_value = MagicMock(returncode=0, stdout="not json at all")
         result = fetch_heartbeat("s3://bucket/prefix/", "bad.json")
         assert result is None
+
+    @patch("scripts.fleet_health_check.resolve_aws_cli", return_value=None)
+    @patch("scripts.fleet_health_check.subprocess.run")
+    def test_missing_aws_cli_returns_none(self, mock_run, _mock_aws):
+        result = fetch_heartbeat("s3://bucket/prefix/", "bad.json")
+        assert result is None
+        mock_run.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

@@ -15,6 +15,8 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import os
+import shutil
 import subprocess
 import sys
 import time
@@ -67,6 +69,21 @@ def get_thresholds_for_config(
         if fnmatch.fnmatch(config_key, pattern):
             return max(stale_threshold_h, override_stale_h), max(dead_threshold_h, override_dead_h)
     return stale_threshold_h, dead_threshold_h
+
+
+def resolve_aws_cli() -> str | None:
+    """Locate the AWS CLI in interactive and cron-like environments."""
+    candidates = [
+        os.environ.get("AWS_CLI"),
+        shutil.which("aws"),
+        "/opt/homebrew/bin/aws",
+        "/usr/local/bin/aws",
+        "/usr/bin/aws",
+    ]
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            return candidate
+    return None
 
 
 def summarize_report(report: list[dict[str, Any]]) -> dict[str, int]:
@@ -196,9 +213,13 @@ def parse_s3_prefix(s3_prefix: str) -> tuple[str, str]:
 
 def list_heartbeat_keys(s3_prefix: str) -> list[str]:
     """List all .json keys under the S3 heartbeat prefix."""
+    aws_cli = resolve_aws_cli()
+    if not aws_cli:
+        print("ERROR: aws CLI not found. Install it or add to PATH.", file=sys.stderr)
+        return []
     try:
         result = subprocess.run(
-            ["aws", "s3", "ls", s3_prefix],
+            [aws_cli, "s3", "ls", s3_prefix],
             capture_output=True,
             text=True,
             timeout=30,
@@ -207,7 +228,7 @@ def list_heartbeat_keys(s3_prefix: str) -> list[str]:
             bucket, prefix = parse_s3_prefix(s3_prefix)
             fallback = subprocess.run(
                 [
-                    "aws",
+                    aws_cli,
                     "s3api",
                     "list-objects-v2",
                     "--bucket",
@@ -236,9 +257,6 @@ def list_heartbeat_keys(s3_prefix: str) -> list[str]:
             if parts and parts[-1].endswith(".json"):
                 keys.append(parts[-1])
         return keys
-    except FileNotFoundError:
-        print("ERROR: aws CLI not found. Install it or add to PATH.", file=sys.stderr)
-        return []
     except (subprocess.TimeoutExpired, ValueError):
         print("ERROR: aws s3 ls timed out.", file=sys.stderr)
         return []
@@ -246,9 +264,12 @@ def list_heartbeat_keys(s3_prefix: str) -> list[str]:
 
 def fetch_heartbeat(s3_prefix: str, key: str) -> dict[str, Any] | None:
     """Download and parse a single heartbeat JSON from S3."""
+    aws_cli = resolve_aws_cli()
+    if not aws_cli:
+        return None
     try:
         result = subprocess.run(
-            ["aws", "s3", "cp", f"{s3_prefix}{key}", "-"],
+            [aws_cli, "s3", "cp", f"{s3_prefix}{key}", "-"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -256,7 +277,7 @@ def fetch_heartbeat(s3_prefix: str, key: str) -> dict[str, Any] | None:
         if result.returncode != 0:
             return None
         return json.loads(result.stdout)
-    except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError):
+    except (subprocess.TimeoutExpired, json.JSONDecodeError):
         return None
 
 
