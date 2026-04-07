@@ -19,6 +19,7 @@ from scripts.fleet_health_check import (
     fetch_all_heartbeats,
     fetch_heartbeat,
     format_age,
+    get_thresholds_for_config,
     list_heartbeat_keys,
     parse_s3_prefix,
     send_fleet_slack_report,
@@ -58,6 +59,23 @@ class TestClassifyStatus:
 
     def test_healthy_just_before_stale(self):
         assert classify_status(7199, 7200, 21600) == STATUS_HEALTHY
+
+
+class TestConfigAwareThresholds:
+    def test_uses_override_for_known_config(self):
+        stale_h, dead_h = get_thresholds_for_config("hex8_2p", 2.0, 6.0)
+        assert stale_h == 12.0
+        assert dead_h == 24.0
+
+    def test_keeps_global_threshold_for_unknown_config(self):
+        stale_h, dead_h = get_thresholds_for_config("custom_board_9p", 2.0, 6.0)
+        assert stale_h == 2.0
+        assert dead_h == 6.0
+
+    def test_respects_higher_cli_thresholds(self):
+        stale_h, dead_h = get_thresholds_for_config("square8_2p", 8.0, 20.0)
+        assert stale_h == 8.0
+        assert dead_h == 20.0
 
 
 # ---------------------------------------------------------------------------
@@ -240,14 +258,24 @@ class TestBuildFleetReport:
         assert report[0]["node_id"] == "gh200-8"
 
     def test_stale_node(self):
-        hb = self._make_hb("gh200-9", "square8_2p", age_s=3 * 3600)  # 3h
+        hb = self._make_hb("gh200-9", "custom_board_2p", age_s=3 * 3600)  # 3h
         report = build_fleet_report([hb])
         assert report[0]["status"] == STATUS_STALE
 
     def test_dead_node(self):
-        hb = self._make_hb("gh200-10", "hex8_3p", age_s=8 * 3600)  # 8h
+        hb = self._make_hb("gh200-10", "custom_board_3p", age_s=8 * 3600)  # 8h
         report = build_fleet_report([hb])
         assert report[0]["status"] == STATUS_DEAD
+
+    def test_known_long_running_config_stays_healthy_longer(self):
+        hb = self._make_hb("gh200-8", "hex8_2p", age_s=8 * 3600)
+        report = build_fleet_report([hb])
+        assert report[0]["status"] == STATUS_HEALTHY
+
+    def test_known_long_running_config_becomes_stale_not_dead(self):
+        hb = self._make_hb("gh200-8", "hex8_2p", age_s=17 * 3600)
+        report = build_fleet_report([hb])
+        assert report[0]["status"] == STATUS_STALE
 
     def test_sorted_by_node_id(self):
         hbs = [
@@ -260,7 +288,7 @@ class TestBuildFleetReport:
         assert node_ids == ["gh200-10", "gh200-8", "gh200-9"]
 
     def test_custom_thresholds(self):
-        hb = self._make_hb("gh200-8", "hex8_2p", age_s=1.5 * 3600)  # 1.5h
+        hb = self._make_hb("gh200-8", "custom_board_2p", age_s=1.5 * 3600)  # 1.5h
         # With 1h stale threshold, this is stale
         report = build_fleet_report([hb], stale_threshold_h=1.0, dead_threshold_h=3.0)
         assert report[0]["status"] == STATUS_STALE
@@ -277,6 +305,7 @@ class TestBuildFleetReport:
             "node_id", "config_key", "iteration", "estimated_elo",
             "promotions", "timestamp", "age_seconds", "age_human",
             "status", "data_quality_score",
+            "stale_threshold_hours", "dead_threshold_hours",
         }
         assert set(r.keys()) == expected_keys
 
@@ -306,7 +335,7 @@ class TestBuildFleetReport:
 
     def test_dead_not_overridden_by_no_progress(self):
         """DEAD status should not be overridden by NO_PROGRESS."""
-        hb = self._make_hb("gh200-8", "hex8_2p", age_s=10 * 3600,
+        hb = self._make_hb("gh200-8", "custom_board_2p", age_s=10 * 3600,
                            elo=1500.0, iteration=1)
         report = build_fleet_report(
             [hb],

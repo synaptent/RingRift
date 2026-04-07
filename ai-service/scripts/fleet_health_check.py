@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import subprocess
 import sys
@@ -30,10 +31,42 @@ DEFAULT_STALE_THRESHOLD_H = 2.0
 DEFAULT_DEAD_THRESHOLD_H = 6.0
 DEFAULT_NO_PROGRESS_H = 24.0
 
+# End-of-iteration heartbeats can legitimately be sparse on larger or
+# higher-game-count loops. These config-aware minima prevent false DEAD
+# classifications for healthy long-running jobs while still allowing callers
+# to pass even more conservative thresholds on the CLI.
+CONFIG_THRESHOLD_OVERRIDES_H: dict[str, tuple[float, float]] = {
+    "square8_2p": (6.0, 16.0),
+    "square8_3p": (10.0, 24.0),
+    "square8_4p": (10.0, 24.0),
+    "hex8_2p": (12.0, 24.0),
+    "hex8_3p": (10.0, 24.0),
+    "hex8_4p": (10.0, 24.0),
+    "square19_*": (48.0, 96.0),
+    "hexagonal_*": (48.0, 96.0),
+}
+
 STATUS_HEALTHY = "HEALTHY"
 STATUS_STALE = "STALE"
 STATUS_DEAD = "DEAD"
 STATUS_NO_PROGRESS = "NO_PROGRESS"
+
+
+def get_thresholds_for_config(
+    config_key: str,
+    stale_threshold_h: float,
+    dead_threshold_h: float,
+) -> tuple[float, float]:
+    """Return effective stale/dead thresholds for a config.
+
+    The global CLI thresholds remain the baseline. For known long-running
+    configs, we raise those minima to avoid false DEAD classifications when a
+    node only publishes heartbeats at iteration completion.
+    """
+    for pattern, (override_stale_h, override_dead_h) in CONFIG_THRESHOLD_OVERRIDES_H.items():
+        if fnmatch.fnmatch(config_key, pattern):
+            return max(stale_threshold_h, override_stale_h), max(dead_threshold_h, override_dead_h)
+    return stale_threshold_h, dead_threshold_h
 
 
 def summarize_report(report: list[dict[str, Any]]) -> dict[str, int]:
@@ -288,8 +321,6 @@ def build_fleet_report(
     Returns a list of dicts with node info and status classification.
     """
     now = time.time()
-    stale_s = stale_threshold_h * 3600
-    dead_s = dead_threshold_h * 3600
     no_progress_s = no_progress_h * 3600
 
     no_progress_configs = detect_no_progress(heartbeats, no_progress_s)
@@ -305,7 +336,12 @@ def build_fleet_report(
         dq_score = hb.get("data_quality_score")
 
         age = now - ts
-        status = classify_status(age, stale_s, dead_s)
+        effective_stale_h, effective_dead_h = get_thresholds_for_config(
+            config_key,
+            stale_threshold_h,
+            dead_threshold_h,
+        )
+        status = classify_status(age, effective_stale_h * 3600, effective_dead_h * 3600)
 
         # Override with NO_PROGRESS if applicable (but keep DEAD as worse)
         if config_key in no_progress_configs and status != STATUS_DEAD:
@@ -322,6 +358,8 @@ def build_fleet_report(
             "age_human": format_age(age),
             "status": status,
             "data_quality_score": dq_score,
+            "stale_threshold_hours": effective_stale_h,
+            "dead_threshold_hours": effective_dead_h,
         })
 
     # Sort by node_id for stable output
