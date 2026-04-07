@@ -277,6 +277,7 @@ class MoveUndo:
     prev_must_move_from_stack_key: str | None = None
     prev_game_status: GameStatus | None = None
     prev_winner: int | None = None
+    prev_move_history_len: int = 0
 
     # === LPS Tracking (for victory detection) ===
     prev_lps_round_index: int = 0
@@ -823,6 +824,7 @@ class MutableGameState:
         undo.prev_total_rings_eliminated = self._total_rings_eliminated
         undo.prev_game_status = self._game_status
         undo.prev_winner = self._winner
+        undo.prev_move_history_len = len(self._move_history)
 
         # Capture LPS state
         undo.prev_lps_round_index = self._lps_round_index
@@ -896,6 +898,9 @@ class MutableGameState:
         ) and move.from_pos.to_key() == self._must_move_from_stack_key):
             self._must_move_from_stack_key = move.to.to_key()
 
+        # Preserve last-actor information for canonical stalemate resolution.
+        self._move_history.append(move)
+
         # Update phase (simplified for search)
         self._update_phase_for_search(move)
 
@@ -967,6 +972,7 @@ class MutableGameState:
         self._must_move_from_stack_key = undo.prev_must_move_from_stack_key
         self._game_status = undo.prev_game_status or GameStatus.ACTIVE
         self._winner = undo.prev_winner
+        self._move_history = self._move_history[:undo.prev_move_history_len]
 
         # Restore LPS state
         self._lps_round_index = undo.prev_lps_round_index
@@ -1541,11 +1547,26 @@ class MutableGameState:
                     self._game_status = GameStatus.COMPLETED
                     return True
 
-        # 3. Last Player Standing
+        # 3. Last Player Standing / bare-board structural terminality
         active_players = self._get_active_player_numbers()
 
         if len(active_players) == 1:
-            self._winner = active_players[0]
+            sole_player = active_players[0]
+
+            # Canonical early-LPS only applies while stacks remain. On a bare
+            # board, the remaining player may still be able to place rings; if
+            # so, the game is not terminal yet. If no legal placement exists,
+            # resolve via the structural-stalemate ladder rather than immediate
+            # LPS so territory / eliminated rings / markers remain decisive.
+            if self._stacks:
+                self._winner = sole_player
+                self._game_status = GameStatus.COMPLETED
+                return True
+
+            if self._has_any_legal_placement_on_bare_board(sole_player):
+                return False
+
+            self._winner = self._resolve_stalemate_tiebreak()
             self._game_status = GameStatus.COMPLETED
             return True
 
@@ -1562,15 +1583,12 @@ class MutableGameState:
     def _resolve_stalemate_tiebreak(self) -> int:
         """Apply the canonical 5-rung stalemate tiebreak ladder.
 
-        Matches VictoryAggregate.ts lines 506-592 exactly:
+        Matches VictoryAggregate.ts lines 506-592:
         1. Most territory spaces
         2. Most eliminated rings (including rings in hand)
         3. Most markers on board
-        4. Lowest player number (deterministic fallback)
-
-        Note: "last actor" (rung 4 in TS) is not tracked by MutableGameState,
-        so we skip it. This is a minor inaccuracy that only matters when
-        territory, rings, AND markers are all tied — extremely rare.
+        4. Last player to complete a valid turn action
+        5. Lowest player number (deterministic fallback)
         """
         all_pn = list(range(1, self._max_players + 1))
 
@@ -1611,10 +1629,42 @@ class MutableGameState:
             if len(leaders) == 1:
                 return leaders[0]
 
-        # Rung 4: Last actor — not tracked by MutableGameState, skip
+        # Rung 4: Last actor
+        last_actor = self._get_last_actor()
+        if last_actor is not None and last_actor in all_pn:
+            return last_actor
 
         # Rung 5: Lowest player number (deterministic fallback)
         return min(all_pn)
+
+    def _get_last_actor(self) -> int | None:
+        """Return the canonical last-actor fallback for stalemate resolution."""
+        if self._move_history:
+            last_move = self._move_history[-1]
+            if isinstance(last_move.player, int) and last_move.player > 0:
+                return last_move.player
+
+        if self._max_players <= 0 or self._active_player <= 0:
+            return None
+
+        return self._max_players if self._active_player == 1 else self._active_player - 1
+
+    def _has_any_legal_placement_on_bare_board(self, player_number: int) -> bool:
+        """Check bare-board re-entry legality for the remaining player.
+
+        This mirrors the canonical GameEngine helper used by the TS
+        VictoryAggregate stalemate path.
+        """
+        from app.game_engine import GameEngine
+
+        player = self._players.get(player_number)
+        if player is None or player.rings_in_hand <= 0:
+            return False
+
+        return GameEngine._has_any_legal_placement_on_bare_board(  # type: ignore[attr-defined]
+            self.to_immutable(),
+            player_number,
+        )
 
     def _make_chain_capture(self, move: Move, undo: MoveUndo) -> None:
         """Apply capture move (OVERTAKING_CAPTURE, CONTINUE_CAPTURE_SEGMENT, CHAIN_CAPTURE).

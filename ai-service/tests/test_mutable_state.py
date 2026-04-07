@@ -27,6 +27,7 @@ from app.models import (
     Territory,
     TimeControl,
 )
+from app.game_engine import GameEngine
 from app.rules.mutable_state import (
     MoveUndo,
     MutableGameState,
@@ -1423,6 +1424,54 @@ class TestVictoryDetection:
         winner = mutable.get_winner()
         assert winner == 1
 
+    def test_single_remaining_player_with_legal_bare_board_placement_is_not_terminal(self):
+        """Bare-board re-entry must not be mistaken for immediate LPS."""
+        state = create_minimal_game_state()
+        state.board.stacks.clear()
+        state.board.markers.clear()
+        state.board.collapsed_spaces.clear()
+        state.players[0].rings_in_hand = 1
+        state.players[1].rings_in_hand = 0
+        state.victory_threshold = 1000
+        state.territory_victory_threshold = 1000
+        state.territory_victory_minimum = 1000
+
+        engine_state = state.model_copy(deep=True)
+        GameEngine._check_victory(engine_state)  # type: ignore[attr-defined]
+        assert engine_state.game_status == GameStatus.ACTIVE
+        assert engine_state.winner is None
+
+        mutable = MutableGameState.from_immutable(state)
+        assert mutable._check_victory_conditions() is False
+        assert mutable.game_status == GameStatus.ACTIVE
+        assert mutable.winner is None
+
+    def test_single_remaining_player_without_legal_placement_uses_stalemate_ladder(self):
+        """A bare-board dead-end with one ring-holder is structural stalemate, not LPS."""
+        state = create_minimal_game_state()
+        state.board.stacks.clear()
+        state.board.markers.clear()
+        state.board.collapsed_spaces.clear()
+        for x in range(state.board.size):
+            for y in range(state.board.size):
+                state.board.collapsed_spaces[f"{x},{y}"] = 2
+        state.board.collapsed_spaces["1,0"] = 1
+        state.players[0].rings_in_hand = 1
+        state.players[1].rings_in_hand = 0
+        state.victory_threshold = 1000
+        state.territory_victory_threshold = 1000
+        state.territory_victory_minimum = 1000
+
+        engine_state = state.model_copy(deep=True)
+        GameEngine._check_victory(engine_state)  # type: ignore[attr-defined]
+        assert engine_state.game_status == GameStatus.COMPLETED
+        assert engine_state.winner == 2
+
+        mutable = MutableGameState.from_immutable(state)
+        assert mutable._check_victory_conditions() is True
+        assert mutable.game_status == GameStatus.COMPLETED
+        assert mutable.winner == 2
+
     def test_get_winner_from_stored_value(self):
         """Test winner returned from stored value."""
         state = create_minimal_game_state()
@@ -1491,6 +1540,41 @@ class TestVictoryDetection:
         assert mutable._game_status == original_status
         assert mutable._winner == original_winner
         assert not mutable.is_game_over()
+
+    def test_make_move_tracks_history_and_unmake_restores_it(self):
+        """Move history must stay in sync for canonical last-actor tiebreaks."""
+        state = create_minimal_game_state()
+        mutable = MutableGameState.from_immutable(state)
+
+        move = create_place_ring_move(player=1, to_pos=Position(x=0, y=0), count=1)
+        undo = mutable.make_move(move)
+
+        assert len(mutable._move_history) == 1
+        assert mutable._move_history[-1].player == 1
+
+        mutable.unmake_move(undo)
+        assert mutable._move_history == []
+
+    def test_stalemate_tiebreak_uses_last_actor_before_lowest_player(self):
+        """Canonical stalemate ladder should honor last actor when earlier rungs tie."""
+        state = create_minimal_game_state()
+        state.board.stacks.clear()
+        state.board.markers.clear()
+        state.board.collapsed_spaces.clear()
+        state.players[0].rings_in_hand = 0
+        state.players[1].rings_in_hand = 0
+        state.players[0].eliminated_rings = 0
+        state.players[1].eliminated_rings = 0
+        state.move_history = [
+            create_move_stack_move(
+                player=2,
+                from_pos=Position(x=1, y=1),
+                to_pos=Position(x=1, y=2),
+            )
+        ]
+
+        mutable = MutableGameState.from_immutable(state)
+        assert mutable._resolve_stalemate_tiebreak() == 2
 
 
 class TestPlayerSkipping:
