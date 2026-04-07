@@ -96,9 +96,21 @@ echo ""
 # Change to ai-service directory
 cd "$AI_SERVICE_DIR"
 
-# Check if virtual environment or Python is available
-if ! command -v python &> /dev/null; then
-    echo -e "${RED}Error: Python not found${NC}"
+# Pick a usable Python interpreter.
+#
+# On some machines `python` resolves to a non-executable shim, so prefer the
+# project venv first, then python3, then python.
+PYTHON_BIN=""
+if [ -x "$AI_SERVICE_DIR/.venv/bin/python" ]; then
+    PYTHON_BIN="$AI_SERVICE_DIR/.venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v python)"
+fi
+
+if [ -z "$PYTHON_BIN" ]; then
+    echo -e "${RED}Error: No usable Python interpreter found${NC}"
     exit 2
 fi
 
@@ -117,7 +129,7 @@ PYTEST_ARGS+=("--timeout=$TIMEOUT")
 echo -e "${BLUE}Running Python contract tests...${NC}"
 echo ""
 
-if python -m pytest "${PYTEST_ARGS[@]}"; then
+if "$PYTHON_BIN" -m pytest "${PYTEST_ARGS[@]}"; then
     echo ""
     echo -e "${GREEN}============================================${NC}"
     echo -e "${GREEN} All Python contract tests passed!${NC}"
