@@ -5,6 +5,7 @@
 # Usage:
 #   cd ai-service && bash scripts/deploy_minimal_loops.sh
 #   bash scripts/deploy_minimal_loops.sh --dry-run
+#   bash scripts/deploy_minimal_loops.sh --only square8_3p
 
 set -euo pipefail
 
@@ -20,18 +21,48 @@ WATCHDOG="scripts/pipeline_watchdog.py"
 # borderline candidates on a 50-game eval gate. Give that config more
 # evaluation games to reduce promotion noise without slowing the other
 # minimal-loop nodes.
+#
+# square8_3p is the 3p canary: run a smaller 50-game selfplay / 30-game eval
+# profile so we can prove iterative improvement faster before changing the
+# rest of the multiplayer fleet.
 NODES=(
   "100.121.230.110 hex8_2p hex8 2 data/minimal_loop_gh200-8 100 100 128"
   "100.127.168.116 square8_2p square8 2 data/minimal_loop_square8_2p 100 50 128"
-  "100.86.51.4 square8_3p square8 3 data/minimal_loop_square8_3p 100 50 128"
+  "100.86.51.4 square8_3p square8 3 data/minimal_loop_square8_3p 50 30 128"
   "100.91.39.59 hex8_3p hex8 3 data/minimal_loop_hex8_3p 100 50 128"
 )
 
 DRY_RUN=false
-[[ "${1:-}" == "--dry-run" ]] && DRY_RUN=true
+ONLY_CONFIG=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    --only)
+      ONLY_CONFIG="${2:-}"
+      if [[ -z "$ONLY_CONFIG" ]]; then
+        echo "ERROR: --only requires a config key" >&2
+        exit 1
+      fi
+      shift 2
+      ;;
+    *)
+      echo "Usage: $0 [--dry-run] [--only <config_key>]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+MATCHED=false
 
 for entry in "${NODES[@]}"; do
   read -r ip config board players workdir games_per_iter eval_games budget <<< "$entry"
+  if [[ -n "$ONLY_CONFIG" && "$config" != "$ONLY_CONFIG" ]]; then
+    continue
+  fi
+  MATCHED=true
   echo "=== $config ($ip) ==="
 
   if $DRY_RUN; then
@@ -72,5 +103,10 @@ for entry in "${NODES[@]}"; do
   echo "  Done."
   echo ""
 done
+
+if [[ -n "$ONLY_CONFIG" && "$MATCHED" == false ]]; then
+  echo "ERROR: config '$ONLY_CONFIG' not found in deploy list" >&2
+  exit 1
+fi
 
 echo "All nodes deployed and restarted."
