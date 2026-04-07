@@ -5,9 +5,9 @@ This script exports training data with the correct encoder for each architecture
 ensuring encoder/model channel count matches.
 
 Architecture requirements:
-- V2: 40 channels (10 base × 4 frames) - HexStateEncoder
-- V3/V4: 64 channels (16 base × 4 frames) - HexStateEncoderV3 with feature_version=2
-- V5-heavy: 56 channels (14 base × 4 frames) - HexStateEncoderV5
+- V2: board-aware canonical contract
+- V3/V4: board-aware canonical contract
+- V5-heavy: board-aware canonical contract
 
 Usage:
     python scripts/export_for_all_architectures.py --board-type hex8 --num-players 2
@@ -24,40 +24,42 @@ import argparse
 import os
 import subprocess
 import sys
-from pathlib import Path
 
 # Architecture specifications
 ARCHITECTURES = {
     "v2": {
-        "channels": 40,
         "encoder_version": "v2",
         "base_channels": 10,
         "frames": 4,
         "description": "V2 standard (10 base × 4 frames)",
     },
     "v3": {
-        "channels": 64,
         "encoder_version": "v3",
         "base_channels": 16,
         "frames": 4,
         "description": "V3/V4 enhanced (16 base × 4 frames)",
     },
     "v4": {
-        "channels": 64,
         "encoder_version": "v3",  # V4 uses same encoder as V3
         "base_channels": 16,
         "frames": 4,
         "description": "V3/V4 enhanced (16 base × 4 frames)",
     },
     "v5-heavy": {
-        "channels": 56,
         "encoder_version": "v3",  # V5-heavy uses V3 encoder with 14 base channels
-        "base_channels": 14,
-        "frames": 4,
-        "description": "V5-heavy with heuristics (14 base × 4 frames)",
+        "description": "V5-heavy with heuristics (board-aware channel contract)",
         "full_heuristics": True,
     },
 }
+
+
+def get_expected_channels_for_architecture(board_type: str, architecture: str) -> int:
+    """Resolve the expected channel count from the canonical contract."""
+    from app.models import BoardType
+    from app.training.board_encoding_contract import get_expected_channels
+
+    board_type_enum = BoardType(board_type)
+    return get_expected_channels(board_type_enum, architecture)
 
 
 def run_export(
@@ -130,7 +132,11 @@ def run_export(
 
         # Verify the output file exists and has correct channels
         if os.path.exists(output_path):
-            return verify_npz_channels(output_path, arch_spec["channels"])
+            expected_channels = get_expected_channels_for_architecture(
+                board_type,
+                architecture,
+            )
+            return verify_npz_channels(output_path, expected_channels)
         else:
             return False, f"Output file not created: {output_path}"
 

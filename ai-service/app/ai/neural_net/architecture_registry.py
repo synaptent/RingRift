@@ -2,11 +2,17 @@
 
 This module provides a single source of truth for the mapping between:
 - Neural network architecture versions (v2, v3, v4, v5-heavy)
-- Expected input channel counts (40, 64, 56)
-- Corresponding encoder classes (HexStateEncoder, HexStateEncoderV3)
+- Expected input channel counts for unambiguous channel families
+- Corresponding encoder classes
 
-The registry enables automatic encoder selection based on loaded model weights,
-ensuring MCTS and other inference code uses the correct encoder for any architecture.
+There are two lookup modes:
+- channel-family lookup via ``ARCHITECTURE_REGISTRY`` for unambiguous cases
+  (40ch hex v2, 64ch hex v3/v4 family, 56ch square family),
+- class-name lookup via ``get_architecture_from_class_name()`` for ambiguous
+  cases such as hex ``v5-heavy`` vs square ``56ch`` families.
+
+This keeps MCTS/inference encoder selection truthful instead of forcing one
+fake interpretation onto every 56- or 64-channel model.
 
 Created: January 2026
 Purpose: Fix encoder/model channel mismatches in MCTS evaluation
@@ -34,7 +40,8 @@ class ArchitectureVersion(Enum):
     V3_LITE = "v3_lite"         # 64 channels (lighter model)
     V3_FLAT = "v3_flat"         # 64 channels (flat policy head)
     V4 = "v4"                   # 64 channels (attention-based)
-    V5_HEAVY = "v5_heavy"       # 56 channels (14 base × 4 frames with heuristics)
+    V5_HEAVY = "v5_heavy"       # Hex: 64 channels, Square: 56 channels
+    SQUARE_FAMILY = "square_family"  # Generic square encoder family (56 channels)
 
 
 @dataclass(frozen=True)
@@ -52,61 +59,165 @@ class ArchitectureSpec:
     def class_names(self) -> Tuple[str, ...]:
         """Return the class names that match this architecture."""
         _version_to_classes = {
-            ArchitectureVersion.V2: ("HexNeuralNet_v2", "RingRiftCNN_v2"),
-            ArchitectureVersion.V2_LITE: ("HexNeuralNet_v2_Lite", "RingRiftCNN_v2_Lite"),
-            ArchitectureVersion.V3: ("HexNeuralNet_v3", "RingRiftCNN_v3"),
-            ArchitectureVersion.V3_LITE: ("HexNeuralNet_v3_Lite", "RingRiftCNN_v3_Lite"),
-            ArchitectureVersion.V3_FLAT: ("HexNeuralNet_v3_Flat", "RingRiftCNN_v3_Flat"),
-            ArchitectureVersion.V4: ("HexNeuralNet_v4", "RingRiftCNN_v4"),
-            ArchitectureVersion.V5_HEAVY: ("HexNeuralNet_v5_Heavy", "RingRiftCNN_v5_Heavy"),
+            ArchitectureVersion.V2: ("HexNeuralNet_v2",),
+            ArchitectureVersion.V2_LITE: ("HexNeuralNet_v2_Lite",),
+            ArchitectureVersion.V3: ("HexNeuralNet_v3",),
+            ArchitectureVersion.V3_LITE: ("HexNeuralNet_v3_Lite",),
+            ArchitectureVersion.V3_FLAT: ("HexNeuralNet_v3_Flat",),
+            ArchitectureVersion.V4: ("HexNeuralNet_v4",),
+            ArchitectureVersion.V5_HEAVY: ("HexNeuralNet_v5_Heavy",),
+            ArchitectureVersion.SQUARE_FAMILY: (),
         }
         return _version_to_classes.get(self.version, ())
 
 
-# Canonical registry: channel count -> architecture spec
-ARCHITECTURE_REGISTRY: Dict[int, ArchitectureSpec] = {
-    40: ArchitectureSpec(
-        version=ArchitectureVersion.V2,
-        expected_channels=40,
-        encoder_name="HexStateEncoder",
-        base_channels=10,
-        frame_count=4,
-        description="V2 standard (10 base × 4 frames)",
-    ),
-    64: ArchitectureSpec(
+HEX_V2_SPEC = ArchitectureSpec(
+    version=ArchitectureVersion.V2,
+    expected_channels=40,
+    encoder_name="HexStateEncoder",
+    base_channels=10,
+    frame_count=4,
+    description="Hex V2 standard (10 base × 4 frames)",
+)
+
+HEX_V3_FAMILY_SPEC = ArchitectureSpec(
+    version=ArchitectureVersion.V3,
+    expected_channels=64,
+    encoder_name="HexStateEncoderV3",
+    base_channels=16,
+    frame_count=4,
+    description="Hex V3/V4/V5-heavy family (16 base × 4 frames)",
+)
+
+SQUARE_FAMILY_SPEC = ArchitectureSpec(
+    version=ArchitectureVersion.SQUARE_FAMILY,
+    expected_channels=56,
+    encoder_name="SquareStateEncoder",
+    base_channels=14,
+    frame_count=4,
+    description="Square encoder family (14 base × 4 frames)",
+)
+
+V2_LITE_SPEC = ArchitectureSpec(
+    version=ArchitectureVersion.V2_LITE,
+    expected_channels=36,
+    encoder_name="HexStateEncoder",
+    base_channels=12,
+    frame_count=3,
+    description="V2-lite (12 base × 3 frames)",
+)
+
+V3_LITE_SPEC = ArchitectureSpec(
+    version=ArchitectureVersion.V3_LITE,
+    expected_channels=44,
+    encoder_name="HexStateEncoderV3Lite",
+    base_channels=12,
+    frame_count=3,
+    description="V3-lite (12 base × 3 frames + 8 extras)",
+)
+
+_CLASS_NAME_TO_SPEC: Dict[str, ArchitectureSpec] = {
+    "HexNeuralNet_v2": HEX_V2_SPEC,
+    "HexNeuralNet_v2_Lite": V2_LITE_SPEC,
+    "HexNeuralNet_v3": ArchitectureSpec(
         version=ArchitectureVersion.V3,
         expected_channels=64,
         encoder_name="HexStateEncoderV3",
         base_channels=16,
         frame_count=4,
-        description="V3/V4 enhanced (16 base × 4 frames)",
+        description="Hex V3 (16 base × 4 frames)",
     ),
-    56: ArchitectureSpec(
+    "HexNeuralNet_v3_Lite": V3_LITE_SPEC,
+    "HexNeuralNet_v3_Flat": ArchitectureSpec(
+        version=ArchitectureVersion.V3_FLAT,
+        expected_channels=64,
+        encoder_name="HexStateEncoderV3",
+        base_channels=16,
+        frame_count=4,
+        description="Hex V3 flat policy (16 base × 4 frames)",
+    ),
+    "HexNeuralNet_v4": ArchitectureSpec(
+        version=ArchitectureVersion.V4,
+        expected_channels=64,
+        encoder_name="HexStateEncoderV3",
+        base_channels=16,
+        frame_count=4,
+        description="Hex V4 attention family (16 base × 4 frames)",
+    ),
+    "HexNeuralNet_v5_Heavy": ArchitectureSpec(
         version=ArchitectureVersion.V5_HEAVY,
+        expected_channels=64,
+        encoder_name="HexStateEncoderV3",
+        base_channels=16,
+        frame_count=4,
+        description="Hex V5-heavy family (16 base × 4 frames + heuristics)",
+    ),
+    "RingRiftCNN_v2": ArchitectureSpec(
+        version=ArchitectureVersion.V2,
         expected_channels=56,
-        encoder_name="HexStateEncoderV5",
+        encoder_name="SquareStateEncoder",
         base_channels=14,
         frame_count=4,
-        description="V5-heavy with heuristics (14 base × 4 frames)",
+        description="Square V2 family (14 base × 4 frames)",
     ),
-    # Lite variants with 36 channels (12 base × 3 frames)
-    36: ArchitectureSpec(
+    "RingRiftCNN_v2_Lite": ArchitectureSpec(
         version=ArchitectureVersion.V2_LITE,
-        expected_channels=36,
-        encoder_name="HexStateEncoder",
-        base_channels=12,
-        frame_count=3,
-        description="V2-lite (12 base × 3 frames)",
+        expected_channels=56,
+        encoder_name="SquareStateEncoder",
+        base_channels=14,
+        frame_count=4,
+        description="Square V2-lite family (14 base × 4 frames)",
     ),
-    # V3-lite with 44 channels (12 base × 3 frames + 8 phase/chain)
-    44: ArchitectureSpec(
+    "RingRiftCNN_v3": ArchitectureSpec(
+        version=ArchitectureVersion.V3,
+        expected_channels=56,
+        encoder_name="SquareStateEncoder",
+        base_channels=14,
+        frame_count=4,
+        description="Square V3 family (14 base × 4 frames)",
+    ),
+    "RingRiftCNN_v3_Lite": ArchitectureSpec(
         version=ArchitectureVersion.V3_LITE,
-        expected_channels=44,
-        encoder_name="HexStateEncoderV3Lite",
-        base_channels=12,
-        frame_count=3,
-        description="V3-lite (12 base × 3 frames + 8 extras)",
+        expected_channels=56,
+        encoder_name="SquareStateEncoder",
+        base_channels=14,
+        frame_count=4,
+        description="Square V3-lite family (14 base × 4 frames)",
     ),
+    "RingRiftCNN_v3_Flat": ArchitectureSpec(
+        version=ArchitectureVersion.V3_FLAT,
+        expected_channels=56,
+        encoder_name="SquareStateEncoder",
+        base_channels=14,
+        frame_count=4,
+        description="Square V3 flat policy family (14 base × 4 frames)",
+    ),
+    "RingRiftCNN_v4": ArchitectureSpec(
+        version=ArchitectureVersion.V4,
+        expected_channels=56,
+        encoder_name="SquareStateEncoder",
+        base_channels=14,
+        frame_count=4,
+        description="Square V4 family (14 base × 4 frames)",
+    ),
+    "RingRiftCNN_v5_Heavy": ArchitectureSpec(
+        version=ArchitectureVersion.V5_HEAVY,
+        expected_channels=56,
+        encoder_name="SquareStateEncoder",
+        base_channels=14,
+        frame_count=4,
+        description="Square V5-heavy family (14 base × 4 frames + heuristics)",
+    ),
+}
+
+
+# Canonical registry: channel count -> generic architecture spec
+ARCHITECTURE_REGISTRY: Dict[int, ArchitectureSpec] = {
+    40: HEX_V2_SPEC,
+    64: HEX_V3_FAMILY_SPEC,
+    56: SQUARE_FAMILY_SPEC,
+    36: V2_LITE_SPEC,
+    44: V3_LITE_SPEC,
 }
 
 
@@ -178,16 +289,9 @@ def get_encoder_class_for_channels(channels: int) -> Optional[Type[Any]]:
         elif spec.encoder_name == "HexStateEncoderV3":
             from app.training.encoding import HexStateEncoderV3
             return HexStateEncoderV3
-        elif spec.encoder_name == "HexStateEncoderV5":
-            # V5 may use a specialized encoder or fall back to V3
-            try:
-                from app.training.encoding import HexStateEncoderV5
-                return HexStateEncoderV5
-            except ImportError:
-                # Fall back to V3 encoder if V5 not available
-                from app.training.encoding import HexStateEncoderV3
-                logger.debug("HexStateEncoderV5 not found, using V3")
-                return HexStateEncoderV3
+        elif spec.encoder_name == "SquareStateEncoder":
+            from app.training.encoding import SquareStateEncoder
+            return SquareStateEncoder
         elif spec.encoder_name == "HexStateEncoderV3Lite":
             # Lite variant may fall back to base encoder
             try:
@@ -217,30 +321,50 @@ def get_encoder_for_model(model: "nn.Module") -> Optional[Any]:
     Returns:
         An encoder instance, or None if not determinable
     """
-    channels = get_expected_channels_from_model(model)
-    if channels is None:
-        logger.warning("Could not detect model channels, using default encoder")
-        return None
+    class_name = model.__class__.__name__
+    spec = _CLASS_NAME_TO_SPEC.get(class_name)
 
-    encoder_class = get_encoder_class_for_channels(channels)
+    if spec is None:
+        channels = get_expected_channels_from_model(model)
+        if channels is None:
+            logger.warning("Could not detect model channels, using default encoder")
+            return None
+        spec = get_architecture_spec(channels)
+        if spec is None:
+            return None
+
+    encoder_class = get_encoder_class_for_channels(spec.expected_channels)
     if encoder_class is None:
         return None
 
     try:
-        # Instantiate with correct parameters based on channel count
-        # Jan 2026: V3/V4 models (64 channels) require feature_version=2
-        # to produce 16 base channels × 4 frames = 64 total channels.
-        # Without this, feature_version defaults to 1 (10 base channels),
-        # causing encoder/model channel mismatch and all-loss gauntlet results.
-        if channels == 64:
-            # V3/V4 requires feature_version=2
-            return encoder_class(feature_version=2)
-        elif channels == 56:
-            # V5-heavy also uses feature_version=2
-            return encoder_class(feature_version=2)
-        else:
-            # V2 and other versions use default parameters
-            return encoder_class()
+        if spec.encoder_name == "SquareStateEncoder":
+            from app.models import BoardType
+
+            board_size = int(getattr(model, "board_size", 8))
+            board_type = BoardType.SQUARE19 if board_size == 19 else BoardType.SQUARE8
+            return encoder_class(
+                board_type=board_type,
+                board_size=board_size,
+                feature_version=2,
+            )
+        if spec.encoder_name in {
+            "HexStateEncoder",
+            "HexStateEncoderV3",
+            "HexStateEncoderV3Lite",
+        }:
+            from app.ai.neural_net import POLICY_SIZE_HEX8, P_HEX
+
+            board_size = int(getattr(model, "board_size", 25))
+            policy_size = POLICY_SIZE_HEX8 if board_size == 9 else P_HEX
+            kwargs: dict[str, Any] = {
+                "board_size": board_size,
+                "policy_size": policy_size,
+            }
+            if spec.expected_channels == 64:
+                kwargs["feature_version"] = 2
+            return encoder_class(**kwargs)
+        return encoder_class()
     except Exception as e:
         logger.error(f"Failed to instantiate encoder: {e}")
         return None
@@ -355,10 +479,7 @@ def get_architecture_from_class_name(class_name: str) -> Optional[ArchitectureSp
     Returns:
         ArchitectureSpec if found, None otherwise
     """
-    for spec in ARCHITECTURE_REGISTRY.values():
-        if class_name in spec.class_names:
-            return spec
-    return None
+    return _CLASS_NAME_TO_SPEC.get(class_name)
 
 
 # Convenience mappings for common use cases
@@ -403,7 +524,8 @@ def get_encoder_version_from_checkpoint(checkpoint_path: str) -> Optional[str]:
         checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
 
         # April 2026: Prefer explicit versioning metadata over channel-count inference.
-        # Channel counts are ambiguous: square v2 and hex v5-heavy both use 56 channels.
+        # Exact architecture is ambiguous for some channel families (for example
+        # 64ch hex v3/v4/v5-heavy), so use metadata when present.
         if isinstance(checkpoint, dict):
             meta = checkpoint.get("_versioning_metadata", {})
             arch_ver = meta.get("architecture_version", "")
@@ -433,9 +555,9 @@ def get_encoder_version_from_checkpoint(checkpoint_path: str) -> Optional[str]:
                 in_channels = weight.shape[1]
                 logger.debug(f"Detected {in_channels} channels from {key}")
 
-                # Map channels to encoder version
-                # NOTE: 56 channels is ambiguous (square v2 OR hex v5-heavy).
-                # Without metadata, default to v2 since it's the common case.
+                # Map channels to encoder family. Square 56ch models use the
+                # square encoder family; hex 64ch models use the V3-family
+                # encoder path (covering v3/v4/v5-heavy).
                 if in_channels == 40:
                     return "v2"
                 elif in_channels == 64:
@@ -515,9 +637,8 @@ def get_model_version_from_checkpoint(checkpoint_path: str) -> Optional[str]:
         elif has_value_fc3:
             return "v4"
         elif len(value_fc_layers) == 2:
-            # Check input channels to distinguish v2 from v3
-            # NOTE: 56 channels is ambiguous (square v2 OR hex v5-heavy).
-            # Without metadata and without heuristic_encoder, default to v2.
+            # Check input channels to distinguish square-family from hex-family
+            # checkpoints when structural signals are otherwise limited.
             for key in keys:
                 if "conv1.weight" in key:
                     weight = state_dict[key]

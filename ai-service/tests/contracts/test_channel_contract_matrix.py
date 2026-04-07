@@ -128,9 +128,32 @@ class TestArchitectureRegistryConsistency:
             assert contract_get_channels(bt, "v5-heavy") == 64
 
     def test_56ch_is_square_v2(self) -> None:
-        """56 channels on square boards must map to v2."""
+        """56 channels must map to the square encoder family, not hex v5-heavy."""
+        from app.ai.neural_net.architecture_registry import ARCHITECTURE_REGISTRY
+
+        spec = ARCHITECTURE_REGISTRY[56]
+        assert spec.encoder_name == "SquareStateEncoder"
+
         for bt in (BoardType.SQUARE8, BoardType.SQUARE19):
             assert contract_get_channels(bt, "v2") == 56
+
+    def test_class_name_mapping_handles_hex_v5_heavy(self) -> None:
+        """Class-name lookup must preserve the real hex heavy channel width."""
+        from app.ai.neural_net.architecture_registry import get_architecture_from_class_name
+
+        spec = get_architecture_from_class_name("HexNeuralNet_v5_Heavy")
+        assert spec is not None
+        assert spec.expected_channels == 64
+        assert spec.encoder_name == "HexStateEncoderV3"
+
+    def test_class_name_mapping_handles_square_cnn(self) -> None:
+        """Square CNN class lookup must not borrow the hex heavy spec."""
+        from app.ai.neural_net.architecture_registry import get_architecture_from_class_name
+
+        spec = get_architecture_from_class_name("RingRiftCNN_v4")
+        assert spec is not None
+        assert spec.expected_channels == 56
+        assert spec.encoder_name == "SquareStateEncoder"
 
 
 class TestDetectModelVersionAmbiguity:
