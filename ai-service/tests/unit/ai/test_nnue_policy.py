@@ -11,6 +11,7 @@ Tests cover:
 import pytest
 import numpy as np
 import torch
+from unittest.mock import patch
 
 from app.models import BoardType, Position
 
@@ -205,6 +206,93 @@ class TestRingRiftNNUEWithPolicy:
 
         # High temperature should have lower max probability (more uniform)
         assert probs_high_temp.max() <= probs_low_temp.max()
+
+
+class TestPreparePolicyCheckpoint:
+    """Tests for policy checkpoint normalization and migration."""
+
+    def test_pads_legacy_accumulator_width(self):
+        """Legacy policy checkpoints should pad missing accumulator features."""
+        from app.ai.nnue import get_feature_dim
+        from app.ai.nnue_policy import RingRiftNNUEWithPolicy, prepare_policy_checkpoint
+
+        model = RingRiftNNUEWithPolicy(
+            board_type=BoardType.SQUARE8,
+            hidden_dim=32,
+            num_hidden_layers=1,
+        )
+        checkpoint = {
+            "model_state_dict": model.state_dict(),
+            "hidden_dim": 32,
+            "num_hidden_layers": 1,
+        }
+        full_weight = checkpoint["model_state_dict"]["accumulator.weight"]
+        legacy_width = full_weight.shape[1] - 8
+        checkpoint["model_state_dict"]["accumulator.weight"] = full_weight[:, :legacy_width].clone()
+
+        state_dict, hidden_dim, num_hidden_layers = prepare_policy_checkpoint(
+            checkpoint,
+            BoardType.SQUARE8,
+        )
+
+        assert hidden_dim == 32
+        assert num_hidden_layers == 1
+        assert state_dict["accumulator.weight"].shape[1] == get_feature_dim(BoardType.SQUARE8)
+        assert torch.equal(state_dict["accumulator.weight"][:, :legacy_width], full_weight[:, :legacy_width])
+        assert torch.count_nonzero(state_dict["accumulator.weight"][:, legacy_width:]) == 0
+
+    def test_strips_module_prefixes(self):
+        """DataParallel checkpoints should normalize module-prefixed keys."""
+        from app.ai.nnue_policy import RingRiftNNUEWithPolicy, prepare_policy_checkpoint
+
+        model = RingRiftNNUEWithPolicy(
+            board_type=BoardType.SQUARE8,
+            hidden_dim=32,
+            num_hidden_layers=1,
+        )
+        checkpoint = {
+            "model_state_dict": {f"module.{k}": v for k, v in model.state_dict().items()},
+            "hidden_dim": 32,
+            "num_hidden_layers": 1,
+        }
+
+        state_dict, _, _ = prepare_policy_checkpoint(checkpoint, BoardType.SQUARE8)
+
+        assert "accumulator.weight" in state_dict
+        assert all(not key.startswith("module.") for key in state_dict)
+
+
+class TestNNUEPolicyAgentLoading:
+    """Tests for NNUEPolicyAgent checkpoint loading."""
+
+    def test_load_model_migrates_legacy_policy_checkpoint(self):
+        """NNUEPolicyAgent should load legacy-width checkpoints without error."""
+        from app.ai.nnue_policy import NNUEPolicyAgent, RingRiftNNUEWithPolicy
+
+        model = RingRiftNNUEWithPolicy(
+            board_type=BoardType.SQUARE8,
+            hidden_dim=32,
+            num_hidden_layers=1,
+        )
+        checkpoint = {
+            "model_state_dict": model.state_dict(),
+            "hidden_dim": 32,
+            "num_hidden_layers": 1,
+        }
+        checkpoint["model_state_dict"]["accumulator.weight"] = (
+            checkpoint["model_state_dict"]["accumulator.weight"][:, :-8].clone()
+        )
+
+        with patch("app.utils.torch_utils.safe_load_checkpoint", return_value=checkpoint):
+            agent = NNUEPolicyAgent(
+                model_path="dummy.pt",
+                board_type="square8",
+                num_players=2,
+                device="cpu",
+            )
+
+        assert agent.model is not None
+        assert agent.model.board_type == BoardType.SQUARE8
 
 
 class TestPosToFlatIndex:

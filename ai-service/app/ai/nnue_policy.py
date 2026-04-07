@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Optional
 
@@ -85,6 +86,75 @@ def get_hidden_dim_for_board(board_type: BoardType, board_size: int = 0) -> int:
         else:
             return 1024  # full hexagonal (size 19+) - large model
     return 256  # default fallback
+
+
+def prepare_policy_checkpoint(
+    checkpoint: object,
+    board_type: BoardType,
+) -> tuple[dict[str, torch.Tensor], int, int]:
+    """Normalize a policy checkpoint and migrate legacy accumulator widths.
+
+    Older NNUE policy checkpoints may have been trained before additional
+    global features were appended to the accumulator input. When that happens,
+    pad the accumulator weight with zeros so the checkpoint remains loadable.
+    """
+    if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+        state_dict = checkpoint["model_state_dict"]
+        hidden_dim = int(checkpoint.get("hidden_dim") or 128)
+        num_hidden_layers = int(checkpoint.get("num_hidden_layers") or 2)
+    elif isinstance(checkpoint, dict) and "state_dict" in checkpoint:
+        state_dict = checkpoint["state_dict"]
+        hidden_dim = int(checkpoint.get("hidden_dim") or 128)
+        num_hidden_layers = int(checkpoint.get("num_hidden_layers") or 2)
+    elif isinstance(checkpoint, dict):
+        state_dict = checkpoint
+        hidden_dim = 128
+        num_hidden_layers = 2
+    else:
+        raise TypeError(f"Unexpected policy checkpoint: {type(checkpoint).__name__}")
+
+    if not isinstance(state_dict, dict):
+        raise TypeError(f"Unexpected policy state dict: {type(state_dict).__name__}")
+
+    if any(k.startswith("module.") for k in state_dict):
+        state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+    else:
+        state_dict = dict(state_dict)
+
+    accumulator_weight = state_dict.get("accumulator.weight")
+    if accumulator_weight is not None and hasattr(accumulator_weight, "shape"):
+        hidden_dim = int(accumulator_weight.shape[0])
+        target_input_size = get_feature_dim(board_type)
+        current_input_size = int(accumulator_weight.shape[1])
+        if current_input_size < target_input_size:
+            padding_size = target_input_size - current_input_size
+            padding = torch.zeros(
+                accumulator_weight.shape[0],
+                padding_size,
+                device=accumulator_weight.device,
+                dtype=accumulator_weight.dtype,
+            )
+            state_dict["accumulator.weight"] = torch.cat([accumulator_weight, padding], dim=1)
+            logger.info(
+                "Padded NNUE policy accumulator for %s: %d -> %d (+%d features)",
+                board_type.value,
+                current_input_size,
+                target_input_size,
+                padding_size,
+            )
+
+    try:
+        layer_indices = {
+            int(match.group(1))
+            for key in state_dict
+            if (match := re.match(r"hidden\.(\d+)\.weight$", key))
+        }
+        if layer_indices:
+            num_hidden_layers = len(layer_indices)
+    except (TypeError, AttributeError, ValueError):
+        pass
+
+    return state_dict, hidden_dim, num_hidden_layers
 
 
 class RingRiftNNUEWithPolicy(nn.Module):
@@ -2775,33 +2845,17 @@ class NNUEPolicyAgent:
         logger = logging.getLogger(__name__)
 
         checkpoint = safe_load_checkpoint(self.model_path, map_location=str(self.device), warn_on_unsafe=False)
-
-        # Handle different checkpoint formats
-        if isinstance(checkpoint, dict):
-            if "model_state_dict" in checkpoint:
-                state_dict = checkpoint["model_state_dict"]
-            elif "state_dict" in checkpoint:
-                state_dict = checkpoint["state_dict"]
-            else:
-                state_dict = checkpoint
-        else:
-            # Assume it's a state dict directly
-            state_dict = checkpoint
-
-        # Infer model architecture from state_dict
-        hidden_dim = None
-        if "accumulator.weight" in state_dict:
-            hidden_dim = state_dict["accumulator.weight"].shape[0]
+        state_dict, hidden_dim, num_hidden_layers = prepare_policy_checkpoint(
+            checkpoint,
+            self.board_type,
+        )
 
         # Create model with inferred or default parameters
         model = RingRiftNNUEWithPolicy(
             board_type=self.board_type,
             hidden_dim=hidden_dim,
+            num_hidden_layers=num_hidden_layers,
         )
-
-        # Load weights (handle DataParallel prefix if present)
-        if any(k.startswith("module.") for k in state_dict):
-            state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
 
         model.load_state_dict(state_dict)
         model = model.to(self.device)

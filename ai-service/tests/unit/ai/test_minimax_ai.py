@@ -13,6 +13,7 @@ Created: December 2025
 """
 
 import pytest
+import torch
 from unittest.mock import MagicMock, patch
 import logging
 import os
@@ -223,6 +224,39 @@ class TestMinimaxAINNUE:
         config = AIConfig(difficulty=2, use_neural_net=False)
         ai = MinimaxAI(player_number=0, config=config)
         assert ai is not None
+
+    def test_policy_loader_migrates_legacy_checkpoint_width(self):
+        """Legacy policy checkpoints should still enable policy ordering."""
+        from app.ai.nnue_policy import RingRiftNNUEWithPolicy
+
+        base_model = RingRiftNNUEWithPolicy(
+            board_type=BoardType.SQUARE8,
+            hidden_dim=32,
+            num_hidden_layers=1,
+        )
+        checkpoint = {
+            "model_state_dict": base_model.state_dict(),
+            "hidden_dim": 32,
+            "num_hidden_layers": 1,
+        }
+        checkpoint["model_state_dict"]["accumulator.weight"] = (
+            checkpoint["model_state_dict"]["accumulator.weight"][:, :-8].clone()
+        )
+
+        config = AIConfig(difficulty=5, use_neural_net=True)
+        ai = MinimaxAI(player_number=0, config=config)
+
+        with patch("app.ai.minimax_ai.os.path.exists", return_value=True):
+            with patch("app.utils.torch_utils.safe_load_checkpoint", return_value=checkpoint):
+                ai._pending_policy_init = True
+                ai._init_policy_model(BoardType.SQUARE8, 2)
+
+        assert ai.use_policy_ordering is True
+        assert ai.policy_model is not None
+        assert ai.policy_model.accumulator.weight.shape[1] > checkpoint["model_state_dict"]["accumulator.weight"].shape[1]
+        assert torch.count_nonzero(
+            ai.policy_model.accumulator.weight[:, checkpoint["model_state_dict"]["accumulator.weight"].shape[1]:]
+        ) == 0
 
 
 class TestMinimaxAISearch:

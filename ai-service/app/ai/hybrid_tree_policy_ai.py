@@ -118,7 +118,7 @@ class HybridTreePolicyAI(HeuristicAI):
             True if model loaded successfully.
         """
         try:
-            from .nnue_policy import RingRiftNNUEWithPolicy
+            from .nnue_policy import RingRiftNNUEWithPolicy, prepare_policy_checkpoint
             from app.utils.torch_utils import safe_load_checkpoint
 
             if model_path is None:
@@ -135,19 +135,20 @@ class HybridTreePolicyAI(HeuristicAI):
                 logger.warning(f"HybridTreePolicyAI: Model not found at {model_path}")
                 return False
 
-            checkpoint = safe_load_checkpoint(model_path, map_location="cpu", warn_on_unsafe=False)
-            hidden_dim = checkpoint.get("hidden_dim", 256)
-            num_hidden_layers = checkpoint.get("num_hidden_layers", 2)
-
             # Determine board type from checkpoint or default
             board_type = self._board_type or BoardType.SQUARE8
+            checkpoint = safe_load_checkpoint(model_path, map_location="cpu", warn_on_unsafe=False)
+            state_dict, hidden_dim, num_hidden_layers = prepare_policy_checkpoint(
+                checkpoint,
+                board_type,
+            )
 
             self.policy_model = RingRiftNNUEWithPolicy(
                 board_type=board_type,
                 hidden_dim=hidden_dim,
                 num_hidden_layers=num_hidden_layers,
             )
-            self.policy_model.load_state_dict(checkpoint["model_state_dict"])
+            self.policy_model.load_state_dict(state_dict)
 
             # Initialize device and move model
             self._init_device()

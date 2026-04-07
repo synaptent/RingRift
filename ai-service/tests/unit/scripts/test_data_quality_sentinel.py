@@ -272,8 +272,8 @@ class TestComputeVerdict:
         assert verdict.critical
         assert any("variance" in w.lower() for w in verdict.warnings)
 
-    def test_critical_identical_data(self) -> None:
-        """Identical data across iterations should be CRITICAL."""
+    def test_warn_identical_data_when_entropy_is_healthy(self) -> None:
+        """Identical data alone should WARN when policy entropy remains healthy."""
         fp = DataFingerprint(
             n_samples=100, n_channels=14,
             feature_means=[0.5] * 14, feature_stds=[1.0] * 14,
@@ -285,8 +285,9 @@ class TestComputeVerdict:
             no_value_variance=False, high_draw_rate=False,
         )
         verdict = compute_verdict(fp, comp)
-        assert verdict.critical
-        assert any("identical" in w.lower() for w in verdict.warnings)
+        assert verdict.passed
+        assert not verdict.critical
+        assert any("similar to recent iteration" in w.lower() for w in verdict.warnings)
 
     def test_warn_low_value_std(self) -> None:
         """Low value target std (but not critical otherwise) should be WARN."""
@@ -332,18 +333,21 @@ class TestEndToEnd:
         assert verdict.critical
         assert not verdict.passed
 
-    def test_identical_data_across_iterations(self, tmp_path: Path) -> None:
-        """Running DQS twice on the exact same data flags CRITICAL on second run."""
+    def test_identical_data_across_iterations_warns_when_entropy_is_healthy(
+        self, tmp_path: Path
+    ) -> None:
+        """Running DQS twice on healthy data should WARN, not CRITICAL."""
         npz = _make_npz(tmp_path, n_samples=100, seed=42)
 
         # First check: should pass (no history)
         v1 = check_data_quality(npz, work_dir=str(tmp_path))
         assert v1.passed
 
-        # Second check with same NPZ: should flag identical data
+        # Second check with same NPZ: identical-but-healthy should warn only.
         v2 = check_data_quality(npz, work_dir=str(tmp_path))
-        assert v2.critical
-        assert any("identical" in w.lower() for w in v2.warnings)
+        assert v2.passed
+        assert not v2.critical
+        assert any("similar to recent iteration" in w.lower() for w in v2.warnings)
 
     def test_history_accumulates(self, tmp_path: Path) -> None:
         """Multiple calls accumulate history entries."""

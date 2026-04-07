@@ -718,7 +718,7 @@ class ParallelGameRunner:
         """
         try:
             from ..models import BoardType
-            from .nnue_policy import RingRiftNNUEWithPolicy
+            from .nnue_policy import RingRiftNNUEWithPolicy, prepare_policy_checkpoint
 
             if model_path is None:
                 board_type_str = self.board_type or "square8"
@@ -735,19 +735,21 @@ class ParallelGameRunner:
             # Use safe loading utility - tries weights_only=True first
             from app.utils.torch_utils import safe_load_checkpoint
             checkpoint = safe_load_checkpoint(model_path, map_location="cpu", warn_on_unsafe=False)
-            hidden_dim = checkpoint.get("hidden_dim", 256)
-            num_hidden_layers = checkpoint.get("num_hidden_layers", 2)
 
             # Determine board type
             board_type_str = self.board_type or "square8"
             board_type = BoardType(board_type_str)
+            state_dict, hidden_dim, num_hidden_layers = prepare_policy_checkpoint(
+                checkpoint,
+                board_type,
+            )
 
             self.policy_model = RingRiftNNUEWithPolicy(
                 board_type=board_type,
                 hidden_dim=hidden_dim,
                 num_hidden_layers=num_hidden_layers,
             )
-            self.policy_model.load_state_dict(checkpoint["model_state_dict"])
+            self.policy_model.load_state_dict(state_dict)
             self.policy_model.to(self.device)
             self.policy_model.eval()
 
@@ -793,6 +795,8 @@ class ParallelGameRunner:
 
         try:
             from app.utils.torch_utils import safe_load_checkpoint
+            from .nnue_policy import RingRiftNNUEWithPolicy, prepare_policy_checkpoint
+            from ..models import BoardType
 
             if model_path is None:
                 board_type_str = self.board_type or "square8"
@@ -808,10 +812,23 @@ class ParallelGameRunner:
 
             # Load new state dict
             checkpoint = safe_load_checkpoint(model_path, map_location=self.device, warn_on_unsafe=False)
-            new_state_dict = checkpoint["model_state_dict"]
+            board_type_str = self.board_type or "square8"
+            board_type = BoardType(board_type_str)
+            new_state_dict, hidden_dim, num_hidden_layers = prepare_policy_checkpoint(
+                checkpoint,
+                board_type,
+            )
 
-            # Hot-swap weights (in-place update)
-            self.policy_model.load_state_dict(new_state_dict)
+            # Recreate the model so legacy checkpoints with migrated widths or
+            # different hidden-layer metadata reload cleanly.
+            reloaded_model = RingRiftNNUEWithPolicy(
+                board_type=board_type,
+                hidden_dim=hidden_dim,
+                num_hidden_layers=num_hidden_layers,
+            )
+            reloaded_model.load_state_dict(new_state_dict)
+            reloaded_model.to(self.device)
+            self.policy_model = reloaded_model
             self.policy_model.eval()
 
             # Re-enable FP16 if on CUDA (with FP32 fallback for models with extreme weights)

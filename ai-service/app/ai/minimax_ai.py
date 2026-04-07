@@ -217,7 +217,7 @@ class MinimaxAI(HeuristicAI):
         self._pending_policy_init = False
 
         try:
-            from .nnue_policy import RingRiftNNUEWithPolicy
+            from .nnue_policy import RingRiftNNUEWithPolicy, prepare_policy_checkpoint
 
             # Try to load policy model checkpoint
             model_path = os.path.join(
@@ -231,43 +231,16 @@ class MinimaxAI(HeuristicAI):
                 # falls back to full loading for legacy checkpoints with metadata
                 from app.utils.torch_utils import safe_load_checkpoint
                 checkpoint = safe_load_checkpoint(model_path, map_location="cpu", warn_on_unsafe=False)
-                state_dict = checkpoint
-                hidden_dim = 256
-                num_hidden_layers = 2
-
-                if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
-                    state_dict = checkpoint["model_state_dict"]
-                    hidden_dim = int(checkpoint.get("hidden_dim") or hidden_dim)
-                    num_hidden_layers = int(checkpoint.get("num_hidden_layers") or num_hidden_layers)
-
-                if isinstance(state_dict, dict):
-                    try:
-                        accumulator_weight = state_dict.get("accumulator.weight")
-                        if accumulator_weight is not None and hasattr(accumulator_weight, "shape"):
-                            hidden_dim = int(accumulator_weight.shape[0])
-                    except (AttributeError, TypeError, ValueError, IndexError):
-                        pass
-
-                    try:
-                        import re
-
-                        layer_indices = set()
-                        for key in state_dict:
-                            match = re.match(r"hidden\.(\d+)\.weight$", key)
-                            if match:
-                                layer_indices.add(int(match.group(1)))
-                        if layer_indices:
-                            num_hidden_layers = len(layer_indices)
-                    except (TypeError, AttributeError, ValueError):
-                        pass
+                state_dict, hidden_dim, num_hidden_layers = prepare_policy_checkpoint(
+                    checkpoint,
+                    board_type,
+                )
 
                 self.policy_model = RingRiftNNUEWithPolicy(
                     board_type=board_type,
                     hidden_dim=hidden_dim,
                     num_hidden_layers=num_hidden_layers,
                 )
-                if not isinstance(state_dict, dict):
-                    raise TypeError(f"Unexpected policy checkpoint: {type(state_dict).__name__}")
                 self.policy_model.load_state_dict(state_dict)
                 self.policy_model.eval()
                 self.use_policy_ordering = True

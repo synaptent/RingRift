@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -35,6 +36,14 @@ from app.coordination.owc_import_daemon import (
     reset_owc_import_daemon,
 )
 from app.coordination.protocols import CoordinatorStatus
+
+
+@contextmanager
+def allow_import_cycle(daemon: OWCImportDaemon):
+    """Keep _run_cycle tests isolated from machine-local resource guards."""
+    with patch("app.utils.resource_guard.coordinator_resource_gate", return_value=True):
+        with patch.object(daemon, "_check_disk_space_for_import", return_value=True):
+            yield
 
 
 # =============================================================================
@@ -491,8 +500,9 @@ class TestOWCImportDaemonAsync:
         """Run cycle handles OWC unavailability."""
         daemon = OWCImportDaemon()
 
-        with patch.object(daemon, "_check_owc_available", return_value=False):
-            await daemon._run_cycle()
+        with allow_import_cycle(daemon):
+            with patch.object(daemon, "_check_owc_available", return_value=False):
+                await daemon._run_cycle()
 
         assert daemon._owc_available is False
 
@@ -500,9 +510,10 @@ class TestOWCImportDaemonAsync:
         """Run cycle exits early when no underserved configs."""
         daemon = OWCImportDaemon()
 
-        with patch.object(daemon, "_check_owc_available", return_value=True):
-            with patch.object(daemon, "_get_underserved_configs", return_value=[]):
-                await daemon._run_cycle()
+        with allow_import_cycle(daemon):
+            with patch.object(daemon, "_check_owc_available", return_value=True):
+                with patch.object(daemon, "_get_underserved_configs", return_value=[]):
+                    await daemon._run_cycle()
 
         assert daemon._owc_available is True
 
@@ -518,12 +529,13 @@ class TestOWCImportDaemonAsync:
             configs={"hex8_2p": 100, "square8_4p": 50},
         )
 
-        with patch.object(daemon, "_check_owc_available", return_value=True):
-            with patch.object(daemon, "_get_underserved_configs", return_value=["hex8_2p"]):
-                with patch.object(daemon, "_discover_owc_databases", return_value=discovered_databases):
-                    with patch.object(daemon, "_scan_owc_database", return_value=db_info):
-                        with patch.object(daemon, "_sync_database", return_value=Path("/tmp/test.db")):
-                            await daemon._run_cycle()
+        with allow_import_cycle(daemon):
+            with patch.object(daemon, "_check_owc_available", return_value=True):
+                with patch.object(daemon, "_get_underserved_configs", return_value=["hex8_2p"]):
+                    with patch.object(daemon, "_discover_owc_databases", return_value=discovered_databases):
+                        with patch.object(daemon, "_scan_owc_database", return_value=db_info):
+                            with patch.object(daemon, "_sync_database", return_value=Path("/tmp/test.db")):
+                                await daemon._run_cycle()
 
         assert daemon._owc_available is True
         assert len(daemon._import_history) == 1
@@ -656,14 +668,16 @@ class TestOWCImportIntegration:
         daemon._owc_available = True
 
         # Simulate disconnect
-        with patch.object(daemon, "_check_owc_available", return_value=False):
-            await daemon._run_cycle()
+        with allow_import_cycle(daemon):
+            with patch.object(daemon, "_check_owc_available", return_value=False):
+                await daemon._run_cycle()
         assert daemon._owc_available is False
 
         # Simulate reconnect
-        with patch.object(daemon, "_check_owc_available", return_value=True):
-            with patch.object(daemon, "_get_underserved_configs", return_value=[]):
-                await daemon._run_cycle()
+        with allow_import_cycle(daemon):
+            with patch.object(daemon, "_check_owc_available", return_value=True):
+                with patch.object(daemon, "_get_underserved_configs", return_value=[]):
+                    await daemon._run_cycle()
         assert daemon._owc_available is True
 
     async def test_import_history_trimming(self):
@@ -680,12 +694,13 @@ class TestOWCImportIntegration:
 
         # Run many cycles
         for _ in range(60):
-            with patch.object(daemon, "_check_owc_available", return_value=True):
-                with patch.object(daemon, "_get_underserved_configs", return_value=["hex8_2p"]):
-                    with patch.object(daemon, "_discover_owc_databases", return_value=discovered_databases):
-                        with patch.object(daemon, "_scan_owc_database", return_value=db_info):
-                            with patch.object(daemon, "_sync_database", return_value=Path("/tmp/test.db")):
-                                await daemon._run_cycle()
+            with allow_import_cycle(daemon):
+                with patch.object(daemon, "_check_owc_available", return_value=True):
+                    with patch.object(daemon, "_get_underserved_configs", return_value=["hex8_2p"]):
+                        with patch.object(daemon, "_discover_owc_databases", return_value=discovered_databases):
+                            with patch.object(daemon, "_scan_owc_database", return_value=db_info):
+                                with patch.object(daemon, "_sync_database", return_value=Path("/tmp/test.db")):
+                                    await daemon._run_cycle()
 
         # Should be trimmed to 50
         assert len(daemon._import_history) <= 50
@@ -704,12 +719,13 @@ class TestOWCImportIntegration:
 
         num_cycles = 3
         for _ in range(num_cycles):
-            with patch.object(daemon, "_check_owc_available", return_value=True):
-                with patch.object(daemon, "_get_underserved_configs", return_value=["hex8_2p"]):
-                    with patch.object(daemon, "_discover_owc_databases", return_value=discovered_databases):
-                        with patch.object(daemon, "_scan_owc_database", return_value=db_info):
-                            with patch.object(daemon, "_sync_database", return_value=Path("/tmp/test.db")):
-                                await daemon._run_cycle()
+            with allow_import_cycle(daemon):
+                with patch.object(daemon, "_check_owc_available", return_value=True):
+                    with patch.object(daemon, "_get_underserved_configs", return_value=["hex8_2p"]):
+                        with patch.object(daemon, "_discover_owc_databases", return_value=discovered_databases):
+                            with patch.object(daemon, "_scan_owc_database", return_value=db_info):
+                                with patch.object(daemon, "_sync_database", return_value=Path("/tmp/test.db")):
+                                    await daemon._run_cycle()
 
         # Each cycle syncs the discovered databases, each reporting 100 games.
         num_databases = len(discovered_databases)

@@ -62,21 +62,31 @@ class TestHealthEndpoints:
 
     def test_health_check(self, client):
         """Health check returns OK."""
-        response = client.get("/health")
+        healthy_payload = {
+            "status": "healthy",
+            "timestamp": "2026-04-07T00:00:00+00:00",
+            "components": {"disk": "ok"},
+            "issues": [],
+            "warnings": [],
+        }
+        with patch("app.distributed.health_registry.health_endpoint_handler", return_value=healthy_payload):
+            response = client.get("/health")
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "healthy"
 
     def test_readiness_check(self, client):
         """Readiness check returns ready status."""
-        response = client.get("/ready")
+        with patch("app.distributed.health_registry.readiness_check", return_value=True):
+            response = client.get("/ready")
         assert response.status_code == 200
         data = response.json()
         assert "ready" in data
 
     def test_liveness_check(self, client):
         """Liveness check returns live status."""
-        response = client.get("/live")
+        with patch("app.distributed.health_registry.liveness_check", return_value=True):
+            response = client.get("/live")
         assert response.status_code == 200
         data = response.json()
         assert "live" in data

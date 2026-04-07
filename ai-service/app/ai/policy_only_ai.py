@@ -151,7 +151,7 @@ class PolicyOnlyAI(BaseAI):
         """Load NNUE policy model if available."""
         try:
             import os
-            from .nnue_policy import RingRiftNNUEWithPolicy
+            from .nnue_policy import RingRiftNNUEWithPolicy, prepare_policy_checkpoint
             from app.utils.torch_utils import safe_load_checkpoint
 
             # Try to find NNUE policy model
@@ -169,16 +169,10 @@ class PolicyOnlyAI(BaseAI):
 
             if os.path.exists(model_path):
                 checkpoint = safe_load_checkpoint(model_path, map_location="cpu", warn_on_unsafe=False)
-
-                # Handle versioned checkpoints
-                if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
-                    state_dict = checkpoint['model_state_dict']
-                    hidden_dim = checkpoint.get('hidden_dim', 128)
-                    num_hidden_layers = checkpoint.get('num_hidden_layers', 2)
-                else:
-                    state_dict = checkpoint
-                    hidden_dim = 128
-                    num_hidden_layers = 2
+                state_dict, hidden_dim, num_hidden_layers = prepare_policy_checkpoint(
+                    checkpoint,
+                    self.board_type,
+                )
 
                 model = RingRiftNNUEWithPolicy(
                     board_type=self.board_type,
