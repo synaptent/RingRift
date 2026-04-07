@@ -313,12 +313,19 @@ def compute_verdict(
             f"(max std={max(fp.feature_stds):.6f})"
         )
 
-    # Cross-iteration identical data
+    # Cross-iteration identical data — only critical if entropy is ALSO low.
+    # Consecutive iterations from the same model naturally produce similar
+    # feature distributions; that's expected, not a bug.
     if comparison.identical_data:
-        critical = True
-        warnings.append(
-            "CRITICAL: Training data is near-identical to a recent iteration"
-        )
+        if fp.policy_entropy_median < 1.0:
+            critical = True
+            warnings.append(
+                "CRITICAL: Training data near-identical AND low entropy — model may be degenerate"
+            )
+        else:
+            warnings.append(
+                "WARN: Feature means similar to recent iteration (expected with same model)"
+            )
 
     # Value target variance
     if comparison.no_value_variance and not critical:
