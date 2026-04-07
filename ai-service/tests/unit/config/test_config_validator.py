@@ -228,6 +228,53 @@ promotion:
             result = validator.validate_remote_hosts()
             assert result.valid is True
 
+    def test_validate_distributed_hosts_skips_low_memory_warning_for_proxy_only_host(self):
+        """Proxy-only relay hosts should not warn on intentionally tiny memory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / "config"
+            config_dir.mkdir()
+            (config_dir / "distributed_hosts.yaml").write_text(
+                """
+hosts:
+  aws-proxy:
+    ssh_host: 3.147.65.95
+    ssh_user: ec2-user
+    memory_gb: 1
+    role: proxy
+    selfplay_enabled: false
+    training_enabled: false
+    p2p_enabled: false
+"""
+            )
+
+            validator = ConfigValidator(base_path=Path(tmpdir))
+            result = validator.validate_distributed_hosts()
+            assert result.valid is True
+            assert all("low memory" not in warning for warning in result.warnings)
+
+    def test_validate_distributed_hosts_keeps_low_memory_warning_for_active_host(self):
+        """Active hosts should still warn when memory is implausibly low."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / "config"
+            config_dir.mkdir()
+            (config_dir / "distributed_hosts.yaml").write_text(
+                """
+hosts:
+  tiny-worker:
+    ssh_host: 100.64.0.2
+    ssh_user: ubuntu
+    memory_gb: 1
+    role: gpu_training_selfplay
+    selfplay_enabled: true
+    training_enabled: true
+    p2p_enabled: true
+"""
+            )
+
+            validator = ConfigValidator(base_path=Path(tmpdir))
+            result = validator.validate_distributed_hosts()
+            assert any("low memory" in warning for warning in result.warnings)
+
     def test_validate_all_with_missing_configs(self):
         """Should validate all configs and report issues."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -250,11 +297,16 @@ hosts:
 """
             )
             (config_dir / "hyperparameters.json").write_text('{"configs": {}}')
+            (config_dir / "remote_hosts.yaml").write_text("legacy: true\n")
 
             validator = ConfigValidator(base_path=Path(tmpdir))
-            result = validator.validate_all(include_unified_loop=False)
+            result = validator.validate_all(
+                include_unified_loop=False,
+                include_deprecated_hosts=False,
+            )
             assert result.valid is True
             assert all("unified_loop" not in error for error in result.errors)
+            assert all("remote_hosts.yaml" not in warning for warning in result.warnings)
 
 
 # =============================================================================
@@ -292,10 +344,12 @@ hosts:
 """
             )
             (config_dir / "hyperparameters.json").write_text('{"configs": {}}')
+            (config_dir / "remote_hosts.yaml").write_text("legacy: true\n")
 
             result = validate_all_configs(
                 base_path=Path(tmpdir),
                 include_unified_loop=False,
+                include_deprecated_hosts=False,
             )
             assert result.valid is True
 

@@ -192,7 +192,10 @@ async def lifespan(app: FastAPI):
         validator = ConfigValidator()
         if not run_daemons:
             logger.info("[Config] Skipping unified_loop.yaml validation in inference-only mode")
-        result = validator.validate_all(include_unified_loop=run_daemons)
+        result = validator.validate_all(
+            include_unified_loop=run_daemons,
+            include_deprecated_hosts=run_daemons,
+        )
         if not result.valid:
             for error in result.errors:
                 logger.error(f"[Config] {error}")

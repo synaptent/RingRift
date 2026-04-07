@@ -64,7 +64,12 @@ class ConfigValidator:
     def __init__(self, base_path: Path | None = None):
         self.base_path = base_path or AI_SERVICE_ROOT
 
-    def validate_all(self, *, include_unified_loop: bool = True) -> ValidationResult:
+    def validate_all(
+        self,
+        *,
+        include_unified_loop: bool = True,
+        include_deprecated_hosts: bool = True,
+    ) -> ValidationResult:
         """Validate all configuration files.
 
         Args:
@@ -72,6 +77,10 @@ class ConfigValidator:
                 This is useful for inference-only deployments that do not boot
                 the orchestration/training runtime and therefore do not require
                 the unified loop config to exist.
+            include_deprecated_hosts: When False, skip remote_hosts.yaml
+                deprecation checks. Inference-only deployments do not use the
+                legacy coordination host file and should not warn on its
+                presence.
         """
         results = []
 
@@ -79,9 +88,10 @@ class ConfigValidator:
         if include_unified_loop:
             results.append(self.validate_unified_loop_config())
         results.append(self.validate_distributed_hosts())
-        legacy_hosts = self.validate_remote_hosts()
-        if legacy_hosts.config_path:
-            results.append(legacy_hosts)
+        if include_deprecated_hosts:
+            legacy_hosts = self.validate_remote_hosts()
+            if legacy_hosts.config_path:
+                results.append(legacy_hosts)
         results.append(self.validate_hyperparameters())
         results.append(self.validate_resource_limits())
 
@@ -217,6 +227,12 @@ class ConfigValidator:
 
             for name, info in hosts.items():
                 ssh_host = info.get("tailscale_ip") or info.get("ssh_host", "")
+                role = str(info.get("role", "")).lower()
+                proxy_only = role == "proxy" or (
+                    info.get("p2p_enabled") is False
+                    and info.get("selfplay_enabled") is False
+                    and info.get("training_enabled") is False
+                )
                 if not ssh_host:
                     errors.append(f"Host '{name}' missing ssh_host/tailscale_ip")
                 if not info.get("ssh_user"):
@@ -231,7 +247,7 @@ class ConfigValidator:
                     warnings.append(f"Host '{name}' has invalid tailscale_ip format: {tailscale_ip}")
 
                 memory_gb = info.get("memory_gb", 0)
-                if memory_gb and memory_gb < 16:
+                if memory_gb and memory_gb < 16 and not proxy_only:
                     warnings.append(f"Host '{name}' has low memory: {memory_gb}GB")
 
                 # Validate GPU VRAM bounds (Dec 30, 2025)
@@ -518,10 +534,14 @@ def validate_all_configs(
     base_path: Path | None = None,
     *,
     include_unified_loop: bool = True,
+    include_deprecated_hosts: bool = True,
 ) -> ValidationResult:
     """Convenience function to validate all configurations."""
     validator = ConfigValidator(base_path)
-    return validator.validate_all(include_unified_loop=include_unified_loop)
+    return validator.validate_all(
+        include_unified_loop=include_unified_loop,
+        include_deprecated_hosts=include_deprecated_hosts,
+    )
 
 
 def validate_startup() -> bool:
