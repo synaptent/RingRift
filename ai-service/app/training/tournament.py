@@ -68,10 +68,18 @@ def infer_victory_reason(game_state: GameState) -> str:
     if winner is None:
         return "unknown"
 
+    winner_player = next(
+        (p for p in game_state.players if p.player_number == winner),
+        None,
+    )
+
     # Check ring elimination victory.
-    # Note: eliminated_rings counts rings YOU eliminated (from any player, including yourself).
-    elim_rings = game_state.board.eliminated_rings
-    eliminated_for_winner = elim_rings.get(str(winner), 0)
+    eliminated_for_winner = (
+        winner_player.eliminated_rings if winner_player is not None else 0
+    )
+    if eliminated_for_winner <= 0:
+        elim_rings = game_state.board.eliminated_rings
+        eliminated_for_winner = elim_rings.get(str(winner), 0)
     if eliminated_for_winner >= game_state.victory_threshold:
         return "ring_elimination"
 
@@ -79,8 +87,14 @@ def infer_victory_reason(game_state: GameState) -> str:
     territory_counts: dict[int, int] = {}
     for p_id in game_state.board.collapsed_spaces.values():
         territory_counts[p_id] = territory_counts.get(p_id, 0) + 1
-    threshold = game_state.territory_victory_threshold
-    if territory_counts.get(winner, 0) >= threshold:
+    threshold = getattr(game_state, "territory_victory_minimum", None)
+    if not isinstance(threshold, int):
+        threshold = game_state.territory_victory_threshold
+    winner_territory = territory_counts.get(winner, 0)
+    opponent_territory = sum(
+        tc for pid, tc in territory_counts.items() if pid != winner
+    )
+    if winner_territory >= threshold and winner_territory > opponent_territory:
         return "territory"
 
     # Check LPS victory (R172).
@@ -315,28 +329,71 @@ class Tournament:
     def _determine_winner_by_tiebreaker(self, state: GameState) -> int | None:
         """Determine winner using tiebreaker rules when no natural victory.
 
-        Tiebreaker priority (2025-12-16):
-        1. Most eliminated rings
-        2. Most territory spaces
-        3. Fewest rings in hand (committed more to board)
+        Use the canonical structural-stalemate ladder as a deterministic
+        fallback for budget-limited games:
+        1. Most territory spaces
+        2. Most eliminated rings
+        3. Most markers
+        4. Last actor
+        5. Lowest player number
         """
-        best_player = None
-        best_score = (-1, -1, float('inf'))  # (elim_rings, territory, -rings_in_hand)
+        players = list(state.players)
+        if not players:
+            return None
 
-        for player in state.players:
-            elim_rings = state.board.eliminated_rings.get(str(player.player_number), 0)
-            territory = 0
-            for p_id in state.board.collapsed_spaces.values():
-                if p_id == player.player_number:
-                    territory += 1
-            rings_in_hand = player.rings_in_hand
+        territory_counts: dict[int, int] = {}
+        for p_id in state.board.collapsed_spaces.values():
+            territory_counts[p_id] = territory_counts.get(p_id, 0) + 1
 
-            score = (elim_rings, territory, -rings_in_hand)
-            if score > best_score:
-                best_score = score
-                best_player = player.player_number
+        no_stacks_remaining = not bool(state.board.stacks)
+        all_players = sorted(player.player_number for player in players)
 
-        return best_player
+        def eliminated_score(player) -> int:
+            if hasattr(player, "eliminated_rings") and isinstance(player.eliminated_rings, int):
+                score = player.eliminated_rings
+            else:
+                score = state.board.eliminated_rings.get(str(player.player_number), 0)
+            if no_stacks_remaining:
+                score += getattr(player, "rings_in_hand", 0)
+            return score
+
+        def unique_leader(values: dict[int, int]) -> int | None:
+            if not values:
+                return None
+            max_value = max(values.values())
+            leaders = [pid for pid, value in values.items() if value == max_value]
+            if len(leaders) == 1 and max_value > 0:
+                return leaders[0]
+            return None
+
+        territory_leader = unique_leader(
+            {player.player_number: territory_counts.get(player.player_number, 0) for player in players}
+        )
+        if territory_leader is not None:
+            return territory_leader
+
+        elimination_leader = unique_leader(
+            {player.player_number: eliminated_score(player) for player in players}
+        )
+        if elimination_leader is not None:
+            return elimination_leader
+
+        marker_counts: dict[int, int] = {pid: 0 for pid in all_players}
+        for marker in getattr(state.board, "markers", {}).values():
+            owner = getattr(marker, "player", None)
+            if owner in marker_counts:
+                marker_counts[owner] += 1
+        marker_leader = unique_leader(marker_counts)
+        if marker_leader is not None:
+            return marker_leader
+
+        move_history = getattr(state, "move_history", None) or []
+        if move_history:
+            last_player = getattr(move_history[-1], "player", None)
+            if isinstance(last_player, int) and last_player in all_players:
+                return last_player
+
+        return min(all_players)
 
     def _update_elo(self, winner_label: str | None) -> None:
         """Update Elo-like ratings for candidate (A) and best (B)."""

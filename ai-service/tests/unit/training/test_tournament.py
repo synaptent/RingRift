@@ -63,13 +63,26 @@ class TestInferVictoryReason:
         state.winner = winner
         state.victory_threshold = victory_threshold
         state.territory_victory_threshold = territory_threshold
+        state.territory_victory_minimum = None
         state.lps_exclusive_player_for_completed_round = lps_exclusive
+        state.move_history = []
+
+        player1 = MagicMock()
+        player1.player_number = 1
+        player1.eliminated_rings = eliminated_rings.get("1", 0)
+        player1.rings_in_hand = 0
+        player2 = MagicMock()
+        player2.player_number = 2
+        player2.eliminated_rings = eliminated_rings.get("2", 0)
+        player2.rings_in_hand = 0
+        state.players = [player1, player2]
 
         # Board mock
         state.board = MagicMock()
         state.board.eliminated_rings = eliminated_rings
         state.board.collapsed_spaces = collapsed_spaces
         state.board.stacks = stacks
+        state.board.markers = {}
 
         return state
 
@@ -291,6 +304,31 @@ class TestTournament:
 
         # Player 1 has more eliminated rings (5 vs 3), so should win
         assert winner == 1
+
+    def test_determine_winner_by_tiebreaker_uses_territory_first(self):
+        """Canonical stalemate ladder prefers territory over eliminated rings."""
+        tournament = Tournament("a.pth", "b.pth", num_players=2)
+
+        state = MagicMock()
+        player1 = MagicMock()
+        player1.player_number = 1
+        player1.rings_in_hand = 0
+        player1.eliminated_rings = 5
+        player2 = MagicMock()
+        player2.player_number = 2
+        player2.rings_in_hand = 0
+        player2.eliminated_rings = 3
+
+        state.players = [player1, player2]
+        state.move_history = []
+        state.board = MagicMock()
+        state.board.eliminated_rings = {"1": 5, "2": 3}
+        state.board.collapsed_spaces = {"0,0": 2, "1,0": 2, "2,0": 1}
+        state.board.markers = {}
+        state.board.stacks = {}
+
+        winner = tournament._determine_winner_by_tiebreaker(state)
+        assert winner == 2
 
     @patch('app.training.tournament.DescentAI')
     @patch('app.training.tournament.GameEngine')
@@ -618,14 +656,17 @@ class TestEdgeCases:
         player2.rings_in_hand = 10
 
         state.players = [player1, player2]
+        state.move_history = []
         state.board = MagicMock()
         state.board.eliminated_rings = {}
         state.board.collapsed_spaces = {}
+        state.board.markers = {}
+        state.board.stacks = {}
 
         winner = tournament._determine_winner_by_tiebreaker(state)
 
-        # Should still return one winner (player 1 wins ties)
-        assert winner in [1, 2]
+        # Canonical final fallback is lowest player number.
+        assert winner == 1
 
     def test_board_types(self):
         """Test tournament works with different board types."""

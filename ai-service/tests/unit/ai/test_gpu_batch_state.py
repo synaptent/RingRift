@@ -543,6 +543,25 @@ class TestDeriveVictoryType:
         assert victory_type == "territory"
         assert tiebreaker is None
 
+    def test_hex8_territory_victory_uses_hex_thresholds(self, device):
+        """Hex8 victory derivation must not fall back to square8 thresholds."""
+        state = BatchGameState.create_batch(
+            batch_size=1,
+            board_size=9,
+            num_players=2,
+            device=device,
+        )
+
+        state.winner[0] = 1
+        state.game_status[0] = GameStatus.COMPLETED
+        # hex8 2-player territory minimum is 31; square8 would incorrectly need 33
+        state.territory_count[0, 1] = 31
+        state.territory_count[0, 2] = 29
+
+        victory_type, tiebreaker = state.derive_victory_type(0, max_moves=500)
+        assert victory_type == "territory"
+        assert tiebreaker is None
+
     def test_elimination_victory(self, device):
         """Should detect elimination victory."""
         state = BatchGameState.create_batch(
@@ -655,6 +674,27 @@ class TestDetermineTiebreaker:
 
         tiebreaker = state._determine_tiebreaker(0)
         assert tiebreaker == "none"
+
+    def test_markers_tiebreaker(self, device):
+        """Should detect markers when territory and eliminations are tied."""
+        state = BatchGameState.create_batch(
+            batch_size=1,
+            board_size=8,
+            num_players=2,
+            device=device,
+        )
+
+        state.winner[0] = 2
+        state.territory_count[0, 1] = 5
+        state.territory_count[0, 2] = 5
+        state.rings_caused_eliminated[0, 1] = 4
+        state.rings_caused_eliminated[0, 2] = 4
+        state.marker_owner[0, 0, 0] = 2
+        state.marker_owner[0, 0, 1] = 2
+        state.marker_owner[0, 1, 0] = 1
+
+        tiebreaker = state._determine_tiebreaker(0)
+        assert tiebreaker == "markers"
 
 
 # =============================================================================

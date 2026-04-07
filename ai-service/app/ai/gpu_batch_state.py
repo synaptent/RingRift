@@ -1128,6 +1128,8 @@ class BatchGameState:
             board_type = BoardType.SQUARE19
         elif self.board_size == 25:
             board_type = BoardType.HEXAGONAL
+        elif self.board_size == 9:
+            board_type = BoardType.HEX8
         else:
             board_type = BoardType.SQUARE8
 
@@ -1145,7 +1147,12 @@ class BatchGameState:
                 return "lps", None
 
         # Check territory victory
-        if self.territory_count[game_idx, winner].item() >= territory_threshold:
+        winner_territory = self.territory_count[game_idx, winner].item()
+        opponent_territory = (
+            self.territory_count[game_idx, 1:self.num_players + 1].sum().item()
+            - winner_territory
+        )
+        if winner_territory >= territory_threshold and winner_territory > opponent_territory:
             return "territory", None
 
         # Check ring elimination victory
@@ -1248,6 +1255,8 @@ class BatchGameState:
             board_type = BoardType.SQUARE19
         elif self.board_size == 25:
             board_type = BoardType.HEXAGONAL
+        elif self.board_size == 9:
+            board_type = BoardType.HEX8
         else:
             board_type = BoardType.SQUARE8
 
@@ -1260,6 +1269,7 @@ class BatchGameState:
         lps_player_cpu = self.lps_consecutive_exclusive_player.cpu().numpy()
         territory_cpu = self.territory_count.cpu().numpy()
         elims_cpu = self.rings_caused_eliminated.cpu().numpy()
+        marker_owner_cpu = self.marker_owner.cpu().numpy()
         move_count_cpu = self.move_count.cpu().numpy()
 
         # Precompute line detection for all games at once
@@ -1292,7 +1302,9 @@ class BatchGameState:
                     continue
 
             # Check territory victory
-            if territory_cpu[g, winner] >= territory_threshold:
+            winner_territory = territory_cpu[g, winner]
+            opponent_territory = territory_cpu[g, 1:self.num_players + 1].sum() - winner_territory
+            if winner_territory >= territory_threshold and winner_territory > opponent_territory:
                 victory_types.append("territory")
                 tiebreakers.append(None)
                 continue
@@ -1307,7 +1319,7 @@ class BatchGameState:
             if move_count_cpu[g] >= max_moves:
                 # Determine tiebreaker using pre-transferred data
                 tb = self._determine_tiebreaker_from_cpu(
-                    g, winner, territory_cpu, elims_cpu
+                    g, winner, territory_cpu, elims_cpu, marker_owner_cpu
                 )
                 victory_types.append("stalemate")
                 tiebreakers.append(tb)
@@ -1331,6 +1343,7 @@ class BatchGameState:
         winner: int,
         territory_cpu,
         elims_cpu,
+        marker_owner_cpu,
     ) -> str:
         """Determine tiebreaker using pre-transferred CPU arrays."""
         if winner <= 0:
@@ -1354,7 +1367,16 @@ class BatchGameState:
                 if (elim_counts == max_elims).sum() == 1:
                     return "eliminations"
 
-        # Marker counts would need separate transfer, fall back to last_actor
+        # Check marker counts
+        marker_counts = []
+        for p in range(1, self.num_players + 1):
+            marker_counts.append((marker_owner_cpu[game_idx] == p).sum())
+        max_markers = max(marker_counts, default=0)
+        if max_markers > 0:
+            winner_markers = marker_counts[winner - 1]
+            if winner_markers == max_markers and marker_counts.count(max_markers) == 1:
+                return "markers"
+
         return "last_actor"
 
     def encode_for_nn(

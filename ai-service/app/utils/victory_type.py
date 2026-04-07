@@ -57,14 +57,20 @@ def derive_stalemate_tiebreaker(game_state: GameState) -> str:
     if winner is None:
         return "unknown"
 
+    no_stacks_remaining = not game_state.board.stacks
+
     # Calculate scores for all players
     scores = {}
     for player in game_state.players:
         pid = player.player_number
-        collapsed = player.territory_spaces
+        collapsed = sum(
+            1 for owner in game_state.board.collapsed_spaces.values() if owner == pid
+        )
 
         # Eliminated rings
         eliminated = player.eliminated_rings
+        if no_stacks_remaining:
+            eliminated += player.rings_in_hand
 
         # Markers
         markers = 0
@@ -137,12 +143,15 @@ def derive_victory_type(
     if winner is None:
         return ("stalemate", derive_stalemate_tiebreaker(game_state))
 
+    winner_player = next(
+        (p for p in game_state.players if p.player_number == winner),
+        None,
+    )
+
     # Check ring elimination victory
-    for p in game_state.players:
-        if p.player_number == winner:
-            if p.eliminated_rings >= game_state.victory_threshold:
-                return ("ring_elimination", None)
-            break
+    if winner_player is not None:
+        if winner_player.eliminated_rings >= game_state.victory_threshold:
+            return ("ring_elimination", None)
 
     # Check territory victory
     territory_counts: dict[int, int] = {}
@@ -150,7 +159,14 @@ def derive_victory_type(
         territory_counts[p_id] = territory_counts.get(p_id, 0) + 1
 
     winner_territory = territory_counts.get(winner, 0)
-    if winner_territory >= game_state.territory_victory_threshold:
+    opponent_territory = sum(
+        tc for pid, tc in territory_counts.items() if pid != winner
+    )
+    territory_threshold = getattr(game_state, "territory_victory_minimum", None)
+    if not isinstance(territory_threshold, int):
+        territory_threshold = game_state.territory_victory_threshold
+
+    if winner_territory >= territory_threshold and winner_territory > opponent_territory:
         return ("territory", None)
 
     # Check if this is LPS (opponent(s) eliminated - total rings = 0)
@@ -170,10 +186,16 @@ def derive_victory_type(
         )
         return rings_in_hand + rings_on_board
 
-    # If any opponent has 0 total rings, this is LPS
-    for p in game_state.players:
-        if p.player_number != winner and count_total_rings(p.player_number) == 0:
-            return ("lps", None)
+    # If canonical LPS tracking says the winner was exclusive for a completed
+    # round, treat it as LPS.
+    if game_state.lps_exclusive_player_for_completed_round == winner:
+        return ("lps", None)
+
+    # Otherwise, distinguish remaining-material wins from bare-board stalemate.
+    if game_state.board.stacks:
+        for p in game_state.players:
+            if p.player_number != winner and count_total_rings(p.player_number) == 0:
+                return ("lps", None)
 
     # Otherwise it's a stalemate victory (tiebreaker resolution)
     return ("stalemate", derive_stalemate_tiebreaker(game_state))
