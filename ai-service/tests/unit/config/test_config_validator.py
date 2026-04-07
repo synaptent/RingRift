@@ -236,6 +236,26 @@ promotion:
             # Missing unified_loop.yaml should cause failure
             assert result.valid is False
 
+    def test_validate_all_can_skip_unified_loop_for_inference_only(self):
+        """Inference-only validation should not require unified_loop.yaml."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / "config"
+            config_dir.mkdir()
+            (config_dir / "distributed_hosts.yaml").write_text(
+                """
+hosts:
+  test-node:
+    tailscale_ip: 100.64.0.1
+    ssh_user: ubuntu
+"""
+            )
+            (config_dir / "hyperparameters.json").write_text('{"configs": {}}')
+
+            validator = ConfigValidator(base_path=Path(tmpdir))
+            result = validator.validate_all(include_unified_loop=False)
+            assert result.valid is True
+            assert all("unified_loop" not in error for error in result.errors)
+
 
 # =============================================================================
 # validate_all_configs Tests
@@ -257,6 +277,27 @@ class TestValidateAllConfigs:
         result = validate_all_configs()
         assert isinstance(result, ValidationResult)
         # Result validity depends on actual config state
+
+    def test_wrapper_supports_skipping_unified_loop(self):
+        """Wrapper should expose the inference-only skip flag."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_dir = Path(tmpdir) / "config"
+            config_dir.mkdir()
+            (config_dir / "distributed_hosts.yaml").write_text(
+                """
+hosts:
+  test-node:
+    tailscale_ip: 100.64.0.1
+    ssh_user: ubuntu
+"""
+            )
+            (config_dir / "hyperparameters.json").write_text('{"configs": {}}')
+
+            result = validate_all_configs(
+                base_path=Path(tmpdir),
+                include_unified_loop=False,
+            )
+            assert result.valid is True
 
 
 # =============================================================================

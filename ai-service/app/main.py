@@ -183,13 +183,16 @@ async def lifespan(app: FastAPI):
     - On shutdown: Gracefully shutdown daemons, then coordinators
     """
     # Startup
+    run_daemons = _should_run_coordination_daemons()
 
     # Validate all configuration files before proceeding (December 2025)
     # Catches misconfigurations early before expensive operations begin
     try:
         from .config.config_validator import ConfigValidator
         validator = ConfigValidator()
-        result = validator.validate_all()
+        if not run_daemons:
+            logger.info("[Config] Skipping unified_loop.yaml validation in inference-only mode")
+        result = validator.validate_all(include_unified_loop=run_daemons)
         if not result.valid:
             for error in result.errors:
                 logger.error(f"[Config] {error}")
@@ -235,7 +238,6 @@ async def lifespan(app: FastAPI):
     # The full training-cluster stack is started via master_loop.py, not here.
     # Legacy: RINGRIFT_INFERENCE_ONLY=true still forces inference-only even when
     # orchestration is enabled (for backward compatibility).
-    run_daemons = _should_run_coordination_daemons()
     if not run_daemons:
         logger.info("[Startup] Inference-only mode - skipping coordination daemons (set RINGRIFT_ORCHESTRATION=true to enable)")
 

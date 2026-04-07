@@ -64,12 +64,20 @@ class ConfigValidator:
     def __init__(self, base_path: Path | None = None):
         self.base_path = base_path or AI_SERVICE_ROOT
 
-    def validate_all(self) -> ValidationResult:
-        """Validate all configuration files."""
+    def validate_all(self, *, include_unified_loop: bool = True) -> ValidationResult:
+        """Validate all configuration files.
+
+        Args:
+            include_unified_loop: When False, skip unified_loop.yaml validation.
+                This is useful for inference-only deployments that do not boot
+                the orchestration/training runtime and therefore do not require
+                the unified loop config to exist.
+        """
         results = []
 
         # Core configs
-        results.append(self.validate_unified_loop_config())
+        if include_unified_loop:
+            results.append(self.validate_unified_loop_config())
         results.append(self.validate_distributed_hosts())
         legacy_hosts = self.validate_remote_hosts()
         if legacy_hosts.config_path:
@@ -506,10 +514,14 @@ class ConfigValidator:
         return all(0 <= int(p) <= 255 for p in parts)
 
 
-def validate_all_configs(base_path: Path | None = None) -> ValidationResult:
+def validate_all_configs(
+    base_path: Path | None = None,
+    *,
+    include_unified_loop: bool = True,
+) -> ValidationResult:
     """Convenience function to validate all configurations."""
     validator = ConfigValidator(base_path)
-    return validator.validate_all()
+    return validator.validate_all(include_unified_loop=include_unified_loop)
 
 
 def validate_startup() -> bool:
