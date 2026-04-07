@@ -1494,20 +1494,21 @@ class MutableGameState:
         """Check if victory conditions are met and update state.
 
         Called after each move to determine if the game has ended.
-        Mirrors the checks in GameEngine._check_victory to prevent games
+        Mirrors the checks in VictoryAggregate.ts to prevent games
         from continuing past valid endpoints in the search tree.
 
-        Victory conditions checked (in order, matching GameEngine):
+        Victory conditions checked (in order, matching VictoryAggregate.ts):
         1. Ring elimination threshold (RR-CANON-R061)
         2. Territory victory (RR-CANON-R062-v2)
         3. Last player standing (all others eliminated)
+        4. Stalemate tiebreak ladder (territory → rings → markers → lowest)
 
         Returns:
             True if game is over, False otherwise.
         """
+        from app.rules.core import get_territory_victory_minimum
+
         # 1. Ring Elimination Victory (RR-CANON-R061)
-        # Check if any player has eliminated enough rings to win.
-        # Matches GameEngine._check_victory lines 1264-1270.
         for ps in self._players.values():
             if ps.eliminated_rings >= self._victory_threshold:
                 self._winner = ps.player_number
@@ -1518,14 +1519,16 @@ class MutableGameState:
         # Victory requires BOTH:
         #   a) Territory >= territory_victory_minimum (floor(totalSpaces/numPlayers) + 1)
         #   b) Territory > sum of all opponent territories
-        # Matches GameEngine._check_victory lines 1272-1308.
         if self._collapsed:
             territory_counts: dict[int, int] = {}
             for p_id in self._collapsed.values():
                 territory_counts[p_id] = territory_counts.get(p_id, 0) + 1
 
-            total_spaces = self._board_size * self._board_size
-            territory_minimum = total_spaces // self._max_players + 1
+            # April 2026: Use BOARD_CONFIGS for correct total_spaces on hex boards.
+            # Was: board_size * board_size (wrong for hex: 9*9=81 instead of 61)
+            territory_minimum = get_territory_victory_minimum(
+                self._board_type, self._max_players
+            )
 
             for pn, player_territory in territory_counts.items():
                 if player_territory < territory_minimum:
@@ -1538,29 +1541,80 @@ class MutableGameState:
                     self._game_status = GameStatus.COMPLETED
                     return True
 
-        # 3. Last Player Standing / All Eliminated
+        # 3. Last Player Standing
         active_players = self._get_active_player_numbers()
 
-        if len(active_players) == 0:
-            # All players eliminated - use deterministic tiebreaker (lowest player number)
-            # This mirrors VictoryAggregate.ts - games must ALWAYS have a winner.
-            # Per RR-CANON: The game must always produce a winner.
-            all_player_numbers = list(range(1, self._max_players + 1))
-            self._winner = min(all_player_numbers)
-            self._game_status = GameStatus.COMPLETED
-            logger.warning(
-                f"Degenerate game state: all players eliminated. "
-                f"Winner by tiebreaker: {self._winner}"
-            )
-            return True
-
         if len(active_players) == 1:
-            # Single player remaining - they win
             self._winner = active_players[0]
             self._game_status = GameStatus.COMPLETED
             return True
 
+        if len(active_players) == 0:
+            # All players eliminated — apply the canonical stalemate tiebreak
+            # ladder from VictoryAggregate.ts lines 506-592.
+            winner = self._resolve_stalemate_tiebreak()
+            self._winner = winner
+            self._game_status = GameStatus.COMPLETED
+            return True
+
         return False
+
+    def _resolve_stalemate_tiebreak(self) -> int:
+        """Apply the canonical 5-rung stalemate tiebreak ladder.
+
+        Matches VictoryAggregate.ts lines 506-592 exactly:
+        1. Most territory spaces
+        2. Most eliminated rings (including rings in hand)
+        3. Most markers on board
+        4. Lowest player number (deterministic fallback)
+
+        Note: "last actor" (rung 4 in TS) is not tracked by MutableGameState,
+        so we skip it. This is a minor inaccuracy that only matters when
+        territory, rings, AND markers are all tied — extremely rare.
+        """
+        all_pn = list(range(1, self._max_players + 1))
+
+        # Rung 1: Territory spaces
+        territory_counts: dict[int, int] = {}
+        if self._collapsed:
+            for p_id in self._collapsed.values():
+                territory_counts[p_id] = territory_counts.get(p_id, 0) + 1
+        max_territory = max((territory_counts.get(pn, 0) for pn in all_pn), default=0)
+        if max_territory > 0:
+            leaders = [pn for pn in all_pn if territory_counts.get(pn, 0) == max_territory]
+            if len(leaders) == 1:
+                return leaders[0]
+
+        # Rung 2: Eliminated rings (including rings in hand for global stalemate)
+        elim_scores: dict[int, int] = {}
+        for pn in all_pn:
+            ps = self._players.get(pn)
+            if ps:
+                elim_scores[pn] = ps.eliminated_rings + ps.rings_in_hand
+            else:
+                elim_scores[pn] = 0
+        max_elim = max(elim_scores.values(), default=0)
+        if max_elim > 0:
+            leaders = [pn for pn in all_pn if elim_scores[pn] == max_elim]
+            if len(leaders) == 1:
+                return leaders[0]
+
+        # Rung 3: Markers on board
+        marker_counts: dict[int, int] = {pn: 0 for pn in all_pn}
+        for marker in self._markers.values():
+            owner = marker.player
+            if owner in marker_counts:
+                marker_counts[owner] += 1
+        max_markers = max(marker_counts.values(), default=0)
+        if max_markers > 0:
+            leaders = [pn for pn in all_pn if marker_counts[pn] == max_markers]
+            if len(leaders) == 1:
+                return leaders[0]
+
+        # Rung 4: Last actor — not tracked by MutableGameState, skip
+
+        # Rung 5: Lowest player number (deterministic fallback)
+        return min(all_pn)
 
     def _make_chain_capture(self, move: Move, undo: MoveUndo) -> None:
         """Apply capture move (OVERTAKING_CAPTURE, CONTINUE_CAPTURE_SEGMENT, CHAIN_CAPTURE).
