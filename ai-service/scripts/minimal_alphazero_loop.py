@@ -338,6 +338,9 @@ def _push_heartbeat_s3(
     elo: float,
     promos: int,
     data_quality_score: float | None = None,
+    *,
+    stage: str = "iteration_done",
+    experiment_params: dict | None = None,
 ) -> None:
     """Push a <1KB heartbeat JSON to S3 for coordinator fleet monitoring.
 
@@ -351,11 +354,10 @@ def _push_heartbeat_s3(
         "promotions": promos,
         "timestamp": time.time(),
         "data_quality_score": data_quality_score,
-        "git_sha": subprocess.run(
-            ["git", "-C", str(SCRIPT_DIR.parent), "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, timeout=5
-        ).stdout.strip() if SCRIPT_DIR else "",
+        "stage": stage,
     }
+    if experiment_params:
+        heartbeat.update(experiment_params)
     tmp = None
     try:
         fd, tmp = tempfile.mkstemp(suffix=".json")
@@ -429,6 +431,15 @@ def main() -> None:
     args = ap.parse_args()
 
     node_id = args.node_id or socket.gethostname()
+
+    # Cache git SHA once at startup (not per-heartbeat)
+    try:
+        _git_sha = subprocess.run(
+            ["git", "-C", str(SCRIPT_DIR.parent), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+    except Exception:
+        _git_sha = "unknown"
 
     # Set globals from CLI args
     BOARD_TYPE = args.board_type
@@ -556,6 +567,8 @@ def main() -> None:
             last_error_stage = "selfplay"
             consec_failures += 1; continue
 
+        _push_heartbeat_s3(node_id, config_key, it, elo, promos, stage="selfplay_done")
+
         # 2. EXPORT
         logger.info("[2/5] Export JSONL -> NPZ")
         if not export_npz(jpath, npath):
@@ -624,11 +637,12 @@ def main() -> None:
 
         # Training succeeded — reset circuit breaker
         consec_failures = 0
+        _push_heartbeat_s3(node_id, config_key, it, elo, promos, stage="training_done")
 
         # 3.5 PROBE: Verify training actually worked
         if not args.skip_probes:
             probe = run_training_probes(
-                str(cpath), str(best), ti, BOARD_ENUM, NUM_PLAYERS, budget,
+                str(cpath), str(best), ti, BOARD_ENUM, NUM_PLAYERS, eval_budget,
             )
             if probe.critical:
                 logger.error(f"TRAINING PROBE FAILED: {probe.summary}")
@@ -671,16 +685,28 @@ def main() -> None:
             logger.info(f"[5/5] REJECTED (wr={wr:.1%}, need {args.promote_threshold:.0%})")
 
         iel = time.time() - it0
+        # Experiment params for metrics and heartbeats
+        exp_params = {
+            "selfplay_budget": selfplay_budget,
+            "eval_budget": eval_budget,
+            "effective_lr": effective_lr,
+            "lr_schedule": args.lr_schedule,
+            "lr_floor": args.lr_floor,
+            "train_window": train_window,
+            "git_sha": _git_sha,
+        }
         metrics = {"iteration": it, "timestamp": datetime.now(timezone.utc).isoformat(),
                    "selfplay": sp, "training": {k: v for k, v in ti.items() if k != "log_line"},
                    "evaluation": ev, "promoted": promoted, "estimated_elo": round(elo, 1),
-                   "total_promotions": promos, "iteration_time_s": round(iel, 1)}
+                   "total_promotions": promos, "iteration_time_s": round(iel, 1),
+                   **exp_params}
         with open(logf, "a") as f:
             f.write(json.dumps(metrics) + "\n")
         logger.info(f"  iter {it} done in {iel/60:.1f}min | elo~{elo:.0f} | promos={promos}/{it}")
 
         # Push S3 heartbeat for fleet health monitoring (best-effort)
-        _push_heartbeat_s3(node_id, config_key, it, elo, promos)
+        _push_heartbeat_s3(node_id, config_key, it, elo, promos,
+                           experiment_params=exp_params)
 
         try:
             jpath.unlink()  # cleanup JSONL, keep NPZ
