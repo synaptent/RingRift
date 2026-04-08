@@ -521,6 +521,18 @@ def main() -> None:
         )
     logger.info("=" * 70)
 
+    # Static experiment params — shared across heartbeats and metrics.
+    # effective_lr is updated per iteration (inside loop).
+    _static_exp_params = {
+        "selfplay_budget": selfplay_budget,
+        "eval_budget": eval_budget,
+        "base_lr": args.lr,
+        "lr_schedule": args.lr_schedule,
+        "lr_floor": args.lr_floor,
+        "train_window": train_window,
+        "git_sha": _git_sha,
+    }
+
     for it in range(start_iter, start_iter + args.iterations):
         it0 = time.time()
         logger.info(f"\n{'='*70}\nITERATION {it}/{args.iterations}\n{'='*70}")
@@ -567,7 +579,8 @@ def main() -> None:
             last_error_stage = "selfplay"
             consec_failures += 1; continue
 
-        _push_heartbeat_s3(node_id, config_key, it, elo, promos, stage="selfplay_done")
+        _push_heartbeat_s3(node_id, config_key, it, elo, promos,
+                           stage="selfplay_done", experiment_params=_static_exp_params)
 
         # 2. EXPORT
         logger.info("[2/5] Export JSONL -> NPZ")
@@ -637,7 +650,8 @@ def main() -> None:
 
         # Training succeeded — reset circuit breaker
         consec_failures = 0
-        _push_heartbeat_s3(node_id, config_key, it, elo, promos, stage="training_done")
+        _push_heartbeat_s3(node_id, config_key, it, elo, promos,
+                           stage="training_done", experiment_params=_static_exp_params)
 
         # 3.5 PROBE: Verify training actually worked
         if not args.skip_probes:
@@ -686,15 +700,7 @@ def main() -> None:
 
         iel = time.time() - it0
         # Experiment params for metrics and heartbeats
-        exp_params = {
-            "selfplay_budget": selfplay_budget,
-            "eval_budget": eval_budget,
-            "effective_lr": effective_lr,
-            "lr_schedule": args.lr_schedule,
-            "lr_floor": args.lr_floor,
-            "train_window": train_window,
-            "git_sha": _git_sha,
-        }
+        exp_params = {**_static_exp_params, "effective_lr": effective_lr}
         metrics = {"iteration": it, "timestamp": datetime.now(timezone.utc).isoformat(),
                    "selfplay": sp, "training": {k: v for k, v in ti.items() if k != "log_line"},
                    "evaluation": ev, "promoted": promoted, "estimated_elo": round(elo, 1),
