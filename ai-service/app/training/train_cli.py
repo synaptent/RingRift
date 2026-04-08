@@ -391,7 +391,7 @@ def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         '--lr-scheduler', type=str, default=None,
-        choices=['cosine', 'step', 'plateau', 'warmrestart'],
+        choices=['none', 'cosine', 'step', 'plateau', 'warmrestart'],
         help='Learning rate scheduler type'
     )
     parser.add_argument(

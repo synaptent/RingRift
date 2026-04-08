@@ -94,7 +94,7 @@ class TestParseArgs:
 
     def test_lr_scheduler(self):
         """Test --lr-scheduler argument."""
-        for scheduler in ["cosine", "step", "plateau", "warmrestart"]:
+        for scheduler in ["none", "cosine", "step", "plateau", "warmrestart"]:
             args = parse_args(["--lr-scheduler", scheduler])
             assert args.lr_scheduler == scheduler
 

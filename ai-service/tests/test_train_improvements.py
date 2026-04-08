@@ -397,7 +397,7 @@ class TestCliArguments(unittest.TestCase):
 
     def test_scheduler_choices(self) -> None:
         """Test valid scheduler choices."""
-        for choice in ["cosine", "step", "plateau", "warmrestart"]:
+        for choice in ["none", "cosine", "step", "plateau", "warmrestart"]:
             args = parse_args(["--lr-scheduler", choice])
             self.assertEqual(args.lr_scheduler, choice)
 

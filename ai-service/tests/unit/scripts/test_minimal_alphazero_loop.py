@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -57,7 +59,7 @@ def _run_loop_once(
         _write_iteration_npz(npz_path, marker)
         return True
 
-    def fake_train_model(npz_path, out_path, init_path, epochs, batch_size, lr):
+    def fake_train_model(npz_path, out_path, init_path, epochs, batch_size, lr, train_lr_scheduler):
         with np.load(npz_path, allow_pickle=True) as data:
             markers = data["features"][:, 0, 0, 0].tolist()
         train_calls.append(
@@ -67,13 +69,33 @@ def _run_loop_once(
                 "epochs": epochs,
                 "batch_size": batch_size,
                 "lr": lr,
+                "train_lr_scheduler": train_lr_scheduler,
             }
         )
         Path(out_path).write_bytes(b"candidate-model")
         return {"last_epoch_line": "Epoch [1/1], Train Loss: 0.1, Val Loss: 0.2"}
 
     def fake_evaluate(candidate_path, best_path, eval_games, budget, tracker=None):
-        return {"win_rate": 0.50, "eval_games": eval_games, "budget": budget}
+        return {
+            "win_rate": 0.50,
+            "eval_games": eval_games,
+            "budget": budget,
+            "candidate_wins": 1,
+            "best_wins": 1,
+            "draws": 0,
+        }
+
+    def fake_staged_evaluate(candidate_path, best_path, budget, tracker=None):
+        return {
+            "win_rate": 0.50,
+            "budget": budget,
+            "candidate_wins": 1,
+            "best_wins": 1,
+            "draws": 0,
+            "games_played": 50,
+            "decision": "reject",
+            "decision_stage": 1,
+        }
 
     def fake_push_heartbeat(node_id, config_key, iteration, elo, promos, data_quality_score=None, *, stage="iteration_done", experiment_params=None):
         heartbeats.append(
@@ -93,6 +115,7 @@ def _run_loop_once(
     monkeypatch.setattr(loop, "export_npz", fake_export_npz)
     monkeypatch.setattr(loop, "train_model", fake_train_model)
     monkeypatch.setattr(loop, "evaluate", fake_evaluate)
+    monkeypatch.setattr(loop, "staged_evaluate", fake_staged_evaluate)
     monkeypatch.setattr(loop, "_push_heartbeat_s3", fake_push_heartbeat)
     monkeypatch.setattr(
         sys,
@@ -159,11 +182,13 @@ def test_loop_records_split_budgets_fixed_lr_and_heartbeat_context(monkeypatch, 
     assert metrics["base_lr"] == 5e-5
     assert metrics["effective_lr"] == 5e-5
     assert metrics["lr_schedule"] == "fixed"
+    assert metrics["train_lr_scheduler"] == "none"
     assert metrics["train_window"] == 3
     assert isinstance(metrics["git_sha"], str) and metrics["git_sha"]
 
     assert len(result["train_calls"]) == 1
     assert result["train_calls"][0]["lr"] == 5e-5
+    assert result["train_calls"][0]["train_lr_scheduler"] == "none"
 
     stages = {heartbeat["stage"]: heartbeat for heartbeat in result["heartbeats"]}
     assert set(stages) == {"selfplay_done", "training_done", "iteration_done"}
@@ -172,6 +197,7 @@ def test_loop_records_split_budgets_fixed_lr_and_heartbeat_context(monkeypatch, 
     assert selfplay_params["selfplay_budget"] == 200
     assert selfplay_params["eval_budget"] == 128
     assert selfplay_params["base_lr"] == 5e-5
+    assert selfplay_params["train_lr_scheduler"] == "none"
     assert "effective_lr" not in selfplay_params
 
     training_params = stages["training_done"]["experiment_params"]
@@ -204,11 +230,13 @@ def test_loop_respects_train_window_and_sqrt_decay(monkeypatch, tmp_path):
     assert train_call["npz_name"] == "combined_004.npz"
     assert train_call["markers"] == [3.0, 4.0]
     assert train_call["lr"] == 5e-5
+    assert train_call["train_lr_scheduler"] == "cosine"
 
     metrics = result["metrics"][0]
     assert metrics["train_window"] == 2
     assert metrics["effective_lr"] == 5e-5
     assert metrics["base_lr"] == 1e-4
+    assert metrics["train_lr_scheduler"] == "cosine"
 
     training_params = next(
         heartbeat["experiment_params"]
@@ -216,3 +244,115 @@ def test_loop_respects_train_window_and_sqrt_decay(monkeypatch, tmp_path):
         if heartbeat["stage"] == "training_done"
     )
     assert training_params["effective_lr"] == 5e-5
+    assert training_params["train_lr_scheduler"] == "cosine"
+
+
+def test_loop_allows_explicit_training_scheduler_override(monkeypatch, tmp_path):
+    result = _run_loop_once(
+        monkeypatch,
+        tmp_path,
+        extra_args=[
+            "--lr",
+            "5e-5",
+            "--lr-schedule",
+            "fixed",
+            "--train-lr-scheduler",
+            "step",
+        ],
+    )
+
+    assert result["train_calls"][0]["train_lr_scheduler"] == "step"
+    assert result["metrics"][0]["train_lr_scheduler"] == "step"
+
+
+def test_train_model_passes_requested_lr_scheduler(monkeypatch, tmp_path):
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, capture_output, text, timeout):
+        captured["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout="val_loss=0.1\n", stderr="")
+
+    monkeypatch.setattr(loop.subprocess, "run", fake_run)
+    monkeypatch.setattr(loop, "BOARD_TYPE", "square8")
+    monkeypatch.setattr(loop, "NUM_PLAYERS", 2)
+
+    result = loop.train_model(
+        tmp_path / "train.npz",
+        tmp_path / "candidate.pth",
+        tmp_path / "init.pth",
+        epochs=2,
+        bs=64,
+        lr=5e-5,
+        train_lr_scheduler="none",
+    )
+
+    assert "error" not in result
+    cmd = captured["cmd"]
+    assert isinstance(cmd, list)
+    assert cmd[cmd.index("--lr-scheduler") + 1] == "none"
+
+
+def test_staged_evaluate_rotates_candidate_seat_evenly(monkeypatch):
+    candidate_by_game: dict[int, int] = {}
+    assignment_log: list[tuple[int, int]] = []
+    current_game = {"index": -1}
+    fake_move = object()
+
+    class FakeAI:
+        def __init__(self, player, model_path):
+            self.player_number = player
+            self.model_path = model_path
+
+        def reset_for_new_game(self, rng_seed=None):
+            return None
+
+        def select_move(self, state):
+            return fake_move
+
+    class FakeEnv:
+        num_players = 4
+
+        def reset(self, seed=None):
+            current_game["index"] += 1
+            return SimpleNamespace(
+                game_status=loop.GameStatus.ACTIVE,
+                current_player=1,
+                winner=None,
+            )
+
+        def legal_moves(self):
+            return [fake_move]
+
+        def step(self, move):
+            winner = candidate_by_game[current_game["index"]]
+            return (
+                SimpleNamespace(
+                    game_status=loop.GameStatus.COMPLETED,
+                    current_player=1,
+                    winner=winner,
+                ),
+                0.0,
+                True,
+                {},
+            )
+
+    def fake_make_env():
+        return FakeEnv()
+
+    def fake_make_ai(player, model_path, budget, randomness=0.0):
+        game_idx = len(assignment_log) // 4
+        assignment_log.append((game_idx, player))
+        if model_path == "cand-model":
+            candidate_by_game[game_idx] = player
+        return FakeAI(player, model_path)
+
+    monkeypatch.setattr(loop, "_make_env", fake_make_env)
+    monkeypatch.setattr(loop, "_make_ai", fake_make_ai)
+    monkeypatch.setattr(loop, "_EVAL_STAGES", [(8, 0.99, 0.0)])
+
+    result = loop.staged_evaluate("cand-model", "best-model", budget=64)
+
+    assert result["candidate_wins"] == 8
+    assert result["best_wins"] == 0
+    assert result["win_rate"] == 1.0
+    assert [candidate_by_game[i] for i in range(8)] == [1, 2, 3, 4, 1, 2, 3, 4]

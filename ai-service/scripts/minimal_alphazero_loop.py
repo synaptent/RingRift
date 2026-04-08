@@ -215,8 +215,15 @@ def export_npz(jsonl: Path, npz: Path) -> bool:
     return True
 
 
-def train_model(npz: Path, out: Path, init: Path,
-                epochs: int, bs: int, lr: float) -> dict:
+def train_model(
+    npz: Path,
+    out: Path,
+    init: Path,
+    epochs: int,
+    bs: int,
+    lr: float,
+    train_lr_scheduler: str,
+) -> dict:
     """Train candidate. Retries with halved batch on OOM."""
     for attempt in range(3):
         b = bs // (2 ** attempt)
@@ -226,9 +233,12 @@ def train_model(npz: Path, out: Path, init: Path,
                "--epochs", str(epochs),
                "--batch-size", str(b), "--learning-rate", str(lr),
                "--init-weights", str(init), "--no-auto-tune-batch-size",
-               "--lr-scheduler", "cosine", "--skip-freshness-check",
+               "--lr-scheduler", train_lr_scheduler, "--skip-freshness-check",
                "--sampling-weights", "uniform"]
-        logger.info(f"  training epochs={epochs} bs={b} lr={lr} (attempt {attempt+1})")
+        logger.info(
+            f"  training epochs={epochs} bs={b} lr={lr} "
+            f"scheduler={train_lr_scheduler} (attempt {attempt+1})"
+        )
         t0 = time.time()
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=7200)
         el = time.time() - t0
@@ -253,7 +263,7 @@ def train_model(npz: Path, out: Path, init: Path,
 
 def evaluate(cand: str, best: str, n_games: int, budget: int,
              tracker: QualityGateTracker | None = None) -> dict:
-    """Head-to-head: candidate vs best, alternating colors.
+    """Head-to-head: candidate vs best, rotating the candidate seat fairly.
 
     If *tracker* is provided, records the candidate's moves and value head
     outputs for the model quality gate (behavioral diversity + value health).
@@ -262,22 +272,12 @@ def evaluate(cand: str, best: str, n_games: int, budget: int,
     cw, bw, dr, t0 = 0, 0, 0, time.time()
     for i in range(n_games):
         gseed = 42_000 + i * 7919
-        if i % 2 == 0:
-            p1m, p2m = cand, best
-        else:
-            p1m, p2m = best, cand
         num_p = env.num_players if hasattr(env, "num_players") else 2
         ais = {}
-        # Determine which player slot(s) the candidate occupies
-        cand_players: set[int] = set()
+        candidate_player = (i % num_p) + 1
         for p in range(1, num_p + 1):
-            if i % 2 == 0:
-                model = cand if p == 1 else best
-            else:
-                model = best if p == 1 else cand
+            model = cand if p == candidate_player else best
             ais[p] = _make_ai(p, model, budget)
-            if model == cand:
-                cand_players.add(p)
         for p, ai in ais.items():
             if hasattr(ai, "reset_for_new_game"):
                 ai.reset_for_new_game(rng_seed=(gseed + p * 97_911) & 0xFFFFFFFF)
@@ -297,7 +297,7 @@ def evaluate(cand: str, best: str, n_games: int, budget: int,
             if mv not in legal:
                 mv = legal[random.randint(0, len(legal) - 1)]
             # Track candidate moves for the quality gate
-            if tracker is not None and c in cand_players:
+            if tracker is not None and c == candidate_player:
                 root_value = None
                 stats = getattr(ais[c], "_last_search_stats", None)
                 if isinstance(stats, dict):
@@ -314,7 +314,7 @@ def evaluate(cand: str, best: str, n_games: int, budget: int,
         w = state.winner if state.game_status == GameStatus.COMPLETED else None
         if w is None:
             dr += 1
-        elif w in cand_players:
+        elif w == candidate_player:
             cw += 1
         else:
             bw += 1
@@ -372,15 +372,10 @@ def staged_evaluate(
             gseed = 42_000 + i * 7919
             num_p = env.num_players if hasattr(env, "num_players") else 2
             ais = {}
-            cand_players: set[int] = set()
+            candidate_player = (i % num_p) + 1
             for p in range(1, num_p + 1):
-                if i % 2 == 0:
-                    model = cand if p == 1 else best
-                else:
-                    model = best if p == 1 else cand
+                model = cand if p == candidate_player else best
                 ais[p] = _make_ai(p, model, budget)
-                if model == cand:
-                    cand_players.add(p)
             for p, ai in ais.items():
                 if hasattr(ai, "reset_for_new_game"):
                     ai.reset_for_new_game(rng_seed=(gseed + p * 97_911) & 0xFFFFFFFF)
@@ -399,7 +394,7 @@ def staged_evaluate(
                     break
                 if mv not in legal:
                     mv = legal[random.randint(0, len(legal) - 1)]
-                if tracker is not None and c in cand_players:
+                if tracker is not None and c == candidate_player:
                     root_value = None
                     stats = getattr(ais[c], "_last_search_stats", None)
                     if isinstance(stats, dict):
@@ -416,7 +411,7 @@ def staged_evaluate(
             w = state.winner if state.game_status == GameStatus.COMPLETED else None
             if w is None:
                 dr += 1
-            elif w in cand_players:
+            elif w == candidate_player:
                 cw += 1
             else:
                 bw += 1
@@ -536,7 +531,11 @@ def main() -> None:
     ap.add_argument("--lr", type=float, default=1e-4)
     ap.add_argument("--lr-schedule", type=str, default="sqrt_decay",
                     choices=["sqrt_decay", "fixed"],
-                    help="LR schedule: sqrt_decay (lr/sqrt(iter)) or fixed")
+                    help="Loop-level LR schedule: sqrt_decay (lr/sqrt(iter)) or fixed")
+    ap.add_argument("--train-lr-scheduler", type=str, default="auto",
+                    choices=["auto", "none", "cosine", "step", "plateau", "warmrestart"],
+                    help="Epoch LR scheduler for app.training.train "
+                         "(auto=none for fixed loop LR, cosine otherwise)")
     ap.add_argument("--lr-floor", type=float, default=1e-5,
                     help="Minimum LR for sqrt_decay schedule (default: 1e-5)")
     ap.add_argument("--train-window", type=int, default=10,
@@ -569,6 +568,11 @@ def main() -> None:
     except Exception:
         _git_sha = "unknown"
 
+    def _resolve_train_lr_scheduler() -> str:
+        if args.train_lr_scheduler != "auto":
+            return args.train_lr_scheduler
+        return "none" if args.lr_schedule == "fixed" else "cosine"
+
     # Set globals from CLI args
     BOARD_TYPE = args.board_type
     BOARD_ENUM = BOARD_TYPE_MAP[args.board_type]
@@ -590,6 +594,7 @@ def main() -> None:
     budget = int(loop_settings["budget"])
     selfplay_budget = args.selfplay_budget or budget
     eval_budget = args.eval_budget or budget
+    train_lr_scheduler = _resolve_train_lr_scheduler()
     epochs = int(loop_settings["epochs"])
     batch_size = int(loop_settings["batch_size"])
     train_window = args.train_window
@@ -638,7 +643,11 @@ def main() -> None:
     logger.info(f"  profile={profile_info['profile']} config={profile_info['config_key']}")
     logger.info(f"  iters={args.iterations} games={games_per_iter} eval={eval_games}")
     logger.info(f"  selfplay_budget={selfplay_budget} eval_budget={eval_budget}")
-    logger.info(f"  epochs={epochs} bs={batch_size} lr={args.lr} lr_schedule={args.lr_schedule} lr_floor={args.lr_floor}")
+    logger.info(
+        f"  epochs={epochs} bs={batch_size} lr={args.lr} "
+        f"lr_schedule={args.lr_schedule} train_lr_scheduler={train_lr_scheduler} "
+        f"lr_floor={args.lr_floor}"
+    )
     logger.info(f"  train_window={train_window} promote_thr={args.promote_threshold:.0%} work_dir={wdir}")
     logger.info(f"  selfplay_randomness={args.selfplay_randomness}")
     transfer_hint = recommend_transfer_source(BOARD_TYPE, NUM_PLAYERS)
@@ -656,6 +665,7 @@ def main() -> None:
         "eval_budget": eval_budget,
         "base_lr": args.lr,
         "lr_schedule": args.lr_schedule,
+        "train_lr_scheduler": train_lr_scheduler,
         "lr_floor": args.lr_floor,
         "train_window": train_window,
         "git_sha": _git_sha,
@@ -768,8 +778,19 @@ def main() -> None:
             effective_lr = args.lr
         else:
             effective_lr = max(args.lr_floor, args.lr / math.sqrt(max(1, it)))
-        logger.info(f"[3/5] Train (epochs={epochs}, bs={batch_size}, lr={effective_lr:.1e})")
-        ti = train_model(train_npz, cpath, best, epochs, batch_size, effective_lr)
+        logger.info(
+            f"[3/5] Train (epochs={epochs}, bs={batch_size}, lr={effective_lr:.1e}, "
+            f"scheduler={train_lr_scheduler})"
+        )
+        ti = train_model(
+            train_npz,
+            cpath,
+            best,
+            epochs,
+            batch_size,
+            effective_lr,
+            train_lr_scheduler,
+        )
         if "error" in ti or not cpath.exists():
             logger.error("Training failed, skipping")
             last_error = ti.get("error", "") or "Training produced no output"
