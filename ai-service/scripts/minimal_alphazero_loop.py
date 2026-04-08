@@ -648,10 +648,12 @@ def main() -> None:
             last_error_stage = "training"
             consec_failures += 1; continue
 
+        training_exp_params = {**_static_exp_params, "effective_lr": effective_lr}
+
         # Training succeeded — reset circuit breaker
         consec_failures = 0
         _push_heartbeat_s3(node_id, config_key, it, elo, promos,
-                           stage="training_done", experiment_params=_static_exp_params)
+                           stage="training_done", experiment_params=training_exp_params)
 
         # 3.5 PROBE: Verify training actually worked
         if not args.skip_probes:
@@ -700,7 +702,7 @@ def main() -> None:
 
         iel = time.time() - it0
         # Experiment params for metrics and heartbeats
-        exp_params = {**_static_exp_params, "effective_lr": effective_lr}
+        exp_params = training_exp_params
         metrics = {"iteration": it, "timestamp": datetime.now(timezone.utc).isoformat(),
                    "selfplay": sp, "training": {k: v for k, v in ti.items() if k != "log_line"},
                    "evaluation": ev, "promoted": promoted, "estimated_elo": round(elo, 1),
