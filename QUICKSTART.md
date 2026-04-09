@@ -91,6 +91,7 @@ Expected artifacts:
 
 ```bash
 bash scripts/check_supported_path.sh
+npm run results:refresh
 ```
 
 ## Next reads

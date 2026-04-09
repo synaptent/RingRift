@@ -109,6 +109,12 @@ Useful trust-building checks for the supported path:
 bash scripts/check_supported_path.sh
 ```
 
+To refresh the checked-in results snapshot and SVG artifacts from local metrics:
+
+```bash
+npm run results:refresh
+```
+
 ## Supported vs Legacy
 
 RingRift is a large, historically layered repository. Not every subsystem is equally current.

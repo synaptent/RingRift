@@ -125,7 +125,9 @@
     "ssot-check": "npx ts-node scripts/ssot/ssot-check.ts",
     "check:parity-metrics": "TS_NODE_PROJECT=tsconfig.server.json npx ts-node scripts/check-parity-metrics.ts",
     "orchestrator:gating": "TS_NODE_PROJECT=tsconfig.server.json npx ts-node scripts/run-orchestrator-gating.ts",
-    "dev:doctor": "TS_NODE_PROJECT=tsconfig.server.json npx ts-node scripts/dev_doctor.ts"
+    "dev:doctor": "TS_NODE_PROJECT=tsconfig.server.json npx ts-node scripts/dev_doctor.ts",
+    "results:refresh": "python3 scripts/refresh_results_artifacts.py",
+    "results:visuals": "python3 scripts/generate_results_visuals.py"
   },
   "keywords": [
     "game",

@@ -123,13 +123,13 @@ That script launches the same minimal-loop configurations used for the reported 
 
 under `ai-service/data/proven_experiments/<config>/`.
 
-The checked-in SVGs in `docs/assets/results/` are generated from
-[`docs/data/results_snapshot.json`](/Users/armand/Development/RingRift/docs/data/results_snapshot.json)
-via:
+The checked-in snapshot and SVGs are refreshed from local metrics artifacts with:
 
 ```bash
-python3 scripts/generate_results_visuals.py
+npm run results:refresh
 ```
+
+That command updates [`docs/data/results_snapshot.json`](/Users/armand/Development/RingRift/docs/data/results_snapshot.json) and regenerates the SVGs under `docs/assets/results/`. By default it searches the standard metrics locations under `ai-service/data/` and leaves existing snapshot values in place for any config that is missing local metrics.
 
 ## Bottom Line
 

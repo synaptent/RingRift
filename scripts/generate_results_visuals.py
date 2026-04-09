@@ -18,6 +18,12 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def generate_visuals(snapshot_path: Path, out_dir: Path) -> None:
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    _write(out_dir / "headline_results.svg", _headline_svg(snapshot))
+    _write(out_dir / "square8_2p_progression.svg", _progression_svg(snapshot))
+
+
 def _headline_svg(snapshot: dict) -> str:
     items = snapshot["headline"]
     width = 860
@@ -176,10 +182,7 @@ def main() -> None:
 
     snapshot_path = Path(args.snapshot)
     out_dir = Path(args.out_dir)
-    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
-
-    _write(out_dir / "headline_results.svg", _headline_svg(snapshot))
-    _write(out_dir / "square8_2p_progression.svg", _progression_svg(snapshot))
+    generate_visuals(snapshot_path, out_dir)
 
     print(f"Wrote {out_dir / 'headline_results.svg'}")
     print(f"Wrote {out_dir / 'square8_2p_progression.svg'}")
