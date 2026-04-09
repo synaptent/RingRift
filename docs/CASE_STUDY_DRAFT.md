@@ -1,6 +1,13 @@
 # DRAFT: Case Study — Building a Distributed Training System for RingRift
 
-> **Status: DRAFT** — This documents the training infrastructure as built. The game has not launched publicly and the neural network models have not been validated by real players yet.
+> **Status: DRAFT** — This is exploratory long-form material, not the main public entry point.
+>
+> For the current supported external-facing path, start with:
+>
+> - [README.md](/Users/armand/Development/RingRift/README.md)
+> - [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md)
+> - [docs/RESEARCH_SNAPSHOT.md](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md)
+> - [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
 
 ## Context: A Research Experiment
 

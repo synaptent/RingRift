@@ -24,6 +24,11 @@
     "config": "square8_2p",
     "points": [
       {
+        "iteration": 25,
+        "elo": 1500.0,
+        "promoted": false
+      },
+      {
         "iteration": 27,
         "elo": 1500.0,
         "promoted": false
@@ -42,11 +47,6 @@
         "iteration": 30,
         "elo": 1601.8,
         "promoted": true
-      },
-      {
-        "iteration": 31,
-        "elo": 1601.8,
-        "promoted": false
       }
     ]
   }

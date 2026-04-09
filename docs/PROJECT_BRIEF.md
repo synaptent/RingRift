@@ -62,3 +62,5 @@ Everything else is support infrastructure, operations, or historical context unt
 ## Bottom Line
 
 RingRift is presentable if you judge it by its supported path rather than by every historical script in the tree. The current codebase has a clear rules source of truth, a reproducible experiment entrypoint, and documented evidence for real iterative improvement on multiple configurations.
+
+If you need a version of this story that is more results-focused and easier to share externally, see [docs/RESEARCH_SNAPSHOT.md](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md).

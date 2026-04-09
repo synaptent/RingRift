@@ -13,6 +13,7 @@ This index provides navigation and status tracking for all project documentation
 | -------------------------- | --------------------------- | ------ |
 | `../README.md`             | Project overview            | Active |
 | `PROJECT_BRIEF.md`         | Short external-facing brief | Active |
+| `RESEARCH_SNAPSHOT.md`     | Shareable research summary  | Active |
 | `../QUICKSTART.md`         | Setup guide                 | Active |
 | `RESULTS.md`               | Current research results    | Active |
 | `ARCHITECTURE_OVERVIEW.md` | External architecture guide | Active |

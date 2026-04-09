@@ -60,6 +60,8 @@ Important context:
 
 This is encouraging, but it should be treated more cautiously than the 2-player results because multiplayer evaluation was corrected later to rotate one candidate seat per game fairly.
 
+As of April 9, 2026, the first seat-fair multiplayer reruns for `square8_3p` and `square8_4p` are in flight, but they have not yet produced a new completed iteration worth replacing the headline evidence above.
+
 ## What Had To Be Fixed Before These Results Were Trustworthy
 
 The current results only became defensible after several bug families were removed.
@@ -102,7 +104,7 @@ The project is not “finished” in a research sense.
 Current limitations:
 
 - `hex8_2p` appears to be plateauing near 2000 Elo
-- `square8_3p` should be revalidated under the seat-fair multiplayer evaluator
+- `square8_3p` is still being revalidated under the seat-fair multiplayer evaluator
 - larger boards and some 4-player configs remain much slower and less mature
 - the strongest results still come from cluster runs, not commodity local hardware
 
