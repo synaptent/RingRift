@@ -64,6 +64,10 @@
         <string>1</string>
         <key>RINGRIFT_MAX_EXPORT_SAMPLES</key>
         <string>500000</string>
+        <key>RINGRIFT_MAX_CONCURRENT_EXPORTS</key>
+        <string>1</string>
+        <key>RINGRIFT_MAX_CONCURRENT_SYNCS</key>
+        <string>1</string>
     </dict>
 
     <!-- Keep the process alive - restart if it exits -->
