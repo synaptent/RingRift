@@ -181,4 +181,4 @@ The engine runs game simulation entirely on CUDA with only 14 remaining `.item()
 
 ---
 
-_RingRift is an open-source project. The full source code, including the distributed training infrastructure described in this case study, is available on [GitHub](https://github.com/an0mium/RingRift)._
+_RingRift is an open-source project. The full source code, including the distributed training infrastructure described in this case study, is available on [GitHub](https://github.com/synaptent/RingRift)._

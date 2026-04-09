@@ -58,7 +58,7 @@ echo "GRAFANA_PASSWORD=$(openssl rand -base64 24)"
 
 ```bash
 # Clone repository
-git clone https://github.com/an0mium/RingRift.git /opt/ringrift
+git clone https://github.com/synaptent/RingRift.git /opt/ringrift
 cd /opt/ringrift
 
 # Create production environment file

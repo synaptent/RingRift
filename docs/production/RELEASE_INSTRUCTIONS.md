@@ -45,7 +45,7 @@ gh release create v0.1.0-beta \
 
 ### Using GitHub Web UI
 
-1. Go to https://github.com/an0mium/RingRift/releases
+1. Go to https://github.com/synaptent/RingRift/releases
 2. Click "Draft a new release"
 3. Create new tag: `v0.1.0-beta`
 4. Set release title: "v0.1.0-beta - First Public Beta"
@@ -65,7 +65,7 @@ gh release create v0.1.0-beta \
 ### Local Development
 
 ```bash
-git clone https://github.com/an0mium/RingRift.git
+git clone https://github.com/synaptent/RingRift.git
 cd ringrift
 npm install
 cp .env.example .env

@@ -164,7 +164,21 @@ See `runbooks/` for 25+ specific runbooks covering:
 | `../PROJECT_GOALS.md`                            | High-level goals          | Active     |
 | `../TODO.md`                                     | Active TODO list          | Active     |
 | `../KNOWN_ISSUES.md`                             | Known issues tracker      | Active     |
-| `production/RELEASE_NOTES_v0.1.0-beta.md`        | Release notes draft       | Active     |
+| `production/RELEASE_NOTES_v0.1.0-beta.md`        | Release notes draft       | Draft      |
+
+---
+
+## Drafts & Narrative Materials
+
+These documents are useful writing or packaging material, but they are not the main supported technical path through the repository.
+
+| Document               | Purpose                      | Status |
+| ---------------------- | ---------------------------- | ------ |
+| `RESEARCH_SNAPSHOT.md` | Shareable research summary   | Active |
+| `PROJECT_BRIEF.md`     | Short external-facing brief  | Active |
+| `CASE_STUDY_DRAFT.md`  | Long-form infrastructure arc | Draft  |
+| `BLOG_POST_OUTLINE.md` | Narrative/blog outline       | Draft  |
+| `TWITTER_THREAD.md`    | Social-summary draft         | Draft  |
 
 ---
 
@@ -202,6 +216,7 @@ Legacy root archives live in `../archive/` (see `../archive/README.md`).
 - **SSoT**: Single Source of Truth - authoritative for its domain
 - **Active**: Current and maintained
 - **New**: Recently created (< 7 days)
+- **Draft**: Exploratory or narrative material, not the primary technical source
 - **Reference**: Historical context, not actively updated
 - **Deprecated**: Scheduled for archival
 

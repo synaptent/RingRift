@@ -36,6 +36,20 @@ This index catalogs all project documentation organized by topic and location. F
 
 ---
 
+## Public-Facing Summaries And Drafts
+
+These are the docs most likely to be shared externally. Only the first three should be treated as part of the supported path.
+
+| Document                                               | Purpose                        | Status |
+| ------------------------------------------------------ | ------------------------------ | ------ |
+| [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md)         | Short external-facing brief    | Active |
+| [docs/RESEARCH_SNAPSHOT.md](docs/RESEARCH_SNAPSHOT.md) | Shareable research summary     | Active |
+| [docs/RESULTS.md](docs/RESULTS.md)                     | Full current research evidence | Active |
+| [docs/CASE_STUDY_DRAFT.md](docs/CASE_STUDY_DRAFT.md)   | Long-form case-study draft     | Draft  |
+| [docs/BLOG_POST_OUTLINE.md](docs/BLOG_POST_OUTLINE.md) | Blog/story outline             | Draft  |
+
+---
+
 ## Automation & Agent Instructions
 
 | Document                                                 | Purpose                                    |
@@ -95,7 +109,7 @@ Production deployment and release management.
 | [PRODUCTION_READINESS_CHECKLIST.md](docs/production/PRODUCTION_READINESS_CHECKLIST.md) | Pre-launch verification |
 | [PRODUCTION_RUNBOOK.md](docs/production/PRODUCTION_RUNBOOK.md)                         | Day-to-day operations   |
 | [RELEASE_INSTRUCTIONS.md](docs/production/RELEASE_INSTRUCTIONS.md)                     | Release process         |
-| [RELEASE_NOTES_v0.1.0-beta.md](docs/production/RELEASE_NOTES_v0.1.0-beta.md)           | Current release notes   |
+| [RELEASE_NOTES_v0.1.0-beta.md](docs/production/RELEASE_NOTES_v0.1.0-beta.md)           | Draft release notes     |
 
 ### /docs/architecture/
 

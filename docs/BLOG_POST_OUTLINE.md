@@ -1,4 +1,13 @@
-# Blog Post: Building a Distributed ML Training System in 6 Weeks with Claude Code
+# DRAFT: Blog Post Outline — Building a Distributed ML Training System in 6 Weeks with Claude Code
+
+> **Status: DRAFT** — This is exploratory narrative material, not the main public-facing project summary.
+>
+> For the current supported external-facing path, start with:
+>
+> - [README.md](/Users/armand/Development/RingRift/README.md)
+> - [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md)
+> - [docs/RESEARCH_SNAPSHOT.md](/Users/armand/Development/RingRift/docs/RESEARCH_SNAPSHOT.md)
+> - [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
 
 ## The Hook
 

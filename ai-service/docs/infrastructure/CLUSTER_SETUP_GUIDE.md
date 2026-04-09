@@ -56,7 +56,7 @@ This guide walks you through setting up your own GPU cluster for distributed AI 
 
 ```bash
 # Clone the repository
-git clone https://github.com/an0mium/RingRift.git
+git clone https://github.com/synaptent/RingRift.git
 cd RingRift/ai-service
 
 # Create virtual environment

@@ -60,7 +60,7 @@ RingRift v0.1.0-beta is the first public release of RingRift, an abstract strate
 
 ```bash
 # Clone and install
-git clone https://github.com/an0mium/RingRift.git
+git clone https://github.com/synaptent/RingRift.git
 cd ringrift
 npm install
 
@@ -100,4 +100,4 @@ Thanks to everyone who contributed to this release!
 
 ---
 
-**Full Changelog**: https://github.com/an0mium/RingRift/commits/v0.1.0-beta
+**Full Changelog**: https://github.com/synaptent/RingRift/commits/v0.1.0-beta
