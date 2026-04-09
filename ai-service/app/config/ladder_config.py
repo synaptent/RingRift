@@ -1079,10 +1079,89 @@ def _build_default_square8_four_player_configs() -> dict[
     }
 
 
+def _build_hex8_two_player_configs() -> dict[LadderKey, LadderTierConfig]:
+    """Ladder assignments for hex8 2-player tiers.
+
+    hex8 is the project's strongest trained config (Elo ~1968).
+    Lower difficulties use heuristic, higher difficulties use the
+    trained neural network via Gumbel MCTS.
+    """
+    return {
+        (1, BoardType.HEX8, 2): LadderTierConfig(
+            difficulty=1, board_type=BoardType.HEX8, num_players=2,
+            ai_type=AIType.RANDOM, model_id=None, heuristic_profile_id=None,
+            randomness=0.5, think_time_ms=150, use_neural_net=False,
+            notes="Random baseline for hex8 2p.",
+        ),
+        (2, BoardType.HEX8, 2): LadderTierConfig(
+            difficulty=2, board_type=BoardType.HEX8, num_players=2,
+            ai_type=AIType.HEURISTIC, model_id=None, heuristic_profile_id=None,
+            randomness=0.15, think_time_ms=500, use_neural_net=False,
+            notes="Easy heuristic for hex8 2p.",
+        ),
+        (3, BoardType.HEX8, 2): LadderTierConfig(
+            difficulty=3, board_type=BoardType.HEX8, num_players=2,
+            ai_type=AIType.HEURISTIC, model_id=None, heuristic_profile_id=None,
+            randomness=0.05, think_time_ms=1000, use_neural_net=False,
+            notes="Strong heuristic for hex8 2p.",
+        ),
+        (4, BoardType.HEX8, 2): LadderTierConfig(
+            difficulty=4, board_type=BoardType.HEX8, num_players=2,
+            ai_type=AIType.MINIMAX, model_id="canonical_hex8_2p",
+            heuristic_profile_id=None,
+            randomness=0.05, think_time_ms=3000, use_neural_net=True,
+            notes="Minimax with neural eval for hex8 2p.",
+        ),
+        (5, BoardType.HEX8, 2): LadderTierConfig(
+            difficulty=5, board_type=BoardType.HEX8, num_players=2,
+            ai_type=AIType.MINIMAX, model_id="canonical_hex8_2p",
+            heuristic_profile_id=None,
+            randomness=0.02, think_time_ms=5000, use_neural_net=True,
+            notes="Strong minimax with neural eval for hex8 2p.",
+        ),
+        (6, BoardType.HEX8, 2): LadderTierConfig(
+            difficulty=6, board_type=BoardType.HEX8, num_players=2,
+            ai_type=AIType.DESCENT, model_id="canonical_hex8_2p",
+            heuristic_profile_id=None,
+            randomness=0.02, think_time_ms=8000, use_neural_net=True,
+            notes="Descent with neural guidance for hex8 2p.",
+        ),
+        (7, BoardType.HEX8, 2): LadderTierConfig(
+            difficulty=7, board_type=BoardType.HEX8, num_players=2,
+            ai_type=AIType.MCTS, model_id="canonical_hex8_2p",
+            heuristic_profile_id=None,
+            randomness=0.02, think_time_ms=10000, use_neural_net=True,
+            notes="MCTS with neural guidance for hex8 2p.",
+        ),
+        (8, BoardType.HEX8, 2): LadderTierConfig(
+            difficulty=8, board_type=BoardType.HEX8, num_players=2,
+            ai_type=AIType.GUMBEL_MCTS, model_id="canonical_hex8_2p",
+            heuristic_profile_id=None,
+            randomness=0.01, think_time_ms=15000, use_neural_net=True,
+            notes="Gumbel MCTS with 1968-Elo neural network for hex8 2p.",
+        ),
+        (9, BoardType.HEX8, 2): LadderTierConfig(
+            difficulty=9, board_type=BoardType.HEX8, num_players=2,
+            ai_type=AIType.GUMBEL_MCTS, model_id="canonical_hex8_2p",
+            heuristic_profile_id=None,
+            randomness=0.005, think_time_ms=20000, use_neural_net=True,
+            notes="Strong Gumbel MCTS with 1968-Elo neural network for hex8 2p.",
+        ),
+        (10, BoardType.HEX8, 2): LadderTierConfig(
+            difficulty=10, board_type=BoardType.HEX8, num_players=2,
+            ai_type=AIType.GUMBEL_MCTS, model_id="canonical_hex8_2p",
+            heuristic_profile_id=None,
+            randomness=0.0, think_time_ms=30000, use_neural_net=True,
+            notes="Maximum strength Gumbel MCTS with 1968-Elo hex8 2p model.",
+        ),
+    }
+
+
 _LADDER_TIER_CONFIGS: dict[LadderKey, LadderTierConfig] = {
     **_build_default_square8_two_player_configs(),
     **_build_default_square19_two_player_configs(),
     **_build_default_hex_two_player_configs(),
+    **_build_hex8_two_player_configs(),
     **_build_default_square19_three_player_configs(),
     **_build_default_square19_four_player_configs(),
     **_build_default_hex_three_player_configs(),
