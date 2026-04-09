@@ -1,0 +1,53 @@
+{
+  "as_of": "2026-04-09",
+  "headline": [
+    {
+      "config": "hex8_2p",
+      "start_elo": 1500.0,
+      "best_elo": 1967.6,
+      "promotions": 6
+    },
+    {
+      "config": "square8_2p",
+      "start_elo": 1500.0,
+      "best_elo": 1601.8,
+      "promotions": 2
+    },
+    {
+      "config": "square8_3p",
+      "start_elo": 1500.0,
+      "best_elo": 1534.9,
+      "promotions": 1
+    }
+  ],
+  "square8_2p_progression": {
+    "config": "square8_2p",
+    "points": [
+      {
+        "iteration": 27,
+        "elo": 1500.0,
+        "promoted": false
+      },
+      {
+        "iteration": 28,
+        "elo": 1500.0,
+        "promoted": false
+      },
+      {
+        "iteration": 29,
+        "elo": 1531.4,
+        "promoted": true
+      },
+      {
+        "iteration": 30,
+        "elo": 1601.8,
+        "promoted": true
+      },
+      {
+        "iteration": 31,
+        "elo": 1601.8,
+        "promoted": false
+      }
+    ]
+  }
+}

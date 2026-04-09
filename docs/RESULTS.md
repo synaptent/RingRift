@@ -12,6 +12,8 @@ Status is current as of April 9, 2026.
 | `square8_2p` |    `1500` |          `1601.8` |        `2` | Clean 2-player square result with recent promotions                  |
 | `square8_3p` |    `1500` |          `1534.9` |        `1` | Promising, but multiplayer evidence is weaker than the 2-player runs |
 
+![Headline results snapshot](assets/results/headline_results.svg)
+
 ## Why These Results Matter
 
 RingRift was built as a novel deterministic strategy game plus an end-to-end AlphaZero-style training system. The central question was not only whether the system could run, but whether it could produce real iterative neural-network improvement on a nontrivial new game.
@@ -42,6 +44,8 @@ Recent progression:
 | `28`      |  `52.0%` |   legacy eval path | reject  |      `1500.0` |
 | `29`      |  `54.5%` | `200` staged games | promote |      `1531.4` |
 | `30`      |  `60.0%` |  `50` staged games | promote |      `1601.8` |
+
+![square8_2p progression](assets/results/square8_2p_progression.svg)
 
 Important context:
 
@@ -118,6 +122,14 @@ That script launches the same minimal-loop configurations used for the reported 
 - `models/best.pth`
 
 under `ai-service/data/proven_experiments/<config>/`.
+
+The checked-in SVGs in `docs/assets/results/` are generated from
+[`docs/data/results_snapshot.json`](/Users/armand/Development/RingRift/docs/data/results_snapshot.json)
+via:
+
+```bash
+python3 scripts/generate_results_visuals.py
+```
 
 ## Bottom Line
 

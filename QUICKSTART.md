@@ -90,9 +90,7 @@ Expected artifacts:
 ## Useful validation commands
 
 ```bash
-npm run test:ts-rules-engine
-npm run test:orchestrator-parity
-cd ai-service && PYTHONPATH=. .venv/bin/pytest tests/unit/scripts/test_minimal_alphazero_loop.py
+bash scripts/check_supported_path.sh
 ```
 
 ## Next reads
