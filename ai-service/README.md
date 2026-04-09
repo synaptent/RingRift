@@ -1,10 +1,12 @@
 # RingRift AI Service
 
-The RingRift AI service is a FastAPI application that serves AI move selection,
-choice handling, and position evaluation, plus a large collection of scripts
-for self-play, training, and cluster orchestration.
+The AI service is the Python side of RingRift. It serves inference endpoints, mirrors the canonical TypeScript rules for parity-sensitive workflows, and contains the training and replay-validation tooling used for the project’s published results.
 
-## Quick Start (FastAPI service)
+For a project-level overview, start with [README.md](/Users/armand/Development/RingRift/README.md). For the current evidence, see [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md).
+
+## Supported Paths
+
+### 1. Inference service
 
 ```bash
 cd ai-service
@@ -12,82 +14,61 @@ cd ai-service
 ./run.sh
 ```
 
-- API docs: `http://localhost:8001/docs`
-- Health: `http://localhost:8001/health`
-- Readiness: `http://localhost:8001/ready`
-- Metrics: `http://localhost:8001/metrics`
+Useful endpoints:
 
-## API Reference
+- `GET /health`
+- `GET /docs`
+- `POST /ai/move`
+- `POST /ai/evaluate`
+- `POST /ai/choice`
 
-- Canonical API reference: `ai-service/docs/API_REFERENCE.md`
-- Core endpoints: `/ai/move`, `/ai/evaluate`, `/ai/choice/*`, `/api/replay/*`
+### 2. Reproduce the proven training path
 
-## Canonical Automation Entry Points
-
-### Primary Orchestrator
-
-**`scripts/master_loop.py`** - canonical automation entry point for
-self-play -> sync -> training -> evaluation -> promotion.
+From the repo root:
 
 ```bash
-# Start the master loop (foreground)
-python scripts/master_loop.py
-
-# Watch status without starting the loop
-python scripts/master_loop.py --watch
-
-# Check status
-python scripts/master_loop.py --status
-
-# Legacy unified loop (explicit opt-in)
-RINGRIFT_UNIFIED_LOOP_LEGACY=1 python scripts/unified_ai_loop.py --start
+./scripts/run_proven_experiment.sh hex8_2p
+./scripts/run_proven_experiment.sh square8_2p
 ```
 
-### Canonical Data + Parity
+Those wrappers call [`scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py), which is the supported training engine for the published results.
 
-- `scripts/generate_canonical_selfplay.py` - canonical self-play generator + gates
-- `scripts/run_canonical_selfplay_parity_gate.py` - parity gate
-- `scripts/check_ts_python_replay_parity.py` - TS<->Python replay parity
+### 3. Verify TypeScript ↔ Python parity
 
-## Script Inventory
+```bash
+cd ai-service
+PYTHONPATH=. python scripts/check_ts_python_replay_parity.py --db <path-to-db>
+```
 
-For the full inventory, see `scripts/INDEX.md` and `scripts/README.md`.
+This is the main trust boundary for training data quality.
 
-### Cluster Management
+## Key Files
 
-- `cluster_health_check.py` - Cluster health snapshot
-- `cluster_watchdog.py` - Host process watchdog
-- `cluster_worker.py` - Worker node implementation
+- [`app/main.py`](/Users/armand/Development/RingRift/ai-service/app/main.py): FastAPI app
+- [`app/game_engine`](/Users/armand/Development/RingRift/ai-service/app/game_engine): Python rules mirror
+- [`app/training`](/Users/armand/Development/RingRift/ai-service/app/training): training stack
+- [`scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py): supported minimal training loop
+- [`scripts/check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py): replay parity harness
+- [`TRAINING_DATA_REGISTRY.md`](/Users/armand/Development/RingRift/ai-service/TRAINING_DATA_REGISTRY.md): data provenance and status
 
-### Training
+## Supported vs Secondary
 
-- `run_training_loop.py` - Automated training loop
-- `run_self_play_soak.py` - Self-play data generation
-- `export_replay_dataset.py` - Export replay data to NPZ datasets
+### Supported
 
-### Evaluation
+- inference service
+- parity tooling
+- minimal training loop
+- canonical checkpoints and replay data workflows
 
-- `run_model_elo_tournament.py` - Model Elo tournaments
-- `run_gauntlet.py` - Evaluation gauntlet
-- `run_tournament.py` - Tournament runner
+### Secondary
 
-## Data & Rules SSoT
+- broader cluster coordination scripts
+- production deployment helpers
+- AI calibration and ladder tooling
 
-- Canonical rules: `RULES_CANONICAL_SPEC.md` (root)
-- Canonical data registry: `ai-service/TRAINING_DATA_REGISTRY.md`
-- Python engine mirrors TS rules under `ai-service/app/game_engine/`
+### Historical or Specialized
 
-## Environment Variables
+- deprecated or archived scripts
+- older orchestration paths not needed for reproducing the main results
 
-Key flags (non-exhaustive):
-
-- `RINGRIFT_TRACE_DEBUG` - Enable detailed tracing
-- `RINGRIFT_SKIP_SHADOW_CONTRACTS` - Skip shadow contract validation
-- `RINGRIFT_CONFIG_PATH` - Override config path
-- `RINGRIFT_UNIFIED_LOOP_LEGACY` - Enable legacy unified loop
-- `RINGRIFT_TRAINED_HEURISTIC_PROFILES` - Override heuristic profiles JSON
-
-Full references:
-
-- `ai-service/docs/ENV_REFERENCE.md`
-- `ai-service/docs/ENV_REFERENCE_COMPREHENSIVE.md`
+The repository still contains a large amount of operations and cluster code. That code is useful, but it is not the shortest path to understanding or reproducing the project’s main research outcomes.

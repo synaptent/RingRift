@@ -1,297 +1,134 @@
 # RingRift
 
-> _A fractured arena where shifting rings of influence determine power — where moves create fault lines, and mastery comes from navigating both space and its ultimate collapse._
+RingRift is a deterministic abstract strategy game and a research codebase for training neural agents on a novel multiplayer ruleset. The repository contains the playable web app, the canonical TypeScript rules engine, a Python AI service that mirrors those rules, parity tooling, and a minimal AlphaZero-style training loop used to produce the current results.
 
-A web-based multiplayer strategy game featuring ring stacking, tactical captures, and territory control. Play against friends or challenge AI opponents across multiple board sizes.
+## Research Status
 
-![RingRift CI/CD](https://github.com/an0mium/RingRift/actions/workflows/ci.yml/badge.svg)
-![Parity CI Gate](https://github.com/an0mium/RingRift/actions/workflows/parity-ci.yml/badge.svg)
+Status below is current as of April 9, 2026.
 
----
+| Config       | Best Reported Elo | Promotions | Evidence                                                                         |
+| ------------ | ----------------: | ---------: | -------------------------------------------------------------------------------- |
+| `hex8_2p`    |          `1967.6` |        `6` | Strongest result so far; clear iterative improvement from the 1500 baseline      |
+| `square8_2p` |          `1601.8` |        `2` | Clean fixed-LR run now promotes under the corrected experiment harness           |
+| `square8_3p` |          `1534.9` |        `1` | Promising multiplayer result; useful evidence, but weaker than the 2-player runs |
 
-## The Game
+These results came from long-running GH200 cluster experiments. Reproducing the same behavior locally is possible, but it requires GPU time and multiple training iterations.
 
-RingRift is an abstract strategy game with zero randomness — every outcome is determined by player decisions. Build stacks of rings, claim territory through line formation, and outmaneuver your opponents as the board transforms beneath you.
-
-**What makes it special:**
-
-- High emergent complexity from simple rules
-- Multiple victory paths keep games dynamic
-- "Won" positions can collapse through cascading reactions
-- Strong humans can compete with strong AI despite deep decision trees
-
-### Core Mechanics
-
-| Mechanic                    | Description                                                                 |
-| --------------------------- | --------------------------------------------------------------------------- |
-| **Ring Stacking**           | Build and move stacks; the top ring determines control                      |
-| **Movement**                | Move in straight lines, leaving markers behind                              |
-| **Overtaking Captures**     | Jump over enemy stacks to claim their top ring                              |
-| **Chain Captures**          | Once you start capturing, continue until no captures remain                 |
-| **Line Formation**          | Create lines of 3-4+ markers (line length varies by board and player count) |
-| **Territory Disconnection** | Cut off regions of the board to claim them entirely                         |
-
-### Victory Conditions
-
-Win by achieving **any one** of:
-
-1. **Ring Elimination** — Remove enough opponent rings to reach the threshold
-2. **Territory Control** — Control your fair share of spaces AND more than all opponents combined
-3. **Last Player Standing** — Be the only player who can still take meaningful actions
-
-### Why RingRift?
-
-**For players:** A deep, deterministic strategy game where "won" positions can collapse through cascading reactions. Three distinct victory paths keep every game dynamic. No dice, no card draws — every outcome is determined by player decisions. **Start with 2-player games** for pure strategy without political dynamics; 3-4 player games add alliances and kingmaking for those who enjoy social strategy.
-
-**As a research experiment:** RingRift tests whether a solo non-developer can use frontier AI models to build an AlphaZero-style self-improvement loop from scratch, apply it to a novel game designed to resist machine learning, and determine whether the game is genuinely ML-resistant or solvable. The project tests five hypotheses about game design, AI-assisted development, and the limits of self-play training. See [PROJECT_GOALS.md](PROJECT_GOALS.md) Section 2.2 for the full research framing.
-
-**For AI researchers:** A novel game environment with:
-
-- Non-trivial state space (up to 469 cells on hex boards, complex stack interactions)
-- Explicit decision points (no hidden auto-execution)
-- Cross-language parity (identical rules in TypeScript and Python)
-- Contract vectors for correctness verification (see `tests/fixtures/contract-vectors/v2`)
-- AlphaZero-style training pipeline with distributed selfplay
-
-**For engineers:** A reference implementation of:
-
-- Spec-driven game engine architecture (RR-CANON-RXXX formal specification)
-- Real-time multiplayer with WebSocket sync
-- Domain-driven design with 8 canonical aggregates
-- Comprehensive testing across unit, scenario, parity, and E2E suites (see `tests/README.md`)
-
----
+For the concrete evidence and caveats, see [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md).
 
 ## Quick Start
 
-### Prerequisites
-
-- Node.js 18+ and npm 9+
-- Docker and Docker Compose (optional, for containerized setup)
-- PostgreSQL 14+ and Redis 6+ (or use Docker)
-
-### Setup
+### 1. Run the web app
 
 ```bash
-# Clone and install
-git clone https://github.com/an0mium/RingRift.git
+git clone https://github.com/synaptent/RingRift.git
 cd RingRift
 npm install
-
-# Configure environment
 cp .env.example .env
-
-# Start services (choose one):
-
-# Option 1: Docker (recommended)
-docker compose up -d
-
-# Option 2: Manual
-docker compose up -d postgres redis  # Just databases
+docker compose up -d postgres redis
 npm run db:migrate
 npm run db:generate
-npm run dev  # Starts both frontend and backend
+npm run dev
 ```
 
-**URLs:**
+- Client: `http://localhost:5173`
+- Server: `http://localhost:3000`
 
-- Frontend: http://localhost:5173
-- Backend API: http://localhost:3000
-- AI Service: http://localhost:8001 (if running)
+More setup detail is in [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md).
 
-### AI Service (Optional)
-
-For AI opponents beyond the client-side sandbox:
+### 2. Run the AI service
 
 ```bash
 cd ai-service
-pip install -r requirements.txt
-uvicorn app.main:app --port 8001 --reload
+./setup.sh
+./run.sh
 ```
 
-That starts the FastAPI service in inference-only mode by default. To boot the
-full coordination/training runtime on a dedicated node, opt in explicitly:
+- Health: `http://localhost:8001/health`
+- Docs: `http://localhost:8001/docs`
+
+### 3. Launch a proven training configuration
+
+From the repo root:
 
 ```bash
-cd ai-service
-RINGRIFT_ORCHESTRATION=true uvicorn app.main:app --port 8001 --reload
+./scripts/run_proven_experiment.sh square8_2p --print-only
+./scripts/run_proven_experiment.sh square8_2p --iterations 10
 ```
 
----
+Supported experiment presets:
 
-## Features
+- `hex8_2p`
+- `square8_2p`
 
-| Feature                | Description                                                                             |
-| ---------------------- | --------------------------------------------------------------------------------------- |
-| **Multiple Boards**    | 8×8 square, 19×19 square, hex8 (61 spaces), and hexagonal (469 spaces)                  |
-| **2-4 Players**        | Any combination of humans and AI                                                        |
-| **10 AI Levels**       | From random moves to neural network-guided search                                       |
-| **Real-time Play**     | WebSocket-based with live state sync                                                    |
-| **Rating System**      | Elo-based rankings and leaderboards                                                     |
-| **Replay System**      | Watch and analyze completed games                                                       |
-| **Sandbox & Teaching** | Public sandbox mode with curated scenarios, teaching overlays, and optional diagnostics |
-| **Spectator Mode**     | Watch ongoing games                                                                     |
+The script launches the same minimal loop configurations used for the published results and writes artifacts under `ai-service/data/proven_experiments/<config>/`.
 
----
-
-## Architecture
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   React Client  │◄──►│   Express API   │◄──►│   PostgreSQL    │
-│   (Vite + TS)   │    │   + WebSocket   │    │   + Redis       │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                              │
-                       ┌──────┴──────┐
-                       │ AI Service  │
-                       │  (Python)   │
-                       └─────────────┘
-```
-
-### Tech Stack
-
-| Layer      | Technologies                             |
-| ---------- | ---------------------------------------- |
-| Frontend   | React 19, TypeScript, Vite, Tailwind CSS |
-| Backend    | Node.js, Express, Socket.IO, Prisma ORM  |
-| Database   | PostgreSQL, Redis                        |
-| AI Service | Python, FastAPI, PyTorch                 |
-| Monitoring | Prometheus, Grafana                      |
-
-### Rules Engine
-
-The game logic lives in a canonical TypeScript engine with Python parity:
-
-- **Single Source of Truth**: `src/shared/engine/` — 7 canonical turn phases + terminal `game_over`
-- **Cross-language Parity**: Contract vectors in `tests/fixtures/contract-vectors/v2` validate TS↔Python parity
-- **Domain Aggregates**: Placement, Movement, Capture, Line, Territory, Victory
-
----
-
-## Testing
+### 4. Inspect results
 
 ```bash
-# TypeScript tests
-npm test
-npm run test:coverage
+cat ai-service/data/proven_experiments/square8_2p/summary.json
+tail -n 5 ai-service/data/proven_experiments/square8_2p/metrics.jsonl
+```
 
-# Python tests
-cd ai-service && pytest
+## Architecture Overview
 
-# Parity tests (TS↔Python rules)
+The supported architecture is intentionally narrow:
+
+1. The canonical game rules live in TypeScript under [`src/shared/engine`](/Users/armand/Development/RingRift/src/shared/engine).
+2. The web app and backend both use that TypeScript engine.
+3. The Python AI service mirrors those rules for inference, replay validation, and training.
+4. The supported training engine is the minimal loop at [`ai-service/scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py).
+5. TS↔Python replay parity is checked with [`ai-service/scripts/check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py).
+
+The broader coordinator, daemon, and P2P infrastructure remains in the repository for cluster operations and historical experiments, but it is not required to understand or reproduce the core results.
+
+See [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md) for the external-facing architecture guide.
+
+## Repository Guide
+
+Start here if you are new to the repo:
+
+- [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md) for local setup
+- [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md) for the current evidence
+- [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md) for the system model
+- [docs/REPOSITORY_MAP.md](/Users/armand/Development/RingRift/docs/REPOSITORY_MAP.md) for what is active versus legacy
+
+Core code directories:
+
+- [`src/shared/engine`](/Users/armand/Development/RingRift/src/shared/engine): canonical game rules
+- [`src/server`](/Users/armand/Development/RingRift/src/server): Node/Express backend
+- [`src/client`](/Users/armand/Development/RingRift/src/client): React frontend
+- [`ai-service/app`](/Users/armand/Development/RingRift/ai-service/app): Python AI service
+- [`ai-service/scripts`](/Users/armand/Development/RingRift/ai-service/scripts): training, parity, and ops scripts
+
+## Validation
+
+Useful trust-building checks for the supported path:
+
+```bash
+npm run test:ts-rules-engine
 npm run test:orchestrator-parity
+cd ai-service && PYTHONPATH=. .venv/bin/pytest tests/unit/scripts/test_minimal_alphazero_loop.py
 ```
 
-Test counts and coverage are tracked in CI; see `tests/README.md` and `ai-service/tests/` for the current suite breakdowns.
+## Supported vs Legacy
 
----
+RingRift is a large, historically layered repository. Not every subsystem is equally current.
 
-## API Overview
+- Supported for external readers:
+  - web app
+  - canonical TS rules engine
+  - Python parity tooling
+  - minimal training loop
+  - proven experiment script and results docs
+- Useful but secondary:
+  - production deployment docs
+  - cluster monitoring and operational scripts
+  - AI ladder and calibration tooling
+- Historical or operationally specialized:
+  - `archive/`
+  - `docs/archive/`
+  - deprecated training and orchestration paths
+  - many cluster automation scripts under `ai-service/scripts`
 
-### REST Endpoints
-
-Full reference: `/api/docs` (OpenAPI) and `docs/architecture/API_REFERENCE.md`.
-
-```
-POST /api/auth/register     # Create account
-POST /api/auth/login        # Authenticate
-GET  /api/games             # List games
-POST /api/games             # Create game
-GET  /api/games/:id         # Game details
-POST /api/games/:id/join    # Join game
-GET  /api/users/leaderboard # Rankings
-```
-
-### WebSocket API
-
-The authoritative event/payload contract lives in `docs/architecture/WEBSOCKET_API.md`
-and `src/shared/types/websocket.ts`. The list below is a non-exhaustive subset.
-
-| Client → Server                         | Server → Client                                              |
-| --------------------------------------- | ------------------------------------------------------------ |
-| `join_game`, `leave_game`               | `game_state`, `game_over`, `game_error`                      |
-| `player_move`, `player_move_by_id`      | `player_choice_required`, `player_choice_canceled`           |
-| `player_choice_response`                | `player_joined`, `player_left`, `player_reconnected`         |
-| `chat_message`                          | `chat_message`, `chat_message_persisted`, `chat_history`     |
-| `rematch_request`, `rematch_respond`    | `rematch_requested`, `rematch_response`                      |
-| `lobby:subscribe`, `lobby:unsubscribe`  | `lobby:*` broadcasts, `matchmaking:*` events                 |
-| `matchmaking:join`, `matchmaking:leave` | `decision_phase_timeout_warning`, `decision_phase_timed_out` |
-| `diagnostic:ping` (load testing)        | `diagnostic:pong`, `error`                                   |
-
----
-
-## Documentation
-
-| Document                                                                 | Purpose                      |
-| ------------------------------------------------------------------------ | ---------------------------- |
-| [QUICKSTART.md](QUICKSTART.md)                                           | Detailed setup guide         |
-| [docs/rules/COMPLETE_RULES.md](docs/rules/COMPLETE_RULES.md)             | Full rulebook with examples  |
-| [RULES_CANONICAL_SPEC.md](RULES_CANONICAL_SPEC.md)                       | Formal rules specification   |
-| [docs/architecture/API_REFERENCE.md](docs/architecture/API_REFERENCE.md) | REST API reference           |
-| [docs/architecture/WEBSOCKET_API.md](docs/architecture/WEBSOCKET_API.md) | WebSocket contract reference |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                                       | Contribution guidelines      |
-| [ai-service/README.md](ai-service/README.md)                             | AI service documentation     |
-
----
-
-## Distributed Training Architecture
-
-RingRift trains neural network AI opponents using a P2P mesh network of ~41 GPU nodes across multiple cloud providers. The training pipeline follows an AlphaZero-style loop:
-
-1. **Selfplay** generates games on GPU workers using MCTS or heuristic play
-2. **Export** converts game databases to training arrays
-3. **Train** updates the neural network with supervised learning
-4. **Evaluate** tests the model in a gauntlet against baselines
-5. **Promote** distributes the improved model back to all nodes for the next round
-
-The system runs autonomously for 48+ hours with automatic leader election, failure recovery, and adaptive selfplay scheduling. Five feedback loops continuously adjust training parameters based on Elo velocity, data quality, and regression detection.
-
-For a hands-on introduction, see [`ai-service/docs/QUICK_START_TRAINING.md`](ai-service/docs/QUICK_START_TRAINING.md) to train a model locally. For the full architecture, see [`ai-service/docs/architecture/DISTRIBUTED_TRAINING.md`](ai-service/docs/architecture/DISTRIBUTED_TRAINING.md).
-
----
-
-## Production Deployment
-
-```bash
-npm run build
-docker compose -f docker-compose.production.yml up -d
-```
-
-The Docker stack includes: app, nginx, postgres, redis, ai-service, prometheus, grafana.
-
-See [QUICKSTART.md](QUICKSTART.md) for detailed deployment options.
-
----
-
-## Project Status
-
-**Stable Beta** — Engine complete, production validation in progress.
-
-- 14 development waves complete
-- All core mechanics implemented and tested
-- Active focus: scaling tests, security hardening, UX polish
-
----
-
-## Contributing
-
-We welcome contributions! Here's how to get started:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes and run tests
-4. Commit (`git commit -m 'Add amazing feature'`)
-5. Push (`git push origin feature/amazing-feature`)
-6. Open a Pull Request
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
-
----
-
-## License
-
-MIT License — see [LICENSE](LICENSE) for details.
-
----
-
-_Built with passion for strategy games_
+If your goal is to understand the research result, follow the supported path first and treat the rest as secondary context.

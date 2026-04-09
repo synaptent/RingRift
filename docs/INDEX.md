@@ -1,6 +1,6 @@
 # RingRift Documentation Index
 
-> **Last Updated:** 2025-12-29
+> **Last Updated:** 2026-04-09
 > **Total Docs:** ~180 active + ~65 archived
 
 This index provides navigation and status tracking for all project documentation.
@@ -9,13 +9,16 @@ This index provides navigation and status tracking for all project documentation
 
 ## Quick Start
 
-| Document             | Purpose                 | Status |
-| -------------------- | ----------------------- | ------ |
-| `../README.md`       | Project overview        | Active |
-| `../QUICKSTART.md`   | Setup guide             | Active |
-| `../SECURITY.md`     | Security policy         | Active |
-| `../CONTRIBUTING.md` | Contribution guidelines | Active |
-| `../AGENTS.md`       | AI agent expectations   | Active |
+| Document                   | Purpose                     | Status |
+| -------------------------- | --------------------------- | ------ |
+| `../README.md`             | Project overview            | Active |
+| `../QUICKSTART.md`         | Setup guide                 | Active |
+| `RESULTS.md`               | Current research results    | Active |
+| `ARCHITECTURE_OVERVIEW.md` | External architecture guide | Active |
+| `REPOSITORY_MAP.md`        | Supported vs legacy map     | Active |
+| `../SECURITY.md`           | Security policy             | Active |
+| `../CONTRIBUTING.md`       | Contribution guidelines     | Active |
+| `../AGENTS.md`             | AI agent expectations       | Active |
 
 ---
 
@@ -45,6 +48,7 @@ This index provides navigation and status tracking for all project documentation
 
 | Document                                           | Purpose                  | Status |
 | -------------------------------------------------- | ------------------------ | ------ |
+| `ARCHITECTURE_OVERVIEW.md`                         | External system overview | Active |
 | `architecture/RULES_ENGINE_ARCHITECTURE.md`        | Engine design            | Active |
 | `architecture/DOMAIN_AGGREGATE_DESIGN.md`          | Aggregate patterns       | Active |
 | `architecture/STATE_MACHINES.md`                   | FSM design               | Active |
@@ -58,14 +62,15 @@ This index provides navigation and status tracking for all project documentation
 
 ### Primary Docs
 
-| Document                                              | Purpose                   | Status |
-| ----------------------------------------------------- | ------------------------- | ------ |
-| `../ai-service/README.md`                             | AI service overview       | Active |
-| `../ai-service/docs/README.md`                        | AI service doc hub + SSoT | Active |
-| `../ai-service/docs/training/TRAINING_FEATURES.md`    | Training feature guide    | Active |
-| `../ai-service/docs/CONSOLIDATION_ROADMAP.md`         | Consolidation progress    | Active |
-| `../ai-service/docs/roadmaps/GPU_PIPELINE_ROADMAP.md` | GPU training pipeline     | Active |
-| `../ai-service/docs/training/DISTRIBUTED_SELFPLAY.md` | Distributed training      | Active |
+| Document                                              | Purpose                      | Status |
+| ----------------------------------------------------- | ---------------------------- | ------ |
+| `../ai-service/README.md`                             | AI service overview          | Active |
+| `RESULTS.md`                                          | Published experiment summary | Active |
+| `../ai-service/docs/README.md`                        | AI service doc hub + SSoT    | Active |
+| `../ai-service/docs/training/TRAINING_FEATURES.md`    | Training feature guide       | Active |
+| `../ai-service/docs/CONSOLIDATION_ROADMAP.md`         | Consolidation progress       | Active |
+| `../ai-service/docs/roadmaps/GPU_PIPELINE_ROADMAP.md` | GPU training pipeline        | Active |
+| `../ai-service/docs/training/DISTRIBUTED_SELFPLAY.md` | Distributed training         | Active |
 
 ### Human Calibration
 

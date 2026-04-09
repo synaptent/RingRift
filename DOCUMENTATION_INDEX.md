@@ -1,6 +1,6 @@
 # RingRift Documentation Index
 
-> **Last Updated:** 2025-12-30
+> **Last Updated:** 2026-04-09
 > **Organization:** Core docs in root, organized subdirectories in `/docs/` and `/ai-service/docs/`
 
 This index catalogs all project documentation organized by topic and location. For a lightweight landing page, see `docs/INDEX.md`.
@@ -9,17 +9,20 @@ This index catalogs all project documentation organized by topic and location. F
 
 ## Quick Start
 
-| Document                                   | Purpose                            |
-| ------------------------------------------ | ---------------------------------- |
-| [README.md](README.md)                     | Project overview, features, status |
-| [QUICKSTART.md](QUICKSTART.md)             | Local development setup            |
-| [CONTRIBUTING.md](CONTRIBUTING.md)         | Contribution guidelines            |
-| [SECURITY.md](SECURITY.md)                 | Security policy and implementation |
-| [TERMS_OF_SERVICE.md](TERMS_OF_SERVICE.md) | Terms of Service                   |
-| [PRIVACY_POLICY.md](PRIVACY_POLICY.md)     | Privacy Policy                     |
-| [TODO.md](TODO.md)                         | Active task tracker                |
-| [KNOWN_ISSUES.md](KNOWN_ISSUES.md)         | Current bugs and gaps              |
-| [CHANGELOG.md](CHANGELOG.md)               | Release history                    |
+| Document                                                       | Purpose                            |
+| -------------------------------------------------------------- | ---------------------------------- |
+| [README.md](README.md)                                         | Project overview, features, status |
+| [QUICKSTART.md](QUICKSTART.md)                                 | Local development setup            |
+| [docs/RESULTS.md](docs/RESULTS.md)                             | Current research evidence          |
+| [docs/ARCHITECTURE_OVERVIEW.md](docs/ARCHITECTURE_OVERVIEW.md) | External architecture guide        |
+| [docs/REPOSITORY_MAP.md](docs/REPOSITORY_MAP.md)               | Supported vs legacy repo map       |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                             | Contribution guidelines            |
+| [SECURITY.md](SECURITY.md)                                     | Security policy and implementation |
+| [TERMS_OF_SERVICE.md](TERMS_OF_SERVICE.md)                     | Terms of Service                   |
+| [PRIVACY_POLICY.md](PRIVACY_POLICY.md)                         | Privacy Policy                     |
+| [TODO.md](TODO.md)                                             | Active task tracker                |
+| [KNOWN_ISSUES.md](KNOWN_ISSUES.md)                             | Current bugs and gaps              |
+| [CHANGELOG.md](CHANGELOG.md)                                   | Release history                    |
 
 ### Getting Started (New Players)
 

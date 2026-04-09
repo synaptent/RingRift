@@ -1,119 +1,92 @@
-# AI Service Documentation
+# RingRift AI Service Docs
 
-Technical documentation for the RingRift AI training service.
+This directory contains deeper technical documentation for the Python side of RingRift.
 
-## Quick Links
+If you are new to the project, do not start here. Start with:
 
-| Document                                                       | Description                   |
-| -------------------------------------------------------------- | ----------------------------- |
-| [Quick Start](QUICK_START.md)                                  | Get up and running quickly    |
-| [Developer Guide](DEVELOPER_GUIDE.md)                          | Coding patterns and standards |
-| [Config Reference](CONFIG_REFERENCE.md)                        | All configuration options     |
-| [API Reference](API_REFERENCE.md)                              | FastAPI endpoints             |
-| [Architecture Overview](architecture/ARCHITECTURE_OVERVIEW.md) | System architecture           |
-| [Training Pipeline](training/TRAINING_PIPELINE.md)             | Training pipeline overview    |
+1. [README.md](/Users/armand/Development/RingRift/README.md)
+2. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
+3. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
+4. [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
+5. [ai-service/README.md](/Users/armand/Development/RingRift/ai-service/README.md)
 
-## P2P + Sync SSoT
+This doc hub is for readers who already know they need the AI-service internals.
 
-- Cluster inventory + voters: `ai-service/config/distributed_hosts.yaml` (`p2p_voters`, per-host `p2p_enabled`)
-- Canonical P2P start: `PYTHONPATH=. venv/bin/python scripts/p2p_orchestrator.py --node-id <name> --port 8770 --peers <url-list>`
-- Data sync service: `PYTHONPATH=. venv/bin/python scripts/unified_data_sync.py --watchdog --http-port 8765`
-- External storage path: `/Volumes/RingRift-Data` on mac-studio via `allowed_external_storage`
+## Supported Entry Points
 
-## Documentation Structure
+### Inference service
 
-### [architecture/](architecture)
+- [../README.md](/Users/armand/Development/RingRift/ai-service/README.md)
+- [API_REFERENCE.md](/Users/armand/Development/RingRift/ai-service/docs/API_REFERENCE.md)
+- [CONFIG_REFERENCE.md](/Users/armand/Development/RingRift/ai-service/docs/CONFIG_REFERENCE.md)
 
-System design and component architecture.
+### Training and reproducible experiments
 
-- Neural network architecture
-- GPU pipeline design (see also [GPU_VECTORIZATION.md](GPU_VECTORIZATION.md))
-- Coordination systems (see also [COORDINATION_ARCHITECTURE.md](COORDINATION_ARCHITECTURE.md))
-- Platform-specific (MPS, CUDA)
+- [../README.md](/Users/armand/Development/RingRift/ai-service/README.md)
+- [training/TRAINING_FEATURES.md](/Users/armand/Development/RingRift/ai-service/docs/training/TRAINING_FEATURES.md)
+- [roadmaps/GPU_PIPELINE_ROADMAP.md](/Users/armand/Development/RingRift/ai-service/docs/roadmaps/GPU_PIPELINE_ROADMAP.md)
+- [../TRAINING_DATA_REGISTRY.md](/Users/armand/Development/RingRift/ai-service/TRAINING_DATA_REGISTRY.md)
 
-### [training/](training)
+### Parity and canonical data trust
 
-Training pipeline and methodology.
+- [../../docs/PARITY_RUNBOOK.md](/Users/armand/Development/RingRift/docs/PARITY_RUNBOOK.md)
+- [../../docs/rules/PYTHON_PARITY_REQUIREMENTS.md](/Users/armand/Development/RingRift/docs/rules/PYTHON_PARITY_REQUIREMENTS.md)
+- [../../docs/rules/INVARIANTS_AND_PARITY_FRAMEWORK.md](/Users/armand/Development/RingRift/docs/rules/INVARIANTS_AND_PARITY_FRAMEWORK.md)
 
-- Training features and internals
-- Optimization techniques
-- Curriculum learning
-- Model promotion and Elo
+## Directory Guide
 
-### [infrastructure/](infrastructure)
+### `architecture/`
 
-Cluster setup, operations, and cloud infrastructure.
+Design docs for the AI-service internals, GPU pipelines, and system decomposition.
 
-- Cluster setup and operations
-- Vast.ai integration
-- P2P orchestration
-- Resource management
+### `training/`
 
-### [algorithms/](algorithms)
+Training pipeline details, feature notes, and implementation-specific references.
 
-AI algorithms and search methods.
+### `algorithms/`
 
-- Gumbel MCTS
-- MCTS integration
-- Hex board augmentation
-- NNUE policy training
+Algorithm-specific documentation for search methods and experimental model variants.
 
-### [specs/](specs)
+### `specs/`
 
-Game notation and data format specifications.
+Data, replay, and format specifications used by the Python training and replay stack.
 
-- Game notation spec
-- Game record format
-- Replay database design
-- Make/unmake design
+### `roadmaps/`
 
-### [roadmaps/](roadmaps)
+Planning documents for AI-service evolution. Useful context, but not always current implementation truth.
 
-Active development roadmaps and plans.
+### `runbooks/`
 
-- GPU pipeline roadmap
-- Consolidation roadmap
-- Integration migration plan
+Operational runbooks for AI-service incidents and maintenance.
 
-### [runbooks/](runbooks)
+### `infrastructure/`
 
-Operational runbooks for incident response.
+Cluster and environment documentation. Useful for operators, not the first stop for understanding the supported training path.
 
-### [audits/](audits)
+### `archive/`
 
-Generated audits and code health reports.
+Historical notes and superseded docs.
 
-- [Circular Dependency Map](audits/CIRCULAR_DEPENDENCY_MAP.md)
+## What To Treat As Canonical
 
-- Cluster health critical
-- Coordinator errors
-- Sync host issues
+Within the AI service, the main rules are:
 
-### [archive/](archive)
+- TypeScript rules behavior is authoritative.
+- Python mirrors it for inference, replay validation, and training.
+- Canonical replay data and parity checks matter more than historical convenience.
 
-Historical documentation and status reports.
+If you need the actual rules source of truth, go back to:
 
-### Historical Reports
+- [RULES_CANONICAL_SPEC.md](/Users/armand/Development/RingRift/RULES_CANONICAL_SPEC.md)
+- [docs/rules/COMPLETE_RULES.md](/Users/armand/Development/RingRift/docs/rules/COMPLETE_RULES.md)
+- [src/shared/engine](/Users/armand/Development/RingRift/src/shared/engine)
 
-- `archive/status_reports/README.md` - Point-in-time operational reports (Dec 2025, gitignored/local-only)
+## Bottom Line
 
-## Root Level Docs
+The shortest trustworthy AI-service path is:
 
-| Document                                                              | Description                      |
-| --------------------------------------------------------------------- | -------------------------------- |
-| [QUICK_START](QUICK_START.md)                                         | Quick start guide                |
-| [DEVELOPER_GUIDE](DEVELOPER_GUIDE.md)                                 | Coding patterns and standards    |
-| [CONFIG_REFERENCE](CONFIG_REFERENCE.md)                               | Complete config reference        |
-| [GPU_VECTORIZATION](GPU_VECTORIZATION.md)                             | GPU module architecture & limits |
-| [COORDINATION_ARCHITECTURE](COORDINATION_ARCHITECTURE.md)             | Event system & coordination      |
-| [P2P_HANDLERS](P2P_HANDLERS.md)                                       | P2P orchestrator handler mixins  |
-| [EVENT_CATALOG](EVENT_CATALOG.md)                                     | Event types reference            |
-| [sync_architecture](sync_architecture.md)                             | Canonical sync architecture      |
-| [CONSOLIDATION_STATUS_2025_12_19](CONSOLIDATION_STATUS_2025_12_19.md) | Historical consolidation status  |
-| [HEX_ARTIFACTS_DEPRECATED](HEX_ARTIFACTS_DEPRECATED.md)               | Deprecated hex data notice       |
-
-## See Also
-
-- [Main docs/](../../docs) - Product documentation
-- `ai-service/TRAINING_DATA_REGISTRY.md` - Training data inventory and provenance
-- [RULES_CANONICAL_SPEC](../../RULES_CANONICAL_SPEC.md) - Canonical rules
+1. top-level project docs
+2. [ai-service/README.md](/Users/armand/Development/RingRift/ai-service/README.md)
+3. parity docs
+4. training docs
+5. deeper architecture and infrastructure references only as needed

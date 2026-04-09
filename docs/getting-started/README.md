@@ -18,5 +18,6 @@ Welcome! This folder contains guides to help you learn and start playing RingRif
 ## See Also
 
 - [Complete Rules](../rules) - Full rules specification
-- [QUICKSTART.md](../../QUICKSTART.md) - Developer quick start
+- [QUICKSTART.md](../../QUICKSTART.md) - Local setup and supported experiment path
 - [README.md](../../README.md) - Project overview
+- [RESULTS.md](../RESULTS.md) - Current research results
