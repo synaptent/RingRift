@@ -1,814 +1,140 @@
 # AI Service Scripts
 
-This directory contains scripts for the RingRift AI training and improvement infrastructure.
+This directory contains a large amount of training, parity, export, cluster, and operational tooling.
 
-## Canonical Entry Points
+It is useful, but it is not a single coherent product surface. If you are new to RingRift, do not start by reading every script here.
 
-### Primary Orchestrator
+Start with the supported path, then move into the operational surface only if you need it.
 
-**`master_loop.py`** - The canonical self-improvement orchestrator. This is the main entry point for the AI improvement loop.
+## Start Here
+
+If your goal is to understand or reproduce the current research result, read these in order:
+
+1. [README.md](/Users/armand/Development/RingRift/README.md)
+2. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
+3. [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md)
+4. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
+5. [scripts/run_proven_experiment.sh](/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh)
+
+Then come back here for script-level detail.
+
+## Supported For External Readers
+
+These are the scripts that matter most for understanding the current project.
+
+### Reproduce the reported experiments
+
+- [`/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh`](/Users/armand/Development/RingRift/scripts/run_proven_experiment.sh)
+  - Top-level wrapper for the supported experiment presets.
+  - Best first stop for anyone trying to reproduce the published `hex8_2p` or `square8_2p` results.
+
+- [`minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py)
+  - Supported self-play / train / evaluate loop for the current research path.
+  - This is the narrow experiment harness behind the reproducible presets.
+
+### Verify TypeScript ↔ Python parity
+
+- [`check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py)
+  - Main parity harness.
+  - Use this to verify that the Python mirror still matches the canonical TypeScript engine on replayed games.
+
+- [`diff_state_bundle.py`](/Users/armand/Development/RingRift/ai-service/scripts/diff_state_bundle.py)
+  - Focused parity debugging tool for a single emitted state bundle.
+
+### Work with canonical replay data
+
+- [`generate_canonical_selfplay.py`](/Users/armand/Development/RingRift/ai-service/scripts/generate_canonical_selfplay.py)
+  - Preferred canonical self-play generator and gate.
+
+- [`check_canonical_phase_history.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_canonical_phase_history.py)
+  - Validates canonical phase-history semantics for a replay database.
+
+- [`export_replay_dataset.py`](/Users/armand/Development/RingRift/ai-service/scripts/export_replay_dataset.py)
+  - Preferred replay-to-dataset export path for current training work.
+
+## Supported Workflow By Goal
+
+### I want to prove the training pipeline works
 
 ```bash
-# Start the master loop
-python scripts/master_loop.py --config config/unified_loop.yaml
-
-# Watch live status (does not start the loop)
-python scripts/master_loop.py --watch
-
-# Check status
-python scripts/master_loop.py --status
+./scripts/run_proven_experiment.sh square8_2p --print-only
+./scripts/run_proven_experiment.sh square8_2p --iterations 10
 ```
 
-Features:
-
-- Streaming data collection from distributed nodes (60s sync)
-- Shadow tournament evaluation (15min lightweight)
-- Training scheduler with data quality gates
-- Model promotion with Elo thresholds
-- Adaptive curriculum weighting
-- Value calibration analysis
-- Temperature scheduling for exploration control
-
-Legacy entrypoint: `unified_ai_loop.py` now redirects to `master_loop.py`.
-Set `RINGRIFT_UNIFIED_LOOP_LEGACY=1` to run the legacy loop.
-
-**`cli.py`** - Unified training CLI for common operations (harvest, monitor, compare, health, periodic).
+### I want to inspect or debug parity
 
 ```bash
-# Harvest training data
-python scripts/cli.py harvest --output data/harvested/local.jsonl
-
-# Monitor Elo and training activity
-python scripts/cli.py monitor
-
-# Compare two models head-to-head
-python scripts/cli.py compare --model-a models/new.pt --model-b models/best.pt --quick
-
-# Check cluster health
-python scripts/cli.py health
+cd ai-service
+PYTHONPATH=. python scripts/check_ts_python_replay_parity.py --db <path-to-db>
 ```
 
-## Key Categories
-
-### P2P Cluster Orchestration
-
-- `p2p_orchestrator.py` - **Primary cluster orchestrator** (1.1MB, self-healing P2P coordination)
-  - Leader election and peer discovery
-  - Auto-starts selfplay/training jobs
-  - Vast.ai integration (Lambda Labs legacy support retired)
-  - Supports all board types: square8, hex8, square19, hexagonal
-  - Start: `PYTHONPATH=. venv/bin/python scripts/p2p_orchestrator.py --node-id <name> --port 8770 --peers <url-list>`
-- `vast_p2p_sync.py` - **Vast.ai instance synchronization** (22KB)
-  - Synchronizes Vast.ai instances with P2P network
-  - Instance status tracking, node unretiring, P2P orchestrator startup
-  - Auto-updates `distributed_hosts.yaml` with new instances
-  - Start: `python scripts/vast_p2p_sync.py --full` (check + sync + start P2P)
-  - Check only: `python scripts/vast_p2p_sync.py --check`
-- `vast_keepalive.py` - **Keepalive manager** for Vast.ai instances (8KB)
-  - Prevents idle instance termination via periodic heartbeats
-  - Auto-restart stopped instances via Vast.ai CLI
-  - SSH health checks and worker restart on unhealthy instances
-  - Status: `python scripts/vast_keepalive.py --status`
-  - Full cycle: `python scripts/vast_keepalive.py --auto`
-  - Install cron: `python scripts/vast_keepalive.py --install-cron`
-- `unified_cluster_monitor.py` - **Python unified cluster monitor**
-  - HTTP health checks with SSH deep checks and leader API status
-  - Webhook alerting and JSON output modes
-  - Uses `config/distributed_hosts.yaml` for node inventory
-  - Start: `python scripts/unified_cluster_monitor.py --quick`
-- `scripts/monitor` - **Unified monitor CLI package**
-  - Quick entry points for status, health, and alerting
-  - Start: `python -m scripts.monitor status`
-- Legacy `cluster_*` scripts and shell monitors have been removed
-  (see `scripts/DEPRECATED.md` for migration details).
-- `node_resilience.py` - **Node resilience daemon** (53KB)
-  - P2P orchestrator monitoring with local selfplay fallback
-  - Auto-reconnect on network changes, IP change detection
-  - Start: `python scripts/node_resilience.py --daemon`
-- `gpu_cluster_manager.py` - GPU cluster inventory and scaling helpers
-  - Uses `config/cluster.yaml` (legacy inventory; distributed_hosts is canonical)
-- `setup_cluster_ssh.sh` - SSH agent/bootstrap helper + connectivity check
-
-### Training
-
-- `master_loop.py` - **Canonical multi-board training orchestrator**
-  - Multi-board training configured via `config/unified_loop.yaml`
-  - Balance mode and curriculum selection are integrated in the loop
-  - Policy label smoothing and augmentation run via the unified training stack
-  - Start: `python scripts/master_loop.py --config config/unified_loop.yaml`
-- `run_nn_training_baseline.py` - **Compatibility wrapper** for NN training
-  - Forwards arguments to `python -m app.training.train`
-  - Start: `python scripts/run_nn_training_baseline.py --board-type square8 --num-players 2`
-- `run_tier_training_pipeline.py` - **Tier-based training pipeline** (D2-D10)
-  - D2: heuristic CMA-ES, D4: search persona, D6+: neural
-  - Start: `python scripts/run_tier_training_pipeline.py --tier D6 --board square8 --num-players 2`
-- `evaluate_gnn_model.py` - **GNN gameplay evaluation** (requires PyTorch Geometric)
-  - Compares GNN model vs random/heuristic baselines using GNNAI + canonical move encoding
-  - Start: `python scripts/evaluate_gnn_model.py --model models/gnn_hex8_2p/gnn_policy_best.pt --games 20`
-- `run_optimized_training.py` - **Optimized training wrapper**
-  - Auto-selects best hyperparameters per board/player config
-  - Optional Elo calibration after training (`--run-elo`)
-  - Start: `python scripts/run_optimized_training.py --board hexagonal --players 4 --victory-balanced`
-- `train_nnue_policy.py` - **NNUE policy head training** (41KB)
-  - AMP (mixed precision) training
-  - KL divergence loss for MCTS distillation (`--auto-kl-loss`, `--use-kl-loss`)
-  - Direct JSONL loading (`--jsonl data/selfplay/*.jsonl`)
-  - Temperature annealing, label smoothing
-  - Start: `python scripts/train_nnue_policy.py --jsonl data/selfplay/mcts_*.jsonl --auto-kl-loss`
-- `train_nnue.py` - **Standard NNUE training** (112KB)
-  - Value and policy head training from SQLite databases
-  - Start: `python scripts/train_nnue.py --db data/games/training.db --board-type square8`
-- `run_improvement_loop.py` - **Alternative improvement loop** (95KB)
-  - Complete self-improvement cycle with selfplay, training, and evaluation
-  - Start: `python scripts/run_improvement_loop.py --board square8 --iterations 10`
-- `training_completion_watcher.py` - **Auto-Elo trigger daemon**
-  - Monitors training logs and triggers Elo tournaments on completion
-  - Start: `python scripts/training_completion_watcher.py --daemon`
-- `auto_training_pipeline.py` - **Automated training pipeline** (40KB)
-  - Complete workflow: data collection -> value training -> policy training -> A/B test -> selfplay -> sync
-  - Curriculum-based policy training with staged progression (endgame -> opening)
-  - A/B testing to validate policy model improvements before deployment
-  - Policy-guided selfplay for high-quality training data generation
-  - Start: `python scripts/auto_training_pipeline.py --board-type square8 --num-players 2`
-  - Dry run: `python scripts/auto_training_pipeline.py --dry-run --board-type square8`
-  - Policy only: `python scripts/auto_training_pipeline.py --skip-collect --skip-backfill --skip-train`
-- `train_nnue_policy_curriculum.py` - **Staged curriculum policy training** (17KB)
-  - Progressive training: endgame -> late-mid -> midgame -> opening -> full
-  - Transfer learning between stages
-  - Board-specific max_moves_per_position auto-selection
-  - Start: `python scripts/train_nnue_policy_curriculum.py --db data/games/*.db --board-type square8`
-- `ab_test_policy_models.py` - **A/B testing for policy models** (12KB)
-  - Compare policy model against baseline
-  - Multi-think-time testing (50ms, 100ms, 200ms, 500ms)
-  - Start: `python scripts/ab_test_policy_models.py --model-a models/nnue/policy.pt --board-type square8`
-- `reanalyze_mcts_policy.py` - **MCTS policy reanalysis**
-  - Adds MCTS visit distributions to existing games for KL loss training
-  - Start: `python scripts/reanalyze_mcts_policy.py --input games.jsonl --output mcts_games.jsonl`
-- `curriculum_training.py` - Generation-based curriculum training
-- `retrain_d10_fresh.sh` - **D10 retraining workflow** (4KB)
-  - Automates JSONL->NPZ->Train->Eval pipeline for D10 tier
-  - Integrated enhancements (augmentation, background eval)
-  - Start: `./scripts/retrain_d10_fresh.sh`
-  - Dry run: `./scripts/retrain_d10_fresh.sh --dry-run`
-  - Skip stages: `./scripts/retrain_d10_fresh.sh --skip-convert --skip-train`
-- `run_self_play_soak.py` - Self-play data generation (158KB)
-- `archive/selfplay/run_hybrid_selfplay.py` - _(ARCHIVED)_ Hybrid self-play modes (67KB)
-- `hex8_training_pipeline.py` - **Hex8-specific pipeline** (19KB)
-  - Optimized for hex8 board training
-
-### Selfplay Data Generation
-
-- `run_distributed_selfplay.py` - **Distributed selfplay for cloud workers** (60KB)
-  - Designed for CPU-based cloud VMs (AWS, GCP, Azure)
-  - Auto-calculates max_moves from board/player configuration
-  - Supports diverse AI matchups (neural, heuristic, MCTS)
-  - **Neural batching for 2-5x throughput** (2025-12-17):
-    ```bash
-    python scripts/run_distributed_selfplay.py \
-      --board-type hex8 --num-players 2 --num-games 1000 \
-      --enable-nn-batching --nn-batch-timeout-ms 50 \
-      --output file://data/selfplay/hex8_2p/games.jsonl
-    ```
-- `run_gpu_selfplay.py` - **GPU-accelerated selfplay** (55KB)
-  - 10-100x speedup via parallel game simulation
-  - Supports all board types: `square8`, `hex8`, `square19`, `hexagonal`
-  - Start: `python scripts/run_gpu_selfplay.py --board hex8 --num-games 1000 --output-dir data/selfplay/gpu_hex8`
-- `archive/selfplay/run_hybrid_selfplay.py` - _(ARCHIVED)_ Hybrid CPU/GPU selfplay (67KB)
-  - Mixed MCTS and neural network modes (legacy)
-  - Start: `python scripts/archive/selfplay/run_hybrid_selfplay.py --board-type hex8 --engine-mode gumbel-mcts`
-  - Replacement: `python scripts/selfplay.py --board hex8 --num-players 2 --engine-mode gumbel-mcts`
-- Cluster selfplay is orchestrated via `p2p_orchestrator.py`
-  (see P2P Cluster Orchestration above).
-
-### Evaluation
-
-- `auto_elo_tournament.py` - **Automated Elo tournament daemon**
-  - Periodic tournaments with Slack alerts
-  - Regression detection
-  - Start daemon: `python scripts/auto_elo_tournament.py --daemon --interval 14400`
-- `run_model_elo_tournament.py` - Model Elo tournaments
-- `run_diverse_tournaments.py` - Multi-configuration tournaments
-- `elo_promotion_gate.py` - Elo-based model promotion with Wilson confidence intervals
-
-### Data Management
-
-- Cluster-wide sync is handled by `unified_data_sync.py` and the P2P orchestrator.
-- `unified_data_sync.py` - **Unified data sync service** (replaces deprecated scripts below)
-  - Run as daemon: `python scripts/unified_data_sync.py`
-  - With watchdog: `python scripts/unified_data_sync.py --watchdog`
-  - One-shot sync: `python scripts/unified_data_sync.py --once`
-- `streaming_data_collector.py` - _(DEPRECATED)_ Incremental game data sync - use `unified_data_sync.py`
-- `collector_watchdog.py` - _(DEPRECATED)_ Collector health monitoring - use `unified_data_sync.py --watchdog`
-- `sync_all_data.py` - _(DEPRECATED)_ Batch data sync - use `unified_data_sync.py --once`
-- `build_canonical_training_pool_db.py` - **Canonical training pool aggregation** (32KB)
-  - Per-game canonical history and parity gates
-  - Holdout exclusion, quarantine of failing games
-  - Single ingestion point for all training data
-  - Start: `python scripts/build_canonical_training_pool_db.py --output data/games/canonical.db`
-- `aggregate_jsonl_to_db.py` - JSONL to SQLite conversion
-- `elo_db_sync.py` - **Distributed Elo database sync** (32KB)
-  - Multi-transport support (Tailscale, aria2, HTTP)
-  - Worker/coordinator modes, automatic discovery
-  - Mac Studio as authoritative coordinator
-  - Start: `python scripts/elo_db_sync.py --mode coordinator`
-- `auto_export_training_data.py` - **Automated training data export**
-  - Exports data for underrepresented board/player configs
-  - Start: `python scripts/auto_export_training_data.py --dry-run`
-- `periodic_harvest.py` - **Automated periodic data harvest**
-  - Harvests new high-quality games and optionally triggers training
-  - Start: `python scripts/periodic_harvest.py`
-  - CLI: `python scripts/cli.py periodic --task harvest`
-- `export_replay_dataset.py` - **Export training samples from replays** (41KB)
-  - Rank-aware value encoding for multiplayer
-  - Quality filtering (completed games, move count ranges)
-  - Incremental export with caching
-  - Start: `python scripts/export_replay_dataset.py --db data/games/training.db --output data/npz/`
-- `jsonl_to_npz.py` - **JSONL to NPZ conversion** (50KB)
-  - Game replaying with proper feature extraction
-  - Checkpointing every N games, encoder selection
-  - Start: `python scripts/jsonl_to_npz.py --input data/selfplay/*.jsonl --output data/npz/`
-- `distributed_export.py` - **Distributed parallel export** (40KB)
-  - Game chunking for parallel processing, HTTP serving
-  - aria2 multi-source downloads, NPZ chunk merging
-  - Start: `python scripts/distributed_export.py --coordinator --chunks 10`
-- `filter_training_data.py` - Filter and clean training data
-
-### Model Management
-
-- `sync_models.py` - Model synchronization across cluster (use `--use-sync-coordinator` for aria2/SSH/P2P + NFS-aware)
-- `prune_models.py` - Old model cleanup
-- `model_promotion_manager.py` - Automated model promotion
-- `validate_models.py` - Validate model files for corruption
-
-### Cluster Management
-
-- `update_cluster_code.py` - **Cluster code synchronization**
-  - Push code updates to all cluster nodes
-  - Auto-stash local changes: `python scripts/update_cluster_code.py --auto-stash`
-  - Force reset: `python scripts/update_cluster_code.py --force-reset`
-  - Status: `python scripts/update_cluster_code.py --status`
-- `update_distributed_hosts.py` - Update distributed hosts configuration
-- `vast_autoscaler.py` - Vast.ai instance autoscaling
-- `vast_lifecycle.py` - Vast.ai instance lifecycle management
-- `vast_p2p_manager.py` - Vast.ai P2P network management
-- `cluster_auto_recovery.py` - Auto-recover failed cluster nodes
-- Cluster automation/control now lives under `p2p_orchestrator.py`
-  (see P2P Cluster Orchestration above).
-
-### Analysis
-
-- `analyze_training_run.py` - **Post-training analysis** (15KB)
-  - Parse training logs and extract metrics
-  - Loss curves, best epoch detection, overfitting analysis
-  - Multi-run comparison mode
-  - Start: `python scripts/analyze_training_run.py --log logs/training_sq8_2p.log`
-  - Compare: `python scripts/analyze_training_run.py --log "logs/training_*.log" --compare`
-  - JSON output: `python scripts/analyze_training_run.py --log logs/training.log --json`
-- `analyze_game_statistics.py` - **Comprehensive game statistics** (107KB)
-  - Victory type distribution, win rates, game length stats, recovery usage
-  - AI type breakdown, data quality metrics, metadata fixing
-  - Supports JSONL recursive scanning, quarantine mode
-  - Start: `python scripts/analyze_game_statistics.py --db data/games/all.db`
-  - JSONL: `python scripts/analyze_game_statistics.py --jsonl data/selfplay/ --recursive`
-- `check_ts_python_replay_parity.py` - **TS/Python parity validation** (77KB)
-  - Post-move/post-bridge view semantics verification
-  - Canonical/legacy parity modes, structural issue detection
-  - Critical quality gate for training data
-  - Start: `python scripts/check_ts_python_replay_parity.py --canonical --verbose`
-- `track_elo_improvement.py` - Elo trend tracking
-- `aggregate_elo_results.py` - Aggregate Elo results from multiple sources
-- `baseline_gauntlet.py` - **Run baseline model gauntlet** (20KB)
-  - Evaluate models against baseline opponents
-  - Start: `python scripts/baseline_gauntlet.py --model models/best.pth`
-- `two_stage_gauntlet.py` - **Two-stage model evaluation** (31KB)
-  - Stage 1 screening (10 games, 40% threshold)
-  - Stage 2 deep evaluation (50 games, Wilson score intervals)
-  - Auto-promotion of top performers with game recording
-  - Start: `python scripts/two_stage_gauntlet.py --model models/candidate.pth`
-- `shadow_tournament_service.py` - **Continuous model evaluation service** (35KB)
-  - 15-minute shadow tournaments (10-20 games)
-  - Hourly full tournaments, regression detection
-  - Provides early feedback without waiting for full Elo calibration
-  - Start: `python scripts/shadow_tournament_service.py --daemon`
-
-### Dashboard & Monitoring
-
-- `dashboard_server.py` - **RingRift Dashboard Server** (24KB)
-  - Unified web interface for training monitoring and replay
-  - Start: `python scripts/dashboard_server.py --port 8080`
-  - **Dashboard URLs** (default port 8080):
-    - `/` - Main Dashboard (Elo leaderboard, cluster status)
-    - `/training` - Training Metrics (loss curves, throughput, LR schedule)
-    - `/replay` - Game Replay Viewer (move-by-move with AI annotations)
-    - `/compare` - Model Comparison (side-by-side performance)
-    - `/tensorboard` - TensorBoard (auto-starts if not running)
-  - **API Endpoints**:
-    - `/api/leaderboard` - Elo rankings
-    - `/api/cluster/status` - Cluster health
-    - `/api/training/loss-curves` - Training loss data
-    - `/api/elo/progression` - Elo over time
-    - `/api/replay/games` - Game list for replay
-    - `/api/tensorboard/status` - TensorBoard status
-- `dashboard_assets/` - Dashboard frontend assets
-  - `model_dashboard.html` - Main dashboard page
-  - `training_dashboard.html` - Training metrics page
-  - `replay_viewer.html` - Game replay interface
-  - `model_comparison.html` - Model comparison page
-  - `board_renderer.js` - Board rendering (square/hex)
-  - `replay_viewer.js` - Replay navigation logic
-
-### Data Validation
-
-- `training_preflight_check.py` - **Pre-training validation** (12KB)
-  - Database integrity, data volume, feature consistency checks
-  - Resource availability verification (GPU, disk, memory)
-  - Model checkpoint validity
-  - Start: `python scripts/training_preflight_check.py`
-- `holdout_validation.py` - **Overfitting detection** (18KB)
-  - Holdout set management for unseen data evaluation
-  - Train vs holdout loss comparison (warning: >0.10 gap)
-  - Value head calibration metrics
-  - Start: `python scripts/holdout_validation.py --evaluate --model models/square8_2p.pt`
-  - Stats: `python scripts/holdout_validation.py --stats`
-- `generate_canonical_selfplay.py` - **End-to-end canonical validation** (15KB)
-  - TS/Python parity + canonical history validation
-  - FE/territory fixture tests
-  - Produces health summary JSON
-  - Start: `python scripts/generate_canonical_selfplay.py --board square8 --num-games 50 --db data/games/canonical_square8_2p.db --summary data/games/db_health.canonical_square8_2p.json`
-  - Defaults to `canonical_<board>_<players>p.db` when `--db` is omitted
-  - For square19/hex, the script defaults `RINGRIFT_USE_MAKE_UNMAKE=true` and `RINGRIFT_USE_FAST_TERRITORY=false` unless set
-- `run_parity_and_history_gate.py` - **Parity + canonical history gate for existing DBs**
-  - Wraps check_ts_python_replay_parity.py + check_canonical_phase_history.py
-  - Start: `python scripts/run_parity_and_history_gate.py --db data/games/canonical_square8_2p.db --summary-json data/games/db_health.canonical_square8_2p.json`
-
-### Hyperparameter Optimization
-
-- `run_gpu_cmaes.py` - **GPU-accelerated CMA-ES** (25KB)
-  - 10-100x faster fitness evaluation on GPU
-  - Single GPU: `python scripts/run_gpu_cmaes.py --board square8 --generations 50`
-  - Multi-GPU: `python scripts/run_gpu_cmaes.py --board square8 --multi-gpu`
-- `run_distributed_gpu_cmaes.py` - **Distributed CMA-ES**
-  - Cluster-wide heuristic weight optimization
-  - Start coordinator: `python scripts/run_distributed_gpu_cmaes.py --mode coordinator`
-- `run_iterative_cmaes.py` - **Iterative CMA-ES refinement**
-  - Warm start from previous best weights
-  - Population adaptation, sigma annealing
-  - Start: `python scripts/run_iterative_cmaes.py --board square8 --iterations 5`
-- `run_cmaes_optimization.py` - **Basic CMA-ES** (CPU-based)
-  - Simpler CMA-ES without GPU acceleration
-- `cmaes_cloud_worker.py` - **Cloud CMA-ES worker**
-  - Remote worker for distributed CMA-ES optimization
-
-### Benchmarking
-
-- `benchmark_engine.py` - Engine performance benchmarking
-- `benchmark_gpu_cpu.py` - GPU vs CPU performance comparison
-- `benchmark_policy.py` - Policy head performance benchmarking
-- `benchmark_ai_memory.py` - AI memory usage benchmarking
-
-## Shared Library (`scripts/lib/`)
-
-The `scripts/lib/` package provides shared utilities for all training scripts:
-
-### Configuration (`scripts.lib.config`)
-
-```python
-from scripts.lib.config import (
-    TrainingConfig,    # Training hyperparameters
-    ModelConfig,       # Model architecture config
-    BoardConfig,       # Board type configuration
-    ConfigManager,     # Configuration management
-    get_config,        # Get config for a board/player combo
-    get_board_config,  # Parse board config from key
-)
-
-# Get config for square8 2-player
-config = get_config("square8_2p")
-print(f"LR: {config.learning_rate}, Batch: {config.batch_size}")
-
-# Override specific values
-config = get_config("hex8_3p", override={"learning_rate": 0.001})
-
-# Environment variable overrides (RINGRIFT_LEARNING_RATE, etc.)
-# are automatically applied
-```
-
-### Logging (`scripts.lib.logging_config`)
-
-```python
-from scripts.lib.logging_config import (
-    setup_logging,         # Configure root logger
-    setup_script_logging,  # Script-specific logging with file output
-    get_logger,            # Get a named logger
-    get_metrics_logger,    # Get a metrics logger for tracking
-    JsonFormatter,         # JSON log formatting
-    MetricsLogger,         # Prometheus-style metrics tracking
-)
-
-# Basic script logging
-logger = setup_script_logging("my_script")
-logger.info("Starting training", extra={"batch_size": 256})
-
-# Metrics tracking
-metrics = get_metrics_logger("training")
-metrics.set("epoch", 5)
-metrics.increment("games_processed", 100)
-with metrics.time("forward_pass"):
-    model(batch)
-```
-
-### Validation (`scripts.lib.validation`)
-
-```python
-from scripts.lib.validation import (
-    ValidationResult,        # Validation result container
-    validate_npz_file,       # Validate NPZ training data
-    validate_jsonl_file,     # Validate JSONL game data
-    validate_model_file,     # Validate model checkpoint
-    validate_training_config,# Validate training configuration
-    DataValidator,           # Comprehensive data validation
-)
-
-# Validate NPZ file
-result = validate_npz_file(Path("data/training.npz"))
-if not result.is_valid:
-    print(f"Errors: {result.errors}")
-
-# Comprehensive pre-training validation
-validator = DataValidator()
-report = validator.validate_training_setup("square8_2p")
-```
-
-### Cluster Operations (`scripts.lib.cluster`)
-
-```python
-from scripts.lib.cluster import (
-    ClusterManager,   # Manage cluster nodes
-    ClusterNode,      # Single node operations
-    NodeHealth,       # Node health status
-    CommandResult,    # Command execution result
-    get_cluster,      # Get default cluster manager
-)
-
-# Run command on all nodes
-cluster = get_cluster()
-results = cluster.run_on_all("nvidia-smi -q -d MEMORY")
-
-# Check specific node
-node = cluster.get_node("gpu-node-1")
-health = node.check_health()
-print(f"GPUs: {len(health.gpus)}, Status: {health.status}")
-```
-
-### Alerts (`scripts.lib.alerts`)
-
-```python
-from scripts.lib.alerts import (
-    Alert,              # Base alert dataclass
-    AlertSeverity,      # DEBUG, INFO, WARNING, ERROR, CRITICAL
-    AlertType,          # HIGH_DISK_USAGE, TRAINING_FAILED, etc.
-    AlertThresholds,    # Configurable thresholds
-    AlertManager,       # Alert collection and deduplication
-    create_alert,       # Convenience function to create alerts
-    check_disk_alert,   # Check disk usage thresholds
-    check_memory_alert, # Check memory usage thresholds
-)
-
-# Create alerts
-alert = create_alert(
-    AlertSeverity.WARNING,
-    AlertType.HIGH_DISK_USAGE,
-    "Disk usage at 75%",
-    details={"disk_percent": 75.0},
-    source="my_monitor",
-)
-
-# Use AlertManager for tracking and notifications
-manager = AlertManager(name="cluster_monitor")
-manager.add_alert(alert)
-manager.flush()  # Process through handlers
-
-# Use threshold checkers
-thresholds = AlertThresholds()  # Uses default thresholds
-disk_alert = check_disk_alert(75.0, thresholds)
-if disk_alert:
-    manager.add_alert(disk_alert)
-```
-
-### Data Quality (`scripts.lib.data_quality`)
-
-```python
-from scripts.lib.data_quality import (
-    QualityMetrics,      # Quality metrics container
-    DataQualityAnalyzer, # Analyze training data quality
-)
-
-analyzer = DataQualityAnalyzer()
-metrics = analyzer.analyze_npz("data/training.npz")
-print(f"Samples: {metrics.total_samples}, Quality: {metrics.quality_score}")
-```
-
-### Database Utilities (`scripts.lib.database`)
-
-```python
-from scripts.lib.database import (
-    safe_transaction,
-    read_only_connection,
-    get_game_db_path,
-    check_integrity,
-)
-
-db_path = get_game_db_path("square8_2p")
-with safe_transaction(db_path) as conn:
-    conn.execute("INSERT INTO games VALUES (?, ?)", (1, "square8_2p"))
-
-is_ok, message = check_integrity(db_path)
-print(f"DB ok: {is_ok}, message: {message}")
-```
-
-### Paths (`scripts.lib.paths`)
-
-```python
-from scripts.lib.paths import AI_SERVICE_ROOT, DATA_DIR, LOGS_DIR, get_log_path
-
-print(f"Root: {AI_SERVICE_ROOT}")
-print(f"Data dir: {DATA_DIR}")
-log_path = get_log_path("my_script")
-```
-
-### Retry (`scripts.lib.retry`)
-
-```python
-from scripts.lib.retry import retry, retry_async, RetryConfig
-
-@retry(max_attempts=3, delay=1.0)
-def flaky_call():
-    return "ok"
-
-@retry_async(max_attempts=3, delay=1.0)
-async def flaky_async_call():
-    return "ok"
-
-config = RetryConfig(max_attempts=5, base_delay=0.5)
-for attempt in config.attempts():
-    try:
-        do_work()
-        break
-    except Exception:
-        if not attempt.should_retry:
-            raise
-        attempt.wait()
-```
-
-### Process Helpers (`scripts.lib.process`)
-
-```python
-from scripts.lib.process import SingletonLock, SignalHandler, run_command
-
-with SingletonLock("training-daemon") as lock:
-    if not lock.acquired:
-        raise SystemExit("Already running")
-
-handler = SignalHandler()
-while handler.running:
-    run_command(["echo", "tick"])
-```
-
-### Transfer Utilities (`scripts.lib.transfer`)
-
-```python
-from scripts.lib.transfer import TransferConfig, rsync_push, verify_transfer
-
-config = TransferConfig(timeout=60, retries=3)
-result = rsync_push("data/games.db", "user@host:/tmp/games.db", config=config)
-verify_transfer(result)
-```
-
-### Health Checks (`scripts.lib.health`)
-
-```python
-from scripts.lib.health import check_system_health, check_http_health
-
-health = check_system_health()
-print(f"CPU: {health.cpu.utilization_percent:.1f}%")
-
-service_ok = check_http_health("http://localhost:8001/health")
-print(f"Service healthy: {service_ok.healthy}")
-```
-
-### CLI Helpers (`scripts.lib.cli`)
-
-```python
-from scripts.lib.cli import add_common_args, add_board_args, setup_cli_logging
-import argparse
-
-parser = argparse.ArgumentParser()
-add_common_args(parser)
-add_board_args(parser)
-args = parser.parse_args()
-
-logger = setup_cli_logging("my_script", args)
-logger.info("CLI ready")
-```
-
-### File Formats (`scripts.lib.file_formats`)
-
-```python
-from scripts.lib.file_formats import open_jsonl_file, load_json, save_json
-
-with open_jsonl_file("data/games.jsonl.gz") as handle:
-    for line in handle:
-        pass
-
-config = load_json("config.json", default={})
-save_json("config.json", config, atomic=True)
-```
-
-### Datetime Utilities (`scripts.lib.datetime_utils`)
-
-```python
-from scripts.lib.datetime_utils import format_elapsed_time, timestamp_id, get_file_age_hours
-
-job_id = f"job_{timestamp_id()}"
-print(format_elapsed_time(125.5))
-print(get_file_age_hours("data/selfplay/latest.jsonl"))
-```
-
-### Metrics (`scripts.lib.metrics`)
-
-```python
-from scripts.lib.metrics import RateCalculator, ProgressTracker
-
-rate = RateCalculator()
-rate.mark(items=100)
-print(rate.items_per_second)
-
-tracker = ProgressTracker(total=1000, label="selfplay")
-tracker.update(250)
-```
-
-## Module Dependencies
-
-### Canonical Service Interfaces
-
-| Module                                | Purpose                | Usage                                        |
-| ------------------------------------- | ---------------------- | -------------------------------------------- |
-| `app.training.elo_service`            | Elo rating operations  | `get_elo_service()` singleton                |
-| `app.training.curriculum`             | Curriculum training    | `CurriculumTrainer`, `CurriculumConfig`      |
-| `app.training.value_calibration`      | Value head calibration | `ValueCalibrator`, `CalibrationTracker`      |
-| `app.training.temperature_scheduling` | Exploration control    | `TemperatureScheduler`, `create_scheduler()` |
-
-### Supporting Modules
-
-| Module                                | Purpose                     |
-| ------------------------------------- | --------------------------- |
-| `app.tournament.elo`                  | Elo calculation utilities   |
-| `app.training.elo_reconciliation`     | Distributed Elo consistency |
-| `app.distributed.cluster_coordinator` | Cluster coordination        |
-| `app.integration.pipeline_feedback`   | Training feedback loops     |
-
-## Archived Scripts
-
-The `archive/` subdirectory contains deprecated scripts that have been superseded:
-
-| Script                                   | Superseded By                      |
-| ---------------------------------------- | ---------------------------------- |
-| `master_self_improvement.py`             | `master_loop.py`                   |
-| `unified_improvement_controller.py`      | `master_loop.py`                   |
-| `integrated_self_improvement.py`         | `master_loop.py`                   |
-| `export_replay_dataset.py`               | Direct DB queries                  |
-| `validate_canonical_training_sources.py` | Data quality gates in daemon stack |
-
-## Resource Management
-
-All scripts enforce **80% maximum resource utilization** to prevent overloading:
-
-### Resource Limits (enforced 2025-12-16)
-
-| Resource | Warning | Critical  | Notes                              |
-| -------- | ------- | --------- | ---------------------------------- |
-| Disk     | 65%     | 70%       | Tighter limit - cleanup takes time |
-| Memory   | 70%     | 80%       | Hard stop when exceeded            |
-| CPU      | 70%     | 80%       | Hard stop when exceeded            |
-| GPU      | 70%     | 80%       | CUDA memory safety                 |
-| Load Avg | -       | 1.5x CPUs | System overload detection          |
-
-### Using Resource Guard
-
-```python
-from app.utils.resource_guard import (
-    check_disk_space, check_memory, check_gpu_memory,
-    can_proceed, wait_for_resources, ResourceGuard
-)
-
-# Pre-flight check before heavy operations
-if not can_proceed(disk_required_gb=5.0, mem_required_gb=2.0):
-    logger.error("Resource limits exceeded")
-    sys.exit(1)
-
-# Context manager for resource-safe operations
-with ResourceGuard(disk_required_gb=5.0, mem_required_gb=2.0) as guard:
-    if not guard.ok:
-        return  # Resources not available
-    # ... do work ...
-
-# Periodic check in long-running loops
-for i in range(num_games):
-    if i % 50 == 0 and not check_memory():
-        logger.warning("Memory pressure, stopping early")
-        break
-```
-
-### Key Files
-
-- `app/utils/resource_guard.py` - Unified resource checking utilities
-- `app/coordination/safeguards.py` - Circuit breakers and backpressure
-- `app/coordination/resource_targets.py` - Utilization targets for scaling
-- `app/coordination/resource_optimizer.py` - PID-based workload adjustment
-- `scripts/disk_monitor.py` - Disk cleanup automation
-
-## Environment Variables
-
-| Variable                          | Description                                 | Default |
-| --------------------------------- | ------------------------------------------- | ------- |
-| `RINGRIFT_DISABLE_LOCAL_TASKS`    | Skip local training/eval (coordinator mode) | `false` |
-| `RINGRIFT_TRACE_DEBUG`            | Enable detailed tracing                     | `false` |
-| `RINGRIFT_SKIP_SHADOW_CONTRACTS`  | Skip shadow contract validation             | `false` |
-| `RINGRIFT_ENABLE_POLICY_TRAINING` | Enable NNUE policy training                 | `1`     |
-| `RINGRIFT_POLICY_AUTO_KL_LOSS`    | Auto-detect and enable KL loss              | `1`     |
-| `RINGRIFT_POLICY_KL_MIN_COVERAGE` | Min MCTS coverage for auto-KL               | `0.3`   |
-| `RINGRIFT_POLICY_KL_MIN_SAMPLES`  | Min samples for auto-KL                     | `50`    |
-| `RINGRIFT_ENABLE_AUTO_HP_TUNING`  | Enable hyperparameter auto-tuning           | `0`     |
-| `RINGRIFT_SOCKS_PROXY`            | SOCKS5 proxy URL for P2P                    | (none)  |
-| `RINGRIFT_P2P_VERBOSE`            | Enable verbose P2P logging                  | `false` |
-
-## Cluster Node Requirements
-
-### Hardware Requirements
-
-| Component | Minimum               | Recommended     | Notes                     |
-| --------- | --------------------- | --------------- | ------------------------- |
-| GPU       | NVIDIA GTX 1080 (8GB) | RTX 3090 / A100 | CUDA 11.7+ required       |
-| RAM       | 16GB                  | 32GB+           | For large batch training  |
-| Storage   | 50GB SSD              | 200GB+ NVMe     | Fast I/O for data loading |
-| Network   | 100Mbps               | 1Gbps           | P2P sync bandwidth        |
-
-### Software Requirements
-
-- **Python 3.10+** with PyTorch 2.0+
-- **CUDA 11.7+** (for GPU training)
-- **Tailscale** (P2P mesh networking)
-- **rsync** (data synchronization)
-
-### Node Roles
-
-| Role                | Description                        | Resources              |
-| ------------------- | ---------------------------------- | ---------------------- |
-| **Coordinator**     | Leader election, task distribution | Low GPU, high network  |
-| **Trainer**         | Neural network training            | High GPU, high RAM     |
-| **Selfplay Worker** | Game generation                    | Medium GPU, medium RAM |
-| **Evaluator**       | Model evaluation, gauntlet         | Medium GPU             |
-
-### Network Ports
-
-| Port | Service               | Protocol |
-| ---- | --------------------- | -------- |
-| 8770 | P2P Orchestrator      | TCP      |
-| 8080 | Dashboard Server      | HTTP     |
-| 6006 | TensorBoard           | HTTP     |
-| 5432 | PostgreSQL (optional) | TCP      |
-
-### Quick Setup
+### I want to validate replay history before training on a DB
 
 ```bash
-# 1. Install Tailscale for P2P mesh
-curl -fsSL https://tailscale.com/install.sh | sh
-tailscale up
-
-# 2. Clone and setup
-git clone <repo> && cd ai-service
-pip install -r requirements.txt
-
-# 3. Start P2P orchestrator
-PYTHONPATH=. venv/bin/python scripts/p2p_orchestrator.py --node-id $(hostname) --port 8770 --peers <coordinator_urls>
-
-# 4. Verify connectivity
-curl -s http://localhost:8770/status
+cd ai-service
+PYTHONPATH=. python scripts/check_canonical_phase_history.py --db <path-to-db>
 ```
 
-### Vast.ai Specific
+## Operations And Cluster Surface
 
-For Vast.ai GPU instances:
+These scripts are real and actively useful for cluster operations, but they are not the best starting point for understanding the project.
 
-- Use `vast_p2p_sync.py --full` to auto-configure instances
-- Keepalive: `vast_keepalive.py --auto` (prevents idle termination)
-- Minimum: RTX 3090 / A5000 instances recommended
+### Coordinator / orchestration
 
-## Configuration
+- [`master_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/master_loop.py)
+  - Coordinator-oriented multi-board orchestration loop.
+  - Useful for long-running fleet operations.
+  - Not the recommended first entrypoint for reproducing the published results.
 
-The unified loop reads configuration from `config/unified_loop.yaml`. Key settings:
+- [`p2p_orchestrator.py`](/Users/armand/Development/RingRift/ai-service/scripts/p2p_orchestrator.py)
+  - Cluster node coordination and job orchestration.
 
-- Data sync intervals
-- Training thresholds
-- Evaluation frequencies
-- Cluster coordination options
+- [`node_resilience.py`](/Users/armand/Development/RingRift/ai-service/scripts/node_resilience.py)
+  - Supervisor / fallback behavior for nodes.
+
+### Sync and export
+
+- [`unified_data_sync.py`](/Users/armand/Development/RingRift/ai-service/scripts/unified_data_sync.py)
+  - Current sync entrypoint.
+
+- [`distributed_export.py`](/Users/armand/Development/RingRift/ai-service/scripts/distributed_export.py)
+  - Parallel export tooling for larger jobs.
+
+- [`update_cluster_code.py`](/Users/armand/Development/RingRift/ai-service/scripts/update_cluster_code.py)
+  - Cluster rollout helper.
+
+If you are operating a live fleet, read [docs/operations](/Users/armand/Development/RingRift/docs/operations) and [docs/runbooks](/Users/armand/Development/RingRift/docs/runbooks) before using these directly.
+
+## Secondary Or Historical Surface
+
+This directory also contains many scripts that reflect older experiments, alternate pipelines, or specialized operational needs.
+
+Examples:
+
+- tier-based or alternate training pipelines such as `run_tier_training_pipeline.py`
+- older automation wrappers such as `auto_training_pipeline.py`
+- board-specific or one-off training flows such as `hex8_training_pipeline.py`
+- Vast.ai or cluster-specific utilities
+- archived self-play helpers under `archive/`
+
+Those files can still be useful, but they should not be mistaken for the main supported research path.
+
+## Recommended Reading Order
+
+If you need more than the supported path, use this order:
+
+1. [`minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py)
+2. [`check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py)
+3. [`generate_canonical_selfplay.py`](/Users/armand/Development/RingRift/ai-service/scripts/generate_canonical_selfplay.py)
+4. [`export_replay_dataset.py`](/Users/armand/Development/RingRift/ai-service/scripts/export_replay_dataset.py)
+5. `master_loop.py` and cluster scripts only if you are dealing with fleet operations
+
+## Bottom Line
+
+Treat this directory as three layers:
+
+1. supported experiment and parity tools
+2. operational cluster tooling
+3. historical or specialized scripts
+
+If you follow that framing, the directory is much easier to navigate and much less misleading.

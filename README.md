@@ -16,6 +16,8 @@ These results came from long-running GH200 cluster experiments. Reproducing the 
 
 For the concrete evidence and caveats, see [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md).
 
+If you want the shortest external-facing orientation before diving into code, read [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md).
+
 ## Quick Start
 
 ### 1. Run the web app
@@ -88,6 +90,7 @@ See [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCH
 
 Start here if you are new to the repo:
 
+- [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md) for the shortest external-facing summary
 - [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md) for local setup
 - [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md) for the current evidence
 - [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md) for the system model

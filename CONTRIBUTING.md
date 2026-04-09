@@ -7,10 +7,11 @@ Work from the supported path first.
 If you are new to the project, start here:
 
 1. [README.md](/Users/armand/Development/RingRift/README.md)
-2. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
-3. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-4. [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
-5. [docs/REPOSITORY_MAP.md](/Users/armand/Development/RingRift/docs/REPOSITORY_MAP.md)
+2. [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md)
+3. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
+4. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
+5. [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
+6. [docs/REPOSITORY_MAP.md](/Users/armand/Development/RingRift/docs/REPOSITORY_MAP.md)
 
 ## What Is Canonical
 
@@ -159,6 +160,7 @@ Good PRs in this repo are narrow and explicit.
 
 If you improve the repo for external readers, prioritize:
 
+- [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md)
 - [README.md](/Users/armand/Development/RingRift/README.md)
 - [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
 - [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)

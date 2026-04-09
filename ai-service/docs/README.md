@@ -5,10 +5,11 @@ This directory contains deeper technical documentation for the Python side of Ri
 If you are new to the project, do not start here. Start with:
 
 1. [README.md](/Users/armand/Development/RingRift/README.md)
-2. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
-3. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-4. [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
-5. [ai-service/README.md](/Users/armand/Development/RingRift/ai-service/README.md)
+2. [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md)
+3. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
+4. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
+5. [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
+6. [ai-service/README.md](/Users/armand/Development/RingRift/ai-service/README.md)
 
 This doc hub is for readers who already know they need the AI-service internals.
 
@@ -23,6 +24,7 @@ This doc hub is for readers who already know they need the AI-service internals.
 ### Training and reproducible experiments
 
 - [../README.md](/Users/armand/Development/RingRift/ai-service/README.md)
+- [../scripts/README.md](/Users/armand/Development/RingRift/ai-service/scripts/README.md)
 - [training/TRAINING_FEATURES.md](/Users/armand/Development/RingRift/ai-service/docs/training/TRAINING_FEATURES.md)
 - [roadmaps/GPU_PIPELINE_ROADMAP.md](/Users/armand/Development/RingRift/ai-service/docs/roadmaps/GPU_PIPELINE_ROADMAP.md)
 - [../TRAINING_DATA_REGISTRY.md](/Users/armand/Development/RingRift/ai-service/TRAINING_DATA_REGISTRY.md)

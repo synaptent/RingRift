@@ -12,6 +12,7 @@ This index catalogs all project documentation organized by topic and location. F
 | Document                                                       | Purpose                            |
 | -------------------------------------------------------------- | ---------------------------------- |
 | [README.md](README.md)                                         | Project overview, features, status |
+| [docs/PROJECT_BRIEF.md](docs/PROJECT_BRIEF.md)                 | Short external-facing summary      |
 | [QUICKSTART.md](QUICKSTART.md)                                 | Local development setup            |
 | [docs/RESULTS.md](docs/RESULTS.md)                             | Current research evidence          |
 | [docs/ARCHITECTURE_OVERVIEW.md](docs/ARCHITECTURE_OVERVIEW.md) | External architecture guide        |

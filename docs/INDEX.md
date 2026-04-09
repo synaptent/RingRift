@@ -12,6 +12,7 @@ This index provides navigation and status tracking for all project documentation
 | Document                   | Purpose                     | Status |
 | -------------------------- | --------------------------- | ------ |
 | `../README.md`             | Project overview            | Active |
+| `PROJECT_BRIEF.md`         | Short external-facing brief | Active |
 | `../QUICKSTART.md`         | Setup guide                 | Active |
 | `RESULTS.md`               | Current research results    | Active |
 | `ARCHITECTURE_OVERVIEW.md` | External architecture guide | Active |
@@ -65,6 +66,7 @@ This index provides navigation and status tracking for all project documentation
 | Document                                              | Purpose                      | Status |
 | ----------------------------------------------------- | ---------------------------- | ------ |
 | `../ai-service/README.md`                             | AI service overview          | Active |
+| `../ai-service/scripts/README.md`                     | Curated AI scripts map       | Active |
 | `RESULTS.md`                                          | Published experiment summary | Active |
 | `../ai-service/docs/README.md`                        | AI service doc hub + SSoT    | Active |
 | `../ai-service/docs/training/TRAINING_FEATURES.md`    | Training feature guide       | Active |

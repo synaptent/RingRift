@@ -96,6 +96,7 @@ npm run results:refresh
 
 ## Next reads
 
+- [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md)
 - [README.md](/Users/armand/Development/RingRift/README.md)
 - [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
 - [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)

@@ -9,9 +9,10 @@ The codebase is large and historically layered. The goal here is not to describe
 If you want to understand the project quickly, read these in order:
 
 1. [README.md](/Users/armand/Development/RingRift/README.md)
-2. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
-3. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
-4. [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
+2. [docs/PROJECT_BRIEF.md](/Users/armand/Development/RingRift/docs/PROJECT_BRIEF.md)
+3. [QUICKSTART.md](/Users/armand/Development/RingRift/QUICKSTART.md)
+4. [docs/RESULTS.md](/Users/armand/Development/RingRift/docs/RESULTS.md)
+5. [docs/ARCHITECTURE_OVERVIEW.md](/Users/armand/Development/RingRift/docs/ARCHITECTURE_OVERVIEW.md)
 
 Then move to the code.
 
@@ -50,6 +51,7 @@ If your goal is to reproduce the reported research results, this is the path to 
 These areas are current and useful, but they are not the fastest way to understand the repo:
 
 - [`ai-service/README.md`](/Users/armand/Development/RingRift/ai-service/README.md)
+- [`ai-service/scripts/README.md`](/Users/armand/Development/RingRift/ai-service/scripts/README.md)
 - [`docs/production`](/Users/armand/Development/RingRift/docs/production)
 - [`docs/runbooks`](/Users/armand/Development/RingRift/docs/runbooks)
 - [`monitoring`](/Users/armand/Development/RingRift/monitoring)
