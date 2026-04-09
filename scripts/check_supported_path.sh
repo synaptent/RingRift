@@ -14,8 +14,8 @@ python3 "$ROOT_DIR/scripts/refresh_results_artifacts.py" --dry-run >/dev/null
 
 echo "==> TypeScript supported-path gates"
 cd "$ROOT_DIR"
-npm run test:ts-rules-engine -- --forceExit
-npm run test:orchestrator-parity -- --forceExit
+npm run test:ts-rules-engine
+npm run test:orchestrator-parity
 
 echo "==> Python minimal-loop gates"
 cd "$AI_DIR"
