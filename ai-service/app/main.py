@@ -1267,6 +1267,7 @@ async def get_ai_move(request: MoveRequest):
                 ai_type,
                 request.player_number,
                 config,
+                board_type=board_type,
             )
             if cache_key is not None:
                 _put_cached_ai(cache_key, ai)
@@ -2575,13 +2576,19 @@ def _get_randomness_for_difficulty(difficulty: int) -> float:
     return _get_difficulty_profile(difficulty)["randomness"]
 
 
-def _create_ai_instance(ai_type: AIType, player_number: int, config: AIConfig):
+def _create_ai_instance(
+    ai_type: AIType,
+    player_number: int,
+    config: AIConfig,
+    board_type: "BoardType | None" = None,
+):
     """Factory function to create AI instances.
 
-    The NEURAL_DEMO branch is reserved for experimental / sandbox use and is
-    gated behind the AI_ENGINE_NEURAL_DEMO_ENABLED environment variable so
-    that neural-only engines cannot be enabled accidentally on production
-    ladders.
+    Args:
+        board_type: Required for neural-net-backed AI types (Gumbel MCTS,
+            MCTS, Descent) to select the correct model class (HexNeuralNet_v2
+            for hex boards, RingRiftCNN_v2 for square boards). If None,
+            defaults to SQUARE8 for backward compatibility.
     """
     if ai_type == AIType.RANDOM:
         return RandomAI(player_number, config)
@@ -2606,13 +2613,13 @@ def _create_ai_instance(ai_type: AIType, player_number: int, config: AIConfig):
     elif ai_type == AIType.MCTS:
         from .ai.mcts_ai import MCTSAI
 
-        return MCTSAI(player_number, config)
+        return MCTSAI(player_number, config, board_type=board_type)
     elif ai_type == AIType.GUMBEL_MCTS:
         from .ai.gumbel_mcts_ai import GumbelMCTSAI
 
-        return GumbelMCTSAI(player_number, config)
+        return GumbelMCTSAI(player_number, config, board_type=board_type)
     elif ai_type == AIType.DESCENT:
-        return DescentAI(player_number, config)
+        return DescentAI(player_number, config, board_type=board_type)
     elif ai_type == AIType.IG_GMO:
         from .ai.ig_gmo import IGGMO
 
