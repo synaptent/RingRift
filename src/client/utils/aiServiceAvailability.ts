@@ -1,12 +1,17 @@
 /**
  * Utility for detecting whether AI service endpoints are available.
  *
- * In production (HTTPS or non-localhost), the AI service endpoints
- * (sandbox/ai/move, sandbox/evaluate, etc.) are not available unless
- * RINGRIFT_AI_SERVICE_URL is explicitly configured.
+ * The sandbox AI endpoints (/api/games/sandbox/ai/move, etc.) are
+ * served by the same Express backend, which proxies to the Python AI
+ * service when AI_SERVICE_URL is configured server-side.
  *
- * This prevents 404 console errors when the client tries to call
- * AI service endpoints that don't exist on the production web server.
+ * Previously this returned false in production to prevent 404 errors,
+ * but the production server now has AI_SERVICE_URL configured and the
+ * sandbox endpoints enabled. Returning true allows the sandbox and
+ * lobby to use neural network AI in production.
+ *
+ * Set RINGRIFT_AI_SERVICE_URL in the client environment to override
+ * the backend URL (e.g., for direct client→AI-service testing).
  */
 
 import { readEnv } from '../../shared/utils/envFlags';
@@ -14,33 +19,10 @@ import { readEnv } from '../../shared/utils/envFlags';
 /**
  * Check if the sandbox AI service endpoints should be called.
  *
- * Returns false in production without RINGRIFT_AI_SERVICE_URL configured,
- * which prevents 404 errors from calling AI endpoints that don't exist
- * on the production web server.
- *
- * Returns true in:
- * - Local development (localhost or 127.0.0.1)
- * - When RINGRIFT_AI_SERVICE_URL is explicitly set
+ * Returns true in all environments — the backend handles availability
+ * and falls back to heuristic AI if the Python service is unreachable.
  */
 export function isSandboxAIServiceAvailable(): boolean {
-  // If RINGRIFT_AI_SERVICE_URL is set, the AI service is explicitly configured
-  const envUrl = readEnv('RINGRIFT_AI_SERVICE_URL');
-  if (envUrl && typeof envUrl === 'string') {
-    return true;
-  }
-
-  // In production without configured URL, AI service is not available
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    const protocol = window.location.protocol;
-    const isProduction =
-      protocol === 'https:' || (!hostname.includes('localhost') && hostname !== '127.0.0.1');
-    if (isProduction) {
-      return false;
-    }
-  }
-
-  // Default: available in local development
   return true;
 }
 
