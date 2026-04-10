@@ -534,6 +534,8 @@ def compute_collapsed_count(state: GameState) -> int:
 class ContractVectorAssertions:
     """Assertions for validating test vector output."""
 
+    __test__ = False
+
     def __init__(self, data: dict[str, Any]):
         self.current_player: int | None = data.get("currentPlayer")
         self.current_phase: str | None = data.get("currentPhase")
@@ -550,6 +552,8 @@ TestVectorAssertions = ContractVectorAssertions
 
 class ContractVector:
     """Parsed test vector for contract testing."""
+
+    __test__ = False
 
     def __init__(self, data: dict[str, Any]):
         self.id: str = data.get("id", "unknown")
@@ -592,6 +596,8 @@ TestVector = ContractVector
 
 class ContractVectorBundle:
     """Collection of test vectors from a single file."""
+
+    __test__ = False
 
     def __init__(self, data: dict[str, Any]):
         self.version: str = data.get("version", "v2")

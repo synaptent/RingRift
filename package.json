@@ -63,7 +63,7 @@
     "build:client": "vite build",
     "start": "node dist/server/index.js",
     "test": "jest --forceExit --workerIdleMemoryLimit=512MB",
-    "test:fast": "jest --forceExit --testPathPattern='(components/|\\.shared\\.test\\.ts$|Aggregate\\.(core|shared)\\.)'  --testPathIgnorePatterns='/node_modules/' '/dist/' '<rootDir>/tests/e2e/'",
+    "test:fast": "bash scripts/check_supported_path.sh && cd ai-service && PYTHONPATH=. python3 -m pytest tests/contracts/ tests/unit/coordination/test_infrastructure_quality_contracts.py tests/unit/coordination/test_event_subscription_completeness.py tests/unit/scripts/test_master_loop_profiles.py tests/unit/scripts/test_deploy_minimal_loops.py -q --timeout=120",
     "test:medium": "jest --forceExit --workerIdleMemoryLimit=512MB --testPathPattern='tests/unit' --testPathIgnorePatterns='/node_modules/' '/dist/' '<rootDir>/tests/e2e/' '<rootDir>/tests/unit/archive/' 'aiSimulation' 'aiHeuristicCoverage' '\\.MoveDriven\\.' 'Parity\\.' 'movementCapture\\.test' 'RulesMatrix\\.' 'FAQ_Q' 'territoryDisconnection\\.hex' 'territory\\.scenarios' 'LineAndTerritory'",
     "test:safe": "timeout 30m jest --forceExit --workerIdleMemoryLimit=512MB || echo 'Tests timed out or failed'",
     "test:watch": "jest --watch",

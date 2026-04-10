@@ -12,12 +12,22 @@ on:
       - 'docs/REPOSITORY_MAP.md'
       - 'docs/INDEX.md'
       - 'DOCUMENTATION_INDEX.md'
+      - 'package.json'
+      - 'package-lock.json'
       - 'ai-service/README.md'
       - 'ai-service/docs/README.md'
       - 'scripts/run_proven_experiment.sh'
       - 'scripts/check_supported_path.sh'
       - 'ai-service/scripts/minimal_alphazero_loop.py'
+      - 'ai-service/scripts/deploy_minimal_loops.sh'
+      - 'ai-service/scripts/fleet_health_check.py'
+      - 'ai-service/scripts/minimal_loop_supervisor.sh'
       - 'ai-service/app/training/train_cli.py'
+      - 'ai-service/tests/contracts/**'
+      - 'ai-service/tests/unit/coordination/test_event_subscription_completeness.py'
+      - 'ai-service/tests/unit/coordination/test_infrastructure_quality_contracts.py'
+      - 'ai-service/tests/unit/scripts/test_deploy_minimal_loops.py'
+      - 'ai-service/tests/unit/scripts/test_master_loop_profiles.py'
       - 'src/shared/engine/**'
       - 'src/shared/types/**'
       - '.github/workflows/supported-path.yml'
@@ -32,12 +42,22 @@ on:
       - 'docs/REPOSITORY_MAP.md'
       - 'docs/INDEX.md'
       - 'DOCUMENTATION_INDEX.md'
+      - 'package.json'
+      - 'package-lock.json'
       - 'ai-service/README.md'
       - 'ai-service/docs/README.md'
       - 'scripts/run_proven_experiment.sh'
       - 'scripts/check_supported_path.sh'
       - 'ai-service/scripts/minimal_alphazero_loop.py'
+      - 'ai-service/scripts/deploy_minimal_loops.sh'
+      - 'ai-service/scripts/fleet_health_check.py'
+      - 'ai-service/scripts/minimal_loop_supervisor.sh'
       - 'ai-service/app/training/train_cli.py'
+      - 'ai-service/tests/contracts/**'
+      - 'ai-service/tests/unit/coordination/test_event_subscription_completeness.py'
+      - 'ai-service/tests/unit/coordination/test_infrastructure_quality_contracts.py'
+      - 'ai-service/tests/unit/scripts/test_deploy_minimal_loops.py'
+      - 'ai-service/tests/unit/scripts/test_master_loop_profiles.py'
       - 'src/shared/engine/**'
       - 'src/shared/types/**'
       - '.github/workflows/supported-path.yml'
@@ -67,7 +87,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.10'
 
       - name: Install Node dependencies
         run: npm ci
@@ -82,4 +102,4 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run supported path checks
-        run: bash scripts/check_supported_path.sh
+        run: npm run test:fast
