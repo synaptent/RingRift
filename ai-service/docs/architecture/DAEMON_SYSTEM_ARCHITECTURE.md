@@ -2,7 +2,9 @@
 
 ## Overview
 
-RingRift uses a daemon-based architecture for background automation. The `DaemonManager` orchestrates 105 daemon types that handle selfplay, training, sync, health monitoring, and cluster coordination.
+RingRift uses a daemon-based architecture for background automation. The `DaemonManager` registry currently covers all 127 `DaemonType` enum values. Of those, 26 are marked deprecated in the registry and should not be started by the audited `full` master-loop profile.
+
+The current strategy is to keep `scripts/minimal_alphazero_loop.py` as the reproducible proof harness, while auditing and reusing the larger daemon/P2P infrastructure for supervision, health, job lifecycle, sync, and evaluation scheduling. The larger daemon stack should not be treated as the research source of truth until its data, training, and evaluation contracts match the minimal loop.
 
 ## Quick Start
 
@@ -24,7 +26,8 @@ python scripts/launch_daemons.py --status
 ```
 MasterLoopController
 ├── DaemonManager: Lifecycle for all daemons
-│   ├── DaemonType enum (120 types)
+│   ├── DaemonType enum (127 types)
+│   ├── DAEMON_REGISTRY (127 registered specs)
 │   ├── DaemonState (INITIALIZING, RUNNING, PAUSED, SHUTTING_DOWN)
 │   └── DaemonAdapter wrappers
 ├── ClusterMonitor: Real-time cluster health
@@ -33,6 +36,19 @@ MasterLoopController
 ├── DataPipelineOrchestrator: Pipeline stage tracking
 └── QueuePopulator: Work queue maintenance
 ```
+
+## Master-Loop Profiles
+
+`scripts/master_loop.py` now validates profile names through `validate_daemon_profile()` before constructing the controller. The supported profiles are:
+
+| Profile    | Baseline daemons | Purpose                                                                 |
+| ---------- | ---------------- | ----------------------------------------------------------------------- |
+| `minimal`  | 11               | Event, health, sync, feedback, data pipeline, and auto-export basics    |
+| `lean`     | 23               | Reuse-focused profile for pipeline, health, sync, training, and eval    |
+| `standard` | 46               | Larger automation stack with more consolidation, recovery, and feedback |
+| `full`     | 101              | All non-deprecated registered daemon types                              |
+
+These counts are before optional S3/PARITY additions and before coordinator or standby coordinator filtering. The `lean` profile is the preferred reuse target because it starts the essential pipeline without intentionally starting the highest-risk legacy process spawners. Current tests assert that supported profiles validate, resolve only active registry daemons, and avoid duplicates.
 
 ## Daemon Categories
 
@@ -150,19 +166,20 @@ Note: `CLUSTER_DATA_SYNC` was removed from the dependency graph (deprecated Dec 
 
 ## Event Integration
 
-Daemons emit and subscribe to events via `EventRouter`:
+Active coordination code should emit through `app.coordination.event_emission_helpers.safe_emit_event()` or `safe_emit_event_async()`. `app.coordination.safe_event_emitter.SafeEventEmitterMixin` remains the compatibility mixin for classes that need `_safe_emit_event()` and delegates to the consolidated helper. Direct calls to router-level `emit_event()` should not be added to active coordination daemons.
 
 ```python
-from app.coordination.event_router import get_router
+from app.coordination.event_emission_helpers import safe_emit_event
 from app.distributed.data_events import DataEventType
 
-# Subscribe to events
-router = get_router()
-router.subscribe(DataEventType.NEW_GAMES_AVAILABLE, self._on_new_games)
-
-# Emit events
-await router.emit(DataEventType.TRAINING_STARTED, {"config_key": "hex8_2p"})
+safe_emit_event(
+    DataEventType.TRAINING_STARTED,
+    {"config_key": "hex8_2p"},
+    source="training_trigger",
+)
 ```
+
+The event router remains the delivery layer and still exposes compatibility helpers for lower-level event infrastructure. The audited import-path tests currently guard active coordination code against drifting back to direct `emit_event` imports, and the safe-event emitter tests verify the canonical compatibility path.
 
 ## Configuration
 
@@ -241,5 +258,23 @@ tail -f logs/training_trigger.log
 - `app/coordination/daemon_manager.py` - Core daemon lifecycle
 - `app/coordination/daemon_adapters.py` - Wrapper adapters
 - `app/coordination/daemon_types.py` - DaemonType enum
+- `app/coordination/daemon_registry.py` - Runner specs, deprecation metadata, health contracts
+- `app/coordination/event_emission_helpers.py` - Canonical safe event emission helper
+- `app/coordination/safe_event_emitter.py` - Compatibility mixin delegating to the helper
 - `scripts/master_loop.py` - Unified automation entry point
 - `scripts/launch_daemons.py` - Manual daemon launcher
+
+## Verification Contracts
+
+The current daemon-system cleanup is covered by focused unit tests plus the full unit/contracts gate:
+
+- `tests/unit/coordination/test_daemon_registry.py` and `tests/unit/coordination/test_health_check_compliance.py` validate registry/profile consistency and daemon health contracts.
+- `tests/unit/coordination/test_event_subscription_completeness.py` validates dead-event diagnostics, import-path audit coverage, and the lean profile subscription matrix.
+- `tests/unit/coordination/test_infrastructure_quality_contracts.py` validates master-loop profile names, active registry resolution, and unused-import cleanliness for the active infrastructure tests.
+- `tests/unit/coordination/test_handler_base.py` covers the tightened `safe_subscribe()` and task helper behavior.
+
+Phase verification command:
+
+```bash
+PYTHONPATH=. python -m pytest tests/unit/ tests/contracts/ -x -q --timeout=120
+```
