@@ -9,15 +9,19 @@ import logging
 import os
 import signal
 import subprocess
+import sys
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
+from app.core.async_context import fire_and_forget as _default_fire_and_forget
 from scripts.p2p.constants import (
     HTTP_TOTAL_TIMEOUT,
     JOB_CHECK_INTERVAL,
     RELAY_COMMAND_TTL_SECONDS,
     RELAY_MAX_PENDING_START_JOBS,
+    SPAWN_RATE_LIMIT_PER_MINUTE,
 )
 from scripts.p2p.models import ClusterJob, NodeInfo
 from scripts.p2p.network import ClientTimeout, get_client_session
@@ -36,6 +40,14 @@ except ImportError:
         return True, ""
 
 logger = logging.getLogger(__name__)
+
+
+def _get_fire_and_forget():
+    """Return the orchestrator-patchable fire-and-forget helper."""
+    orchestrator_module = sys.modules.get("scripts.p2p_orchestrator")
+    if orchestrator_module is not None:
+        return getattr(orchestrator_module, "fire_and_forget", _default_fire_and_forget)
+    return _default_fire_and_forget
 
 
 class JobManagementMixin(P2PMixinBase):
@@ -1080,7 +1092,7 @@ class JobManagementMixin(P2PMixinBase):
                             if board_type and num_players is not None:
                                 config_key = f"{board_type}_{num_players}p"
 
-                    fire_and_forget(
+                    _get_fire_and_forget()(
                         self._emit_task_abandoned(
                             job_id=job_id,
                             config_key=config_key,

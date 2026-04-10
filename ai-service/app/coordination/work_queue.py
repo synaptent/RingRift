@@ -35,6 +35,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import threading
 import time
 import uuid
@@ -105,9 +106,21 @@ def _check_raft_work_queue_available() -> bool:
             _raft_wq_available = False
             return False
 
-        # Try to get work queue from P2P orchestrator
+        # Try to get work queue from P2P orchestrator without importing it.
+        # The script entrypoint configures root logging at import time; if the
+        # module is not already loaded, no in-process singleton can exist.
         try:
-            from scripts.p2p_orchestrator import P2POrchestrator
+            orchestrator_module = sys.modules.get("scripts.p2p_orchestrator")
+            if orchestrator_module is None:
+                logger.debug("Raft work queue: P2P orchestrator not loaded")
+                _raft_wq_available = False
+                return False
+
+            P2POrchestrator = getattr(orchestrator_module, "P2POrchestrator", None)
+            if P2POrchestrator is None:
+                logger.debug("Raft work queue: P2POrchestrator class not available")
+                _raft_wq_available = False
+                return False
 
             # Check for singleton instance
             orchestrator = getattr(P2POrchestrator, "_instance", None)
@@ -147,8 +160,8 @@ def _check_raft_work_queue_available() -> bool:
             )
             return True
 
-        except ImportError:
-            logger.debug("Raft work queue: Could not import P2P orchestrator")
+        except AttributeError:
+            logger.debug("Raft work queue: P2P orchestrator state unavailable")
             _raft_wq_available = False
             return False
 

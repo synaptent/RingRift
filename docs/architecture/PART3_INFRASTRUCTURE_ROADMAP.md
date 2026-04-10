@@ -86,3 +86,5 @@ If this session pauses before all phases are complete, resume from the first pha
 - Phase 3 extraction batch 2: `evaluation_daemon.py` is 1,563 LOC, `unified_queue_populator.py` is 1,470 LOC, and `data_pipeline_orchestrator.py` is 1,936 LOC after extracting execution/strategy/stage mixins.
 - Phase 3 extraction batch 3: `curriculum_integration.py` is 504 LOC and `work_queue.py` is 1,873 LOC after extracting curriculum bridge/strategy helpers and work-queue storage helpers.
 - Phase 3 extraction batch 4: `training_coordinator.py` is 1,862 LOC after extracting `TrainingJob` and slot/progress/status protocol helpers into `training_protocol.py`.
+- Phase 3 extraction batch 5: the strict 2,500 LOC size contract required additional decomposition of `unified_health_manager.py`, `idle_resource_daemon.py`, `unified_distribution_daemon.py`, `tournament_daemon.py`, `event_router.py`, `event_emitters.py`, `coordination_bootstrap.py`, and `resource_optimizer.py`.
+- Phase 3 size contract added: `tests/contracts/test_coordination_module_sizes.py` checks all `app/coordination/**/*.py` files and currently passes across 423 files.

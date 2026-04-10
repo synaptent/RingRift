@@ -42,15 +42,23 @@ These files exceeded 3,000 LOC at the start of Part 3 Phase 3.
 
 The first extraction batch completed two of the largest coordination files while preserving the daemon-facing public APIs:
 
-| Original File                   | Before LOC | After LOC | Extracted Module               | Extracted LOC | Status                                        |
-| ------------------------------- | ---------: | --------: | ------------------------------ | ------------: | --------------------------------------------- |
-| `training_trigger_daemon.py`    |      3,924 |     1,836 | `training_executor_actions.py` |         2,226 | Focused training-trigger tests passed         |
-| `daemon_manager.py`             |      3,809 |     1,483 | `daemon_manager_lifecycle.py`  |         2,462 | Focused daemon-manager lifecycle tests passed |
-| `evaluation_daemon.py`          |      3,685 |     1,563 | `evaluation_executor.py`       |         2,132 | Focused evaluation-daemon tests passed        |
-| `unified_queue_populator.py`    |      3,497 |     1,470 | `queue_strategies/` mixins     |         2,093 | Focused queue-populator tests passed          |
-| `data_pipeline_orchestrator.py` |      3,485 |     1,936 | `pipeline_stages.py`           |         1,583 | Focused pipeline tests passed                 |
-| `curriculum_integration.py`     |      3,360 |       504 | Curriculum bridge/strategies   |         2,902 | Focused curriculum tests passed               |
-| `work_queue.py`                 |      3,222 |     1,873 | `work_queue_storage.py`        |         1,380 | Focused work-queue tests passed               |
-| `training_coordinator.py`       |      3,151 |     1,862 | `training_protocol.py`         |         1,364 | Focused training-coordinator tests passed     |
+| Original File                    | Before LOC | After LOC | Extracted Module                   | Extracted LOC | Status                                        |
+| -------------------------------- | ---------: | --------: | ---------------------------------- | ------------: | --------------------------------------------- |
+| `training_trigger_daemon.py`     |      3,924 |     1,836 | `training_executor_actions.py`     |         2,226 | Focused training-trigger tests passed         |
+| `daemon_manager.py`              |      3,809 |     1,483 | `daemon_manager_lifecycle.py`      |         2,462 | Focused daemon-manager lifecycle tests passed |
+| `evaluation_daemon.py`           |      3,685 |     1,563 | `evaluation_executor.py`           |         2,132 | Focused evaluation-daemon tests passed        |
+| `unified_queue_populator.py`     |      3,497 |     1,470 | `queue_strategies/` mixins         |         2,093 | Focused queue-populator tests passed          |
+| `data_pipeline_orchestrator.py`  |      3,485 |     1,936 | `pipeline_stages.py`               |         1,583 | Focused pipeline tests passed                 |
+| `curriculum_integration.py`      |      3,360 |       504 | Curriculum bridge/strategies       |         2,902 | Focused curriculum tests passed               |
+| `work_queue.py`                  |      3,222 |     1,873 | `work_queue_storage.py`            |         1,380 | Focused work-queue tests passed               |
+| `training_coordinator.py`        |      3,151 |     1,862 | `training_protocol.py`             |         1,364 | Focused training-coordinator tests passed     |
+| `unified_health_manager.py`      |      3,127 |     2,452 | `unified_health_recovery_mixin.py` |           746 | Focused health-manager tests passed           |
+| `idle_resource_daemon.py`        |      3,045 |     2,126 | `idle_resource_spawn_mixin.py`     |           962 | Focused idle-resource tests passed            |
+| `unified_distribution_daemon.py` |      2,958 |     2,358 | `distribution_delivery_mixin.py`   |           628 | Focused distribution tests passed             |
+| `tournament_daemon.py`           |      2,846 |     2,192 | `tournament_execution_mixin.py`    |           670 | Focused tournament tests passed               |
+| `event_router.py`                |      2,753 |     2,380 | `event_router_compat_emitters.py`  |           405 | Focused event-router tests passed             |
+| `event_emitters.py`              |      2,734 |     2,346 | `event_emitters_extended.py`       |           418 | Focused event-emitter tests passed            |
+| `coordination_bootstrap.py`      |      2,612 |     2,258 | `coordination_bootstrap_smoke.py`  |           376 | Focused bootstrap tests passed                |
+| `resource_optimizer.py`          |      2,574 |     2,152 | `resource_optimizer_models.py`     |           444 | Focused resource-optimizer tests passed       |
 
-`daemon_lifecycle.py` remains the existing composition-based lifecycle manager at 1,064 LOC. The new `daemon_manager_lifecycle.py` module was intentionally kept separate so no new coordination file exceeds the upcoming 2,500 LOC size contract.
+`daemon_lifecycle.py` remains the existing composition-based lifecycle manager at 1,064 LOC. The new `daemon_manager_lifecycle.py` module was intentionally kept separate so no new coordination file exceeds the 2,500 LOC size contract enforced by `tests/contracts/test_coordination_module_sizes.py`.
