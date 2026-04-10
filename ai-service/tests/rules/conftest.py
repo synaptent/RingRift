@@ -249,22 +249,6 @@ def create_game_state(
     )
 
 
-# =============================================================================
-# Pytest Fixtures
-# =============================================================================
-
-@pytest.fixture
-def game_state_factory() -> Callable[..., GameState]:
-    """
-    Factory fixture for creating GameState objects.
-
-    Usage:
-        def test_something(game_state_factory):
-            state = game_state_factory(board_type=BoardType.HEX8, num_players=4)
-    """
-    return create_game_state
-
-
 @pytest.fixture
 def square8_state() -> GameState:
     """Pre-configured Square8 2-player state."""

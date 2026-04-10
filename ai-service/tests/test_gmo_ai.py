@@ -16,7 +16,7 @@ from datetime import datetime
 import pytest
 import torch
 
-from archive.deprecated_ai.gmo_ai import (
+from app.ai.gmo_ai import (
     GMOAI,
     GMOConfig,
     GMOValueNetWithUncertainty,
@@ -24,6 +24,7 @@ from archive.deprecated_ai.gmo_ai import (
     NoveltyTracker,
     StateEncoder,
     estimate_uncertainty,
+    nll_loss_with_uncertainty,
     optimize_move_with_entropy,
     project_to_legal_move,
 )

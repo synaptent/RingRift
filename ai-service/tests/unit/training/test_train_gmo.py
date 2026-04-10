@@ -326,7 +326,7 @@ class TestNLLLoss:
 
     def test_nll_loss_basic(self):
         """Test basic NLL loss computation."""
-        from archive.deprecated_ai.gmo_ai import nll_loss_with_uncertainty
+        from app.ai.gmo_shared import nll_loss_with_uncertainty
 
         pred_values = torch.tensor([[0.5], [-0.5]])
         pred_log_vars = torch.tensor([[0.0], [0.0]])  # variance = 1
@@ -340,7 +340,7 @@ class TestNLLLoss:
 
     def test_nll_loss_high_variance_lower_loss(self):
         """Test that higher variance reduces loss for wrong predictions."""
-        from archive.deprecated_ai.gmo_ai import nll_loss_with_uncertainty
+        from app.ai.gmo_shared import nll_loss_with_uncertainty
 
         pred_values = torch.tensor([[0.5]])  # Wrong prediction
         targets = torch.tensor([-1.0])  # True value is -1

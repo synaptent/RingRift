@@ -27,6 +27,8 @@ from app.coordination.sync_router import (
 )
 from app.distributed.cluster_manifest import DataType
 
+pytestmark = pytest.mark.timeout(30)
+
 
 # =============================================================================
 # Fixtures

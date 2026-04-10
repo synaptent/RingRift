@@ -2,22 +2,19 @@
 
 December 2025: Phase 4 NNUE Integration
 
-NOTE: This test file is for a module that hasn't been implemented yet.
-The app/ai/nnue/registry.py module needs to be created before these tests can run.
+NOTE: The registry module was later implemented under ``app.ai.nnue_registry``.
 """
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
 # Skip entire module if the registry module doesn't exist
-pytest.importorskip("app.ai.nnue.registry", reason="NNUE registry module not yet implemented")
+pytest.importorskip("app.ai.nnue_registry", reason="NNUE registry module not yet implemented")
 
-from app.ai.nnue.registry import (
+from app.ai.nnue_registry import (
     CANONICAL_CONFIGS,
     NNUEModelInfo,
     NNUERegistryStats,
@@ -29,9 +26,9 @@ from app.ai.nnue.registry import (
     get_missing_nnue_models,
     get_nnue_registry_stats,
     get_nnue_output_path,
-    _normalize_board_type,
 )
-from app.coordination.types import BoardType
+from app.ai.nnue_registry.registry import _normalize_board_type
+from app.models import BoardType
 
 
 class TestNormalizeBoardType:

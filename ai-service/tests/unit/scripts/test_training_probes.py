@@ -15,6 +15,8 @@ from scripts.lib.training_probes import (
     run_training_probes,
 )
 
+pytestmark = pytest.mark.timeout(30)
+
 
 # ---------------------------------------------------------------------------
 # ProbeResult tests

@@ -28,6 +28,8 @@ from app.coordination.socket_leak_recovery_daemon import (
     reset_socket_leak_recovery_daemon,
 )
 
+pytestmark = pytest.mark.timeout(30)
+
 
 class TestSocketLeakConfig:
     """Tests for SocketLeakConfig dataclass."""

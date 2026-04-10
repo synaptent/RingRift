@@ -2733,13 +2733,29 @@ def _create_ai_instance(
     elif ai_type == AIType.MCTS:
         from .ai.mcts_ai import MCTSAI
 
-        return MCTSAI(player_number, config, board_type=board_type)
+        effective_config = config
+        if board_type is not None:
+            board_type_value = (
+                board_type.value if hasattr(board_type, "value") else str(board_type)
+            )
+            if config.board_type != board_type_value:
+                effective_config = config.model_copy(update={"board_type": board_type_value})
+
+        return MCTSAI(player_number, effective_config)
     elif ai_type == AIType.GUMBEL_MCTS:
         from .ai.gumbel_mcts_ai import GumbelMCTSAI
 
         return GumbelMCTSAI(player_number, config, board_type=board_type)
     elif ai_type == AIType.DESCENT:
-        return DescentAI(player_number, config, board_type=board_type)
+        effective_config = config
+        if board_type is not None:
+            board_type_value = (
+                board_type.value if hasattr(board_type, "value") else str(board_type)
+            )
+            if config.board_type != board_type_value:
+                effective_config = config.model_copy(update={"board_type": board_type_value})
+
+        return DescentAI(player_number, effective_config)
     elif ai_type == AIType.IG_GMO:
         from .ai.ig_gmo import IGGMO
 

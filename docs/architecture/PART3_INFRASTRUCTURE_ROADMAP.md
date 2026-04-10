@@ -31,12 +31,12 @@ This document records the Part 3 deep infrastructure improvement session so futu
 | 0     | Roadmap capture                                 | Durable document for the Part 3 goals and remaining work                                                               | Completed   |
 | 1     | CI fix                                          | Supported-path workflow no longer fails when optional lint tools are absent; contract tests pass locally               | Completed   |
 | 2     | P2P orchestrator                                | Extract state, peer discovery, job, process, HTTP, and game-count mixins; reduce `p2p_orchestrator.py` below 3,000 LOC | Completed   |
-| 3     | Coordination module                             | Audit >3,000 LOC coordination files and extract repeated execution/lifecycle/strategy patterns                         | In progress |
-| 4     | Script consolidation                            | Inventory 602 scripts, archive deprecated scripts, and add a unified operational CLI                                   | Pending     |
-| 5     | Training pipeline quality                       | Document minimal loop contracts, compare legacy behavior, add training pipeline contract tests                         | Pending     |
-| 6     | Client code quality                             | Document extraction plans for large client files, run TypeScript checks, and reduce easy `as any` usage                | Pending     |
-| 7     | Server code quality                             | Extract major route handlers and document server decomposition targets                                                 | Pending     |
-| 8     | Test infrastructure                             | Remove empty tests, detect broken imports, add test-coverage meta-contracts, and clean conftest fixtures               | Pending     |
+| 3     | Coordination module                             | Audit >3,000 LOC coordination files and extract repeated execution/lifecycle/strategy patterns                         | Completed   |
+| 4     | Script consolidation                            | Inventory 602 scripts, archive deprecated scripts, and add a unified operational CLI                                   | Completed   |
+| 5     | Training pipeline quality                       | Document minimal loop contracts, compare legacy behavior, add training pipeline contract tests                         | Completed   |
+| 6     | Client code quality                             | Document extraction plans for large client files, run TypeScript checks, and reduce easy `as any` usage                | Completed   |
+| 7     | Server code quality                             | Extract major route handlers and document server decomposition targets                                                 | Completed   |
+| 8     | Test infrastructure                             | Remove empty tests, detect broken imports, add test-coverage meta-contracts, and clean conftest fixtures               | In progress |
 | 9     | Documentation cleanup                           | Archive stale 2025 docs and refresh current status, results, architecture, developer guide, and repository map         | Pending     |
 | 10    | Type safety                                     | Audit `# type: ignore`, narrow bare `except`, add type-safety contracts                                                | Pending     |
 | 11    | Config/environment cleanup                      | Archive unused cluster/hyperparameter configs and refresh `.env.*.example` files                                       | Pending     |
@@ -81,10 +81,15 @@ If this session pauses before all phases are complete, resume from the first pha
 - Phase 0 completed: this roadmap was created so the Part 3 goals survive session context loss.
 - Phase 1 completed: the optional Ruff contract now skips when Ruff is unavailable, and contract tests pass locally.
 - Phase 2 completed: `scripts/p2p_orchestrator.py` was reduced below 3,000 LOC by extracting additional mixins; see `docs/P2P_DECOMPOSITION_PLAN.md`.
-- Phase 3 in progress: `COORDINATION_AUDIT.md` was created and the first seven oversized files were reduced below the target thresholds.
+- Phase 3 completed: `COORDINATION_AUDIT.md` was created, the largest coordination modules were split, and the 2,500 LOC size contract now passes.
 - Phase 3 extraction batch 1: `training_trigger_daemon.py` is 1,836 LOC and `daemon_manager.py` is 1,483 LOC after extracting execution and lifecycle mixins.
 - Phase 3 extraction batch 2: `evaluation_daemon.py` is 1,563 LOC, `unified_queue_populator.py` is 1,470 LOC, and `data_pipeline_orchestrator.py` is 1,936 LOC after extracting execution/strategy/stage mixins.
 - Phase 3 extraction batch 3: `curriculum_integration.py` is 504 LOC and `work_queue.py` is 1,873 LOC after extracting curriculum bridge/strategy helpers and work-queue storage helpers.
 - Phase 3 extraction batch 4: `training_coordinator.py` is 1,862 LOC after extracting `TrainingJob` and slot/progress/status protocol helpers into `training_protocol.py`.
 - Phase 3 extraction batch 5: the strict 2,500 LOC size contract required additional decomposition of `unified_health_manager.py`, `idle_resource_daemon.py`, `unified_distribution_daemon.py`, `tournament_daemon.py`, `event_router.py`, `event_emitters.py`, `coordination_bootstrap.py`, and `resource_optimizer.py`.
 - Phase 3 size contract added: `tests/contracts/test_coordination_module_sizes.py` checks all `app/coordination/**/*.py` files and currently passes across 423 files.
+- Phase 4 completed: the script inventory/archive sweep and unified operational CLI were added, with deprecated helpers moved out of the active surface.
+- Phase 5 completed: `MINIMAL_LOOP_CONTRACT.md` and the training-infrastructure comparison work landed with supporting training pipeline contract coverage.
+- Phase 6 completed: client decomposition plans were written, easy `as any` reductions were applied, and `npx tsc --noEmit` passed.
+- Phase 7 completed: `SERVER_DECOMPOSITION_PLAN.md` was added, three large game route handlers were extracted, and the route layer was stabilized.
+- Phase 8 in progress: empty regression stubs and obsolete skip-only tests were removed, archive imports were migrated to active shims, new test-infrastructure contracts were added, and timeout guards are being added to hang-prone suites.

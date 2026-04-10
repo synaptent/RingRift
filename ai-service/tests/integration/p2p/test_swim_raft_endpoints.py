@@ -15,6 +15,8 @@ from aiohttp.test_utils import AioHTTPTestCase
 from scripts.p2p.handlers.swim import SwimHandlersMixin
 from scripts.p2p.handlers.raft import RaftHandlersMixin
 
+pytestmark = pytest.mark.timeout(30)
+
 
 class MockOrchestrator(SwimHandlersMixin, RaftHandlersMixin):
     """Mock orchestrator class for testing handlers."""

@@ -30,6 +30,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import yaml
 
+pytestmark = pytest.mark.timeout(30)
+
 
 # =============================================================================
 # Fixtures

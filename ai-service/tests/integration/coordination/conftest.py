@@ -179,26 +179,6 @@ def daemon_test_state():
 
 
 @pytest.fixture
-def mock_daemon_manager(daemon_test_state):
-    """Mock daemon manager for testing daemon lifecycle."""
-    manager = MagicMock()
-
-    async def mock_start(daemon_type):
-        daemon_test_state.started_daemons.append(str(daemon_type))
-        return True
-
-    async def mock_stop(daemon_type):
-        daemon_test_state.stopped_daemons.append(str(daemon_type))
-        return True
-
-    manager.start = AsyncMock(side_effect=mock_start)
-    manager.stop = AsyncMock(side_effect=mock_stop)
-    manager.get_daemon_health = MagicMock(return_value={"status": "healthy"})
-
-    return manager
-
-
-@pytest.fixture
 def patch_event_router(mock_event_router):
     """Patch the global event router with mock."""
     with patch("app.coordination.event_router.get_router", return_value=mock_event_router):

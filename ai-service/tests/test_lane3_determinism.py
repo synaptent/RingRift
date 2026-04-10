@@ -58,7 +58,7 @@ class TestAITypeEnumCompleteness:
 
     def test_all_types_covered(self):
         """Verify factory can create instances for all AIType enum values."""
-        config = AIConfig(difficulty=5)
+        config = AIConfig(difficulty=5, allow_fresh_weights=True)
 
         for ai_type in AIType:
             # Skip types that require special handling
@@ -291,7 +291,7 @@ class TestFactoryRouting:
 
     def test_ebmo_creates_ebmo(self):
         """AIType.EBMO should create EBMO_AI instance."""
-        from archive.deprecated_ai.ebmo_ai import EBMO_AI
+        from app.ai.ebmo_ai import EBMO_AI
 
         config = AIConfig(difficulty=6)
         ai = AIFactory.create(AIType.EBMO, player_number=1, config=config)

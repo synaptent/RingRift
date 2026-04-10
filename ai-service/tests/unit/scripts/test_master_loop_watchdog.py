@@ -13,6 +13,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 import scripts.master_loop_watchdog as master_loop_watchdog
 
+pytestmark = pytest.mark.timeout(30)
+
 
 def test_build_master_loop_command_defaults_to_local_venv_and_lean(
     tmp_path: Path,

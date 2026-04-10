@@ -12,7 +12,7 @@ Tests cover:
 import pytest
 import torch
 
-from archive.deprecated_ai.ebmo_ai import EBMO_AI
+from app.ai.ebmo_ai import EBMO_AI
 from app.ai.ebmo_network import (
     ActionFeatureExtractor,
     EBMOConfig,
@@ -280,18 +280,20 @@ class TestEBMO_AI:
 
     def test_select_move_deterministic_with_seed(self, ai_config, game_state):
         """With same seed, AI should select same move."""
-        # Note: This may not be fully deterministic due to optimization
+        # Seed before construction so both randomly initialized networks match.
+        torch.manual_seed(42)
         ai1 = EBMO_AI(player_number=1, config=ai_config)
+        torch.manual_seed(42)
         ai2 = EBMO_AI(player_number=1, config=ai_config)
 
-        # Set same random seed
+        # Reset the RNG before each move selection as well.
         torch.manual_seed(42)
         move1 = ai1.select_move(game_state)
 
         torch.manual_seed(42)
         move2 = ai2.select_move(game_state)
 
-        # Moves should be the same (deterministic given same initialization)
+        # With identical weights and RNG state, EBMO selection should be stable.
         assert move1.type == move2.type
 
     def test_evaluate_position(self, ai, game_state):

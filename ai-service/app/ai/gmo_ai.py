@@ -31,6 +31,9 @@ try:
         NoveltyTracker,
         StateEncoder,
         estimate_uncertainty,
+        nll_loss_with_uncertainty,
+        optimize_move_with_entropy,
+        project_to_legal_move,
     )
     __all__ = [
         "GMOAI",
@@ -40,6 +43,9 @@ try:
         "NoveltyTracker",
         "StateEncoder",
         "estimate_uncertainty",
+        "nll_loss_with_uncertainty",
+        "optimize_move_with_entropy",
+        "project_to_legal_move",
     ]
 except ImportError as e:
     raise ImportError(

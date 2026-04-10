@@ -17,6 +17,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+pytestmark = pytest.mark.timeout(30)
+
 # =============================================================================
 # Test Constants and Configuration
 # =============================================================================

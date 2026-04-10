@@ -29,6 +29,8 @@ from app.coordination.database_sync_manager import (
     SyncNodeInfo,
 )
 
+pytestmark = pytest.mark.timeout(30)
+
 
 # =============================================================================
 # Concrete Test Implementation

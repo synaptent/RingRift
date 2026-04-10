@@ -34,6 +34,8 @@ with warnings.catch_warnings(record=True):
         VAST_SSH_USER,
     )
 
+pytestmark = pytest.mark.timeout(30)
+
 
 # =============================================================================
 # Fixtures
