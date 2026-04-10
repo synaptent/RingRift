@@ -1,0 +1,630 @@
+[
+  {
+    "config": "hex8_2p",
+    "elo": 1967.6,
+    "heartbeat_age": "2.9h ago",
+    "heartbeat_age_seconds": 10551.44085407257,
+    "host": "100.121.230.110",
+    "iteration": 31,
+    "last_error": "",
+    "latest_metrics": {
+      "base_lr": 0.0001,
+      "effective_lr": 1.7960530202677492e-05,
+      "estimated_elo": 1967.6,
+      "eval_budget": 128,
+      "evaluation": {
+        "best_wins": 110,
+        "candidate_wins": 90,
+        "decision": "reject",
+        "decision_stage": 3,
+        "draws": 0,
+        "elapsed_s": 21111.63063120842,
+        "games_played": 200,
+        "win_rate": 0.45
+      },
+      "git_sha": "c90bbab50",
+      "iteration": 31,
+      "iteration_time_s": 36690.4,
+      "lr_floor": 1e-05,
+      "lr_schedule": "sqrt_decay",
+      "promoted": false,
+      "selfplay": {
+        "completed": 100,
+        "elapsed_s": 15473.0112991333,
+        "p1_wins": 47,
+        "p2_wins": 53
+      },
+      "selfplay_budget": 200,
+      "timestamp": "2026-04-10T12:37:03.613801+00:00",
+      "total_promotions": 6,
+      "train_lr_scheduler": "cosine",
+      "train_window": 10,
+      "training": {
+        "batch_size": 512,
+        "elapsed_s": 94.1196517944336,
+        "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=6.0735, mining_active=False, hard_frac=0.00%, lr_scale=1.000"
+      }
+    },
+    "log_path": "/tmp/minimal_alphazero.log",
+    "loop_alive": true,
+    "loop_pid": "3079852",
+    "metrics_tail": [
+      {
+        "estimated_elo": 1967.6,
+        "evaluation": {
+          "best_wins": 24,
+          "candidate_wins": 26,
+          "draws": 0,
+          "elapsed_s": 6565.636833906174,
+          "win_rate": 0.52
+        },
+        "iteration": 30,
+        "iteration_time_s": 21315.1,
+        "promoted": false,
+        "selfplay": {
+          "completed": 100,
+          "elapsed_s": 14647.739681959152,
+          "p1_wins": 43,
+          "p2_wins": 57
+        },
+        "timestamp": "2026-04-08T22:16:09.835429+00:00",
+        "total_promotions": 6,
+        "training": {
+          "batch_size": 512,
+          "elapsed_s": 91.74588871002197,
+          "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=6.0618, mining_active=False, hard_frac=0.00%, lr_scale=1.000"
+        }
+      },
+      {
+        "estimated_elo": 1967.6,
+        "evaluation": {
+          "best_wins": 25,
+          "candidate_wins": 25,
+          "draws": 0,
+          "elapsed_s": 6885.958630561829,
+          "win_rate": 0.5
+        },
+        "iteration": 31,
+        "iteration_time_s": 21073.2,
+        "promoted": false,
+        "selfplay": {
+          "completed": 100,
+          "elapsed_s": 14084.98195552826,
+          "p1_wins": 36,
+          "p2_wins": 64
+        },
+        "timestamp": "2026-04-09T04:07:23.727269+00:00",
+        "total_promotions": 6,
+        "training": {
+          "batch_size": 512,
+          "elapsed_s": 92.60390543937683,
+          "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=6.0638, mining_active=False, hard_frac=0.00%, lr_scale=1.000"
+        }
+      },
+      {
+        "base_lr": 0.0001,
+        "effective_lr": 1.7960530202677492e-05,
+        "estimated_elo": 1967.6,
+        "eval_budget": 128,
+        "evaluation": {
+          "best_wins": 110,
+          "candidate_wins": 90,
+          "decision": "reject",
+          "decision_stage": 3,
+          "draws": 0,
+          "elapsed_s": 21111.63063120842,
+          "games_played": 200,
+          "win_rate": 0.45
+        },
+        "git_sha": "c90bbab50",
+        "iteration": 31,
+        "iteration_time_s": 36690.4,
+        "lr_floor": 1e-05,
+        "lr_schedule": "sqrt_decay",
+        "promoted": false,
+        "selfplay": {
+          "completed": 100,
+          "elapsed_s": 15473.0112991333,
+          "p1_wins": 47,
+          "p2_wins": 53
+        },
+        "selfplay_budget": 200,
+        "timestamp": "2026-04-10T12:37:03.613801+00:00",
+        "total_promotions": 6,
+        "train_lr_scheduler": "cosine",
+        "train_window": 10,
+        "training": {
+          "batch_size": 512,
+          "elapsed_s": 94.1196517944336,
+          "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=6.0735, mining_active=False, hard_frac=0.00%, lr_scale=1.000"
+        }
+      }
+    ],
+    "model": "models/canonical_hex8_2p.pth",
+    "model_exists": true,
+    "node": "gh200-8",
+    "process_alive": true,
+    "promotions": 6,
+    "s3_status": "HEALTHY",
+    "ssh_error": null,
+    "ssh_ok": true,
+    "stage": null,
+    "supervisor_alive": true,
+    "supervisor_heartbeat_age": "unknown",
+    "supervisor_heartbeat_age_seconds": null,
+    "supervisor_heartbeat_path": "/tmp/supervisor_hex8_2p.heartbeat",
+    "supervisor_pid": "3079852",
+    "timestamp": 1775824623.613976,
+    "work_dir": "data/minimal_loop_gh200-8"
+  },
+  {
+    "config": "square8_2p",
+    "elo": 1601.7905458700845,
+    "heartbeat_age": "1.0d ago",
+    "heartbeat_age_seconds": 90644.23384261131,
+    "host": "100.127.168.116",
+    "iteration": 31,
+    "last_error": "",
+    "latest_metrics": {
+      "base_lr": 5e-05,
+      "effective_lr": 5e-05,
+      "estimated_elo": 1601.8,
+      "eval_budget": 128,
+      "evaluation": {
+        "best_wins": 20,
+        "candidate_wins": 30,
+        "decision": "promote",
+        "decision_stage": 1,
+        "draws": 0,
+        "elapsed_s": 4706.489826440811,
+        "games_played": 50,
+        "win_rate": 0.6
+      },
+      "git_sha": "c90bbab50",
+      "iteration": 30,
+      "iteration_time_s": 13696.2,
+      "lr_floor": 1e-05,
+      "lr_schedule": "fixed",
+      "promoted": true,
+      "selfplay": {
+        "completed": 100,
+        "elapsed_s": 8960.432466506958,
+        "p1_wins": 50,
+        "p2_wins": 50
+      },
+      "selfplay_budget": 128,
+      "timestamp": "2026-04-09T11:54:11.837070+00:00",
+      "total_promotions": 2,
+      "train_lr_scheduler": "none",
+      "train_window": 3,
+      "training": {
+        "batch_size": 512,
+        "elapsed_s": 19.586020946502686,
+        "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=5.6880, mining_active=False, hard_frac=0.00%, lr_scale=1.000"
+      }
+    },
+    "log_path": "/tmp/minimal_alphazero.log",
+    "loop_alive": false,
+    "loop_pid": null,
+    "metrics_tail": [
+      {
+        "estimated_elo": 1500.0,
+        "evaluation": {
+          "best_wins": 24,
+          "candidate_wins": 26,
+          "draws": 0,
+          "elapsed_s": 4807.236333847046,
+          "win_rate": 0.52
+        },
+        "iteration": 28,
+        "iteration_time_s": 14039.8,
+        "promoted": false,
+        "selfplay": {
+          "completed": 100,
+          "elapsed_s": 9152.225465774536,
+          "p1_wins": 53,
+          "p2_wins": 47
+        },
+        "timestamp": "2026-04-09T00:18:12.093018+00:00",
+        "total_promotions": 0,
+        "training": {
+          "batch_size": 512,
+          "elapsed_s": 69.72979092597961,
+          "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=5.6399, mining_active=False, hard_frac=0.00%, lr_scale=1.000"
+        }
+      },
+      {
+        "base_lr": 5e-05,
+        "effective_lr": 5e-05,
+        "estimated_elo": 1531.4,
+        "eval_budget": 128,
+        "evaluation": {
+          "best_wins": 91,
+          "candidate_wins": 109,
+          "decision": "promote",
+          "decision_stage": 3,
+          "draws": 0,
+          "elapsed_s": 17795.57510328293,
+          "games_played": 200,
+          "win_rate": 0.545
+        },
+        "git_sha": "c90bbab50",
+        "iteration": 29,
+        "iteration_time_s": 27259.2,
+        "lr_floor": 1e-05,
+        "lr_schedule": "fixed",
+        "promoted": true,
+        "selfplay": {
+          "completed": 100,
+          "elapsed_s": 9433.430682182312,
+          "p1_wins": 55,
+          "p2_wins": 45
+        },
+        "selfplay_budget": 128,
+        "timestamp": "2026-04-09T08:05:54.880075+00:00",
+        "total_promotions": 1,
+        "train_lr_scheduler": "none",
+        "train_window": 3,
+        "training": {
+          "batch_size": 512,
+          "elapsed_s": 20.124943256378174,
+          "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=6.2062, mining_active=False, hard_frac=0.00%, lr_scale=1.000"
+        }
+      },
+      {
+        "base_lr": 5e-05,
+        "effective_lr": 5e-05,
+        "estimated_elo": 1601.8,
+        "eval_budget": 128,
+        "evaluation": {
+          "best_wins": 20,
+          "candidate_wins": 30,
+          "decision": "promote",
+          "decision_stage": 1,
+          "draws": 0,
+          "elapsed_s": 4706.489826440811,
+          "games_played": 50,
+          "win_rate": 0.6
+        },
+        "git_sha": "c90bbab50",
+        "iteration": 30,
+        "iteration_time_s": 13696.2,
+        "lr_floor": 1e-05,
+        "lr_schedule": "fixed",
+        "promoted": true,
+        "selfplay": {
+          "completed": 100,
+          "elapsed_s": 8960.432466506958,
+          "p1_wins": 50,
+          "p2_wins": 50
+        },
+        "selfplay_budget": 128,
+        "timestamp": "2026-04-09T11:54:11.837070+00:00",
+        "total_promotions": 2,
+        "train_lr_scheduler": "none",
+        "train_window": 3,
+        "training": {
+          "batch_size": 512,
+          "elapsed_s": 19.586020946502686,
+          "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=5.6880, mining_active=False, hard_frac=0.00%, lr_scale=1.000"
+        }
+      }
+    ],
+    "model": "models/canonical_square8_2p.pth",
+    "model_exists": true,
+    "node": "gh200-9",
+    "process_alive": false,
+    "promotions": 2,
+    "s3_status": "DEAD",
+    "ssh_error": null,
+    "ssh_ok": true,
+    "stage": null,
+    "supervisor_alive": false,
+    "supervisor_heartbeat_age": "unknown",
+    "supervisor_heartbeat_age_seconds": null,
+    "supervisor_heartbeat_path": "/tmp/supervisor_square8_2p.heartbeat",
+    "supervisor_pid": null,
+    "timestamp": 1775744530.8209875,
+    "work_dir": "data/minimal_loop_square8_2p"
+  },
+  {
+    "config": "square8_3p",
+    "elo": 1534.9,
+    "heartbeat_age": "21min ago",
+    "heartbeat_age_seconds": 1309.3453831672668,
+    "host": "100.86.51.4",
+    "iteration": 12,
+    "last_error": "",
+    "latest_metrics": {
+      "base_lr": 0.0001,
+      "effective_lr": 3.0151134457776364e-05,
+      "estimated_elo": 1534.9,
+      "eval_budget": 128,
+      "evaluation": {
+        "best_wins": 39,
+        "candidate_wins": 11,
+        "decision": "reject",
+        "decision_stage": 1,
+        "draws": 0,
+        "elapsed_s": 6432.59423327446,
+        "games_played": 50,
+        "win_rate": 0.22
+      },
+      "git_sha": "c90bbab50",
+      "iteration": 11,
+      "iteration_time_s": 13333.0,
+      "lr_floor": 1e-05,
+      "lr_schedule": "sqrt_decay",
+      "promoted": false,
+      "selfplay": {
+        "completed": 50,
+        "elapsed_s": 6776.105545759201,
+        "p1_wins": 15,
+        "p2_wins": 17,
+        "p3_wins": 18
+      },
+      "selfplay_budget": 128,
+      "timestamp": "2026-04-10T13:14:39.646467+00:00",
+      "total_promotions": 1,
+      "train_lr_scheduler": "cosine",
+      "train_window": 3,
+      "training": {
+        "batch_size": 512,
+        "elapsed_s": 111.30097889900208,
+        "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=4.1425, mining_active=False, hard_frac=0.00%, lr_scale=1.000"
+      }
+    },
+    "log_path": "/tmp/minimal_alphazero.log",
+    "loop_alive": true,
+    "loop_pid": "804670",
+    "metrics_tail": [
+      {
+        "base_lr": 0.0001,
+        "effective_lr": 3.3333333333333335e-05,
+        "estimated_elo": 1534.9,
+        "eval_budget": 128,
+        "evaluation": {
+          "best_wins": 38,
+          "candidate_wins": 12,
+          "decision": "reject",
+          "decision_stage": 1,
+          "draws": 0,
+          "elapsed_s": 6138.619528770447,
+          "games_played": 50,
+          "win_rate": 0.24
+        },
+        "git_sha": "c90bbab50",
+        "iteration": 9,
+        "iteration_time_s": 12983.9,
+        "lr_floor": 1e-05,
+        "lr_schedule": "sqrt_decay",
+        "promoted": false,
+        "selfplay": {
+          "completed": 50,
+          "elapsed_s": 6561.680230140686,
+          "p1_wins": 19,
+          "p2_wins": 14,
+          "p3_wins": 17
+        },
+        "selfplay_budget": 128,
+        "timestamp": "2026-04-10T06:02:34.917856+00:00",
+        "total_promotions": 1,
+        "train_lr_scheduler": "cosine",
+        "train_window": 3,
+        "training": {
+          "batch_size": 512,
+          "elapsed_s": 266.2413830757141,
+          "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=4.0293, mining_active=False, hard_frac=0.00%, lr_scale=1.000"
+        }
+      },
+      {
+        "base_lr": 0.0001,
+        "effective_lr": 3.1622776601683795e-05,
+        "estimated_elo": 1534.9,
+        "eval_budget": 128,
+        "evaluation": {
+          "best_wins": 37,
+          "candidate_wins": 13,
+          "decision": "reject",
+          "decision_stage": 1,
+          "draws": 0,
+          "elapsed_s": 6458.223770618439,
+          "games_played": 50,
+          "win_rate": 0.26
+        },
+        "git_sha": "c90bbab50",
+        "iteration": 10,
+        "iteration_time_s": 12590.1,
+        "lr_floor": 1e-05,
+        "lr_schedule": "sqrt_decay",
+        "promoted": false,
+        "selfplay": {
+          "completed": 50,
+          "elapsed_s": 5844.122617959976,
+          "p1_wins": 20,
+          "p2_wins": 16,
+          "p3_wins": 14
+        },
+        "selfplay_budget": 128,
+        "timestamp": "2026-04-10T09:32:25.877553+00:00",
+        "total_promotions": 1,
+        "train_lr_scheduler": "cosine",
+        "train_window": 3,
+        "training": {
+          "batch_size": 512,
+          "elapsed_s": 270.8516094684601,
+          "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=4.0990, mining_active=False, hard_frac=0.00%, lr_scale=1.000"
+        }
+      },
+      {
+        "base_lr": 0.0001,
+        "effective_lr": 3.0151134457776364e-05,
+        "estimated_elo": 1534.9,
+        "eval_budget": 128,
+        "evaluation": {
+          "best_wins": 39,
+          "candidate_wins": 11,
+          "decision": "reject",
+          "decision_stage": 1,
+          "draws": 0,
+          "elapsed_s": 6432.59423327446,
+          "games_played": 50,
+          "win_rate": 0.22
+        },
+        "git_sha": "c90bbab50",
+        "iteration": 11,
+        "iteration_time_s": 13333.0,
+        "lr_floor": 1e-05,
+        "lr_schedule": "sqrt_decay",
+        "promoted": false,
+        "selfplay": {
+          "completed": 50,
+          "elapsed_s": 6776.105545759201,
+          "p1_wins": 15,
+          "p2_wins": 17,
+          "p3_wins": 18
+        },
+        "selfplay_budget": 128,
+        "timestamp": "2026-04-10T13:14:39.646467+00:00",
+        "total_promotions": 1,
+        "train_lr_scheduler": "cosine",
+        "train_window": 3,
+        "training": {
+          "batch_size": 512,
+          "elapsed_s": 111.30097889900208,
+          "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=4.1425, mining_active=False, hard_frac=0.00%, lr_scale=1.000"
+        }
+      }
+    ],
+    "model": "models/canonical_square8_3p.pth",
+    "model_exists": true,
+    "node": "gh200-12",
+    "process_alive": true,
+    "promotions": 1,
+    "s3_status": "HEALTHY",
+    "ssh_error": null,
+    "ssh_ok": true,
+    "stage": null,
+    "supervisor_alive": true,
+    "supervisor_heartbeat_age": "unknown",
+    "supervisor_heartbeat_age_seconds": null,
+    "supervisor_heartbeat_path": "/tmp/supervisor_square8_3p.heartbeat",
+    "supervisor_pid": "804670",
+    "timestamp": 1775833865.709447,
+    "work_dir": "data/minimal_loop_square8_3p"
+  },
+  {
+    "config": "square8_4p",
+    "elo": 1500.0,
+    "heartbeat_age": "1.1d ago",
+    "heartbeat_age_seconds": 99118.64170360565,
+    "host": "100.100.19.96",
+    "iteration": 5,
+    "last_error": "",
+    "latest_metrics": {
+      "estimated_elo": 1500.0,
+      "evaluation": {
+        "best_wins": 54,
+        "candidate_wins": 46,
+        "draws": 0,
+        "elapsed_s": 32855.28429055214,
+        "win_rate": 0.46
+      },
+      "iteration": 5,
+      "iteration_time_s": 131376.9,
+      "promoted": false,
+      "selfplay": {
+        "completed": 300,
+        "elapsed_s": 98456.57565188408,
+        "p1_wins": 68,
+        "p2_wins": 62,
+        "p3_wins": 83,
+        "p4_wins": 87
+      },
+      "timestamp": "2026-04-09T12:00:56.412924+00:00",
+      "total_promotions": 0,
+      "training": {
+        "batch_size": 512,
+        "elapsed_s": 48.76192665100098,
+        "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=5.1537, mining_active=False, hard_frac=0.00%, lr_scale=1.000"
+      }
+    },
+    "log_path": "/tmp/minimal_alphazero.log",
+    "loop_alive": false,
+    "loop_pid": null,
+    "metrics_tail": [
+      {
+        "estimated_elo": 1500.0,
+        "evaluation": {
+          "best_wins": 51,
+          "candidate_wins": 49,
+          "draws": 0,
+          "elapsed_s": 29540.68012905121,
+          "win_rate": 0.49
+        },
+        "iteration": 4,
+        "iteration_time_s": 114036.6,
+        "promoted": false,
+        "selfplay": {
+          "completed": 300,
+          "elapsed_s": 84452.66757464409,
+          "p1_wins": 74,
+          "p2_wins": 66,
+          "p3_wins": 87,
+          "p4_wins": 73
+        },
+        "timestamp": "2026-04-07T23:31:18.701384+00:00",
+        "total_promotions": 0,
+        "training": {
+          "batch_size": 512,
+          "elapsed_s": 31.337477922439575,
+          "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=5.2692, mining_active=False, hard_frac=0.00%, lr_scale=1.000"
+        }
+      },
+      {
+        "estimated_elo": 1500.0,
+        "evaluation": {
+          "best_wins": 54,
+          "candidate_wins": 46,
+          "draws": 0,
+          "elapsed_s": 32855.28429055214,
+          "win_rate": 0.46
+        },
+        "iteration": 5,
+        "iteration_time_s": 131376.9,
+        "promoted": false,
+        "selfplay": {
+          "completed": 300,
+          "elapsed_s": 98456.57565188408,
+          "p1_wins": 68,
+          "p2_wins": 62,
+          "p3_wins": 83,
+          "p4_wins": 87
+        },
+        "timestamp": "2026-04-09T12:00:56.412924+00:00",
+        "total_promotions": 0,
+        "training": {
+          "batch_size": 512,
+          "elapsed_s": 48.76192665100098,
+          "last_epoch_line": "INFO:app.training.enhancements.training_facade:Epoch 14 enhancements: mean_loss=5.1537, mining_active=False, hard_frac=0.00%, lr_scale=1.000"
+        }
+      }
+    ],
+    "model": "models/canonical_square8_4p.pth",
+    "model_exists": true,
+    "node": "gh200-10",
+    "process_alive": false,
+    "promotions": 0,
+    "s3_status": "DEAD",
+    "ssh_error": null,
+    "ssh_ok": true,
+    "stage": null,
+    "supervisor_alive": false,
+    "supervisor_heartbeat_age": "unknown",
+    "supervisor_heartbeat_age_seconds": null,
+    "supervisor_heartbeat_path": "/tmp/supervisor_square8_4p.heartbeat",
+    "supervisor_pid": null,
+    "timestamp": 1775736056.4131265,
+    "work_dir": "data/minimal_loop_square8_4p"
+  }
+]

@@ -2,15 +2,16 @@
 
 This document summarizes the current research evidence from the RingRift self-play training project.
 
-Status is current as of April 9, 2026.
+Status is current as of April 10, 2026.
 
 ## Headline Results
 
-| Config       | Start Elo | Best Reported Elo | Promotions | Status                                                               |
-| ------------ | --------: | ----------------: | ---------: | -------------------------------------------------------------------- |
-| `hex8_2p`    |    `1500` |          `1967.6` |        `6` | Strongest result; currently plateaued near 2000                      |
-| `square8_2p` |    `1500` |          `1601.8` |        `2` | Clean 2-player square result with recent promotions                  |
-| `square8_3p` |    `1500` |          `1534.9` |        `1` | Promising, but multiplayer evidence is weaker than the 2-player runs |
+| Config       | Start Elo | Best Reported Elo | Promotions | Status                                                          |
+| ------------ | --------: | ----------------: | ---------: | --------------------------------------------------------------- |
+| `hex8_2p`    |    `1500` |          `1967.6` |        `6` | Strongest result; currently plateaued near 2000                 |
+| `square8_2p` |    `1500` |          `1601.8` |        `2` | Clean 2-player square result; node was dead in latest SSH probe |
+| `square8_3p` |    `1500` |          `1534.9` |        `1` | Weak evidence; recent seat-fair evals are regressing            |
+| `square8_4p` |    `1500` |          `1500.0` |        `0` | No proven improvement above baseline                            |
 
 ![Headline results snapshot](assets/results/headline_results.svg)
 
@@ -30,11 +31,11 @@ The strongest evidence is `hex8_2p`, but `square8_2p` now matters almost as much
 - Promotions: `6`
 - Interpretation: strong iterative improvement from the 1500 baseline to a much stronger checkpoint family
 
-Recent iterations have been clustering around the promotion boundary, which looks more like a real plateau than an infrastructure failure.
+Recent iterations have been clustering around or below the promotion boundary. The latest completed evaluation in the April 10 status snapshot rejected the candidate at `45%` after `200` games, so this should be described as a real plateau rather than a fresh breakthrough.
 
 ### `square8_2p`
 
-This is the clearest recent improvement story in the repo.
+This remains the clearest recent improvement story after `hex8_2p`.
 
 Recent progression:
 
@@ -51,6 +52,7 @@ Important context:
 
 - iteration `29` and `30` were produced after the minimal loop gained true fixed-LR support end-to-end
 - those promotions also used staged evaluation and the cleaned-up experiment harness
+- the latest April 10 SSH probe found the `square8_2p` loop and supervisor dead, so the result is real but the node currently needs operational recovery
 
 ### `square8_3p`
 
@@ -58,9 +60,17 @@ Important context:
 - Promotions: `1`
 - Best promotion came at iteration `6` with a `55%` win rate
 
-This is encouraging, but it should be treated more cautiously than the 2-player results because multiplayer evaluation was corrected later to rotate one candidate seat per game fairly.
+This should be treated cautiously. Multiplayer evaluation was corrected later to rotate one candidate seat per game fairly, and the recent April 10 seat-fair evaluations are poor: `24%`, `26%`, then `22%` candidate win rate in the latest metrics tail.
 
-As of April 9, 2026, the first seat-fair multiplayer reruns for `square8_3p` and `square8_4p` are in flight, but they have not yet produced a new completed iteration worth replacing the headline evidence above.
+As of April 10, 2026, the `square8_3p` process is alive, but the result is not strong enough to claim robust multiplayer progress.
+
+### `square8_4p`
+
+- Best reported Elo: `1500.0`
+- Promotions: `0`
+- Latest completed eval in the status snapshot was roughly `46%`
+
+This configuration has not demonstrated improvement above baseline. The latest SSH probe also found the loop and supervisor dead, so it is both scientifically unproven and operationally not accumulating new evidence at the moment.
 
 ## What Had To Be Fixed Before These Results Were Trustworthy
 
@@ -104,8 +114,10 @@ The project is not “finished” in a research sense.
 Current limitations:
 
 - `hex8_2p` appears to be plateauing near 2000 Elo
-- `square8_3p` is still being revalidated under the seat-fair multiplayer evaluator
-- larger boards and some 4-player configs remain much slower and less mature
+- `square8_2p` has a credible 1601.8 result, but its node was dead in the latest probe
+- `square8_3p` is regressing under the seat-fair multiplayer evaluator
+- `square8_4p` remains at baseline and was also dead in the latest probe
+- larger boards and other 3-4 player configs remain much slower and less mature
 - the strongest results still come from cluster runs, not commodity local hardware
 
 ## Reproducing The Supported Path
