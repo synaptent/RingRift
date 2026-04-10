@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 # Import base monitoring framework for integration (2025-12)
 try:
@@ -50,9 +50,9 @@ try:
     HAS_MONITORING_FRAMEWORK = True
 except ImportError:
     HAS_MONITORING_FRAMEWORK = False
-    BaseHealthMonitor = object  # type: ignore
+    BaseHealthMonitor = object  # type: ignore[assignment]
     # Define fallbacks for standalone use
-    class AlertLevel(Enum):  # type: ignore
+    class AlertLevel(Enum):  # type: ignore[no-redef]
         WARNING = "warning"
         CRITICAL = "critical"
 
@@ -75,7 +75,7 @@ MIN_WIN_RATE = 0.35  # Alert if win rate drops below this
 if HAS_MONITORING_FRAMEWORK:
     from app.monitoring.base import HealthStatus
 else:
-    class HealthStatus(Enum):  # type: ignore
+    class HealthStatus(Enum):  # type: ignore[no-redef]
         """Fallback health status when monitoring framework unavailable."""
         HEALTHY = "healthy"
         DEGRADED = "degraded"
@@ -104,7 +104,7 @@ class AlertSeverity(Enum):
                 AlertSeverity.CRITICAL: AlertLevel.CRITICAL,
             }
             return mapping.get(self, AlertLevel.WARNING)
-        return self  # type: ignore
+        return cast(AlertLevel, self)
 
 
 @dataclass
@@ -203,11 +203,11 @@ class TrainingHealthMonitor(BaseHealthMonitor):
         if not HAS_MONITORING_FRAMEWORK:
             # Return a dict-like fallback when framework not available
             report = self.get_health_status()
-            return {  # type: ignore
+            return cast(MonitoringResult, {
                 "status": report.status,
                 "metrics": {"configs": len(self._configs), "active_alerts": len(report.active_alerts)},
                 "alerts": report.active_alerts,
-            }
+            })
 
         start_time = time.time()
         report = self.get_health_status()

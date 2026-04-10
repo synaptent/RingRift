@@ -796,10 +796,10 @@ try:
     _HAS_LEGACY_CHECKPOINTING = True
 except ImportError:
     _HAS_LEGACY_CHECKPOINTING = False
-    GracefulShutdownHandler = None  # type: ignore
-    save_checkpoint = None  # type: ignore
-    load_checkpoint = None  # type: ignore
-    AsyncCheckpointer = None  # type: ignore
+    GracefulShutdownHandler = None  # type: ignore[assignment]
+    save_checkpoint = None  # type: ignore[assignment]
+    load_checkpoint = None  # type: ignore[assignment]
+    AsyncCheckpointer = None  # type: ignore[assignment]
 
 
 def create_checkpoint_manager(

@@ -45,7 +45,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, TypeVar, cast
 
 # ParamSpec requires Python 3.10+, use typing_extensions for 3.9 compatibility
 try:
@@ -401,7 +401,7 @@ def trace_async(
                     span.set_status("ERROR", str(e))
                     raise
 
-        return wrapper  # type: ignore
+        return cast(Callable[P, T], wrapper)
 
     return decorator
 
@@ -436,7 +436,7 @@ def trace_sync(
                     span.set_status("ERROR", str(e))
                     raise
 
-        return wrapper  # type: ignore
+        return cast(Callable[P, T], wrapper)
 
     return decorator
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 
 from collections.abc import Sequence
-from typing import Any, NamedTuple, Protocol
+from typing import NamedTuple, Protocol
 
 from app.models import BoardState, BoardType, GameState, GameStatus, Player, Position
 
@@ -195,7 +195,7 @@ class BoardView(Protocol):
     def is_valid_position(self, pos: Position) -> bool: ...
     def is_collapsed_space(self, pos: Position) -> bool: ...
     # Returns RingStack-like
-    def get_stack_at(self, pos: Position) -> Any | None: ...
+    def get_stack_at(self, pos: Position) -> object | None: ...
     def get_marker_owner(self, pos: Position) -> int | None: ...
 
 

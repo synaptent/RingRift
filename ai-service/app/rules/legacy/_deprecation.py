@@ -6,7 +6,7 @@ as deprecated, with clear migration paths to the canonical implementations.
 
 import functools
 import warnings
-from typing import Callable, TypeVar
+from typing import Callable, TypeVar, cast
 
 F = TypeVar("F", bound=Callable)
 
@@ -37,7 +37,7 @@ def deprecated_legacy(removal_target: str = "Q2 2026") -> Callable[[F], F]:
                     stacklevel=2,
                 )
             return func(*args, **kwargs)
-        return wrapper  # type: ignore
+        return cast(F, wrapper)
     return decorator
 
 

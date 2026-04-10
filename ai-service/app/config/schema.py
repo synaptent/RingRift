@@ -42,6 +42,7 @@ from typing import (
     Any,
     Generic,
     TypeVar,
+    cast,
 )
 
 logger = logging.getLogger(__name__)
@@ -171,8 +172,8 @@ class Field(Generic[T]):
         if value is None:
             if self.required:
                 errors.append(ValidationError(path, "Required field is missing"))
-                return None, errors  # type: ignore
-            return self.get_default(), errors  # type: ignore
+                return cast(T, None), errors
+            return cast(T, self.get_default()), errors
 
         # Type coercion/checking
         validated_value = value
@@ -271,20 +272,20 @@ class Field(Generic[T]):
         """Coerce value to the expected type."""
         if self.type_ is bool:
             if isinstance(value, str):
-                return value.lower() in ("true", "1", "yes", "on")  # type: ignore
-            return bool(value)  # type: ignore
+                return cast(T, value.lower() in ("true", "1", "yes", "on"))
+            return cast(T, bool(value))
 
         if self.type_ is int:
-            return int(float(value))  # type: ignore
+            return cast(T, int(float(value)))
 
         if self.type_ is float:
-            return float(value)  # type: ignore
+            return cast(T, float(value))
 
         if self.type_ is str:
-            return str(value)  # type: ignore
+            return cast(T, str(value))
 
         if self.type_ is Path:
-            return Path(value)  # type: ignore
+            return cast(T, Path(value))
 
         return self.type_(value)
 

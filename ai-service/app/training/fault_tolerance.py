@@ -19,7 +19,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, TypeVar
+from typing import Any, Optional, TypeVar, cast
 
 from app.utils.checksum_utils import compute_file_checksum
 from app.utils.torch_utils import safe_load_checkpoint
@@ -37,9 +37,9 @@ try:
     _HAS_UNIFIED_CHECKPOINT = True
 except ImportError:
     _HAS_UNIFIED_CHECKPOINT = False
-    UnifiedCheckpointManager = None  # type: ignore
-    UnifiedCheckpointConfig = None  # type: ignore
-    create_checkpoint_manager = None  # type: ignore
+    UnifiedCheckpointManager = None  # type: ignore[assignment]
+    UnifiedCheckpointConfig = None  # type: ignore[assignment]
+    create_checkpoint_manager = None  # type: ignore[assignment]
     # Fallback definitions below will be used
 
 T = TypeVar('T')
@@ -145,7 +145,9 @@ def retry_with_backoff(
                     time.sleep(delay)
 
             # Should never reach here, but for type safety
-            raise last_exception  # type: ignore
+            if last_exception is None:
+                raise RuntimeError("retry_with_backoff exhausted without capturing an exception")
+            raise last_exception
 
         return wrapper
     return decorator
@@ -258,7 +260,9 @@ def async_retry_with_backoff(
                     await asyncio.sleep(delay)
 
             # Should never reach here, but for type safety
-            raise last_exception  # type: ignore
+            if last_exception is None:
+                raise RuntimeError("async_retry_with_backoff exhausted without capturing an exception")
+            raise last_exception
 
         return wrapper
     return decorator
@@ -971,7 +975,7 @@ class _LegacyCheckpointManager:
 if _HAS_UNIFIED_CHECKPOINT and UnifiedCheckpointManager is not None:
     CheckpointManager = UnifiedCheckpointManager
 else:
-    CheckpointManager = _LegacyCheckpointManager  # type: ignore
+    CheckpointManager = cast(type, _LegacyCheckpointManager)
 
 
 class HeartbeatMonitor:
@@ -1573,7 +1577,7 @@ try:
     _HAS_EXCEPTION_INTEGRATION = True
 except ImportError:
     _HAS_EXCEPTION_INTEGRATION = False
-    TrainingRetryPolicies = None  # type: ignore
+    TrainingRetryPolicies = None  # type: ignore[assignment]
 
 
 if __name__ == "__main__":

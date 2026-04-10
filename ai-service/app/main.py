@@ -27,9 +27,9 @@ except ImportError:  # pragma: no cover
     from typing_extensions import Self  # Python 3.10 compatibility
 
 try:  # Python 3.10 compatibility (NotRequired added in 3.11)
-    from typing import NotRequired  # type: ignore
+    from typing import NotRequired  # type: ignore[attr-defined]
 except ImportError:
-    from typing_extensions import NotRequired  # type: ignore
+    from typing_extensions import NotRequired
 
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
@@ -52,14 +52,14 @@ try:
     HAS_DB_UTILS = True
 except ImportError:  # pragma: no cover
     HAS_DB_UTILS = False
-    _close_db_connections = None  # type: ignore
+    _close_db_connections = None  # type: ignore[assignment]
 
 try:
     from .ai.model_cache import clear_model_cache as _clear_model_cache
     HAS_MODEL_CACHE = True
 except ImportError:  # pragma: no cover
     HAS_MODEL_CACHE = False
-    _clear_model_cache = None  # type: ignore
+    _clear_model_cache = None  # type: ignore[assignment]
 
 from .ai.descent_ai import DescentAI
 from .ai.heuristic_ai import HeuristicAI
@@ -133,8 +133,8 @@ try:
     HAS_COORDINATOR_REGISTRY = True
 except ImportError:  # pragma: no cover
     HAS_COORDINATOR_REGISTRY = False
-    get_coordinator_registry = None  # type: ignore
-    shutdown_all_coordinators = None  # type: ignore
+    get_coordinator_registry = None  # type: ignore[assignment]
+    shutdown_all_coordinators = None  # type: ignore[assignment]
 
 # Import DaemonManager for unified background service management
 try:
@@ -146,9 +146,9 @@ try:
     HAS_DAEMON_MANAGER = True
 except ImportError:  # pragma: no cover
     HAS_DAEMON_MANAGER = False
-    DaemonManager = None  # type: ignore
-    get_daemon_manager = None  # type: ignore
-    DaemonType = None  # type: ignore
+    DaemonManager = None  # type: ignore[assignment]
+    get_daemon_manager = None  # type: ignore[assignment]
+    DaemonType = None  # type: ignore[assignment]
 
 # Import event helpers for unified router configuration (December 2025)
 try:
@@ -159,8 +159,8 @@ try:
     HAS_EVENT_HELPERS = True
 except ImportError:  # pragma: no cover
     HAS_EVENT_HELPERS = False
-    set_use_router_by_default = None  # type: ignore
-    has_event_router = None  # type: ignore
+    set_use_router_by_default = None  # type: ignore[assignment]
+    has_event_router = None  # type: ignore[assignment]
 
 
 _TRUTHY_ENV_VALUES = frozenset({"1", "true", "yes", "on"})

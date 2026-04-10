@@ -49,7 +49,7 @@ import logging
 import random
 import time
 from collections.abc import Callable, Sequence
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 __all__ = [
     # Constants
@@ -158,7 +158,7 @@ def with_emergency_halt_check(func: F) -> F:
                 f"Emergency halt active, refusing to run {func.__name__}"
             )
         return func(*args, **kwargs)
-    return wrapper  # type: ignore
+    return cast(F, wrapper)
 
 
 def with_emergency_halt_check_async(func: AF) -> AF:
@@ -170,7 +170,7 @@ def with_emergency_halt_check_async(func: AF) -> AF:
                 f"Emergency halt active, refusing to run {func.__name__}"
             )
         return await func(*args, **kwargs)
-    return wrapper  # type: ignore
+    return cast(AF, wrapper)
 
 
 # ============================================================================
@@ -256,7 +256,7 @@ def retry(
                 raise last_exception
             return None
 
-        return wrapper  # type: ignore
+        return cast(F, wrapper)
 
     return decorator
 
@@ -364,7 +364,7 @@ def retry_async(
                 raise last_exception
             return None
 
-        return wrapper  # type: ignore
+        return cast(AF, wrapper)
 
     return decorator
 

@@ -71,15 +71,15 @@ try:
     HAS_ELO_SERVICE = True
 except ImportError:
     HAS_ELO_SERVICE = False
-    get_elo_service = None  # type: ignore
-    EloService = None  # type: ignore
-    EloRating = None  # type: ignore
+    get_elo_service = None  # type: ignore[assignment]
+    EloService = None  # type: ignore[assignment]
+    EloRating = None  # type: ignore[assignment]
 
 # Import harness type extraction (January 2026)
 try:
     from app.training.composite_participant import extract_harness_type
 except ImportError:
-    def extract_harness_type(participant_id: str) -> str | None:  # type: ignore
+    def extract_harness_type(participant_id: str) -> str | None:
         """Fallback if composite_participant not available."""
         return None
 

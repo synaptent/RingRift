@@ -103,7 +103,7 @@ try:
     HAS_SSH = True
 except ImportError:
     HAS_SSH = False
-    SSHClient = None  # type: ignore
+    SSHClient = None  # type: ignore[assignment]
 
 try:
     from .sync_utils import (
@@ -155,8 +155,8 @@ try:
     HAS_CIRCUIT_BREAKER = True
 except ImportError:
     HAS_CIRCUIT_BREAKER = False
-    get_node_circuit_breaker = None  # type: ignore
-    NodeCircuitBreaker = None  # type: ignore
+    get_node_circuit_breaker = None  # type: ignore[assignment]
+    NodeCircuitBreaker = None  # type: ignore[assignment]
 
 # Event emission for sync feedback loops (Phase 21.2 - Dec 2025)
 try:

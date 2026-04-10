@@ -41,7 +41,7 @@ from app.distributed.data_events import DataEventType
 try:
     from app.coordination.alert_types import AlertSeverity as ErrorSeverity
 except ImportError:
-    ErrorSeverity = None  # type: ignore
+    ErrorSeverity = None  # type: ignore[assignment]
 
 # Import recovery-related enums
 try:
@@ -51,25 +51,25 @@ try:
         RecoveryStatus,
     )
 except ImportError:
-    JobRecoveryAction = None  # type: ignore
-    RecoveryResult = None  # type: ignore
-    RecoveryStatus = None  # type: ignore
+    JobRecoveryAction = None  # type: ignore[assignment]
+    RecoveryResult = None  # type: ignore[assignment]
+    RecoveryStatus = None  # type: ignore[assignment]
 
 try:
     from app.coordination.node_recovery_daemon import NodeRecoveryAction
 except ImportError:
-    NodeRecoveryAction = None  # type: ignore
+    NodeRecoveryAction = None  # type: ignore[assignment]
 
 # Import role enums
 try:
     from app.coordination.leadership_coordinator import LeadershipRole
 except ImportError:
-    LeadershipRole = None  # type: ignore
+    LeadershipRole = None  # type: ignore[assignment]
 
 try:
     from app.coordination.multi_provider_orchestrator import ClusterNodeRole
 except ImportError:
-    ClusterNodeRole = None  # type: ignore
+    ClusterNodeRole = None  # type: ignore[assignment]
 
 
 class ScaleAction(str, Enum):

@@ -23,7 +23,7 @@ import functools
 import hashlib
 import logging
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from app.caching.memory import MemoryCache
 
@@ -111,10 +111,10 @@ def cached(
             return result
 
         # Attach cache for manual access
-        wrapper._cache = cache  # type: ignore
-        wrapper._cache_name = name  # type: ignore
+        setattr(wrapper, "_cache", cache)
+        setattr(wrapper, "_cache_name", name)
 
-        return wrapper  # type: ignore
+        return cast(F, wrapper)
 
     return decorator
 
@@ -168,10 +168,10 @@ def async_cached(
             return result
 
         # Attach cache for manual access
-        wrapper._cache = cache  # type: ignore
-        wrapper._cache_name = name  # type: ignore
+        setattr(wrapper, "_cache", cache)
+        setattr(wrapper, "_cache_name", name)
 
-        return wrapper  # type: ignore
+        return cast(F, wrapper)
 
     return decorator
 

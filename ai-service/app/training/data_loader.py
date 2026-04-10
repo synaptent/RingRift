@@ -31,7 +31,7 @@ try:
     import h5py
     HDF5_AVAILABLE = True
 except ImportError:
-    h5py = None  # type: ignore
+    h5py = None  # type: ignore[assignment]
     HDF5_AVAILABLE = False
 
 import torch
@@ -1728,9 +1728,9 @@ def get_sample_count(data_path: str) -> int:
             raise ImportError("h5py is required for HDF5 support")
         with h5py.File(data_path, 'r') as f:
             if 'values' in f:
-                return len(f['values'])  # type: ignore
+                return len(f['values'])  # type: ignore[arg-type]
             elif 'features' in f:
-                return len(f['features'])  # type: ignore
+                return len(f['features'])  # type: ignore[arg-type]
         return 0
 
     raise ValueError(f"Unsupported file format: {ext}")

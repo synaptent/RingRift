@@ -41,6 +41,7 @@ from typing import (
     Generic,
     TypeVar,
     Union,
+    cast,
 )
 
 T = TypeVar("T")  # Success type
@@ -93,7 +94,7 @@ class Ok(Generic[T]):
 
     def map_err(self, f: Callable[[Any], Any]) -> Result[T, Any]:
         """Transform the error (no-op for Ok)."""
-        return self  # type: ignore
+        return cast(Result[T, Any], self)
 
     def and_then(self, f: Callable[[T], Result[U, Any]]) -> Result[U, Any]:
         """Chain another operation that returns a Result."""
@@ -101,7 +102,7 @@ class Ok(Generic[T]):
 
     def or_else(self, f: Callable[[Any], Result[T, Any]]) -> Result[T, Any]:
         """Provide fallback (no-op for Ok)."""
-        return self  # type: ignore
+        return cast(Result[T, Any], self)
 
     def __iter__(self) -> Iterator[T]:
         """Allow iteration over success value."""
@@ -151,7 +152,7 @@ class Err(Generic[E]):
 
     def map(self, f: Callable[[Any], U]) -> Result[U, E]:
         """No-op for error."""
-        return self  # type: ignore
+        return cast(Result[U, E], self)
 
     def map_err(self, f: Callable[[E], U]) -> Result[Any, U]:
         """Transform the error value."""
@@ -159,7 +160,7 @@ class Err(Generic[E]):
 
     def and_then(self, f: Callable[[Any], Result[U, E]]) -> Result[U, E]:
         """No-op for error."""
-        return self  # type: ignore
+        return cast(Result[U, E], self)
 
     def or_else(self, f: Callable[[E], Result[T, Any]]) -> Result[T, Any]:
         """Provide fallback result."""
@@ -229,8 +230,8 @@ def collect_results(results: list[Result[T, E]]) -> Result[list[T], E]:
     """
     values = []
     for r in results:
-        if r.is_err:
-            return r  # type: ignore
+        if isinstance(r, Err):
+            return r
         values.append(r.value)
     return Ok(values)
 
@@ -254,10 +255,10 @@ def partition_results(
     oks: list[T] = []
     errs: list[E] = []
     for r in results:
-        if r.is_ok:
-            oks.append(r.value)  # type: ignore
+        if isinstance(r, Ok):
+            oks.append(r.value)
         else:
-            errs.append(r.error)  # type: ignore
+            errs.append(r.error)
     return oks, errs
 
 
@@ -302,8 +303,8 @@ class OperationResult(Generic[T]):
 
     def to_result(self) -> Result[T, str]:
         """Convert to simple Result type."""
-        if self.success:
-            return Ok(self.value)  # type: ignore
+        if self.success and self.value is not None:
+            return Ok(self.value)
         return Err(self.error or "Unknown error")
 
     def to_dict(self) -> dict:

@@ -27,7 +27,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -179,7 +179,7 @@ def log_duration(
                     else:
                         logger.log(level, f"{operation} completed in {elapsed_ms:.1f}ms")
 
-        return wrapper  # type: ignore
+        return cast(F, wrapper)
 
     return decorator
 
@@ -206,7 +206,7 @@ def log_duration_async(
                     else:
                         logger.log(level, f"{operation} completed in {elapsed_ms:.1f}ms")
 
-        return wrapper  # type: ignore
+        return cast(F, wrapper)
 
     return decorator
 

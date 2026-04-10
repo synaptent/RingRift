@@ -139,7 +139,7 @@ def get_game_counts_from_dbs(hours: float = 24.0) -> dict[str, ConfigStats]:
                             dt = datetime.fromisoformat(latest.replace('Z', '+00:00'))
                             if stats[config].latest_game is None or dt > stats[config].latest_game:
                                 stats[config].latest_game = dt
-                        except:
+                        except ValueError:
                             pass
 
             conn.close()
@@ -158,7 +158,7 @@ def get_p2p_work_queue() -> dict:
         )
         if result.returncode == 0:
             return json.loads(result.stdout)
-    except:
+    except (json.JSONDecodeError, OSError, subprocess.SubprocessError):
         pass
     return {}
 
@@ -172,7 +172,7 @@ def get_p2p_status() -> dict:
         )
         if result.returncode == 0:
             return json.loads(result.stdout)
-    except:
+    except (json.JSONDecodeError, OSError, subprocess.SubprocessError):
         pass
     return {}
 

@@ -18,7 +18,7 @@ Usage:
 from __future__ import annotations
 
 import logging
-from typing import Any
+LegacyStateDict = dict[str, object]
 
 from app.rules.legacy._deprecation import deprecated_legacy
 
@@ -126,7 +126,7 @@ def normalize_legacy_phase(phase: str) -> str:
 
 
 @deprecated_legacy()
-def normalize_legacy_state(state_dict: dict[str, Any]) -> dict[str, Any]:
+def normalize_legacy_state(state_dict: LegacyStateDict) -> LegacyStateDict:
     """Normalize a legacy game state dictionary to canonical form.
 
     This function performs in-place normalization of known legacy fields.
@@ -179,7 +179,7 @@ def normalize_legacy_state(state_dict: dict[str, Any]) -> dict[str, Any]:
 
 
 @deprecated_legacy()
-def infer_phase_from_moves(moves: list[dict[str, Any]]) -> str | None:
+def infer_phase_from_moves(moves: list[LegacyStateDict]) -> str | None:
     """Infer the current game phase from move history.
 
     This is a fallback for legacy games that may have missing phase data.

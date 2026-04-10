@@ -42,7 +42,7 @@ import uuid
 from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from app.coordination.event_emission_helpers import safe_emit_event, safe_emit_event_async
 
@@ -361,7 +361,7 @@ def coordinate_task(
                 # Clear context
                 _set_task_context(None)
 
-        return wrapper  # type: ignore
+        return cast(F, wrapper)
 
     return decorator
 
@@ -446,7 +446,7 @@ def coordinate_async_task(
                 # Clear context
                 _set_task_context(None)
 
-        return wrapper  # type: ignore
+        return cast(F, wrapper)
 
     return decorator
 

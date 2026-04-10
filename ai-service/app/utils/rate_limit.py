@@ -33,7 +33,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -298,7 +298,7 @@ def rate_limit(
                 )
             return func(*args, **kwargs)
 
-        return wrapper  # type: ignore
+        return cast(F, wrapper)
 
     return decorator
 
@@ -330,7 +330,7 @@ def rate_limit_async(
                 )
             return await func(*args, **kwargs)
 
-        return wrapper  # type: ignore
+        return cast(F, wrapper)
 
     return decorator
 

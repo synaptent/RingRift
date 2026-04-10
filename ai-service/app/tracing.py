@@ -50,7 +50,7 @@ import logging
 import os
 from collections.abc import Callable
 from contextlib import contextmanager
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 logger = logging.getLogger(__name__)
 
@@ -363,7 +363,7 @@ def traced(
                     span.record_exception(e)
                     raise
 
-        return wrapper  # type: ignore
+        return cast(F, wrapper)
 
     return decorator
 
@@ -401,7 +401,7 @@ def traced_async(
                     span.record_exception(e)
                     raise
 
-        return wrapper  # type: ignore
+        return cast(F, wrapper)
 
     return decorator
 

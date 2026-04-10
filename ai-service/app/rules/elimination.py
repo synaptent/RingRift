@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any
+StackData = dict[str, object]
 
 
 class EliminationContext(Enum):
@@ -291,7 +291,7 @@ def eliminate_from_stack(
 
 
 def enumerate_eligible_stacks(
-    stacks: dict[tuple, dict[str, Any]],
+    stacks: dict[tuple, StackData],
     player: int,
     context: EliminationContext,
     exclude_positions: set | None = None,
@@ -326,7 +326,7 @@ def enumerate_eligible_stacks(
 
 
 def has_eligible_elimination_target(
-    stacks: dict[tuple, dict[str, Any]],
+    stacks: dict[tuple, StackData],
     player: int,
     context: EliminationContext,
     exclude_positions: set | None = None,

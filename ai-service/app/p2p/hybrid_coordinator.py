@@ -71,8 +71,8 @@ try:
     )
 except ImportError:
     SWIM_AVAILABLE = False
-    SwimMembershipManager = None  # type: ignore
-    HybridMembershipManager = None  # type: ignore
+    SwimMembershipManager = None  # type: ignore[assignment]
+    HybridMembershipManager = None  # type: ignore[assignment]
 
 # ============================================
 # Import Raft state machines
@@ -86,8 +86,8 @@ try:
     )
 except ImportError:
     PYSYNCOBJ_AVAILABLE = False
-    ReplicatedWorkQueue = None  # type: ignore
-    create_replicated_work_queue = None  # type: ignore
+    ReplicatedWorkQueue = None  # type: ignore[assignment]
+    create_replicated_work_queue = None  # type: ignore[assignment]
 
 # ============================================
 # Import AsyncRaftManager for manual tick control
@@ -98,7 +98,7 @@ try:
     ASYNC_RAFT_MANAGER_AVAILABLE = True
 except ImportError:
     ASYNC_RAFT_MANAGER_AVAILABLE = False
-    get_async_raft_manager = None  # type: ignore
+    get_async_raft_manager = None  # type: ignore[assignment]
 
 # ============================================
 # Import SQLite work queue for fallback
@@ -107,8 +107,8 @@ except ImportError:
 try:
     from app.coordination.work_queue import WorkQueue, get_work_queue
 except ImportError:
-    WorkQueue = None  # type: ignore
-    get_work_queue = None  # type: ignore
+    WorkQueue = None  # type: ignore[assignment]
+    get_work_queue = None  # type: ignore[assignment]
 
 
 # ============================================

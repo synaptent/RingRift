@@ -980,13 +980,16 @@ class DataPipelineOrchestrator(
         """
         try:
             import aiohttp
+        except ImportError:
+            return False
 
+        try:
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=timeout)
             ) as session:
                 async with session.get(get_local_p2p_status_url()) as response:
                     return response.status == 200
-        except Exception:
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
             return False
 
     def _subscribe_local_only_events(self) -> None:

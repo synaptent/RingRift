@@ -1357,9 +1357,14 @@ class EvaluationDaemon(HandlerBase, EvaluationExecutorMixin):
                     rating = elo_service.get_rating(model_name, bt, np_int)
                     if rating is not None:
                         return True
-                except Exception:
-                    pass  # Best-effort: per-config rating lookup may fail for configs
-                          # that don't match this model. We try all 12 and move on.
+                except Exception as exc:
+                    logger.debug(
+                        "[EvaluationDaemon] Skipping Elo lookup for model=%s config=%s_%sp: %s",
+                        model_name,
+                        bt,
+                        np_int,
+                        exc,
+                    )
             return False
 
         except ImportError:
@@ -1407,9 +1412,15 @@ class EvaluationDaemon(HandlerBase, EvaluationExecutorMixin):
                     rating = elo_service.get_rating(composite_id, bt, np_int)
                     if rating is not None:
                         return False  # Has rating = doesn't need eval
-                except Exception:
-                    pass  # Best-effort: per-config rating lookup may fail for configs
-                          # that don't match this model. We try all 12 and move on.
+                except Exception as exc:
+                    logger.debug(
+                        "[EvaluationDaemon] Skipping harness Elo lookup for model=%s harness=%s config=%s_%sp: %s",
+                        model_name,
+                        harness_type,
+                        bt,
+                        np_int,
+                        exc,
+                    )
             return True  # No rating found = needs eval
 
         except ImportError:

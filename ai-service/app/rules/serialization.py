@@ -9,7 +9,7 @@ from __future__ import annotations
 
 
 from datetime import datetime
-from typing import Any
+SerializedDict = dict[str, object]
 
 from ..models import (
     BoardState,
@@ -40,7 +40,7 @@ def serialize_position(pos: Position) -> dict[str, int]:
     return result
 
 
-def deserialize_position(data: dict[str, Any]) -> Position:
+def deserialize_position(data: SerializedDict) -> Position:
     """Deserialize a Position from JSON dict."""
     return Position(
         x=data["x"],
@@ -54,7 +54,7 @@ def deserialize_position(data: dict[str, Any]) -> Position:
 # ============================================================================
 
 
-def serialize_stack(stack: RingStack) -> dict[str, Any]:
+def serialize_stack(stack: RingStack) -> SerializedDict:
     """Serialize a RingStack to JSON-compatible dict."""
     return {
         "position": serialize_position(stack.position),
@@ -65,7 +65,7 @@ def serialize_stack(stack: RingStack) -> dict[str, Any]:
     }
 
 
-def deserialize_stack(data: dict[str, Any]) -> RingStack:
+def deserialize_stack(data: SerializedDict) -> RingStack:
     """Deserialize a RingStack from JSON dict.
 
     NOTE: TS stores rings top-to-bottom (top ring at index 0), but Python
@@ -88,7 +88,7 @@ def deserialize_stack(data: dict[str, Any]) -> RingStack:
 # ============================================================================
 
 
-def serialize_marker(marker: MarkerInfo) -> dict[str, Any]:
+def serialize_marker(marker: MarkerInfo) -> SerializedDict:
     """Serialize a MarkerInfo to JSON-compatible dict."""
     return {
         "position": serialize_position(marker.position),
@@ -96,7 +96,7 @@ def serialize_marker(marker: MarkerInfo) -> dict[str, Any]:
     }
 
 
-def deserialize_marker(data: dict[str, Any]) -> MarkerInfo:
+def deserialize_marker(data: SerializedDict) -> MarkerInfo:
     """Deserialize a MarkerInfo from JSON dict."""
     return MarkerInfo(
         position=deserialize_position(data["position"]),
@@ -110,13 +110,13 @@ def deserialize_marker(data: dict[str, Any]) -> MarkerInfo:
 # ============================================================================
 
 
-def serialize_board_state(board: BoardState) -> dict[str, Any]:
+def serialize_board_state(board: BoardState) -> SerializedDict:
     """Serialize a BoardState to JSON-compatible dict."""
-    stacks: dict[str, Any] = {}
+    stacks: dict[str, object] = {}
     for key, stack in board.stacks.items():
         stacks[key] = serialize_stack(stack)
 
-    markers: dict[str, Any] = {}
+    markers: dict[str, object] = {}
     for key, marker in board.markers.items():
         markers[key] = serialize_marker(marker)
 
@@ -138,7 +138,7 @@ def serialize_board_state(board: BoardState) -> dict[str, Any]:
     }
 
 
-def deserialize_board_state(data: dict[str, Any]) -> BoardState:
+def deserialize_board_state(data: SerializedDict) -> BoardState:
     """Deserialize a BoardState from JSON dict."""
     # Parse board type
     board_type_str = data.get("type", "square8")
@@ -181,7 +181,7 @@ def deserialize_board_state(data: dict[str, Any]) -> BoardState:
 # ============================================================================
 
 
-def serialize_player(player: Player) -> dict[str, Any]:
+def serialize_player(player: Player) -> SerializedDict:
     """Serialize a Player to JSON-compatible dict."""
     return {
         "playerNumber": player.player_number,
@@ -192,7 +192,7 @@ def serialize_player(player: Player) -> dict[str, Any]:
     }
 
 
-def deserialize_player(data: dict[str, Any], index: int) -> Player:
+def deserialize_player(data: SerializedDict, index: int) -> Player:
     """Deserialize a Player from JSON dict.
 
     Supports both camelCase (TypeScript) and snake_case (Python) field names.
@@ -222,9 +222,9 @@ def deserialize_player(data: dict[str, Any], index: int) -> Player:
 # ============================================================================
 
 
-def serialize_move(move: Move) -> dict[str, Any]:
+def serialize_move(move: Move) -> SerializedDict:
     """Serialize a Move to JSON-compatible dict."""
-    result: dict[str, Any] = {
+    result: SerializedDict = {
         "id": move.id,
         "type": move.type.value,
         "player": move.player,
@@ -253,7 +253,7 @@ def serialize_move(move: Move) -> dict[str, Any]:
     return result
 
 
-def deserialize_move(data: dict[str, Any]) -> Move | None:
+def deserialize_move(data: SerializedDict) -> Move | None:
     """Deserialize a Move from JSON dict.
 
     This mirrors the TypeScript contract move format from
@@ -338,7 +338,7 @@ def deserialize_move(data: dict[str, Any]) -> Move | None:
 # ============================================================================
 
 
-def serialize_game_state(state: GameState) -> dict[str, Any]:
+def serialize_game_state(state: GameState) -> SerializedDict:
     """Serialize a GameState to JSON-compatible dict."""
     payload = {
         "gameId": state.id,
@@ -366,7 +366,7 @@ def serialize_game_state(state: GameState) -> dict[str, Any]:
     return payload
 
 
-def deserialize_game_state(data: dict[str, Any]) -> GameState:
+def deserialize_game_state(data: SerializedDict) -> GameState:
     """Deserialize a GameState from JSON dict.
 
     This function parses the contract test vector format and produces a
@@ -536,7 +536,7 @@ class ContractVectorAssertions:
 
     __test__ = False
 
-    def __init__(self, data: dict[str, Any]):
+    def __init__(self, data: SerializedDict):
         self.current_player: int | None = data.get("currentPlayer")
         self.current_phase: str | None = data.get("currentPhase")
         self.game_status: str | None = data.get("gameStatus")
@@ -555,7 +555,7 @@ class ContractVector:
 
     __test__ = False
 
-    def __init__(self, data: dict[str, Any]):
+    def __init__(self, data: SerializedDict):
         self.id: str = data.get("id", "unknown")
         self.version: str = data.get("version", "v2")
         self.category: str = data.get("category", "unknown")
@@ -599,7 +599,7 @@ class ContractVectorBundle:
 
     __test__ = False
 
-    def __init__(self, data: dict[str, Any]):
+    def __init__(self, data: SerializedDict):
         self.version: str = data.get("version", "v2")
         self.generated: str = data.get("generated", "")
         self.count: int = data.get("count", 0)

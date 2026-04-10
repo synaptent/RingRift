@@ -88,8 +88,8 @@ def get_game_counts(db_path: Path) -> dict:
                     counts[part] += count
                     break
             conn.close()
-        except:
-            pass
+        except (OSError, sqlite3.Error):
+            continue
 
     return counts
 

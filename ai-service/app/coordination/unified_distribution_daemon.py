@@ -67,11 +67,11 @@ try:
     DELIVERY_LEDGER_AVAILABLE = True
 except ImportError:
     DELIVERY_LEDGER_AVAILABLE = False
-    DeliveryLedger = None  # type: ignore
-    DeliveryStatus = None  # type: ignore
-    get_delivery_ledger = None  # type: ignore
-    DeliveryRetryQueue = None  # type: ignore
-    get_delivery_retry_queue = None  # type: ignore
+    DeliveryLedger = None  # type: ignore[assignment]
+    DeliveryStatus = None  # type: ignore[assignment]
+    get_delivery_ledger = None  # type: ignore[assignment]
+    DeliveryRetryQueue = None  # type: ignore[assignment]
+    get_delivery_retry_queue = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +86,8 @@ try:
     CIRCUIT_BREAKER_AVAILABLE = True
 except ImportError:
     CIRCUIT_BREAKER_AVAILABLE = False
-    CircuitBreakerRegistry = None  # type: ignore
-    CircuitState = None  # type: ignore
+    CircuitBreakerRegistry = None  # type: ignore[assignment]
+    CircuitState = None  # type: ignore[assignment]
 
     def get_adaptive_timeout(operation_type: str, host: str, default: float) -> float:
         """Fallback when circuit_breaker not available."""
@@ -99,7 +99,7 @@ try:
     SSH_CONFIG_AVAILABLE = True
 except ImportError:
     SSH_CONFIG_AVAILABLE = False
-    build_ssh_options = None  # type: ignore
+    build_ssh_options = None  # type: ignore[assignment]
 
 # Add parent to path for imports
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -1150,8 +1150,11 @@ class UnifiedDistributionDaemon(DistributionDeliveryMixin, HandlerBase):
                 try:
                     from app.utils.coordinator_governor import get_governor
                     get_governor().release(_governor_slot)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(
+                        "[S3Distribution] Failed to release governor slot: %s",
+                        exc,
+                    )
 
     async def _distribute_via_s3_inner(
         self, files: list[Path], data_type: "DataType",

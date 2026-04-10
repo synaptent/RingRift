@@ -22,7 +22,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
+
+ReplayRecord = dict[str, object]
 
 if TYPE_CHECKING:
     from app.models import GameState
@@ -52,7 +54,7 @@ class ReplayResult:
 
 
 def requires_legacy_replay(
-    game_record: dict[str, Any],
+    game_record: ReplayRecord,
     schema_version: int | None = None,
     board_type: str | None = None,
 ) -> bool:
@@ -108,7 +110,7 @@ def requires_legacy_replay(
 
 
 def replay_with_legacy_fallback(
-    game_record: dict[str, Any],
+    game_record: ReplayRecord,
     schema_version: int | None = None,
     strict: bool = False,
 ) -> ReplayResult:
@@ -226,7 +228,7 @@ def replay_with_legacy_fallback(
         )
 
 
-def _replay_with_legacy_engine(game_record: dict[str, Any]) -> GameState:
+def _replay_with_legacy_engine(game_record: ReplayRecord) -> GameState:
     """Internal helper to replay using the legacy GameEngine.
 
     This is a minimal implementation for games that cannot be replayed
@@ -345,7 +347,7 @@ class LegacyReplayMetrics:
         with self._lock:
             self.failed_replays += 1
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, object]:
         """Export metrics as dictionary."""
         with self._lock:
             total = self.canonical_replays + self.legacy_replays
@@ -377,7 +379,7 @@ class LegacyReplayMetrics:
 _replay_metrics = LegacyReplayMetrics()
 
 
-def get_legacy_replay_stats() -> dict[str, Any]:
+def get_legacy_replay_stats() -> dict[str, object]:
     """Get statistics about legacy replay usage.
 
     Returns:

@@ -57,9 +57,9 @@ try:
 except ImportError:
     HAS_P2P_BACKEND = False
     HAS_AIOHTTP = False
-    P2PBackend = None  # type: ignore
-    discover_p2p_leader_url = None  # type: ignore
-    get_p2p_backend = None  # type: ignore
+    P2PBackend = None  # type: ignore[assignment]
+    discover_p2p_leader_url = None  # type: ignore[assignment]
+    get_p2p_backend = None  # type: ignore[assignment]
 
 # Dec 2025: Use centralized P2P port config
 try:
@@ -73,7 +73,7 @@ try:
     import aiohttp
     HAS_AIOHTTP = True
 except ImportError:
-    aiohttp = None  # type: ignore
+    aiohttp = None  # type: ignore[assignment]
 
 
 def _get_default_p2p_port() -> int:
