@@ -602,6 +602,53 @@ def build_encoder(
 # Value computation and encoding functions are now imported from app.training.export_core
 
 
+HUMAN_SANDBOX_TRAINING_READY_PARITY_STATUSES = {"passed", "canonical_history_ok"}
+
+
+def _metadata_dict_from_game_meta(meta: dict) -> dict:
+    metadata_json_raw = meta.get("metadata_json")
+    if not metadata_json_raw:
+        return {}
+    try:
+        parsed = json.loads(metadata_json_raw) if isinstance(metadata_json_raw, str) else metadata_json_raw
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _categorize_game_source(source_raw: str) -> str:
+    source = source_raw.lower()
+    if "gauntlet" in source:
+        return "gauntlet"
+    if "tournament" in source:
+        return "tournament"
+    if "human" in source:
+        return "human"
+    if "sandbox" in source:
+        return "sandbox"
+    return "selfplay"
+
+
+def _is_human_or_sandbox_source(source_raw: str, game_source: str) -> bool:
+    source = source_raw.lower()
+    return game_source in {"human", "sandbox"} or "human" in source or "sandbox" in source
+
+
+def _human_or_sandbox_game_is_training_ready(meta: dict, metadata_dict: dict) -> bool:
+    source_raw = str(meta.get("source") or metadata_dict.get("source") or "").lower()
+    game_source = _categorize_game_source(source_raw)
+    if not _is_human_or_sandbox_source(source_raw, game_source):
+        return True
+    if "quarantine" in source_raw:
+        return False
+    parity_status = str(
+        meta.get("parity_status")
+        or metadata_dict.get("parity_status")
+        or ""
+    ).lower()
+    return parity_status in HUMAN_SANDBOX_TRAINING_READY_PARITY_STATUSES
+
+
 def export_replay_dataset_multi(
     db_paths: list[str],
     board_type: BoardType,
@@ -877,18 +924,15 @@ def export_replay_dataset_multi(
 
             # Source filtering (December 2025 - Phase 5 Unified NN/NNUE training)
             # Filter games by source type (selfplay, gauntlet, tournament, etc.)
-            if include_sources is not None or exclude_sources is not None:
-                source_raw = str(meta.get("source", "") or "").lower()
-                # Categorize source
-                if "gauntlet" in source_raw:
-                    game_source = "gauntlet"
-                elif "tournament" in source_raw:
-                    game_source = "tournament"
-                elif "human" in source_raw:
-                    game_source = "human"
-                else:
-                    game_source = "selfplay"  # Default category
+            metadata_dict = _metadata_dict_from_game_meta(meta)
+            source_raw = str(meta.get("source") or metadata_dict.get("source") or "").lower()
+            game_source = _categorize_game_source(source_raw)
 
+            if not _human_or_sandbox_game_is_training_ready(meta, metadata_dict):
+                games_skipped += 1
+                continue
+
+            if include_sources is not None or exclude_sources is not None:
                 # Apply inclusion filter
                 if include_sources is not None and "all" not in include_sources:
                     if game_source not in include_sources:
@@ -973,13 +1017,11 @@ def export_replay_dataset_multi(
             # Games from stronger models provide higher quality training data.
             # Try metadata_json first (new games), then legacy model_elo field
             game_generator_elo: float = 1500.0  # Default to baseline Elo
-            metadata_json_raw = meta.get("metadata_json")
-            if metadata_json_raw:
+            if metadata_dict:
                 try:
-                    metadata_dict = json.loads(metadata_json_raw) if isinstance(metadata_json_raw, str) else metadata_json_raw
                     if metadata_dict.get("model_elo") is not None:
                         game_generator_elo = float(metadata_dict.get("model_elo"))
-                except (json.JSONDecodeError, TypeError, AttributeError, ValueError):
+                except (TypeError, AttributeError, ValueError):
                     pass
             if game_generator_elo == 1500.0 and meta.get("model_elo") is not None:
                 try:

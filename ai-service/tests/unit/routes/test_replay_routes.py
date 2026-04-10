@@ -733,6 +733,84 @@ class TestStoreGame:
         game_data = get_response.json()
         assert game_data["metadata"]["source"] == "sandbox"
 
+    def test_store_game_is_idempotent_by_game_id(
+        self, client, sample_game_state, sample_completed_game_state
+    ):
+        """Duplicate game IDs are accepted as idempotent submissions."""
+        moves, _ = _build_legal_move_sequence(sample_game_state, move_count=5)
+        payload = {
+            "gameId": "test-idempotent-store",
+            "initialState": sample_game_state.model_dump(mode='json', by_alias=True),
+            "finalState": sample_completed_game_state.model_dump(mode='json', by_alias=True),
+            "moves": _moves_payload(moves),
+            "metadata": {"source": "sandbox", "termination_reason": "ring_elimination"},
+        }
+
+        first = client.post("/api/replay/games", json=payload)
+        second = client.post("/api/replay/games", json=payload)
+
+        assert first.status_code == 200
+        assert second.status_code == 200
+        second_data = second.json()
+        assert second_data["success"] is True
+        assert second_data["deduplicated"] is True
+        assert second_data["gameId"] == "test-idempotent-store"
+
+    def test_non_replayable_human_sandbox_game_is_quarantined(
+        self, client, sample_game_state, sample_completed_game_state
+    ):
+        """Human/sandbox games are recorded but excluded if Python replay rejects them."""
+        legal_first_move = GameEngine.get_valid_moves(
+            sample_game_state,
+            sample_game_state.current_player,
+        )[0].model_copy(
+            update={
+                "id": "m1",
+                "move_number": 1,
+                "timestamp": datetime.now(),
+            }
+        )
+        invalid_skip = Move(
+            id="bad-skip",
+            type=MoveType.SKIP_PLACEMENT,
+            player=sample_game_state.current_player,
+            to=Position(x=0, y=0),
+            timestamp=datetime.now(),
+        )
+        moves = [
+            legal_first_move,
+            *[
+                invalid_skip.model_copy(update={"id": f"bad-skip-{idx}", "move_number": idx})
+                for idx in range(2, 6)
+            ],
+        ]
+        payload = {
+            "gameId": "test-quarantined-human-sandbox",
+            "initialState": sample_game_state.model_dump(mode='json', by_alias=True),
+            "finalState": sample_completed_game_state.model_dump(mode='json', by_alias=True),
+            "moves": _moves_payload(moves),
+            "metadata": {
+                "source": "sandbox",
+                "playerTypes": ["human", "ai"],
+                "termination_reason": "ring_elimination",
+            },
+        }
+
+        response = client.post("/api/replay/games", json=payload)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["acceptedForTraining"] is False
+        assert data["parityStatus"] == "non_canonical_history"
+
+        get_response = client.get("/api/replay/games/test-quarantined-human-sandbox")
+        assert get_response.status_code == 200
+        game_data = get_response.json()
+        assert game_data["source"] == "human_vs_ai_quarantine"
+        assert game_data["metadata"]["excluded_from_training"] is True
+        assert "replay_validation_error" in game_data["metadata"]
+
 
 class TestErrorHandling:
     """Tests for error handling and edge cases."""

@@ -11,6 +11,8 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from scripts.export_replay_dataset import (
+    _categorize_game_source,
+    _human_or_sandbox_game_is_training_ready,
     value_from_final_ranking,
     value_from_final_winner,
 )
@@ -49,6 +51,32 @@ class TestValueFromFinalWinner:
         """No winner (draw/incomplete) should get 0."""
         state = MockGameState(winner=None)
         assert value_from_final_winner(state, perspective=1) == 0.0
+
+
+class TestHumanSandboxTrainingGate:
+    """Tests for human/sandbox replay export gating."""
+
+    def test_sandbox_source_is_not_categorized_as_selfplay(self):
+        assert _categorize_game_source("sandbox") == "sandbox"
+        assert _categorize_game_source("human_vs_ai_quarantine") == "human"
+
+    def test_quarantined_human_game_is_not_training_ready(self):
+        meta = {
+            "source": "human_vs_ai_quarantine",
+            "parity_status": "non_canonical_history",
+        }
+        assert _human_or_sandbox_game_is_training_ready(meta, {}) is False
+
+    def test_validated_human_game_is_training_ready(self):
+        meta = {
+            "source": "human_vs_ai",
+            "parity_status": "canonical_history_ok",
+        }
+        assert _human_or_sandbox_game_is_training_ready(meta, {}) is True
+
+    def test_selfplay_game_is_training_ready_without_human_gate(self):
+        meta = {"source": "selfplay", "parity_status": "pending"}
+        assert _human_or_sandbox_game_is_training_ready(meta, {}) is True
 
 
 class TestValueFromFinalRanking:

@@ -194,16 +194,13 @@ class GameSyncServiceImpl {
       try {
         // Convert LocalGameRecord to StoreGameRequest for ReplayService
         const result = await replayService.storeGame({
+          gameId: game.metadata.gameId ?? game.finalState.id ?? game.id,
           initialState: game.initialState,
           finalState: game.finalState,
           moves: game.moves as Record<string, unknown>[],
           metadata: {
-            source: game.metadata.source,
-            boardType: game.metadata.boardType,
-            numPlayers: game.metadata.numPlayers,
-            playerTypes: game.metadata.playerTypes,
-            victoryReason: game.metadata.victoryReason,
-            winnerPlayerNumber: game.metadata.winnerPlayerNumber,
+            ...game.metadata,
+            gameId: game.metadata.gameId ?? game.finalState.id ?? game.id,
           },
         });
 

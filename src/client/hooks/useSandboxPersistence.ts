@@ -164,11 +164,21 @@ export function useSandboxPersistence(options: SandboxPersistenceOptions): Sandb
         return;
       }
 
+      const hasHuman = playerTypes.slice(0, numPlayers).includes('human');
+      const hasAI = playerTypes.slice(0, numPlayers).includes('ai');
       const metadata = {
-        source: 'sandbox',
+        source: hasHuman && hasAI ? 'human_vs_ai' : 'sandbox',
+        submissionIntent: 'autosave',
+        gameId: finalState.id,
         boardType: finalState.board.type,
         numPlayers: finalState.players.length,
         playerTypes: playerTypes.slice(0, numPlayers),
+        players: finalState.players.map((player) => ({
+          playerNumber: player.playerNumber,
+          playerType: player.type,
+          aiType: player.aiProfile?.aiType,
+          aiDifficulty: player.aiProfile?.difficulty ?? player.aiDifficulty,
+        })),
         victoryReason: victoryResult.reason,
         winnerPlayerNumber: victoryResult.winner,
       };
@@ -177,6 +187,7 @@ export function useSandboxPersistence(options: SandboxPersistenceOptions): Sandb
         setGameSaveStatus('saving');
         const replayService = getReplayService();
         const result = await replayService.storeGame({
+          gameId: finalState.id,
           initialState,
           finalState,
           moves: finalState.moveHistory as unknown as Record<string, unknown>[],

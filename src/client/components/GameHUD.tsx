@@ -823,14 +823,14 @@ function getAIDifficultyInfo(difficulty: number): {
   }
   if (difficulty === 9) {
     return {
-      label: 'Master · Gumbel MCTS',
+      label: 'D9 · Gumbel MCTS',
       color: 'text-red-300',
       bgColor: 'bg-red-900/40',
     };
   }
   // 10
   return {
-    label: 'Grandmaster · Gumbel MCTS',
+    label: 'D10 · Gumbel MCTS',
     color: 'text-red-400',
     bgColor: 'bg-red-900/50',
   };

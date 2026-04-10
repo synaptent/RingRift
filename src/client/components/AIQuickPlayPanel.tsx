@@ -46,7 +46,7 @@ function DifficultyCard({
       <div className={`font-semibold ${colors.text}`}>{option.displayName}</div>
       <div className="text-xs text-slate-400 mt-1">D{option.difficulty}</div>
       <div className="text-xs text-slate-300 mt-2">{option.description}</div>
-      <div className="text-[10px] text-slate-500 mt-1">~{option.estimatedElo} Elo</div>
+      <div className="text-[10px] text-slate-500 mt-1">Training estimate, not human Elo</div>
     </button>
   );
 }
@@ -135,7 +135,8 @@ export function AIQuickPlayPanel({ onStartGame, isLoading }: AIQuickPlayPanelPro
 
       {/* Helper text */}
       <p className="mt-4 text-xs text-slate-500 text-center">
-        AI games are unrated. Elo estimates are approximate based on AI training data.
+        AI games are unrated. Difficulty tiers are model-training estimates, not calibrated human
+        Elo.
       </p>
     </div>
   );

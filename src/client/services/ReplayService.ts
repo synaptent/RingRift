@@ -23,8 +23,6 @@ import type {
   ReplayStatsResponse,
   StoreGameRequest,
   StoreGameResponse,
-  TrainingSubmissionRequest,
-  TrainingSubmissionResponse,
 } from '../types/replay';
 import type { GameHistoryResponse, GameHistoryMove, GameDetailsResponse } from './api';
 import type {
@@ -262,49 +260,6 @@ export class ReplayService {
     }
 
     return response.json();
-  }
-
-  /**
-   * Submit a completed sandbox game for AI training (January 2026).
-   *
-   * Used when a human wins against an AI to update the shadow model.
-   * The shadow model is periodically validated and merged into the canonical model.
-   *
-   * @param request - Training data with moves, winner, and game metadata
-   * @returns Training submission result with optional loss metrics
-   */
-  async submitForTraining(request: TrainingSubmissionRequest): Promise<TrainingSubmissionResponse> {
-    if (!this.baseUrl) {
-      return { success: false, message: 'ReplayService is not configured' };
-    }
-
-    // Use the online learning endpoint (different from /api/replay/)
-    const baseOrigin = this.baseUrl.replace('/api/replay', '');
-    const url = `${baseOrigin}/api/online-learning/learn_from_game`;
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(request),
-        signal: AbortSignal.timeout(30000), // 30s timeout for training
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => 'Unknown error');
-        return {
-          success: false,
-          message: `Training submission failed: ${response.status} ${errorText}`,
-        };
-      }
-
-      return response.json();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      return { success: false, message: `Training submission error: ${message}` };
-    }
   }
 
   /**

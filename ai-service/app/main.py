@@ -1238,24 +1238,22 @@ async def get_ai_move(request: MoveRequest):
         use_gpu_tree = ai_type == AIType.GUMBEL_MCTS
 
         # Map think_time_ms to Gumbel simulation budget and eval mode.
-        # Lower difficulties use "hybrid" mode (heuristic rollouts + NN rerank)
-        # for fast responses. Higher difficulties use "nn" mode for full neural
-        # MCTS search — slower but much stronger play.
+        # D10 uses full neural leaf evaluation by default; lower tiers keep
+        # hybrid rollouts for latency. The env var is a production rollback knob.
         gumbel_budget: int | None = None
-        eval_mode = "hybrid"
+        eval_mode_override = os.getenv("RINGRIFT_GUMBEL_TREE_EVAL_MODE", "").strip().lower()
+        eval_mode = eval_mode_override or "hybrid"
         if ai_type == AIType.GUMBEL_MCTS:
             if think_time_ms <= 5000:
                 gumbel_budget = 64
-                eval_mode = "hybrid"
             elif think_time_ms <= 10000:
                 gumbel_budget = 128
-                eval_mode = "hybrid"
             elif think_time_ms <= 20000:
-                gumbel_budget = 128
-                eval_mode = "nn"  # Full neural search
-            else:
                 gumbel_budget = 200
-                eval_mode = "nn"  # Full neural search
+            else:
+                gumbel_budget = 400
+            if not eval_mode_override and request.difficulty >= 10:
+                eval_mode = "nn"
 
         config = AIConfig(
             difficulty=request.difficulty,

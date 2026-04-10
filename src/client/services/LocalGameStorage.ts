@@ -23,6 +23,9 @@ export interface LocalGameRecord {
     playerTypes: string[];
     victoryReason?: string;
     winnerPlayerNumber?: number | null;
+    gameId?: string;
+    submittedForTraining?: boolean;
+    [key: string]: unknown;
   };
   createdAt: string;
   synced: boolean;

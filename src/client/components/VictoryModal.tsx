@@ -609,7 +609,9 @@ function TrainingSubmissionSection({
           <span className="text-lg">&#10003;</span>
           <span className="font-medium">Thanks for contributing!</span>
         </div>
-        <p className="text-sm text-green-300/80 mt-1">Your game is helping train the AI. Thanks!</p>
+        <p className="text-sm text-green-300/80 mt-1">
+          Your game was recorded and will be used after replay validation.
+        </p>
       </div>
     );
   }
@@ -639,7 +641,7 @@ function TrainingSubmissionSection({
   return (
     <div className="bg-blue-900/20 border border-blue-600/30 rounded-lg px-4 py-3 text-center">
       <p className="text-sm text-blue-200/80 mb-2">
-        Your win can help improve the AI. Submit this game for training?
+        Your win can help improve the AI. Submit this game for training review?
       </p>
       <button
         type="button"
@@ -657,7 +659,7 @@ function TrainingSubmissionSection({
             Submitting...
           </span>
         ) : (
-          'Submit for Training'
+          'Submit for Training Review'
         )}
       </button>
     </div>

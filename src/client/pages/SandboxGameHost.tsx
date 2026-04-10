@@ -27,7 +27,6 @@ import { toast } from 'react-hot-toast';
 import { ChoiceDialog } from '../components/ChoiceDialog';
 import { VictoryModal, type TrainingSubmissionState } from '../components/VictoryModal';
 import { getReplayService } from '../services/ReplayService';
-import type { TrainingMoveRecord } from '../types/replay';
 import { BoardControlsOverlay } from '../components/BoardControlsOverlay';
 import { ScenarioPickerModal } from '../components/ScenarioPickerModal';
 import { SelfPlayBrowser } from '../components/SelfPlayBrowser';
@@ -104,6 +103,7 @@ import { useSandboxGameLifecycle } from '../hooks/useSandboxGameLifecycle';
 import { useGlobalGameShortcuts } from '../hooks/useKeyboardNavigation';
 import { useSoundOptional } from '../contexts/SoundContext';
 import { AIServiceStatusBanner } from '../components/AIServiceStatusBanner';
+import { getSandboxAiDiagnostics } from '../sandbox/sandboxAiDiagnostics';
 
 const PHASE_COPY: Record<
   string,
@@ -690,7 +690,7 @@ export const SandboxGameHost: React.FC = () => {
     gameSaveStatus,
     pendingLocalGames,
     syncState,
-    initialGameStateRef: _initialGameStateRef,
+    initialGameStateRef,
     gameSavedRef: _gameSavedRef,
     cloneInitialGameState: _cloneInitialGameState,
   } = useSandboxPersistence({
@@ -1052,25 +1052,38 @@ export const SandboxGameHost: React.FC = () => {
     try {
       const replayService = getReplayService();
 
-      // Convert moves to training format
-      const trainingMoves: TrainingMoveRecord[] = sandboxGameState.moveHistory.map((move) => ({
-        type: move.type,
-        player: move.player,
-        from: move.from ? { x: move.from.x, y: move.from.y } : undefined,
-        to: move.to ? { x: move.to.x, y: move.to.y } : undefined,
-        captureTarget: move.captureTarget
-          ? { x: move.captureTarget.x, y: move.captureTarget.y }
-          : undefined,
-      }));
+      const aiDiagnostics = getSandboxAiDiagnostics()[aiPlayer.playerNumber];
+      const initialState = initialGameStateRef.current;
+      if (!initialState) {
+        throw new Error('Cannot submit game: initial state snapshot is unavailable');
+      }
 
-      const result = await replayService.submitForTraining({
-        board_type: sandboxGameState.boardType,
-        num_players: players.length,
-        moves: trainingMoves,
-        winner: sandboxVictoryResult.winner ?? humanPlayer.playerNumber,
-        human_player: humanPlayer.playerNumber,
-        human_won: true,
-        ai_difficulty: aiPlayer.aiDifficulty,
+      const result = await replayService.storeGame({
+        gameId: sandboxGameState.id,
+        initialState,
+        finalState: sandboxGameState,
+        moves: sandboxGameState.moveHistory as unknown as Record<string, unknown>[],
+        metadata: {
+          source: 'human_vs_ai',
+          submissionIntent: 'training_review',
+          submittedForTraining: true,
+          boardType: sandboxGameState.boardType,
+          numPlayers: players.length,
+          playerTypes: players.map((p) => p.type),
+          players: players.map((p) => ({
+            playerNumber: p.playerNumber,
+            playerType: p.type,
+            aiType: p.aiProfile?.aiType,
+            aiDifficulty: p.aiProfile?.difficulty ?? p.aiDifficulty,
+          })),
+          winnerPlayerNumber: sandboxVictoryResult.winner ?? humanPlayer.playerNumber,
+          humanPlayerNumber: humanPlayer.playerNumber,
+          humanWon: true,
+          opponent_type: aiDiagnostics?.aiType ?? aiPlayer.aiProfile?.aiType ?? 'unknown',
+          opponent_model_id: aiDiagnostics?.nnModelId ?? aiDiagnostics?.nnCheckpoint ?? null,
+          engine_mode: aiDiagnostics?.aiType ?? aiPlayer.aiProfile?.aiType ?? 'human_vs_ai',
+          aiDiagnostics,
+        },
       });
 
       if (result.success) {
@@ -1080,7 +1093,11 @@ export const SandboxGameHost: React.FC = () => {
           wasSubmitted: true,
           error: null,
         }));
-        toast.success('Game submitted for AI training!');
+        toast.success(
+          result.acceptedForTraining
+            ? 'Game recorded for training export.'
+            : 'Game recorded for training review.'
+        );
       } else {
         setTrainingSubmissionState((prev) => ({
           ...prev,
@@ -1096,7 +1113,7 @@ export const SandboxGameHost: React.FC = () => {
         error: message,
       }));
     }
-  }, [sandboxGameState, sandboxVictoryResult]);
+  }, [initialGameStateRef, sandboxGameState, sandboxVictoryResult]);
 
   // Get historical state when viewing history (for fixture/scenario playback)
   const historyState: GameState | null =

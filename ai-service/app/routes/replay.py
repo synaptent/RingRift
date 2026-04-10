@@ -535,6 +535,112 @@ class StoreGameResponse(BaseModel):
     gameId: str
     totalMoves: int
     success: bool
+    message: str | None = None
+    acceptedForTraining: bool = False
+    parityStatus: str | None = None
+    deduplicated: bool = False
+
+
+def _metadata_player_types(metadata: dict[str, Any]) -> list[str]:
+    """Extract player types from explicit client metadata."""
+    raw_types = metadata.get("playerTypes")
+    if isinstance(raw_types, list):
+        return [str(t).lower() for t in raw_types if t is not None]
+
+    players_info = metadata.get("players", [])
+    if isinstance(players_info, list) and players_info:
+        player_types: list[str] = []
+        for player in players_info:
+            if not isinstance(player, dict):
+                continue
+            player_type = player.get("playerType") or player.get("type")
+            if player_type is not None:
+                player_types.append(str(player_type).lower())
+        if player_types:
+            return player_types
+
+    return []
+
+
+def _normalize_store_metadata(metadata: dict[str, Any], final_state: Any) -> dict[str, Any]:
+    """Normalize submission metadata so training gates can reason about provenance."""
+    normalized = dict(metadata)
+    player_types = _metadata_player_types(normalized)
+    if player_types:
+        normalized.setdefault("playerTypes", player_types)
+
+    has_human = "human" in player_types
+    has_ai = "ai" in player_types
+    existing_source = str(normalized.get("source") or "").lower()
+
+    if has_human and has_ai:
+        if existing_source in ("", "sandbox"):
+            normalized["source"] = "human_vs_ai"
+        normalized.setdefault("engine_mode", "human_vs_ai")
+    elif has_human and existing_source == "":
+        normalized["source"] = "human"
+        normalized.setdefault("engine_mode", "human")
+    else:
+        normalized.setdefault("source", "sandbox")
+
+    for player in getattr(final_state, "players", []) or []:
+        player_number = getattr(player, "player_number", None)
+        if player_number is None:
+            continue
+        if getattr(player, "type", None) == "ai":
+            profile = getattr(player, "ai_profile", None)
+            ai_type = getattr(profile, "ai_type", None) if profile is not None else None
+            if hasattr(ai_type, "value"):
+                ai_type = ai_type.value
+            if ai_type:
+                normalized.setdefault(f"player_{player_number}_ai_type", str(ai_type))
+
+    return normalized
+
+
+def _is_human_or_sandbox_source(source: str) -> bool:
+    source = source.lower()
+    return "human" in source or "sandbox" in source
+
+
+def _validate_replay_sequence(initial_state: Any, moves: list[Any]) -> tuple[bool, str | None]:
+    """Validate that a submitted game can be replayed by the Python canonical engine."""
+    from app.game_engine import GameEngine
+    from app.rules.history_contract import validate_canonical_move
+
+    state = initial_state
+    for move_index, move in enumerate(moves):
+        current_phase = getattr(state, "current_phase", None)
+        phase_str = current_phase.value if hasattr(current_phase, "value") else str(current_phase)
+        move_type = getattr(move, "type", None)
+        if hasattr(move_type, "value"):
+            move_type = move_type.value
+        canonical_check = validate_canonical_move(phase_str, str(move_type))
+        if not canonical_check.ok:
+            player = getattr(move, "player", None)
+            return (
+                False,
+                (
+                    f"move {move_index}: phase={phase_str} type={move_type} "
+                    f"player={player}: {canonical_check.reason}"
+                ),
+            )
+        try:
+            state = GameEngine.apply_move(state, move, trace_mode=True)
+        except Exception as exc:
+            player = getattr(move, "player", None)
+            return (
+                False,
+                f"move {move_index}: type={move_type} player={player}: {exc}",
+            )
+    return True, None
+
+
+def _accepted_for_training(source: str | None, parity_status: str | None) -> bool:
+    source_value = str(source or "").lower()
+    if not _is_human_or_sandbox_source(source_value):
+        return True
+    return str(parity_status or "").lower() in {"passed", "canonical_history_ok"}
 
 
 @router.post("/games", response_model=StoreGameResponse)
@@ -551,6 +657,19 @@ async def store_game(request: StoreGameRequest):
         db = get_replay_db()
 
         game_id = request.gameId or str(uuid.uuid4())
+        existing = await asyncio.to_thread(db.get_game_metadata, game_id)
+        if existing is not None:
+            source_type = existing.get("source")
+            parity_status = existing.get("parity_status")
+            return StoreGameResponse(
+                gameId=game_id,
+                totalMoves=int(existing.get("total_moves") or 0),
+                success=True,
+                message="Game was already recorded; duplicate submission ignored.",
+                acceptedForTraining=_accepted_for_training(source_type, parity_status),
+                parityStatus=parity_status,
+                deduplicated=True,
+            )
 
         # Parse states. For recording we treat the provided initial state as
         # the start of the stored sequence and rely on the moves list for the
@@ -564,22 +683,8 @@ async def store_game(request: StoreGameRequest):
         # Parse moves
         moves = [Move.model_validate(m) for m in request.moves]
 
-        # Prepare metadata
-        metadata = request.metadata or {}
-
-        # Detect human players from player metadata (Jan 2026: for training data)
-        players_info = metadata.get("players", [])
-        has_human = any(
-            p.get("playerType") == "human" or p.get("type") == "human"
-            for p in players_info
-        )
-
-        # Set appropriate source and engine_mode based on player types
-        if has_human:
-            metadata.setdefault("source", "human")
-            metadata.setdefault("engine_mode", "human")
-        else:
-            metadata.setdefault("source", "sandbox")
+        # Prepare metadata and classify human/sandbox provenance before validation.
+        metadata = _normalize_store_metadata(request.metadata or {}, final_state)
 
         # Infer a canonical termination reason for completed games when callers
         # omit it. This keeps sandbox callers lightweight while still satisfying
@@ -605,6 +710,35 @@ async def store_game(request: StoreGameRequest):
             logger.warning(f"Game {game_id} rejected by quality gate: {error}")
             raise HTTPException(status_code=400, detail=f"Invalid game data: {error}")
 
+        replay_ok, replay_error = _validate_replay_sequence(initial_state, moves)
+        source_type = str(metadata.get("source", "sandbox"))
+        is_human_or_sandbox = _is_human_or_sandbox_source(source_type)
+
+        store_history_entries = True
+        snapshot_interval = 20
+        if replay_ok:
+            metadata.setdefault(
+                "parity_status",
+                "canonical_history_ok" if is_human_or_sandbox else "pending",
+            )
+            metadata.pop("replay_validation_error", None)
+        elif is_human_or_sandbox:
+            if "quarantine" not in source_type.lower():
+                metadata["source"] = f"{source_type}_quarantine"
+            metadata["parity_status"] = "non_canonical_history"
+            metadata["excluded_from_training"] = True
+            metadata["replay_validation_error"] = replay_error
+            store_history_entries = False
+            snapshot_interval = 0
+            logger.warning(
+                "Recording non-training replay %s with non-canonical history: %s",
+                game_id,
+                replay_error,
+            )
+        else:
+            logger.warning(f"Game {game_id} rejected by replay validation: {replay_error}")
+            raise HTTPException(status_code=400, detail=f"Non-replayable game data: {replay_error}")
+
         # Store the game - wrap blocking SQLite call
         await asyncio.to_thread(
             db.store_game,
@@ -614,15 +748,25 @@ async def store_game(request: StoreGameRequest):
             moves=moves,
             choices=request.choices,
             metadata=metadata,
+            store_history_entries=store_history_entries,
+            snapshot_interval=snapshot_interval,
         )
 
         source_type = metadata.get("source", "sandbox")
         logger.info(f"Stored game {game_id} with {len(moves)} moves (source={source_type})")
+        parity_status = metadata.get("parity_status")
 
         return StoreGameResponse(
             gameId=game_id,
             totalMoves=len(moves),
             success=True,
+            message=(
+                "Game recorded for training review."
+                if metadata.get("excluded_from_training")
+                else "Game recorded and accepted for training export."
+            ),
+            acceptedForTraining=_accepted_for_training(str(source_type), str(parity_status)),
+            parityStatus=str(parity_status) if parity_status is not None else None,
         )
 
     except HTTPException:

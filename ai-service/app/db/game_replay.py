@@ -1943,19 +1943,7 @@ class GameReplayDB:
                 # auto-apply forced eliminations during turn rotation, causing state divergence.
                 state_after = None
                 if need_state_tracking:
-                    try:
-                        state_after = GameEngine.apply_move(prev_state, move, trace_mode=True)
-                    except RuntimeError as e:
-                        if "Phase/move invariant" in str(e):
-                            # Sandbox games may have phase mismatches (e.g., skip_placement
-                            # recorded during movement phase). Skip state tracking for this
-                            # move but continue storing the game.
-                            logger.warning(
-                                "Phase/move invariant in replay storage (non-fatal): %s", e
-                            )
-                            state_after = prev_state  # carry forward previous state
-                        else:
-                            raise
+                    state_after = GameEngine.apply_move(prev_state, move, trace_mode=True)
 
                 # Store history entry with before/after states (v4 feature)
                 if store_history_entries and state_after is not None:
@@ -4011,6 +3999,9 @@ class GameReplayDB:
             engine_mode = metadata.get("engine_mode")
             opponent_type = metadata.get("opponent_type")
             opponent_model_id = metadata.get("opponent_model_id")
+            parity_status = metadata.get("parity_status", "pending")
+            parity_checked_at = metadata.get("parity_checked_at")
+            parity_divergence_move = metadata.get("parity_divergence_move")
             conn.execute(
                 """
                 UPDATE games SET
@@ -4027,7 +4018,10 @@ class GameReplayDB:
                     quality_category = ?,
                     engine_mode = ?,
                     opponent_type = ?,
-                    opponent_model_id = ?
+                    opponent_model_id = ?,
+                    parity_status = ?,
+                    parity_checked_at = ?,
+                    parity_divergence_move = ?
                 WHERE game_id = ?
                 """,
                 (
@@ -4045,6 +4039,9 @@ class GameReplayDB:
                     engine_mode,
                     opponent_type,
                     opponent_model_id,
+                    parity_status,
+                    parity_checked_at,
+                    parity_divergence_move,
                     game_id,
                 ),
             )
@@ -4053,6 +4050,9 @@ class GameReplayDB:
             engine_mode = metadata.get("engine_mode")
             opponent_type = metadata.get("opponent_type")
             opponent_model_id = metadata.get("opponent_model_id")
+            parity_status = metadata.get("parity_status", "pending")
+            parity_checked_at = metadata.get("parity_checked_at")
+            parity_divergence_move = metadata.get("parity_divergence_move")
             conn.execute(
                 """
                 INSERT INTO games
@@ -4060,8 +4060,9 @@ class GameReplayDB:
                  game_status, winner, termination_reason, total_moves, total_turns,
                  duration_ms, source, schema_version, metadata_json,
                  quality_score, quality_category, engine_mode,
-                 opponent_type, opponent_model_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 opponent_type, opponent_model_id, parity_status,
+                 parity_checked_at, parity_divergence_move)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     game_id,
@@ -4084,6 +4085,9 @@ class GameReplayDB:
                     engine_mode,
                     opponent_type,
                     opponent_model_id,
+                    parity_status,
+                    parity_checked_at,
+                    parity_divergence_move,
                 ),
             )
 

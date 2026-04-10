@@ -161,6 +161,12 @@ export interface StoreGameResponse {
   success: boolean;
   /** Error message when success is false */
   message?: string;
+  /** Whether the server accepted this game for direct training export. */
+  acceptedForTraining?: boolean;
+  /** Replay/parity status assigned by the server. */
+  parityStatus?: string | null;
+  /** True when the server ignored a duplicate idempotent submission. */
+  deduplicated?: boolean;
 }
 
 // =============================================================================

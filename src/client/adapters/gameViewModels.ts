@@ -644,9 +644,9 @@ function getAIDifficultyInfo(difficulty: number): {
     return { label: 'Expert · MCTS', color: 'text-purple-300', bgColor: 'bg-purple-900/40' };
   }
   if (difficulty === 9) {
-    return { label: 'Master · Gumbel MCTS', color: 'text-red-300', bgColor: 'bg-red-900/40' };
+    return { label: 'D9 · Gumbel MCTS', color: 'text-red-300', bgColor: 'bg-red-900/40' };
   }
-  return { label: 'Grandmaster · Gumbel MCTS', color: 'text-red-400', bgColor: 'bg-red-900/50' };
+  return { label: 'D10 · Gumbel MCTS', color: 'text-red-400', bgColor: 'bg-red-900/50' };
 }
 
 function getAITypeLabel(aiType?: string): string {

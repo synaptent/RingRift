@@ -10,7 +10,7 @@ export interface AIQuickPlayOption {
   difficulty: number; // 1-10 ladder level
   displayName: string;
   description: string;
-  estimatedElo: number; // Human-scale Elo estimate
+  estimatedElo: number; // Legacy model-training estimate; do not present as human Elo.
 }
 
 /**
