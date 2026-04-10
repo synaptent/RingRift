@@ -1236,6 +1236,22 @@ async def get_ai_move(request: MoveRequest):
 
         # Enable GPU tree acceleration for Gumbel MCTS (177x speedup)
         use_gpu_tree = ai_type == AIType.GUMBEL_MCTS
+
+        # Map think_time_ms to Gumbel simulation budget so the search depth
+        # scales with the allowed thinking time.  Without this, GumbelMCTSAI
+        # falls back to its default budget (100) regardless of the ladder
+        # config's think_time_ms.
+        gumbel_budget: int | None = None
+        if ai_type == AIType.GUMBEL_MCTS:
+            if think_time_ms <= 5000:
+                gumbel_budget = 64
+            elif think_time_ms <= 10000:
+                gumbel_budget = 128
+            elif think_time_ms <= 20000:
+                gumbel_budget = 200
+            else:
+                gumbel_budget = 400
+
         config = AIConfig(
             difficulty=request.difficulty,
             randomness=randomness,
@@ -1246,6 +1262,7 @@ async def get_ai_move(request: MoveRequest):
             use_neural_net=use_neural_net,
             use_gpu_tree=use_gpu_tree,
             gpu_tree_eval_mode="hybrid",  # Balance speed and accuracy
+            **({"gumbel_simulation_budget": gumbel_budget} if gumbel_budget is not None else {}),
         )
         ai = None
         cache_key: str | None = None

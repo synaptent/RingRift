@@ -451,6 +451,17 @@ export class ClientSandboxEngine {
       const playerNumber = idx + 1;
       const kind = config.playerKinds[idx] ?? 'human';
       const aiDifficulty = this.aiDifficulties[idx];
+
+      // Map difficulty to the underlying AI tactic type so the UI can
+      // display the correct label instead of falling back to "Heuristic".
+      const aiTypeForDifficulty = (d: number) => {
+        if (d <= 1) return 'random' as const;
+        if (d <= 3) return 'heuristic' as const;
+        if (d <= 6) return 'descent' as const;
+        if (d <= 7) return 'mcts' as const;
+        return 'gumbel_mcts' as const;
+      };
+
       return {
         id: `sandbox-${playerNumber}`,
         username: `Player ${playerNumber}`,
@@ -458,7 +469,16 @@ export class ClientSandboxEngine {
         playerNumber,
         isReady: true,
         timeRemaining: 0,
-        ...(kind === 'ai' ? { aiDifficulty } : {}),
+        ...(kind === 'ai'
+          ? {
+              aiDifficulty,
+              aiProfile: {
+                difficulty: aiDifficulty,
+                mode: 'service' as const,
+                aiType: aiTypeForDifficulty(aiDifficulty),
+              },
+            }
+          : {}),
         ringsInHand: BOARD_CONFIGS[config.boardType].ringsPerPlayer,
         eliminatedRings: 0,
         territorySpaces: 0,
