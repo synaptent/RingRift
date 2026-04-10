@@ -388,12 +388,92 @@ def build_fleet_report(
     return report
 
 
+def supervisor_health_label(item: dict[str, Any]) -> str:
+    """Classify supervisor/loop process state when SSH probe data is present."""
+    supervisor_alive = item.get("supervisor_alive")
+    loop_alive = item.get("loop_alive")
+    if supervisor_alive is None and loop_alive is None:
+        return "UNKNOWN"
+    if supervisor_alive and loop_alive:
+        return "OK"
+    if supervisor_alive and loop_alive is False:
+        return "SUPERVISOR_RUNNING_LOOP_DEAD"
+    if supervisor_alive is False and loop_alive:
+        return "SUPERVISOR_DEAD_LOOP_RUNNING"
+    if supervisor_alive is False and loop_alive is False:
+        return "SUPERVISOR_AND_LOOP_DEAD"
+    return "UNKNOWN"
+
+
+def add_supervisor_health(
+    report: list[dict[str, Any]],
+    *,
+    ssh_user: str,
+    ssh_key: str,
+    ssh_timeout: int,
+) -> list[dict[str, Any]]:
+    """Enrich fleet report with supported-loop supervisor process checks."""
+    from scripts.training_status import SUPPORTED_NODES, ssh_probe_node
+
+    by_node = {str(item.get("node_id")): item for item in report}
+    by_config: dict[str, dict[str, Any]] = {}
+    for item in report:
+        config_key = str(item.get("config_key"))
+        existing = by_config.get(config_key)
+        if existing is None or float(item.get("timestamp") or 0) > float(existing.get("timestamp") or 0):
+            by_config[config_key] = item
+
+    for node in SUPPORTED_NODES:
+        target = by_node.get(node.node) or by_config.get(node.config)
+        if target is None:
+            target = {
+                "node_id": node.node,
+                "config_key": node.config,
+                "iteration": 0,
+                "estimated_elo": 0,
+                "promotions": 0,
+                "timestamp": 0,
+                "age_seconds": None,
+                "age_human": "unknown",
+                "status": "NO_HEARTBEAT",
+                "data_quality_score": None,
+            }
+            report.append(target)
+        probe = ssh_probe_node(
+            node,
+            user=ssh_user,
+            key=ssh_key,
+            timeout=ssh_timeout,
+            connect_timeout=min(ssh_timeout, 8),
+        )
+        target.update({
+            "host": node.host,
+            "work_dir": node.work_dir,
+            "ssh_ok": probe.get("ssh_ok"),
+            "ssh_error": probe.get("ssh_error"),
+            "supervisor_alive": probe.get("supervisor_alive"),
+            "loop_alive": probe.get("loop_alive"),
+            "process_alive": probe.get("process_alive"),
+            "supervisor_heartbeat_age_seconds": probe.get("supervisor_heartbeat_age_seconds"),
+            "supervisor_heartbeat_path": probe.get("supervisor_heartbeat_path"),
+            "last_error": probe.get("last_error"),
+            "model_exists": probe.get("model_exists"),
+        })
+        target["supervisor_health"] = supervisor_health_label(target)
+
+    report.sort(key=lambda r: str(r.get("node_id", "")))
+    return report
+
+
 def print_table(report: list[dict[str, Any]]) -> None:
     """Print fleet status as a formatted table."""
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     print(f"\nFLEET HEALTH CHECK - {now_str}")
-    print(f"{'Node':<16} {'Config':<14} {'Iter':>5} {'Elo':>6} {'Promos':>6} {'Last Seen':<14} Status")
-    print("-" * 85)
+    print(
+        f"{'Node':<16} {'Config':<14} {'Iter':>5} {'Elo':>6} {'Promos':>6} "
+        f"{'Last Seen':<14} {'Loop':<5} {'Sup':<5} Status"
+    )
+    print("-" * 105)
 
     counts = summarize_report(report)
     for r in report:
@@ -416,10 +496,19 @@ def print_table(report: list[dict[str, Any]]) -> None:
             f"{r['estimated_elo']:>6.0f} "
             f"{r['promotions']:>6} "
             f"{r['age_human']:<14} "
+            f"{'y' if r.get('loop_alive') else 'n' if r.get('loop_alive') is False else '?':<5} "
+            f"{'y' if r.get('supervisor_alive') else 'n' if r.get('supervisor_alive') is False else '?':<5} "
             f"{status}{marker}"
         )
+        supervisor_health = r.get("supervisor_health")
+        if supervisor_health and supervisor_health not in {"OK", "UNKNOWN"}:
+            print(f"{'':<16} supervisor_health={supervisor_health}")
+        if r.get("last_error"):
+            print(f"{'':<16} last_error: {str(r['last_error']).splitlines()[-1][:140]}")
+        if r.get("ssh_error"):
+            print(f"{'':<16} ssh_error: {str(r['ssh_error'])[:140]}")
 
-    print("-" * 85)
+    print("-" * 105)
     total = len(report)
     print(
         f"Total: {total} nodes | "
@@ -449,6 +538,14 @@ def main() -> None:
                     help="Override Slack webhook URL (otherwise uses environment/file config)")
     ap.add_argument("--slack-on-healthy", action="store_true",
                     help="Also send an informational Slack message when the fleet is fully healthy")
+    ap.add_argument("--ssh-supervisor", action="store_true",
+                    help="SSH-probe supported minimal-loop supervisors and child processes")
+    ap.add_argument("--ssh-user", default="ubuntu",
+                    help="SSH user for --ssh-supervisor")
+    ap.add_argument("--ssh-key", default="~/.ssh/id_cluster",
+                    help="SSH key for --ssh-supervisor")
+    ap.add_argument("--ssh-timeout", type=int, default=20,
+                    help="SSH probe timeout seconds for --ssh-supervisor")
     args = ap.parse_args()
 
     heartbeats = fetch_all_heartbeats(args.s3_prefix)
@@ -458,6 +555,13 @@ def main() -> None:
         dead_threshold_h=args.dead_hours,
         no_progress_h=args.no_progress_hours,
     )
+    if args.ssh_supervisor:
+        report = add_supervisor_health(
+            report,
+            ssh_user=args.ssh_user,
+            ssh_key=args.ssh_key,
+            ssh_timeout=args.ssh_timeout,
+        )
 
     if args.json:
         print(json.dumps(report, indent=2))

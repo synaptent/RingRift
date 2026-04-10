@@ -84,19 +84,30 @@ for entry in "${NODES[@]}"; do
   " 2>/dev/null
 
   echo "  Starting supervised minimal loop ($config)..."
+  remote_log="/tmp/minimal_alphazero_${config}.log"
   ssh -f -n "${SSH_OPTS[@]}" "ubuntu@${ip}" "
     cd ~/ringrift/ai-service && \
     chmod +x $SUPERVISOR && \
-    env PYTHONPATH=. setsid -f bash $SUPERVISOR --restart-delay-seconds 60 -- \
+    nohup env PYTHONPATH=. bash $SUPERVISOR --config $config --restart-delay-seconds 60 --max-restarts 10 -- \
       venv/bin/python scripts/minimal_alphazero_loop.py \
         --model models/canonical_${config}.pth \
         --work-dir $workdir \
         $loop_args \
-      </dev/null > /tmp/minimal_alphazero.log 2>&1
+      > $remote_log 2>&1 < /dev/null &
   " 2>/dev/null
 
-  sleep 3
-  ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" "pgrep -af '[m]inimal_loop_supervisor|[m]inimal_alphazero_loop.py' | head -n 4" 2>/dev/null
+  echo "  Verifying launch after 10s..."
+  sleep 10
+  ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" "
+    echo '  Processes:'
+    pgrep -af 'scripts/[m]inimal_loop_supervisor.sh.*$workdir|scripts/[m]inimal_alphazero_loop.py.*--work-dir $workdir' | head -n 6 || true
+    echo '  Log tail:'
+    tail -n 12 $remote_log 2>/dev/null || true
+    if ! pgrep -f 'scripts/[m]inimal_loop_supervisor.sh.*$workdir' >/dev/null; then
+      echo 'ERROR: supervisor not alive after launch' >&2
+      exit 1
+    fi
+  "
   echo
 done
 
