@@ -3653,10 +3653,12 @@ export class ClientSandboxEngine {
       // Track collapsed marker positions for sandbox-only visual cues. When
       // the shared helper reports explicit collapsedMarkers, prefer those;
       // otherwise fall back to the original line geometry when available.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accessing optional property from shared helper
-      const outcomeAny = outcome as any;
-      if (outcomeAny.collapsedMarkers && outcomeAny.collapsedMarkers.length > 0) {
-        for (const pos of outcomeAny.collapsedMarkers as Position[]) {
+      const collapsedMarkers =
+        'collapsedMarkers' in outcome && Array.isArray(outcome.collapsedMarkers)
+          ? (outcome.collapsedMarkers as Position[])
+          : [];
+      if (collapsedMarkers.length > 0) {
+        for (const pos of collapsedMarkers) {
           recentLineKeys.add(positionToString(pos));
         }
       } else if (line && line.positions && line.positions.length > 0) {

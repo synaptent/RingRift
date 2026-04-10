@@ -16,9 +16,19 @@
  * @see docs/rules/SSOT_BANNER_GUIDE.md
  */
 
-import type { GameState, BoardType, Player, TimeControl, MoveType } from '../../shared/types/game';
+import type {
+  GameState,
+  BoardType,
+  Player,
+  TimeControl,
+  MoveType,
+  Move,
+} from '../../shared/types/game';
 import type { LoadableScenario, ScenarioCategory } from './scenarioTypes';
-import { serializeGameState } from '../../shared/engine/contracts/serialization';
+import {
+  serializeGameState,
+  type SerializedGameState,
+} from '../../shared/engine/contracts/serialization';
 import { computeGlobalLegalActionsSummary, evaluateVictory, isANMState } from '../../shared/engine';
 import { saveCustomScenario } from './scenarioLoader';
 import { createInitialGameState } from '../../shared/engine/initialState';
@@ -215,6 +225,26 @@ export interface ScenarioValidationResult {
   scenario?: LoadableScenario;
 }
 
+type ImportedFixtureState = Partial<SerializedGameState> & {
+  board?: { type?: string };
+  currentPhase?: string;
+  moveHistory?: Move[];
+  players?: Array<{ playerNumber: number }>;
+};
+
+interface SandboxFixtureImport {
+  kind: 'ringrift_sandbox_fixture_v1';
+  state?: ImportedFixtureState;
+  boardType?: BoardType;
+  moveHistory?: Move[];
+  id?: string;
+  rngSeed?: number;
+  tags?: unknown[];
+  name?: string;
+  currentPhase?: string;
+  description?: string;
+}
+
 /**
  * Validate an imported scenario object.
  */
@@ -234,22 +264,17 @@ function validateScenario(data: unknown): ScenarioValidationResult {
   // selfPlayMeta.moves array so the sandbox host can reconstruct full history
   // snapshots by replaying the canonical move sequence from an inferred
   // initial state.
-  /* eslint-disable @typescript-eslint/no-explicit-any -- parsing untyped JSON fixtures */
   if (obj.kind === 'ringrift_sandbox_fixture_v1') {
-    const fixture = obj as any;
-    const fixtureState = fixture.state as Record<string, unknown> | undefined;
-    const serializedState = fixtureState as
-      | (ScenarioValidationResult['scenario'] extends { state: infer S } ? S : never)
-      | undefined;
+    const fixture = obj as unknown as SandboxFixtureImport;
+    const fixtureState = fixture.state;
+    const serializedState = fixtureState as LoadableScenario['state'] | undefined;
 
-    const boardType =
-      (fixture.boardType as BoardType | undefined) ||
-      ((fixtureState?.board as { type?: string } | undefined)?.type as BoardType | undefined);
+    const boardType = fixture.boardType || (fixtureState?.board?.type as BoardType | undefined);
 
     const fixtureMoves: unknown[] = Array.isArray(fixture.moveHistory)
-      ? (fixture.moveHistory as unknown[])
-      : Array.isArray((serializedState as any)?.moveHistory)
-        ? (((serializedState as any).moveHistory as unknown[]) ?? [])
+      ? fixture.moveHistory
+      : Array.isArray(fixtureState?.moveHistory)
+        ? fixtureState.moveHistory
         : [];
 
     const baseId =
@@ -258,8 +283,7 @@ function validateScenario(data: unknown): ScenarioValidationResult {
         : 'sandbox_fixture';
 
     // Build minimal player stubs for initial-state reconstruction metadata.
-    const serializedPlayers: Array<{ playerNumber: number }> =
-      (serializedState && (serializedState as any).players) || [];
+    const serializedPlayers: Array<{ playerNumber: number }> = fixtureState?.players || [];
     const playerCount = serializedPlayers.length || 2;
 
     // Use a simple rapid time control and human players; this metadata is
@@ -310,9 +334,7 @@ function validateScenario(data: unknown): ScenarioValidationResult {
         ? (fixture.name as string)
         : 'Sandbox test fixture';
 
-    const currentPhase =
-      (fixture.currentPhase as string | undefined) ||
-      ((serializedState as any)?.currentPhase as string | undefined);
+    const currentPhase = fixture.currentPhase || fixtureState?.currentPhase;
 
     const description =
       typeof fixture.description === 'string' && fixture.description.trim()
@@ -341,13 +363,12 @@ function validateScenario(data: unknown): ScenarioValidationResult {
         dbPath: 'sandbox_fixture',
         gameId: baseId,
         totalMoves: fixtureMoves.length,
-        moves: fixtureMoves as any[],
+        moves: fixtureMoves as Move[],
       },
     };
 
     return { valid: true, errors: [], scenario };
   }
-  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // Required fields
   if (!obj.id || typeof obj.id !== 'string') {

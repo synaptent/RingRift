@@ -100,6 +100,8 @@ export function metricsMiddleware(req: Request, res: Response, next: NextFunctio
   let responseSize = 0;
   const originalWrite = res.write.bind(res);
   const originalEnd = res.end.bind(res);
+  const writeWithUnknownArgs = originalWrite as (...writeArgs: unknown[]) => boolean;
+  const endWithUnknownArgs = originalEnd as (...endArgs: unknown[]) => Response;
 
   // Override write to track response size
 
@@ -112,8 +114,7 @@ export function metricsMiddleware(req: Request, res: Response, next: NextFunctio
         responseSize += Buffer.byteLength(chunk, encoding as BufferEncoding);
       }
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- apply requires any for overloaded functions
-    return originalWrite.apply(res, [chunk, ...args] as any);
+    return writeWithUnknownArgs(chunk, ...args);
   } as typeof res.write;
 
   // Override end to track final response size and record metrics
@@ -145,8 +146,7 @@ export function metricsMiddleware(req: Request, res: Response, next: NextFunctio
     );
 
     // Call original end
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- apply requires any for overloaded functions
-    return originalEnd.apply(res, [chunk, ...args] as any);
+    return endWithUnknownArgs(chunk, ...args);
   } as typeof res.end;
 
   next();

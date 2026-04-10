@@ -335,9 +335,7 @@ export const SandboxGameHost: React.FC = () => {
 
           // AI players: pick a random option without involving the UI.
           if (playerKind === 'ai') {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generic choice type narrowing
-            const options = (choice as any).options as TChoice['options'];
-            const optionsArray = (options as unknown[]) ?? [];
+            const optionsArray = choice.options as TChoice['options'];
             if (optionsArray.length === 0) {
               throw new Error('SandboxInteractionHandler: no options available for AI choice');
             }
@@ -357,9 +355,7 @@ export const SandboxGameHost: React.FC = () => {
           // choice without surfacing any blocking UI.
           // RR-FIX-2026-01-10: Exception for ring_elimination - always show UI for visual feedback
           // so human players see stack highlighting and confirmation even for single-option eliminations.
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- polymorphic choice options access
-          const rawOptions = (choice as any).options as TChoice['options'] | undefined;
-          const autoOptions = (rawOptions as unknown[]) ?? [];
+          const autoOptions = choice.options as TChoice['options'];
           if (autoOptions.length === 1 && choice.type !== 'ring_elimination') {
             const onlyOption = autoOptions[0] as TChoice['options'][number];
             return {
@@ -372,10 +368,7 @@ export const SandboxGameHost: React.FC = () => {
 
           // Human players
           if (choice.type === 'capture_direction') {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- capture_direction type narrowing
-            const anyChoice = choice as any;
-            const options = (anyChoice.options ?? []) as Array<{ landingPosition: Position }>;
-            const targets: Position[] = options.map((opt) => opt.landingPosition);
+            const targets: Position[] = choice.options.map((opt) => opt.landingPosition);
             setSandboxCaptureChoice(choice);
             setSandboxCaptureTargets(targets);
           } else {
@@ -1568,10 +1561,8 @@ export const SandboxGameHost: React.FC = () => {
         return;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accessing choice options
-      const options = (sandboxPendingChoice as any).options ?? [];
-      const eliminationTargets: Position[] = options
-        .map((opt: { stackPosition?: Position }) => opt.stackPosition)
+      const eliminationTargets: Position[] = sandboxPendingChoice.options
+        .map((opt) => opt.stackPosition)
         .filter((pos: Position | undefined): pos is Position => pos !== undefined);
 
       if (eliminationTargets.length > 0) {
@@ -1596,11 +1587,9 @@ export const SandboxGameHost: React.FC = () => {
         return;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accessing choice options
-      const options = (sandboxPendingChoice as any).options ?? [];
       const territorySpaces: Position[] = [];
 
-      for (const opt of options) {
+      for (const opt of sandboxPendingChoice.options) {
         // Each option has a representativePosition and optionally spaces array
         const spaces = opt.spaces as Position[] | undefined;
         if (spaces && spaces.length > 0) {
@@ -1710,8 +1699,7 @@ export const SandboxGameHost: React.FC = () => {
   // aligned with backend games without requiring server-side timeout warnings.
   const sandboxDecisionTimeRemainingMs = React.useMemo(() => {
     if (!activePendingChoice) return null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accessing optional timeoutMs on polymorphic PlayerChoice
-    const rawTimeout = (activePendingChoice as any).timeoutMs as number | undefined;
+    const rawTimeout = activePendingChoice.timeoutMs;
     if (typeof rawTimeout !== 'number' || Number.isNaN(rawTimeout)) {
       return null;
     }

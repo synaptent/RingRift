@@ -98,9 +98,7 @@ export function useSandboxDiagnostics(gameState: GameState | null): UseSandboxDi
         return;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- accessing debug global
-      const anyWindow = window as any;
-      const trace = anyWindow.__RINGRIFT_SANDBOX_TRACE__ ?? [];
+      const trace = window.__RINGRIFT_SANDBOX_TRACE__ ?? [];
       const payload = JSON.stringify(trace, null, 2);
 
       if (

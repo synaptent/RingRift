@@ -16,7 +16,6 @@ from app.config.thresholds import (
 from app.models import BoardType
 from app.training.board_encoding_contract import get_expected_channels
 from app.training.env import TrainingEnvConfig, make_env
-from scripts.jsonl_to_npz import convert_jsonl_to_npz
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[2]
 REPO_ROOT = AI_SERVICE_ROOT.parent
@@ -51,7 +50,10 @@ def test_canonical_model_files_exist_for_all_configs() -> None:
 
 def test_npz_export_produces_expected_schema(tmp_path: Path, monkeypatch) -> None:
     """A tiny legal JSONL self-play record exports to the training NPZ schema."""
+    monkeypatch.setenv("RINGRIFT_FORCE_CPU", "1")
     monkeypatch.setenv("RINGRIFT_MIN_MOVES", "1")
+
+    from scripts.jsonl_to_npz import convert_jsonl_to_npz
 
     env = make_env(TrainingEnvConfig(board_type=BoardType.HEX8, num_players=2, max_moves=120))
     state = env.reset(seed=123)
