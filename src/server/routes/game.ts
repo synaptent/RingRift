@@ -425,6 +425,11 @@ sandboxHelperRoutes.post(
         nnModelId: response.nn_model_id,
         nnCheckpoint: response.nn_checkpoint,
         nnueCheckpoint: response.nnue_checkpoint,
+        modelId: response.model_id,
+        evalMode: response.eval_mode,
+        simulationBudget: response.simulation_budget,
+        device: response.device,
+        searchStatsSummary: response.search_stats_summary,
       });
     } catch (err) {
       const message =

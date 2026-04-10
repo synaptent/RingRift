@@ -148,6 +148,11 @@ export interface MoveResponse {
   nn_model_id?: string;
   nn_checkpoint?: string;
   nnue_checkpoint?: string;
+  model_id?: string | null;
+  eval_mode?: string | null;
+  simulation_budget?: number | null;
+  device?: string | null;
+  search_stats_summary?: Record<string, unknown> | null;
 }
 
 export interface EvaluationRequest {
@@ -566,6 +571,11 @@ export class AIServiceClient {
             nnModelId: response.data.nn_model_id,
             nnCheckpoint: response.data.nn_checkpoint,
             nnueCheckpoint: response.data.nnue_checkpoint,
+            modelId: response.data.model_id,
+            evalMode: response.data.eval_mode,
+            simulationBudget: response.data.simulation_budget,
+            device: response.data.device,
+            searchStatsSummary: response.data.search_stats_summary,
           });
           AIServiceClient.recordMoveSuccess();
 

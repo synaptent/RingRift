@@ -34,6 +34,11 @@ export interface SandboxAiDiagnosticEntry {
   nnModelId?: string | null;
   nnCheckpoint?: string | null;
   nnueCheckpoint?: string | null;
+  modelId?: string | null;
+  evalMode?: string | null;
+  simulationBudget?: number | null;
+  device?: string | null;
+  searchStatsSummary?: Record<string, unknown> | null;
   thinkingTimeMs?: number | null;
   error?: string;
 }

@@ -539,6 +539,60 @@ class MoveResponse(BaseModel):
     nn_model_id: str | None = None
     nn_checkpoint: str | None = None
     nnue_checkpoint: str | None = None
+    model_id: str | None = None
+    eval_mode: str | None = None
+    simulation_budget: int | None = None
+    device: str | None = None
+    search_stats_summary: dict[str, Any] | None = None
+
+
+def _summarize_search_stats(stats: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Return compact scalar search stats suitable for API telemetry."""
+    if not isinstance(stats, dict):
+        return None
+
+    summary: dict[str, Any] = {}
+    for key in (
+        "total_simulations",
+        "nodes_explored",
+        "search_depth",
+        "uncertainty",
+        "root_value",
+    ):
+        value = stats.get(key)
+        if isinstance(value, (int, float)):
+            summary[key] = value
+
+    visit_counts = stats.get("visit_counts")
+    if isinstance(visit_counts, dict) and visit_counts:
+        values = [v for v in visit_counts.values() if isinstance(v, (int, float))]
+        if values:
+            summary["visit_count_total"] = int(sum(values))
+            summary["max_visit_count"] = int(max(values))
+            summary["visited_actions"] = len(values)
+
+    return summary or None
+
+
+def _infer_ai_device(ai: Any) -> str | None:
+    """Best-effort compute device label for AI move telemetry."""
+    gpu_tree = getattr(ai, "_gpu_gumbel_mcts", None)
+    gpu_tree_config = getattr(gpu_tree, "config", None) if gpu_tree is not None else None
+    for candidate in (
+        getattr(gpu_tree_config, "device", None) if gpu_tree_config is not None else None,
+        getattr(gpu_tree, "device", None) if gpu_tree is not None else None,
+        getattr(ai, "_gpu_device", None),
+        getattr(ai, "device", None),
+    ):
+        if candidate is not None:
+            return str(candidate)
+
+    neural_net = getattr(ai, "neural_net", None)
+    neural_device = getattr(neural_net, "device", None) if neural_net is not None else None
+    if neural_device is not None:
+        return str(neural_device)
+
+    return None
 
 
 class BatchMoveRequest(BaseModel):
@@ -1329,14 +1383,6 @@ async def get_ai_move(request: MoveRequest):
             labels_difficulty,
         ).observe(duration_seconds)
 
-        logger.info(
-            "AI move: type=%s, difficulty=%d, time=%dms, eval=%.2f",
-            ai_type.value,
-            request.difficulty,
-            thinking_time,
-            evaluation,
-        )
-
         nn_checkpoint: str | None = None
         try:
             neural_net = getattr(ai, "neural_net", None)
@@ -1373,6 +1419,55 @@ async def get_ai_move(request: MoveRequest):
             # Preserve backward compatible behaviour on unexpected AI types.
             effective_use_neural_net = bool(use_neural_net)
 
+        search_stats: dict[str, Any] | None = None
+        try:
+            stats_getter = getattr(ai, "get_search_stats", None)
+            if callable(stats_getter):
+                raw_stats = stats_getter()
+                if isinstance(raw_stats, dict):
+                    search_stats = raw_stats
+        except (AttributeError, TypeError, ValueError):
+            search_stats = None
+
+        search_stats_summary = _summarize_search_stats(search_stats)
+        actual_simulations: int | None = None
+        if search_stats_summary is not None:
+            for key in ("total_simulations", "visit_count_total"):
+                value = search_stats_summary.get(key)
+                if isinstance(value, (int, float)):
+                    actual_simulations = int(value)
+                    break
+
+        simulation_budget = getattr(ai, "simulation_budget", None)
+        if not isinstance(simulation_budget, int):
+            simulation_budget = gumbel_budget
+
+        device = _infer_ai_device(ai)
+        model_id = nn_model_id
+        fallback_reason: str | None = None
+        if use_neural_net and not effective_use_neural_net:
+            fallback_reason = "requested_neural_net_unavailable"
+        elif model_id and not effective_use_neural_net:
+            fallback_reason = "configured_model_not_active"
+
+        logger.info(
+            (
+                "AI move: type=%s, difficulty=%d, time=%dms, eval=%.2f, "
+                "model_id=%s, eval_mode=%s, simulation_budget=%s, "
+                "actual_simulations=%s, device=%s, fallback_reason=%s"
+            ),
+            ai_type.value,
+            request.difficulty,
+            thinking_time,
+            evaluation,
+            model_id,
+            eval_mode if ai_type == AIType.GUMBEL_MCTS else None,
+            simulation_budget,
+            actual_simulations,
+            device,
+            fallback_reason,
+        )
+
         return MoveResponse(
             move=move,
             evaluation=evaluation,
@@ -1384,6 +1479,11 @@ async def get_ai_move(request: MoveRequest):
             nn_model_id=nn_model_id,
             nn_checkpoint=nn_checkpoint,
             nnue_checkpoint=nnue_checkpoint,
+            model_id=model_id,
+            eval_mode=eval_mode if ai_type == AIType.GUMBEL_MCTS else None,
+            simulation_budget=simulation_budget,
+            device=device,
+            search_stats_summary=search_stats_summary,
         )
 
     except Exception as e:

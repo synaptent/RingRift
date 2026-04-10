@@ -208,6 +208,11 @@ async function tryRequestSandboxAIMove(payload: {
   nnModelId?: string | null;
   nnCheckpoint?: string | null;
   nnueCheckpoint?: string | null;
+  modelId?: string | null;
+  evalMode?: string | null;
+  simulationBudget?: number | null;
+  device?: string | null;
+  searchStatsSummary?: Record<string, unknown> | null;
 } | null> {
   if (typeof fetch !== 'function') {
     return null;
@@ -277,6 +282,24 @@ async function tryRequestSandboxAIMove(payload: {
         : data.nnueCheckpoint === null
           ? null
           : undefined;
+    const modelId =
+      typeof data.modelId === 'string' ? data.modelId : data.modelId === null ? null : undefined;
+    const evalMode =
+      typeof data.evalMode === 'string' ? data.evalMode : data.evalMode === null ? null : undefined;
+    const simulationBudget =
+      typeof data.simulationBudget === 'number'
+        ? data.simulationBudget
+        : data.simulationBudget === null
+          ? null
+          : undefined;
+    const device =
+      typeof data.device === 'string' ? data.device : data.device === null ? null : undefined;
+    const searchStatsSummary =
+      data.searchStatsSummary && typeof data.searchStatsSummary === 'object'
+        ? (data.searchStatsSummary as Record<string, unknown>)
+        : data.searchStatsSummary === null
+          ? null
+          : undefined;
 
     const thinkingTimeMs =
       typeof data.thinkingTimeMs === 'number'
@@ -296,6 +319,11 @@ async function tryRequestSandboxAIMove(payload: {
       nnModelId,
       nnCheckpoint,
       nnueCheckpoint,
+      modelId,
+      evalMode,
+      simulationBudget,
+      device,
+      searchStatsSummary,
     };
   } catch {
     return null;
@@ -339,6 +367,11 @@ interface SandboxAITurnTraceEntry {
   nnModelId?: string | null | undefined;
   nnCheckpoint?: string | null | undefined;
   nnueCheckpoint?: string | null | undefined;
+  modelId?: string | null | undefined;
+  evalMode?: string | null | undefined;
+  simulationBudget?: number | null | undefined;
+  device?: string | null | undefined;
+  searchStatsSummary?: Record<string, unknown> | null | undefined;
   thinkingTimeMs?: number | null | undefined;
   serviceError?: string | undefined;
 }
@@ -793,6 +826,11 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
   let debugServiceNnModelId: string | null = null;
   let debugServiceNnCheckpoint: string | null = null;
   let debugServiceNnueCheckpoint: string | null = null;
+  let debugServiceModelId: string | null = null;
+  let debugServiceEvalMode: string | null = null;
+  let debugServiceSimulationBudget: number | null = null;
+  let debugServiceDevice: string | null = null;
+  let debugServiceSearchStatsSummary: Record<string, unknown> | null = null;
   let debugServiceThinkingTimeMs: number | null = null;
   let debugServiceError: string | null = null;
 
@@ -861,7 +899,24 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
         debugServiceNnModelId = serviceResult.nnModelId ?? null;
         debugServiceNnCheckpoint = serviceResult.nnCheckpoint ?? null;
         debugServiceNnueCheckpoint = serviceResult.nnueCheckpoint ?? null;
+        debugServiceModelId = serviceResult.modelId ?? null;
+        debugServiceEvalMode = serviceResult.evalMode ?? null;
+        debugServiceSimulationBudget = serviceResult.simulationBudget ?? null;
+        debugServiceDevice = serviceResult.device ?? null;
+        debugServiceSearchStatsSummary = serviceResult.searchStatsSummary ?? null;
         debugServiceThinkingTimeMs = serviceResult.thinkingTimeMs ?? null;
+
+        console.debug('[Sandbox AI] Service telemetry', {
+          aiType: debugServiceAiType,
+          difficulty: debugServiceDifficulty,
+          useNeuralNet: debugServiceUseNeuralNet,
+          modelId: debugServiceModelId ?? debugServiceNnModelId,
+          evalMode: debugServiceEvalMode,
+          simulationBudget: debugServiceSimulationBudget,
+          device: debugServiceDevice,
+          searchStatsSummary: debugServiceSearchStatsSummary,
+          thinkingTimeMs: debugServiceThinkingTimeMs,
+        });
 
         const candidates = hooks.getValidMovesForCurrentPlayer();
         const desiredKey = moveMatchKey(serviceMove);
@@ -2406,6 +2461,26 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
             debugAiDecisionSource === 'service' || debugAiDecisionSource === 'mismatch'
               ? (debugServiceNnueCheckpoint ?? undefined)
               : undefined,
+          modelId:
+            debugAiDecisionSource === 'service' || debugAiDecisionSource === 'mismatch'
+              ? (debugServiceModelId ?? undefined)
+              : undefined,
+          evalMode:
+            debugAiDecisionSource === 'service' || debugAiDecisionSource === 'mismatch'
+              ? (debugServiceEvalMode ?? undefined)
+              : undefined,
+          simulationBudget:
+            debugAiDecisionSource === 'service' || debugAiDecisionSource === 'mismatch'
+              ? (debugServiceSimulationBudget ?? undefined)
+              : undefined,
+          device:
+            debugAiDecisionSource === 'service' || debugAiDecisionSource === 'mismatch'
+              ? (debugServiceDevice ?? undefined)
+              : undefined,
+          searchStatsSummary:
+            debugAiDecisionSource === 'service' || debugAiDecisionSource === 'mismatch'
+              ? (debugServiceSearchStatsSummary ?? undefined)
+              : undefined,
           thinkingTimeMs:
             debugAiDecisionSource === 'service' || debugAiDecisionSource === 'mismatch'
               ? (debugServiceThinkingTimeMs ?? undefined)
@@ -2468,6 +2543,11 @@ export async function maybeRunAITurnSandbox(hooks: SandboxAIHooks, rng: LocalAIR
               nnModelId: debugServiceNnModelId,
               nnCheckpoint: debugServiceNnCheckpoint,
               nnueCheckpoint: debugServiceNnueCheckpoint,
+              modelId: debugServiceModelId,
+              evalMode: debugServiceEvalMode,
+              simulationBudget: debugServiceSimulationBudget,
+              device: debugServiceDevice,
+              searchStatsSummary: debugServiceSearchStatsSummary,
               thinkingTimeMs: debugServiceThinkingTimeMs,
             }
           : {}),
