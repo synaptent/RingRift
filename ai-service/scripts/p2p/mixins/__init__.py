@@ -10,6 +10,10 @@ Mixins:
 - ElectionLogicMixin: Election, provisional leadership, and lease logic
 - HeartbeatLoopMixin: Heartbeat loop and bootstrap methods (April 2026 - Target 4)
 - TrainingPipelineMixin: AlphaZero-style training loop coordination (April 2026 - Target 3)
+- DataSyncMixin: Cluster data sync and dedup helpers (April 2026 - Phase 4)
+- JobManagementMixin: Local/cluster job orchestration helpers (April 2026 - Phase 4)
+- CodeUpdateMixin: Git auto-update helpers (April 2026 - Phase 4)
+- StatusMonitoringMixin: Health/status/self-info methods (April 2026 - Phase 4)
 
 Usage:
     from scripts.p2p.mixins import HealthTrackingMixin, HealthTrackingConfig
@@ -40,6 +44,10 @@ from .leadership_health_mixin import LeadershipHealthMixin
 from .leadership_transitions_mixin import LeadershipTransitionsMixin
 from .advertise_validation_mixin import AdvertiseValidationMixin
 from .training_pipeline_mixin import TrainingPipelineMixin
+from .data_sync_mixin import DataSyncMixin
+from .job_management_mixin import JobManagementMixin
+from .code_update_mixin import CodeUpdateMixin
+from .status_monitoring_mixin import StatusMonitoringMixin
 
 __all__ = [
     "HealthTrackingMixin",
@@ -52,4 +60,8 @@ __all__ = [
     "LeadershipTransitionsMixin",
     "AdvertiseValidationMixin",
     "TrainingPipelineMixin",
+    "DataSyncMixin",
+    "JobManagementMixin",
+    "CodeUpdateMixin",
+    "StatusMonitoringMixin",
 ]
