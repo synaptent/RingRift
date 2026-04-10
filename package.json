@@ -13,6 +13,8 @@
     "dev:app": "npm run dev:free-port && npm run dev",
     "training:status": "cd ai-service && PYTHONPATH=. python3 scripts/training_status.py",
     "training:dashboard": "cd ai-service && PYTHONPATH=. python3 scripts/training_dashboard.py",
+    "training:validate-db": "cd ai-service && PYTHONPATH=. python3 scripts/validate_training_db.py",
+    "training:provenance": "cd ai-service && PYTHONPATH=. python3 scripts/export_replay_dataset.py --provenance-report --db",
     "soak:orchestrator": "npx ts-node scripts/run-orchestrator-soak.ts",
     "soak:orchestrator:smoke": "TS_NODE_PROJECT=tsconfig.server.json npx ts-node scripts/run-orchestrator-soak.ts --boardTypes=square8 --gamesPerBoard=1 --maxTurns=20 --mode=backend --outputPath=results/orchestrator_soak_smoke.json --failOnViolation",
     "soak:orchestrator:short": "TS_NODE_PROJECT=tsconfig.server.json npx ts-node scripts/run-orchestrator-soak.ts --profile=ci-short --failOnViolation=true",

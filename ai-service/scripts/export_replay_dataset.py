@@ -76,6 +76,7 @@ import os
 import shutil
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any, Optional
 
@@ -647,6 +648,208 @@ def _human_or_sandbox_game_is_training_ready(meta: dict, metadata_dict: dict) ->
         or ""
     ).lower()
     return parity_status in HUMAN_SANDBOX_TRAINING_READY_PARITY_STATUSES
+
+
+def _row_value(row: sqlite3.Row, key: str, default: Any = None) -> Any:
+    """Return a row value without assuming every legacy DB has every column."""
+    try:
+        return row[key]
+    except (IndexError, KeyError):
+        return default
+
+
+def _game_metadata_from_row(row: sqlite3.Row) -> dict:
+    raw = _row_value(row, "metadata_json")
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw) if isinstance(raw, str) else raw
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _is_truthy_db_value(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    return bool(value)
+
+
+def build_provenance_report(
+    db_paths: list[str],
+    *,
+    board_type: str | None = None,
+    num_players: int | None = None,
+    include_sources: set[str] | None = None,
+    exclude_sources: set[str] | None = None,
+) -> dict[str, Any]:
+    """Summarize replay data provenance without exporting samples."""
+    totals = {
+        "total_games_found": 0,
+        "games_by_source": Counter(),
+        "games_by_parity_status": Counter(),
+        "games_excluded": 0,
+        "games_excluded_by_reason": Counter(),
+        "games_with_quarantine_source": 0,
+    }
+    date_min: str | None = None
+    date_max: str | None = None
+    db_reports: list[dict[str, Any]] = []
+
+    for db_path in db_paths:
+        db_report = {
+            "db_path": db_path,
+            "total_games_found": 0,
+            "games_by_source": Counter(),
+            "games_by_parity_status": Counter(),
+            "games_excluded": 0,
+            "games_excluded_by_reason": Counter(),
+            "games_with_quarantine_source": 0,
+            "date_range": {"created_at_min": None, "created_at_max": None},
+            "error": None,
+        }
+
+        try:
+            conn = sqlite3.connect(db_path)
+            conn.row_factory = sqlite3.Row
+            conditions: list[str] = []
+            params: list[Any] = []
+            if board_type is not None:
+                conditions.append("board_type = ?")
+                params.append(board_type)
+            if num_players is not None:
+                conditions.append("num_players = ?")
+                params.append(num_players)
+            where_clause = " AND ".join(conditions) if conditions else "1=1"
+            rows = conn.execute(
+                f"SELECT * FROM games WHERE {where_clause} ORDER BY created_at ASC",
+                params,
+            ).fetchall()
+        except sqlite3.Error as exc:
+            db_report["error"] = str(exc)
+            db_reports.append(db_report)
+            continue
+        finally:
+            try:
+                conn.close()
+            except (NameError, sqlite3.Error):
+                pass
+
+        for row in rows:
+            metadata_dict = _game_metadata_from_row(row)
+            meta = dict(row)
+            source_raw = str(_row_value(row, "source") or metadata_dict.get("source") or "unknown")
+            source_key = _categorize_game_source(source_raw)
+            parity_status = str(
+                _row_value(row, "parity_status")
+                or metadata_dict.get("parity_status")
+                or "pending"
+            )
+            created_at = _row_value(row, "created_at")
+
+            db_report["total_games_found"] += 1
+            totals["total_games_found"] += 1
+            db_report["games_by_source"][source_key] += 1
+            totals["games_by_source"][source_key] += 1
+            db_report["games_by_parity_status"][parity_status] += 1
+            totals["games_by_parity_status"][parity_status] += 1
+
+            if created_at:
+                created_str = str(created_at)
+                db_min = db_report["date_range"]["created_at_min"]
+                db_max = db_report["date_range"]["created_at_max"]
+                db_report["date_range"]["created_at_min"] = (
+                    created_str if db_min is None or created_str < db_min else db_min
+                )
+                db_report["date_range"]["created_at_max"] = (
+                    created_str if db_max is None or created_str > db_max else db_max
+                )
+                date_min = created_str if date_min is None or created_str < date_min else date_min
+                date_max = created_str if date_max is None or created_str > date_max else date_max
+
+            exclusion_reasons: list[str] = []
+            if "quarantine" in source_raw.lower():
+                exclusion_reasons.append("quarantine_source")
+                db_report["games_with_quarantine_source"] += 1
+                totals["games_with_quarantine_source"] += 1
+            if _is_truthy_db_value(_row_value(row, "excluded_from_training", 0)) or _is_truthy_db_value(
+                metadata_dict.get("excluded_from_training", False)
+            ):
+                exclusion_reasons.append("excluded_from_training")
+            if not _human_or_sandbox_game_is_training_ready(meta, metadata_dict):
+                exclusion_reasons.append("human_or_sandbox_not_training_ready")
+            if include_sources is not None and "all" not in include_sources and source_key not in include_sources:
+                exclusion_reasons.append("source_not_included")
+            if exclude_sources is not None and source_key in exclude_sources:
+                exclusion_reasons.append("source_excluded")
+
+            if exclusion_reasons:
+                db_report["games_excluded"] += 1
+                totals["games_excluded"] += 1
+                for reason in sorted(set(exclusion_reasons)):
+                    db_report["games_excluded_by_reason"][reason] += 1
+                    totals["games_excluded_by_reason"][reason] += 1
+
+        db_reports.append(db_report)
+
+    def _plain(report: dict[str, Any]) -> dict[str, Any]:
+        return {
+            **report,
+            "games_by_source": dict(sorted(report["games_by_source"].items())),
+            "games_by_parity_status": dict(sorted(report["games_by_parity_status"].items())),
+            "games_excluded_by_reason": dict(sorted(report["games_excluded_by_reason"].items())),
+        }
+
+    return {
+        "db_paths": db_paths,
+        "filters": {
+            "board_type": board_type,
+            "num_players": num_players,
+            "include_sources": sorted(include_sources) if include_sources else None,
+            "exclude_sources": sorted(exclude_sources) if exclude_sources else None,
+        },
+        "total_games_found": totals["total_games_found"],
+        "games_by_source": dict(sorted(totals["games_by_source"].items())),
+        "games_by_parity_status": dict(sorted(totals["games_by_parity_status"].items())),
+        "games_excluded": totals["games_excluded"],
+        "games_excluded_by_reason": dict(sorted(totals["games_excluded_by_reason"].items())),
+        "games_with_quarantine_source": totals["games_with_quarantine_source"],
+        "date_range": {"created_at_min": date_min, "created_at_max": date_max},
+        "databases": [_plain(report) for report in db_reports],
+    }
+
+
+def _build_source_filters_from_args(args: argparse.Namespace) -> tuple[set[str] | None, set[str] | None]:
+    """Build include/exclude source sets using the exporter's CLI contract."""
+    include_sources: set[str] | None = None
+    exclude_sources: set[str] | None = None
+
+    if args.include_gauntlet or args.include_tournaments or args.include_human or args.sources:
+        include_sources = {"selfplay"}
+        if args.include_gauntlet:
+            include_sources.add("gauntlet")
+        if args.include_tournaments:
+            include_sources.add("tournament")
+        if args.include_human:
+            include_sources.update({"human", "human_vs_ai", "sandbox"})
+        if args.sources:
+            for source in args.sources.split(","):
+                source = source.strip().lower()
+                if source:
+                    include_sources.add(source)
+
+    if args.exclude_sources:
+        exclude_sources = set()
+        for source in args.exclude_sources.split(","):
+            source = source.strip().lower()
+            if source:
+                exclude_sources.add(source)
+
+    return include_sources, exclude_sources
 
 
 def export_replay_dataset_multi(
@@ -2000,21 +2203,35 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--board-type",
         type=str,
         choices=["square8", "square19", "hex8", "hexagonal"],
-        required=True,
-        help="Board type to filter games by.",
+        default=None,
+        help="Board type to filter games by. Required for NPZ export; optional for --provenance-report.",
     )
     parser.add_argument(
         "--num-players",
         type=int,
         choices=[2, 3, 4],
-        required=True,
-        help="Number of players to filter games by.",
+        default=None,
+        help="Number of players to filter games by. Required for NPZ export; optional for --provenance-report.",
     )
     parser.add_argument(
         "--output",
         type=str,
-        required=True,
-        help="Path to output .npz dataset.",
+        default=None,
+        help="Path to output .npz dataset. Required unless --provenance-report is used.",
+    )
+    parser.add_argument(
+        "--provenance-report",
+        action="store_true",
+        help=(
+            "Print a JSON provenance summary for the selected replay DBs and exit. "
+            "Does not create an NPZ file or modify source databases."
+        ),
+    )
+    parser.add_argument(
+        "--provenance-report-output",
+        type=str,
+        default=None,
+        help="Optional path to write the --provenance-report JSON instead of stdout.",
     )
     parser.add_argument(
         "--append",
@@ -2417,6 +2634,33 @@ def main(argv: list[str] | None = None) -> int:
     if not args.allow_pending_gate and os.environ.get("RINGRIFT_ALLOW_PENDING_GATE", "").lower() in ("true", "1", "yes"):
         args.allow_pending_gate = True
 
+    include_sources, exclude_sources = _build_source_filters_from_args(args)
+
+    if args.provenance_report:
+        db_paths = args.db_paths or []
+        if not db_paths:
+            raise ValueError("--provenance-report requires at least one --db path")
+        report = build_provenance_report(
+            db_paths,
+            board_type=args.board_type,
+            num_players=args.num_players,
+            include_sources=include_sources,
+            exclude_sources=exclude_sources,
+        )
+        output = json.dumps(report, indent=2, sort_keys=True)
+        if args.provenance_report_output:
+            Path(args.provenance_report_output).write_text(output + "\n")
+        else:
+            print(output)
+        return 0
+
+    if args.board_type is None:
+        raise ValueError("--board-type is required unless --provenance-report is used")
+    if args.num_players is None:
+        raise ValueError("--num-players is required unless --provenance-report is used")
+    if args.output is None:
+        raise ValueError("--output is required unless --provenance-report is used")
+
     board_type = BOARD_TYPE_MAP[args.board_type]
     if args.history_length < 0:
         raise ValueError("--history-length must be >= 0")
@@ -2603,38 +2847,18 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # Parse source filters (December 2025 - Phase 5 Unified NN/NNUE training)
-    include_sources: set[str] | None = None
-    exclude_sources: set[str] | None = None
-
-    # Build include set from convenience flags and --sources
-    if args.include_gauntlet or args.include_tournaments or args.include_human or args.sources:
-        include_sources = set()
-        include_sources.add("selfplay")  # Always include selfplay by default
+    if include_sources is not None:
         if args.include_gauntlet:
-            include_sources.add("gauntlet")
             print("[SOURCE FILTER] Including gauntlet games")
         if args.include_tournaments:
-            include_sources.add("tournament")
             print("[SOURCE FILTER] Including tournament games")
         if args.include_human:
-            include_sources.add("human")
-            include_sources.add("human_vs_ai")  # January 2026: human vs AI games from web client
-            include_sources.add("sandbox")  # Sandbox may contain human games too
             print("[SOURCE FILTER] Including human gameplay (weighted 3x in training)")
         if args.sources:
-            for source in args.sources.split(","):
-                source = source.strip().lower()
-                if source:
-                    include_sources.add(source)
             print(f"[SOURCE FILTER] Sources: {', '.join(sorted(include_sources))}")
 
     # Build exclude set from --exclude-sources
-    if args.exclude_sources:
-        exclude_sources = set()
-        for source in args.exclude_sources.split(","):
-            source = source.strip().lower()
-            if source:
-                exclude_sources.add(source)
+    if exclude_sources:
         print(f"[SOURCE FILTER] Excluding: {', '.join(sorted(exclude_sources))}")
 
     # Determine parallelism: default is parallel unless --single-threaded or --workers=1
