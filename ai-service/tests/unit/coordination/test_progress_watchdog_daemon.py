@@ -19,6 +19,17 @@ from app.coordination.progress_watchdog_daemon import (
     get_progress_watchdog,
 )
 from app.coordination.protocols import CoordinatorStatus
+from app.coordination.selfplay_scheduler import reset_selfplay_scheduler
+
+
+@pytest.fixture(autouse=True)
+def reset_progress_watchdog_test_singletons():
+    """Keep watchdog tests isolated from leaked scheduler singletons."""
+    ProgressWatchdogDaemon.reset_instance()
+    reset_selfplay_scheduler()
+    yield
+    ProgressWatchdogDaemon.reset_instance()
+    reset_selfplay_scheduler()
 
 
 class TestProgressWatchdogConfig:

@@ -9,9 +9,7 @@ January 4, 2026 (Sprint 17.3): SQLite async safety for event loop protection.
 """
 
 import asyncio
-import os
 import sqlite3
-import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -45,13 +43,14 @@ def handler():
 
 
 @pytest.fixture
-def temp_db():
+def temp_db(tmp_path: Path) -> str:
     """Create a temporary SQLite database for testing."""
-    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
-        db_path = f.name
+    db_path = tmp_path / "test_sqlite.db"
 
     # Create test table
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS test_items (
             id INTEGER PRIMARY KEY,
@@ -65,13 +64,7 @@ def temp_db():
     conn.commit()
     conn.close()
 
-    yield db_path
-
-    # Cleanup
-    try:
-        os.unlink(db_path)
-    except OSError:
-        pass
+    yield str(db_path)
 
 
 # =============================================================================
