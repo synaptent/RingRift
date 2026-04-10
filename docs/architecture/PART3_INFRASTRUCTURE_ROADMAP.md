@@ -26,29 +26,29 @@ This document records the Part 3 deep infrastructure improvement session so futu
 
 ## Roadmap
 
-| Phase | Focus                                           | Target Outcome                                                                                                         | Status    |
-| ----- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------- |
-| 0     | Roadmap capture                                 | Durable document for the Part 3 goals and remaining work                                                               | Completed |
-| 1     | CI fix                                          | Supported-path workflow no longer fails when optional lint tools are absent; contract tests pass locally               | Completed |
-| 2     | P2P orchestrator                                | Extract state, peer discovery, job, process, HTTP, and game-count mixins; reduce `p2p_orchestrator.py` below 3,000 LOC | Completed |
-| 3     | Coordination module                             | Audit >3,000 LOC coordination files and extract repeated execution/lifecycle/strategy patterns                         | Pending   |
-| 4     | Script consolidation                            | Inventory 602 scripts, archive deprecated scripts, and add a unified operational CLI                                   | Pending   |
-| 5     | Training pipeline quality                       | Document minimal loop contracts, compare legacy behavior, add training pipeline contract tests                         | Pending   |
-| 6     | Client code quality                             | Document extraction plans for large client files, run TypeScript checks, and reduce easy `as any` usage                | Pending   |
-| 7     | Server code quality                             | Extract major route handlers and document server decomposition targets                                                 | Pending   |
-| 8     | Test infrastructure                             | Remove empty tests, detect broken imports, add test-coverage meta-contracts, and clean conftest fixtures               | Pending   |
-| 9     | Documentation cleanup                           | Archive stale 2025 docs and refresh current status, results, architecture, developer guide, and repository map         | Pending   |
-| 10    | Type safety                                     | Audit `# type: ignore`, narrow bare `except`, add type-safety contracts                                                | Pending   |
-| 11    | Config/environment cleanup                      | Archive unused cluster/hyperparameter configs and refresh `.env.*.example` files                                       | Pending   |
-| 12    | Archive cleanup                                 | Audit active imports from archive modules and archive unused lambda scripts safely                                     | Pending   |
-| 13    | Event system completion                         | Migrate remaining active `emit_event` calls to `safe_emit_event` and add canonical event contracts                     | Pending   |
-| 14    | Large file decomposition: `app/ai` and `app/db` | Extract board encoding, MCTS tree logic, and replay validation modules with size contracts                             | Pending   |
-| 15    | Large file decomposition: `app/training`        | Extract training data pipeline, checkpointing, and Elo algorithms with size contracts                                  | Pending   |
-| 16    | CI workflow consolidation                       | Add composite setup actions for Python AI and Node workflows                                                           | Pending   |
-| 17    | Dead code and import cleanup                    | Detect unused app modules, circular imports, star imports, and obvious unused arguments                                | Pending   |
-| 18    | Operational resilience                          | Add dead-loop restart and cluster health scripts plus supervisor heartbeat tests                                       | Pending   |
-| 19    | Rules engine quality                            | Add parity coverage and rules completeness contracts across all supported board/player configs                         | Pending   |
-| 20    | Final verification                              | Run Python tests, TypeScript checks, supported path checks, and update final architecture/audit docs                   | Pending   |
+| Phase | Focus                                           | Target Outcome                                                                                                         | Status      |
+| ----- | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------- |
+| 0     | Roadmap capture                                 | Durable document for the Part 3 goals and remaining work                                                               | Completed   |
+| 1     | CI fix                                          | Supported-path workflow no longer fails when optional lint tools are absent; contract tests pass locally               | Completed   |
+| 2     | P2P orchestrator                                | Extract state, peer discovery, job, process, HTTP, and game-count mixins; reduce `p2p_orchestrator.py` below 3,000 LOC | Completed   |
+| 3     | Coordination module                             | Audit >3,000 LOC coordination files and extract repeated execution/lifecycle/strategy patterns                         | In progress |
+| 4     | Script consolidation                            | Inventory 602 scripts, archive deprecated scripts, and add a unified operational CLI                                   | Pending     |
+| 5     | Training pipeline quality                       | Document minimal loop contracts, compare legacy behavior, add training pipeline contract tests                         | Pending     |
+| 6     | Client code quality                             | Document extraction plans for large client files, run TypeScript checks, and reduce easy `as any` usage                | Pending     |
+| 7     | Server code quality                             | Extract major route handlers and document server decomposition targets                                                 | Pending     |
+| 8     | Test infrastructure                             | Remove empty tests, detect broken imports, add test-coverage meta-contracts, and clean conftest fixtures               | Pending     |
+| 9     | Documentation cleanup                           | Archive stale 2025 docs and refresh current status, results, architecture, developer guide, and repository map         | Pending     |
+| 10    | Type safety                                     | Audit `# type: ignore`, narrow bare `except`, add type-safety contracts                                                | Pending     |
+| 11    | Config/environment cleanup                      | Archive unused cluster/hyperparameter configs and refresh `.env.*.example` files                                       | Pending     |
+| 12    | Archive cleanup                                 | Audit active imports from archive modules and archive unused lambda scripts safely                                     | Pending     |
+| 13    | Event system completion                         | Migrate remaining active `emit_event` calls to `safe_emit_event` and add canonical event contracts                     | Pending     |
+| 14    | Large file decomposition: `app/ai` and `app/db` | Extract board encoding, MCTS tree logic, and replay validation modules with size contracts                             | Pending     |
+| 15    | Large file decomposition: `app/training`        | Extract training data pipeline, checkpointing, and Elo algorithms with size contracts                                  | Pending     |
+| 16    | CI workflow consolidation                       | Add composite setup actions for Python AI and Node workflows                                                           | Pending     |
+| 17    | Dead code and import cleanup                    | Detect unused app modules, circular imports, star imports, and obvious unused arguments                                | Pending     |
+| 18    | Operational resilience                          | Add dead-loop restart and cluster health scripts plus supervisor heartbeat tests                                       | Pending     |
+| 19    | Rules engine quality                            | Add parity coverage and rules completeness contracts across all supported board/player configs                         | Pending     |
+| 20    | Final verification                              | Run Python tests, TypeScript checks, supported path checks, and update final architecture/audit docs                   | Pending     |
 
 ## Verification Rhythm
 
@@ -75,3 +75,10 @@ cd ai-service && PYTHONPATH=. python scripts/check_supported_path.py
 ## Resume Notes
 
 If this session pauses before all phases are complete, resume from the first phase marked `Pending` or `In progress`. Do not infer completion from the roadmap alone; verify with git history, tests, and the referenced architecture documents.
+
+## Progress Log
+
+- Phase 0 completed: this roadmap was created so the Part 3 goals survive session context loss.
+- Phase 1 completed: the optional Ruff contract now skips when Ruff is unavailable, and contract tests pass locally.
+- Phase 2 completed: `scripts/p2p_orchestrator.py` was reduced below 3,000 LOC by extracting additional mixins; see `docs/P2P_DECOMPOSITION_PLAN.md`.
+- Phase 3 in progress: `COORDINATION_AUDIT.md` was created; `training_trigger_daemon.py` was reduced to 1,836 LOC via `training_executor_actions.py`; `daemon_manager.py` was reduced to 1,483 LOC via `daemon_manager_lifecycle.py`.
