@@ -85,3 +85,4 @@ If this session pauses before all phases are complete, resume from the first pha
 - Phase 3 extraction batch 1: `training_trigger_daemon.py` is 1,836 LOC and `daemon_manager.py` is 1,483 LOC after extracting execution and lifecycle mixins.
 - Phase 3 extraction batch 2: `evaluation_daemon.py` is 1,563 LOC, `unified_queue_populator.py` is 1,470 LOC, and `data_pipeline_orchestrator.py` is 1,936 LOC after extracting execution/strategy/stage mixins.
 - Phase 3 extraction batch 3: `curriculum_integration.py` is 504 LOC and `work_queue.py` is 1,873 LOC after extracting curriculum bridge/strategy helpers and work-queue storage helpers.
+- Phase 3 extraction batch 4: `training_coordinator.py` is 1,862 LOC after extracting `TrainingJob` and slot/progress/status protocol helpers into `training_protocol.py`.

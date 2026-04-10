@@ -51,5 +51,6 @@ The first extraction batch completed two of the largest coordination files while
 | `data_pipeline_orchestrator.py` |      3,485 |     1,936 | `pipeline_stages.py`           |         1,583 | Focused pipeline tests passed                 |
 | `curriculum_integration.py`     |      3,360 |       504 | Curriculum bridge/strategies   |         2,902 | Focused curriculum tests passed               |
 | `work_queue.py`                 |      3,222 |     1,873 | `work_queue_storage.py`        |         1,380 | Focused work-queue tests passed               |
+| `training_coordinator.py`       |      3,151 |     1,862 | `training_protocol.py`         |         1,364 | Focused training-coordinator tests passed     |
 
 `daemon_lifecycle.py` remains the existing composition-based lifecycle manager at 1,064 LOC. The new `daemon_manager_lifecycle.py` module was intentionally kept separate so no new coordination file exceeds the upcoming 2,500 LOC size contract.
