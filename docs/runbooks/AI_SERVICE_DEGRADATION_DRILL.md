@@ -10,7 +10,7 @@
 > - **AI integration & fallbacks:** `AIServiceClient` and `AIEngine` (`src/server/services/AIServiceClient.ts`, `src/server/game/ai/AIEngine.ts`), including concurrency caps, circuit breaker, and local heuristic fallback logic plus counters such as `ringrift_ai_requests_total` and `ringrift_ai_fallback_total`.
 > - **Environment and deployment:** `docs/operations/ENVIRONMENT_VARIABLES.md` (AI- and load-related env vars such as `AI_SERVICE_URL`, `AI_SERVICE_REQUEST_TIMEOUT_MS`, `AI_MAX_CONCURRENT_REQUESTS`, `ENABLE_HTTP_MOVE_HARNESS`) and `docs/planning/DEPLOYMENT_REQUIREMENTS.md` (monitoring stack expectations).
 > - **Load / gameplay harnesses:** `tests/load/scenarios/player-moves.js` and its thresholds as mapped in `docs/operations/ALERTING_THRESHOLDS.md` §“AI turn SLOs (service and end‑to‑end turn latency)”.
-> - **Existing drills:** `docs/runbooks/SECRETS_ROTATION_DRILL.md`, `docs/runbooks/DATABASE_BACKUP_AND_RESTORE_DRILL.md`, and the summary in `docs/runbooks/OPERATIONAL_DRILLS_RESULTS_2025_12_03.md` (Drill 7.3.3 AI outage simulation).
+> - **Existing drills:** `docs/runbooks/SECRETS_ROTATION_DRILL.md`, `docs/runbooks/DATABASE_BACKUP_AND_RESTORE_DRILL.md`, and the summary in `docs/archive/historical/OPERATIONAL_DRILLS_RESULTS_2025_12_03.md` (Drill 7.3.3 AI outage simulation).
 
 > **Precedence:** Alert rules, metrics, backend/AI code, and tests are authoritative for **what counts as AI degradation** and how fallbacks behave. This runbook defines a **repeatable drill** for staging; if any step disagrees with code, configs, or tests, **code + configs + tests win** and this document must be updated.
 
@@ -524,7 +524,7 @@ Use this checklist to decide whether the drill has successfully validated AI deg
   - [ ] `docker compose start ai-service` (or equivalent) restored the AI service.
   - [ ] All AI- and degradation-related alerts have cleared in Alertmanager.
   - [ ] Any unexpected alerts or anomalies observed during the drill have been captured as findings (with follow-up issues as appropriate).
-  - [ ] The drill has been logged in your internal ops log, optionally cross-referencing `docs/runbooks/OPERATIONAL_DRILLS_RESULTS_2025_12_03.md`.
+  - [ ] The drill has been logged in your internal ops log, optionally cross-referencing `docs/archive/historical/OPERATIONAL_DRILLS_RESULTS_2025_12_03.md`.
 
 ---
 

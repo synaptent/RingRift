@@ -170,7 +170,7 @@ Notes:
 - `docs/supplementary/rules_analysis/rules_analysis_recovery_action_interactions.md` – updated recovery semantics (global fallback, stack-strike, Option 1/2 costs) and marked projections/checklists as historical where appropriate.
 - `docs/architecture/SHARED_ENGINE_CONSOLIDATION_PLAN.md` – clarified forbidden placement uses `no_placement_action`, not `skip_placement`.
 - `docs/ux/UX_RULES_TEACHING_GAP_ANALYSIS.md`, `docs/ux/UX_RULES_TEACHING_SCENARIOS.md` – updated teaching terminology (“permanently eliminated”).
-- `docs/planning/WAVE_2025_12.md` – clarified legacy replay notes about “skipping players with no turn-material”.
+- `../planning/WAVE_2025_12.md` – clarified legacy replay notes about “skipping players with no turn-material”.
 - `ai-service/docs/SELFPLAY_ANALYSIS_REPORT_2025_12_10.md` – added a prominent “resolved” banner so the historical recovery contradiction isn’t treated as current.
 
 ### Code comment alignment (no rules changes)

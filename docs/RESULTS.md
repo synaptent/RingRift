@@ -6,12 +6,12 @@ Status is current as of April 10, 2026.
 
 ## Headline Results
 
-| Config       | Start Elo | Best Reported Elo | Promotions | Status                                                          |
-| ------------ | --------: | ----------------: | ---------: | --------------------------------------------------------------- |
-| `hex8_2p`    |    `1500` |          `1967.6` |        `6` | Strongest result; currently plateaued near 2000                 |
-| `square8_2p` |    `1500` |          `1601.8` |        `2` | Clean 2-player square result; node was dead in latest SSH probe |
-| `square8_3p` |    `1500` |          `1534.9` |        `1` | Weak evidence; recent seat-fair evals are regressing            |
-| `square8_4p` |    `1500` |          `1500.0` |        `0` | No proven improvement above baseline                            |
+| Config       | Start Elo | Best Reported Elo | Promotions | Status                                                        |
+| ------------ | --------: | ----------------: | ---------: | ------------------------------------------------------------- |
+| `hex8_2p`    |    `1500` |          `1967.6` |        `6` | Strongest result; latest iteration `32` was rejected at `40%` |
+| `square8_2p` |    `1500` |          `1601.8` |        `2` | Credible 2P square result, but the node is currently dead     |
+| `square8_3p` |    `1500` |          `1534.9` |        `1` | Weak evidence; recent seat-fair evals are still regressing    |
+| `square8_4p` |    `1500` |          `1500.0` |        `0` | No proven improvement above baseline; node is currently dead  |
 
 ![Headline results snapshot](assets/results/headline_results.svg)
 
@@ -21,7 +21,7 @@ RingRift was built as a novel deterministic strategy game plus an end-to-end Alp
 
 The answer is now yes.
 
-The strongest evidence is `hex8_2p`, but `square8_2p` now matters almost as much because it shows the improvement loop is not limited to a single board family.
+The strongest evidence is still `hex8_2p`, and `square8_2p` remains important because it demonstrates that the loop can improve on a second configuration. The current state is not a universal success story, though: multiplayer remains weak, and two training nodes are currently down.
 
 ## Concrete Evidence
 
@@ -31,7 +31,7 @@ The strongest evidence is `hex8_2p`, but `square8_2p` now matters almost as much
 - Promotions: `6`
 - Interpretation: strong iterative improvement from the 1500 baseline to a much stronger checkpoint family
 
-Recent iterations have been clustering around or below the promotion boundary. The latest completed evaluation in the April 10 status snapshot rejected the candidate at `45%` after `200` games, so this should be described as a real plateau rather than a fresh breakthrough.
+Recent iterations have been clustering around or below the promotion boundary. The latest completed evaluation in the current April 10 snapshot rejected iteration `32` at `40%` after `50` games. Combined with the prior iteration `31` rejection at `45%` after `200` games, this should be described as a real plateau rather than a fresh breakthrough.
 
 ### `square8_2p`
 
@@ -52,7 +52,7 @@ Important context:
 
 - iteration `29` and `30` were produced after the minimal loop gained true fixed-LR support end-to-end
 - those promotions also used staged evaluation and the cleaned-up experiment harness
-- the latest April 10 SSH probe found the `square8_2p` loop and supervisor dead, so the result is real but the node currently needs operational recovery
+- the latest April 10 SSH probe still found the `square8_2p` loop and supervisor dead, so the result is real but the node currently needs operational recovery
 
 ### `square8_3p`
 
@@ -60,7 +60,7 @@ Important context:
 - Promotions: `1`
 - Best promotion came at iteration `6` with a `55%` win rate
 
-This should be treated cautiously. Multiplayer evaluation was corrected later to rotate one candidate seat per game fairly, and the recent April 10 seat-fair evaluations are poor: `24%`, `26%`, then `22%` candidate win rate in the latest metrics tail.
+This should be treated cautiously. Multiplayer evaluation was corrected later to rotate one candidate seat per game fairly, and the recent April 10 seat-fair evaluations remain poor: `22%`, `24%`, then `22%` candidate win rate in the latest metrics tail.
 
 As of April 10, 2026, the `square8_3p` process is alive, but the result is not strong enough to claim robust multiplayer progress.
 
@@ -117,6 +117,7 @@ Current limitations:
 - `square8_2p` has a credible 1601.8 result, but its node was dead in the latest probe
 - `square8_3p` is regressing under the seat-fair multiplayer evaluator
 - `square8_4p` remains at baseline and was also dead in the latest probe
+- the latest remote GitHub Actions status on `main` is red, so operational confidence still depends on local verification as well as cluster metrics
 - larger boards and other 3-4 player configs remain much slower and less mature
 - the strongest results still come from cluster runs, not commodity local hardware
 
@@ -147,9 +148,10 @@ That command updates [`docs/data/results_snapshot.json`](/Users/armand/Developme
 
 ## Bottom Line
 
-RingRift now has credible evidence that its neural self-play training system can produce stronger models over time on more than one configuration.
+RingRift has credible evidence that its neural self-play system can produce stronger models over time on more than one configuration.
 
-The repo’s next challenge is no longer “does the training loop work at all?” It is:
+That evidence is real, but it is not evenly distributed. The next challenge is not proving that the loop can ever improve. It is:
 
-1. extend that proof cleanly to the remaining multiplayer and large-board paths
-2. keep the supported path understandable and reproducible for other engineers
+1. keep the supported path reproducible and operationally trustworthy
+2. get remote CI and cluster operations back to a state that matches the local evidence
+3. extend the proof to the remaining multiplayer and larger-board paths without overstating weak results

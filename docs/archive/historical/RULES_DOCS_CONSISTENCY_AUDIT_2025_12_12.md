@@ -24,7 +24,7 @@ Associated docs sampled (high-risk drift areas):
 - `docs/rules/ACTIVE_NO_MOVES_BEHAVIOUR.md`
 - `docs/rules/EXPERIMENTAL_RECOVERY_STACK_STRIKE_V1.md`
 - `docs/rules/RULES_IMPLEMENTATION_MAPPING.md`
-- `docs/rules/RULES_DOCS_CONSISTENCY_PASS_2025_12_11.md`
+- `RULES_DOCS_CONSISTENCY_PASS_2025_12_11.md`
 
 ---
 

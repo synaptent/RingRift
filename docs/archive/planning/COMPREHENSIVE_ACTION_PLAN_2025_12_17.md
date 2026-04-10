@@ -1,3 +1,13 @@
+> Historical planning snapshot from December 17, 2025.
+>
+> Current strategy and execution state now live in:
+>
+> - [CURRENT_STATUS.md](../../CURRENT_STATUS.md)
+> - [RESULTS.md](../../RESULTS.md)
+> - [ARCHITECTURE_OVERVIEW.md](../../ARCHITECTURE_OVERVIEW.md)
+> - [PART3_INFRASTRUCTURE_ROADMAP.md](../../architecture/PART3_INFRASTRUCTURE_ROADMAP.md)
+> - [TRAINING_INFRASTRUCTURE_STRATEGY.md](../../architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md)
+
 # Comprehensive Action Plan
 
 **Created:** 2025-12-17
@@ -187,7 +197,7 @@ Document any additional inconsistencies found and fix them.
 
 #### Phase 5: Update Consistency Audit Doc (30 min)
 
-Update `docs/rules/RULES_DOCS_CONSISTENCY_AUDIT_2025_12_12.md`:
+Update `../historical/RULES_DOCS_CONSISTENCY_AUDIT_2025_12_12.md`:
 
 ```markdown
 ## Update (2025-12-17): Territory Processing Eligibility
@@ -211,7 +221,7 @@ territory processing in any rules doc.
 - [x] `rules/HUMAN_RULES.md` updated ✅ Fixed 2025-12-17
 - [x] Version stamps added to all rules docs ✅ Already present, version bumped
 - [x] No other elimination-related contradictions found ✅ Audited line/forced elimination rules
-- [x] Consistency audit doc updated ✅ Added Section F to RULES_DOCS_CONSISTENCY_AUDIT_2025_12_12.md
+- [x] Consistency audit doc updated ✅ Added Section F to `../historical/RULES_DOCS_CONSISTENCY_AUDIT_2025_12_12.md`
 - [x] 25+ additional code comments, test fixtures, and user-facing content fixed ✅
 - [ ] AI training data reviewed (was it generated under correct rules?) - **NOTE**: The TS and Python implementations already correctly allowed height-1 stacks (EliminationAggregate.ts, elimination.py). Training data should be valid.
 

@@ -68,6 +68,13 @@ It is not required to understand the core system or reproduce the main training 
 
 It should also not be treated as disposable. The current infrastructure strategy is to keep the minimal loop as the reproducible proof harness while reusing audited pieces of the broader coordinator/P2P stack where they satisfy the current rules, data, and evaluation contracts. See [docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md](/Users/armand/Development/RingRift/docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md).
 
+As of April 10, 2026:
+
+- the P2P orchestrator main file is down to `2591` LOC
+- its behavior is split across `21` mixins totaling `12618` LOC
+- the coordination directory is now protected by file-size and contract tests
+- the repo has first-class status/health tooling via `training_status.py`, `training_dashboard.py`, and the product smoke gate
+
 ## Supported Path For New Readers
 
 If you are approaching RingRift as an engineer or researcher, the most useful path through the repo is:
@@ -78,16 +85,19 @@ If you are approaching RingRift as an engineer or researcher, the most useful pa
 4. [`src/shared/engine`](/Users/armand/Development/RingRift/src/shared/engine)
 5. [`ai-service/scripts/minimal_alphazero_loop.py`](/Users/armand/Development/RingRift/ai-service/scripts/minimal_alphazero_loop.py)
 6. [`ai-service/scripts/check_ts_python_replay_parity.py`](/Users/armand/Development/RingRift/ai-service/scripts/check_ts_python_replay_parity.py)
+7. [`ai-service/scripts/training_status.py`](/Users/armand/Development/RingRift/ai-service/scripts/training_status.py)
+8. [`docs/CURRENT_STATUS.md`](/Users/armand/Development/RingRift/docs/CURRENT_STATUS.md)
 
 ## Current Training Shape
 
 The published results come from a small set of board/player configurations rather than every possible setup in the repo.
 
-As of April 9, 2026:
+As of April 10, 2026:
 
-- `hex8_2p` is the strongest result
-- `square8_2p` is now also clearly improving
-- `square8_3p` is promising, but multiplayer evaluation has needed more care than the 2-player path
+- `hex8_2p` is the strongest result but appears plateaued
+- `square8_2p` is the second clear improvement path, though its node is currently down
+- `square8_3p` is alive but regressing under seat-fair evaluation
+- `square8_4p` is still baseline and operationally down
 
 Large-board and some multiplayer configurations remain slower and less mature.
 
@@ -120,3 +130,12 @@ These areas are real, but they are not the best entry point:
 - internal planning and assistant-facing notes such as `CLAUDE.md`
 
 Use them later if you need operational or historical context. They are not the shortest path to understanding the project.
+
+## Current Architectural Read
+
+The architecture is now split into two explicit lanes:
+
+- the **supported lane**, centered on the shared TS engine, Python parity mirror, and minimal training loop
+- the **legacy-but-rehabilitated lane**, centered on coordination, P2P, and operational tooling that is being audited and decomposed rather than deleted
+
+That distinction matters. The broader infrastructure is becoming usable again, but the project should still present the supported lane as the source of truth for scientific claims and reproducibility.

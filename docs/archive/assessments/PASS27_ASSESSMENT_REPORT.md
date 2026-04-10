@@ -41,7 +41,7 @@ PASS27 evaluates RingRift project health across document hygiene, test hygiene, 
 | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
 | [`DOMAIN_AGGREGATE_DESIGN.md`](../../architecture/DOMAIN_AGGREGATE_DESIGN.md)                           | ✅ **All 8 aggregates documented**                       |
 | [`MODULE_RESPONSIBILITIES.md`](../../architecture/MODULE_RESPONSIBILITIES.md)                           | ✅ Current with EliminationAggregate & RecoveryAggregate |
-| [`FSM_MIGRATION_STATUS_2025_12.md`](../../architecture/FSM_MIGRATION_STATUS_2025_12.md)                 | ✅ Documents TurnStateMachine as canonical               |
+| [`FSM_MIGRATION_STATUS_2025_12.md`](../historical/FSM_MIGRATION_STATUS_2025_12.md)                      | ✅ Documents TurnStateMachine as canonical               |
 | [`SANDBOX_GAME_HOST_DECOMPOSITION_PLAN.md`](../../architecture/SANDBOX_GAME_HOST_DECOMPOSITION_PLAN.md) | ✅ Complete - reflects actual 49% reduction              |
 | [`BACKEND_GAME_HOST_DECOMPOSITION_PLAN.md`](../../architecture/BACKEND_GAME_HOST_DECOMPOSITION_PLAN.md) | ⏳ Created, implementation pending                       |
 

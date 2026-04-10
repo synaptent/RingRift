@@ -54,7 +54,7 @@ This document tracks shipped UX/GUI improvements so work is not duplicated or lo
 - `docs/ux/UX_RULES_TELEMETRY_SPEC.md`
 - `CONTRIBUTING.md`
 - `docs/planning/IMPROVEMENT.md`
-- `docs/planning/WAVE_2025_12.md`
+- `docs/archive/planning/WAVE_2025_12.md`
 
 ## 2025-12-15 — Spectator UI Polish (P1-UX-02)
 

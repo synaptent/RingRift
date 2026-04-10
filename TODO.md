@@ -1,50 +1,52 @@
 # RingRift Task Tracker
 
 **Last Updated:** 2026-04-10
-**Project Health:** usable but operationally mixed
-**Current Focus:** make the legacy infrastructure observable, diagnosable, and safe to reuse alongside the supported minimal training loop
+**Project Health:** technically credible, operationally mixed
+**Current Focus:** finish the Part 3 cleanup so the legacy infrastructure is diagnosable and reusable without displacing the supported minimal loop
 
-## Current Training Status
+## Current Training Snapshot
 
-Snapshot source: `docs/data/training_status.json`, generated with:
+Source:
 
 ```bash
 npm --silent run training:status -- --json --ssh > docs/data/training_status.json
 ```
 
-| Config       | Node                          | Current Evidence                                                  | Process Status                               | Read                                                  |
-| ------------ | ----------------------------- | ----------------------------------------------------------------- | -------------------------------------------- | ----------------------------------------------------- |
-| `hex8_2p`    | `gh200-8` / `100.121.230.110` | `1967.6` Elo, 6 promotions, latest completed eval rejected at 45% | Loop and supervisor alive                    | Proven strongest result; plateaued near 1968          |
-| `square8_2p` | `gh200-9` / `100.127.168.116` | `1601.8` Elo, 2 promotions, latest completed eval promoted at 60% | Loop and supervisor dead in latest SSH probe | Good result, but node needs operational restart/debug |
-| `square8_3p` | `gh200-12` / `100.86.51.4`    | `1534.9` Elo, 1 promotion, latest completed eval rejected at 22%  | Loop and supervisor alive                    | Regressing under seat-fair eval; treat cautiously     |
-| `square8_4p` | `gh200-10` / `100.100.19.96`  | `1500.0` Elo, 0 promotions, latest completed eval about 46%       | Loop and supervisor dead in latest SSH probe | Experimental; not yet proven                          |
+| Config       | Node                          | Latest Iteration | Evidence                                                                      | Process Status            | Read                                           |
+| ------------ | ----------------------------- | ---------------: | ----------------------------------------------------------------------------- | ------------------------- | ---------------------------------------------- |
+| `hex8_2p`    | `gh200-8` / `100.121.230.110` |             `32` | `1967.6` Elo, `6` promotions, latest eval rejected at `40%` after `50` games  | Loop and supervisor alive | Strongest result, but clearly plateaued        |
+| `square8_2p` | `gh200-9` / `100.127.168.116` |             `31` | `1601.8` Elo, `2` promotions, latest promotion came at `60%` after `50` games | Loop and supervisor dead  | Real 2P improvement, but currently not running |
+| `square8_3p` | `gh200-12` / `100.86.51.4`    |             `13` | `1534.9` Elo, `1` promotion, recent seat-fair evals at `22-24%` win rate      | Loop and supervisor alive | Regressing; not trustworthy as a strong result |
+| `square8_4p` | `gh200-10` / `100.100.19.96`  |              `5` | `1500.0` Elo, `0` promotions, latest eval around `46%`                        | Loop and supervisor dead  | No proven improvement                          |
 
 ## What Is Proven
 
-- The TypeScript engine remains the rules source of truth; Python mirrors it for AI/training.
-- The supported minimal loop has produced real promotions on `hex8_2p` and `square8_2p`.
-- `hex8_2p` is the strongest current model and is deployed through the live AI ladder.
-- Product smoke coverage now checks production health, sandbox AI move generation, replay submission, and local model loadability via `npm run smoke:product`.
-- Training observability now has `npm run training:status`, `npm run training:dashboard`, `npm run training:validate-db -- <db>`, and `npm run training:provenance -- <db>`.
+- The supported minimal loop remains the training path to trust for reproducible results.
+- `hex8_2p` and `square8_2p` both have genuine promotion evidence above the `1500` baseline.
+- Production smoke currently passes end to end against `ringrift.ai`, including server health, sandbox AI move generation, replay submission, and local `canonical_hex8_2p` model loadability.
+- Training observability now exists in repo via `training:status`, `training:dashboard`, `training:validate-db`, and `training:provenance`.
+- The P2P orchestrator size target has been achieved: `2591` LOC in the main file with `21` extracted mixins totaling `12618` LOC.
 
-## What Is Experimental Or Not Yet Trustworthy
+## What Is Not Yet Trustworthy
 
-- `square8_3p` has one promotion but recent seat-fair evaluations are poor; do not market it as a strong model yet.
-- `square8_4p` has not improved above baseline.
-- The legacy coordinator/P2P stack is being audited and decomposed; it is useful infrastructure, but not yet the source of truth for the current research claims.
-- Human-submitted sandbox games are being recorded, but should only enter training when provenance and validation gates say they are ready.
+- `square8_3p` is still regressing under seat-fair evaluation.
+- `square8_4p` has not shown improvement above baseline.
+- Two of the four active training nodes are currently down.
+- The latest remote GitHub Actions status on `main` is red: both `Supported Path` and `ci.yml` failed on commit `bb4c99be1`, even though the local Phase 8 verification passed.
+- Supervisor heartbeat files still report `unknown` age on the nodes that are alive, so the operational story is improved but not finished.
 
-## Immediate P0/P1 Work
+## Immediate Priorities
 
-- P0: Restart or diagnose dead `square8_2p` and `square8_4p` supervisors using `npm run training:status -- --ssh` plus remote logs.
-- P0: Keep `scripts/minimal_alphazero_loop.py` and its support libs stable; do not mix infrastructure refactors into the proven loop.
-- P1: Finish operational docs and dashboard flow so node health does not require ad-hoc SSH archaeology.
-- P1: Continue P2P orchestrator decomposition only behind tests; the goal is reuse, not deletion.
-- P1: Use `npm run training:provenance -- <db>` and `npm run training:validate-db -- <db>` before mixing replay DBs into training exports.
+- P0: Diagnose the failing GitHub Actions runs on `main` and get the remote CI surface green again.
+- P0: Restart or debug `square8_2p` and `square8_4p`.
+- P0: Keep `ai-service/scripts/minimal_alphazero_loop.py` stable; infrastructure cleanup must not leak into the supported loop.
+- P1: Finish the remaining Part 3 cleanup phases in order, updating the roadmap after each.
+- P1: Keep training-data provenance gates mandatory before any human/sandbox replay data enters exports.
 
 ## Reference Docs
 
-- `docs/CURRENT_STATUS.md` - owner-facing state snapshot.
-- `docs/RESULTS.md` - research result summary and limitations.
-- `docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md` - minimal-loop plus legacy-infrastructure strategy.
-- `ai-service/AGENTS.md` and root `AGENTS.md` - invariants for code changes.
+- [CURRENT_STATUS.md](docs/CURRENT_STATUS.md)
+- [RESULTS.md](docs/RESULTS.md)
+- [ARCHITECTURE_OVERVIEW.md](docs/ARCHITECTURE_OVERVIEW.md)
+- [PART3_INFRASTRUCTURE_ROADMAP.md](docs/architecture/PART3_INFRASTRUCTURE_ROADMAP.md)
+- [TRAINING_INFRASTRUCTURE_STRATEGY.md](docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md)

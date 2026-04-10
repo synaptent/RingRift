@@ -4,53 +4,81 @@ Last updated: 2026-04-10.
 
 This is an owner-facing snapshot for Armand. It is not a marketing document.
 
-## Snapshot Source
+## Snapshot Sources
 
-The machine-readable snapshot is checked in at `docs/data/training_status.json`.
+- Training nodes: `npm --silent run training:status -- --json --ssh`
+- Product health: `npm --silent run smoke:product`
+- Local infrastructure gate: `cd ai-service && PYTHONPATH=. python -m pytest tests/unit/ tests/contracts/ -x -q --timeout=120`
+- Remote CI state: `gh run list -L 5`
 
-Refresh it with:
-
-```bash
-npm --silent run training:status -- --json --ssh > docs/data/training_status.json
-```
+The machine-readable training snapshot is checked in at [`docs/data/training_status.json`](/Users/armand/Development/RingRift/docs/data/training_status.json).
 
 ## Training Results
 
-| Config       | Best Current Elo | Promotions | Latest Evidence                                       | Status                                      |
-| ------------ | ---------------: | ---------: | ----------------------------------------------------- | ------------------------------------------- |
-| `hex8_2p`    |         `1967.6` |        `6` | Latest completed eval rejected at 45% after 200 games | Proven strongest result; plateaued          |
-| `square8_2p` |         `1601.8` |        `2` | Latest completed eval promoted at 60% after 50 games  | Proven improvement, but node currently down |
-| `square8_3p` |         `1534.9` |        `1` | Recent seat-fair evals rejected at 24%, 26%, then 22% | Regressing; treat as weak evidence          |
-| `square8_4p` |         `1500.0` |        `0` | Latest completed eval about 46%; no promotion         | Not improved above baseline                 |
+| Config       | Iteration |      Elo | Promotions | Latest Evidence                                            | Status                                      |
+| ------------ | --------: | -------: | ---------: | ---------------------------------------------------------- | ------------------------------------------- |
+| `hex8_2p`    |      `32` | `1967.6` |        `6` | Latest eval rejected at `40%` after `50` games             | Strongest result, but clearly plateaued     |
+| `square8_2p` |      `31` | `1601.8` |        `2` | Latest completed promotion was `60%` after `50` games      | Real improvement, but node is currently off |
+| `square8_3p` |      `13` | `1534.9` |        `1` | Recent seat-fair evals rejected at `22%`, `24%`, and `22%` | Regressing; weak evidence                   |
+| `square8_4p` |       `5` | `1500.0` |        `0` | Latest completed eval was about `46%`                      | No proven improvement                       |
 
 ## Infrastructure Health
 
-| Node                          | Config       | SSH Probe | Loop  | Supervisor | Read                        |
-| ----------------------------- | ------------ | --------- | ----- | ---------- | --------------------------- |
-| `gh200-8` / `100.121.230.110` | `hex8_2p`    | OK        | Alive | Alive      | Healthy                     |
-| `gh200-9` / `100.127.168.116` | `square8_2p` | OK        | Dead  | Dead       | Needs restart/debug         |
-| `gh200-12` / `100.86.51.4`    | `square8_3p` | OK        | Alive | Alive      | Healthy process, weak evals |
-| `gh200-10` / `100.100.19.96`  | `square8_4p` | OK        | Dead  | Dead       | Needs restart/debug         |
+| Node                          | Config       | SSH Probe | Loop  | Supervisor | Heartbeat File | Read                              |
+| ----------------------------- | ------------ | --------- | ----- | ---------- | -------------- | --------------------------------- |
+| `gh200-8` / `100.121.230.110` | `hex8_2p`    | OK        | Alive | Alive      | `unknown`      | Healthy loop, but plateaued       |
+| `gh200-9` / `100.127.168.116` | `square8_2p` | OK        | Dead  | Dead       | `unknown`      | Needs restart/debug               |
+| `gh200-12` / `100.86.51.4`    | `square8_3p` | OK        | Alive | Alive      | `unknown`      | Live process, but weak evaluation |
+| `gh200-10` / `100.100.19.96`  | `square8_4p` | OK        | Dead  | Dead       | `unknown`      | Needs restart/debug               |
+
+## Product Health
+
+The current product smoke against `https://ringrift.ai` passed on April 10, 2026:
+
+- server health endpoint reachable
+- AI proxy/replay stats endpoint reachable
+- sandbox AI move returned `ai_type=gumbel_mcts` with `use_neural_net=True`
+- replay-store smoke succeeded and the smoke replay was explicitly excluded from training
+- local `canonical_hex8_2p` model loaded successfully through the Python AI service
+
+## CI Status
+
+Local verification is green:
+
+- `tests/unit + tests/contracts`: `32716 passed, 94 skipped`
+
+Remote GitHub Actions on `main` are currently red:
+
+- `Supported Path` failed on `bb4c99be1`
+- `.github/workflows/ci.yml` failed on `bb4c99be1`
+
+The doc state should therefore be read as: local quality gates are strong, but remote CI still needs follow-up.
+
+## P2P / Legacy Infrastructure State
+
+- `ai-service/scripts/p2p_orchestrator.py` is now `2591` LOC, below the `<3000` target.
+- The orchestrator currently delegates into `21` mixin modules totaling `12618` LOC.
+- The Phase 8 verification gate passed after the test-infrastructure cleanup, so the decomposed legacy surface is substantially more auditable than it was at the start of Part 3.
+- The minimal loop remains the supported training harness; the legacy coordinator/P2P stack is being kept and cleaned up for reuse, not for ownership of the core research claims.
 
 ## What Works
 
-- Production sandbox AI can route through the Python AI service and report `Gumbel MCTS` / neural telemetry instead of forcing local heuristic fallback.
-- Product smoke coverage exists via `npm run smoke:product`.
-- Training observability exists via `npm run training:status` and `npm run training:dashboard`.
-- Replay-data provenance and validation are now inspectable via `npm run training:provenance -- <db>` and `npm run training:validate-db -- <db>`.
-- The minimal training loop remains the supported proof harness.
+- Production sandbox AI can route through the Python AI service and use neural-backed Gumbel MCTS.
+- Product smoke coverage exists and currently passes.
+- Training observability exists through `training:status`, `training:dashboard`, `training:validate-db`, and `training:provenance`.
+- Replay-data provenance and validation are inspectable without direct SQL work.
+- The P2P orchestrator and the largest coordination modules are now behind passing size and contract checks.
 
 ## What Is Broken Or Unproven
 
-- `square8_2p` and `square8_4p` are not currently running despite having recent metrics.
-- Supervisor heartbeat ages are reported as `unknown` by the SSH probe for the live loops, so heartbeat-file path/state still needs follow-up.
-- `square8_3p` is alive but appears to be failing seat-fair evaluation badly.
-- `square8_4p` has not demonstrated improvement.
-- The legacy P2P stack is still being decomposed/audited and should not be treated as the research source of truth yet.
+- `square8_2p` and `square8_4p` are not currently running.
+- Supervisor heartbeat age reporting still returns `unknown` even on live nodes.
+- `square8_3p` remains alive but is failing seat-fair evaluation badly enough that it should not be treated as a strong result.
+- Remote GitHub Actions are currently failing on `main`.
 
 ## Next Actions
 
-- Restart or diagnose `square8_2p` and `square8_4p` with the hardened supervisor/deploy scripts.
-- Investigate why supervisor heartbeat files are not reporting age even when supervisor processes are alive.
-- Keep training claims tied to completed metrics and evaluation conditions, not to aspirational Elo labels.
-- Continue P2P decomposition behind `tests/unit/p2p/` and update `docs/P2P_DECOMPOSITION_PLAN.md` after each extraction.
+- Fix the remote `Supported Path` and `ci.yml` failures on `main`.
+- Restart or diagnose `square8_2p` and `square8_4p`.
+- Keep claims tied to completed evaluations, not label inflation.
+- Continue the remaining Part 3 phases in order and update the roadmap after each completion.

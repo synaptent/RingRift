@@ -1618,7 +1618,7 @@ For complete AI SLO validation (response latency, fallback rate), a separate loa
 
 ### Recommendations
 
-1. **Document the drill in runbook results** - Add this execution to `docs/runbooks/OPERATIONAL_DRILLS_RESULTS_2025_12_03.md` or create a new results document
+1. **Document the drill in runbook results** - Add this execution to `docs/archive/historical/OPERATIONAL_DRILLS_RESULTS_2025_12_03.md` or create a new results document
 2. **Schedule periodic drills** - Consider running this drill quarterly in staging
 3. **Extend to production** - Adapt this drill for production with appropriate change management
 

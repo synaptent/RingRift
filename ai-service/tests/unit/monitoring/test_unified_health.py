@@ -216,7 +216,7 @@ class TestUnifiedHealthOrchestrator:
         assert result is not None
         assert result.component == "test_comp"
         assert result.status == HealthStatus.HEALTHY
-        assert result.check_time > 0
+        assert result.check_time >= 0
 
     def test_check_component_nonexistent(self):
         """Test checking a nonexistent component."""

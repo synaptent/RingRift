@@ -1,7 +1,7 @@
 # RingRift Documentation Index
 
-> **Last Updated:** 2026-04-09
-> **Total Docs:** ~180 active + ~65 archived
+> **Last Updated:** 2026-04-10
+> **Status:** actively curated during Part 3 cleanup
 
 This index provides navigation and status tracking for all project documentation.
 
@@ -18,6 +18,7 @@ This index provides navigation and status tracking for all project documentation
 | `RESULTS.md`               | Current research results    | Active |
 | `ARCHITECTURE_OVERVIEW.md` | External architecture guide | Active |
 | `REPOSITORY_MAP.md`        | Supported vs legacy map     | Active |
+| `DEVELOPER_GUIDE.md`       | New developer quick start   | Active |
 | `../SECURITY.md`           | Security policy             | Active |
 | `../CONTRIBUTING.md`       | Contribution guidelines     | Active |
 | `../AGENTS.md`             | AI agent expectations       | Active |
@@ -37,12 +38,12 @@ This index provides navigation and status tracking for all project documentation
 
 ### Rules Analysis & Audits
 
-| Document                                           | Purpose                             | Status    |
-| -------------------------------------------------- | ----------------------------------- | --------- |
-| `rules/RULES_DOCS_CONSISTENCY_AUDIT_2025_12_12.md` | Consistency audit                   | Active    |
-| `rules/RULES_SSOT_MAP.md`                          | SSoT hierarchy guide                | Active    |
-| `rules/CURRENT_RULES_STATE.md`                     | Current rules implementation status | Active    |
-| `supplementary/rules_analysis/*`                   | Deep dives (LPS, ring count)        | Reference |
+| Document                                                        | Purpose                             | Status    |
+| --------------------------------------------------------------- | ----------------------------------- | --------- |
+| `archive/historical/RULES_DOCS_CONSISTENCY_AUDIT_2025_12_12.md` | Historical consistency audit        | Reference |
+| `rules/RULES_SSOT_MAP.md`                                       | SSoT hierarchy guide                | Active    |
+| `rules/CURRENT_RULES_STATE.md`                                  | Current rules implementation status | Active    |
+| `supplementary/rules_analysis/*`                                | Deep dives (LPS, ring count)        | Reference |
 
 ---
 
@@ -155,16 +156,20 @@ See `runbooks/` for 25+ specific runbooks covering:
 
 ## Planning & Status
 
-| Document                                         | Purpose                   | Status     |
-| ------------------------------------------------ | ------------------------- | ---------- |
-| `COMPREHENSIVE_ACTION_PLAN_2025_12_17.md`        | Current action plan       | **Active** |
-| `archive/historical/CURRENT_STATE_ASSESSMENT.md` | Project state summary     | Reference  |
-| `planning/NN_SELFPLAY_TRAINING_LOOP_PLAN.md`     | NN self-play loop plan    | Active     |
-| `planning/SELFPLAY_LOOP_CLOSURE_PLAN.md`         | Self-play bottleneck plan | Active     |
-| `../PROJECT_GOALS.md`                            | High-level goals          | Active     |
-| `../TODO.md`                                     | Active TODO list          | Active     |
-| `../KNOWN_ISSUES.md`                             | Known issues tracker      | Active     |
-| `production/RELEASE_NOTES_v0.1.0-beta.md`        | Release notes draft       | Draft      |
+| Document                                                   | Purpose                    | Status    |
+| ---------------------------------------------------------- | -------------------------- | --------- |
+| `CURRENT_STATUS.md`                                        | Owner-facing current state | Active    |
+| `RESULTS.md`                                               | Current evidence summary   | Active    |
+| `ARCHITECTURE_OVERVIEW.md`                                 | External architecture view | Active    |
+| `architecture/PART3_INFRASTRUCTURE_ROADMAP.md`             | Current cleanup roadmap    | Active    |
+| `archive/planning/COMPREHENSIVE_ACTION_PLAN_2025_12_17.md` | Historical action plan     | Reference |
+| `archive/historical/CURRENT_STATE_ASSESSMENT.md`           | Project state summary      | Reference |
+| `planning/NN_SELFPLAY_TRAINING_LOOP_PLAN.md`               | NN self-play loop plan     | Active    |
+| `planning/SELFPLAY_LOOP_CLOSURE_PLAN.md`                   | Self-play bottleneck plan  | Active    |
+| `../PROJECT_GOALS.md`                                      | High-level goals           | Active    |
+| `../TODO.md`                                               | Active task tracker        | Active    |
+| `../KNOWN_ISSUES.md`                                       | Known issues tracker       | Active    |
+| `production/RELEASE_NOTES_v0.1.0-beta.md`                  | Release notes draft        | Draft     |
 
 ---
 
@@ -201,7 +206,8 @@ Superseded or historical documents are in `archive/`:
 | Directory                              | Contents                               |
 | -------------------------------------- | -------------------------------------- |
 | `archive/assessments/`                 | Historical pass assessments (PASS1-22) |
-| `archive/plans/`                       | Old planning documents                 |
+| `archive/plans/`                       | Older planning documents               |
+| `archive/planning/`                    | Archived 2025 planning snapshots       |
 | `archive/historical/`                  | Historical snapshots and assessments   |
 | `archive/historical/ROADMAP_2025Q1.md` | Historical roadmap snapshot            |
 

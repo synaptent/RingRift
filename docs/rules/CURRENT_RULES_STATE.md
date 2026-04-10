@@ -11,7 +11,7 @@ A central navigation guide for developers to quickly locate all rules-related do
   > - **Lifecycle/API SSoT:** `docs/architecture/CANONICAL_ENGINE_API.md` and shared types/schemas under `src/shared/types/game.ts`, `src/shared/engine/orchestration/types.ts`, `src/shared/types/websocket.ts`, and `src/shared/validation/websocketSchemas.ts`.
   > - Some linked documents (especially under `archive/` and older UX/audit reports) are **partially historical**; this file is kept current but intentionally points at both active and archived material.
   > - For high-level architecture/topology, see `ARCHITECTURE_ASSESSMENT.md`, `ARCHITECTURE_REMEDIATION_PLAN.md`, and `DOCUMENTATION_INDEX.md`.
-  > - Rules consistency worklog (2025-12-11): `docs/rules/RULES_DOCS_CONSISTENCY_PASS_2025_12_11.md`.
+  > - Rules consistency worklog (2025-12-11): `docs/archive/historical/RULES_DOCS_CONSISTENCY_PASS_2025_12_11.md`.
 
 ---
 
