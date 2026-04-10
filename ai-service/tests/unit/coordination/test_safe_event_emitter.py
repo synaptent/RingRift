@@ -233,6 +233,24 @@ class TestSafeEmitEventFunction:
 
         assert result is False
 
+    def test_safe_emit_event_uses_canonical_consolidated_path(self):
+        """The compatibility helper must delegate through event_emission_helpers."""
+        with (
+            patch(
+                "app.coordination.event_emission_helpers.safe_emit_event",
+                return_value=True,
+            ) as mock_consolidated,
+            patch(
+                "app.coordination.event_router.safe_emit_event",
+                side_effect=AssertionError("bypassed consolidated helper"),
+            ) as mock_router,
+        ):
+            result = safe_emit_event("MODULE_EVENT", {"key": "value"})
+
+        assert result is True
+        mock_consolidated.assert_called_once()
+        mock_router.assert_not_called()
+
 
 class TestSafeEventEmitterIntegration:
     """Lightweight integration coverage."""

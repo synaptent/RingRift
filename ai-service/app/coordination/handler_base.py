@@ -56,7 +56,6 @@ January 3, 2026 - Added fire-and-forget task helpers (_safe_create_task, _try_em
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import hashlib
 import json
 import logging
@@ -1284,10 +1283,14 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
             return task
         except RuntimeError as e:
             # Event loop is closed or not running
-            with contextlib.suppress(Exception):
-                close = getattr(coro, "close", None)
-                if callable(close):
+            close = getattr(coro, "close", None)
+            if callable(close):
+                try:
                     close()
+                except (AttributeError, RuntimeError, TypeError) as close_error:
+                    logger.debug(
+                        f"[{self._name}] Could not close unscheduled coroutine: {close_error}"
+                    )
             ctx = f" for {context}" if context else ""
             logger.debug(f"[{self._name}] Could not create task{ctx}: {e}")
             return None
@@ -1699,7 +1702,13 @@ class HandlerBase(SafeEventEmitterMixin, ABC):
                 return result
             except Exception:
                 if not readonly:
-                    conn.rollback()
+                    try:
+                        conn.rollback()
+                    except sqlite3.Error as rollback_error:
+                        logger.warning(
+                            f"[{self._name}] SQLite rollback failed for {db_path}: "
+                            f"{rollback_error}"
+                        )
                 raise
             finally:
                 conn.close()
@@ -1764,7 +1773,7 @@ def safe_subscribe(handler: HandlerBase, fallback: bool = True) -> bool:
     """
     try:
         return handler.subscribe()
-    except Exception as e:
+    except (AttributeError, RuntimeError, TypeError, ValueError) as e:
         logger.warning(f"safe_subscribe failed for {type(handler).__name__}: {e}")
         return fallback
 

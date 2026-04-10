@@ -124,6 +124,18 @@ ALL_CONFIGS = [
     "hexagonal_2p", "hexagonal_3p", "hexagonal_4p",
 ]
 
+SUPPORTED_DAEMON_PROFILES = ("minimal", "lean", "standard", "full")
+
+
+def validate_daemon_profile(daemon_profile: str) -> str:
+    """Validate a master-loop daemon profile name."""
+    if daemon_profile not in SUPPORTED_DAEMON_PROFILES:
+        available = ", ".join(SUPPORTED_DAEMON_PROFILES)
+        raise ValueError(
+            f"Unknown daemon profile: {daemon_profile}. Available: {available}"
+        )
+    return daemon_profile
+
 # Loop timing - now configurable via environment (Dec 2025)
 # Use env.master_loop_interval, env.training_check_interval, etc.
 from app.config.env import env
@@ -514,7 +526,7 @@ class MasterLoopController:
         self.active_configs = configs or ALL_CONFIGS
         self.dry_run = dry_run
         self.skip_daemons = skip_daemons
-        self.daemon_profile = daemon_profile
+        self.daemon_profile = validate_daemon_profile(daemon_profile)
 
         # State tracking
         self._states: dict[str, ConfigState] = {
@@ -3178,7 +3190,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--profile",
-        choices=["minimal", "lean", "standard", "full"],
+        choices=list(SUPPORTED_DAEMON_PROFILES),
         default="standard",
         help="Daemon profile (minimal=sync+health, lean=pipeline+health, standard=all automation, full=all)",
     )

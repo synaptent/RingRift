@@ -715,8 +715,6 @@ class TestHandlerBaseBackwardCompat:
     @pytest.mark.asyncio
     async def test_uptime_seconds_when_started(self):
         """Should return uptime when started."""
-        import time
-
         handler = ConcreteHandler(cycle_interval=0.1)
         await handler.start()
         await asyncio.sleep(0.1)
@@ -788,6 +786,16 @@ class TestHelperFunctions:
 
         result = safe_subscribe(handler, fallback=True)
         assert result is True
+
+    def test_safe_subscribe_does_not_swallow_base_exceptions(self):
+        """Process-control exceptions should still propagate."""
+        from app.coordination.handler_base import safe_subscribe
+
+        handler = ConcreteHandler()
+        handler.subscribe = MagicMock(side_effect=KeyboardInterrupt("stop"))
+
+        with pytest.raises(KeyboardInterrupt):
+            safe_subscribe(handler, fallback=False)
 
 
 class TestBackwardCompatAliases:
@@ -1259,7 +1267,6 @@ class TestRetryQueueHelpers:
     def test_add_and_process_integration(self):
         """Integration test: add items, then process them when ready."""
         from collections import deque
-        import time
 
         handler = ConcreteHandler()
         queue = deque()
