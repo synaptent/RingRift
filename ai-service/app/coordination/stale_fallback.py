@@ -478,7 +478,7 @@ class TrainingFallbackController:
                 },
                 source="TrainingFallbackController",
             )
-        except Exception as e:
+        except (AttributeError, ImportError, RuntimeError, TypeError, ValueError) as e:
             logger.debug(f"[StaleFallback] Could not emit fallback event: {e}")
 
     def get_status(self) -> dict[str, Any]:

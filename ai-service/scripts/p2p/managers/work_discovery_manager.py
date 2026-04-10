@@ -123,7 +123,7 @@ def _is_selfplay_enabled_for_node() -> bool:
 
         return True
 
-    except Exception as e:
+    except (AttributeError, KeyError, OSError, TypeError, ValueError, yaml.YAMLError) as e:
         logger.debug(f"[WorkDiscovery] Error checking selfplay_enabled config: {e}")
         return True
 
@@ -176,7 +176,7 @@ def _is_selfplay_enabled_for_node_id(node_id: str) -> bool:
 
         _node_selfplay_cache[node_id] = True
         return True
-    except Exception as e:
+    except (AttributeError, KeyError, OSError, TypeError, ValueError, yaml.YAMLError) as e:
         logger.debug(f"[WorkDiscovery] Error checking selfplay_enabled for {node_id}: {e}")
         _node_selfplay_cache[node_id] = True
         return True
@@ -273,7 +273,7 @@ def _is_training_enabled_for_node() -> bool:
 
         return True
 
-    except Exception as e:
+    except (AttributeError, KeyError, OSError, TypeError, ValueError, yaml.YAMLError) as e:
         logger.debug(f"[WorkDiscovery] Error checking training_enabled config: {e}")
         return True
 
@@ -480,7 +480,7 @@ class WorkDiscoveryManager:
                 channel=channel,
                 duration_seconds=time.time() - start_time,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - work-claim callback boundary
             self._stats.record_attempt(channel, False)
             return DiscoveryResult(
                 work_item=None,
@@ -529,7 +529,7 @@ class WorkDiscoveryManager:
                         )
                 except asyncio.TimeoutError:
                     logger.debug(f"[WorkDiscovery] Peer {peer_id} query timed out")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - peer query callback boundary
                     logger.debug(f"[WorkDiscovery] Peer {peer_id} query failed: {e}")
 
             self._stats.record_attempt(channel, False)
@@ -541,7 +541,7 @@ class WorkDiscoveryManager:
                 error=f"No work from {len(peers)} peers",
             )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - peer discovery callback boundary
             self._stats.record_attempt(channel, False)
             return DiscoveryResult(
                 work_item=None,
@@ -573,7 +573,7 @@ class WorkDiscoveryManager:
                 channel=channel,
                 duration_seconds=time.time() - start_time,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - autonomous queue callback boundary
             self._stats.record_attempt(channel, False)
             return DiscoveryResult(
                 work_item=None,
@@ -607,7 +607,7 @@ class WorkDiscoveryManager:
                 channel=channel,
                 duration_seconds=time.time() - start_time,
             )
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - direct selfplay callback boundary
             self._stats.record_attempt(channel, False)
             return DiscoveryResult(
                 work_item=None,

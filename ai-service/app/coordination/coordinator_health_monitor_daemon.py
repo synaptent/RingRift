@@ -279,7 +279,7 @@ class CoordinatorHealthMonitorDaemon(HandlerBase):
                     "timestamp": time.time(),
                 },
             )
-        except Exception as e:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as e:
             logger.debug(f"[CoordinatorHealthMonitor] Failed to emit cluster health event: {e}")
 
     async def _check_stale_heartbeats(self) -> None:

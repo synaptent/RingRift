@@ -330,7 +330,7 @@ class TrainingDataRecoveryDaemon(SingletonMixin, HandlerBase):
                 logger.error(f"[DataRecovery] Failed to recover {config_key}")
                 await self._emit_recovery_failed(config_key, "Export script failed")
 
-        except Exception as e:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as e:
             self._recoveries_failed += 1
             logger.error(f"[DataRecovery] Exception recovering {config_key}: {e}")
             await self._emit_recovery_failed(config_key, str(e))
@@ -427,7 +427,7 @@ class TrainingDataRecoveryDaemon(SingletonMixin, HandlerBase):
                 f"after {self.config.recovery_timeout_seconds}s"
             )
             return False
-        except Exception as e:
+        except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as e:
             logger.error(f"[DataRecovery] Export exception for {config_key}: {e}")
             return False
 

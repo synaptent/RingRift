@@ -277,7 +277,7 @@ class ModelRegistryDaemon(HandlerBase):
                 f"{len(self._known_models)} total"
             )
 
-        except Exception as e:
+        except (AttributeError, OSError, RuntimeError, sqlite3.Error, TypeError, ValueError) as e:
             logger.error(f"[ModelRegistry] Scan failed: {e}")
             self._stats.errors_count += 1
             self._stats.last_error = str(e)
@@ -435,7 +435,7 @@ class ModelRegistryDaemon(HandlerBase):
                 source="model_registry_daemon",
                 context="ModelRegistryDaemon",
             )
-        except Exception as e:
+        except (AttributeError, RuntimeError, TypeError) as e:
             logger.debug(f"[ModelRegistry] Failed to emit event: {e}")
 
     def get_all_models(self) -> list[dict[str, Any]]:

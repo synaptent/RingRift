@@ -11,6 +11,7 @@ This controller manages:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass, field
@@ -278,7 +279,7 @@ class WorkerPullController:
                                         f"Claimed work via {source} (leader unreachable)"
                                     )
                                 return data.get("work")
-            except Exception as e:  # noqa: BLE001
+            except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, OSError, TypeError, ValueError) as e:
                 if source == "leader":
                     logger.debug(f"Failed to claim work from leader: {e}")
                 else:
@@ -350,7 +351,7 @@ class WorkerPullController:
                                         f"Batch claimed {len(items)} items via {source}"
                                     )
                                 return items
-            except Exception as e:  # noqa: BLE001
+            except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, OSError, TypeError, ValueError) as e:
                 logger.debug(f"Failed to batch claim from {source}: {e}")
 
         return []
@@ -419,7 +420,7 @@ class WorkerPullController:
                         )
                         self._stats.results_reported += 1
                         return True
-        except Exception as e:  # noqa: BLE001
+        except (aiohttp.ClientError, asyncio.TimeoutError, KeyError, OSError, TypeError, ValueError) as e:
             logger.debug(f"Failed to report work result: {e}")
             self._stats.results_failed += 1
 

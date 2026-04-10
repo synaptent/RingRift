@@ -232,7 +232,7 @@ class JobLifecycleManager:
             return result.returncode, result.stdout, result.stderr
         except subprocess.TimeoutExpired:
             return -1, "", "timeout"
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError, ValueError) as e:
             return -1, "", str(e)
 
     # ========================================================================

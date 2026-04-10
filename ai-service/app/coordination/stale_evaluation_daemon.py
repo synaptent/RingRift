@@ -249,7 +249,7 @@ class StaleEvaluationDaemon(HandlerBase):
 
             return stale_models
 
-        except Exception as e:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as e:
             logger.error(f"[StaleEval] Error querying stale ratings: {e}")
             return []
 
@@ -363,10 +363,9 @@ class StaleEvaluationDaemon(HandlerBase):
             "timestamp": time.time(),
         }
 
-        try:
-            safe_emit_event(DataEventType.EVALUATION_REQUESTED, payload)
-        except Exception as e:
-            logger.debug(f"[StaleEval] Failed to emit eval request: {e}")
+        emitted = safe_emit_event(DataEventType.EVALUATION_REQUESTED, payload)
+        if not emitted:
+            logger.debug("[StaleEval] Failed to emit eval request")
 
     # =========================================================================
     # Health Check

@@ -355,7 +355,7 @@ class BacklogEvaluationDaemon(HandlerBase):
 
             self._emit_discovery_completed(len(models), queued)
 
-        except Exception as e:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as e:
             logger.error(f"[BacklogEval] Cycle failed: {e}", exc_info=True)
             self._record_error(f"Cycle failed: {e}", e)
 
@@ -444,7 +444,7 @@ class BacklogEvaluationDaemon(HandlerBase):
                         stats = elo_service.get_config_stats(config_key)
                         if stats and stats.total_games < self._daemon_config.underserved_game_threshold:
                             self._underserved_configs.add(config_key)
-                    except Exception:
+                    except (AttributeError, RuntimeError, TypeError, ValueError):
                         # If we can't get stats, assume underserved
                         self._underserved_configs.add(config_key)
 
@@ -550,7 +550,7 @@ class BacklogEvaluationDaemon(HandlerBase):
 
             return True
 
-        except Exception as e:
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError) as e:
             logger.error(
                 f"[BacklogEval] Failed to queue {model.file_name}: {e}",
                 exc_info=True,

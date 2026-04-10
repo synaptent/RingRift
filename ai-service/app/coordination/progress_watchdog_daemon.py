@@ -245,7 +245,7 @@ class ProgressWatchdogDaemon(HandlerBase):
                 # Invalid config_key or data validation errors
                 logger.error(f"Invalid config or data for {config_key}: {e}")
                 self._record_error(str(e))
-            except Exception as e:
+            except (AttributeError, OSError, RuntimeError, sqlite3.Error, TypeError) as e:
                 # Other errors - daemon loop must continue
                 logger.error(f"Error checking progress for {config_key}: {e}")
                 self._record_error(str(e))
@@ -666,7 +666,7 @@ class ProgressWatchdogDaemon(HandlerBase):
                     if instance and hasattr(instance, "reset_all"):
                         instance.reset_all()
                         reset_count += 1
-                except Exception as e:
+                except (AttributeError, RuntimeError, TypeError) as e:
                     logger.debug(f"Could not reset {cb_cls.__name__}: {e}")
         except ImportError:
             logger.debug("CircuitBreakerBase not available for reset")
@@ -678,7 +678,7 @@ class ProgressWatchdogDaemon(HandlerBase):
             if ncb and hasattr(ncb, "reset_all"):
                 ncb.reset_all()
                 reset_count += 1
-        except (ImportError, Exception) as e:
+        except (AttributeError, ImportError, RuntimeError, TypeError) as e:
             logger.debug(f"Could not reset NodeCircuitBreaker: {e}")
 
         try:
@@ -690,10 +690,10 @@ class ProgressWatchdogDaemon(HandlerBase):
                 for node_progress in self._progress:
                     try:
                         tcb.reset_all_transports(node_progress, reason="stall_recovery_cb_reset")
-                    except Exception:
+                    except (AttributeError, RuntimeError, TypeError):
                         pass
                 reset_count += 1
-        except (ImportError, Exception) as e:
+        except (AttributeError, ImportError, RuntimeError, TypeError) as e:
             logger.debug(f"Could not reset TransportCircuitBreaker: {e}")
 
         logger.warning(

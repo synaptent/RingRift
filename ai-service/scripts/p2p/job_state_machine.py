@@ -432,7 +432,7 @@ class JobStateMachine:
 
             emit_fn(event_name, payload)
 
-        except Exception as e:
+        except (AttributeError, KeyError, RuntimeError, TypeError, ValueError) as e:
             logger.debug(f"[JobStateMachine] Failed to emit event: {e}")
 
     def get_allowed_transitions(

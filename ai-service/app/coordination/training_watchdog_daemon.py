@@ -591,7 +591,7 @@ class TrainingWatchdogDaemon(HandlerBase):
 
         except ImportError:
             logger.debug(f"[{self.name}] DistributedLock not available")
-        except Exception as e:
+        except (AttributeError, OSError, RuntimeError, sqlite3.Error, TypeError) as e:
             logger.error(f"[{self.name}] Failed to release lock: {e}")
 
     async def _emit_process_killed_event(
@@ -768,5 +768,5 @@ def send_training_heartbeat(config_key: str, pid: int | None = None) -> None:
             daemon = TrainingWatchdogDaemon.get_instance()
             if daemon._running:
                 daemon.heartbeat(config_key, pid)
-        except Exception:
+        except (AttributeError, RuntimeError):
             pass  # Best effort

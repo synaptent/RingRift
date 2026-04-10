@@ -821,7 +821,7 @@ class MaintenanceDaemon(HandlerBase):
                     pass
         except ImportError:
             pass
-        except Exception as e:
+        except (AttributeError, OSError, RuntimeError, sqlite3.Error, TypeError, ValueError) as e:
             logger.warning(f"[Maintenance] Elo integrity check error: {e}")
 
     async def _detect_orphan_files(self) -> None:
