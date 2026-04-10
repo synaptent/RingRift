@@ -348,10 +348,10 @@ class TransportAwareCircuitBreaker:
 
         # Emit event
         try:
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
             from app.distributed.data_events import DataEventType
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.HOST_OFFLINE,
                 {
                     "node_id": node_id,
@@ -359,6 +359,7 @@ class TransportAwareCircuitBreaker:
                     "excluded_until": exclude_until,
                     "source": "transport_circuit_breaker",
                 },
+                source="transport_circuit_breaker",
             )
         except ImportError:
             pass

@@ -529,10 +529,10 @@ class AtomicLeadershipCoordinator:
     def _emit_leader_changed_event(self, transition: TransitionRecord) -> None:
         """Emit event when leader changes."""
         try:
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
             from app.distributed.data_events import DataEventType
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.LEADER_ELECTED,
                 {
                     "old_leader": transition.old_leader,
@@ -542,6 +542,7 @@ class AtomicLeadershipCoordinator:
                     "duration_seconds": transition.completed_at - transition.started_at,
                     "source": "atomic_leadership",
                 },
+                source="atomic_leadership",
             )
         except ImportError:
             pass

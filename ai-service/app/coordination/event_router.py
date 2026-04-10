@@ -1860,8 +1860,8 @@ class UnifiedEventRouter:
                 "buses_available": validation.get("buses_available", {}),
             },
             "orphan_events": {
-                "count": len(orphan_analysis.get("orphaned_events", [])),
-                "types": orphan_analysis.get("orphaned_events", [])[:10],  # Limit to 10
+                "count": len(orphan_analysis.get("emitted_no_subscribers", [])),
+                "types": orphan_analysis.get("emitted_no_subscribers", [])[:10],
             },
         }
 

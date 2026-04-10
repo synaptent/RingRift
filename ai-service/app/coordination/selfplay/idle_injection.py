@@ -243,9 +243,10 @@ class IdleWorkInjectionMixin:
 
         # Emit event for observability
         try:
-            from app.coordination.event_router import DataEventType, emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
+            from app.distributed.data_events import DataEventType
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.IDLE_NODE_WORK_INJECTED,
                 {
                     "idle_nodes": idle_nodes,
@@ -256,6 +257,7 @@ class IdleWorkInjectionMixin:
                     "gpu_nodes": gpu_node_count,
                     "cpu_nodes": cpu_node_count,
                 },
+                source="selfplay_idle_injection",
             )
         except (ImportError, AttributeError):
             pass

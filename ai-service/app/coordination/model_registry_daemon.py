@@ -76,13 +76,11 @@ except ImportError:
 
 # Try to import event emission
 try:
-    from app.distributed.data_events import DataEventType
-    from app.coordination.event_router import emit_event
+    from app.coordination.event_emission_helpers import safe_emit_event_async
     HAS_EVENTS = True
 except ImportError:
     HAS_EVENTS = False
-    DataEventType = None
-    emit_event = None
+    safe_emit_event_async = None
 
 
 @dataclass
@@ -426,14 +424,16 @@ class ModelRegistryDaemon(HandlerBase):
             return
 
         try:
-            await self._safe_emit_event_async(
+            await safe_emit_event_async(
                 "MODEL_REGISTRY_UPDATED",
                 {
                     "total_models": len(self._known_models),
                     "new_models": self._new_models_this_scan,
                     "scan_count": self._scan_count,
                     "timestamp": time.time(),
-                }
+                },
+                source="model_registry_daemon",
+                context="ModelRegistryDaemon",
             )
         except Exception as e:
             logger.debug(f"[ModelRegistry] Failed to emit event: {e}")

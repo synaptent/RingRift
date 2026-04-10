@@ -2062,13 +2062,13 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
             analysis: Analysis result from DaemonHealthAnalyzer
         """
         try:
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
             from app.distributed.data_events import DataEventType
 
             import socket
             event_type = DataEventType.DAEMON_FAILURE_CLASSIFIED
 
-            await emit_event(
+            safe_emit_event(
                 event_type,
                 {
                     "daemon_name": daemon_type.value,
@@ -2080,6 +2080,7 @@ class DaemonManager(SingletonMixin["DaemonManager"]):
                     "hostname": socket.gethostname(),
                     "source": "DaemonManager",
                 },
+                source="daemon_manager",
             )
             logger.debug(
                 f"Emitted DAEMON_FAILURE_CLASSIFIED for {daemon_type.value}: "

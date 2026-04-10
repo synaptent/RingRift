@@ -676,10 +676,10 @@ class DataAvailabilityDaemon:
     def _emit_data_available_event(self, req: DataRequirement) -> None:
         """Emit event when data becomes available."""
         try:
-            from app.coordination.event_router import emit_event
-            from app.coordination.data_events import DataEventType
+            from app.coordination.event_emission_helpers import safe_emit_event
+            from app.distributed.data_events import DataEventType
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.DATA_SYNC_COMPLETED,
                 {
                     "node_id": self._node_id,
@@ -688,6 +688,7 @@ class DataAvailabilityDaemon:
                     "file": req.file_pattern,
                     "source": "data_availability_daemon",
                 },
+                source="data_availability_daemon",
             )
         except ImportError:
             pass

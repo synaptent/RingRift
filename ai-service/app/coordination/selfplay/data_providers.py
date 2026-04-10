@@ -302,15 +302,16 @@ class DataProviderMixin:
         # Emit event for monitoring (Jan 2026 - cluster visibility)
         try:
             from app.distributed.data_events.event_types import DataEventType
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
-            emit_event(
+            safe_emit_event(
                 DataEventType.CLUSTER_VISIBILITY_DEGRADED,
                 {
                     "reason": "cluster_manifest_unavailable",
                     "node_id": getattr(self, "_node_id", "unknown"),
                     "cached_count": sum(self._cluster_game_counts.values()),
                 },
+                source="selfplay_data_provider",
             )
         except Exception:
             pass  # Don't fail on event emission

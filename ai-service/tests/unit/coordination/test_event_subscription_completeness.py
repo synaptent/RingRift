@@ -9,6 +9,9 @@ is subscribed to handle them.
 
 from __future__ import annotations
 
+import ast
+from pathlib import Path
+
 import pytest
 from unittest.mock import patch, MagicMock
 
@@ -318,6 +321,109 @@ class TestEventSubscriptionDiagnostics:
 
         assert "all_subscribed" in result
         assert isinstance(result["all_subscribed"], list)
+
+    def test_dead_event_detection_reports_emitted_events_without_subscribers(self):
+        """Verify orphan diagnostics surface emitted events with no subscribers."""
+        from app.coordination.event_router import UnifiedEventRouter
+
+        router = UnifiedEventRouter(enable_cross_process_polling=False)
+
+        def handler(event):
+            return None
+
+        router.subscribe("HANDLED_EVENT", handler)
+        router._events_routed["HANDLED_EVENT"] = 1
+        router._events_routed["UNHANDLED_EVENT"] = 1
+
+        orphaned = router.get_orphaned_events()
+        assert orphaned["emitted_no_subscribers"] == ["UNHANDLED_EVENT"]
+        assert "HANDLED_EVENT" in orphaned["subscribed_event_types"]
+
+        status = router.get_status()
+        assert status["orphan_events"]["count"] == 1
+        assert status["orphan_events"]["types"] == ["UNHANDLED_EVENT"]
+
+
+class TestLeanProfileEventMatrix:
+    """Lean profile should include daemons that subscribe to critical events."""
+
+    def test_lean_profile_covers_pipeline_event_subscriptions(self, monkeypatch):
+        from app.config.env import env
+        from app.coordination.daemon_types import DaemonType
+        from scripts.master_loop import MasterLoopController
+
+        controller = object.__new__(MasterLoopController)
+        controller.daemon_profile = "lean"
+        controller._has_aws_credentials = lambda: False
+        controller._has_npx = lambda: False
+
+        monkeypatch.setattr(env, "is_coordinator", False, raising=False)
+        monkeypatch.setattr(env, "is_standby_coordinator", False, raising=False)
+        monkeypatch.setattr(env, "node_id", "unit-test-node", raising=False)
+
+        lean_daemons = set(controller._get_daemons_for_profile())
+        subscription_matrix = {
+            "SELFPLAY_COMPLETE": {
+                DaemonType.DATA_PIPELINE,
+                DaemonType.FEEDBACK_LOOP,
+                DaemonType.SELFPLAY_COORDINATOR,
+            },
+            "DATA_SYNC_COMPLETED": {DaemonType.DATA_PIPELINE},
+            "TRAINING_COMPLETED": {
+                DaemonType.DATA_PIPELINE,
+                DaemonType.FEEDBACK_LOOP,
+                DaemonType.SELFPLAY_COORDINATOR,
+            },
+            "EVALUATION_COMPLETED": {
+                DaemonType.DATA_PIPELINE,
+                DaemonType.FEEDBACK_LOOP,
+                DaemonType.AUTO_PROMOTION,
+            },
+            "MODEL_PROMOTED": {
+                DaemonType.DATA_PIPELINE,
+                DaemonType.FEEDBACK_LOOP,
+                DaemonType.MODEL_DISTRIBUTION,
+                DaemonType.SELFPLAY_COORDINATOR,
+            },
+        }
+
+        for event_name, subscriber_daemons in subscription_matrix.items():
+            assert subscriber_daemons & lean_daemons, (
+                f"Lean profile must include at least one subscriber daemon for {event_name}"
+            )
+
+
+class TestEventImportPathAudit:
+    """Prevent the active coordination path from drifting back to legacy imports."""
+
+    @staticmethod
+    def _python_files_to_audit() -> list[Path]:
+        service_root = Path(__file__).parents[3]
+        coordination_files = [
+            path
+            for path in (service_root / "app" / "coordination").rglob("*.py")
+            if "deprecated" not in path.parts and path.name != "event_router.py"
+        ]
+        return coordination_files + [service_root / "scripts" / "master_loop.py"]
+
+    def test_active_coordination_code_uses_safe_event_emission_path(self):
+        violations = []
+
+        for path in self._python_files_to_audit():
+            tree = ast.parse(path.read_text(), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.ImportFrom):
+                    continue
+                imported_names = {alias.name for alias in node.names}
+                if node.module == "app.coordination.data_events":
+                    violations.append(f"{path}: import from app.coordination.data_events")
+                if (
+                    node.module == "app.coordination.event_router"
+                    and "emit_event" in imported_names
+                ):
+                    violations.append(f"{path}: direct event_router.emit_event import")
+
+        assert not violations, "\n".join(violations)
 
 
 class TestEventEmitterCoverage:

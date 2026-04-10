@@ -395,13 +395,13 @@ class AutoPromotionDaemon(HandlerBase):
 
                         # Emit MODEL_PROMOTED event for distribution
                         try:
-                            from app.coordination.event_router import emit_event
-                            from app.coordination.data_events import DataEventType
+                            from app.coordination.event_emission_helpers import safe_emit_event
+                            from app.distributed.data_events import DataEventType
                             # Feb 28, 2026: Parse config_key to include board_type/num_players
                             # in payload. Downstream consumers (distribution, S3, tournament)
                             # require these fields and log errors when they're None.
                             parsed = parse_config_key(config_key)
-                            emit_event(
+                            safe_emit_event(
                                 DataEventType.MODEL_PROMOTED,
                                 {
                                     "config_key": config_key,
@@ -413,6 +413,7 @@ class AutoPromotionDaemon(HandlerBase):
                                     "candidate_elo": candidate_elo,
                                     "canonical_elo": canonical_elo,
                                 },
+                                source="auto_promotion_daemon",
                             )
                         except Exception:
                             pass  # Non-fatal

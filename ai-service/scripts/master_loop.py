@@ -2169,40 +2169,18 @@ class MasterLoopController:
                 # TrainingTriggerDaemon subscribes to QUALITY_SCORE_UPDATED and computes
                 # intensity from quality_score. This avoids fragile direct state access.
                 try:
-                    from app.distributed.data_events import (
-                        DataEvent,
-                        DataEventType,
-                        get_event_bus,
-                    )
+                    from app.coordination.event_emission_helpers import safe_emit_event
+                    from app.distributed.data_events import DataEventType
 
-                    # Emit quality score update with config_key for training coordination
-                    event = DataEvent(
-                        event_type=DataEventType.QUALITY_SCORE_UPDATED,
-                        payload={
+                    safe_emit_event(
+                        DataEventType.QUALITY_SCORE_UPDATED,
+                        {
                             "config_key": config_key,
                             "quality_score": quality_score,
                             "source": "master_loop",
                         },
                         source="master_loop._on_quality_assessed",
                     )
-
-                    # Create task to emit async event without blocking
-                    # Jan 12, 2026: Fixed fire-and-forget pattern - now captures exceptions
-                    import asyncio
-
-                    def _on_publish_error(task: asyncio.Task) -> None:
-                        """Handle event publish errors to prevent silent failures."""
-                        try:
-                            exc = task.exception()
-                            if exc:
-                                logger.error(
-                                    f"[MasterLoop] EventBus publish failed for {config_key}: {exc}"
-                                )
-                        except asyncio.CancelledError:
-                            pass
-
-                    publish_task = asyncio.create_task(get_event_bus().publish(event))
-                    publish_task.add_done_callback(_on_publish_error)
                 except ImportError:
                     pass  # Event system not available
 
@@ -2303,15 +2281,17 @@ class MasterLoopController:
 
         # Emit throttle signal via event bus
         try:
-            from app.coordination.event_router import emit_event, DataEventType
+            from app.coordination.event_emission_helpers import safe_emit_event
+            from app.distributed.data_events import DataEventType
 
-            await emit_event(
+            safe_emit_event(
                 DataEventType.HEALTH_ALERT,
                 {
                     "alert": "throttle_selfplay",
                     "action": "throttle_selfplay",
                     "reason": "load_critical",
-                }
+                },
+                source="master_loop",
             )
         except Exception as e:
             logger.debug(f"[MasterLoop] Error emitting throttle event: {e}")
@@ -2663,9 +2643,10 @@ class MasterLoopController:
             num_players = int(parts[1].replace("p", ""))
 
             # Emit training trigger event
-            from app.coordination.event_router import emit_event, DataEventType
+            from app.coordination.event_emission_helpers import safe_emit_event
+            from app.distributed.data_events import DataEventType
 
-            await emit_event(
+            safe_emit_event(
                 DataEventType.TRAINING_THRESHOLD_REACHED,
                 {
                     "config": config_key,
@@ -2673,7 +2654,8 @@ class MasterLoopController:
                     "num_players": num_players,
                     "priority": self._states[config_key].training_intensity,
                     "reason": "master_loop_trigger",
-                }
+                },
+                source="master_loop",
             )
 
             logger.info(f"[MasterLoop] Triggered training for {config_key}")
@@ -2869,9 +2851,10 @@ class MasterLoopController:
 
             # Also emit the event for other subscribers (feedback loop, etc.)
             try:
-                from app.coordination.event_router import emit_event, DataEventType
+                from app.coordination.event_emission_helpers import safe_emit_event
+                from app.distributed.data_events import DataEventType
 
-                await emit_event(
+                safe_emit_event(
                     DataEventType.SELFPLAY_TARGET_UPDATED,
                     {
                         "node_id": node_id,
@@ -2882,7 +2865,8 @@ class MasterLoopController:
                         "priority": "high",
                         "source": "master_loop",
                         "dispatched": dispatch_success,
-                    }
+                    },
+                    source="master_loop",
                 )
             except Exception as e:
                 logger.debug(f"[MasterLoop] Event emission failed (non-fatal): {e}")

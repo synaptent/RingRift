@@ -280,8 +280,9 @@ class TrainingFallbackController:
         # Emit event for tier 2 and 3
         if tier >= 2 and StaleFallbackDefaults.EMIT_FALLBACK_EVENTS:
             try:
-                from app.coordination.event_router import emit_event
-                emit_event(
+                from app.coordination.event_emission_helpers import safe_emit_event
+
+                safe_emit_event(
                     f"STALE_DATA_QUALITY_TIER_{tier}",
                     {
                         "config_key": config_key,
@@ -290,6 +291,7 @@ class TrainingFallbackController:
                         "sync_failures": failures,
                         "elapsed_seconds": elapsed,
                     },
+                    source="stale_fallback",
                 )
             except (ImportError, AttributeError, RuntimeError) as e:
                 logger.debug(f"[StaleFallback] Could not emit tier event: {e}")

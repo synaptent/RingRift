@@ -240,17 +240,19 @@ class UnifiedHealthMonitor:
 
         # Emit event
         try:
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
             from app.distributed.data_events import DataEventType
 
-            emit_event(
-                DataEventType.CLUSTER_DEGRADED,
+            safe_emit_event(
+                DataEventType.CLUSTER_HEALTH_CHANGED,
                 {
                     "reason": "cascade_failure",
+                    "status": "degraded",
                     "failure_count": len(failures),
                     "nodes_affected": list(nodes),
                     "source": "unified_health",
                 },
+                source="unified_health",
             )
         except ImportError:
             pass

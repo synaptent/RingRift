@@ -13,8 +13,8 @@ Migration Guide:
     #   from app.coordination.event_emitters import (
     #       emit_training_complete, emit_selfplay_complete, ...
     #   )
-    # Use event_router for generic emit:
-    #   from app.coordination.event_router import safe_emit_event, emit_event
+    # Use the consolidated helper for generic safe emission:
+    #   from app.coordination.event_emission_helpers import safe_emit_event
     # Or use this module (core_events) for typed emitters:
 
     # Preferred imports:
@@ -166,9 +166,9 @@ from app.coordination.event_mappings import (
 # =============================================================================
 # Re-exports from event_router.py (typed emit functions)
 # April 2026: Migrated from deprecated event_emitters to event_router.
-# The event_router module provides safe_emit_event() and emit_event() as the
-# primary API. For backward compatibility, legacy emit_* names are resolved
-# via __getattr__ from event_router (which re-exports from data_events).
+# The event_emission_helpers module provides safe_emit_event() as the preferred
+# generic API. For backward compatibility, legacy emit_* names are resolved via
+# __getattr__ from event_router (which re-exports from data_events).
 # =============================================================================
 
 _EVENT_EMITTER_EXPORTS = frozenset(

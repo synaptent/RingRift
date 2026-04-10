@@ -970,10 +970,9 @@ class DataPipelineOrchestrator(
             error: The error that caused the failure
         """
         from app.coordination.event_emission_helpers import safe_emit_event_async
-        from app.coordination.data_events import DataEventType
 
         await safe_emit_event_async(
-            DataEventType.PIPELINE_FAILED,
+            "PIPELINE_FAILED",
             {
                 "stage": stage.value,
                 "config_key": config_key,

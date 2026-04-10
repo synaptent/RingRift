@@ -809,13 +809,14 @@ class MaintenanceDaemon(HandlerBase):
                     f"(first: {issues[0].get('winner_id', '?')})"
                 )
                 try:
-                    from app.coordination.event_router import emit_event
+                    from app.coordination.event_emission_helpers import safe_emit_event
                     from app.distributed.data_events import DataEventType
-                    emit_event(DataEventType.DATA_QUALITY_DEGRADED, {
+
+                    safe_emit_event(DataEventType.QUALITY_DEGRADED, {
                         "source": "elo_integrity_check",
                         "issue": "winner_id_mismatch",
                         "count": len(issues),
-                    })
+                    }, source="maintenance_daemon")
                 except (ImportError, AttributeError):
                     pass
         except ImportError:

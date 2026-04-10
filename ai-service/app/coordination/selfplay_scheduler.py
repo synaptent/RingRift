@@ -536,13 +536,13 @@ class SelfplayScheduler(
         January 2026 Sprint 17.9: Created for AllocationEngine integration.
         """
         try:
-            from app.coordination.event_router import emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
             from app.distributed.data_events import DataEventType
 
             # Map string event name to DataEventType
             event_type = getattr(DataEventType, event_name, None)
             if event_type is not None:
-                emit_event(event_type, payload)
+                safe_emit_event(event_type, payload, source="selfplay_scheduler")
             else:
                 logger.warning(f"[SelfplayScheduler] Unknown event type: {event_name}")
         except Exception as e:
@@ -591,7 +591,7 @@ class SelfplayScheduler(
         # Emit SELFPLAY_RATE_CHANGED if momentum changed by >20%
         if abs(priority.momentum_multiplier - old_momentum) / max(old_momentum, 0.01) > 0.20:
             change_percent = ((priority.momentum_multiplier - old_momentum) / old_momentum) * 100.0
-            from app.coordination.event_router import safe_emit_event
+            from app.coordination.event_emission_helpers import safe_emit_event
 
             safe_emit_event(
                 "SELFPLAY_RATE_CHANGED",
