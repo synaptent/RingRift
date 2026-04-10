@@ -12,6 +12,7 @@ Tests cover:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
 from dataclasses import asdict
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -466,6 +467,49 @@ class TestRunCycle:
 
         # Should not raise and should complete immediately
         await daemon._run_cycle()
+
+
+class TestEvaluationInfrastructureContracts:
+    """Contracts for safely reusing legacy evaluation infrastructure."""
+
+    def test_startup_scan_queues_candidate_artifacts_only(self):
+        """Startup recovery must not flood evaluation with canonical symlinks."""
+        source = inspect.getsource(EvaluationDaemon._startup_scan_for_unevaluated_models)
+
+        assert 'for pattern in ["candidate_*.pth"]' in source
+        assert '"canonical_*.pth"' not in source
+        assert '"ringrift_best_*.pth"' not in source
+
+    def test_run_evaluation_prefers_cluster_gauntlet_before_local_fallback(self):
+        """Evaluation should use cluster/MCTS first and local fallback second."""
+        source = inspect.getsource(EvaluationDaemon._run_evaluation)
+
+        assert "_dispatch_gauntlet_to_cluster_with_fallback" in source
+        assert "_run_gauntlet(" in source
+        assert source.index("_dispatch_gauntlet_to_cluster_with_fallback") < source.index(
+            "_run_gauntlet("
+        )
+
+    def test_head_to_head_uses_canonical_baseline_and_large_sample(self):
+        """Candidate head-to-head evaluation should compare against canonical."""
+        source = inspect.getsource(EvaluationDaemon._evaluate_vs_previous)
+
+        assert 'f"canonical_{board_type}_{num_players}p.pth"' in source
+        assert "Tournament(" in source
+        assert "num_games=200" in source
+
+    def test_multiplayer_evaluation_rotates_candidate_seats(self):
+        """Seat-fair evaluation must rotate the candidate through all seats."""
+        from app.training import game_gauntlet
+        from app.training.tournament import Tournament
+
+        tournament_source = inspect.getsource(Tournament.run)
+        parallel_source = inspect.getsource(game_gauntlet._play_single_gauntlet_game)
+        sequential_source = inspect.getsource(game_gauntlet._evaluate_single_opponent)
+
+        assert "candidate_seat = (i % self.num_players) + 1" in tournament_source
+        assert "candidate_player = (game_num % num_players) + 1" in parallel_source
+        assert "candidate_player = (game_num % num_players) + 1" in sequential_source
 
 
 # Run with: pytest tests/unit/coordination/test_evaluation_daemon.py -v

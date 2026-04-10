@@ -8,6 +8,28 @@ import torch
 
 from app.ai.gpu_batch_state import BatchGameState
 from app.ai.gpu_game_types import GamePhase, GameStatus, MoveType
+from app.models import BoardType
+from app.rules.core import (
+    BOARD_CONFIGS,
+    get_territory_victory_minimum,
+    get_victory_threshold,
+)
+
+
+CANONICAL_TERRITORY_THRESHOLDS = [
+    (BoardType.SQUARE8, 2, 33),
+    (BoardType.SQUARE8, 3, 22),
+    (BoardType.SQUARE8, 4, 17),
+    (BoardType.SQUARE19, 2, 181),
+    (BoardType.SQUARE19, 3, 121),
+    (BoardType.SQUARE19, 4, 91),
+    (BoardType.HEX8, 2, 31),
+    (BoardType.HEX8, 3, 21),
+    (BoardType.HEX8, 4, 16),
+    (BoardType.HEXAGONAL, 2, 235),
+    (BoardType.HEXAGONAL, 3, 157),
+    (BoardType.HEXAGONAL, 4, 118),
+]
 
 # =============================================================================
 # Test Fixtures
@@ -615,6 +637,91 @@ class TestDeriveVictoryType:
         victory_type, tiebreaker = state.derive_victory_type(0, max_moves=500)
         assert victory_type == "stalemate"
         assert tiebreaker is not None
+
+    def test_batch_victory_labeling_matches_per_game_derivation(self, device):
+        """Vectorized victory labeling should match per-game derivation."""
+        state = BatchGameState.create_batch(
+            batch_size=5,
+            board_size=BOARD_CONFIGS[BoardType.HEX8].size,
+            num_players=3,
+            device=device,
+            board_type=BoardType.HEX8.value,
+        )
+        territory_threshold = get_territory_victory_minimum(BoardType.HEX8, 3)
+        elimination_threshold = get_victory_threshold(BoardType.HEX8, 3)
+
+        # Game 0: still active.
+
+        # Game 1: territory victory.
+        state.winner[1] = 1
+        state.game_status[1] = GameStatus.COMPLETED
+        state.territory_count[1, 1] = territory_threshold
+        state.territory_count[1, 2] = territory_threshold - 1
+
+        # Game 2: ring-elimination victory.
+        state.winner[2] = 2
+        state.game_status[2] = GameStatus.COMPLETED
+        state.rings_caused_eliminated[2, 2] = elimination_threshold
+
+        # Game 3: last-player-standing victory.
+        state.winner[3] = 3
+        state.game_status[3] = GameStatus.COMPLETED
+        state.lps_consecutive_exclusive_rounds[3] = state.lps_rounds_required
+        state.lps_consecutive_exclusive_player[3] = 3
+
+        # Game 4: max-move stalemate decided by territory tiebreaker.
+        state.winner[4] = 1
+        state.game_status[4] = GameStatus.COMPLETED
+        state.move_count[4] = 500
+        state.territory_count[4, 1] = territory_threshold - 1
+        state.territory_count[4, 2] = territory_threshold - 2
+
+        per_game_labels = [
+            state.derive_victory_type(i, max_moves=500)
+            for i in range(state.batch_size)
+        ]
+        batch_types, batch_tiebreakers = state.derive_victory_types_batch(max_moves=500)
+
+        assert list(zip(batch_types, batch_tiebreakers)) == per_game_labels
+        assert per_game_labels == [
+            ("in_progress", None),
+            ("territory", None),
+            ("ring_elimination", None),
+            ("lps", None),
+            ("stalemate", "territory"),
+        ]
+
+    @pytest.mark.parametrize(
+        ("board_type", "num_players", "expected_threshold"),
+        CANONICAL_TERRITORY_THRESHOLDS,
+    )
+    def test_territory_thresholds_cover_all_canonical_configs(
+        self,
+        device,
+        board_type,
+        num_players,
+        expected_threshold,
+    ):
+        """GPU victory labeling should honor all 12 canonical thresholds."""
+        assert get_territory_victory_minimum(board_type, num_players) == expected_threshold
+
+        state = BatchGameState.create_batch(
+            batch_size=1,
+            board_size=BOARD_CONFIGS[board_type].size,
+            num_players=num_players,
+            device=device,
+            board_type=board_type.value,
+        )
+        state.winner[0] = 1
+        state.game_status[0] = GameStatus.COMPLETED
+        state.territory_count[0, 1] = expected_threshold
+        state.territory_count[0, 2] = expected_threshold - 1
+
+        victory_type, tiebreaker = state.derive_victory_type(0, max_moves=500)
+        batch_types, batch_tiebreakers = state.derive_victory_types_batch(max_moves=500)
+
+        assert (victory_type, tiebreaker) == ("territory", None)
+        assert (batch_types, batch_tiebreakers) == (["territory"], [None])
 
 
 # =============================================================================

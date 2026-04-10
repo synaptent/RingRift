@@ -692,7 +692,7 @@ class WorkDistributor:
         candidate_model: str,
         games_per_config: int = 200,
     ) -> list[str]:
-        """Submit evaluations for all 9 board/player configurations.
+        """Submit evaluations for all 12 board/player configurations.
 
         Args:
             candidate_model: Model to evaluate.

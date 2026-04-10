@@ -465,7 +465,7 @@ class ModelCullingController:
         return protected
 
     def cull_all_configs(self) -> dict[str, CullResult]:
-        """Check and cull all 9 configs.
+        """Check and cull all 12 configs.
 
         Returns:
             Dict mapping config_key to CullResult

@@ -2974,10 +2974,11 @@ class TrainingTriggerDaemon(HandlerBase):
         if self._dispatch_to_queue:
             return await self._dispatch_training_to_queue(config_key, state, arch)
 
-        # December 30, 2025: Default to v5 if no architecture specified
+        # Default to the supported v2 architecture family if no architecture is
+        # specified; v5 remains outside the corrected minimal-loop contract.
         if arch is None:
             arch = ArchitectureSpec(
-                name="v5", enabled=True, configs=["*"], priority=1.0
+                name="v2", enabled=True, configs=["*"], priority=1.0
             )
 
         # Mar 6, 2026: Cross-process governor for training.
@@ -3037,9 +3038,9 @@ class TrainingTriggerDaemon(HandlerBase):
                 base_dir = Path(__file__).resolve().parent.parent.parent
                 npz_path = state.npz_path or f"data/training/{config_key}.npz"
 
-                # December 30, 2025: Include architecture in model filename
-                # Format: canonical_{config}_{arch}.pth (e.g., canonical_hex8_2p_v4.pth)
-                model_filename = f"canonical_{config_key}_{arch.name}.pth"
+                # Candidate artifacts must be evaluated and promoted before they
+                # become canonical models.
+                model_filename = f"candidate_{config_key}_{arch.name}.pth"
                 model_path = str(base_dir / "models" / model_filename)
 
                 cmd = [

@@ -12,6 +12,7 @@ Tests cover:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import os
 import sqlite3
 import tempfile
@@ -868,6 +869,26 @@ class TestDynamicThreshold:
 
         # Should return the getter value (2500 * 1.0 for 2p)
         assert threshold == 2500
+
+
+class TestTrainingInfrastructureContracts:
+    """Contracts for reusing legacy training infra with the minimal-loop rules."""
+
+    def test_direct_training_path_writes_candidate_artifacts(self):
+        """Legacy direct training must not silently promote canonical models."""
+        source = inspect.getsource(TrainingTriggerDaemon._run_training_inner)
+
+        assert 'model_filename = f"candidate_{config_key}_{arch.name}.pth"' in source
+        assert '"--save-path", model_path' in source
+        assert 'model_filename = f"canonical_{config_key}_{arch.name}.pth"' not in source
+        assert '"--allow-noncanonical"' not in source
+
+    def test_direct_training_path_defaults_to_supported_v2_architecture(self):
+        """Fallback architecture should stay aligned with the supported path."""
+        source = inspect.getsource(TrainingTriggerDaemon._run_training_inner)
+
+        assert 'name="v2", enabled=True, configs=["*"], priority=1.0' in source
+        assert 'name="v5", enabled=True, configs=["*"], priority=1.0' not in source
 
 
 # Run with: pytest tests/unit/coordination/test_training_trigger_daemon.py -v

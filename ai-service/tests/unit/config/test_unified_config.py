@@ -321,6 +321,25 @@ class TestUnifiedConfig:
         assert hasattr(config, 'get_all_board_configs')
         assert callable(config.get_all_board_configs)
 
+    def test_get_all_board_configs_default_covers_all_12_configs(self):
+        """Default fallback board configs include hex8 and all player counts."""
+        from app.config.unified_config import ALL_BOARD_CONFIGS, UnifiedConfig
+
+        expected = {
+            ("square8", 2), ("square8", 3), ("square8", 4),
+            ("square19", 2), ("square19", 3), ("square19", 4),
+            ("hex8", 2), ("hex8", 3), ("hex8", 4),
+            ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
+        }
+        config = UnifiedConfig()
+        actual = {
+            (board_config.board_type, board_config.num_players)
+            for board_config in config.get_all_board_configs()
+        }
+
+        assert actual == expected
+        assert set(ALL_BOARD_CONFIGS) == expected
+
 
 # =============================================================================
 # get_config Singleton Tests

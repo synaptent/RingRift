@@ -69,7 +69,7 @@ class TestEventRouterIntegration:
         """Create a mock router with subscriber tracking."""
         from app.coordination.event_router import UnifiedEventRouter
 
-        router = UnifiedEventRouter()
+        router = UnifiedEventRouter(enable_cross_process_polling=False)
         return router
 
     def test_router_can_subscribe_handler(self, mock_router):

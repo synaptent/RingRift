@@ -27,7 +27,7 @@ class TestTrainingCompletedWiring:
     def mock_event_router(self):
         """Create isolated event router for testing."""
         from app.coordination.event_router import UnifiedEventRouter
-        router = UnifiedEventRouter()
+        router = UnifiedEventRouter(enable_cross_process_polling=False)
         return router
 
     def test_training_completed_triggers_evaluation(self, mock_event_router):
@@ -62,7 +62,7 @@ class TestEvaluationCompletedWiring:
         """Verify EVALUATION_COMPLETED flows to curriculum integration."""
         from app.coordination.event_router import UnifiedEventRouter
 
-        router = UnifiedEventRouter()
+        router = UnifiedEventRouter(enable_cross_process_polling=False)
         handler_called = []
 
         def mock_handler(event):
@@ -93,7 +93,7 @@ class TestDataSyncCompletedWiring:
         """Verify DATA_SYNC_COMPLETED triggers pipeline export."""
         from app.coordination.event_router import UnifiedEventRouter
 
-        router = UnifiedEventRouter()
+        router = UnifiedEventRouter(enable_cross_process_polling=False)
         handler_called = []
 
         def mock_handler(event):
@@ -115,7 +115,7 @@ class TestModelPromotedWiring:
         """Verify MODEL_PROMOTED triggers model distribution."""
         from app.coordination.event_router import UnifiedEventRouter
 
-        router = UnifiedEventRouter()
+        router = UnifiedEventRouter(enable_cross_process_polling=False)
         handler_called = []
 
         def mock_handler(event):
@@ -139,7 +139,7 @@ class TestNewGamesAvailableWiring:
         """Verify NEW_GAMES_AVAILABLE triggers export scheduling."""
         from app.coordination.event_router import UnifiedEventRouter
 
-        router = UnifiedEventRouter()
+        router = UnifiedEventRouter(enable_cross_process_polling=False)
         handler_called = []
 
         def mock_handler(event):
@@ -162,7 +162,7 @@ class TestRegressionDetectedWiring:
         """Verify REGRESSION_DETECTED flows to model lifecycle."""
         from app.coordination.event_router import UnifiedEventRouter
 
-        router = UnifiedEventRouter()
+        router = UnifiedEventRouter(enable_cross_process_polling=False)
         handler_called = []
 
         def mock_handler(event):
@@ -187,7 +187,7 @@ class TestNodeRecoveredWiring:
         """Verify NODE_RECOVERED updates sync router capacity."""
         from app.coordination.event_router import UnifiedEventRouter
 
-        router = UnifiedEventRouter()
+        router = UnifiedEventRouter(enable_cross_process_polling=False)
         handler_called = []
 
         def mock_handler(event):
@@ -209,7 +209,7 @@ class TestMultipleSubscribersWiring:
         """Verify event reaches all subscribers."""
         from app.coordination.event_router import UnifiedEventRouter
 
-        router = UnifiedEventRouter()
+        router = UnifiedEventRouter(enable_cross_process_polling=False)
         handler1_called = []
         handler2_called = []
 
@@ -236,7 +236,7 @@ class TestEventDeduplication:
         """Verify SHA256 deduplication filters duplicate events."""
         from app.coordination.event_router import UnifiedEventRouter
 
-        router = UnifiedEventRouter()
+        router = UnifiedEventRouter(enable_cross_process_polling=False)
         handler_called = []
 
         def handler(event):
@@ -260,7 +260,7 @@ class TestAsyncEventHandling:
         """Verify async handlers are properly awaited."""
         from app.coordination.event_router import UnifiedEventRouter
 
-        router = UnifiedEventRouter()
+        router = UnifiedEventRouter(enable_cross_process_polling=False)
         handler_called = []
 
         async def async_handler(event):
@@ -281,7 +281,7 @@ class TestCriticalEventChain:
         """Verify events can flow through full pipeline chain."""
         from app.coordination.event_router import UnifiedEventRouter
 
-        router = UnifiedEventRouter()
+        router = UnifiedEventRouter(enable_cross_process_polling=False)
         events_received = []
 
         def track_event(event_type):
@@ -405,7 +405,7 @@ class TestEventErrorHandling:
         """Verify handler errors don't crash the event router."""
         from app.coordination.event_router import UnifiedEventRouter
 
-        router = UnifiedEventRouter()
+        router = UnifiedEventRouter(enable_cross_process_polling=False)
         good_handler_called = []
 
         def failing_handler(event):
@@ -432,7 +432,7 @@ class TestEventSubscriptionCount:
         """Verify router can report subscription counts."""
         from app.coordination.event_router import UnifiedEventRouter
 
-        router = UnifiedEventRouter()
+        router = UnifiedEventRouter(enable_cross_process_polling=False)
 
         def handler1(event): pass
         def handler2(event): pass

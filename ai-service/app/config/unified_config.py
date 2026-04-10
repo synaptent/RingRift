@@ -17,7 +17,7 @@ Usage:
     # Access evaluation settings
     shadow_games = config.evaluation.shadow_games_per_config
 
-    # Access all 9 board configurations
+    # Access all 12 board/player configurations
     for board_config in config.get_all_board_configs():
         print(f"{board_config.board_type}_{board_config.num_players}p")
 
@@ -1530,16 +1530,16 @@ class UnifiedConfig:
         return config
 
     def get_all_board_configs(self) -> list[BoardConfig]:
-        """Get all 9 board configurations."""
+        """Get all 12 board/player configurations."""
         configs = []
         for bc in self._board_configs:
             board_type = bc.get("board_type", "")
             for num_players in bc.get("num_players", []):
                 configs.append(BoardConfig(board_type=board_type, num_players=num_players))
 
-        # Fallback to default 9 configs if not specified
+        # Fallback to default 12 configs if not specified.
         if not configs:
-            for board in ["square8", "square19", "hexagonal"]:
+            for board in ["square8", "square19", "hex8", "hexagonal"]:
                 for players in [2, 3, 4]:
                     configs.append(BoardConfig(board_type=board, num_players=players))
 
@@ -1864,6 +1864,7 @@ def _get_legacy_threshold() -> int:
 ALL_BOARD_CONFIGS: list[tuple[str, int]] = [
     ("square8", 2), ("square8", 3), ("square8", 4),
     ("square19", 2), ("square19", 3), ("square19", 4),
+    ("hex8", 2), ("hex8", 3), ("hex8", 4),
     ("hexagonal", 2), ("hexagonal", 3), ("hexagonal", 4),
 ]
 

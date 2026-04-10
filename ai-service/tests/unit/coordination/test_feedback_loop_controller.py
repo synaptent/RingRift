@@ -726,12 +726,14 @@ class TestFeedbackLoopEventHandlers:
             "model_path": "models/test.pth",
         }
 
-        controller._on_evaluation_complete(event)
+        with patch.object(controller, "_update_training_final_elo") as mock_update_elo:
+            controller._on_evaluation_complete(event)
 
         state = controller.get_state("hex8_2p")
         assert state is not None
         assert state.last_evaluation_win_rate == 0.72
         assert state.last_elo == 1550.0
+        mock_update_elo.assert_called_once_with("hex8_2p", 1550.0)
 
     def test_on_evaluation_complete_empty_config_returns_early(self):
         """Test _on_evaluation_complete returns early for empty config."""

@@ -144,7 +144,7 @@ def summarize_crossboard_tier_strength(
 # Cross-Board Configuration System
 # =============================================================================
 
-# All supported board/player configurations (9 total)
+# All supported board/player configurations (12 total)
 ALL_BOARD_CONFIGS: list[tuple[str, int]] = [
     ("square8", 2),
     ("square8", 3),
@@ -152,6 +152,9 @@ ALL_BOARD_CONFIGS: list[tuple[str, int]] = [
     ("square19", 2),
     ("square19", 3),
     ("square19", 4),
+    ("hex8", 2),
+    ("hex8", 3),
+    ("hex8", 4),
     ("hexagonal", 2),
     ("hexagonal", 3),
     ("hexagonal", 4),
@@ -388,4 +391,3 @@ def check_promotion_threshold_strict(
             "configs_below": below_threshold,
         },
     }
-
