@@ -12,6 +12,7 @@ KEY="${HOME}/.ssh/id_cluster"
 SSH_OPTS=(-i "$KEY" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15)
 SCRIPT="scripts/minimal_alphazero_loop.py"
 WATCHDOG="scripts/pipeline_watchdog.py"
+SUPERVISOR="scripts/minimal_loop_supervisor.sh"
 
 # Node assignments:
 #   ip|config|workdir|args...
@@ -73,25 +74,29 @@ for entry in "${NODES[@]}"; do
   echo "  Deploying scripts..."
   scp "${SSH_OPTS[@]}" "$SCRIPT" "ubuntu@${ip}:~/ringrift/ai-service/$SCRIPT" >/dev/null
   scp "${SSH_OPTS[@]}" "$WATCHDOG" "ubuntu@${ip}:~/ringrift/ai-service/$WATCHDOG" >/dev/null
+  scp "${SSH_OPTS[@]}" "$SUPERVISOR" "ubuntu@${ip}:~/ringrift/ai-service/$SUPERVISOR" >/dev/null
 
-  echo "  Killing old process..."
-  ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" "killall -u ubuntu python 2>/dev/null || true" 2>/dev/null
-  ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" "sudo killall -9 gumbel_selfplay p2p_orchestrator 2>/dev/null || true" 2>/dev/null
-
-  echo "  Starting minimal loop ($config)..."
+  echo "  Stopping old supported loop for $workdir..."
   ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" "
-    sleep 2
+    pkill -f 'scripts/[m]inimal_loop_supervisor.sh.*$workdir' 2>/dev/null || true
+    pkill -f 'scripts/[m]inimal_alphazero_loop.py.*--work-dir $workdir' 2>/dev/null || true
+    pkill -f 'scripts/[p]ipeline_watchdog.py.*$workdir' 2>/dev/null || true
+  " 2>/dev/null
+
+  echo "  Starting supervised minimal loop ($config)..."
+  ssh -f -n "${SSH_OPTS[@]}" "ubuntu@${ip}" "
     cd ~/ringrift/ai-service && \
-    PYTHONPATH=. nohup venv/bin/python scripts/minimal_alphazero_loop.py \
-      --model models/canonical_${config}.pth \
-      --work-dir $workdir \
-      $loop_args \
-      </dev/null > /tmp/minimal_alphazero.log 2>&1 &
-    echo PID=\$!
+    chmod +x $SUPERVISOR && \
+    env PYTHONPATH=. setsid -f bash $SUPERVISOR --restart-delay-seconds 60 -- \
+      venv/bin/python scripts/minimal_alphazero_loop.py \
+        --model models/canonical_${config}.pth \
+        --work-dir $workdir \
+        $loop_args \
+      </dev/null > /tmp/minimal_alphazero.log 2>&1
   " 2>/dev/null
 
   sleep 3
-  ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" "pgrep -af minimal_alphazero_loop.py | head -n 2" 2>/dev/null
+  ssh "${SSH_OPTS[@]}" "ubuntu@${ip}" "pgrep -af '[m]inimal_loop_supervisor|[m]inimal_alphazero_loop.py' | head -n 4" 2>/dev/null
   echo
 done
 

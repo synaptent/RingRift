@@ -66,6 +66,8 @@ That infrastructure exists for:
 
 It is not required to understand the core system or reproduce the main training results.
 
+It should also not be treated as disposable. The current infrastructure strategy is to keep the minimal loop as the reproducible proof harness while reusing audited pieces of the broader coordinator/P2P stack where they satisfy the current rules, data, and evaluation contracts. See [docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md](/Users/armand/Development/RingRift/docs/architecture/TRAINING_INFRASTRUCTURE_STRATEGY.md).
+
 ## Supported Path For New Readers
 
 If you are approaching RingRift as an engineer or researcher, the most useful path through the repo is:
