@@ -42,9 +42,12 @@ These files exceeded 3,000 LOC at the start of Part 3 Phase 3.
 
 The first extraction batch completed two of the largest coordination files while preserving the daemon-facing public APIs:
 
-| Original File                | Before LOC | After LOC | Extracted Module               | Extracted LOC | Status                                        |
-| ---------------------------- | ---------: | --------: | ------------------------------ | ------------: | --------------------------------------------- |
-| `training_trigger_daemon.py` |      3,924 |     1,836 | `training_executor_actions.py` |         2,226 | Focused training-trigger tests passed         |
-| `daemon_manager.py`          |      3,809 |     1,483 | `daemon_manager_lifecycle.py`  |         2,462 | Focused daemon-manager lifecycle tests passed |
+| Original File                   | Before LOC | After LOC | Extracted Module               | Extracted LOC | Status                                        |
+| ------------------------------- | ---------: | --------: | ------------------------------ | ------------: | --------------------------------------------- |
+| `training_trigger_daemon.py`    |      3,924 |     1,836 | `training_executor_actions.py` |         2,226 | Focused training-trigger tests passed         |
+| `daemon_manager.py`             |      3,809 |     1,483 | `daemon_manager_lifecycle.py`  |         2,462 | Focused daemon-manager lifecycle tests passed |
+| `evaluation_daemon.py`          |      3,685 |     1,563 | `evaluation_executor.py`       |         2,132 | Focused evaluation-daemon tests passed        |
+| `unified_queue_populator.py`    |      3,497 |     1,470 | `queue_strategies/` mixins     |         2,093 | Focused queue-populator tests passed          |
+| `data_pipeline_orchestrator.py` |      3,485 |     1,936 | `pipeline_stages.py`           |         1,583 | Focused pipeline tests passed                 |
 
 `daemon_lifecycle.py` remains the existing composition-based lifecycle manager at 1,064 LOC. The new `daemon_manager_lifecycle.py` module was intentionally kept separate so no new coordination file exceeds the upcoming 2,500 LOC size contract.
