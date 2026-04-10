@@ -27,6 +27,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -247,6 +249,37 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _normalize_passthrough_args(args: list[str]) -> list[str]:
+    """Return args intended for the wrapped script."""
+    if args and args[0] == "--":
+        return args[1:]
+    return args
+
+
+def cmd_passthrough(args: argparse.Namespace) -> int:
+    """Run a supported operational script as a thin CLI subcommand."""
+    script_name = args.script_name
+    script_args = _normalize_passthrough_args(list(args.script_args))
+    script_path = SCRIPT_DIR / script_name
+    if not script_path.exists():
+        print(f"Wrapped script not found: {script_path}", file=sys.stderr)
+        return 1
+
+    if script_path.suffix == ".sh":
+        command = ["bash", str(script_path), *script_args]
+    else:
+        command = [sys.executable, str(script_path), *script_args]
+
+    env = os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        str(PROJECT_ROOT)
+        if not existing_pythonpath
+        else os.pathsep.join([str(PROJECT_ROOT), existing_pythonpath])
+    )
+    return subprocess.call(command, cwd=PROJECT_ROOT, env=env)
+
+
 # =============================================================================
 # NEW CONSOLIDATED COMMANDS (December 2025)
 # =============================================================================
@@ -367,7 +400,7 @@ def cmd_cluster(args: argparse.Namespace) -> int:
         return 1
 
 
-def cmd_status(args: argparse.Namespace) -> int:
+def cmd_coord_status(args: argparse.Namespace) -> int:
     """Show unified cluster status."""
     import json as json_module
 
@@ -410,7 +443,14 @@ Commands:
   sync      Data synchronization (data, models, all, status)
   daemon    Daemon management (start, stop, status)
   cluster   Unified cluster monitoring (--deep, --continuous)
-  status    Show coordinator status
+  status    Supported minimal-loop training status
+  dashboard Terminal training dashboard
+  fleet-health Fleet S3 heartbeat health check
+  deploy-loops Deploy supported minimal AlphaZero loops
+  export-replay Export replay dataset
+  parity    Run TS/Python replay parity checker
+  validate-db Validate a GameReplayDB for training
+  coord-status Show legacy coordinator status
 
 Examples:
   %(prog)s harvest --output data/harvested/local.jsonl
@@ -420,6 +460,9 @@ Examples:
   %(prog)s daemon status
   %(prog)s cluster --continuous --interval 30
   %(prog)s status --json
+  %(prog)s dashboard -- --interval 30
+  %(prog)s deploy-loops -- --dry-run
+  %(prog)s validate-db -- data/selfplay.db --json
         """,
     )
 
@@ -585,11 +628,31 @@ Examples:
     cluster_parser.add_argument("--webhook", "-w", help="Alert webhook URL")
     cluster_parser.add_argument("--json", action="store_true", help="JSON output")
 
-    # Status command (December 2025)
-    status_parser = subparsers.add_parser("status", help="Coordinator status")
-    status_parser.add_argument("--json", action="store_true", help="JSON output")
+    # Thin wrappers for supported operational scripts (April 2026)
+    passthrough_commands = {
+        "status": ("training_status.py", "Supported minimal-loop training status"),
+        "dashboard": ("training_dashboard.py", "Refreshing terminal training dashboard"),
+        "fleet-health": ("fleet_health_check.py", "Fleet S3 heartbeat health check"),
+        "deploy-loops": ("deploy_minimal_loops.sh", "Deploy supported minimal AlphaZero loops"),
+        "export-replay": ("export_replay_dataset.py", "Export replay dataset"),
+        "parity": ("check_ts_python_replay_parity.py", "Run TS/Python replay parity checker"),
+        "validate-db": ("validate_training_db.py", "Validate a GameReplayDB for training"),
+    }
+    for command_name, (script_name, help_text) in passthrough_commands.items():
+        wrapper_parser = subparsers.add_parser(command_name, help=help_text, add_help=False)
+        wrapper_parser.add_argument("script_args", nargs=argparse.REMAINDER)
+        wrapper_parser.set_defaults(script_name=script_name)
 
-    args = parser.parse_args()
+    # Coordinator status command (December 2025; renamed to avoid status conflict)
+    coord_status_parser = subparsers.add_parser("coord-status", help="Coordinator status")
+    coord_status_parser.add_argument("--json", action="store_true", help="JSON output")
+
+    args, unknown_args = parser.parse_known_args()
+    if unknown_args:
+        if getattr(args, "script_name", None):
+            args.script_args.extend(unknown_args)
+        else:
+            parser.error(f"unrecognized arguments: {' '.join(unknown_args)}")
 
     if not args.command:
         parser.print_help()
@@ -605,7 +668,14 @@ Examples:
         "sync": cmd_sync,
         "daemon": cmd_daemon,
         "cluster": cmd_cluster,
-        "status": cmd_status,
+        "status": cmd_passthrough,
+        "dashboard": cmd_passthrough,
+        "fleet-health": cmd_passthrough,
+        "deploy-loops": cmd_passthrough,
+        "export-replay": cmd_passthrough,
+        "parity": cmd_passthrough,
+        "validate-db": cmd_passthrough,
+        "coord-status": cmd_coord_status,
     }
 
     handler = commands.get(args.command)
