@@ -55,6 +55,7 @@
     "slo:gate:staging": "TS_NODE_PROJECT=tsconfig.server.json npx ts-node scripts/slo-gate-check.ts --env staging",
     "slo:gate:production": "TS_NODE_PROJECT=tsconfig.server.json npx ts-node scripts/slo-gate-check.ts --env production --fail-on-breach",
     "smoke:orchestrator:preflight": "npm run soak:orchestrator:smoke && npm run load:orchestrator:smoke && npm run test:e2e -- tests/e2e/metrics.e2e.spec.ts",
+    "smoke:product": "bash scripts/product_smoke_test.sh",
     "build": "npm run build:server && npm run build:client",
     "build:server": "tsc -p tsconfig.server.json",
     "build:client": "vite build",
