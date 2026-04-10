@@ -6,9 +6,46 @@ This plan tracks the remaining high-value extraction targets for `ai-service/scr
 
 ## Current State
 
-The orchestrator has already been reduced from roughly 14,363 lines to 4,913 lines through targeted mixin extraction. The latest extraction moved startup/runtime lifecycle responsibilities into dedicated mixins while preserving the legacy orchestration surface.
+The orchestrator has been reduced from roughly 14,363 lines to 2,591 lines through targeted mixin extraction. The mixin modules now contain 11,893 lines across 19 `*_mixin.py` files, while the main orchestrator stays as the compatibility shell, constructor, and remaining glue code.
 
-Verification: `cd ai-service && PYTHONPATH=. python3 -m pytest tests/unit/p2p/ -x -q --timeout=120` passed on April 10, 2026 with 2,615 passed and 2 skipped.
+Verification: `cd ai-service && PYTHONPATH=. python3 -m pytest tests/unit/p2p/ -x -q` passed on April 10, 2026 with 2,615 passed and 2 skipped.
+
+## Phase 3 Targets
+
+These targets were identified from an AST audit of the remaining `P2POrchestrator` class on April 10, 2026. The immediate target is to reduce `ai-service/scripts/p2p_orchestrator.py` from about 4,913 LOC to below 3,000 LOC while preserving behavior.
+
+| Target                       | Methods                                                                                                                                                                                                                                                                                                    | Estimated LOC | Shared State Dependencies                                                                                                                                                                                                   | Status    |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| StatePersistenceMixin        | `_load_state`, `_save_state`, `_save_cluster_epoch`, `_increment_cluster_epoch`, `record_metric`, `get_metrics_history`, `get_metrics_summary`                                                                                                                                                             | 310           | `state_manager`, `metrics_manager`, `peers`, `local_jobs`, `jobs_lock`, `peers_lock`, `leader_state_lock`, leader lease and voter fields, lease fencing fields, `health_metrics_manager`, `_job_snapshot`, `quorum_manager` | Completed |
+| PeerDiscoveryMixin           | `_reconnect_discovered_peer`, `reconnect_missing_peers`, `_check_partition_mode`, `is_partition_readonly`, `get_partition_status`, `_local_has_tailscale`, `_get_tailscale_status`, `_sync_peer_snapshot`, `_prepopulate_voter_peers`, `_cache_local_ips`                                                  | 342           | `peers`, `peers_lock`, `_peer_snapshot`, `self_info`, `network`, distributed host loading, Tailscale/local IP helpers, partition state fields, event emission, heartbeat sender, voter config fields                        | Completed |
+| JobManagementMixin expansion | `_get_all_active_jobs_for_reaper`, `_cancel_job_for_reaper`, `_get_job_heartbeats_for_reaper`, `_inline_job_reaper_fallback_loop`, `_spawn_and_track_job`, `_can_spawn_process`, `_check_spawn_rate_limit`, `_record_spawn`, `_get_node_job_preference`, `_record_gpu_job_result`, `_update_gpu_job_count` | 399           | Existing `JobManagementMixin`, `active_jobs`, `jobs_lock`, `jobs_started_at`, `job_manager`, `jobs`, `spawn_timestamps`, `self_info`, event emission, task abandonment callbacks, YAML cluster config                       | Completed |
+| ProcessManagementMixin       | `_reap_orphan_processes`, `_cleanup_stale_processes`, `_cleanup_orphan_gpu_processes`, `_run_subprocess_sync`, `_run_subprocess_async`, `_get_max_selfplay_slots_for_node`                                                                                                                                 | 207           | `jobs`, `local_jobs`, `self_info`, process table access, `nvidia-smi`, subprocess helpers, RingRift process-name conventions                                                                                                | Completed |
+| HttpSessionMixin             | `http_session`, `http_session_created_at`, `recreate_http_session`, `_auth_headers`, `_get_leader_peer`, `_proxy_to_leader`, `_is_request_authorized`                                                                                                                                                      | 158           | `_http_session`, auth token fields, `_peer_snapshot`, `leadership`, `leader_id`, `self_info`, URL builders, leader eligibility checks, endpoint conflict helpers, aiohttp sessions                                          | Completed |
+| GameCountMixin               | `_seed_selfplay_scheduler_game_counts_sync`, `_fetch_game_counts_from_peers`, `_async_seed_game_counts_from_peers_if_needed`, `_game_count_refresh_loop`                                                                                                                                                   | 172           | `data_pipeline_manager`, `selfplay_scheduler`, peer snapshots, endpoint helpers, canonical DB layout, ai-service path helpers, aiohttp client sessions                                                                      | Completed |
+
+The first six targets reduced the file to about 3,333 LOC, which missed the below-3,000 target. Two follow-up clusters were therefore extracted as `AutonomousWorkMixin` and `RelayCommandExecutionMixin`, reducing the main file to 2,591 LOC.
+
+## Phase 3 Completion Status
+
+Extracted modules:
+
+- `ai-service/scripts/p2p/mixins/state_persistence_mixin.py`
+- `ai-service/scripts/p2p/mixins/peer_discovery_mixin.py`
+- `ai-service/scripts/p2p/mixins/process_management_mixin.py`
+- `ai-service/scripts/p2p/mixins/http_session_mixin.py`
+- `ai-service/scripts/p2p/mixins/game_count_mixin.py`
+- `ai-service/scripts/p2p/mixins/autonomous_work_mixin.py`
+- `ai-service/scripts/p2p/mixins/relay_command_execution_mixin.py`
+
+Expanded module:
+
+- `ai-service/scripts/p2p/mixins/job_management_mixin.py`
+
+Final LOC snapshot:
+
+- `ai-service/scripts/p2p_orchestrator.py`: 2,591 LOC.
+- `ai-service/scripts/p2p/mixins/*.py`: 11,893 LOC across 19 mixins.
+- Reduction from the original 14,363 LOC orchestrator baseline: about 82%.
 
 ## Target 10: RuntimeLifecycleMixin
 
@@ -55,33 +92,4 @@ Estimated LOC removed: about 956.
 
 Shared state dependencies: node identity, bootstrap and relay config, storage config, quorum manager, partition config, peer snapshots, stability controller, SWIM/Raft/failover setup, state manager, metrics manager, job/training/sync locks, scheduler/coordinator/orchestrator manager instances, event wiring status, SWIM callbacks, and LoopManager registration state.
 
-## Target 12: PersistentStateMixin
-
-Status: Candidate.
-
-Candidate methods:
-
-- `_load_state`
-- `_save_state`
-
-Estimated LOC: about 253.
-
-Shared state dependencies: `state_manager`, `peers`, `local_jobs`, `leader_state_lock`, `NodeInfo`, `ClusterJob`, `JobType`, `NodeRole`, persisted leader lease fields, voter grant fields, forced leader override, peer and job snapshots, and health metrics persistence.
-
-Extraction notes: This target is cohesive and lower risk than another large operational cluster. It should be extracted only after the current runtime/initialization mixins pass P2P unit tests, because it sits on the startup path and interacts with leadership recovery.
-
-## Target 13: RelayCommandExecutionMixin
-
-Status: Candidate.
-
-Candidate methods:
-
-- `_execute_relay_commands`
-- `_action_reset_circuits`
-- `_action_emit_alert`
-
-Estimated LOC: about 240.
-
-Shared state dependencies: relay command queues and attempts, `node_id`, relay locks, auth headers, peer URL/session helpers, circuit breaker registry, stability action callbacks, event emission, notification hooks, and subprocess/network command execution paths.
-
-Extraction notes: Keep this target separate from relay HTTP handlers. The goal is to isolate relay command execution and recovery actions while preserving the existing handler routing modules.
+Historical candidate targets 12 and 13 were superseded by the completed Phase 3 extraction above.

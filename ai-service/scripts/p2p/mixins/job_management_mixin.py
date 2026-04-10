@@ -972,3 +972,413 @@ class JobManagementMixin(P2PMixinBase):
 
         # Fallback: enqueue locally (works when peer polls the leader directly).
         return self._enqueue_relay_command(peer_id, cmd_type, payload)
+
+    def _get_all_active_jobs_for_reaper(self) -> dict[str, Any]:
+        """Get all active jobs across all job types for the job reaper.
+
+        Returns a flat dict of job_id -> job_info, where job_info includes:
+        - started_at: timestamp when job started
+        - claimed_at: timestamp when job was claimed (if applicable)
+        - status: current job status
+        - pid: process ID (for killing stuck processes)
+        - node_id: which node is running the job
+        """
+        result: dict[str, Any] = {}
+        with self.jobs_lock:
+            for job_type, jobs in self.active_jobs.items():
+                for job_id, job_info in jobs.items():
+                    if isinstance(job_info, dict):
+                        result[job_id] = {
+                            **job_info,
+                            "job_type": job_type,
+                        }
+                    else:
+                        # Handle non-dict job objects (legacy)
+                        result[job_id] = {
+                            "job_id": job_id,
+                            "job_type": job_type,
+                            "status": getattr(job_info, "status", "unknown"),
+                            "started_at": getattr(job_info, "started_at", 0),
+                            "pid": getattr(job_info, "pid", None),
+                        }
+        return result
+
+    async def _cancel_job_for_reaper(self, job_id: str) -> bool:
+        """Cancel a job by ID for the job reaper.
+
+        Jan 21, 2026: Enhanced to escalate SIGTERM -> SIGKILL for stuck processes.
+
+        Attempts to:
+        1. Kill the process with SIGTERM, wait 3s, then SIGKILL if still alive
+        2. Update job status to 'cancelled'
+        3. Remove from active jobs dict
+        4. Emit TASK_ABANDONED event
+
+        Returns True if job was successfully cancelled.
+        """
+        import os
+        import signal
+
+        with self.jobs_lock:
+            # Find the job across all job types
+            for job_type, jobs in self.active_jobs.items():
+                if job_id in jobs:
+                    job_info = jobs[job_id]
+                    pid = job_info.get("pid") if isinstance(job_info, dict) else getattr(job_info, "pid", None)
+
+                    # Kill the process if we have a PID
+                    if pid:
+                        process_killed = False
+                        try:
+                            # First try SIGTERM
+                            os.kill(pid, signal.SIGTERM)
+                            logger.info(f"[JobReaper] Sent SIGTERM to pid {pid} for job {job_id}")
+
+                            # Wait up to 3 seconds for graceful termination
+                            for _ in range(6):  # 6 x 0.5s = 3s
+                                await asyncio.sleep(0.5)
+                                try:
+                                    # Check if process still exists (signal 0 = check only)
+                                    os.kill(pid, 0)
+                                except ProcessLookupError:
+                                    # Process is dead
+                                    process_killed = True
+                                    logger.debug(f"[JobReaper] Process {pid} terminated gracefully")
+                                    break
+
+                            # If still alive after 3s, escalate to SIGKILL
+                            if not process_killed:
+                                try:
+                                    os.kill(pid, signal.SIGKILL)
+                                    logger.warning(
+                                        f"[JobReaper] SIGTERM failed for pid {pid}, sent SIGKILL for job {job_id}"
+                                    )
+                                    # Wait briefly for SIGKILL to take effect
+                                    await asyncio.sleep(0.5)
+                                except ProcessLookupError:
+                                    pass  # Died between check and kill
+
+                        except ProcessLookupError:
+                            logger.debug(f"[JobReaper] Process {pid} already dead for job {job_id}")
+                        except OSError as e:
+                            logger.warning(f"[JobReaper] Failed to kill pid {pid}: {e}")
+
+                    # Update status and remove from active jobs
+                    if isinstance(job_info, dict):
+                        job_info["status"] = "reaped"
+                    del jobs[job_id]
+
+                    # Emit event for coordination (fire-and-forget async task)
+                    config_key = str(job_type)
+                    node_id = ""
+                    if isinstance(job_info, dict):
+                        node_id = str(job_info.get("node_id") or "")
+                        config_key = str(job_info.get("config_key") or config_key)
+                        if config_key == str(job_type):
+                            board_type = job_info.get("board_type")
+                            num_players = job_info.get("num_players")
+                            if board_type and num_players is not None:
+                                config_key = f"{board_type}_{num_players}p"
+
+                    fire_and_forget(
+                        self._emit_task_abandoned(
+                            job_id=job_id,
+                            config_key=config_key,
+                            reason="reaped_by_job_reaper",
+                            node_id=node_id,
+                        ),
+                        name=f"emit_task_abandoned:{job_id}",
+                    )
+
+                    logger.info(f"[JobReaper] Cancelled job {job_id} (type: {job_type})")
+                    return True
+
+        logger.debug(f"[JobReaper] Job {job_id} not found in active jobs")
+        return False
+
+    def _get_job_heartbeats_for_reaper(self) -> dict[str, float]:
+        """Get job heartbeat timestamps for the job reaper.
+
+        Returns dict of job_id -> last_heartbeat_time.
+        Jobs without recent heartbeats may be considered abandoned.
+
+        Phase 15.1.9 (Dec 29, 2025): Updated to use JobManager.get_job_heartbeats()
+        for actual heartbeat tracking instead of just job start times.
+        """
+        result: dict[str, float] = {}
+
+        # Phase 15.1.9: Get actual heartbeats from JobManager
+        if hasattr(self, "job_manager") and self.job_manager is not None:
+            try:
+                job_heartbeats = self.job_manager.get_job_heartbeats()
+                result.update(job_heartbeats)
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"Failed to get heartbeats from JobManager: {e}")
+
+        # Fallback: Also include jobs_started_at for jobs without heartbeat tracking
+        # This ensures older jobs (started before heartbeat tracking) are still monitored
+        if hasattr(self, "jobs_started_at"):
+            for _node_id, jobs in self.jobs_started_at.items():
+                for job_id, start_time in jobs.items():
+                    # Only add if not already in result from heartbeat tracking
+                    if job_id not in result:
+                        result[job_id] = start_time
+
+        return result
+
+    async def _inline_job_reaper_fallback_loop(self) -> None:
+        """Inline job reaper fallback loop.
+
+        December 27, 2025: Fallback implementation that runs if the extracted
+        JobReaperLoop fails to start or hits persistent errors. Uses the same
+        callbacks and thresholds as the extracted loop.
+
+        This is NOT a replacement for JobReaperLoop - it's a safety net that
+        ensures job cleanup continues even if the modular loop system fails.
+
+        Thresholds:
+        - STALE: Jobs older than 1 hour without heartbeat
+        - STUCK: Jobs older than 2 hours regardless of heartbeat
+        - INTERVAL: Checks every 5 minutes
+
+        Environment:
+        - RINGRIFT_JOB_REAPER_FALLBACK_ENABLED: Enable/disable (default: true)
+        """
+        STALE_THRESHOLD_SECONDS = 3600.0   # 1 hour
+        STUCK_THRESHOLD_SECONDS = 7200.0   # 2 hours
+        CHECK_INTERVAL_SECONDS = 300.0      # 5 minutes
+        MAX_JOBS_PER_CYCLE = 10             # Limit to avoid overload
+
+        logger.info("[JobReaper Fallback] Started inline fallback loop")
+        stats = {"checks": 0, "reaped": 0, "errors": 0}
+
+        while self.running:
+            try:
+                await asyncio.sleep(CHECK_INTERVAL_SECONDS)
+                if not self.running:
+                    break
+
+                stats["checks"] += 1
+                now = time.time()
+                reaped_this_cycle = 0
+
+                # Get all active jobs
+                try:
+                    active_jobs = self._get_all_active_jobs_for_reaper()
+                except Exception as e:
+                    logger.warning(f"[JobReaper Fallback] Failed to get active jobs: {e}")
+                    stats["errors"] += 1
+                    continue
+
+                if not active_jobs:
+                    continue
+
+                # Get heartbeat info
+                try:
+                    heartbeats = self._get_job_heartbeats_for_reaper()
+                except Exception as e:
+                    logger.debug(f"[JobReaper Fallback] Failed to get heartbeats: {e}")
+                    heartbeats = {}
+
+                # Identify stale and stuck jobs
+                jobs_to_reap: list[tuple[str, str]] = []  # [(job_id, reason), ...]
+
+                for job_id, job_info in active_jobs.items():
+                    if reaped_this_cycle >= MAX_JOBS_PER_CYCLE:
+                        break
+
+                    started_at = job_info.get("started_at", 0)
+                    if not started_at:
+                        continue
+
+                    job_age = now - started_at
+                    last_heartbeat = heartbeats.get(job_id, started_at)
+                    heartbeat_age = now - last_heartbeat
+
+                    # Check for stuck jobs (absolute age threshold)
+                    if job_age > STUCK_THRESHOLD_SECONDS:
+                        jobs_to_reap.append((job_id, "stuck"))
+                        reaped_this_cycle += 1
+                        continue
+
+                    # Check for stale jobs (no recent heartbeat)
+                    if heartbeat_age > STALE_THRESHOLD_SECONDS:
+                        jobs_to_reap.append((job_id, "stale"))
+                        reaped_this_cycle += 1
+
+                # Reap identified jobs
+                for job_id, reason in jobs_to_reap:
+                    try:
+                        success = await self._cancel_job_for_reaper(job_id)
+                        if success:
+                            stats["reaped"] += 1
+                            logger.info(
+                                f"[JobReaper Fallback] Reaped {reason} job {job_id} "
+                                f"(total: {stats['reaped']})"
+                            )
+                    except Exception as e:
+                        logger.warning(f"[JobReaper Fallback] Failed to reap {job_id}: {e}")
+                        stats["errors"] += 1
+
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"[JobReaper Fallback] Unexpected error: {e}")
+                stats["errors"] += 1
+                await asyncio.sleep(60)  # Back off on error
+
+        logger.info(
+            f"[JobReaper Fallback] Stopped after {stats['checks']} checks, "
+            f"{stats['reaped']} reaped, {stats['errors']} errors"
+        )
+
+    def _check_spawn_rate_limit(self) -> tuple[bool, str]:
+        """Check if we're within the spawn rate limit.
+
+        SAFEGUARD: Prevents runaway process spawning by limiting spawns per minute.
+
+        Returns:
+            (can_spawn, reason) - True if within rate limit
+        """
+        now = time.time()
+        # Clean old timestamps (older than 60 seconds)
+        self.spawn_timestamps = [t for t in self.spawn_timestamps if now - t < 60]
+
+        if len(self.spawn_timestamps) >= SPAWN_RATE_LIMIT_PER_MINUTE:
+            return False, f"Rate limit: {len(self.spawn_timestamps)}/{SPAWN_RATE_LIMIT_PER_MINUTE} spawns in last minute"
+
+        return True, f"Rate OK: {len(self.spawn_timestamps)}/{SPAWN_RATE_LIMIT_PER_MINUTE}"
+
+    def _record_spawn(self) -> None:
+        """Record a process spawn for rate limiting."""
+        self.spawn_timestamps.append(time.time())
+
+    def _can_spawn_process(self, reason: str = "job") -> tuple[bool, str]:
+        """Combined safeguard check before spawning any process.
+
+        Jan 29, 2026: Delegates to JobOrchestrator.can_spawn_process().
+
+        Args:
+            reason: Description of why we want to spawn (for logging)
+
+        Returns:
+            (can_spawn, explanation) - True if all checks pass
+        """
+        return self.jobs.can_spawn_process(reason)
+
+    def _spawn_and_track_job(
+        self,
+        job_id: str,
+        job_type: JobType,
+        board_type: str,
+        num_players: int,
+        engine_mode: str,
+        cmd: list[str],
+        output_dir: Path,
+        log_filename: str = "run.log",
+        cuda_visible_devices: str | None = None,
+        extra_env: dict[str, str] | None = None,
+        safeguard_reason: str | None = None,
+    ) -> tuple[ClusterJob, subprocess.Popen] | None:
+        """Spawn a subprocess job and track it in local_jobs.
+
+        Jan 29, 2026: Delegates to JobOrchestrator.spawn_and_track_job().
+
+        Args:
+            job_id: Unique job identifier
+            job_type: Type of job (SELFPLAY, GPU_SELFPLAY, etc.)
+            board_type: Board type (hex8, square8, etc.)
+            num_players: Number of players
+            engine_mode: Engine mode for the job
+            cmd: Command to execute
+            output_dir: Directory for output files
+            log_filename: Name of log file in output_dir
+            cuda_visible_devices: CUDA_VISIBLE_DEVICES value (None = inherit, "" = disable)
+            extra_env: Additional environment variables
+            safeguard_reason: Reason for safeguard check (default: job_type-board_type-Np)
+
+        Returns:
+            Tuple of (ClusterJob, Popen) if successful, None if blocked or failed
+        """
+        return self.jobs.spawn_and_track_job(
+            job_id=job_id,
+            job_type=job_type,
+            board_type=board_type,
+            num_players=num_players,
+            engine_mode=engine_mode,
+            cmd=cmd,
+            output_dir=output_dir,
+            log_filename=log_filename,
+            cuda_visible_devices=cuda_visible_devices,
+            extra_env=extra_env,
+            safeguard_reason=safeguard_reason,
+        )
+
+    def _get_node_job_preference(self, node_id: str) -> str:
+        """Get preferred job type based on node role from YAML config.
+
+        Jan 7, 2026: Added to enforce role-based job selection.
+        GPU-only nodes should not fall back to CPU selfplay.
+
+        Returns one of:
+        - 'cpu_only': Node should only run CPU jobs (coordinator, cpu_selfplay)
+        - 'gpu_only': Node should only run GPU jobs (gpu_selfplay role)
+        - 'training_only': Node should only run training (gpu_training_primary)
+        - 'both': Node can run both GPU selfplay and training (default)
+        """
+        try:
+            from app.config.cluster_config import get_config_cache
+            config = get_config_cache().get_config()
+            host_cfg = config.hosts_raw.get(node_id, {})
+            role = str(host_cfg.get("role", "")).lower()
+
+            if role in ("coordinator", "cpu_selfplay"):
+                return "cpu_only"
+            if role == "gpu_selfplay":
+                return "gpu_only"
+            if role == "gpu_training_primary":
+                # Training-primary nodes can still do selfplay when idle
+                return "both"
+            if role == "gpu_training_selfplay":
+                return "both"
+            return "both"
+        except Exception as e:
+            logger.debug(f"Could not get job preference for {node_id}: {e}")
+            return "both"
+
+    def _record_gpu_job_result(self, success: bool) -> None:
+        """Record GPU job completion result for adaptive dispatch decisions.
+
+        Jan 7, 2026: Added for GPU failure tracking.
+        Consecutive failures indicate driver issues and should trigger CPU fallback.
+
+        Args:
+            success: True if GPU job completed successfully, False otherwise.
+        """
+        try:
+            now = time.time()
+            if success:
+                self.self_info.last_gpu_job_success = now
+                self.self_info.gpu_failure_count = 0  # Reset on success
+            else:
+                self.self_info.last_gpu_job_failure = now
+                self.self_info.gpu_failure_count = getattr(self.self_info, "gpu_failure_count", 0) + 1
+            logger.debug(f"GPU job result: success={success}, failure_count={self.self_info.gpu_failure_count}")
+        except Exception as e:
+            logger.debug(f"Could not record GPU job result: {e}")
+
+    def _update_gpu_job_count(self, delta: int) -> None:
+        """Update running GPU job count.
+
+        Jan 7, 2026: Added for accurate GPU job tracking.
+        Used to detect driver issues (jobs running but 0% utilization).
+
+        Args:
+            delta: Amount to change count by (+1 for start, -1 for completion).
+        """
+        try:
+            current = getattr(self.self_info, "gpu_job_count", 0) or 0
+            self.self_info.gpu_job_count = max(0, current + delta)
+            logger.debug(f"GPU job count: {current} -> {self.self_info.gpu_job_count}")
+        except Exception as e:
+            logger.debug(f"Could not update GPU job count: {e}")
