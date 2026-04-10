@@ -63,6 +63,7 @@ try:
         ELO_K_FACTOR,
         INITIAL_ELO_RATING,
         MIN_GAMES_FOR_ELO,
+        get_pinned_baseline_rating,
     )
 except ImportError:
     # Fallback defaults if thresholds not available
@@ -70,6 +71,10 @@ except ImportError:
     ELO_K_FACTOR = 32
     MIN_GAMES_FOR_ELO = 30
     BASELINE_ELO_RANDOM = 400
+
+    def get_pinned_baseline_rating(participant_id: str) -> float | None:
+        """Fallback baseline pinning when thresholds.py is unavailable."""
+        return float(BASELINE_ELO_RANDOM) if _is_random_participant(participant_id) else None
 
 
 def _is_random_participant(participant_id: str) -> bool:
@@ -527,6 +532,12 @@ class EloService:
         elo_before = result.get("elo_before", {})
         elo_after = result.get("elo_after", {})
         elo_changes = result.get("elo_changes", {})
+
+        for pid in [participant_a, participant_b]:
+            pinned_rating = get_pinned_baseline_rating(pid)
+            if pinned_rating is not None:
+                elo_after[pid] = float(pinned_rating)
+                elo_changes[pid] = 0.0
 
         with self._transaction() as conn:
             for pid in [participant_a, participant_b]:
@@ -1414,11 +1425,12 @@ class EloService:
     ) -> EloRating:
         """Get participant's Elo rating, creating initial if needed.
 
-        Note: Random players are anchored at BASELINE_ELO_RANDOM (400) to serve
-        as the fixed reference point and prevent rating inflation.
+        Note: Baseline players are anchored by thresholds.get_pinned_baseline_rating()
+        to serve as fixed reference points and prevent rating inflation.
         """
-        # Anchor random participants at fixed Elo to prevent rating drift
-        if _is_random_participant(participant_id):
+        # Anchor canonical baseline participants at fixed Elo to prevent rating drift.
+        pinned_rating = get_pinned_baseline_rating(participant_id)
+        if pinned_rating is not None:
             # Still fetch games_played from DB for stats, but rating is fixed
             conn = self._get_connection()
             cursor = conn.execute("""
@@ -1430,24 +1442,24 @@ class EloService:
             if row:
                 return EloRating(
                     participant_id=participant_id,
-                    rating=float(BASELINE_ELO_RANDOM),  # ANCHORED
+                    rating=float(pinned_rating),  # ANCHORED
                     games_played=row["games_played"],
                     wins=row["wins"],
                     losses=row["losses"],
                     draws=row["draws"],
                     last_update=row["last_update"] or 0.0,
-                    confidence=1.0  # Random is always reliable as anchor
+                    confidence=1.0  # Baselines are always reliable anchors
                 )
-            # Create entry for random participant at anchored rating
+            # Create entry for baseline participant at anchored rating
             with self._transaction() as txn_conn:
                 txn_conn.execute("""
                     INSERT OR IGNORE INTO elo_ratings
                     (participant_id, board_type, num_players, rating, last_update)
                     VALUES (?, ?, ?, ?, ?)
-                """, (participant_id, board_type, num_players, float(BASELINE_ELO_RANDOM), time.time()))
+                """, (participant_id, board_type, num_players, float(pinned_rating), time.time()))
             return EloRating(
                 participant_id=participant_id,
-                rating=float(BASELINE_ELO_RANDOM),  # ANCHORED
+                rating=float(pinned_rating),  # ANCHORED
                 confidence=1.0
             )
 
@@ -1878,13 +1890,14 @@ class EloService:
         new_rating_a = rating_a.rating + change_a
         new_rating_b = rating_b.rating + change_b
 
-        # ANCHOR: Force random players back to fixed Elo (prevents rating inflation)
-        # Random serves as the anchor point for the entire rating system
-        if _is_random_participant(participant_a):
-            new_rating_a = float(BASELINE_ELO_RANDOM)
+        # ANCHOR: Force baseline players back to fixed Elo (prevents rating inflation).
+        pinned_a = get_pinned_baseline_rating(participant_a)
+        pinned_b = get_pinned_baseline_rating(participant_b)
+        if pinned_a is not None:
+            new_rating_a = float(pinned_a)
             change_a = 0.0  # No effective change for anchored player
-        if _is_random_participant(participant_b):
-            new_rating_b = float(BASELINE_ELO_RANDOM)
+        if pinned_b is not None:
+            new_rating_b = float(pinned_b)
             change_b = 0.0  # No effective change for anchored player
 
         elo_after = {participant_a: new_rating_a, participant_b: new_rating_b}
@@ -2062,6 +2075,9 @@ class EloService:
 
             # Extract rating data
             elo = result_data.get("elo", self.INITIAL_ELO)
+            pinned_rating = get_pinned_baseline_rating(participant_id)
+            if pinned_rating is not None:
+                elo = float(pinned_rating)
             games_played = result_data.get("games_played", 0)
             wins = result_data.get("wins", 0)
             losses = result_data.get("losses", 0)
@@ -2371,11 +2387,8 @@ class EloService:
             num_players: Number of players
             min_interval_seconds: Minimum seconds between snapshots (default 5 min)
         """
-        # Skip baseline participants (random, heuristic) - their Elo is fixed
-        if _is_random_participant(participant_id):
-            return
-        pid_lower = participant_id.lower()
-        if 'heuristic' in pid_lower or 'baseline' in pid_lower:
+        # Skip baseline participants because their Elo is fixed by thresholds.py.
+        if get_pinned_baseline_rating(participant_id) is not None:
             return
 
         current_rating = self.get_rating(participant_id, board_type, num_players)

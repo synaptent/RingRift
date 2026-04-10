@@ -42,6 +42,14 @@ Recommended Usage (December 2025):
 """
 from __future__ import annotations
 
+# Maintenance note (April 2026): this file remains the supported training CLI,
+# but the next safe decomposition should split along these seams without
+# changing behavior:
+# - data loading and NPZ validation -> app.training.data_pipeline
+# - model construction and init-weight compatibility -> app.training.model_factory
+# - checkpoint naming, atomic save, and version metadata -> app.training.checkpoint_manager
+# - train/validation loop orchestration stays here, with batch math in train_step/train_epoch
+# - evaluation or promotion decisions stay outside this CLI and should remain explicit callers
 
 import contextlib
 import glob

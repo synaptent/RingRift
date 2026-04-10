@@ -20,6 +20,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.config.thresholds import BASELINE_ELO_HEURISTIC, BASELINE_ELO_RANDOM
 from app.training.elo_service import (
     EloRating,
     EloService,
@@ -272,6 +273,32 @@ class TestMatchRecording:
         assert rating_b.games_played == 1
         assert rating_a.wins == 1
         assert rating_b.losses == 1
+
+    def test_pinned_baselines_do_not_drift(self, service):
+        """Random and heuristic baselines remain fixed across Elo updates."""
+        heuristic_result = service.record_match(
+            participant_a="player_a",
+            participant_b="baseline_heuristic",
+            winner="player_a",
+            board_type="square8",
+            num_players=3,
+        )
+        heuristic_rating = service.get_rating("baseline_heuristic", "square8", 3)
+
+        assert heuristic_rating.rating == BASELINE_ELO_HEURISTIC
+        assert heuristic_result.elo_changes["baseline_heuristic"] == 0.0
+
+        random_result = service.record_match(
+            participant_a="none:random:d1",
+            participant_b="player_b",
+            winner="player_b",
+            board_type="hex8",
+            num_players=4,
+        )
+        random_rating = service.get_rating("none:random:d1", "hex8", 4)
+
+        assert random_rating.rating == BASELINE_ELO_RANDOM
+        assert random_result.elo_changes["none:random:d1"] == 0.0
 
 
 class TestLeaderboard:
