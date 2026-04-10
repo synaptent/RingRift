@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Cluster configuration loader for RingRift distributed training.
 
-This module provides utilities to load and query cluster node configurations
-from config/cluster_nodes.yaml (or cluster_nodes.local.yaml if it exists).
+This module provides utilities to load and query the legacy
+`config/cluster_nodes.yaml` inventory (or `cluster_nodes.local.yaml` if it
+exists). New infrastructure should prefer `distributed_hosts.yaml` via the
+unified loaders, but this module remains active compatibility surface for older
+deployment helpers.
 
 Usage:
     from scripts.lib.cluster_config import ClusterConfig

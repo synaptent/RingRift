@@ -539,22 +539,29 @@ function validateStagingEnv(stagingEnvPath: string): ValidationResult {
 
   const envVars = parseEnvExample(stagingEnvPath);
 
-  // Phase 3+ Orchestrator Configuration Checks
-  // Note: ORCHESTRATOR_ROLLOUT_PERCENTAGE and ORCHESTRATOR_SHADOW_MODE_ENABLED
-  // were removed in Phase 3 - orchestrator is now permanently enabled at 100%
+  // Current staging posture: TypeScript rules are authoritative.
   const requiredConfig = {
     RINGRIFT_RULES_MODE: 'ts',
-    ORCHESTRATOR_ADAPTER_ENABLED: 'true',
   };
 
   for (const [key, expectedValue] of Object.entries(requiredConfig)) {
     const actualValue = envVars.get(key);
     if (actualValue !== expectedValue) {
       result.errors.push(
-        `Invalid Phase 1 configuration: ${key} should be "${expectedValue}", found "${actualValue || 'undefined'}"`
+        `Invalid staging configuration: ${key} should be "${expectedValue}", found "${actualValue || 'undefined'}"`
       );
       result.valid = false;
     }
+  }
+
+  if (envVars.has('ORCHESTRATOR_ADAPTER_ENABLED')) {
+    result.warnings.push(
+      'ORCHESTRATOR_ADAPTER_ENABLED is hardcoded to true and should be removed from .env.staging'
+    );
+  }
+
+  if (envVars.has('SOCKET_PORT')) {
+    result.warnings.push('SOCKET_PORT is legacy and should be removed from .env.staging');
   }
 
   return result;

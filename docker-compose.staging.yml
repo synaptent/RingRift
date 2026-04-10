@@ -33,7 +33,6 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - SOCKET_PORT=3001
       - DATABASE_URL=${DATABASE_URL:-postgresql://ringrift:${DB_PASSWORD:-stagingpass}@postgres:5432/ringrift}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       - AI_SERVICE_URL=${AI_SERVICE_URL:-http://ai-service:8001}
@@ -49,7 +48,6 @@ services:
       # NOTE: FSM is now canonical; shadow mode has been removed
       - RINGRIFT_RULES_MODE=ts
       - RINGRIFT_APP_TOPOLOGY=single
-      - ORCHESTRATOR_ADAPTER_ENABLED=true
       - ORCHESTRATOR_CIRCUIT_BREAKER_ENABLED=true
       - ORCHESTRATOR_ERROR_THRESHOLD_PERCENT=5
       - ORCHESTRATOR_ERROR_WINDOW_SECONDS=300
@@ -72,7 +70,6 @@ services:
       - RATE_LIMIT_BYPASS_USER_PATTERN=${RATE_LIMIT_BYPASS_USER_PATTERN:-}
       # Load testing capacity targets
       - MAX_CONCURRENT_GAMES=${MAX_CONCURRENT_GAMES:-150}
-      - MAX_CONCURRENT_CONNECTIONS=${MAX_CONCURRENT_CONNECTIONS:-400}
     command: >
       sh -c "npx prisma migrate deploy && node dist/server/server/index.js"
     depends_on:
@@ -84,7 +81,6 @@ services:
         condition: service_healthy
     ports:
       - '3000:3000'
-      - '3001:3001'
     volumes:
       - ./uploads:/app/uploads
       - ./logs:/app/logs
@@ -261,7 +257,6 @@ services:
       - RINGRIFT_TRAINED_HEURISTIC_PROFILES=${RINGRIFT_TRAINED_HEURISTIC_PROFILES:-/app/data/trained_heuristic_profiles.json}
       # AI performance configuration
       - AI_MAX_CONCURRENT_REQUESTS=${AI_MAX_CONCURRENT_REQUESTS:-50}
-      - AI_REQUEST_TIMEOUT=${AI_REQUEST_TIMEOUT:-5000}
     ports:
       - '8001:8001'
     volumes:

@@ -4,17 +4,17 @@ This document designates the authoritative configuration file for each concept t
 
 ## Quick Reference
 
-| Concept                  | Authoritative File          | Deprecated Files                     |
-| ------------------------ | --------------------------- | ------------------------------------ |
-| **Cluster Hosts**        | `distributed_hosts.yaml`    | `cluster.yaml`, `cluster_nodes.yaml` |
-| **P2P Configuration**    | `distributed_hosts.yaml`    | `p2p_hosts.yaml`                     |
-| **SSH Access**           | `distributed_hosts.yaml`    | `remote_hosts.yaml`                  |
-| **Selfplay Workers**     | `selfplay_workers.yaml`     | -                                    |
-| **Training Hyperparams** | `training_hyperparams.yaml` | -                                    |
-| **Promotion Settings**   | `promotion_daemon.yaml`     | -                                    |
-| **Node Policies**        | `node_policies.yaml`        | -                                    |
-| **Notification Hooks**   | `notification_hooks.yaml`   | -                                    |
-| **Unified Loop**         | `unified_loop.yaml`         | -                                    |
+| Concept                         | Authoritative File          | Compatibility / Deprecated Files                           |
+| ------------------------------- | --------------------------- | ---------------------------------------------------------- |
+| **Cluster Hosts**               | `distributed_hosts.yaml`    | `cluster.yaml`, `cluster_nodes.yaml` (legacy fallbacks)    |
+| **P2P Configuration**           | `distributed_hosts.yaml`    | `p2p_hosts.yaml`                                           |
+| **SSH Access**                  | `distributed_hosts.yaml`    | `remote_hosts.yaml`                                        |
+| **Selfplay Workers**            | `selfplay_workers.yaml`     | -                                                          |
+| **Training Hyperparams (NNUE)** | `training_hyperparams.yaml` | `hyperparameters.json` (legacy/runtime CNN overrides)      |
+| **Promotion Settings**          | `promotion_daemon.yaml`     | -                                                          |
+| **Node Policies**               | `node_policies.yaml`        | -                                                          |
+| **Notification Hooks**          | `notification_hooks.yaml`   | -                                                          |
+| **Unified Loop**                | `unified_loop.yaml`         | -                                                          |
 
 ## Authoritative Files
 
@@ -75,6 +75,13 @@ hosts:
 - Early stopping thresholds
 - Model architecture settings
 
+**Scope note**:
+
+- This file is the authoritative source for NNUE-oriented training settings.
+- `config/hyperparameters.json` is still actively consumed by legacy/runtime
+  CNN tooling (`app.config.hyperparameters`, `scripts/lib/config.py`,
+  `run_nn_training_baseline.py`) and cannot be archived yet.
+
 ---
 
 ### `promotion_daemon.yaml` - PROMOTION SETTINGS
@@ -127,23 +134,61 @@ hosts:
 
 ---
 
-## Deprecated Files (Do Not Modify)
+## Compatibility Inputs (Do Not Expand)
 
-### `cluster.yaml` - DEPRECATED
+These files are no longer the canonical source of truth, but they are still
+read by active code paths and therefore cannot be archived yet. Keep them as
+compatibility shims while migrations continue.
 
-**Status**: Superseded by `distributed_hosts.yaml` (December 2025)
+### `cluster.yaml` - LEGACY P2P / ALERTS FALLBACK
 
-**Migration**: All host definitions moved to `distributed_hosts.yaml`
+**Status**: Superseded by `distributed_hosts.yaml` for host inventory, but still
+loaded by P2P support code for static node metadata and alert thresholds.
 
-**Reason**: Consolidated into single canonical file for easier maintenance
+**Active consumers**:
+
+- `scripts/p2p/cluster_config.py`
+- `scripts/lib/unified_cluster_config.py`
+- `scripts/p2p/network_utils.py`
+- `scripts/p2p/utils/webhook_notifier.py`
+
+**Policy**: Do not add new inventory here. Prefer `distributed_hosts.yaml` and
+only retain the minimum data needed by legacy fallback paths.
 
 ---
 
-### `cluster_nodes.yaml` - DEPRECATED
+### `cluster_nodes.yaml` - LEGACY INVENTORY FALLBACK
 
-**Status**: Superseded by `distributed_hosts.yaml` (December 2025)
+**Status**: Superseded by `distributed_hosts.yaml`, but still read by legacy SSH
+and deployment helpers.
 
-**Migration**: Node list now in `distributed_hosts.yaml`
+**Active consumers**:
+
+- `scripts/lib/cluster_config.py`
+- `scripts/lib/unified_cluster_config.py`
+- `scripts/master_cluster_update.sh`
+- `scripts/resource_aware_router.py`
+
+**Policy**: Do not expand this file for new deployments. Migrate callers to
+`distributed_hosts.yaml` when touching those scripts.
+
+---
+
+### `hyperparameters.json` - LEGACY / RUNTIME CNN OVERRIDES
+
+**Status**: Still active. Not canonical for new loop design, but not removable.
+
+**Active consumers**:
+
+- `app/config/hyperparameters.py`
+- `app/config/config_validator.py`
+- `scripts/lib/config.py`
+- `scripts/run_nn_training_baseline.py`
+- `scripts/tune_hyperparameters.py`
+
+---
+
+## Deprecated Files (Do Not Modify)
 
 ---
 

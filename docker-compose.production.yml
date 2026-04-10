@@ -30,7 +30,6 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
-      - SOCKET_PORT=3001
       # Database - NO DEFAULTS (will fail if not set)
       - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
       - REDIS_URL=${REDIS_URL:?REDIS_URL is required}
@@ -49,7 +48,6 @@ services:
       # Application mode
       - RINGRIFT_RULES_MODE=ts
       - RINGRIFT_APP_TOPOLOGY=single
-      - ORCHESTRATOR_ADAPTER_ENABLED=true
       - ORCHESTRATOR_CIRCUIT_BREAKER_ENABLED=true
       - ORCHESTRATOR_ERROR_THRESHOLD_PERCENT=5
       - ORCHESTRATOR_ERROR_WINDOW_SECONDS=300
@@ -64,7 +62,6 @@ services:
       - RATE_LIMIT_GAME_CREATE_IP_POINTS=${RATE_LIMIT_GAME_CREATE_IP_POINTS:-20}
       # Capacity
       - MAX_CONCURRENT_GAMES=${MAX_CONCURRENT_GAMES:-150}
-      - MAX_CONCURRENT_CONNECTIONS=${MAX_CONCURRENT_CONNECTIONS:-500}
     command: >
       sh -c "npx prisma migrate deploy && node dist/server/server/index.js"
     depends_on:

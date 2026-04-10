@@ -2,10 +2,11 @@
 # Configure different training settings for each board type
 # Used by train_nnue.py for NNUE policy network training
 #
-# NOTE: For CNN training hyperparameters (used by unified_ai_loop.py,
-# multi_config_training_loop.py), see config/hyperparameters.json instead.
-# This file is specifically for NNUE policy training which has different
-# requirements than the main CNN architecture.
+# NOTE: For board-specific CNN/runtime overrides still consumed by
+# app.config.hyperparameters and legacy training helpers, see
+# config/hyperparameters.json.
+# This file is specifically for NNUE policy training, which uses a separate
+# configuration surface from the older CNN-oriented tooling.
 
 # Default settings (used as fallback)
 default:

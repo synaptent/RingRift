@@ -1,11 +1,12 @@
 """Cluster Configuration Loader.
 
-Reads static cluster configuration from config/cluster.yaml and provides
-node metadata, fallback IPs, priorities, and alert thresholds to the
-P2P orchestrator.
+Reads the legacy `config/cluster.yaml` compatibility file and provides static
+node metadata, fallback IPs, priorities, and alert thresholds to the P2P
+orchestrator.
 
-This integrates the centralized cluster.yaml config with the dynamic
-P2P node discovery system.
+`distributed_hosts.yaml` is the authoritative host inventory. This module
+persists because active P2P support code still depends on the older
+`cluster.yaml` shape for alerting and fallback metadata.
 """
 
 from __future__ import annotations
